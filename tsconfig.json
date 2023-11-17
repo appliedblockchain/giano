@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "dom",
+      "dom.iterable",
+      "esnext",
+      "WebWorker",
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "noUnusedLocals": false,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "strictPropertyInitialization": false,
+    "noImplicitAny": false,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      // common
+      "@type/*": ["services/types/*"],
+      "@schema/*": ["services/types/schemas/*"],
+      // back-end
+      "@controller/*": ["services/api/src/controller/*"],
+      "@database/*": ["services/api/src/database/*"],
+      "@decorator/*": ["services/api/src/decorator/*"],
+      "@middleware/*": ["services/api/src/middleware/*"],
+      "@repository/*": ["services/api/src/repository/*"],
+      "@service/*": ["services/api/src/service/*"],
+      // front-end
+      "@admin/*": ["services/webapp/src/admin/*"],
+      "@user/*": ["services/webapp/src/user/*"],
+      "@component/*": ["services/webapp/src/components/*"],
+      "@control/*": ["services/webapp/src/controls/*"],
+      "@helper/*": ["services/webapp/src/helpers/*"],
+      "@hook/*": ["services/webapp/src/hooks/*"],
+      // contracts
+      "@contract/*": ["services/bcm/artifacts/contracts/*"]
+    }
+  }
+}

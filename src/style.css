@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.paper {
+  @apply relative border border-slate-200 bg-white p-4 shadow-xl;
+}
+
+@layer {
+  input, textarea, select {
+    @apply outline-none focus:ring-0 focus:ring-offset-0 !important;
+  }
+}
