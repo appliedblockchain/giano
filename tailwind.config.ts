@@ -8,6 +8,6 @@ export default {
   plugins: [typography, forms, daisyui],
   daisyui: {
     logs: false,
-    themes: ['lofi'],
+    themes: ['corporate'],
   },
 } satisfies Config;

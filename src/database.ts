@@ -30,14 +30,14 @@ await database.raw('SELECT 1 /* no-log */');
 // await database.raw(`DROP TABLE IF EXISTS authenticators`);
 await database.raw(`
   CREATE TABLE IF NOT EXISTS authenticators (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    credentialID TEXT UNIQUE NOT NULL,
-    credentialPublicKey BLOB NOT NULL,
+    id TEXT UNIQUE NOT NULL,
+    publicKey BLOB NOT NULL,
+    coseAlg INTEGER,
     counter INTEGER,
     credentialDeviceType TEXT,
     credentialBackedUp BOOL,
-    transports JSONB
+    transports JSONB,
+    username TEXT UNIQUE NOT NULL
   );
 `);
 

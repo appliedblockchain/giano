@@ -1,20 +1,8 @@
-import * as base64url from '@cfworker/base64url';
-
-const { decode: fromBase64Url, encode: toBase64Url } = base64url;
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-export const encode = encoder.encode.bind(encoder);
-export const decode = decoder.decode.bind(decoder);
-
 export const byteStringToBuffer = (byteString: string) => Uint8Array.from(byteString, (e) => e.charCodeAt(0)).buffer;
-
 export const bufferToByteString = (buffer: ArrayBuffer) => String.fromCharCode(...new Uint8Array(buffer));
 
-export const safeDecode = (data: string): Uint8Array => encode(fromBase64Url(data));
-export const safeEncode = (data: ArrayBuffer): string => toBase64Url(decode(data));
-export const safeByteDecode = (data: string): ArrayBufferLike => byteStringToBuffer(fromBase64Url(data));
-export const safeByteEncode = (data: ArrayBuffer): string => toBase64Url(bufferToByteString(data));
+// export const safeByteDecode = (data: string): ArrayBufferLike => byteStringToBuffer(fromBase64Url(data));
+// export const safeByteEncode = (data: ArrayBuffer): string => toBase64Url(bufferToByteString(data));
 
 export const base64URLToBuffer = (base64URL: string) => {
   const base64 = base64URL.replace(/-/g, '+').replace(/_/g, '/');
@@ -30,14 +18,7 @@ export const bufferToBase64URL = (buffer: Uint8Array) => {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 };
 
-export const base64ToPem = (b64cert) => {
-  let pemcert = '';
-  for (let i = 0; i < b64cert.length; i += 64) pemcert += b64cert.slice(i, i + 64) + '\n';
-
-  return '-----BEGIN CERTIFICATE-----\n' + pemcert + '-----END CERTIFICATE-----';
-};
-
-export const encodeChallenge = (challenge: string) => bufferToBase64URL(new TextEncoder().encode(challenge));
+// export const encodeChallenge = (challenge: string) => bufferToBase64URL(new TextEncoder().encode(challenge));
 // export const decodeChallenge = (challenge: string) => new TextDecoder().decode(challenge)
 
 export const fetchPost = async (url: string, data: any) => {
@@ -52,7 +33,32 @@ export const fetchPost = async (url: string, data: any) => {
   return result;
 };
 
-export const areBytewiseEqual = (a, b) => indexedDB.cmp(a, b) === 0;
+export const concatenateBuffers = (a: Uint8Array, b: Uint8Array) => new Uint8Array([...a, ...b]);
+
+export const concatBuffers = (...buffers: ArrayBuffer[]) => {
+  const length = buffers.reduce((acc, b) => acc + b.byteLength, 0);
+  const tmp = new Uint8Array(length);
+
+  let prev = 0;
+  for (const buffer of buffers) {
+    tmp.set(new Uint8Array(buffer), prev);
+    prev += buffer.byteLength;
+  }
+
+  return tmp.buffer;
+};
+
+// export const areBytewiseEqual = (a: Uint8Array, b: Uint8Array) => indexedDB.cmp(a, b) === 0;
+
+export const areBytewiseEqual = (a: Uint8Array, b: Uint8Array) => {
+  if (a.byteLength != b.byteLength) return false;
+  const dv1 = new Int8Array(a);
+  const dv2 = new Int8Array(b);
+  for (let i = 0; i != a.byteLength; i++) {
+    if (dv1[i] != dv2[i]) return false;
+  }
+  return true;
+};
 
 export const convertDERSignatureToECDSASignature = (DERSignature: ArrayLike<number> | ArrayBufferLike): ArrayBuffer => {
   const signatureBytes = new Uint8Array(DERSignature);
@@ -76,15 +82,53 @@ export const convertDERSignatureToECDSASignature = (DERSignature: ArrayLike<numb
 
 export const decodeDERInteger = (integerBytes: Uint8Array, expectedLength: number): Uint8Array => {
   if (integerBytes.byteLength === expectedLength) return integerBytes;
-  if (integerBytes.byteLength < expectedLength) {
-    return new Uint8Array([
-      // add leading 0x00s if smaller than expected length
-      ...new Uint8Array(expectedLength - integerBytes.byteLength).fill(0),
-      ...integerBytes,
-    ]);
-  }
-  // remove leading 0x00s if larger then expected length
-  return integerBytes.slice(-32);
+  // add leading 0x00s if smaller than expected length
+  if (integerBytes.byteLength < expectedLength) return new Uint8Array([...new Uint8Array(expectedLength - integerBytes.byteLength).fill(0), ...integerBytes]);
+  // remove leading 0x00s if larger than expected length
+  else return integerBytes.slice(-32);
 };
 
-export const concatenateBuffers = (a, b) => new Uint8Array([...a, ...b]);
+export const fromAsn1DERtoRSSignature = (signature: ArrayBuffer, hashBitLength: number) => {
+  if (hashBitLength % 8 !== 0) {
+    throw new Error(`hashBitLength ${hashBitLength} is not a multiple of 8`);
+  }
+
+  const sig = new Uint8Array(signature);
+
+  if (sig[0] != 48) {
+    throw new Error('Invalid ASN.1 DER signature');
+  }
+
+  const rStart = 4;
+  const rLength = sig[3];
+  const sStart = rStart + rLength + 2;
+  const sLength = sig[rStart + rLength + 1];
+
+  let r = sig.slice(rStart, rStart + rLength);
+  let s = sig.slice(sStart, sStart + sLength);
+
+  // Remove any 0 padding
+  for (const i of r.slice()) {
+    if (i !== 0) {
+      break;
+    }
+    r = r.slice(1);
+  }
+  for (const i of s.slice()) {
+    if (i !== 0) {
+      break;
+    }
+    s = s.slice(1);
+  }
+
+  const padding = hashBitLength / 8;
+
+  if (r.length > padding || s.length > padding) {
+    throw new Error(`Invalid r or s value bigger than allowed max size of ${padding}`);
+  }
+
+  const rPadding = padding - r.length;
+  const sPadding = padding - s.length;
+
+  return concatBuffers(new Uint8Array(rPadding).fill(0), r, new Uint8Array(sPadding).fill(0), s);
+};
