@@ -1,6 +1,6 @@
 import React from 'react';
 import { FaCopy as ICopy } from 'react-icons/fa';
-import * as helpers from '../helpers';
+import * as helpers from '../../misc/helpers';
 
 const AuthServer: React.FC = () => {
   const [result, setResult] = React.useState<null | string>(null);
@@ -26,32 +26,36 @@ const AuthServer: React.FC = () => {
   };
 
   const attestate = async (username: string) => {
-    const options = await helpers.fetchPost('/api/register/start', { username });
+    try {
+      const options = await helpers.fetchPost('/api/register/start', { username });
 
-    options.challenge = new TextEncoder().encode(options.challenge);
-    options.user.id = new TextEncoder().encode(options.user.id);
-    options.user.username = new TextEncoder().encode(options.user.username);
+      options.challenge = new TextEncoder().encode(options.challenge);
+      options.user.id = new TextEncoder().encode(options.user.id);
+      options.user.username = new TextEncoder().encode(options.user.username);
 
-    const credential = await navigator.credentials.create({ publicKey: options });
-    if (!credential) return;
-    const attestationResponse = credential.response as AuthenticatorAttestationResponse;
+      const credential = await navigator.credentials.create({ publicKey: options });
+      if (!credential) return;
+      const attestationResponse = credential.response as AuthenticatorAttestationResponse;
 
-    const payload = {
-      username,
-      id: credential.id,
-      publicKey: helpers.bufferToBase64URL(attestationResponse.getPublicKey()),
-      coseAlg: attestationResponse.getPublicKeyAlgorithm(),
-      clientDataJSON: helpers.bufferToBase64URL(attestationResponse.clientDataJSON),
-      attestationObject: helpers.bufferToBase64URL(attestationResponse.attestationObject),
-      transports: attestationResponse.getTransports(),
-    };
+      const payload = {
+        username,
+        id: credential.id,
+        publicKey: helpers.bufferToBase64URL(attestationResponse.getPublicKey()),
+        coseAlg: attestationResponse.getPublicKeyAlgorithm(),
+        clientDataJSON: helpers.bufferToBase64URL(attestationResponse.clientDataJSON),
+        attestationObject: helpers.bufferToBase64URL(attestationResponse.attestationObject),
+        transports: attestationResponse.getTransports(),
+      };
 
-    await helpers.fetchPost('/api/register/complete', payload);
+      await helpers.fetchPost('/api/register/complete', payload);
 
-    const pubKey = payload.publicKey;
-    setPubKey(pubKey);
-    setResult(`Public key:\n${pubKey}`);
-    return pubKey;
+      const pubKey = payload.publicKey;
+      setPubKey(pubKey);
+      setResult(`Public key:\n${pubKey}`);
+    } catch (error) {
+      console.error(error);
+      setResult(`Error: ` + (error as Error).message);
+    }
   };
 
   const assert = async (username: string) => {

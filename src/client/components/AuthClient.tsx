@@ -1,8 +1,11 @@
 import React from 'react';
 import { FaCopy as ICopy } from 'react-icons/fa';
-import * as helpers from '../helpers';
-import { bufferToBase64URL } from '../helpers';
-import verifyAssertion from '../verifyAssertion';
+import * as helpers from '../../misc/helpers';
+import verifyAssertion from '../../misc/verifyAssertion';
+
+const RP_ID = window.location.hostname;
+const RP_NAME = 'WebAuthn PoC';
+const RP_ORIGINS = ['http://localhost', 'http://localhost:3000', 'https://cryopdp.ngrok.dev'];
 
 const AuthClient: React.FC = () => {
   const [result, setResult] = React.useState<null | string>(null);
@@ -33,8 +36,8 @@ const AuthClient: React.FC = () => {
     const options = {
       challenge,
       rp: {
-        name: 'WebAuthn PoC',
-        id: window.location.hostname,
+        id: RP_ID,
+        name: RP_NAME,
       },
       user: {
         id: new TextEncoder().encode(username),
@@ -83,10 +86,7 @@ const AuthClient: React.FC = () => {
   };
 
   const assert = async () => {
-    const publicKey = window.prompt(
-      'Public key:',
-      'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfwGvPf05DtXJ5AsJjv6TcejGAYcR0WpXkLizZmqbZ-yz5FLkiCyvIYCW1C7g_w-WCN6g69zV9rV7zNttSJp1gw',
-    );
+    const publicKey = window.prompt('Public key:');
     if (!publicKey) return window.alert('Public key must be provided.');
 
     const challenge = 'abc';
@@ -94,7 +94,7 @@ const AuthClient: React.FC = () => {
     const credential = await navigator.credentials.get({
       publicKey: {
         challenge: new TextEncoder().encode(challenge),
-        rpId: window.location.hostname,
+        rpId: RP_ID,
         timeout: 60_000,
         // todo: add allowCredentials to narrow authenticator to registered one (ref: https://www.w3.org/TR/webauthn/#sctn-usecase-authentication)
       },
@@ -115,7 +115,7 @@ const AuthClient: React.FC = () => {
       },
     };
 
-    const verifiedSignature = await verifyAssertion(payload, challenge, publicKey);
+    const verifiedSignature = await verifyAssertion(payload, challenge, RP_ID, RP_ORIGINS, publicKey);
     if (!verifiedSignature) {
       setResult('Signature verification failed.');
       throw new Error('Signature verification failed.');
@@ -134,7 +134,7 @@ const AuthClient: React.FC = () => {
             <label className="label">
               <span className="label-text">Username</span>
             </label>
-            <input name="username" type="text" placeholder="Type here" className="input input-bordered w-full max-w-xs" defaultValue="bruce.wayne" />
+            <input name="username" type="text" placeholder="Type here" className="input input-bordered w-full max-w-xs" defaultValue="clark.kent" />
           </div>
 
           <div className="flex flex-row justify-between gap-4">

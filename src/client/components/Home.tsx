@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { startAuthentication } from '@simplewebauthn/browser';
 import { ethers } from 'ethers';
-import BankArtifact from '../../artifacts/contracts/Bank.sol/Bank.json' assert { type: 'json' };
-import { safeByteDecode, safeByteEncode } from '../helpers';
+import BankArtifact from '../../../artifacts/contracts/Bank.sol/Bank.json' assert { type: 'json' };
+import * as helpers from '../../misc/helpers';
 
 const toWei = (num) => ethers.parseEther(num.toString());
 const fromWei = (num) => ethers.formatEther(num);
@@ -73,7 +72,7 @@ const Home: React.FC = () => {
     await sign('ciao');
   };
 
-  const sign = async (args) => {
+  const sign = async (_args) => {
     // sign the challenge
     const credential = await navigator.credentials.get({
       publicKey: {
@@ -86,7 +85,7 @@ const Home: React.FC = () => {
     });
 
     const assertion = credential.response as AuthenticatorAssertionResponse;
-    const signature = safeByteEncode(assertion.signature);
+    const signature = helpers.bufferToBase64URL(assertion.signature);
     console.log('Signature:', signature);
   };
 
@@ -104,7 +103,7 @@ const Home: React.FC = () => {
     await checkHolders();
   };
 
-  const deposit = async (event) => {
+  const deposit = (event) => {
     event.preventDefault();
     const formData = Object.fromEntries(new FormData(event.target)) as unknown as { holder: string; amount: number };
     console.log(formData);

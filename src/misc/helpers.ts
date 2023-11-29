@@ -1,9 +1,6 @@
 export const byteStringToBuffer = (byteString: string) => Uint8Array.from(byteString, (e) => e.charCodeAt(0)).buffer;
 export const bufferToByteString = (buffer: ArrayBuffer) => String.fromCharCode(...new Uint8Array(buffer));
 
-// export const safeByteDecode = (data: string): ArrayBufferLike => byteStringToBuffer(fromBase64Url(data));
-// export const safeByteEncode = (data: ArrayBuffer): string => toBase64Url(bufferToByteString(data));
-
 export const base64URLToBuffer = (base64URL: string) => {
   const base64 = base64URL.replace(/-/g, '+').replace(/_/g, '/');
   const padLen = (4 - (base64.length % 4)) % 4;
@@ -18,9 +15,6 @@ export const bufferToBase64URL = (buffer: Uint8Array) => {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 };
 
-// export const encodeChallenge = (challenge: string) => bufferToBase64URL(new TextEncoder().encode(challenge));
-// export const decodeChallenge = (challenge: string) => new TextDecoder().decode(challenge)
-
 export const fetchPost = async (url: string, data: any) => {
   const response = await fetch(url, {
     method: 'POST',
@@ -30,6 +24,7 @@ export const fetchPost = async (url: string, data: any) => {
   });
 
   const result = await response.json();
+  if (!response.ok) throw new Error(result);
   return result;
 };
 
@@ -47,8 +42,6 @@ export const concatBuffers = (...buffers: ArrayBuffer[]) => {
 
   return tmp.buffer;
 };
-
-// export const areBytewiseEqual = (a: Uint8Array, b: Uint8Array) => indexedDB.cmp(a, b) === 0;
 
 export const areBytewiseEqual = (a: Uint8Array, b: Uint8Array) => {
   if (a.byteLength != b.byteLength) return false;
@@ -86,49 +79,4 @@ export const decodeDERInteger = (integerBytes: Uint8Array, expectedLength: numbe
   if (integerBytes.byteLength < expectedLength) return new Uint8Array([...new Uint8Array(expectedLength - integerBytes.byteLength).fill(0), ...integerBytes]);
   // remove leading 0x00s if larger than expected length
   else return integerBytes.slice(-32);
-};
-
-export const fromAsn1DERtoRSSignature = (signature: ArrayBuffer, hashBitLength: number) => {
-  if (hashBitLength % 8 !== 0) {
-    throw new Error(`hashBitLength ${hashBitLength} is not a multiple of 8`);
-  }
-
-  const sig = new Uint8Array(signature);
-
-  if (sig[0] != 48) {
-    throw new Error('Invalid ASN.1 DER signature');
-  }
-
-  const rStart = 4;
-  const rLength = sig[3];
-  const sStart = rStart + rLength + 2;
-  const sLength = sig[rStart + rLength + 1];
-
-  let r = sig.slice(rStart, rStart + rLength);
-  let s = sig.slice(sStart, sStart + sLength);
-
-  // Remove any 0 padding
-  for (const i of r.slice()) {
-    if (i !== 0) {
-      break;
-    }
-    r = r.slice(1);
-  }
-  for (const i of s.slice()) {
-    if (i !== 0) {
-      break;
-    }
-    s = s.slice(1);
-  }
-
-  const padding = hashBitLength / 8;
-
-  if (r.length > padding || s.length > padding) {
-    throw new Error(`Invalid r or s value bigger than allowed max size of ${padding}`);
-  }
-
-  const rPadding = padding - r.length;
-  const sPadding = padding - s.length;
-
-  return concatBuffers(new Uint8Array(rPadding).fill(0), r, new Uint8Array(sPadding).fill(0), s);
 };

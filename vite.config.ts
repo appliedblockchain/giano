@@ -5,7 +5,7 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 export default defineConfig({
   plugins: [react({ tsDecorators: true }), tsconfigPaths()],
   envDir: './', // by default vite will look into root directory for .env
-  root: 'src',
+  root: 'src/client',
   build: {
     outDir: './dist',
   },

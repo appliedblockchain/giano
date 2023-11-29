@@ -1,4 +1,3 @@
-import { ClientDataJSON } from '@simplewebauthn/server/script/helpers';
 import * as helpers from './helpers';
 
 type PublicKeyEncoded = string;
@@ -29,19 +28,25 @@ type ClientData = {
   origin: string;
 };
 
-const verifyAssertion = async (assertion: AssertionEncoded, expectedChallenge: ChallengeEncoded, publicKey: PublicKeyEncoded): Promise<boolean> => {
+const verifyAssertion = async (
+  assertion: AssertionEncoded,
+  expectedChallenge: ChallengeEncoded,
+  expectedRpId: string,
+  allowedOrigins: string[],
+  publicKey: PublicKeyEncoded,
+): Promise<boolean> => {
   const assertionResponse = assertion.response;
 
   const clientData = JSON.parse(helpers.bufferToByteString(helpers.base64URLToBuffer(assertionResponse.clientDataJSON))) as ClientData;
 
   if (clientData.type !== 'webauthn.get') throw new Error("Failed to verify 'clientData.type'");
-  if (clientData.challenge !== btoa(expectedChallenge)) throw new Error("Failed to verify 'clientData.challenge'");
-  if (clientData.origin !== window.location.origin) throw new Error("Failed to verify 'clientData.origin");
+  if (atob(clientData.challenge) !== expectedChallenge) throw new Error("Failed to verify 'clientData.challenge'");
+  if (!allowedOrigins.includes(clientData.origin)) throw new Error("Failed to verify 'clientData.origin");
 
   const authenticatorData = helpers.base64URLToBuffer(assertionResponse.authenticatorData);
   if (authenticatorData.byteLength < 37) throw new Error("Malformed 'authData'");
   const rpIdHash = authenticatorData.slice(0, 32);
-  const rpIdData = new TextEncoder().encode(window.location.hostname);
+  const rpIdData = new TextEncoder().encode(expectedRpId);
   const expectedRpIdHash = new Uint8Array(await crypto.subtle.digest('SHA-256', rpIdData));
   if (!helpers.areBytewiseEqual(rpIdHash, expectedRpIdHash)) throw new Error("Failed to verify 'rpId' hash");
 
