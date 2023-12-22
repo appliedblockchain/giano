@@ -5,7 +5,7 @@ import verifyAssertion from '../../misc/verifyAssertion';
 
 const RP_ID = window.location.hostname;
 const RP_NAME = 'WebAuthn PoC';
-const RP_ORIGINS = ['http://localhost', 'http://localhost:3000', 'https://cryopdp.ngrok.dev'];
+const RP_ORIGINS = ['http://localhost', 'http://localhost:3000', 'https://webauthn-poc.ngrok.dev'];
 
 const AuthClient: React.FC = () => {
   const [result, setResult] = React.useState<null | string>(null);
@@ -103,8 +103,6 @@ const AuthClient: React.FC = () => {
 
     const assertionResponse = credential.response as AuthenticatorAssertionResponse;
 
-    // MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfwGvPf05DtXJ5AsJjv6TcejGAYcR0WpXkLizZmqbZ-yz5FLkiCyvIYCW1C7g_w-WCN6g69zV9rV7zNttSJp1gw
-
     const payload = {
       id: credential.id,
       rawId: helpers.bufferToBase64URL(credential.rawId),
@@ -114,6 +112,11 @@ const AuthClient: React.FC = () => {
         signature: helpers.bufferToBase64URL(assertionResponse.signature),
       },
     };
+
+    console.log('Public key used:');
+    console.log(JSON.stringify(publicKey, null, 2));
+    console.log('Payload to verify:');
+    console.log(JSON.stringify(payload, null, 2));
 
     const verifiedSignature = await verifyAssertion(payload, challenge, RP_ID, RP_ORIGINS, publicKey);
     if (!verifiedSignature) {

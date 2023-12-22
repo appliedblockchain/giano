@@ -113,7 +113,7 @@ const Home: React.FC = () => {
     <>
       <div className="absolute right-4 top-4 flex flex-row items-center gap-4">
         <p className="inline">Welcome!</p>
-        <NavLink className="link-primary link" to={'/register'}>
+        <NavLink className="link link-primary" to={'/register'}>
           Logout
         </NavLink>
       </div>

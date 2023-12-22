@@ -72,8 +72,8 @@ router.post('/api/register/start', async (ctx) => {
       userVerification: 'required',
       residentKey: 'required',
       // if user is on mobile then don't ask to save the passkey on another roaming device or the user will need another smartphone to register!
-      authenticatorAttachment: isMobile ? 'platform' : 'cross-platform',
-      // authenticatorAttachment: 'platform',
+      // authenticatorAttachment: isMobile ? 'platform' : 'cross-platform',
+      authenticatorAttachment: 'platform',
     },
     attestation: 'none',
     timeout: 60_000,

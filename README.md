@@ -21,3 +21,18 @@ Some are already deprecated, like Apple Anonymous Attestation (see here <https:/
 4. Non-resident key functioning still obscure to me: <https://crypto.stackexchange.com/questions/105942/how-do-non-resident-keys-work-in-webauthn>
 
 Final note: The amount of machinery involved to work (eg: decode, transmit) the underlying data is astonishing.
+
+## Development
+
+Start PoC:
+```sh
+nvm install
+yarn install
+yarn build:dev
+```
+PoC available at <http://localhost>.
+
+Test contracts:
+```sh
+yarn hh:test
+```
