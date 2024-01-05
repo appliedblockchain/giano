@@ -1,6 +1,3 @@
-import { ECDSASigValue } from '@peculiar/asn1-ecc';
-import { AsnParser } from '@peculiar/asn1-schema';
-
 export const byteStringToBuffer = (byteString: string) => Uint8Array.from(byteString, (e) => e.charCodeAt(0)).buffer;
 export const bufferToByteString = (buffer: ArrayBuffer) => String.fromCharCode(...new Uint8Array(buffer));
 
@@ -9,6 +6,19 @@ export const base64URLToBuffer = (base64URL: string) => {
   const padLen = (4 - (base64.length % 4)) % 4;
   return Uint8Array.from(atob(base64.padEnd(base64.length + padLen, '=')), (c) => c.charCodeAt(0));
 };
+
+export function bufferToBigInt(buf: ArrayBuffer | Uint8Array | Buffer): bigint {
+  let bits = 8n;
+  if (ArrayBuffer.isView(buf)) bits = BigInt(buf.BYTES_PER_ELEMENT * 8);
+  else buf = new Uint8Array(buf);
+
+  let ret = 0n;
+  for (const i of (buf as Uint8Array | Buffer).values()) {
+    const bi = BigInt(i);
+    ret = (ret << bits) + bi;
+  }
+  return ret;
+}
 
 export const bufferToBase64URL = (buffer: Uint8Array) => {
   const bytes = new Uint8Array(buffer);
@@ -82,56 +92,4 @@ export const decodeDERInteger = (integerBytes: Uint8Array, expectedLength: numbe
   if (integerBytes.byteLength < expectedLength) return new Uint8Array([...new Uint8Array(expectedLength - integerBytes.byteLength).fill(0), ...integerBytes]);
   // remove leading 0x00s if larger than expected length
   else return integerBytes.slice(-32);
-};
-
-export function bufToBn(buf) {
-  const hex: string[] = [];
-  const u8 = Uint8Array.from(buf);
-
-  u8.forEach(function (i) {
-    let h = i.toString(16);
-    if (h.length % 2) {
-      h = '0' + h;
-    }
-    hex.push(h);
-  });
-
-  return BigInt('0x' + hex.join(''));
-}
-
-export const getPublicKeyFromBytes = async (publicKeyBytes: string): Promise<bigint[]> => {
-  const cap = {
-    name: 'ECDSA',
-    namedCurve: 'P-256',
-    hash: 'SHA-256',
-  };
-  const pkeybytes = base64URLToBuffer(publicKeyBytes);
-  const pkey = await crypto.subtle.importKey('spki', pkeybytes, cap, true, ['verify']);
-  const jwk = await crypto.subtle.exportKey('jwk', pkey);
-  if (jwk.x && jwk.y) return [bufToBn(base64URLToBuffer(jwk.x)), bufToBn(base64URLToBuffer(jwk.y))];
-  else throw new Error('Invalid public key');
-};
-
-function shouldRemoveLeadingZero(bytes: Uint8Array): boolean {
-  return bytes[0] === 0x0 && (bytes[1] & (1 << 7)) !== 0;
-}
-
-export const getMessageSignature = (authResponseSignature: string): bigint[] => {
-  // See https://github.dev/MasterKale/SimpleWebAuthn/blob/master/packages/server/src/helpers/iso/isoCrypto/verifyEC2.ts
-  // for extraction of the r and s bytes from the raw signature buffer
-  const parsedSignature = AsnParser.parse(base64URLToBuffer(authResponseSignature), ECDSASigValue);
-
-  let rBytes = new Uint8Array(parsedSignature.r);
-  let sBytes = new Uint8Array(parsedSignature.s);
-
-  if (shouldRemoveLeadingZero(rBytes)) {
-    rBytes = rBytes.slice(1);
-  }
-
-  if (shouldRemoveLeadingZero(sBytes)) {
-    sBytes = sBytes.slice(1);
-  }
-
-  // r and s values
-  return [bufToBn(rBytes), bufToBn(sBytes)];
 };
