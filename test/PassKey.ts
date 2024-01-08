@@ -72,12 +72,10 @@ describe('PassKey', () => {
       };
 
       const signature = payload.response.signature;
+      const authenticatorData = payload.response.authenticatorData;
+      const clientDataJSON = payload.response.clientDataJSON;
 
-      const authenticatorData = Buffer.from(payload.response.authenticatorData, 'base64');
-      const clientDataHash = new Uint8Array(await crypto.subtle.digest('SHA-256', Buffer.from(payload.response.clientDataJSON, 'base64')));
-      const data = new Uint8Array(await crypto.subtle.digest('SHA-256', Buffer.concat([authenticatorData, clientDataHash])));
-
-      const response = await passkey.parseAndVerifyPassKeySignature(publicKey, signature, helpers.bufferToBigInt(data));
+      const response = await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON);
       expect(response).to.equal(true);
     });
   });

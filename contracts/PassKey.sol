@@ -144,13 +144,28 @@ contract PassKey {
         return (sigR, sigS);
     }
 
+    function _getDataHash(string memory authenticatorData, string memory clientDataJSON) private pure returns (uint256) {
+        bytes memory authenticatorDataBytes = Base64.decode(authenticatorData);
+        bytes memory clientDataJSONBytes = Base64.decode(clientDataJSON);
+        bytes32 clientDataJSONHash = sha256(clientDataJSONBytes);
+        bytes memory data = bytes.concat(authenticatorDataBytes, clientDataJSONHash);
+        uint256 dataHash = uint256(sha256(data));
+        return dataHash;
+    }
+
     function verifyPassKeySignature(uint256 pubKeyX, uint256 pubKeyY, uint256 sigx, uint256 sigy, uint256 sigHash) public view returns (bool) {
         return Secp256r1.Verify(pubKeyX, pubKeyY, sigx, sigy, sigHash);
     }
 
-    function parseAndVerifyPassKeySignature(string memory publicKey, string memory signature, uint256 sigHash) public view returns (bool) {
+    function parseAndVerifyPassKeySignature(
+        string memory publicKey,
+        string memory signature,
+        string memory authenticatorData,
+        string memory clientDataJSON
+    ) public view returns (bool) {
         (uint256 pubKeyX, uint256 pubKeyY) = _getPublicKeyXY(publicKey);
         (uint256 sigR, uint256 sigS) = _getSignatureRS(signature);
-        return Secp256r1.Verify(pubKeyX, pubKeyY, sigR, sigS, sigHash);
+        uint256 dataHash = _getDataHash(authenticatorData, clientDataJSON);
+        return Secp256r1.Verify(pubKeyX, pubKeyY, sigR, sigS, dataHash);
     }
 }
