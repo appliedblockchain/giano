@@ -1,93 +1,168 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v4.7.0) (utils/Base64.sol)
-// modified for base64url encoding, does not pad with '='
+pragma solidity ^0.8.4;
 
-pragma solidity ^0.8.0;
-
-/**
- * @dev Provides a set of functions to operate with Base64 strings.
- *  modified for base64url https://datatracker.ietf.org/doc/html/rfc4648#section-5
- * _Available since v4.5._
- */
+/// @notice Library to encode strings in Base64.
+/// @author Solady (https://github.com/vectorized/solady/blob/main/src/utils/Base64.sol)
+/// @author Modified from Solmate (https://github.com/transmissions11/solmate/blob/main/src/utils/Base64.sol)
+/// @author Modified from (https://github.com/Brechtpd/base64/blob/main/base64.sol) by Brecht Devos - <brecht@loopring.org>.
 library Base64 {
-  /**
-   * @dev Base64 Encoding/Decoding Table
-     */
-  string internal constant _TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    /// @dev Encodes `data` using the base64 encoding described in RFC 4648.
+    /// See: https://datatracker.ietf.org/doc/html/rfc4648
+    /// @param fileSafe  Whether to replace '+' with '-' and '/' with '_'.
+    /// @param noPadding Whether to strip away the padding.
+    function encode(bytes memory data, bool fileSafe, bool noPadding) internal pure returns (string memory result) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let dataLength := mload(data)
 
-  /**
-   * @dev Converts a `bytes` to its Bytes64 `string` representation.
-     */
-  function encode(bytes memory data) internal pure returns (string memory) {
-    /**
-     * Inspired by Brecht Devos (Brechtpd) implementation - MIT licence
-     * https://github.com/Brechtpd/base64/blob/e78d9fd951e7b0977ddca77d92dc85183770daf4/base64.sol
-     */
-    if (data.length == 0) return "";
+            if dataLength {
+                // Multiply by 4/3 rounded up.
+                // The `shl(2, ...)` is equivalent to multiplying by 4.
+                let encodedLength := shl(2, div(add(dataLength, 2), 3))
 
-    // Loads the table into memory
-    string memory table = _TABLE;
+                // Set `result` to point to the start of the free memory.
+                result := mload(0x40)
 
-    // Encoding takes 3 bytes chunks of binary data from `bytes` data parameter
-    // and split into 4 numbers of 6 bits.
-    // The final Base64 length should be `bytes` data length multiplied by 4/3 rounded up
-    // - `data.length + 2`  -> Round up
-    // - `/ 3`              -> Number of 3-bytes chunks
-    // - `4 *`              -> 4 characters for each chunk
-    uint256 newlength = data.length * 8 / 6;
-    if (data.length % 6 > 0) {
-      newlength++;
-    }
-    string memory result = new string(newlength);
+                // Store the table into the scratch space.
+                // Offsetted by -1 byte so that the `mload` will load the character.
+                // We will rewrite the free memory pointer at `0x40` later with
+                // the allocated size.
+                // The magic constant 0x0670 will turn "-_" into "+/".
+                mstore(0x1f, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef')
+                mstore(0x3f, xor('ghijklmnopqrstuvwxyz0123456789-_', mul(iszero(fileSafe), 0x0670)))
 
-    /// @solidity memory-safe-assembly
-    assembly {
-    // Prepare the lookup table (skip the first "length" byte)
-      let tablePtr := add(table, 1)
+                // Skip the first slot, which stores the length.
+                let ptr := add(result, 0x20)
+                let end := add(ptr, encodedLength)
 
-    // Prepare result pointer, jump over length
-      let resultPtr := add(result, 32)
-    // let targetLength := add(resultPtr, newlength)
+                // Run over the input, 3 bytes at a time.
+                for {
 
-    // Run over the input, 3 bytes at a time
-      for {
-        let dataPtr := data
-        let endPtr := add(data, mload(data))
-      } lt(dataPtr, endPtr) {
+                } 1 {
 
-      } {
-      // Advance 3 bytes
-        dataPtr := add(dataPtr, 3)
-        let input := mload(dataPtr)
+                } {
+                    data := add(data, 3) // Advance 3 bytes.
+                    let input := mload(data)
 
-      // To write each character, shift the 3 bytes (18 bits) chunk
-      // 4 times in blocks of 6 bits for each character (18, 12, 6, 0)
-      // and apply logical AND with 0x3F which is the number of
-      // the previous character in the ASCII table prior to the Base64 Table
-      // The result is then added to the table to get the character to write,
-      // and finally write it in the result pointer but with a left shift
-      // of 256 (1 byte) - 8 (1 ASCII char) = 248 bits
+                    // Write 4 bytes. Optimized for fewer stack operations.
+                    mstore8(0, mload(and(shr(18, input), 0x3F)))
+                    mstore8(1, mload(and(shr(12, input), 0x3F)))
+                    mstore8(2, mload(and(shr(6, input), 0x3F)))
+                    mstore8(3, mload(and(input, 0x3F)))
+                    mstore(ptr, mload(0x00))
 
-        mstore8(resultPtr, mload(add(tablePtr, and(shr(18, input), 0x3F))))
-        resultPtr := add(resultPtr, 1) // Advance
-
-      // if lt(resultPtr, targetLength) {
-        mstore8(resultPtr, mload(add(tablePtr, and(shr(12, input), 0x3F))))
-        resultPtr := add(resultPtr, 1) // Advance
-
-      // if lt(resultPtr, targetLength) {
-        mstore8(resultPtr, mload(add(tablePtr, and(shr(6, input), 0x3F))))
-        resultPtr := add(resultPtr, 1) // Advance
-
-      // if lt(resultPtr, targetLength) {
-        mstore8(resultPtr, mload(add(tablePtr, and(input, 0x3F))))
-        resultPtr := add(resultPtr, 1) // Advance
-      // }
-      // }
-      // }
-      }
+                    ptr := add(ptr, 4) // Advance 4 bytes.
+                    if iszero(lt(ptr, end)) {
+                        break
+                    }
+                }
+                mstore(0x40, add(end, 0x20)) // Allocate the memory.
+                // Equivalent to `o = [0, 2, 1][dataLength % 3]`.
+                let o := div(2, mod(dataLength, 3))
+                // Offset `ptr` and pad with '='. We can simply write over the end.
+                mstore(sub(ptr, o), shl(240, 0x3d3d))
+                // Set `o` to zero if there is padding.
+                o := mul(iszero(iszero(noPadding)), o)
+                mstore(sub(ptr, o), 0) // Zeroize the slot after the string.
+                mstore(result, sub(encodedLength, o)) // Store the length.
+            }
+        }
     }
 
-    return result;
-  }
+    /// @dev Encodes `data` using the base64 encoding described in RFC 4648.
+    /// Equivalent to `encode(data, false, false)`.
+    function encode(bytes memory data) internal pure returns (string memory result) {
+        result = encode(data, false, false);
+    }
+
+    /// @dev Encodes `data` using the base64 encoding described in RFC 4648.
+    /// Equivalent to `encode(data, fileSafe, false)`.
+    function encode(bytes memory data, bool fileSafe) internal pure returns (string memory result) {
+        result = encode(data, fileSafe, false);
+    }
+
+    /// @dev Decodes base64 encoded `data`.
+    ///
+    /// Supports:
+    /// - RFC 4648 (both standard and file-safe mode).
+    /// - RFC 3501 (63: ',').
+    ///
+    /// Does not support:
+    /// - Line breaks.
+    ///
+    /// Note: For performance reasons,
+    /// this function will NOT revert on invalid `data` inputs.
+    /// Outputs for invalid inputs will simply be undefined behaviour.
+    /// It is the user's responsibility to ensure that the `data`
+    /// is a valid base64 encoded string.
+    function decode(string memory data) internal pure returns (bytes memory result) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let dataLength := mload(data)
+
+            if dataLength {
+                let decodedLength := mul(shr(2, dataLength), 3)
+
+                for {
+
+                } 1 {
+
+                } {
+                    // If padded.
+                    if iszero(and(dataLength, 3)) {
+                        let t := xor(mload(add(data, dataLength)), 0x3d3d)
+                        // forgefmt: disable-next-item
+                        decodedLength := sub(decodedLength, add(iszero(byte(30, t)), iszero(byte(31, t))))
+                        break
+                    }
+                    // If non-padded.
+                    decodedLength := add(decodedLength, sub(and(dataLength, 3), 1))
+                    break
+                }
+                result := mload(0x40)
+
+                // Write the length of the bytes.
+                mstore(result, decodedLength)
+
+                // Skip the first slot, which stores the length.
+                let ptr := add(result, 0x20)
+                let end := add(ptr, decodedLength)
+
+                // Load the table into the scratch space.
+                // Constants are optimized for smaller bytecode with zero gas overhead.
+                // `m` also doubles as the mask of the upper 6 bits.
+                let m := 0xfc000000fc00686c7074787c8084888c9094989ca0a4a8acb0b4b8bcc0c4c8cc
+                mstore(0x5b, m)
+                mstore(0x3b, 0x04080c1014181c2024282c3034383c4044484c5054585c6064)
+                mstore(0x1a, 0xf8fcf800fcd0d4d8dce0e4e8ecf0f4)
+
+                for {
+
+                } 1 {
+
+                } {
+                    // Read 4 bytes.
+                    data := add(data, 4)
+                    let input := mload(data)
+
+                    // Write 3 bytes.
+                    // forgefmt: disable-next-item
+                    mstore(
+                        ptr,
+                        or(
+                            and(m, mload(byte(28, input))),
+                            shr(6, or(and(m, mload(byte(29, input))), shr(6, or(and(m, mload(byte(30, input))), shr(6, mload(byte(31, input)))))))
+                        )
+                    )
+                    ptr := add(ptr, 3)
+                    if iszero(lt(ptr, end)) {
+                        break
+                    }
+                }
+                mstore(0x40, add(end, 0x20)) // Allocate the memory.
+                mstore(end, 0) // Zeroize the slot after the bytes.
+                mstore(0x60, 0) // Restore the zero slot.
+            }
+        }
+    }
 }

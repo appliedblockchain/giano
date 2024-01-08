@@ -27,10 +27,12 @@ export const parseSignature = (signature: string) => {
   let sBytes = new Uint8Array(parsedSignature.s);
 
   if (shouldRemoveLeadingZero(rBytes)) {
+    console.log('removing leading zero from rBytes');
     rBytes = rBytes.slice(1);
   }
 
   if (shouldRemoveLeadingZero(sBytes)) {
+    console.log('removing leading zero from sBytes');
     sBytes = sBytes.slice(1);
   }
 
