@@ -86,6 +86,84 @@ describe('PassKey', () => {
       expect(log.args[2]).to.equal(true);
     });
 
+    it('should false if signature is invalid', async () => {
+      const { passkey } = await loadFixture(deployFixture);
+
+      const publicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5jCn87rbZZDLc8VHJ8dxAs4hx95Y1n0__U_I8qvwG6UytkNz9Dx7WjlEDWx_fj5IjGnFKC1KN-DOVKIMRGy-oQ';
+
+      const payload = {
+        id: 'ZlrAhA3QjT7IJwYZceyfjA_e5vo',
+        rawId: 'ZlrAhA3QjT7IJwYZceyfjA_e5vo',
+        response: {
+          clientDataJSON: 'eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiWVdKaiIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzAwMCIsImNyb3NzT3JpZ2luIjpmYWxzZX0',
+          authenticatorData: 'SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MdAAAAAA',
+          signature: 'MEUCIQDNbZxz5Re-Yo9FS7xa4LyXYlAKe9-VQ1umIz4rIAacLgIgZenp4ijLbKoRBQ7nR0pTBwrNf2QTsqSgFZtThgX3oeU',
+        },
+      };
+
+      const signature = payload.response.signature;
+      const authenticatorData = payload.response.authenticatorData;
+      const clientDataJSON = payload.response.clientDataJSON;
+
+      const response = await (await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).wait();
+
+      const log = parseLog(response?.logs[0] as Log);
+      expect(log.fragment.name).to.equal('SignatureVerified');
+      expect(log.args[0]).to.equal(ethers.solidityPackedKeccak256(['string'], [publicKey]));
+      expect(log.args[1]).to.equal(ethers.solidityPackedKeccak256(['string'], [signature]));
+      expect(log.args[2]).to.equal(false);
+    });
+
+    it('should revert if public key format is invalid', async () => {
+      const { passkey } = await loadFixture(deployFixture);
+
+      const publicKey = Buffer.from('incorrect_public_key').toString('base64');
+
+      const payload = {
+        id: 'ZlrAhA3QjT7IJwYZceyfjA_e5vo',
+        rawId: 'ZlrAhA3QjT7IJwYZceyfjA_e5vo',
+        response: {
+          clientDataJSON: 'eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiWVdKaiIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzAwMCIsImNyb3NzT3JpZ2luIjpmYWxzZX0',
+          authenticatorData: 'SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MdAAAAAA',
+          signature: 'MEUCIGT47yTmzNsYrwkpdqptRTOJmBjhbcLK_tSpA8mosbVSAiEAjRCIERiV7EMvI37tDgYQp-EwhDnlba7fKsW4aDvWGMg',
+        },
+      };
+
+      const signature = payload.response.signature;
+      const authenticatorData = payload.response.authenticatorData;
+      const clientDataJSON = payload.response.clientDataJSON;
+
+      await expect(passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).to.be.revertedWithCustomError(
+        passkey,
+        'InvalidFormat',
+      );
+    });
+
+    it('should revert if signature format is invalid', async () => {
+      const { passkey } = await loadFixture(deployFixture);
+
+      const publicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5jCn87rbZZDLc8VHJ8dxAs4hx95Y1n0__U_I8qvwG6UytkNz9Dx7WjlEDWx_fj5IjGnFKC1KN-DOVKIMRGy-oQ';
+
+      const payload = {
+        id: 'ZlrAhA3QjT7IJwYZceyfjA_e5vo',
+        rawId: 'ZlrAhA3QjT7IJwYZceyfjA_e5vo',
+        response: {
+          clientDataJSON: 'eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiWVdKaiIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzAwMCIsImNyb3NzT3JpZ2luIjpmYWxzZX0',
+          authenticatorData: 'SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MdAAAAAA',
+          signature: Buffer.from('incorrect_signature').toString('base64'),
+        },
+      };
+
+      const signature = payload.response.signature;
+      const authenticatorData = payload.response.authenticatorData;
+      const clientDataJSON = payload.response.clientDataJSON;
+
+      await expect(passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).to.be.revertedWithCustomError(
+        passkey,
+        'InvalidFormat',
+      );
+    });
+
     it('should revert if signature was already used', async () => {
       const { passkey } = await loadFixture(deployFixture);
 

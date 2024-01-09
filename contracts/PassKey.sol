@@ -6,6 +6,7 @@ import './Base64.sol';
 
 contract PassKey {
     error InvalidSignature(string publicKey, string signature);
+    error InvalidFormat();
 
     address public owner;
     mapping(bytes32 => mapping(bytes32 => bool)) private usedSignatures;
@@ -32,8 +33,18 @@ contract PassKey {
         return number;
     }
 
+    function _validateDERFieldLength(bytes memory field) private pure {
+        uint8 numberOfMetadataBytes = 2; // sequence1 Tag and Length
+        // field[0] is the Tag
+        // field[1] is the Length
+        if (field.length < numberOfMetadataBytes || field.length != uint8(field[1]) + numberOfMetadataBytes) {
+            revert InvalidFormat();
+        }
+    }
+
     function _parseDERPublicKey(string memory encodedPublicKey) private pure returns (bytes memory, bytes memory, bytes memory) {
         bytes memory encodedPublicKeyBytes = Base64.decode(encodedPublicKey);
+        _validateDERFieldLength(encodedPublicKeyBytes);
         // sequence1 Tag
         uint8 count = 0;
         count++;
@@ -109,6 +120,7 @@ contract PassKey {
 
     function _parseDERSignature(string memory signature) private pure returns (bytes memory, bytes memory) {
         bytes memory signatureBytes = Base64.decode(signature);
+        _validateDERFieldLength(signatureBytes);
         // sequence1 Tag
         uint8 count = 0;
         count++;
