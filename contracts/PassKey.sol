@@ -70,6 +70,32 @@ contract PassKey {
         return (objectIdentifier1, objectIdentifier2, publicKeyBytes);
     }
 
+    function _DERInteger(bytes memory integer, uint256 expectedLength) private pure returns (bytes memory) {
+        if (integer.length == expectedLength) {
+            return integer;
+        }
+
+        bytes memory newInteger = new bytes(expectedLength);
+
+        if (integer.length < expectedLength) {
+            uint256 numberOfMissingBytes = expectedLength - integer.length;
+            for (uint8 i = 0; i < numberOfMissingBytes; i++) {
+                newInteger[i] = 0x00;
+            }
+            for (uint8 i = 0; i < integer.length; i++) {
+                newInteger[i + numberOfMissingBytes] = integer[i];
+            }
+            return newInteger;
+        }
+
+        uint256 numberOfExtraBytes = integer.length - expectedLength;
+        for (uint8 i = 0; i < expectedLength; i++) {
+            newInteger[i] = integer[i + numberOfExtraBytes];
+        }
+
+        return newInteger;
+    }
+
     function _parseDERSignature(string memory signature) private pure returns (bytes memory, bytes memory) {
         bytes memory signatureBytes = Base64.decode(signature);
         // sequence1 Tag
@@ -82,11 +108,7 @@ contract PassKey {
         // integer1 Length
         uint8 integer1Len = uint8(signatureBytes[count]);
         count++;
-        // Remove leading 0x00 bytes
-        if (signatureBytes[count] == 0x00) {
-            count++;
-            integer1Len--;
-        }
+
         bytes memory integer1 = new bytes(integer1Len);
         for (uint8 i = 0; i < integer1Len; i++) {
             integer1[i] = signatureBytes[count];
@@ -97,16 +119,15 @@ contract PassKey {
         // integer2 Length
         uint8 integer2Len = uint8(signatureBytes[count]);
         count++;
-        // Remove leading 0x00 bytes
-        if (signatureBytes[count] == 0x00) {
-            count++;
-            integer2Len--;
-        }
+
         bytes memory integer2 = new bytes(integer2Len);
         for (uint8 i = 0; i < integer2Len; i++) {
             integer2[i] = signatureBytes[count];
             count++;
         }
+
+        integer1 = _DERInteger(integer1, 32);
+        integer2 = _DERInteger(integer2, 32);
 
         return (integer1, integer2);
     }
