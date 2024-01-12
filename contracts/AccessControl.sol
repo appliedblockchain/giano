@@ -2,13 +2,14 @@
 pragma solidity ^0.8.9;
 
 import './Context.sol';
+import './PassKey.sol';
 
-abstract contract AccessControl is Context {
-    error AccessControlUnauthorizedAccount(bytes32 publicKeyHash, bytes32 neededRole);
+abstract contract AccessControl is Context, PassKey {
+    error AccessControlUnauthorizedAccount(string publicKey, bytes32 neededRole);
 
     event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);
-    event RoleGranted(bytes32 indexed role, bytes32 indexed publicKeyHash, address indexed sender);
-    event RoleRevoked(bytes32 indexed role, bytes32 indexed publicKeyHash, address indexed sender);
+    event RoleGranted(bytes32 indexed role, string publicKey, string sender);
+    event RoleRevoked(bytes32 indexed role, string publicKey, string sender);
 
     struct RoleData {
         mapping(bytes32 publicKeyHash => bool) hasRole;
@@ -19,20 +20,16 @@ abstract contract AccessControl is Context {
 
     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
 
-    /**
-     * @dev Modifier that checks that an account has a specific role. Reverts
-     * with an {AccessControlUnauthorizedAccount} error including the required role.
-     */
-    modifier onlyRole(bytes32 role, bytes32 publicKeyHash) {
-        _checkRole(role, publicKeyHash);
+    modifier onlyRole(bytes32 role, string memory publicKey) {
+        _checkRole(role, publicKey);
         _;
     }
 
     /**
      * @dev Returns `true` if `account` has been granted `role`.
      */
-    function hasRole(bytes32 role, bytes32 publicKeyHash) public view virtual returns (bool) {
-        return _roles[role].hasRole[publicKeyHash];
+    function hasRole(bytes32 role, string memory publicKey) public view virtual returns (bool) {
+        return _roles[role].hasRole[keccak256(abi.encodePacked((publicKey)))];
     }
 
     // /**
@@ -47,9 +44,9 @@ abstract contract AccessControl is Context {
      * @dev Reverts with an {AccessControlUnauthorizedAccount} error if `account`
      * is missing `role`.
      */
-    function _checkRole(bytes32 role, bytes32 publicKeyHash) internal view virtual {
-        if (!hasRole(role, publicKeyHash)) {
-            revert AccessControlUnauthorizedAccount(publicKeyHash, role);
+    function _checkRole(bytes32 role, string memory publicKey) internal view virtual {
+        if (!hasRole(role, publicKey)) {
+            revert AccessControlUnauthorizedAccount(publicKey, role);
         }
     }
 
@@ -75,8 +72,12 @@ abstract contract AccessControl is Context {
      *
      * May emit a {RoleGranted} event.
      */
-    function grantRole(bytes32 role, bytes32 publicKeyHash) public virtual onlyRole(getRoleAdmin(role), publicKeyHash) {
-        _grantRole(role, publicKeyHash);
+    function grantRole(
+        PassKeyParams memory passKeyParams,
+        bytes32 role,
+        string memory publicKey
+    ) public virtual validSignature(passKeyParams) onlyRole(getRoleAdmin(role), passKeyParams.publicKey) {
+        _grantRole(role, publicKey, passKeyParams.publicKey);
     }
 
     /**
@@ -90,8 +91,12 @@ abstract contract AccessControl is Context {
      *
      * May emit a {RoleRevoked} event.
      */
-    function revokeRole(bytes32 role, bytes32 publicKeyHash) public virtual onlyRole(getRoleAdmin(role), publicKeyHash) {
-        _revokeRole(role, publicKeyHash);
+    function revokeRole(
+        PassKeyParams memory passKeyParams,
+        bytes32 role,
+        string memory publicKey
+    ) public virtual validSignature(passKeyParams) onlyRole(getRoleAdmin(role), passKeyParams.publicKey) {
+        _revokeRole(role, publicKey, passKeyParams.publicKey);
     }
 
     /**
@@ -136,10 +141,10 @@ abstract contract AccessControl is Context {
      *
      * May emit a {RoleGranted} event.
      */
-    function _grantRole(bytes32 role, bytes32 publicKeyHash) internal virtual returns (bool) {
-        if (!hasRole(role, publicKeyHash)) {
-            _roles[role].hasRole[publicKeyHash] = true;
-            emit RoleGranted(role, publicKeyHash, _msgSender());
+    function _grantRole(bytes32 role, string memory publicKey, string memory sender) internal virtual returns (bool) {
+        if (!hasRole(role, publicKey)) {
+            _roles[role].hasRole[keccak256(abi.encodePacked(publicKey))] = true;
+            emit RoleGranted(role, publicKey, sender);
             return true;
         } else {
             return false;
@@ -153,10 +158,10 @@ abstract contract AccessControl is Context {
      *
      * May emit a {RoleRevoked} event.
      */
-    function _revokeRole(bytes32 role, bytes32 publicKeyHash) internal virtual returns (bool) {
-        if (hasRole(role, publicKeyHash)) {
-            _roles[role].hasRole[publicKeyHash] = false;
-            emit RoleRevoked(role, publicKeyHash, _msgSender());
+    function _revokeRole(bytes32 role, string memory publicKey, string memory sender) internal virtual returns (bool) {
+        if (hasRole(role, publicKey)) {
+            _roles[role].hasRole[keccak256(abi.encodePacked(publicKey))] = false;
+            emit RoleRevoked(role, publicKey, sender);
             return true;
         } else {
             return false;

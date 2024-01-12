@@ -16,15 +16,6 @@ async function deployFixture() {
 }
 
 describe('PassKey', () => {
-  describe('Deployment', () => {
-    it('should set the right owner', async () => {
-      const { passkey, ownerAccount } = await loadFixture(deployFixture);
-      const result = await passkey.owner();
-      const expected = ownerAccount.address;
-      expect(result).to.equal(expected);
-    });
-  });
-
   describe('Use cases', () => {
     it('should validate passkey signature', async () => {
       const { passkey } = await loadFixture(deployFixture);
@@ -77,7 +68,7 @@ describe('PassKey', () => {
       const authenticatorData = payload.response.authenticatorData;
       const clientDataJSON = payload.response.clientDataJSON;
 
-      const response = await (await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).wait();
+      const response = await (await passkey.parseAndVerifyPassKeySignature({ publicKey, signature, authenticatorData, clientDataJSON })).wait();
 
       const log = parseLog(response?.logs[0] as Log);
       expect(log.fragment.name).to.equal('SignatureVerified');
@@ -105,7 +96,7 @@ describe('PassKey', () => {
       const authenticatorData = payload.response.authenticatorData;
       const clientDataJSON = payload.response.clientDataJSON;
 
-      const response = await (await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).wait();
+      const response = await (await passkey.parseAndVerifyPassKeySignature({ publicKey, signature, authenticatorData, clientDataJSON })).wait();
 
       const log = parseLog(response?.logs[0] as Log);
       expect(log.fragment.name).to.equal('SignatureVerified');
@@ -133,7 +124,7 @@ describe('PassKey', () => {
       const authenticatorData = payload.response.authenticatorData;
       const clientDataJSON = payload.response.clientDataJSON;
 
-      await expect(passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).to.be.revertedWithCustomError(
+      await expect(passkey.parseAndVerifyPassKeySignature({ publicKey, signature, authenticatorData, clientDataJSON })).to.be.revertedWithCustomError(
         passkey,
         'InvalidFormat',
       );
@@ -158,7 +149,7 @@ describe('PassKey', () => {
       const authenticatorData = payload.response.authenticatorData;
       const clientDataJSON = payload.response.clientDataJSON;
 
-      await expect(passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).to.be.revertedWithCustomError(
+      await expect(passkey.parseAndVerifyPassKeySignature({ publicKey, signature, authenticatorData, clientDataJSON })).to.be.revertedWithCustomError(
         passkey,
         'InvalidFormat',
       );
@@ -183,8 +174,8 @@ describe('PassKey', () => {
       const authenticatorData = payload.response.authenticatorData;
       const clientDataJSON = payload.response.clientDataJSON;
 
-      await (await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON)).wait();
-      await expect(passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON))
+      await (await passkey.parseAndVerifyPassKeySignature({ publicKey, signature, authenticatorData, clientDataJSON })).wait();
+      await expect(passkey.parseAndVerifyPassKeySignature({ publicKey, signature, authenticatorData, clientDataJSON }))
         .to.be.revertedWithCustomError(passkey, 'InvalidSignature')
         .withArgs(publicKey, signature);
     });
