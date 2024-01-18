@@ -8,3 +8,5 @@ stats.html
 latest.sql
 .DS_Store
 cache
+artifacts
+typechain-types
