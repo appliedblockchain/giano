@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { ethers } from 'ethers';
-import BankArtifact from '../../../artifacts/contracts/Bank.sol/Bank.json' assert { type: 'json' };
+import BankArtifact from '../../../artifacts/contracts/Passkey.sol/Passkey.json' assert { type: 'json' };
 import * as helpers from '../../misc/helpers';
 
 const toWei = (num) => ethers.parseEther(num.toString());

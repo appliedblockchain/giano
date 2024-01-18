@@ -4,10 +4,20 @@ This repository is a demo showing how the user can authenticate on a smart contr
 
 ## Development
 
-Start PoC:
+Install deps:
 ```sh
 nvm install
 yarn install
+```
+
+Start GETH node:
+```sh
+yarn hh:node
+yarn hh:deploy --network localhost
+```
+
+Start application:
+```sh
 yarn build:dev
 ```
 

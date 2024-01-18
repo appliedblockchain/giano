@@ -1,6 +1,7 @@
 import React from 'react';
 import * as helpers from '../../misc/helpers';
 import verifyAssertion from '../../misc/verifyAssertion';
+import verifyAssertionOnBlockchain from '../../misc/verifyAssertionOnBlockchain';
 
 const RP_ID = window.location.hostname;
 const RP_NAME = 'Passkey PoC';
@@ -21,6 +22,7 @@ const AuthClient: React.FC = () => {
 
     if (action === 'attestation') void attestate(username);
     else if (action === 'assertion') void assert(credentialId, publicKey);
+    else if (action === 'assertionOnBlockchain') void assertOnBlockchain(credentialId, publicKey);
     else window.alert('Choose an action between "Create" and "Sign"');
   };
 
@@ -104,13 +106,17 @@ const AuthClient: React.FC = () => {
 
     const assertionResponse = credential.response as AuthenticatorAssertionResponse;
 
+    const clientDataJSON = helpers.bufferToBase64URL(assertionResponse.clientDataJSON);
+    const authenticatorData = helpers.bufferToBase64URL(assertionResponse.authenticatorData);
+    const signature = helpers.bufferToBase64URL(assertionResponse.signature);
+
     const payload = {
       id: credential.id,
       rawId: helpers.bufferToBase64URL(credential.rawId),
       response: {
-        clientDataJSON: helpers.bufferToBase64URL(assertionResponse.clientDataJSON),
-        authenticatorData: helpers.bufferToBase64URL(assertionResponse.authenticatorData),
-        signature: helpers.bufferToBase64URL(assertionResponse.signature),
+        clientDataJSON,
+        authenticatorData,
+        signature,
       },
     };
 
@@ -129,15 +135,69 @@ const AuthClient: React.FC = () => {
     }
   };
 
+  const assertOnBlockchain = async (credentialId: undefined | string, publicKey: string) => {
+    const challenge = 'abc';
+
+    const allowCredentials = credentialId
+      ? [
+          {
+            id: helpers.base64URLToBuffer(credentialId),
+            type: 'public-key',
+          },
+        ]
+      : undefined;
+
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        challenge: new TextEncoder().encode(challenge),
+        rpId: RP_ID,
+        timeout: 60_000,
+        allowCredentials,
+      },
+      mediation: 'optional',
+    });
+
+    const assertionResponse = credential.response as AuthenticatorAssertionResponse;
+
+    const clientDataJSON = helpers.bufferToBase64URL(assertionResponse.clientDataJSON);
+    const authenticatorData = helpers.bufferToBase64URL(assertionResponse.authenticatorData);
+    const signature = helpers.bufferToBase64URL(assertionResponse.signature);
+
+    const payload = {
+      id: credential.id,
+      rawId: helpers.bufferToBase64URL(credential.rawId),
+      response: {
+        clientDataJSON,
+        authenticatorData,
+        signature,
+      },
+    };
+
+    console.log('Public key used:');
+    console.log(JSON.stringify(publicKey, null, 2));
+    console.log('Payload to verify:');
+    console.log(JSON.stringify(payload, null, 2));
+
+    const verifiedSignature = await verifyAssertionOnBlockchain(publicKey, signature, authenticatorData, clientDataJSON);
+
+    if (!verifiedSignature) {
+      setResult('Signature verification failed. ❌');
+      throw new Error('Signature verification failed. ❌');
+    } else {
+      console.log('Signature verification succeeded! 🎉');
+      setResult('Signature verification succeeded! 🎉');
+    }
+  };
+
   return (
     <>
-      <main className="m-auto mt-14 flex w-[600px] flex-row flex-wrap justify-between gap-4">
+      <main className="m-auto mt-14 flex w-[800px] flex-row flex-wrap justify-between gap-4">
         <h1 className="w-full grow basis-full text-2xl">Passkey PoC</h1>
         <hr className="mb-4 w-full grow basis-full" />
 
         <section className="paper">
           <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-            <h2 className="text-base">Register (Attestation)</h2>
+            <h2 className="text-base font-bold">Register (Attestation)</h2>
 
             <div className="form-control w-full max-w-xs">
               <label className="label">
@@ -156,7 +216,7 @@ const AuthClient: React.FC = () => {
 
         <section className="paper">
           <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-            <h2 className="text-base">Login (Assertion)</h2>
+            <h2 className="text-base font-bold">Login (Assertion)</h2>
 
             <div className="form-control w-full max-w-xs">
               <label className="label">
@@ -174,6 +234,32 @@ const AuthClient: React.FC = () => {
 
             <div className="flex flex-row justify-between gap-4">
               <button name={'assertion'} className="btn btn-outline">
+                Sign with passkey
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="paper">
+          <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+            <h2 className="text-base font-bold">Smart Contract verification</h2>
+
+            <div className="form-control w-full max-w-xs">
+              <label className="label">
+                <span className="label-text">Credential ID</span>
+              </label>
+              <input name="credential_id" type="text" placeholder="Credential ID generated" className="input input-bordered w-full max-w-xs" />
+            </div>
+
+            <div className="form-control w-full max-w-xs">
+              <label className="label">
+                <span className="label-text">Public Key*</span>
+              </label>
+              <input name="public_key" type="text" placeholder="Public Key generated" className="input input-bordered w-full max-w-xs" required={true} />
+            </div>
+
+            <div className="flex flex-row justify-between gap-4">
+              <button name={'assertionOnBlockchain'} className="btn btn-outline">
                 Sign with passkey
               </button>
             </div>

@@ -4,7 +4,7 @@ pragma solidity ^0.8.9;
 import './Secp256r1.sol';
 import './Base64.sol';
 
-contract PassKey {
+contract Passkey {
     address public owner;
 
     modifier onlyOwner() {
