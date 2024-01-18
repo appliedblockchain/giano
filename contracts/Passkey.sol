@@ -5,10 +5,22 @@ import './Secp256r1.sol';
 import './Base64.sol';
 
 contract Passkey {
+    error InvalidSignature(string publicKey, string signature);
+    error InvalidFormat();
+
     address public owner;
+    mapping(bytes32 => mapping(bytes32 => bool)) private usedSignatures;
+
+    event SignatureVerified(bytes32 publicKeyHash, bytes32 signatureHash, bool isValid);
 
     modifier onlyOwner() {
         require(msg.sender == owner, 'Only the owner can access this function.');
+        _;
+    }
+    modifier signatureNotUsed(string memory publicKey, string memory signature) {
+        if (usedSignatures[_hashString(publicKey)][_hashString(signature)]) {
+            revert InvalidSignature(publicKey, signature);
+        }
         _;
     }
 
@@ -21,8 +33,18 @@ contract Passkey {
         return number;
     }
 
-    function _parseDERPublicKey(string memory encodedPublicKey) private pure returns (bytes memory, bytes memory, bytes memory) {
-        bytes memory encodedPublicKeyBytes = Base64.decode(encodedPublicKey);
+    function _validateDERFieldLength(bytes memory field) private pure {
+        uint8 numberOfMetadataBytes = 2; // sequence1 Tag and Length
+        // field[0] is the Tag
+        // field[1] is the Length
+        if (field.length < numberOfMetadataBytes || field.length != uint8(field[1]) + numberOfMetadataBytes) {
+            revert InvalidFormat();
+        }
+    }
+
+    function _parseDERPublicKey(string memory publicKey) private pure returns (bytes memory, bytes memory, bytes memory) {
+        bytes memory publicKeyBytes = Base64.decode(publicKey);
+        _validateDERFieldLength(publicKeyBytes);
         // sequence1 Tag
         uint8 count = 0;
         count++;
@@ -35,39 +57,39 @@ contract Passkey {
         // objectIdentifier1 Tag
         count++;
         // objectIdentifier1 Length
-        uint8 objectIdentifier1Len = uint8(encodedPublicKeyBytes[count]);
+        uint8 objectIdentifier1Len = uint8(publicKeyBytes[count]);
         count++;
         bytes memory objectIdentifier1 = new bytes(objectIdentifier1Len);
         for (uint8 i = 0; i < objectIdentifier1Len; i++) {
-            objectIdentifier1[i] = encodedPublicKeyBytes[count];
+            objectIdentifier1[i] = publicKeyBytes[count];
             count++;
         }
         // objectIdentifier2 Tag
         count++;
         // objectIdentifier2 Length
-        uint8 objectIdentifier2Len = uint8(encodedPublicKeyBytes[count]);
+        uint8 objectIdentifier2Len = uint8(publicKeyBytes[count]);
         count++;
         bytes memory objectIdentifier2 = new bytes(objectIdentifier2Len);
         for (uint8 i = 0; i < objectIdentifier2Len; i++) {
-            objectIdentifier2[i] = encodedPublicKeyBytes[count];
+            objectIdentifier2[i] = publicKeyBytes[count];
             count++;
         }
         // bitString Tag
         count++;
         // bitString Length
-        uint8 bitStringLen = uint8(encodedPublicKeyBytes[count]);
+        uint8 bitStringLen = uint8(publicKeyBytes[count]);
         count++;
         // number of padding bits (0)
         count++;
         // bitString length also includes the number of padding bits
         uint8 publicKeyLen = bitStringLen - 1;
-        bytes memory publicKeyBytes = new bytes(publicKeyLen);
+        bytes memory parsedPublicKeyBytes = new bytes(publicKeyLen);
         for (uint8 i = 0; i < publicKeyLen; i++) {
-            publicKeyBytes[i] = encodedPublicKeyBytes[count];
+            parsedPublicKeyBytes[i] = publicKeyBytes[count];
             count++;
         }
 
-        return (objectIdentifier1, objectIdentifier2, publicKeyBytes);
+        return (objectIdentifier1, objectIdentifier2, parsedPublicKeyBytes);
     }
 
     function _DERInteger(bytes memory integer, uint256 expectedLength) private pure returns (bytes memory) {
@@ -98,6 +120,7 @@ contract Passkey {
 
     function _parseDERSignature(string memory signature) private pure returns (bytes memory, bytes memory) {
         bytes memory signatureBytes = Base64.decode(signature);
+        _validateDERFieldLength(signatureBytes);
         // sequence1 Tag
         uint8 count = 0;
         count++;
@@ -174,6 +197,10 @@ contract Passkey {
         return dataHash;
     }
 
+    function _hashString(string memory str) private pure returns (bytes32) {
+        return keccak256(abi.encodePacked(str));
+    }
+
     function verifyPassKeySignature(uint256 pubKeyX, uint256 pubKeyY, uint256 sigx, uint256 sigy, uint256 sigHash) public view returns (bool) {
         return Secp256r1.Verify(pubKeyX, pubKeyY, sigx, sigy, sigHash);
     }
@@ -183,10 +210,20 @@ contract Passkey {
         string memory signature,
         string memory authenticatorData,
         string memory clientDataJSON
-    ) public view returns (bool) {
+    ) public signatureNotUsed(publicKey, signature) {
         (uint256 pubKeyX, uint256 pubKeyY) = _getPublicKeyXY(publicKey);
         (uint256 sigR, uint256 sigS) = _getSignatureRS(signature);
         uint256 dataHash = _getDataHash(authenticatorData, clientDataJSON);
-        return Secp256r1.Verify(pubKeyX, pubKeyY, sigR, sigS, dataHash);
+
+        bool isValid = Secp256r1.Verify(pubKeyX, pubKeyY, sigR, sigS, dataHash);
+
+        bytes32 publicKeyHash = _hashString(publicKey);
+        bytes32 signatureHash = _hashString(signature);
+
+        if (isValid) {
+            usedSignatures[publicKeyHash][signatureHash] = true;
+        }
+
+        emit SignatureVerified(publicKeyHash, signatureHash, isValid);
     }
 }
