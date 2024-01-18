@@ -23,6 +23,7 @@
     "@cfworker/base64url": "^1.12.5",
     "@koa/cors": "^4.0.0",
     "@koa/router": "^12.0.1",
+    "@openzeppelin/contracts": "^5.0.1",
     "@peculiar/asn1-ecc": "^2.3.8",
     "@peculiar/asn1-schema": "^2.3.8",
     "@types/koa__cors": "^4.0.3",
