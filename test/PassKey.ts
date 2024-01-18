@@ -55,5 +55,36 @@ describe('PassKey', () => {
       );
       expect(response).to.equal(true);
     });
+
+    it('should validate passkey signature', async () => {
+      const { passkey } = await loadFixture(deployFixture);
+
+      const derPublicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEm-Vk1IapY1q5L14FzNBNkdguKMbTuqtaXKg2zWLva9JHlsRqJsBHdLL4DP568eCMi79V_OcmPvkVRFlEFC85vg';
+      const [pubKeyX, pubKeyY] = asn1.parsePublicKey(derPublicKey);
+
+      const payload = {
+        id: 'jaBhsdlAQUlg2-r_mnLFzUGBr_I',
+        rawId: 'jaBhsdlAQUlg2-r_mnLFzUGBr_I',
+        response: {
+          clientDataJSON: 'eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiWVdKaiIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzAwMCIsImNyb3NzT3JpZ2luIjpmYWxzZX0',
+          authenticatorData: 'SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MZAAAAAA',
+          signature: 'MEQCIB-aQun6cqTerjfeIrbuK6a6FRxYo-CmA0zVRyEiSV48AiBLBbf93YcAmPB5DMWznE_PcpM6zpESZERf2Dd_qG66CQ',
+        },
+      };
+      const [sigX, sigY] = asn1.parseSignature(payload.response.signature);
+
+      const authenticatorData = Buffer.from(payload.response.authenticatorData, 'base64');
+      const clientDataHash = new Uint8Array(await crypto.subtle.digest('SHA-256', Buffer.from(payload.response.clientDataJSON, 'base64')));
+      const data = new Uint8Array(await crypto.subtle.digest('SHA-256', Buffer.concat([authenticatorData, clientDataHash])));
+
+      const response = await passkey.verifyPassKeySignature(
+        helpers.bufferToBigInt(pubKeyX),
+        helpers.bufferToBigInt(pubKeyY),
+        helpers.bufferToBigInt(sigX),
+        helpers.bufferToBigInt(sigY),
+        helpers.bufferToBigInt(data),
+      );
+      expect(response).to.equal(true);
+    });
   });
 });

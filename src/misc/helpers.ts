@@ -93,3 +93,13 @@ export const decodeDERInteger = (integerBytes: Uint8Array, expectedLength: numbe
   // remove leading 0x00s if larger than expected length
   else return integerBytes.slice(-32);
 };
+
+export const copyToClipboard = async (value: any) => {
+  await navigator.clipboard.writeText(String(value));
+  alert('Value copied to clipboard');
+};
+
+export const copyToClipboardCallback = (value: any) => async () => {
+  await navigator.clipboard.writeText(String(value));
+  alert('Value copied to clipboard.');
+};

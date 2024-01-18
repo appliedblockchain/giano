@@ -95,7 +95,7 @@ const AuthServer: React.FC = () => {
   return (
     <>
       <main className="paper m-auto mt-14 w-max">
-        <h2 className="mb-4 text-2xl">WebAuthn PoC</h2>
+        <h2 className="mb-4 text-2xl">Passkey PoC</h2>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
           <div className="form-control w-full max-w-xs">
             <label className="label">
