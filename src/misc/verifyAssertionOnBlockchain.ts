@@ -1,4 +1,6 @@
+import type { Log } from 'ethers';
 import { ethers } from 'ethers';
+import { parseLog } from 'test/utils';
 import PasskeyArtifact from '../../artifacts/contracts/Passkey.sol/Passkey.json' assert { type: 'json' };
 
 const toWei = (num) => ethers.parseEther(num.toString());
@@ -35,8 +37,14 @@ const sendTransaction = async () => {
 };
 
 const verify = async (publicKey: string, signature: string, authenticatorData: string, clientDataJSON: string) => {
-  const result = await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON);
-  return result;
+  const tx = await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON, { gasLimit: 1000000 });
+  let receipt = await provider.getTransactionReceipt(tx.hash);
+  while (!receipt) {
+    await provider.send('evm_mine', []);
+    receipt = await provider.getTransactionReceipt(tx.hash);
+  }
+  const log = parseLog(receipt?.logs[0]);
+  return log.args[2];
 };
 
 export default verify;
