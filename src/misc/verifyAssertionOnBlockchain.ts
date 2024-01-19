@@ -38,11 +38,7 @@ const sendTransaction = async () => {
 
 const verify = async (publicKey: string, signature: string, authenticatorData: string, clientDataJSON: string) => {
   const tx = await passkey.parseAndVerifyPassKeySignature(publicKey, signature, authenticatorData, clientDataJSON, { gasLimit: 1000000 });
-  let receipt = await provider.getTransactionReceipt(tx.hash);
-  while (!receipt) {
-    await provider.send('evm_mine', []);
-    receipt = await provider.getTransactionReceipt(tx.hash);
-  }
+  const receipt = await tx.wait(); // provider.getTransactionReceipt(tx.hash);
   const log = parseLog(receipt?.logs[0]);
   return log.args[2];
 };

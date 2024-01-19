@@ -12,6 +12,7 @@ async function deployFixture() {
   const [ownerAccount, account] = await ethers.getSigners();
   const Passkey = await ethers.getContractFactory('Passkey');
   const passkey = await Passkey.deploy();
+  await passkey.waitForDeployment();
   return { passkey, ownerAccount, account };
 }
 
@@ -55,6 +56,7 @@ describe('Passkey', () => {
         helpers.bufferToBigInt(sigY),
         helpers.bufferToBigInt(data),
       );
+
       expect(response).to.equal(true);
     });
 

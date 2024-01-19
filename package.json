@@ -12,7 +12,7 @@
     "build:dev": "rm -rf dist && vite",
     "build": "rm -rf dist && vite build",
     "serve": "serve -s dist -p 80 --config ../serve.json",
-    "hh:test": "REPORT_GAS=true hardhat test",
+    "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "hardhat node",
     "hh:deploy": "hardhat run scripts/deploy.js",
     "hh:compile": "hardhat compile",

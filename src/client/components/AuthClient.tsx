@@ -178,14 +178,19 @@ const AuthClient: React.FC = () => {
     console.log('Payload to verify:');
     console.log(JSON.stringify(payload, null, 2));
 
-    const verifiedSignature = await verifyAssertionOnBlockchain(publicKey, signature, authenticatorData, clientDataJSON);
+    try {
+      const verifiedSignature = await verifyAssertionOnBlockchain(publicKey, signature, authenticatorData, clientDataJSON);
 
-    if (!verifiedSignature) {
+      if (!verifiedSignature) {
+        setResult('Signature verification failed. ❌');
+        throw new Error('Signature verification failed. ❌');
+      } else {
+        console.log('Signature verification succeeded! 🎉');
+        setResult('Signature verification succeeded! 🎉');
+      }
+    } catch (error) {
       setResult('Signature verification failed. ❌');
-      throw new Error('Signature verification failed. ❌');
-    } else {
-      console.log('Signature verification succeeded! 🎉');
-      setResult('Signature verification succeeded! 🎉');
+      console.error(error);
     }
   };
 
@@ -243,13 +248,6 @@ const AuthClient: React.FC = () => {
         <section className="paper">
           <form className="flex flex-col gap-4" onSubmit={onSubmit}>
             <h2 className="text-base font-bold">Smart Contract verification</h2>
-
-            <div className="form-control w-full max-w-xs">
-              <label className="label">
-                <span className="label-text">Credential ID</span>
-              </label>
-              <input name="credential_id" type="text" placeholder="Credential ID generated" className="input input-bordered w-full max-w-xs" />
-            </div>
 
             <div className="form-control w-full max-w-xs">
               <label className="label">
