@@ -1,4 +1,6 @@
 import React from 'react';
+import { CgSpinner as ISpinner } from 'react-icons/cg';
+import { isLocalDev } from 'hardhat/internal/core/execution-mode';
 import * as helpers from '../../misc/helpers';
 import verifyAssertion from '../../misc/verifyAssertion';
 import verifyAssertionOnBlockchain from '../../misc/verifyAssertionOnBlockchain';
@@ -9,6 +11,7 @@ const RP_ORIGINS = ['http://localhost', 'http://localhost:3000', 'https://passke
 
 const AuthClient: React.FC = () => {
   const [result, setResult] = React.useState<null | string>(null);
+  const [loading, setLoading] = React.useState(false);
 
   const onSubmit = (event) => {
     event.preventDefault();
@@ -179,6 +182,7 @@ const AuthClient: React.FC = () => {
     console.log(JSON.stringify(payload, null, 2));
 
     try {
+      setLoading(true);
       const verifiedSignature = await verifyAssertionOnBlockchain(publicKey, signature, authenticatorData, clientDataJSON);
 
       if (!verifiedSignature) {
@@ -191,6 +195,8 @@ const AuthClient: React.FC = () => {
     } catch (error) {
       setResult('Signature verification failed. ❌');
       console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -227,14 +233,27 @@ const AuthClient: React.FC = () => {
               <label className="label">
                 <span className="label-text">Credential ID</span>
               </label>
-              <input name="credential_id" type="text" placeholder="Credential ID generated" className="input input-bordered w-full max-w-xs" />
+              <input
+                name="credential_id"
+                type="text"
+                placeholder="Credential ID generated"
+                className="input input-bordered w-full max-w-xs"
+                autoComplete="new-password"
+              />
             </div>
 
             <div className="form-control w-full max-w-xs">
               <label className="label">
                 <span className="label-text">Public Key*</span>
               </label>
-              <input name="public_key" type="text" placeholder="Public Key generated" className="input input-bordered w-full max-w-xs" required={true} />
+              <input
+                name="public_key"
+                type="text"
+                placeholder="Public Key generated"
+                className="input input-bordered w-full max-w-xs"
+                required={true}
+                autoComplete="new-password"
+              />
             </div>
 
             <div className="flex flex-row justify-between gap-4">
@@ -251,9 +270,29 @@ const AuthClient: React.FC = () => {
 
             <div className="form-control w-full max-w-xs">
               <label className="label">
+                <span className="label-text">Credential ID</span>
+              </label>
+              <input
+                name="credential_id"
+                type="text"
+                placeholder="Credential ID generated"
+                className="input input-bordered w-full max-w-xs"
+                autoComplete="new-password"
+              />
+            </div>
+
+            <div className="form-control w-full max-w-xs">
+              <label className="label">
                 <span className="label-text">Public Key*</span>
               </label>
-              <input name="public_key" type="text" placeholder="Public Key generated" className="input input-bordered w-full max-w-xs" required={true} />
+              <input
+                name="public_key"
+                type="text"
+                placeholder="Public Key generated"
+                className="input input-bordered w-full max-w-xs"
+                required={true}
+                autoComplete="new-password"
+              />
             </div>
 
             <div className="flex flex-row justify-between gap-4">
@@ -264,6 +303,12 @@ const AuthClient: React.FC = () => {
           </form>
         </section>
       </main>
+      {loading && (
+        <p className="mx-auto mt-12 flex max-w-[400px] flex-col items-center gap-4">
+          <ISpinner size={48} className="animate-spin" />
+        </p>
+      )}
+
       {result !== null && (
         <p className="mx-auto mt-12 flex max-w-[400px] flex-col items-center gap-4 whitespace-pre-wrap break-all text-lg font-bold">{result}</p>
       )}
