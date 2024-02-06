@@ -1,6 +1,9 @@
 # Passkey PoC
 
-This repository is a demo showing how the user can authenticate on a smart contract using a Passkey.
+This repository is a demo showing how the user can authenticate on a smart contract using a Passkey.  
+Relevant bits:
+- [AuthClient.tsx](./src/client/components/AuthClient.tsx): the full logic running on client side.
+- [Passkey.sol](./contracts/Passkey.sol): the smart contract method verifying the signature.
 
 ## Development
 
