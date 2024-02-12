@@ -9,3 +9,4 @@ latest.sql
 cache
 artifacts
 typechain-types
+db.sqlite
