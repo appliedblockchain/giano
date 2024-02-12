@@ -2,7 +2,7 @@
   "name": "webauthn-pof",
   "version": "1.0.0",
   "main": "index.js",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "commonjs",
   "scripts": {
     "eslint": "TIMING=1 ESLINT_XS_TW=./tailwind.config.ts eslint --ignore-path .gitignore --fix",
