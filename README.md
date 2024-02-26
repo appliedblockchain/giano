@@ -1,4 +1,4 @@
-# Passkey PoC
+# Passkey Blockchain Example
 
 This repository is a demo showing how the user can authenticate on a smart contract using a Passkey.  
 Relevant bits:
