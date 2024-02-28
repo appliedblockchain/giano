@@ -74,5 +74,6 @@
     "typechain": "^8.3.2",
     "vite": "^5.0.12",
     "vite-tsconfig-paths": "^4.2.1"
-  }
+  },
+  "packageManager": "yarn@4.1.0"
 }
