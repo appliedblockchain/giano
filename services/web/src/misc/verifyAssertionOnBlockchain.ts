@@ -1,6 +1,6 @@
 import type { Log } from 'ethers';
 import { ethers } from 'ethers';
-import { parseLog } from 'test/utils';
+import { parseLog } from 'packages/hardhat/test/utils';
 import PasskeyArtifact from '../../artifacts/contracts/Passkey.sol/Passkey.json' assert { type: 'json' };
 
 const toWei = (num) => ethers.parseEther(num.toString());

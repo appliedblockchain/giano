@@ -3,8 +3,8 @@ import { expect } from 'chai';
 import hardhat from 'hardhat';
 const { ethers } = hardhat;
 import type { Log } from 'ethers';
-import * as asn1 from '../src/misc/asn1';
-import * as helpers from '../src/misc/helpers';
+import * as asn1 from '../../../services/web/src/misc/asn1';
+import * as helpers from '../../../services/web/src/misc/helpers';
 import { parseLog } from './utils';
 
 // We define a fixture to reuse the same setup in every test: we use loadFixture to run this setup once, snapshot that state, and reset Hardhat Network to that snapshot in every test.
