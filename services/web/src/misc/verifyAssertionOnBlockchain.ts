@@ -1,6 +1,6 @@
-import PasskeyArtifact from '@giano/contracts/artifacts/contracts/Passkey.sol/Passkey.json' assert { type: 'json' };
+import PasskeyArtifact from 'packages/contracts/artifacts/contracts/Passkey.sol/Passkey.json' assert { type: 'json' };
 import { ethers } from 'ethers';
-import { parseLog } from 'packages/hardhat/test/utils';
+import { parseLog } from 'packages/contracts/test/utils';
 
 const fromWei = (num) => ethers.formatEther(num);
 
