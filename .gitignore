@@ -10,3 +10,5 @@ cache
 artifacts
 typechain-types
 db.sqlite
+.yarn/install-state.gz
+.vite/
