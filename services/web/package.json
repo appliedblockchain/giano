@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "eslint": "TIMING=1 ESLINT_XS_TW=./tailwind.config.ts eslint --ignore-path .gitignore --fix",
+    "eslint": "TIMING=1 ESLINT_XS_TW=./tailwind.config.ts eslint --ignore-path ../../.gitignore --fix",
     "test": "vitest run",
     "start:dev": "NODE_ENV=development tsx --no-warnings -r envk --watch src/server/index.ts",
     "start": "NODE_ENV=${NODE_ENV:?} tsx --no-warnings -r envk src/server/index.ts",
@@ -48,6 +48,7 @@
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.11",
+    "@types/eslint": "^8",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.6",
     "@types/react": "^18.2.39",
@@ -56,6 +57,7 @@
     "autoprefixer": "^10.4.16",
     "chai": "^4.3.10",
     "daisyui": "^4.4.14",
+    "eslint": "^8.57.0",
     "eslint-config-xs": "^2.6.3",
     "hardhat": "^2.18.2",
     "hardhat-gas-reporter": "^1.0.9",
@@ -67,7 +69,8 @@
     "ts-node": "^10.9.1",
     "typechain": "^8.3.2",
     "vite": "^5.0.12",
-    "vite-tsconfig-paths": "^4.2.1"
+    "vite-tsconfig-paths": "^4.2.1",
+    "vitest": "^1.3.1"
   },
   "packageManager": "yarn@4.1.0"
 }

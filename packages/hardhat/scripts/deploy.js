@@ -18,4 +18,4 @@ import hre from 'hardhat';
 
   console.log(`Owner address: ${signer.address}`);
   console.log(`Contract address: ${contract.target}`);
-})();
+})().catch(console.error);

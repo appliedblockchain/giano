@@ -2,7 +2,7 @@
   "name": "@giano/contracts",
   "version": "1.0.0",
   "license": "MIT",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "node": "hardhat node",
