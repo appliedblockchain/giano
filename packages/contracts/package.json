@@ -6,7 +6,7 @@
   "scripts": {
     "test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "node": "hardhat node",
-    "deploy": "hardhat run scripts/deploy.js",
+    "deploy": "hardhat run scripts/deploy.ts",
     "compile": "hardhat compile",
     "clean": "hardhat clean"
   },
