@@ -1,6 +1,6 @@
 import React from 'react';
 import { FaCopy as ICopy } from 'react-icons/fa';
-import * as helpers from '../../misc/helpers';
+import * as helpers from '@giano/common/misc/helpers';
 
 const AuthServer: React.FC = () => {
   const [result, setResult] = React.useState<null | string>(null);

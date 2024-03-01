@@ -676,15 +676,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@giano/contracts@workspace:packages/hardhat":
+"@giano/common@workspace:packages/common":
   version: 0.0.0-use.local
-  resolution: "@giano/contracts@workspace:packages/hardhat"
+  resolution: "@giano/common@workspace:packages/common"
+  languageName: unknown
+  linkType: soft
+
+"@giano/contracts@workspace:packages/contracts":
+  version: 0.0.0-use.local
+  resolution: "@giano/contracts@workspace:packages/contracts"
   dependencies:
     "@nomicfoundation/hardhat-chai-matchers": "npm:^2.0.2"
     "@nomicfoundation/hardhat-ethers": "npm:^3.0.0"
     "@nomicfoundation/hardhat-network-helpers": "npm:^1.0.9"
     "@nomicfoundation/hardhat-toolbox": "npm:^4.0.0"
     "@nomicfoundation/hardhat-verify": "npm:^2.0.1"
+    "@peculiar/asn1-ecc": "npm:^2.3.8"
+    "@peculiar/asn1-schema": "npm:^2.3.8"
     "@typechain/ethers-v6": "npm:^0.5.1"
     "@typechain/hardhat": "npm:^9.1.0"
     "@types/chai": "npm:^4.3.11"
@@ -712,8 +720,6 @@ __metadata:
     "@nomicfoundation/hardhat-network-helpers": "npm:^1.0.9"
     "@nomicfoundation/hardhat-toolbox": "npm:^4.0.0"
     "@nomicfoundation/hardhat-verify": "npm:^2.0.1"
-    "@peculiar/asn1-ecc": "npm:^2.3.8"
-    "@peculiar/asn1-schema": "npm:^2.3.8"
     "@tailwindcss/forms": "npm:^0.5.7"
     "@tailwindcss/typography": "npm:^0.5.10"
     "@typechain/ethers-v6": "npm:^0.5.1"

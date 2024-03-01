@@ -1,9 +1,8 @@
 import React from 'react';
 import { CgSpinner as ISpinner } from 'react-icons/cg';
-import { isLocalDev } from 'hardhat/internal/core/execution-mode';
-import * as helpers from '../../misc/helpers';
-import verifyAssertion from '../../misc/verifyAssertion';
-import verifyAssertionOnBlockchain from '../../misc/verifyAssertionOnBlockchain';
+import * as helpers from '@giano/common/misc/helpers';
+import verifyAssertion from '@giano/common/misc/verifyAssertion';
+import verifyAssertionOnBlockchain from '@giano/common/misc/verifyAssertionOnBlockchain';
 
 const RP_ID = window.location.hostname;
 const RP_NAME = 'Passkey PoC';

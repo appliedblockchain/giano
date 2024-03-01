@@ -2,7 +2,7 @@
   "name": "@giano/contracts",
   "version": "1.0.0",
   "license": "MIT",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "node": "hardhat node",
@@ -16,6 +16,8 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.0.9",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.1",
+    "@peculiar/asn1-ecc": "^2.3.8",
+    "@peculiar/asn1-schema": "^2.3.8",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.11",
