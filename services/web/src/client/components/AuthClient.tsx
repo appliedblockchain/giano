@@ -87,7 +87,7 @@ const AuthClient: React.FC = () => {
   const assert = async (credentialId: undefined | string, publicKey: string) => {
     const challenge = 'abc';
 
-    const allowCredentials = credentialId
+    const allowCredentials: PublicKeyCredentialDescriptor[] | undefined = credentialId
       ? [
           {
             id: helpers.base64URLToBuffer(credentialId),
@@ -106,7 +106,7 @@ const AuthClient: React.FC = () => {
       mediation: 'optional',
     });
 
-    const assertionResponse = credential.response as AuthenticatorAssertionResponse;
+    const assertionResponse = credential?.response as AuthenticatorAssertionResponse;
 
     const clientDataJSON = helpers.bufferToBase64URL(assertionResponse.clientDataJSON);
     const authenticatorData = helpers.bufferToBase64URL(assertionResponse.authenticatorData);
@@ -140,7 +140,7 @@ const AuthClient: React.FC = () => {
   const assertOnBlockchain = async (credentialId: undefined | string, publicKey: string) => {
     const challenge = 'abc';
 
-    const allowCredentials = credentialId
+    const allowCredentials: PublicKeyCredentialDescriptor[] | undefined = credentialId
       ? [
           {
             id: helpers.base64URLToBuffer(credentialId),
