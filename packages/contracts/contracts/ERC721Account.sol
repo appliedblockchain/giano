@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.23;
 
 import {WebAuthn} from "./WebAuthn.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 struct Signature {
     bytes authenticatorData;
@@ -22,14 +22,20 @@ contract ERC721Account {
         bytes32 Y;
     }
 
-    PublicKey public publicKey;
-    uint256 public currentNonce;
+    error InvalidNonce(uint256 expected, uint256 actual);
+    error InvalidSignature();
 
-    function validateAndIncrementNonce(int nonce) private returns (bool) {
+    PublicKey public publicKey;
+    uint256 public currentNonce = 0;
+
+    constructor(PublicKey memory _publicKey) {
+        publicKey = _publicKey;
+    }
+
+    function validateAndIncrementNonce(uint256 nonce) private returns (bool) {
        return currentNonce++ == nonce; 
     }
 
-    error InvalidNonce(uint256 expected, uint256 actual);
 
     modifier validNonce(uint256 nonce) {
         if (!validateAndIncrementNonce(nonce)) {
@@ -42,7 +48,9 @@ contract ERC721Account {
     }
 
     modifier validSignature(bytes memory message, bytes calldata signature) {
-        require(_validateSignature(message, signature), "Invalid signature");
+        if (!_validateSignature(message, signature)) {
+            revert InvalidSignature();
+        }
         _;
     }
 
