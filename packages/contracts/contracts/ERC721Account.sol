@@ -18,8 +18,8 @@ A minimalist smart wallet implementation that allows you to transfer ERC721 toke
  */
 contract ERC721Account {
     struct PublicKey {
-        bytes32 X;
-        bytes32 Y;
+        bytes32 x;
+        bytes32 y;
     }
 
     error InvalidNonce(uint256 expected, uint256 actual);
@@ -76,8 +76,8 @@ contract ERC721Account {
                 responseTypeLocation: sig.responseTypeLocation,
                 r: sig.r,
                 s: sig.s,
-                x: uint256(publicKey.X),
-                y: uint256(publicKey.Y)
+                x: uint256(publicKey.x),
+                y: uint256(publicKey.y)
             });
     }
 
@@ -85,12 +85,10 @@ contract ERC721Account {
         address token,
         address to,
         uint256 tokenId,
+        bytes memory message,
         bytes calldata signature,
         uint256 nonce
-    ) external validNonce(nonce) validSignature(
-        abi.encodePacked(token, to, tokenId, nonce),
-        signature
-    ) {
+    ) external validNonce(nonce) validSignature(message, signature) {
         IERC721(token).transferFrom(address(this), to, tokenId);
     }
 
