@@ -17,7 +17,9 @@ import hre from 'hardhat';
   await hre.network.provider.send('hardhat_setCode', ['0x7a29Dc72fa3938705d91A9659455BC54731eD70F', p256PrecompileBytecode]);
 
   const accountFactory = await hre.ethers.deployContract('ERC721AccountFactory', { signer });
+  const genericToken = await hre.ethers.deployContract('GenericERC721', signer);
   await accountFactory.waitForDeployment();
+  await genericToken.waitForDeployment();
 
-  console.log({ accountFactory: accountFactory.target });
+  console.log({ accountFactory: accountFactory.target, genericToken: genericToken.target });
 })().catch(console.error);

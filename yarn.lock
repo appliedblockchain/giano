@@ -737,6 +737,7 @@ __metadata:
     autoprefixer: "npm:^10.4.16"
     better-sqlite3: "npm:^9.1.1"
     buffer: "npm:^6.0.3"
+    cbor-web: "npm:^9.0.2"
     chai: "npm:^4.3.10"
     daisyui: "npm:^4.4.14"
     envk: "npm:^3.2.2"
@@ -3449,6 +3450,13 @@ __metadata:
   version: 0.12.0
   resolution: "caseless@npm:0.12.0"
   checksum: 10c0/ccf64bcb6c0232cdc5b7bd91ddd06e23a4b541f138336d4725233ac538041fb2f29c2e86c3c4a7a61ef990b665348db23a047060b9414c3a6603e9fa61ad4626
+  languageName: node
+  linkType: hard
+
+"cbor-web@npm:^9.0.2":
+  version: 9.0.2
+  resolution: "cbor-web@npm:9.0.2"
+  checksum: 10c0/e2c304c46aa4c3f10aff14d7abcd3f8f0f0f29f659943a17d584098bfaf4f1aec5f16466e62556753d2047462ea6dcbcad5a767cc076ec21021af70285aa274a
   languageName: node
   linkType: hard
 
