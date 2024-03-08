@@ -13,20 +13,20 @@ describe('ERC721AccountFactory', () => {
     return { signer, accountFactoryContract };
   };
 
-  describe('createAccount', () => {
-    it('should emit an AccountCreated event', async () => {
+  describe('createUser', () => {
+    it('should emit an UserCreated event', async () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      await expect(accountFactoryContract.createAccount(123n, { x, y }))
-        .to.emit(accountFactoryContract, 'AccountCreated')
+      await expect(accountFactoryContract.createUser(123n, { x, y }))
+        .to.emit(accountFactoryContract, 'UserCreated')
         .withArgs(123n, [x, y], anyValue);
     });
     it('should deploy a contract', async () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      const receipt = await (await accountFactoryContract.createAccount(123n, { x, y })).wait();
+      const receipt = await (await accountFactoryContract.createUser(123n, { x, y })).wait();
       expect(receipt).to.exist;
       const event = accountFactoryContract.interface.parseLog(receipt!.logs[0]);
       const [, , address] = event!.args;
