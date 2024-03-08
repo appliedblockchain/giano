@@ -18,18 +18,18 @@ describe('ERC721AccountFactory', () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      await expect(accountFactoryContract.createAccount({ x, y }))
+      await expect(accountFactoryContract.createAccount(123n, { x, y }))
         .to.emit(accountFactoryContract, 'AccountCreated')
-        .withArgs([x, y], anyValue);
+        .withArgs(123n, [x, y], anyValue);
     });
     it('should deploy a contract', async () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      const receipt = await (await accountFactoryContract.createAccount({ x, y })).wait();
+      const receipt = await (await accountFactoryContract.createAccount(123n, { x, y })).wait();
       expect(receipt).to.exist;
       const event = accountFactoryContract.interface.parseLog(receipt!.logs[0]);
-      const [, address] = event!.args;
+      const [, , address] = event!.args;
       expect(await ethers.provider.getCode(address)).to.exist;
     });
   });

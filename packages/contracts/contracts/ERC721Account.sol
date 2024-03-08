@@ -28,8 +28,8 @@ contract ERC721Account {
     PublicKey public publicKey;
     uint256 public currentNonce = 0;
 
-    constructor(bytes32[2] memory _publicKey) {
-        publicKey = PublicKey(_publicKey[0], _publicKey[1]);
+    constructor(PublicKey memory _publicKey) {
+        publicKey = _publicKey;
     }
 
     function validateAndIncrementNonce(uint256 nonce) private returns (bool) {
