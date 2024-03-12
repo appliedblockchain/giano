@@ -32,10 +32,13 @@ contract ERC721Account {
         publicKey = _publicKey;
     }
 
-    function validateAndIncrementNonce(uint256 nonce) private returns (bool) {
-       return currentNonce++ == nonce; 
+    function getChallenge() public view returns (bytes memory) {
+        return bytes.concat(bytes32(currentNonce));
     }
 
+    function validateAndIncrementNonce(uint256 nonce) private returns (bool) {
+       return currentNonce++ == nonce;
+    }
 
     modifier validNonce(uint256 nonce) {
         if (!validateAndIncrementNonce(nonce)) {
@@ -85,10 +88,9 @@ contract ERC721Account {
         address token,
         address to,
         uint256 tokenId,
-        bytes memory message,
-        bytes calldata signature,
-        uint256 nonce
-    ) external validNonce(nonce) validSignature(message, signature) {
+        uint256 nonce,
+        bytes calldata signature
+    ) external validNonce(nonce) validSignature(bytes.concat(bytes32(nonce)), signature) {
         IERC721(token).transferFrom(address(this), to, tokenId);
     }
 
