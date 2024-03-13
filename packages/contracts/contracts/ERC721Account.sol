@@ -32,8 +32,12 @@ contract ERC721Account {
         publicKey = _publicKey;
     }
 
-    function getChallenge() public view returns (bytes memory) {
-        return bytes.concat(bytes32(currentNonce));
+    function getChallenge() public view returns (bytes32) {
+        return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce)));
+    }
+
+    function getNonce() public view returns (uint256) {
+        return currentNonce;
     }
 
     function validateAndIncrementNonce(uint256 nonce) private returns (bool) {

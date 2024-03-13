@@ -12,6 +12,7 @@ const ERC721AccountClient: React.FC = () => {
 
   type User = {
     account: string;
+    rawId: BufferSource;
     credentialId: string
   }
 
@@ -30,12 +31,20 @@ const ERC721AccountClient: React.FC = () => {
     return new Uint8Array(array).join('');
   };
 
-  const getCredential = async () => {
+  const getCredential = async (id?: BufferSource, challenge?: BufferSource) => {
     return await window.navigator.credentials.get({
       publicKey: {
-        challenge: new TextEncoder().encode(''),
+        challenge: challenge || new TextEncoder().encode(''),
         rpId: window.location.hostname,
-        userVerification: 'preferred'
+        userVerification: 'preferred',
+        ...id && {
+          allowCredentials: [
+            {
+              id: id,
+              type: 'public-key'
+            }
+          ]
+        }
       }
     }) as PublicKeyCredential & { response: AuthenticatorAssertionResponse }
   };
@@ -54,6 +63,7 @@ const ERC721AccountClient: React.FC = () => {
       if (user.account !== ethers.ZeroAddress) {
         setUser({
           account: user.account,
+          rawId: credential.rawId,
           credentialId: userId
         });
       }
@@ -112,24 +122,19 @@ const ERC721AccountClient: React.FC = () => {
   }
 
   const transfer = async () => {
-    const credential = await navigator.credentials.get(
-      {
-        publicKey: {
-          challenge: new TextEncoder().encode(''),
-          rpId: window.location.hostname,
-          userVerification: 'preferred'
-        }
-      }) as PublicKeyCredential & { response: AuthenticatorAssertionResponse };
-    const user = await accountFactory.getUser(uint8ArrayToUint256String(credential.rawId));
-    if (user.account === ethers.ZeroAddress) {
-      throw new Error('User not found');
+    if (!user) {
+      throw new Error('Not logged in');
     }
     const accountContract = ERC721Account__factory.connect(user.account, signer);
-    const challenge = await accountContract.getChallenge();
-    console.log({ challenge });
+    const challenge = accountContract.getChallenge();
+
     console.log('getUser result:', { ...user });
     console.log({ t: tokenContract.target, recipient, tokenId });
-    await accountContract.transferToken(tokenContract.target, recipient, tokenId, challenge, new Uint8Array(credential.response.signature));
+    const signature = ethers.AbiCoder.defaultAbiCoder().encode(
+      ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
+      [[new Uint8Array([1, 2, 3]), JSON.stringify({ a: 1, b: 2 }), 23n, 1n, '0x1', '0x2']]
+    );
+    await accountContract.transferToken(tokenContract.target, recipient, tokenId, challenge, signature);
   };
 
   return (
