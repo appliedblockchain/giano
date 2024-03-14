@@ -92,9 +92,8 @@ contract ERC721Account {
         address token,
         address to,
         uint256 tokenId,
-        uint256 nonce,
         bytes calldata signature
-    ) external validNonce(nonce) validSignature(bytes.concat(bytes32(nonce)), signature) {
+    ) external validSignature(bytes.concat(getChallenge()), signature) {
         IERC721(token).transferFrom(address(this), to, tokenId);
     }
 

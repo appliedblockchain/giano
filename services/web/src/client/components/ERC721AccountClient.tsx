@@ -7,13 +7,15 @@ import {
 } from '@giano/contracts/typechain-types';
 import { decode as cborDecode } from 'cbor-web';
 import { parseAuthenticatorData } from '@simplewebauthn/server/helpers';
+import { AsnParser } from '@peculiar/asn1-schema';
+import { ECDSASigValue } from '@peculiar/asn1-ecc';
 
 const ERC721AccountClient: React.FC = () => {
 
   type User = {
     account: string;
     rawId: BufferSource;
-    credentialId: string
+    credentialId: bigint;
   }
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
@@ -27,8 +29,15 @@ const ERC721AccountClient: React.FC = () => {
   const [status, setStatus] = useState('');
   const [user, setUser] = useState(null as User | null);
 
-  const uint8ArrayToUint256String = (array: Uint8Array | ArrayBuffer) => {
-    return new Uint8Array(array).join('');
+  const uint8ArrayToUint256 = (array: ArrayBuffer) => {
+    const arr = new Uint8Array(array)
+    let result = 0n
+
+    for (let i = 0; i < arr.length; i++) {
+      result = (result << 8n) + BigInt(arr[i])
+    }
+
+    return result
   };
 
   const getCredential = async (id?: BufferSource, challenge?: BufferSource) => {
@@ -57,7 +66,7 @@ const ERC721AccountClient: React.FC = () => {
 
   const logIn = async () => {
     const credential = await getCredential();
-    const userId = uint8ArrayToUint256String(credential.rawId);
+    const userId = uint8ArrayToUint256 (credential.rawId);
     if (credential) {
       const user = await accountFactory.getUser(userId);
       if (user.account !== ethers.ZeroAddress) {
@@ -68,6 +77,13 @@ const ERC721AccountClient: React.FC = () => {
         });
       }
     }
+  };
+
+  const hexToUint8Array = (hex: string) => {
+    if (hex.startsWith('0x')) {
+      hex = hex.slice(2);
+    }
+    return new Uint8Array(hex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)));
   };
 
   const createUser = async (e) => {
@@ -112,7 +128,7 @@ const ERC721AccountClient: React.FC = () => {
       const authData = parseAuthenticatorData(attestation.authData);
       const publicKey = cborDecode(authData.credentialPublicKey?.buffer as ArrayBuffer);
       const [x, y] = [publicKey.get(-2), publicKey.get(-3)];
-      const userId = uint8ArrayToUint256String(credential.rawId);
+      const userId = uint8ArrayToUint256 (credential.rawId);
       await (await (accountFactory.createUser(userId, { x, y }))).wait();
     } catch (e) {
       console.error(e);
@@ -126,15 +142,23 @@ const ERC721AccountClient: React.FC = () => {
       throw new Error('Not logged in');
     }
     const accountContract = ERC721Account__factory.connect(user.account, signer);
-    const challenge = accountContract.getChallenge();
+    const challengeHex = await accountContract.getChallenge();
+    const challenge = hexToUint8Array(challengeHex);
+
+    const credential = await getCredential(user.rawId, challenge);
+
+    const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
 
     console.log('getUser result:', { ...user });
     console.log({ t: tokenContract.target, recipient, tokenId });
+    console.log({ rLen: parsedSignature.r.byteLength, sLen: parsedSignature.s.byteLength });
+    const values = [[new Uint8Array(credential.response.authenticatorData), new TextDecoder().decode(credential.response.clientDataJSON), 23, 1, uint8ArrayToUint256 (parsedSignature.r), uint8ArrayToUint256 (parsedSignature.s)]]
+    console.log({ values });
     const signature = ethers.AbiCoder.defaultAbiCoder().encode(
       ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
-      [[new Uint8Array([1, 2, 3]), JSON.stringify({ a: 1, b: 2 }), 23n, 1n, '0x1', '0x2']]
+      values
     );
-    await accountContract.transferToken(tokenContract.target, recipient, tokenId, challenge, signature);
+    await accountContract.transferToken(tokenContract.target, recipient, tokenId,  signature);
   };
 
   return (
