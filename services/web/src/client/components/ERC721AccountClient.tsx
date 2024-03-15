@@ -149,14 +149,12 @@ const ERC721AccountClient: React.FC = () => {
 
     const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
 
-    console.log('getUser result:', { ...user });
-    console.log({ t: tokenContract.target, recipient, tokenId });
-    console.log({ rLen: parsedSignature.r.byteLength, sLen: parsedSignature.s.byteLength });
-    const values = [[new Uint8Array(credential.response.authenticatorData), new TextDecoder().decode(credential.response.clientDataJSON), 23, 1, uint8ArrayToUint256 (parsedSignature.r), uint8ArrayToUint256 (parsedSignature.s)]]
-    console.log({ values });
+    const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
+    const responseTypeLocation = clientDataJson.indexOf('"type":');
+    const challengeLocation = clientDataJson.indexOf('"challenge":');
     const signature = ethers.AbiCoder.defaultAbiCoder().encode(
       ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
-      values
+      [[new Uint8Array(credential.response.authenticatorData), clientDataJson, challengeLocation, responseTypeLocation, uint8ArrayToUint256(parsedSignature.r), uint8ArrayToUint256(parsedSignature.s)]]
     );
     await accountContract.transferToken(tokenContract.target, recipient, tokenId,  signature);
   };
