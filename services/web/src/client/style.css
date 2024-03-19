@@ -15,3 +15,11 @@ body {
     @apply outline-none focus:ring-0 focus:ring-offset-0 !important;
   }
 }
+
+.bg {
+  background-color: #ffffff;
+  opacity: 0.8;
+  background-image: radial-gradient(circle at center center, #007bff, #ffffff), repeating-radial-gradient(circle at center center, #007bff, #007bff, 10px, transparent 20px, transparent 10px);
+  background-blend-mode: multiply;
+}
+

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import {
   ERC721Account__factory,
@@ -64,7 +64,9 @@ const ERC721AccountClient: React.FC = () => {
     }
   };
 
-  const logIn = async () => {
+  const logIn = async (e) => {
+    e.preventDefault();
+    console.log('loging');
     const credential = await getCredential();
     const userId = uint8ArrayToUint256 (credential.rawId);
     if (credential) {
@@ -161,45 +163,54 @@ const ERC721AccountClient: React.FC = () => {
 
   return (
     <>
-      <main className={'p-5 mx-auto w-1/2'}>
-        <section>
-          <h2 className={'text-xl font-bold'}>Create account</h2>
-          <form>
-            <input type="text" name="username" placeholder="Username" onChange={(e) => setUsername(e.target.value)}
-                   value={username} />
-            <input type="button" value="Create Account" disabled={!username} onClick={createUser}
-                   className="btn-outline btn" />
-          </form>
-        </section>
-        <section>
-          <h2 className={'text-xl font-bold'}>Log in</h2>
-          <form>
-            <input type="button" value="Log in" onClick={logIn}
-                   className="btn-outline btn" />
-          </form>
-          <p>
-            {user ? `Logged in as ${user.account}` : 'Not logged in'}
-          </p>
-        </section>
-        <section>
-          <h2 className={'text-xl font-bold'}>Mint</h2>
-          <form>
-            <input type="button" value="Mint" onClick={mint} className="btn-outline btn" />
-          </form>
-        </section>
-        <section>
-          <h2 className={'text-xl font-bold'}>Transfer token</h2>
-          <form>
-            <input type="text" name="recipient" placeholder="Recipient" onChange={(e) => setRecipient(e.target.value)}
-                   value={recipient} />
-            <input type="number" name="tokenId" placeholder="Token ID" onChange={(e) => setTokenId(e.target.value)}
-                   value={tokenId} />
-            <input type="button" value="Transfer" onClick={transfer} className="btn-outline btn" />
-          </form>
-        </section>
-        <section>
-          {status}
-        </section>
+      <main className="flex items-center justify-center h-screen">
+        <div className="p-6 rounded-lg shadow-lg h-[700px] w-[350px] bg-white">
+          {user ?
+            <>
+              <section>
+                <h2 className={'text-xl font-bold'}>Mint</h2>
+                <form>
+                  <input type="button" value="Mint" onClick={mint} className="btn-outline btn" />
+                </form>
+              </section>
+              <section>
+                <h2 className={'text-xl font-bold'}>Transfer token</h2>
+                <form>
+                  <input type="text" name="recipient" placeholder="Recipient"
+                         onChange={(e) => setRecipient(e.target.value)}
+                         value={recipient} />
+                  <input type="number" name="tokenId" placeholder="Token ID"
+                         onChange={(e) => setTokenId(e.target.value)}
+                         value={tokenId} />
+                  <input type="button" value="Transfer" onClick={transfer} className="btn-outline btn" />
+                </form>
+              </section>
+              <section>
+                {status}
+              </section>
+            </> :
+            <>
+              <div className="flex justify-center h-full w-full">
+                <section className="flex flex-col items-center justify-center">
+                  <form onSubmit={logIn}>
+                    <button type="submit"
+                            className="btn-outline btn">Log in
+                    </button>
+                  </form>
+                  <p>or</p>
+                  <h2 className="text-xl font-bold">Create account</h2>
+                  <form className="flex flex-col">
+                    <input type="text" name="username" placeholder="Username"
+                           onChange={(e) => setUsername(e.target.value)}
+                           value={username} />
+                    <input type="button" value="Create Account" disabled={!username} onClick={createUser}
+                           className="btn-outline btn" />
+                  </form>
+                </section>
+              </div>
+            </>
+          }
+        </div>
       </main>
     </>
   );
