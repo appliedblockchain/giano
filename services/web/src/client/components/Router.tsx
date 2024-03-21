@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
-const ERC721AccountClient = React.lazy(() => import('./ERC721AccountClient'));
+const ERC721AccountClient = React.lazy(() => import('./AccountClient'));
 
 export default function Router() {
   return (

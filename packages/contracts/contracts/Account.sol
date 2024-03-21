@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {WebAuthn} from "./WebAuthn.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 struct Signature {
     bytes authenticatorData;
@@ -14,9 +15,9 @@ struct Signature {
 }
 
 /**
-A minimalist smart wallet implementation that allows you to transfer ERC721 tokens
+A minimalist smart wallet implementation that allows you to transfer tokens
  */
-contract ERC721Account {
+contract Account {
     struct PublicKey {
         bytes32 x;
         bytes32 y;
@@ -95,6 +96,15 @@ contract ERC721Account {
         bytes calldata signature
     ) external validSignature(bytes.concat(getChallenge()), signature) {
         IERC721(token).transferFrom(address(this), to, tokenId);
+    }
+
+    function transferERC20(
+        address token,
+        address to,
+        uint256 amount,
+        bytes calldata signature
+    ) external validSignature(bytes.concat(getChallenge()), signature) {
+        IERC20(token).transfer(to, amount);
     }
 
 }

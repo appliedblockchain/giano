@@ -4,10 +4,10 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { createKeypair } from './utils';
 
-describe('ERC721AccountFactory', () => {
+describe('AccountFactory', () => {
   const deploy = async () => {
     const [signer] = await ethers.getSigners();
-    const accountFactory = await ethers.getContractFactory('ERC721AccountFactory', signer);
+    const accountFactory = await ethers.getContractFactory('AccountFactory', signer);
     const accountFactoryContract = await accountFactory.deploy();
     await accountFactoryContract.waitForDeployment();
     return { signer, accountFactoryContract };

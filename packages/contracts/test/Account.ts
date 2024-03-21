@@ -3,10 +3,10 @@ import crypto from 'crypto';
 import { ethers } from 'hardhat';
 import { createKeypair } from './utils';
 
-describe.skip('ERC721Account', () => {
+describe.skip('Account', () => {
   const deploy = async () => {
     const [signer] = await ethers.getSigners();
-    const account = await ethers.getContractFactory('ERC721Account', signer);
+    const account = await ethers.getContractFactory('Account', signer);
     const { x, y, keyPair } = createKeypair();
     const accountContract = await account.deploy({ x, y });
     const token = await ethers.getContractFactory('GenericERC721', signer);
