@@ -166,13 +166,13 @@ const AccountClient: React.FC = () => {
   return (
     <>
       <main className="flex items-center justify-center h-screen">
-        <div className="p-6 rounded-[12px] shadow-lg h-[660px] w-[550px] bg-white">
+        <div className="p-8 rounded-[12px] shadow-lg h-[660px] w-[550px] bg-white">
           {user ? (
             <>
               <section>
                 <h2 className={'text-xl font-bold'}>Mint</h2>
                 <form>
-                  <input type="button" value="Mint" onClick={mint} className="btn-outline btn" />
+                  <input type="button" value="Mint" onClick={mint} className="btn btn-primary" />
                 </form>
               </section>
               <section>
@@ -188,18 +188,35 @@ const AccountClient: React.FC = () => {
           ) : (
             <>
               <div className="flex justify-center h-full w-full">
-                <section className="flex flex-col items-center justify-center">
-                  <img src="/services/web/src/client/logo.svg"></img>
+                <section className="flex flex-col items-center justify-center w-full">
+                  <img src="/logo.svg" className="m-8"></img>
                   <form onSubmit={logIn}>
-                    <button type="submit" className="bg-main">
-                      Log in
+                    <button type="submit" className="btn bg-primary-main uppercase text-white text-lg font-black py-1 hover:bg-primary-dark">
+                      Login
                     </button>
                   </form>
-                  <p>or</p>
-                  <h2 className="text-xl font-bold">Create account</h2>
-                  <form className="flex flex-col">
-                    <input type="text" name="username" placeholder="Username" onChange={(e) => setUsername(e.target.value)} value={username} />
-                    <input type="button" value="Create Account" disabled={!username} onClick={createUser} className="btn-outline btn" />
+                  <div className="flex w-full justify-around items-center m-5">
+                    <hr className="border-t border-[1px] w-1/3" />
+                    <p>or</p>
+                    <hr className="border-t border-[1px] w-1/3" />
+                  </div>
+                  <form className="flex flex-col w-full justify-center gap-y-5">
+                    <h2 className="text-center text-[24px] font-bold">Create account</h2>
+                    <input
+                      type="text"
+                      name="username"
+                      className="input form-control font-bold text-[16px] px-[8px] py-[12px] h-[60px] bg-[rgba(247,248,251,1)] text-[rgba(0,10,30,0.54)]"
+                      placeholder="Passkey name"
+                      onChange={(e) => setUsername(e.target.value)}
+                      value={username}
+                    />
+                    <input
+                      type="button"
+                      value="Create account"
+                      disabled={!username}
+                      onClick={createUser}
+                      className="btn uppercase font-black disabled:bg-[rgba(219,221,239,1)] text-[16px] disabled:text-[rgba(125,129,143,1)]"
+                    />
                   </form>
                 </section>
               </div>
