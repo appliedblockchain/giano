@@ -1,24 +1,8 @@
 import { createTheme } from '@mui/material';
 
-export default createTheme({
-  components: {
-    MuiButton: {
-      defaultProps: {
-        disableElevation: true,
-      },
-      styleOverrides: {
-        contained: {
-          fontWeight: '900',
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: '12px',
-        },
-      },
-    },
+let theme = createTheme({
+  shape: {
+    borderRadius: 10,
   },
   palette: {
     text: {
@@ -86,3 +70,49 @@ export default createTheme({
     fontFamily: ['"Source Sans 3"', 'sans-serif'].join(','),
   },
 });
+
+theme = createTheme(theme, {
+  palette: {
+    action: {
+      disabledBackground: theme.palette.grey['300'],
+      disabledText: 'red',
+    },
+  },
+  components: {
+    MuiInputLabel: {
+      styleOverrides: {
+        root: {
+          fontWeight: '700',
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          backgroundColor: theme.palette.grey['100'],
+          borderRadius: theme.shape.borderRadius,
+          border: 0,
+        },
+      },
+    },
+    MuiButton: {
+      defaultProps: {
+        disableElevation: true,
+      },
+      styleOverrides: {
+        contained: {
+          fontWeight: '900',
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          borderRadius: '12px',
+        },
+      },
+    },
+  },
+});
+
+export default theme;
