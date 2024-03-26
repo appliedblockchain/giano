@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { Box, Button, Card, CircularProgress, Container, Select, Tab, Tabs, Typography } from '@mui/material';
+import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Snackbar, Tab, Tabs, Typography } from '@mui/material';
+import { Copy } from '../icons';
 
-const Mint: React.FC = () => {
+const Wallet: React.FC = () => {
   const [tab, setTab] = useState(0);
   const [minting, setMinting] = useState(false);
+  const [tokenId, setTokenId] = useState('');
+  const [openSnackbar, setOpenSnackbar] = useState(false);
 
   const handleTabChange = (_event: React.SyntheticEvent, newTab: number) => {
     setTab(newTab);
@@ -28,8 +31,16 @@ const Mint: React.FC = () => {
     e.preventDefault();
     if (!minting) {
       setMinting(true);
-      setTimeout(() => setMinting(false), 2000);
+      setTimeout(() => {
+        setMinting(false);
+        setTokenId(tokenId ? (parseInt(tokenId) + 1).toString() : '1');
+        setOpenSnackbar(true);
+      }, 2000);
     }
+  };
+
+  const copyTokenId = async () => {
+    await window.navigator.clipboard.writeText(tokenId);
   };
 
   return (
@@ -55,7 +66,11 @@ const Mint: React.FC = () => {
       >
         <Box display="flex" justifyContent="space-between" width="100%">
           <img alt="Giano logo" src="/logo_horizontal.svg" />
-          <Select />
+          <FormControl sx={{ width: '50%' }}>
+            <Select labelId="account-select-label">
+              <MenuItem value="0x12345562354234">0x12312321312</MenuItem>
+            </Select>
+          </FormControl>
         </Box>
         <Card sx={{ backgroundColor: 'grey.100', width: '100%', textAlign: 'center', p: '16 40 16 40' }}>
           <Typography color="primary">Available</Typography>
@@ -87,20 +102,52 @@ const Mint: React.FC = () => {
                   onClick={mint}
                   variant="contained"
                   sx={{
-                    '&.Mui-disabled': { backgroundColor: (theme) => theme.palette.primary.dark },
+                    '&.Mui-disabled': { backgroundColor: 'primary.dark' },
                     m: 2,
                     width: '100%',
                   }}
                 >
                   {minting ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Mint'}
                 </Button>
+                {tokenId && (
+                  <Card
+                    sx={{
+                      backgroundColor: (theme) => theme.palette.grey['100'],
+                      m: 2,
+                      ml: 0,
+                      py: 0,
+                      px: 1,
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Typography color="text.secondary">
+                      Token ID:{' '}
+                      <Typography display="inline" color="text.primary" fontWeight="bold">
+                        {tokenId}
+                      </Typography>
+                    </Typography>
+                    <Button sx={{ p: 0, m: 0, minWidth: 0 }} onClick={copyTokenId}>
+                      <Copy sx={{ color: 'primary.main' }} />
+                    </Button>
+                  </Card>
+                )}
               </Box>
             </Box>
           </TabPanel>
+          <TabPanel index={1} tab={tab}>
+            <p>WIP</p>
+          </TabPanel>
+          <TabPanel index={2} tab={tab}>
+            <p>WIP</p>
+          </TabPanel>
         </Box>
+        <Snackbar message="snackity snack snack" open={openSnackbar} onClose={() => setOpenSnackbar(false)} autoHideDuration={1000} />
       </Card>
     </Container>
   );
 };
 
-export default Mint;
+export default Wallet;

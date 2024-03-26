@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material';
+import { ChevronDown } from './icons';
 
 let theme = createTheme({
   shape: {
@@ -123,6 +124,17 @@ theme = createTheme(theme, {
           fontWeight: '900',
           fontSize: 12,
           color: theme.palette.text.primary,
+        },
+      },
+    },
+    MuiSelect: {
+      defaultProps: {
+        IconComponent: ChevronDown,
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: 34,
+          backgroundColor: theme.palette.grey['100'],
         },
       },
     },
