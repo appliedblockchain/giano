@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Button, Card, Container, TextField, Typography } from '@mui/material';
+import { Box, Button, Card, Container, Divider, TextField, Typography } from '@mui/material';
 
 const Login: React.FC = () => {
   return (
@@ -29,11 +29,9 @@ const Login: React.FC = () => {
         <form>
           <Button variant="contained">Login</Button>
         </form>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <hr style={{ width: '128px', borderColor: 'rgba(0, 10, 30, 0.12)' }} />
-          <p>or</p>
-          <hr style={{ width: '128px', borderColor: 'rgba(0, 10, 30, 0.12)' }} />
-        </Box>
+        <Divider flexItem>
+          <Typography>or</Typography>
+        </Divider>
         <form style={{ display: 'flex', flexDirection: 'column', textAlign: 'center', width: '100%', gap: 'inherit' }}>
           <Typography variant="h4">Create account</Typography>
           <TextField label="Passkey" />

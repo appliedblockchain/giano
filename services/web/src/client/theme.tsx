@@ -106,9 +106,23 @@ theme = createTheme(theme, {
       },
     },
     MuiCard: {
+      defaultProps: {
+        variant: 'outlined',
+      },
       styleOverrides: {
         root: {
-          borderRadius: '12px',
+          padding: 32,
+          borderRadius: theme.shape.borderRadius,
+          border: 'none',
+        },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          fontWeight: '900',
+          fontSize: 12,
+          color: theme.palette.text.primary,
         },
       },
     },
