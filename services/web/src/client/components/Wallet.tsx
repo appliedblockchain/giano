@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Snackbar, Tab, Tabs, Typography } from '@mui/material';
+import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { Copy } from '../icons';
 
 const Wallet: React.FC = () => {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(1);
   const [minting, setMinting] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const [tokenId, setTokenId] = useState('');
-  const [openSnackbar, setOpenSnackbar] = useState(false);
 
   const handleTabChange = (_event: React.SyntheticEvent, newTab: number) => {
     setTab(newTab);
@@ -39,6 +39,20 @@ const Wallet: React.FC = () => {
     }
   };
 
+  const transfer = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const { currentTarget: form } = e;
+    const { recipient, tokenId } = Object.fromEntries(new FormData(form));
+    console.log({ recipient, tokenId });
+  };
+
+  const send = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const { currentTarget: form } = e;
+    const { recipient, amount } = Object.fromEntries(new FormData(form));
+    console.log({ recipient, amount });
+  };
+
   const copyTokenId = async () => {
     await window.navigator.clipboard.writeText(tokenId);
   };
@@ -67,8 +81,8 @@ const Wallet: React.FC = () => {
         <Box display="flex" justifyContent="space-between" width="100%">
           <img alt="Giano logo" src="/logo_horizontal.svg" />
           <FormControl sx={{ width: '50%' }}>
-            <Select labelId="account-select-label">
-              <MenuItem value="0x12345562354234">0x12312321312</MenuItem>
+            <Select labelId="account-select-label" value="1">
+              <MenuItem value="1">0x12312321312</MenuItem>
             </Select>
           </FormControl>
         </Box>
@@ -78,7 +92,7 @@ const Wallet: React.FC = () => {
             $21.67
           </Typography>
         </Card>
-        <Box display="flex" flexDirection="column" justifyContent="space-between" height="50%" width="100%">
+        <Box display="flex" flexDirection="column" justifyContent="space-between" height="60%" width="100%">
           <Tabs value={tab} onChange={handleTabChange} sx={{ width: '100%' }} centered>
             <Tab label="Mint" />
             <Tab label="Transfer" />
@@ -138,13 +152,34 @@ const Wallet: React.FC = () => {
             </Box>
           </TabPanel>
           <TabPanel index={1} tab={tab}>
-            <p>WIP</p>
+            <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
+              <Typography variant="h4" color="primary" align="center">
+                Transfer token
+              </Typography>
+              <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={transfer}>
+                <TextField name="recipient" label="Recipient address" variant="standard" required />
+                <TextField name="tokenId" label="Token ID" type="number" required />
+                <Button type="submit" disabled={transferring} variant="contained">
+                  {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Transfer token'}
+                </Button>
+              </form>
+            </Box>
           </TabPanel>
           <TabPanel index={2} tab={tab}>
-            <p>WIP</p>
+            <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
+              <Typography variant="h4" color="primary" align="center">
+                Send tokens
+              </Typography>
+              <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send} onInvalid={(e) => e.preventDefault()}>
+                <TextField name="recipient" label="Recipient address" variant="standard" required />
+                <TextField name="amount" label="Amount" type="number" required />
+                <Button type="submit" disabled={transferring} variant="contained">
+                  {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Send'}
+                </Button>
+              </form>
+            </Box>
           </TabPanel>
         </Box>
-        <Snackbar message="snackity snack snack" open={openSnackbar} onClose={() => setOpenSnackbar(false)} autoHideDuration={1000} />
       </Card>
     </Container>
   );

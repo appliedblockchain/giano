@@ -88,12 +88,28 @@ theme = createTheme(theme, {
       },
     },
     MuiTextField: {
-      styleOverrides: {
-        root: {
-          backgroundColor: theme.palette.grey['100'],
-          borderRadius: theme.shape.borderRadius,
-          border: 0,
+      variants: [
+        {
+          props: { variant: 'standard' },
+          style: {
+            backgroundColor: theme.palette.grey['100'],
+            borderRadius: theme.shape.borderRadius,
+          },
         },
+      ],
+      defaultProps: {
+        InputLabelProps: {
+          style: {
+            paddingLeft: 16,
+          },
+        },
+        InputProps: {
+          disableUnderline: true,
+          style: {
+            margin: 16,
+          },
+        },
+        variant: 'standard',
       },
     },
     MuiButton: {
