@@ -1,16 +1,39 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
+import type { User } from 'services/web/src/client/common/user';
+import { getSessionUser } from 'services/web/src/client/common/user';
 import { Copy } from '../icons';
+import { ethers } from 'ethers';
+import { Account__factory, AccountFactory__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import { AsnParser } from '@peculiar/asn1-schema';
+import { ECDSASigValue } from '@peculiar/asn1-ecc';
+import { getCredential } from 'services/web/src/client/common/credentials';
+import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 
 const Wallet: React.FC = () => {
-  const [tab, setTab] = useState(1);
+  const [tab, setTab] = useState(0);
   const [minting, setMinting] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [tokenId, setTokenId] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+
+  const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
+  const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
+  const accountFactory = useMemo(() => AccountFactory__factory.connect('0x5fbdb2315678afecb367f032d93f642f64180aa3', signer), [signer]);
+  const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newTab: number) => {
     setTab(newTab);
   };
+
+  useEffect(() => {
+    const user = getSessionUser();
+    if (!user) {
+      window.location.replace('/');
+      return;
+    }
+    setUser(user);
+  }, []);
 
   type TabPanelProps = {
     children?: React.ReactNode;
@@ -27,23 +50,63 @@ const Wallet: React.FC = () => {
     );
   };
 
-  const mint = (e: React.SyntheticEvent) => {
+  const mint = async (e: React.SyntheticEvent) => {
     e.preventDefault();
-    if (!minting) {
-      setMinting(true);
-      setTimeout(() => {
+    if (!minting && user) {
+      try {
+        setMinting(true);
+        const tx = await tokenContract.mint(user.account);
+        const receipt = await tx.wait();
+        if (receipt) {
+          const transfer = tokenContract.interface.parseLog(receipt.logs[0]);
+          if (transfer) {
+            const [, , tokenId] = transfer.args;
+            setTokenId(tokenId.toString());
+          }
+        }
+      } finally {
         setMinting(false);
-        setTokenId(tokenId ? (parseInt(tokenId) + 1).toString() : '1');
-        setOpenSnackbar(true);
-      }, 2000);
+      }
     }
   };
 
-  const transfer = (e: React.FormEvent<HTMLFormElement>) => {
+  const transfer = async (e: React.FormEvent<HTMLFormElement>) => {
+    if (!user) {
+      throw new Error('Not logged in');
+    }
     e.preventDefault();
-    const { currentTarget: form } = e;
-    const { recipient, tokenId } = Object.fromEntries(new FormData(form));
-    console.log({ recipient, tokenId });
+    setTransferring(true);
+    try {
+      const { currentTarget: form } = e;
+      const { recipient, tokenId } = Object.fromEntries(new FormData(form));
+      const accountContract = Account__factory.connect(user.account, signer);
+      const challengeHex = await accountContract.getChallenge();
+      const challenge = hexToUint8Array(challengeHex);
+
+      const credential = await getCredential(user.rawId, challenge);
+
+      const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
+
+      const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
+      const responseTypeLocation = clientDataJson.indexOf('"type":');
+      const challengeLocation = clientDataJson.indexOf('"challenge":');
+      const signature = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
+        [
+          [
+            new Uint8Array(credential.response.authenticatorData),
+            clientDataJson,
+            challengeLocation,
+            responseTypeLocation,
+            uint8ArrayToUint256(parsedSignature.r),
+            uint8ArrayToUint256(parsedSignature.s),
+          ],
+        ],
+      );
+      await accountContract.transferToken(tokenContract.target, recipient as string, tokenId as string, signature);
+    } finally {
+      setTransferring(false);
+    }
   };
 
   const send = (e: React.FormEvent<HTMLFormElement>) => {
@@ -82,7 +145,7 @@ const Wallet: React.FC = () => {
           <img alt="Giano logo" src="/logo_horizontal.svg" />
           <FormControl sx={{ width: '50%' }}>
             <Select labelId="account-select-label" value="1">
-              <MenuItem value="1">0x12312321312</MenuItem>
+              <MenuItem value="1">{user?.account}</MenuItem>
             </Select>
           </FormControl>
         </Box>
@@ -139,7 +202,7 @@ const Wallet: React.FC = () => {
                   >
                     <Typography color="text.secondary">
                       Token ID:{' '}
-                      <Typography display="inline" color="text.primary" fontWeight="bold">
+                      <Typography component="span" color="text.primary" fontWeight="bold">
                         {tokenId}
                       </Typography>
                     </Typography>

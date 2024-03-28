@@ -1,19 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AccountFactory__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Button, Card, CircularProgress, Container, Divider, TextField, Typography } from '@mui/material';
 import { parseAuthenticatorData } from '@simplewebauthn/server/helpers';
 import { decode as cborDecode } from 'cbor-web';
 import { ethers } from 'ethers';
+import { setSessionUser, User } from 'services/web/src/client/common/user';
+import { getCredential } from 'services/web/src/client/common/credentials';
+import { uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 
 const ES256 = -7;
 
 const Login: React.FC = () => {
-  type User = {
-    account: string;
-    rawId: BufferSource;
-    credentialId: bigint;
-  };
-
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const accountFactory = useMemo(() => AccountFactory__factory.connect('0x5fbdb2315678afecb367f032d93f642f64180aa3', signer), [signer]);
@@ -23,33 +20,12 @@ const Login: React.FC = () => {
   const [loggingIn, setLoggingIn] = useState(false);
   const [registering, setRegistering] = useState(false);
 
-  const uint8ArrayToUint256 = (array: ArrayBuffer) => {
-    const bytes = new Uint8Array(array.byteLength <= 32 ? array : array.slice(0, 32));
-    const hex = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    return BigInt('0x' + hex);
-  };
-
-  const getCredential = async (id?: BufferSource, challenge?: BufferSource) => {
-    const params = {
-      challenge: challenge || new TextEncoder().encode('abc'),
-      rpId: window.location.hostname,
-      userVerification: 'preferred',
-      ...(id && {
-        allowCredentials: [
-          {
-            id: id,
-            type: 'public-key',
-          },
-        ],
-      }),
-    };
-    console.log({ params });
-    return (await window.navigator.credentials.get({
-      publicKey: params,
-    })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse };
-  };
+  useEffect(() => {
+    setSessionUser(user);
+    if (user) {
+      window.location.replace('/wallet');
+    }
+  }, [user]);
 
   const createUser = async (e) => {
     e.preventDefault();
@@ -115,8 +91,8 @@ const Login: React.FC = () => {
         if (user.account !== ethers.ZeroAddress) {
           setUser({
             account: user.account,
-            rawId: credential.rawId,
-            credentialId: userId,
+            rawId: new Uint8Array(credential.rawId),
+            credentialId: userId.toString(),
           });
         }
       }

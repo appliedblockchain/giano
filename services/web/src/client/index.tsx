@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import Router from './components/Router';
 import theme from './theme';
+import { UserContext } from 'services/web/src/client/context/UserContext';
 
 const App = () => (
   <ThemeProvider theme={theme}>
