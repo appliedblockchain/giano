@@ -35,8 +35,18 @@ let theme = createTheme({
       main: 'rgba(202, 43, 72, 1)',
       dark: 'rgba(102, 14, 30, 1)',
     },
+    success: {
+      light: 'rgba(239, 255, 232, 1)',
+      main: 'rgba(66, 166, 30, 1)',
+      dark: 'rgba(41, 101, 12, 1)',
+    },
   },
   typography: {
+    subtitle2: {
+      fontWeight: 700,
+      lineHeight: '27px',
+      size: 18,
+    },
     h1: {
       fontWeight: 900,
       fontSize: 56,

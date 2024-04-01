@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AccountFactory__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import { AccountFactory__factory } from '@giano/contracts/typechain-types';
 import { Button, Card, CircularProgress, Container, Divider, TextField, Typography } from '@mui/material';
 import { parseAuthenticatorData } from '@simplewebauthn/server/helpers';
 import { decode as cborDecode } from 'cbor-web';
 import { ethers } from 'ethers';
-import { setSessionUser, User } from 'services/web/src/client/common/user';
 import { getCredential } from 'services/web/src/client/common/credentials';
 import { uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
+import type { User } from 'services/web/src/client/common/user';
+import { setSessionUser } from 'services/web/src/client/common/user';
+import type { CustomSnackbarProps } from 'services/web/src/client/components/CustomSnackbar';
+import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
 
 const ES256 = -7;
 
@@ -14,11 +17,14 @@ const Login: React.FC = () => {
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const accountFactory = useMemo(() => AccountFactory__factory.connect('0x5fbdb2315678afecb367f032d93f642f64180aa3', signer), [signer]);
-  const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
 
   const [user, setUser] = useState(null as User | null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [snackbarState, setSnackbarState] = useState<CustomSnackbarProps | null>(null);
+  const onSnackbarClose = () => {
+    setSnackbarState((prev) => ({ ...prev, open: false }));
+  };
 
   useEffect(() => {
     setSessionUser(user);
@@ -70,7 +76,10 @@ const Login: React.FC = () => {
       const [x, y] = [publicKey.get(-2), publicKey.get(-3)];
       const userId = uint8ArrayToUint256(credential.rawId);
       await (await accountFactory.createUser(userId, { x, y })).wait();
+      setSnackbarState({ severity: 'success', message: 'Passkey account created successfully.', open: true });
     } catch (e) {
+      console.log('error');
+      setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console', open: true });
       console.error(e);
     } finally {
       setRegistering(false);
@@ -154,6 +163,7 @@ const Login: React.FC = () => {
             {registering ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Create account'}
           </Button>
         </form>
+        <CustomSnackbar {...snackbarState} onClose={onSnackbarClose} />
       </Card>
     </Container>
   );
