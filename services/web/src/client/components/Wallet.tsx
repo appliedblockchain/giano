@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Account__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { ECDSASigValue } from '@peculiar/asn1-ecc';
+import { AsnParser } from '@peculiar/asn1-schema';
+import { ethers } from 'ethers';
+import { getCredential } from 'services/web/src/client/common/credentials';
+import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
 import { getSessionUser } from 'services/web/src/client/common/user';
 import { Copy } from '../icons';
-import { ethers } from 'ethers';
-import { Account__factory, AccountFactory__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
-import { AsnParser } from '@peculiar/asn1-schema';
-import { ECDSASigValue } from '@peculiar/asn1-ecc';
-import { getCredential } from 'services/web/src/client/common/credentials';
-import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 
 const Wallet: React.FC = () => {
   const [tab, setTab] = useState(0);
@@ -19,7 +20,6 @@ const Wallet: React.FC = () => {
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
-  const accountFactory = useMemo(() => AccountFactory__factory.connect('0x5fbdb2315678afecb367f032d93f642f64180aa3', signer), [signer]);
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newTab: number) => {
@@ -103,7 +103,8 @@ const Wallet: React.FC = () => {
           ],
         ],
       );
-      await accountContract.transferToken(tokenContract.target, recipient as string, tokenId as string, signature);
+      const tx = await accountContract.transferToken(tokenContract.target, recipient as string, tokenId as string, signature);
+      await tx.wait();
     } finally {
       setTransferring(false);
     }
@@ -118,6 +119,11 @@ const Wallet: React.FC = () => {
 
   const copyTokenId = async () => {
     await window.navigator.clipboard.writeText(tokenId);
+  };
+
+  const logout = () => {
+    setUser(null);
+    window.location.href = '/';
   };
 
   return (
@@ -146,6 +152,10 @@ const Wallet: React.FC = () => {
           <FormControl sx={{ width: '50%' }}>
             <Select labelId="account-select-label" value="1">
               <MenuItem value="1">{user?.account}</MenuItem>
+              <MenuItem onClick={logout}>
+                <Logout />
+                Log Out
+              </MenuItem>
             </Select>
           </FormControl>
         </Box>
