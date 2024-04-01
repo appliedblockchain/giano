@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import {P256} from "./P256.sol";
 import {Base64} from "./Base64.sol";
-import "hardhat/console.sol";
 
 /**
  * Helper library for external contracts to verify WebAuthn signatures.
@@ -156,7 +155,6 @@ library WebAuthn {
             '"'
         );
 
-        console.log("challenge: %s, clientDataJSON: %s, challenge index: %d", challengeProperty, clientDataJSON, challengeLocation);
         if (!contains(challengeProperty, clientDataJSON, challengeLocation)) {
             return false;
         }
