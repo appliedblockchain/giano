@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Account__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
@@ -13,10 +13,46 @@ import type { CustomSnackbarProps } from 'services/web/src/client/components/Cus
 import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
 import { Copy } from '../icons';
 
+type TransferFormProps = {
+  recipient: string;
+  tokenId: string;
+};
+
+function TransferForm(props: { onSubmit: (f: TransferFormProps) => Promise<void> }) {
+  const [transferForm, setTransferForm] = useState<TransferFormProps>({ recipient: '', tokenId: '' });
+  const [transferring, setTransferring] = useState(false);
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setTransferForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+  return (
+    <form
+      style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setTransferring(true);
+        try {
+          await props.onSubmit(transferForm);
+        } finally {
+          setTransferring(false);
+        }
+      }}
+    >
+      <TextField name="recipient" value={transferForm.recipient} onChange={handleChange} label="Recipient address" variant="standard" required />
+      <TextField name="tokenId" value={transferForm.tokenId} label="Token ID" type="number" onChange={handleChange} required />
+      <Button type="submit" disabled={transferring} variant="contained">
+        {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Transfer token'}
+      </Button>
+    </form>
+  );
+}
+
 const Wallet: React.FC = () => {
   const [tab, setTab] = useState(0);
   const [minting, setMinting] = useState(false);
-  const [transferring, setTransferring] = useState(false);
   const [tokenId, setTokenId] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [snackbarState, setSnackbarState] = useState<CustomSnackbarProps | null>(null);
@@ -25,9 +61,9 @@ const Wallet: React.FC = () => {
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
 
-  const handleTabChange = (_event: React.SyntheticEvent, newTab: number) => {
+  const handleTabChange = useCallback((_event: React.SyntheticEvent, newTab: number) => {
     setTab(newTab);
-  };
+  }, []);
 
   const onSnackbarClose = () => {
     setSnackbarState((prev) => ({ ...prev, open: false }));
@@ -77,49 +113,47 @@ const Wallet: React.FC = () => {
     }
   };
 
-  const transfer = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!user) {
-      throw new Error('Not logged in');
-    }
-    try {
-      setTransferring(true);
-      const { currentTarget: form } = e;
-      const { recipient, tokenId } = Object.fromEntries(new FormData(form));
-      const accountContract = Account__factory.connect(user.account, signer);
-      const challengeHex = await accountContract.getChallenge();
-      const challenge = hexToUint8Array(challengeHex);
+  const transfer = useCallback(
+    async (form: TransferFormProps) => {
+      if (!user) {
+        throw new Error('Not logged in');
+      }
+      try {
+        const { recipient, tokenId } = form;
+        const accountContract = Account__factory.connect(user.account, signer);
+        const challengeHex = await accountContract.getChallenge();
+        const challenge = hexToUint8Array(challengeHex);
 
-      const credential = await getCredential(user.rawId, challenge);
+        const credential = await getCredential(user.rawId, challenge);
 
-      const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
+        const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
 
-      const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
-      const responseTypeLocation = clientDataJson.indexOf('"type":');
-      const challengeLocation = clientDataJson.indexOf('"challenge":');
-      const signature = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
-        [
+        const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
+        const responseTypeLocation = clientDataJson.indexOf('"type":');
+        const challengeLocation = clientDataJson.indexOf('"challenge":');
+        const signature = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
           [
-            new Uint8Array(credential.response.authenticatorData),
-            clientDataJson,
-            challengeLocation,
-            responseTypeLocation,
-            uint8ArrayToUint256(parsedSignature.r),
-            uint8ArrayToUint256(parsedSignature.s),
+            [
+              new Uint8Array(credential.response.authenticatorData),
+              clientDataJson,
+              challengeLocation,
+              responseTypeLocation,
+              uint8ArrayToUint256(parsedSignature.r),
+              uint8ArrayToUint256(parsedSignature.s),
+            ],
           ],
-        ],
-      );
-      const tx = await accountContract.transferToken(tokenContract.target, recipient as string, tokenId as string, signature);
-      await tx.wait();
-      setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
-    } catch (e) {
-      console.error(e);
-      setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
-    } finally {
-      setTransferring(false);
-    }
-  };
+        );
+        const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
+        await tx.wait();
+        setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
+      } catch (e) {
+        console.error(e);
+        setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
+      }
+    },
+    [user, signer, tokenContract.target],
+  );
 
   const send = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -241,13 +275,7 @@ const Wallet: React.FC = () => {
               <Typography variant="h4" color="primary" align="center">
                 Transfer token
               </Typography>
-              <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={transfer}>
-                <TextField name="recipient" label="Recipient address" variant="standard" required />
-                <TextField name="tokenId" label="Token ID" type="number" required />
-                <Button type="submit" disabled={transferring} variant="contained">
-                  {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Transfer token'}
-                </Button>
-              </form>
+              <TransferForm onSubmit={transfer} />
             </Box>
           </TabPanel>
           <TabPanel index={2} tab={tab}>
@@ -258,8 +286,8 @@ const Wallet: React.FC = () => {
               <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send} onInvalid={(e) => e.preventDefault()}>
                 <TextField name="recipient" label="Recipient address" variant="standard" required />
                 <TextField name="amount" label="Amount" type="number" required />
-                <Button type="submit" disabled={transferring} variant="contained">
-                  {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Send'}
+                <Button type="submit" disabled variant="contained">
+                  Send
                 </Button>
               </form>
             </Box>
