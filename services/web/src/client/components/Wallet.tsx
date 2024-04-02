@@ -9,6 +9,8 @@ import { getCredential } from 'services/web/src/client/common/credentials';
 import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
 import { getSessionUser } from 'services/web/src/client/common/user';
+import type { CustomSnackbarProps } from 'services/web/src/client/components/CustomSnackbar';
+import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
 import { Copy } from '../icons';
 
 const Wallet: React.FC = () => {
@@ -17,6 +19,7 @@ const Wallet: React.FC = () => {
   const [transferring, setTransferring] = useState(false);
   const [tokenId, setTokenId] = useState('');
   const [user, setUser] = useState<User | null>(null);
+  const [snackbarState, setSnackbarState] = useState<CustomSnackbarProps | null>(null);
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
@@ -24,6 +27,10 @@ const Wallet: React.FC = () => {
 
   const handleTabChange = (_event: React.SyntheticEvent, newTab: number) => {
     setTab(newTab);
+  };
+
+  const onSnackbarClose = () => {
+    setSnackbarState((prev) => ({ ...prev, open: false }));
   };
 
   useEffect(() => {
@@ -71,12 +78,12 @@ const Wallet: React.FC = () => {
   };
 
   const transfer = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     if (!user) {
       throw new Error('Not logged in');
     }
-    e.preventDefault();
-    setTransferring(true);
     try {
+      setTransferring(true);
       const { currentTarget: form } = e;
       const { recipient, tokenId } = Object.fromEntries(new FormData(form));
       const accountContract = Account__factory.connect(user.account, signer);
@@ -105,6 +112,10 @@ const Wallet: React.FC = () => {
       );
       const tx = await accountContract.transferToken(tokenContract.target, recipient as string, tokenId as string, signature);
       await tx.wait();
+      setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
+    } catch (e) {
+      console.error(e);
+      setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
     } finally {
       setTransferring(false);
     }
@@ -114,6 +125,7 @@ const Wallet: React.FC = () => {
     e.preventDefault();
     const { currentTarget: form } = e;
     const { recipient, amount } = Object.fromEntries(new FormData(form));
+    setSnackbarState({ severity: 'success', message: 'Amount sent successfully.', open: true });
     console.log({ recipient, amount });
   };
 
@@ -254,6 +266,7 @@ const Wallet: React.FC = () => {
           </TabPanel>
         </Box>
       </Card>
+      <CustomSnackbar {...snackbarState} onClose={onSnackbarClose} />
     </Container>
   );
 };

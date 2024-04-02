@@ -12,7 +12,6 @@ export const getCredential = async (id?: BufferSource, challenge?: BufferSource)
       ],
     }),
   };
-  console.log({ params });
   return (await window.navigator.credentials.get({
     publicKey: params,
   })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse };

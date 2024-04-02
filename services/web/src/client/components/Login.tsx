@@ -78,7 +78,6 @@ const Login: React.FC = () => {
       await (await accountFactory.createUser(userId, { x, y })).wait();
       setSnackbarState({ severity: 'success', message: 'Passkey account created successfully.', open: true });
     } catch (e) {
-      console.log('error');
       setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console', open: true });
       console.error(e);
     } finally {
@@ -105,6 +104,9 @@ const Login: React.FC = () => {
           });
         }
       }
+    } catch (e) {
+      console.error(e);
+      setSnackbarState({ severity: 'error', open: true, message: 'Something went wrong. Please check the console' });
     } finally {
       setLoggingIn(false);
     }
