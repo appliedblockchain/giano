@@ -5,8 +5,8 @@ pragma solidity 0.8.23;
  * Helper library for external contracts to verify P256 signatures.
  **/
 library P256 {
-    // We use our own copy of the P256Verifier contract, to be able to use it on Sepolia
-    address constant VERIFIER = 0x7a29Dc72fa3938705d91A9659455BC54731eD70F;
+    // official address of the precompile contract
+    address constant VERIFIER = 0xc2b78104907F722DABAc4C69f826a522B2754De4;
 
     function verifySignatureAllowMalleability(
         bytes32 message_hash,

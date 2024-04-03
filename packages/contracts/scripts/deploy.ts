@@ -15,7 +15,7 @@ import hre from 'hardhat';
 
   // deploy precompile code at the expected predetermined address
   await hre.network.provider.send('hardhat_setCode', [
-    '0x7a29Dc72fa3938705d91A9659455BC54731eD70F',
+    '0xc2b78104907F722DABAc4C69f826a522B2754De4',
     p256PrecompileBytecode,
   ]);
 
