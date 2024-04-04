@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Account__factory, ERC20__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import type { Account } from '@giano/contracts/typechain-types';
+import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
-import { ContractEventPayload, ethers, ProviderEvent } from 'ethers';
+import type { Addressable } from 'ethers';
+import { ethers } from 'ethers';
 import { getCredential } from 'services/web/src/client/common/credentials';
 import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
@@ -52,30 +54,118 @@ function TransferForm(props: { onSubmit: (f: TransferFormProps) => Promise<void>
   );
 }
 
+type SendCoinsFormProps = {
+  accountContract?: Account;
+  user?: User;
+  coinContractAddress: string | Addressable;
+  onSuccess: () => void;
+  onFailure: () => void;
+};
+
+const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, onSuccess, onFailure, coinContractAddress }) => {
+  type FormValues = {
+    recipient: string;
+    amount: string;
+  };
+
+  const [values, setValues] = useState<FormValues>({ recipient: '', amount: '' });
+  const [sending, setSending] = useState(false);
+
+  const send = async (e: React.FormEvent<HTMLFormElement>) => {
+    try {
+      if (accountContract && user) {
+        e.preventDefault();
+        setSending(true);
+        const signature = await signAndEncodeChallenge(user, accountContract);
+        const tx = await accountContract.transferERC20(coinContractAddress, values.recipient, ethers.parseEther(values.amount), signature);
+        await tx.wait();
+        onSuccess();
+      }
+    } catch (e) {
+      console.error(e);
+      onFailure();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setValues((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  return (
+    <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send}>
+      <TextField value={values.recipient} onChange={handleChange} name="recipient" label="Recipient address" variant="standard" required />
+      <TextField value={values.amount} onChange={handleChange} name="amount" label="Amount" type="number" required />
+      <Button type="submit" variant="contained" disabled={sending}>
+        Send
+      </Button>
+    </form>
+  );
+};
+
+async function signAndEncodeChallenge(user: User, accountContract: Account) {
+  const { x, y } = await accountContract.publicKey();
+  const challengeHex = await accountContract.getChallenge();
+  const challenge = hexToUint8Array(challengeHex);
+
+  const credential = await getCredential(user.rawId, challenge);
+
+  const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
+
+  const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
+  const responseTypeLocation = clientDataJson.indexOf('"type":');
+  const challengeLocation = clientDataJson.indexOf('"challenge":');
+  return ethers.AbiCoder.defaultAbiCoder().encode(
+    ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
+    [
+      [
+        new Uint8Array(credential.response.authenticatorData),
+        clientDataJson,
+        challengeLocation,
+        responseTypeLocation,
+        uint8ArrayToUint256(parsedSignature.r),
+        uint8ArrayToUint256(parsedSignature.s),
+      ],
+    ],
+  );
+}
+
 const Wallet: React.FC = () => {
   const [tab, setTab] = useState(0);
   const [minting, setMinting] = useState(false);
   const [tokenId, setTokenId] = useState('');
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | undefined>(undefined);
   const [snackbarState, setSnackbarState] = useState<CustomSnackbarProps | null>(null);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [faucetRunning, setFaucetRunning] = useState(false);
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
+  const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
   const coinContract = useMemo(() => GenericERC20__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
+
+  const updateBalance = async () => {
+    if (user) {
+      const balance = await coinContract.balanceOf(user.account);
+      setWalletBalance(ethers.formatEther(balance));
+    }
+  };
 
   useEffect(() => {
     // Typechain-generated event listener is not working
     const ethersContract = new ethers.Contract(coinContract.target, coinContract.interface, provider);
     if (walletBalance === null && user) {
-      void coinContract.balanceOf(user.account).then((b) => setWalletBalance(ethers.formatEther(b)));
+      void updateBalance();
     }
     const listener = async (from, to) => {
       if (user && [from, to].map((a) => a.toLowerCase()).includes(user.account.toLowerCase())) {
-        const balance = await coinContract.balanceOf(user.account);
-        setWalletBalance(ethers.formatEther(balance));
+        await updateBalance();
       }
     };
     void ethersContract.on('Transfer', listener);
@@ -141,47 +231,18 @@ const Wallet: React.FC = () => {
       throw new Error('Not logged in');
     }
     try {
-      const { recipient, tokenId } = form;
-      const accountContract = Account__factory.connect(user.account, signer);
-      const { x, y } = await accountContract.publicKey();
-      const challengeHex = await accountContract.getChallenge();
-      const challenge = hexToUint8Array(challengeHex);
-
-      const credential = await getCredential(user.rawId, challenge);
-
-      const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
-
-      const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
-      const responseTypeLocation = clientDataJson.indexOf('"type":');
-      const challengeLocation = clientDataJson.indexOf('"challenge":');
-      const signature = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
-        [
-          [
-            new Uint8Array(credential.response.authenticatorData),
-            clientDataJson,
-            challengeLocation,
-            responseTypeLocation,
-            uint8ArrayToUint256(parsedSignature.r),
-            uint8ArrayToUint256(parsedSignature.s),
-          ],
-        ],
-      );
-      const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
-      await tx.wait();
-      setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
+      if (accountContract) {
+        console.log(accountContract.target);
+        const { recipient, tokenId } = form;
+        const signature = await signAndEncodeChallenge(user, accountContract);
+        const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
+        await tx.wait();
+        setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
+      }
     } catch (e) {
       console.error(e);
       setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
     }
-  };
-
-  const send = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const { currentTarget: form } = e;
-    const { recipient, amount } = Object.fromEntries(new FormData(form));
-    setSnackbarState({ severity: 'success', message: 'Amount sent successfully.', open: true });
-    console.log({ recipient, amount });
   };
 
   const transferFromFaucet = async () => {
@@ -201,7 +262,7 @@ const Wallet: React.FC = () => {
   };
 
   const logout = () => {
-    setUser(null);
+    setUser(undefined);
     window.location.href = '/';
   };
 
@@ -345,13 +406,21 @@ const Wallet: React.FC = () => {
               <Typography variant="h4" color="primary" align="center">
                 Send tokens
               </Typography>
-              <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send} onInvalid={(e) => e.preventDefault()}>
-                <TextField name="recipient" label="Recipient address" variant="standard" required />
-                <TextField name="amount" label="Amount" type="number" required />
-                <Button type="submit" disabled variant="contained">
-                  Send
-                </Button>
-              </form>
+              <SendCoinsForm
+                accountContract={accountContract}
+                coinContractAddress={coinContract.target}
+                user={user}
+                onSuccess={() => {
+                  setSnackbarState({ open: true, severity: 'success', message: 'Tokens sent successfully.' });
+                }}
+                onFailure={() =>
+                  setSnackbarState({
+                    open: true,
+                    severity: 'error',
+                    message: 'Something went wrong. Please check the console.',
+                  })
+                }
+              />
             </Box>
           </TabPanel>
         </Box>
