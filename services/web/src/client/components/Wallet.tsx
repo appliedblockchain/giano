@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Account__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import { Account__factory, ERC20__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
-import { ethers } from 'ethers';
+import { ContractEventPayload, ethers, ProviderEvent } from 'ethers';
 import { getCredential } from 'services/web/src/client/common/credentials';
 import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
@@ -17,6 +17,8 @@ type TransferFormProps = {
   recipient: string;
   tokenId: string;
 };
+
+const faucetDropAmount = ethers.parseEther('100');
 
 function TransferForm(props: { onSubmit: (f: TransferFormProps) => Promise<void> }) {
   const [transferForm, setTransferForm] = useState<TransferFormProps>({ recipient: '', tokenId: '' });
@@ -56,10 +58,31 @@ const Wallet: React.FC = () => {
   const [tokenId, setTokenId] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [snackbarState, setSnackbarState] = useState<CustomSnackbarProps | null>(null);
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
+  const [faucetRunning, setFaucetRunning] = useState(false);
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
+  const coinContract = useMemo(() => GenericERC20__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
+
+  useEffect(() => {
+    // Typechain-generated event listener is not working
+    const ethersContract = new ethers.Contract(coinContract.target, coinContract.interface, provider);
+    if (walletBalance === null && user) {
+      void coinContract.balanceOf(user.account).then((b) => setWalletBalance(ethers.formatEther(b)));
+    }
+    const listener = async (from, to) => {
+      if (user && [from, to].map((a) => a.toLowerCase()).includes(user.account.toLowerCase())) {
+        const balance = await coinContract.balanceOf(user.account);
+        setWalletBalance(ethers.formatEther(balance));
+      }
+    };
+    void ethersContract.on('Transfer', listener);
+    return () => {
+      void ethersContract.off('Transfer', listener);
+    };
+  }, [coinContract, user]);
 
   const handleTabChange = useCallback((_event: React.SyntheticEvent, newTab: number) => {
     setTab(newTab);
@@ -161,6 +184,18 @@ const Wallet: React.FC = () => {
     console.log({ recipient, amount });
   };
 
+  const transferFromFaucet = async () => {
+    if (user) {
+      setFaucetRunning(true);
+      try {
+        const tx = await coinContract.transfer(user.account, faucetDropAmount);
+        await tx.wait();
+      } finally {
+        setFaucetRunning(false);
+      }
+    }
+  };
+
   const copyTokenId = async () => {
     await window.navigator.clipboard.writeText(tokenId);
   };
@@ -206,13 +241,14 @@ const Wallet: React.FC = () => {
         <Card sx={{ backgroundColor: 'grey.100', width: '100%', textAlign: 'center', p: '16 40 16 40' }}>
           <Typography color="primary">Available</Typography>
           <Typography variant="h2" color="primary">
-            $21.67
+            ${walletBalance}
           </Typography>
         </Card>
         <Box display="flex" flexDirection="column" justifyContent="space-between" height="60%" width="100%">
           <Tabs value={tab} onChange={handleTabChange} sx={{ width: '100%' }} centered>
             <Tab label="Mint" />
             <Tab label="Transfer" />
+            <Tab label="Faucet" />
             <Tab label="Send" />
           </Tabs>
           <TabPanel index={0} tab={tab}>
@@ -277,6 +313,34 @@ const Wallet: React.FC = () => {
             </Box>
           </TabPanel>
           <TabPanel index={2} tab={tab}>
+            <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
+              <Typography variant="h4" color="primary" align="center">
+                Faucet
+              </Typography>
+              <Box
+                sx={{
+                  backgroundColor: (theme) => theme.palette.grey['200'],
+                }}
+                borderRadius={(theme) => `${theme.shape.borderRadius}px`}
+                display="flex"
+                justifyContent="center"
+              >
+                <Button
+                  disabled={faucetRunning}
+                  onClick={transferFromFaucet}
+                  variant="contained"
+                  sx={{
+                    '&.Mui-disabled': { backgroundColor: 'primary.dark' },
+                    m: 2,
+                    width: '100%',
+                  }}
+                >
+                  {faucetRunning ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Get $100'}
+                </Button>
+              </Box>
+            </Box>
+          </TabPanel>
+          <TabPanel index={3} tab={tab}>
             <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
               <Typography variant="h4" color="primary" align="center">
                 Send tokens
