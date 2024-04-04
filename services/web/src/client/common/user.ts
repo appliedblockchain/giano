@@ -21,7 +21,6 @@ export const getSessionUser = (): User | null => {
   return userJson
     ? JSON.parse(userJson, (k, v) => {
         if (k === 'rawId') {
-          console.log({ v });
           return new Uint8Array(v);
         }
         return v;

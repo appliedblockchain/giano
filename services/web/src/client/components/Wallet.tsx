@@ -113,47 +113,45 @@ const Wallet: React.FC = () => {
     }
   };
 
-  const transfer = useCallback(
-    async (form: TransferFormProps) => {
-      if (!user) {
-        throw new Error('Not logged in');
-      }
-      try {
-        const { recipient, tokenId } = form;
-        const accountContract = Account__factory.connect(user.account, signer);
-        const challengeHex = await accountContract.getChallenge();
-        const challenge = hexToUint8Array(challengeHex);
+  const transfer = async (form: TransferFormProps) => {
+    if (!user) {
+      throw new Error('Not logged in');
+    }
+    try {
+      const { recipient, tokenId } = form;
+      const accountContract = Account__factory.connect(user.account, signer);
+      const { x, y } = await accountContract.publicKey();
+      const challengeHex = await accountContract.getChallenge();
+      const challenge = hexToUint8Array(challengeHex);
 
-        const credential = await getCredential(user.rawId, challenge);
+      const credential = await getCredential(user.rawId, challenge);
 
-        const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
+      const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
 
-        const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
-        const responseTypeLocation = clientDataJson.indexOf('"type":');
-        const challengeLocation = clientDataJson.indexOf('"challenge":');
-        const signature = ethers.AbiCoder.defaultAbiCoder().encode(
-          ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
+      const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
+      const responseTypeLocation = clientDataJson.indexOf('"type":');
+      const challengeLocation = clientDataJson.indexOf('"challenge":');
+      const signature = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
+        [
           [
-            [
-              new Uint8Array(credential.response.authenticatorData),
-              clientDataJson,
-              challengeLocation,
-              responseTypeLocation,
-              uint8ArrayToUint256(parsedSignature.r),
-              uint8ArrayToUint256(parsedSignature.s),
-            ],
+            new Uint8Array(credential.response.authenticatorData),
+            clientDataJson,
+            challengeLocation,
+            responseTypeLocation,
+            uint8ArrayToUint256(parsedSignature.r),
+            uint8ArrayToUint256(parsedSignature.s),
           ],
-        );
-        const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
-        await tx.wait();
-        setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
-      } catch (e) {
-        console.error(e);
-        setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
-      }
-    },
-    [user, signer, tokenContract.target],
-  );
+        ],
+      );
+      const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
+      await tx.wait();
+      setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
+    } catch (e) {
+      console.error(e);
+      setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
+    }
+  };
 
   const send = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

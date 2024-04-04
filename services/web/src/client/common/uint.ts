@@ -1,6 +1,5 @@
 export const uint8ArrayToUint256 = (array: ArrayBuffer) => {
-  const bytes = new Uint8Array(array.byteLength <= 32 ? array : array.slice(0, 32));
-  const hex = Array.from(bytes)
+  const hex = Array.from(new Uint8Array(array))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
   return BigInt('0x' + hex);

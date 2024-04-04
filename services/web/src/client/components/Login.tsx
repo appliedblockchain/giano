@@ -74,7 +74,7 @@ const Login: React.FC = () => {
       const authData = parseAuthenticatorData(attestation.authData);
       const publicKey = cborDecode(authData.credentialPublicKey?.buffer as ArrayBuffer);
       const [x, y] = [publicKey.get(-2), publicKey.get(-3)];
-      const userId = uint8ArrayToUint256(credential.rawId);
+      const userId = uint8ArrayToUint256(credential.rawId.slice(-32));
       await (await accountFactory.createUser(userId, { x, y })).wait();
       setSnackbarState({ severity: 'success', message: 'Passkey account created successfully.', open: true });
     } catch (e) {
@@ -93,7 +93,7 @@ const Login: React.FC = () => {
     setLoggingIn(true);
     try {
       const credential = await getCredential();
-      const userId = uint8ArrayToUint256(credential.rawId);
+      const userId = uint8ArrayToUint256(credential.rawId.slice(-32));
       if (credential) {
         const user = await accountFactory.getUser(userId);
         if (user.account !== ethers.ZeroAddress) {
