@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Account, GenericERC20, GenericERC721 } from '@giano/contracts/typechain-types';
+import type { Account, GenericERC721 } from '@giano/contracts/typechain-types';
 import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
@@ -15,38 +15,47 @@ import type { CustomSnackbarProps } from 'services/web/src/client/components/Cus
 import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
 import { Copy } from '../icons';
 
+type TransferFormValues = {
+  recipient: string;
+  tokenId: string;
+};
+
 type TransferFormProps = {
   accountContract?: Account;
   tokenContract: GenericERC721;
   user?: User;
+  formValues: TransferFormValues;
   onSuccess: () => void;
   onFailure: () => void;
+  onChange: (event: React.SyntheticEvent) => void;
 };
 
 const faucetDropAmount = ethers.parseEther('100');
 
-const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContract }: TransferFormProps) => {
-  type FormValues = {
-    recipient: string;
-    tokenId: string;
-  };
-  const [transferForm, setTransferForm] = useState<FormValues>({ recipient: '', tokenId: '' });
-  const [transferring, setTransferring] = useState(false);
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setTransferForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+type TabPanelProps = {
+  children?: React.ReactNode;
+  index: number;
+  tab: number;
+  [other: string]: any;
+};
 
+const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, ...other }: TabPanelProps) => {
+  return (
+    <div role="tabpanel" style={{ width: '100%', height: '100%' }} hidden={tab !== index} id={`tab-${index}`} {...other}>
+      {tab === index && children}
+    </div>
+  );
+};
+
+const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContract, formValues, onChange }: TransferFormProps) => {
+  const [transferring, setTransferring] = useState(false);
   const transfer = async (e) => {
     e.preventDefault();
     setTransferring(true);
     try {
       if (accountContract && user) {
         console.log(accountContract.target);
-        const { recipient, tokenId } = transferForm;
+        const { recipient, tokenId } = formValues;
         const signature = await signAndEncodeChallenge(user, accountContract);
         const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
         await tx.wait();
@@ -61,8 +70,16 @@ const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContra
   };
   return (
     <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={transfer}>
-      <TextField name="recipient" value={transferForm.recipient} onChange={handleChange} label="Recipient address" variant="standard" required />
-      <TextField name="tokenId" value={transferForm.tokenId} label="Token ID" type="number" onChange={handleChange} required />
+      <TextField
+        name="recipient"
+        value={formValues.recipient}
+        onChange={onChange}
+        label="Recipient address"
+        variant="standard"
+        required
+        disabled={transferring}
+      />
+      <TextField name="tokenId" value={formValues.tokenId} label="Token ID" type="number" onChange={onChange} required disabled={transferring} />
       <Button type="submit" disabled={transferring} variant="contained">
         {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Transfer token'}
       </Button>
@@ -70,21 +87,22 @@ const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContra
   );
 };
 
+type SendCoinsFormValues = {
+  recipient: string;
+  amount: string;
+};
+
 type SendCoinsFormProps = {
   accountContract?: Account;
   user?: User;
   coinContractAddress: string | Addressable;
+  values: SendCoinsFormValues;
   onSuccess: () => void;
   onFailure: () => void;
+  onChange: (e: React.SyntheticEvent) => void;
 };
 
-const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, onSuccess, onFailure, coinContractAddress }) => {
-  type FormValues = {
-    recipient: string;
-    amount: string;
-  };
-
-  const [values, setValues] = useState<FormValues>({ recipient: '', amount: '' });
+const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, onSuccess, onFailure, coinContractAddress, values, onChange }) => {
   const [sending, setSending] = useState(false);
 
   const send = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -105,27 +123,18 @@ const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, on
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setValues((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
   return (
     <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send}>
-      <TextField value={values.recipient} onChange={handleChange} name="recipient" label="Recipient address" variant="standard" required />
-      <TextField value={values.amount} onChange={handleChange} name="amount" label="Amount" type="number" required />
+      <TextField value={values.recipient} onChange={onChange} name="recipient" label="Recipient address" variant="standard" required disabled={sending} />
+      <TextField value={values.amount} onChange={onChange} name="amount" label="Amount" type="number" required disabled={sending} />
       <Button type="submit" variant="contained" disabled={sending}>
-        Send
+        {sending ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Send'}
       </Button>
     </form>
   );
 };
 
 async function signAndEncodeChallenge(user: User, accountContract: Account) {
-  const { x, y } = await accountContract.publicKey();
   const challengeHex = await accountContract.getChallenge();
   const challenge = hexToUint8Array(challengeHex);
 
@@ -159,12 +168,22 @@ const Wallet: React.FC = () => {
   const [snackbarState, setSnackbarState] = useState<CustomSnackbarProps | null>(null);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [faucetRunning, setFaucetRunning] = useState(false);
+  const [transferFormValues, setTransferFormValues] = useState<TransferFormValues>({ recipient: '', tokenId: '' });
+  const [sendCoinsFormValues, setSendCoinsFormValues] = useState<SendCoinsFormValues>({ recipient: '', amount: '' });
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
   const coinContract = useMemo(() => GenericERC20__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
+
+  const handleFormChange = (setter: React.SetStateAction<any>) => (event) => {
+    const { name, value } = event.target;
+    setter((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
 
   const updateBalance = async () => {
     if (user) {
@@ -199,28 +218,16 @@ const Wallet: React.FC = () => {
   };
 
   useEffect(() => {
+    console.log('mounting wallet');
+    const cleanup = () => console.log('unmounting wallet');
     const user = getSessionUser();
     if (!user) {
       window.location.replace('/');
-      return;
+      return cleanup;
     }
     setUser(user);
+    return cleanup;
   }, []);
-
-  type TabPanelProps = {
-    children?: React.ReactNode;
-    index: number;
-    tab: number;
-    [other: string]: any;
-  };
-
-  const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, ...other }: TabPanelProps) => {
-    return (
-      <div role="tabpanel" style={{ width: '100%', height: '100%' }} hidden={tab !== index} id={`tab-${index}`} {...other}>
-        {tab === index && children}
-      </div>
-    );
-  };
 
   const mint = async (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -371,6 +378,8 @@ const Wallet: React.FC = () => {
                 accountContract={accountContract}
                 tokenContract={tokenContract}
                 user={user}
+                formValues={transferFormValues}
+                onChange={handleFormChange(setTransferFormValues)}
                 onSuccess={() =>
                   setSnackbarState({
                     open: true,
@@ -425,6 +434,8 @@ const Wallet: React.FC = () => {
                 accountContract={accountContract}
                 coinContractAddress={coinContract.target}
                 user={user}
+                values={sendCoinsFormValues}
+                onChange={handleFormChange(setSendCoinsFormValues)}
                 onSuccess={() => {
                   setSnackbarState({ open: true, severity: 'success', message: 'Tokens sent successfully.' });
                 }}

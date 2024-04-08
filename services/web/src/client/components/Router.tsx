@@ -9,9 +9,9 @@ export default function Router() {
     <BrowserRouter basename={'/'}>
       <React.Suspense>
         <Routes>
-          <Route path={'/'} element={<Navigate to={'/login'} />} />
-          <Route path={'/login'} element={<Login />} />
-          <Route path={'/wallet'} element={<Wallet />} />
+          <Route path="/" element={<Navigate to="/login" />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/wallet" element={<Wallet />} />
         </Routes>
       </React.Suspense>
     </BrowserRouter>
