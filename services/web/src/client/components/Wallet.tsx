@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Account } from '@giano/contracts/typechain-types';
+import type { Account, GenericERC20, GenericERC721 } from '@giano/contracts/typechain-types';
 import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
@@ -16,14 +16,21 @@ import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
 import { Copy } from '../icons';
 
 type TransferFormProps = {
-  recipient: string;
-  tokenId: string;
+  accountContract?: Account;
+  tokenContract: GenericERC721;
+  user?: User;
+  onSuccess: () => void;
+  onFailure: () => void;
 };
 
 const faucetDropAmount = ethers.parseEther('100');
 
-function TransferForm(props: { onSubmit: (f: TransferFormProps) => Promise<void> }) {
-  const [transferForm, setTransferForm] = useState<TransferFormProps>({ recipient: '', tokenId: '' });
+const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContract }: TransferFormProps) => {
+  type FormValues = {
+    recipient: string;
+    tokenId: string;
+  };
+  const [transferForm, setTransferForm] = useState<FormValues>({ recipient: '', tokenId: '' });
   const [transferring, setTransferring] = useState(false);
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -32,19 +39,28 @@ function TransferForm(props: { onSubmit: (f: TransferFormProps) => Promise<void>
       [name]: value,
     }));
   };
+
+  const transfer = async (e) => {
+    e.preventDefault();
+    setTransferring(true);
+    try {
+      if (accountContract && user) {
+        console.log(accountContract.target);
+        const { recipient, tokenId } = transferForm;
+        const signature = await signAndEncodeChallenge(user, accountContract);
+        const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
+        await tx.wait();
+        onSuccess();
+      }
+    } catch (e) {
+      console.error(e);
+      onFailure();
+    } finally {
+      setTransferring(false);
+    }
+  };
   return (
-    <form
-      style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setTransferring(true);
-        try {
-          await props.onSubmit(transferForm);
-        } finally {
-          setTransferring(false);
-        }
-      }}
-    >
+    <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={transfer}>
       <TextField name="recipient" value={transferForm.recipient} onChange={handleChange} label="Recipient address" variant="standard" required />
       <TextField name="tokenId" value={transferForm.tokenId} label="Token ID" type="number" onChange={handleChange} required />
       <Button type="submit" disabled={transferring} variant="contained">
@@ -52,7 +68,7 @@ function TransferForm(props: { onSubmit: (f: TransferFormProps) => Promise<void>
       </Button>
     </form>
   );
-}
+};
 
 type SendCoinsFormProps = {
   accountContract?: Account;
@@ -226,25 +242,6 @@ const Wallet: React.FC = () => {
     }
   };
 
-  const transfer = async (form: TransferFormProps) => {
-    if (!user) {
-      throw new Error('Not logged in');
-    }
-    try {
-      if (accountContract) {
-        console.log(accountContract.target);
-        const { recipient, tokenId } = form;
-        const signature = await signAndEncodeChallenge(user, accountContract);
-        const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
-        await tx.wait();
-        setSnackbarState({ severity: 'success', message: 'Token transferred successfully.', open: true });
-      }
-    } catch (e) {
-      console.error(e);
-      setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console.', open: true });
-    }
-  };
-
   const transferFromFaucet = async () => {
     if (user) {
       setFaucetRunning(true);
@@ -370,7 +367,25 @@ const Wallet: React.FC = () => {
               <Typography variant="h4" color="primary" align="center">
                 Transfer token
               </Typography>
-              <TransferForm onSubmit={transfer} />
+              <TransferForm
+                accountContract={accountContract}
+                tokenContract={tokenContract}
+                user={user}
+                onSuccess={() =>
+                  setSnackbarState({
+                    open: true,
+                    message: 'Token transferred sucessfully.',
+                    severity: 'success',
+                  })
+                }
+                onFailure={() =>
+                  setSnackbarState({
+                    open: true,
+                    message: 'Something went wrong. Please check the console.',
+                    severity: 'error',
+                  })
+                }
+              />
             </Box>
           </TabPanel>
           <TabPanel index={2} tab={tab}>
