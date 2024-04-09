@@ -20,7 +20,7 @@ Key parts:
 yarn install
 ```
 
-2. Start GETH node and deploy contracts:
+2. Start Hardhat node and deploy contracts:
 
 ```sh
 yarn hh:node
