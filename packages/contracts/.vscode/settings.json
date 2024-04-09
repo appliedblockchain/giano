@@ -1,4 +1,0 @@
-{
-	"solidity.packageDefaultDependenciesDirectory": "../../node_modules",
-	"solidity.compileUsingRemoteVersion": "v0.8.23+commit.f704f362",
-}
