@@ -88,9 +88,7 @@ const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContra
         disabled={transferring}
       />
       <TextField name="tokenId" value={formValues.tokenId} label="Token ID" type="number" onChange={onChange} required disabled={transferring} />
-      <Button type="submit" disabled={transferring} variant="contained">
-        {transferring ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Transfer token'}
-      </Button>
+      <SubmitButtonWithProgress running={transferring} label="Transfer token" />
     </form>
   );
 };
@@ -135,10 +133,31 @@ const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, on
     <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send}>
       <TextField value={values.recipient} onChange={onChange} name="recipient" label="Recipient address" variant="standard" required disabled={sending} />
       <TextField value={values.amount} onChange={onChange} name="amount" label="Amount" type="number" required disabled={sending} />
-      <Button type="submit" variant="contained" disabled={sending}>
-        {sending ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Send'}
-      </Button>
+      <SubmitButtonWithProgress label="Send" running={sending} />
     </form>
+  );
+};
+
+type SubmitButtonWithProgressProps = {
+  label: string;
+  running: boolean;
+  sx?: any;
+};
+
+const SubmitButtonWithProgress: React.FC<SubmitButtonWithProgressProps> = ({ running, label, sx }) => {
+  return (
+    <Button
+      type="submit"
+      disabled={running}
+      variant="contained"
+      sx={{
+        '&.Mui-disabled': { backgroundColor: 'primary.dark' },
+        width: '100%',
+        ...sx,
+      }}
+    >
+      {running ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : label}
+    </Button>
   );
 };
 
@@ -257,7 +276,8 @@ const Wallet: React.FC = () => {
     }
   };
 
-  const transferFromFaucet = async () => {
+  const transferFromFaucet = async (e) => {
+    e.preventDefault();
     if (user) {
       setFaucetRunning(true);
       try {
@@ -325,52 +345,43 @@ const Wallet: React.FC = () => {
             <Tab label="Send" />
           </Tabs>
           <TabPanel index={0} tab={tab} title="Mint">
-            <Box
-              sx={{
-                backgroundColor: (theme) => theme.palette.grey['200'],
-              }}
-              borderRadius={(theme) => `${theme.shape.borderRadius}px`}
-              display="flex"
-              justifyContent="center"
-            >
-              <Button
-                disabled={minting}
-                onClick={mint}
-                variant="contained"
+            <form onSubmit={mint}>
+              <Box
                 sx={{
-                  '&.Mui-disabled': { backgroundColor: 'primary.dark' },
-                  m: 2,
-                  width: '100%',
+                  backgroundColor: (theme) => theme.palette.grey['200'],
                 }}
+                borderRadius={(theme) => `${theme.shape.borderRadius}px`}
+                display="flex"
+                justifyContent="center"
               >
-                {minting ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Mint'}
-              </Button>
-              {tokenId && (
-                <Card
-                  sx={{
-                    backgroundColor: (theme) => theme.palette.grey['100'],
-                    m: 2,
-                    ml: 0,
-                    py: 0,
-                    px: 1,
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <Typography color="text.secondary">
-                    Token ID:{' '}
-                    <Typography component="span" color="text.primary" fontWeight="bold">
-                      {tokenId}
+                <SubmitButtonWithProgress label="Mint" running={minting} sx={{ m: 2 }} />
+                {tokenId && (
+                  <Card
+                    sx={{
+                      backgroundColor: (theme) => theme.palette.grey['100'],
+                      m: 2,
+                      ml: 0,
+                      py: 0,
+                      px: 1,
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Typography color="text.secondary">
+                      Token ID:{' '}
+                      <Typography component="span" color="text.primary" fontWeight="bold">
+                        {tokenId}
+                      </Typography>
                     </Typography>
-                  </Typography>
-                  <Button sx={{ p: 0, m: 0, minWidth: 0 }} onClick={copyTokenId}>
-                    <Copy sx={{ color: 'primary.main' }} />
-                  </Button>
-                </Card>
-              )}
-            </Box>
+                    <Button sx={{ p: 0, m: 0, minWidth: 0 }} onClick={copyTokenId}>
+                      <Copy sx={{ color: 'primary.main' }} />
+                    </Button>
+                  </Card>
+                )}
+              </Box>
+            </form>
           </TabPanel>
           <TabPanel index={1} tab={tab} title="Transfer token">
             <TransferForm
@@ -396,27 +407,18 @@ const Wallet: React.FC = () => {
             />
           </TabPanel>
           <TabPanel index={2} tab={tab} title="Faucet">
-            <Box
-              sx={{
-                backgroundColor: (theme) => theme.palette.grey['200'],
-              }}
-              borderRadius={(theme) => `${theme.shape.borderRadius}px`}
-              display="flex"
-              justifyContent="center"
-            >
-              <Button
-                disabled={faucetRunning}
-                onClick={transferFromFaucet}
-                variant="contained"
+            <form onSubmit={transferFromFaucet}>
+              <Box
                 sx={{
-                  '&.Mui-disabled': { backgroundColor: 'primary.dark' },
-                  m: 2,
-                  width: '100%',
+                  backgroundColor: (theme) => theme.palette.grey['200'],
                 }}
+                borderRadius={(theme) => `${theme.shape.borderRadius}px`}
+                display="flex"
+                justifyContent="center"
               >
-                {faucetRunning ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Get $100'}
-              </Button>
-            </Box>
+                <SubmitButtonWithProgress label="Get $100" running={faucetRunning} sx={{ m: 2 }} />
+              </Box>
+            </form>
           </TabPanel>
           <TabPanel index={3} tab={tab} title="Send tokens">
             <SendCoinsForm
@@ -439,7 +441,7 @@ const Wallet: React.FC = () => {
           </TabPanel>
         </Box>
       </Card>
-      <CustomSnackbar {...snackbarState} onClose={onSnackbarClose} />
+      <CustomSnackbar {...snackbarState} onClose={onSnackbarClose} />;
     </Container>
   );
 };
