@@ -5,13 +5,13 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "eslint": "TIMING=1 ESLINT_XS_TW=./tailwind.config.mts eslint --ignore-path ../../.gitignore --fix",
-    "test": "vitest run",
-    "start:dev": "NODE_ENV=development tsx --no-warnings -r envk --watch src/server/index.ts",
-    "start": "NODE_ENV=${NODE_ENV:?} tsx --no-warnings -r envk src/server/index.ts",
-    "build:dev": "rm -rf dist && vite",
-    "build": "rm -rf dist && vite build",
-    "serve": "serve -s dist -p 80 --config ../serve.json"
+    "web:eslint": "TIMING=1 ESLINT_XS_TW=./tailwind.config.mts eslint --ignore-path ../../.gitignore --fix",
+    "web:test": "vitest run",
+    "web:start:dev": "NODE_ENV=development tsx --no-warnings -r envk --watch src/server/index.ts",
+    "web:start": "NODE_ENV=${NODE_ENV:?} tsx --no-warnings -r envk src/server/index.ts",
+    "web:build:dev": "rm -rf dist && vite",
+    "web:build": "rm -rf dist && vite build",
+    "web:serve": "serve -s dist -p 80 --config ../serve.json"
   },
   "dependencies": {
     "@cfworker/base64url": "^1.12.5",
