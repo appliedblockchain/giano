@@ -4,11 +4,11 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "test": "NODE_ENV=test REPORT_GAS=true hardhat test",
-    "node": "hardhat node",
-    "deploy": "hardhat run scripts/deploy.ts",
-    "compile": "hardhat compile",
-    "clean": "hardhat clean"
+    "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
+    "hh:node": "hardhat node",
+    "hh:deploy": "hardhat run scripts/deploy.ts",
+    "hh:compile": "hardhat compile",
+    "hh:clean": "hardhat clean"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
