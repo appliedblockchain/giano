@@ -34,15 +34,23 @@ const faucetDropAmount = ethers.parseEther('100');
 
 type TabPanelProps = {
   children?: React.ReactNode;
+  title: string;
   index: number;
   tab: number;
   [other: string]: any;
 };
 
-const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, ...other }: TabPanelProps) => {
+const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, title, ...other }: TabPanelProps) => {
   return (
-    <div role="tabpanel" style={{ width: '100%', height: '100%' }} hidden={tab !== index} id={`tab-${index}`} {...other}>
-      {tab === index && children}
+    <div role="tabpanel" style={{ width: '100%', height: '100%', paddingTop: '1em' }} hidden={tab !== index} id={`tab-${index}`} {...other}>
+      <Box>
+        <Typography variant="h4" color="primary" align="center">
+          {title}
+        </Typography>
+      </Box>
+      <Box display="flex" flexDirection="column" justifyContent="space-around" height="100%">
+        {tab === index && children}
+      </Box>
     </div>
   );
 };
@@ -316,138 +324,118 @@ const Wallet: React.FC = () => {
             <Tab label="Faucet" />
             <Tab label="Send" />
           </Tabs>
-          <TabPanel index={0} tab={tab}>
-            <Box display="flex" flexDirection="column" justifyContent="space-around" height="100%">
-              <Typography variant="h4" color="primary" align="center">
-                Mint
-              </Typography>
-              <Box
+          <TabPanel index={0} tab={tab} title="Mint">
+            <Box
+              sx={{
+                backgroundColor: (theme) => theme.palette.grey['200'],
+              }}
+              borderRadius={(theme) => `${theme.shape.borderRadius}px`}
+              display="flex"
+              justifyContent="center"
+            >
+              <Button
+                disabled={minting}
+                onClick={mint}
+                variant="contained"
                 sx={{
-                  backgroundColor: (theme) => theme.palette.grey['200'],
+                  '&.Mui-disabled': { backgroundColor: 'primary.dark' },
+                  m: 2,
+                  width: '100%',
                 }}
-                borderRadius={(theme) => `${theme.shape.borderRadius}px`}
-                display="flex"
-                justifyContent="center"
               >
-                <Button
-                  disabled={minting}
-                  onClick={mint}
-                  variant="contained"
+                {minting ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Mint'}
+              </Button>
+              {tokenId && (
+                <Card
                   sx={{
-                    '&.Mui-disabled': { backgroundColor: 'primary.dark' },
+                    backgroundColor: (theme) => theme.palette.grey['100'],
                     m: 2,
+                    ml: 0,
+                    py: 0,
+                    px: 1,
                     width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  {minting ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Mint'}
-                </Button>
-                {tokenId && (
-                  <Card
-                    sx={{
-                      backgroundColor: (theme) => theme.palette.grey['100'],
-                      m: 2,
-                      ml: 0,
-                      py: 0,
-                      px: 1,
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <Typography color="text.secondary">
-                      Token ID:{' '}
-                      <Typography component="span" color="text.primary" fontWeight="bold">
-                        {tokenId}
-                      </Typography>
+                  <Typography color="text.secondary">
+                    Token ID:{' '}
+                    <Typography component="span" color="text.primary" fontWeight="bold">
+                      {tokenId}
                     </Typography>
-                    <Button sx={{ p: 0, m: 0, minWidth: 0 }} onClick={copyTokenId}>
-                      <Copy sx={{ color: 'primary.main' }} />
-                    </Button>
-                  </Card>
-                )}
-              </Box>
+                  </Typography>
+                  <Button sx={{ p: 0, m: 0, minWidth: 0 }} onClick={copyTokenId}>
+                    <Copy sx={{ color: 'primary.main' }} />
+                  </Button>
+                </Card>
+              )}
             </Box>
           </TabPanel>
-          <TabPanel index={1} tab={tab}>
-            <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
-              <Typography variant="h4" color="primary" align="center">
-                Transfer token
-              </Typography>
-              <TransferForm
-                accountContract={accountContract}
-                tokenContract={tokenContract}
-                user={user}
-                formValues={transferFormValues}
-                onChange={handleFormChange(setTransferFormValues)}
-                onSuccess={() =>
-                  setSnackbarState({
-                    open: true,
-                    message: 'Token transferred sucessfully.',
-                    severity: 'success',
-                  })
-                }
-                onFailure={() =>
-                  setSnackbarState({
-                    open: true,
-                    message: 'Something went wrong. Please check the console.',
-                    severity: 'error',
-                  })
-                }
-              />
-            </Box>
+          <TabPanel index={1} tab={tab} title="Transfer token">
+            <TransferForm
+              accountContract={accountContract}
+              tokenContract={tokenContract}
+              user={user}
+              formValues={transferFormValues}
+              onChange={handleFormChange(setTransferFormValues)}
+              onSuccess={() =>
+                setSnackbarState({
+                  open: true,
+                  message: 'Token transferred successfully.',
+                  severity: 'success',
+                })
+              }
+              onFailure={() =>
+                setSnackbarState({
+                  open: true,
+                  message: 'Something went wrong. Please check the console.',
+                  severity: 'error',
+                })
+              }
+            />
           </TabPanel>
-          <TabPanel index={2} tab={tab}>
-            <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
-              <Typography variant="h4" color="primary" align="center">
-                Faucet
-              </Typography>
-              <Box
+          <TabPanel index={2} tab={tab} title="Faucet">
+            <Box
+              sx={{
+                backgroundColor: (theme) => theme.palette.grey['200'],
+              }}
+              borderRadius={(theme) => `${theme.shape.borderRadius}px`}
+              display="flex"
+              justifyContent="center"
+            >
+              <Button
+                disabled={faucetRunning}
+                onClick={transferFromFaucet}
+                variant="contained"
                 sx={{
-                  backgroundColor: (theme) => theme.palette.grey['200'],
+                  '&.Mui-disabled': { backgroundColor: 'primary.dark' },
+                  m: 2,
+                  width: '100%',
                 }}
-                borderRadius={(theme) => `${theme.shape.borderRadius}px`}
-                display="flex"
-                justifyContent="center"
               >
-                <Button
-                  disabled={faucetRunning}
-                  onClick={transferFromFaucet}
-                  variant="contained"
-                  sx={{
-                    '&.Mui-disabled': { backgroundColor: 'primary.dark' },
-                    m: 2,
-                    width: '100%',
-                  }}
-                >
-                  {faucetRunning ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Get $100'}
-                </Button>
-              </Box>
+                {faucetRunning ? <CircularProgress size="18px" sx={{ margin: '5px', color: 'white' }} /> : 'Get $100'}
+              </Button>
             </Box>
           </TabPanel>
-          <TabPanel index={3} tab={tab}>
-            <Box display="flex" flexDirection="column" justifyContent="space-between" height="100%">
-              <Typography variant="h4" color="primary" align="center">
-                Send tokens
-              </Typography>
-              <SendCoinsForm
-                accountContract={accountContract}
-                coinContractAddress={coinContract.target}
-                user={user}
-                values={sendCoinsFormValues}
-                onChange={handleFormChange(setSendCoinsFormValues)}
-                onSuccess={() => {
-                  setSnackbarState({ open: true, severity: 'success', message: 'Tokens sent successfully.' });
-                }}
-                onFailure={() =>
-                  setSnackbarState({
-                    open: true,
-                    severity: 'error',
-                    message: 'Something went wrong. Please check the console.',
-                  })
-                }
-              />
-            </Box>
+          <TabPanel index={3} tab={tab} title="Send tokens">
+            <SendCoinsForm
+              accountContract={accountContract}
+              coinContractAddress={coinContract.target}
+              user={user}
+              values={sendCoinsFormValues}
+              onChange={handleFormChange(setSendCoinsFormValues)}
+              onSuccess={() => {
+                setSnackbarState({ open: true, severity: 'success', message: 'Tokens sent successfully.' });
+              }}
+              onFailure={() =>
+                setSnackbarState({
+                  open: true,
+                  severity: 'error',
+                  message: 'Something went wrong. Please check the console.',
+                })
+              }
+            />
           </TabPanel>
         </Box>
       </Card>
