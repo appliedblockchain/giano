@@ -293,6 +293,13 @@ const Wallet: React.FC = () => {
     await window.navigator.clipboard.writeText(tokenId);
   };
 
+  const writeAccountToClipboard = async () => {
+    if (user?.account) {
+      await window.navigator.clipboard.writeText(user.account);
+      setSnackbarState({ open: true, severity: 'success', message: 'Account address copied to clipboard' });
+    }
+  };
+
   const logout = () => {
     setUser(undefined);
     window.location.href = '/';
@@ -322,8 +329,10 @@ const Wallet: React.FC = () => {
         <Box display="flex" justifyContent="space-between" width="100%">
           <img alt="Giano logo" src="/logo_horizontal.svg" />
           <FormControl sx={{ width: '50%' }}>
-            <Select labelId="account-select-label" value="1">
-              <MenuItem value="1">{user?.account}</MenuItem>
+            <Select labelId="account-select-label" value="account">
+              <MenuItem onClick={writeAccountToClipboard} value="account">
+                {user?.account}
+              </MenuItem>
               <MenuItem onClick={logout}>
                 <Logout />
                 Log Out
