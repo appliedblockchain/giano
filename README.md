@@ -39,3 +39,18 @@ Application available at <http://localhost:3000>.
 ```sh
 yarn hh:test
 ```
+
+## Setting up Blockscout (block explorer)
+If you want, you can use `docker compose` to start up a local Blockscout instance to explore the transactions and 
+contracts deployed on the local network. Start the Hardhat node at the default port and then run these commands to clone the 
+Blockscout repo and start up a local instance:
+
+```sh
+# run these commands OUTSIDE of the project's structure
+git clone https://github.com/blockscout/blockscout/ && \
+cd blockscout/docker-compose && \
+docker compose -f hardhat-network.yml up -d 
+```
+
+You can then access the Blockscout instance at `http://127.0.0.1/`
+
