@@ -6,9 +6,5 @@ node_modules/
 stats.html
 latest.sql
 .DS_Store
-cache
-artifacts
-typechain-types
-db.sqlite
 .yarn/install-state.gz
 .vite/

@@ -1,7 +1,7 @@
-import { network } from 'hardhat';
 import type { HardhatUserConfig } from 'hardhat/config';
 import { extendEnvironment } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
+import '@nomicfoundation/hardhat-ignition-ethers';
 import 'hardhat-gas-reporter';
 
 /** @type import('hardhat/config').HardhatUserConfig */
