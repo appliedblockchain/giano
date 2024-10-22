@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Account, GenericERC721 } from '@giano/contracts/typechain-types';
-import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import { Account__factory, ERC20__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
@@ -60,12 +60,17 @@ const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContra
   const transfer = async (e) => {
     e.preventDefault();
     setTransferring(true);
+    const tokenIface = ethers.Interface.from(GenericERC721__factory.abi);
     try {
       if (accountContract && user) {
-        console.log(accountContract.target);
         const { recipient, tokenId } = formValues;
         const signature = await signAndEncodeChallenge(user, accountContract);
-        const tx = await accountContract.transferToken(tokenContract.target, recipient, tokenId, signature);
+        const tx = await accountContract.execute({
+          target: tokenContract.target,
+          value: 0n,
+          data: tokenIface.encodeFunctionData('transferFrom', [user.account, recipient, tokenId]),
+          signature,
+        });
         await tx.wait();
         onSuccess();
       }
@@ -113,11 +118,17 @@ const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, on
 
   const send = async (e: React.FormEvent<HTMLFormElement>) => {
     try {
+      const erc20Iface = ethers.Interface.from(GenericERC20__factory.abi);
       if (accountContract && user) {
         e.preventDefault();
         setSending(true);
         const signature = await signAndEncodeChallenge(user, accountContract);
-        const tx = await accountContract.transferERC20(coinContractAddress, values.recipient, ethers.parseEther(values.amount), signature);
+        const tx = await accountContract.execute({
+          target: coinContractAddress,
+          value: 0n,
+          data: erc20Iface.encodeFunctionData('transfer', [values.recipient, ethers.parseEther(values.amount)]),
+          signature,
+        });
         await tx.wait();
         onSuccess();
       }
