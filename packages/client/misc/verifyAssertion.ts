@@ -1,10 +1,7 @@
 import * as helpers from './helpers';
 
 type PublicKeyEncoded = string;
-type PublicKey = ArrayBuffer;
-
 type ChallengeEncoded = string;
-type Challenge = ArrayBuffer;
 
 type AssertionEncoded = {
   id: string;

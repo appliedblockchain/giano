@@ -1,22 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AccountFactory__factory } from '@giano/contracts/typechain-types';
 import { Button, Card, CircularProgress, Container, Divider, TextField, Typography } from '@mui/material';
-import { parseAuthenticatorData } from '@simplewebauthn/server/helpers';
-import { decode as cborDecode } from 'cbor-web';
 import { ethers } from 'ethers';
-import { getCredential } from 'services/web/src/client/common/credentials';
+import React, { useEffect, useMemo, useState } from 'react';
+
+import { credentialClient } from '@giano/client/credential/web';
+import { extractPublicKey } from '@giano/client/extractPublicKey';
+import { AccountFactory__factory } from '@giano/contracts/typechain-types';
+
 import { uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
 import { setSessionUser } from 'services/web/src/client/common/user';
 import type { CustomSnackbarProps } from 'services/web/src/client/components/CustomSnackbar';
 import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
 
-const ES256 = -7;
+const { createCredential, getCredential } = credentialClient({
+  rp: {
+    id: window.location.hostname,
+    name: 'Giano',
+  },
+});
 
 const Login: React.FC = () => {
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
-  const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
-  const accountFactory = useMemo(() => AccountFactory__factory.connect('0x5fbdb2315678afecb367f032d93f642f64180aa3', signer), [signer]);
+  const signer = useMemo(() => new ethers.Wallet(import.meta.env.VITE_SIGNER_ADDRESS, provider), [provider]);
+  const accountFactory = useMemo(() => AccountFactory__factory.connect(import.meta.env.VITE_CONTRACT_ACCOUNT_FACTORE_ADDRESS, signer), [signer]);
 
   const [user, setUser] = useState(null as User | null);
   const [loggingIn, setLoggingIn] = useState(false);
@@ -43,39 +49,19 @@ const Login: React.FC = () => {
       username: { value: username },
     } = e.currentTarget;
     try {
-      const credential = (await navigator.credentials.create({
-        publicKey: {
-          challenge: new TextEncoder().encode('abc'),
-          authenticatorSelection: {
-            requireResidentKey: true,
-            residentKey: 'required',
-            userVerification: 'required',
-          },
-          rp: {
-            id: window.location.hostname,
-            name: 'Giano',
-          },
-          user: {
-            id: new TextEncoder().encode(username),
-            displayName: username,
-            name: username,
-          },
-          pubKeyCredParams: [
-            {
-              alg: ES256,
-              type: 'public-key',
-            },
-          ],
-          timeout: 60_000,
-        },
-      })) as PublicKeyCredential & { response: AuthenticatorAttestationResponse };
+      // giano specific
+      const credential = await createCredential(username);
 
-      const attestation = cborDecode(new Uint8Array(credential.response.attestationObject));
-      const authData = parseAuthenticatorData(attestation.authData);
-      const publicKey = cborDecode(authData.credentialPublicKey?.buffer as ArrayBuffer);
-      const [x, y] = [publicKey.get(-2), publicKey.get(-3)];
+      console.log('credential:', credential);
+
+      const {x, y} = await extractPublicKey(credential.response.attestationObject);
+      console.log('public key:', x, y);
+
+      // contract specific
       const userId = uint8ArrayToUint256(credential.rawId.slice(-32));
+      console.log('userId:', userId.toString());
       await (await accountFactory.createUser(userId, { x, y })).wait();
+
       setSnackbarState({ severity: 'success', message: 'Passkey account created successfully.', open: true });
     } catch (e) {
       setSnackbarState({ severity: 'error', message: 'Something went wrong. Please check the console', open: true });
@@ -92,7 +78,10 @@ const Login: React.FC = () => {
     }
     setLoggingIn(true);
     try {
+      // giano specific
       const credential = await getCredential();
+      console.log('login credential', credential);
+      // contract specific
       const userId = uint8ArrayToUint256(credential.rawId.slice(-32));
       if (credential) {
         const user = await accountFactory.getUser(userId);

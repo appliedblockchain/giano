@@ -8,3 +8,5 @@ latest.sql
 .DS_Store
 .yarn/install-state.gz
 .vite/
+.yarn/
+
