@@ -28,19 +28,6 @@ export const bufferToBase64URL = (buffer: Uint8Array) => {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 };
 
-export const fetchPost = async (url: string, data: any) => {
-  const response = await fetch(url, {
-    method: 'POST',
-    mode: 'cors',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-
-  const result = await response.json();
-  if (!response.ok) throw new Error(result);
-  return result;
-};
-
 export const concatenateBuffers = (a: Uint8Array, b: Uint8Array) => new Uint8Array([...a, ...b]);
 
 export const concatBuffers = (...buffers: ArrayBuffer[]) => {
@@ -92,14 +79,4 @@ export const decodeDERInteger = (integerBytes: Uint8Array, expectedLength: numbe
   if (integerBytes.byteLength < expectedLength) return new Uint8Array([...new Uint8Array(expectedLength - integerBytes.byteLength).fill(0), ...integerBytes]);
   // remove leading 0x00s if larger than expected length
   else return integerBytes.slice(-32);
-};
-
-export const copyToClipboard = async (value: any) => {
-  await navigator.clipboard.writeText(String(value));
-  alert('Value copied to clipboard');
-};
-
-export const copyToClipboardCallback = (value: any) => async () => {
-  await navigator.clipboard.writeText(String(value));
-  alert('Value copied to clipboard.');
 };

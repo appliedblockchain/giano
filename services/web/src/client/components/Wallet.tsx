@@ -1,12 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Account, GenericERC721 } from '@giano/contracts/typechain-types';
-import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
 import type { Addressable } from 'ethers';
 import { ethers } from 'ethers';
+
+import type { Account, GenericERC721 } from '@giano/contracts/typechain-types';
+import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+
 import { getCredential } from 'services/web/src/client/common/credentials';
 import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
@@ -199,10 +202,10 @@ const Wallet: React.FC = () => {
   const [sendCoinsFormValues, setSendCoinsFormValues] = useState<SendCoinsFormValues>({ recipient: '', amount: '' });
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
-  const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
+  const signer = useMemo(() => new ethers.Wallet(import.meta.env.VITE_SIGNER_ADDRESS, provider), [provider]);
   const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
-  const tokenContract = useMemo(() => GenericERC721__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
-  const coinContract = useMemo(() => GenericERC20__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
+  const tokenContract = useMemo(() => GenericERC721__factory.connect(import.meta.env.VITE_CONTRACT_TOKEN_ADDRESS, signer), [signer]);
+  const coinContract = useMemo(() => GenericERC20__factory.connect(import.meta.env.VITE_CONTRACT_COIN_ADDRESS, signer), [signer]);
 
   const handleFormChange = (setter: React.SetStateAction<any>) => (event) => {
     const { name, value } = event.target;
