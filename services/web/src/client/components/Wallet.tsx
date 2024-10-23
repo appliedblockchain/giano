@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Account, GenericERC721 } from '@giano/contracts/typechain-types';
-import { Account__factory, ERC20__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
-import type { Addressable } from 'ethers';
+import type { Addressable, ContractRunner } from 'ethers';
 import { ethers } from 'ethers';
 import { getCredential } from 'services/web/src/client/common/credentials';
+import type { WalletClient } from 'services/web/src/client/common/gianoWalletClient';
+import { GianoWalletClient } from 'services/web/src/client/common/gianoWalletClient';
 import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
 import { getSessionUser } from 'services/web/src/client/common/user';
@@ -21,7 +23,7 @@ type TransferFormValues = {
 };
 
 type TransferFormProps = {
-  accountContract?: Account;
+  walletClient?: WalletClient;
   tokenContract: GenericERC721;
   user?: User;
   formValues: TransferFormValues;
@@ -55,20 +57,18 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, title, ...oth
   );
 };
 
-const TransferForm = ({ user, accountContract, onSuccess, onFailure, tokenContract, formValues, onChange }: TransferFormProps) => {
+const TransferForm = ({ user, walletClient, onSuccess, onFailure, tokenContract, formValues, onChange }: TransferFormProps) => {
   const [transferring, setTransferring] = useState(false);
   const transfer = async (e) => {
     e.preventDefault();
     setTransferring(true);
     const tokenIface = ethers.Interface.from(GenericERC721__factory.abi);
     try {
-      if (accountContract && user) {
+      if (walletClient && user) {
         const { recipient, tokenId } = formValues;
-        const signature = await signAndEncodeChallenge(user, accountContract);
-        const tx = await accountContract.execute({
-          target: tokenContract.target,
-          value: 0n,
-          data: tokenIface.encodeFunctionData('transferFrom', [user.account, recipient, tokenId]),
+        const signature = await signAndEncodeChallenge(user, walletClient.account);
+        const tx = await walletClient.proxyFor(tokenIface, tokenContract.target).transferFrom({
+          args: [user.account, recipient, tokenId],
           signature,
         });
         await tx.wait();
@@ -104,42 +104,40 @@ type SendCoinsFormValues = {
 };
 
 type SendCoinsFormProps = {
-  accountContract?: Account;
+  walletClient?: WalletClient;
   user?: User;
   coinContractAddress: string | Addressable;
   values: SendCoinsFormValues;
   onSuccess: () => void;
-  onFailure: () => void;
+  onFailure: (message?: string) => void;
   onChange: (e: React.SyntheticEvent) => void;
 };
 
-const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ accountContract, user, onSuccess, onFailure, coinContractAddress, values, onChange }) => {
+const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ walletClient, user, onSuccess, onFailure, coinContractAddress, values, onChange }) => {
   const [sending, setSending] = useState(false);
 
   const send = async (e: React.FormEvent<HTMLFormElement>) => {
+    const erc20Iface = ethers.Interface.from(GenericERC20__factory.abi);
     try {
-      const erc20Iface = ethers.Interface.from(GenericERC20__factory.abi);
-      if (accountContract && user) {
+      if (walletClient && user) {
         e.preventDefault();
         setSending(true);
-        const signature = await signAndEncodeChallenge(user, accountContract);
-        const tx = await accountContract.execute({
-          target: coinContractAddress,
-          value: 0n,
-          data: erc20Iface.encodeFunctionData('transfer', [values.recipient, ethers.parseEther(values.amount)]),
+        const signature = await signAndEncodeChallenge(user, walletClient.account);
+        const tx = await walletClient.proxyFor(erc20Iface, coinContractAddress).transfer({
           signature,
+          args: [values.recipient, ethers.parseEther(values.amount)],
         });
         await tx.wait();
         onSuccess();
       }
     } catch (e) {
       console.error(e);
-      onFailure();
+      onFailure(e.message);
+      // }
     } finally {
       setSending(false);
     }
   };
-
   return (
     <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={send}>
       <TextField value={values.recipient} onChange={onChange} name="recipient" label="Recipient address" variant="standard" required disabled={sending} />
@@ -212,6 +210,7 @@ const Wallet: React.FC = () => {
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
+  const walletClient = useMemo(() => (user ? GianoWalletClient(user.account, signer) : undefined), [user?.account, signer]);
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
   const coinContract = useMemo(() => GenericERC20__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
 
@@ -405,7 +404,7 @@ const Wallet: React.FC = () => {
           </TabPanel>
           <TabPanel index={1} tab={tab} title="Transfer token">
             <TransferForm
-              accountContract={accountContract}
+              walletClient={walletClient}
               tokenContract={tokenContract}
               user={user}
               formValues={transferFormValues}
@@ -417,10 +416,10 @@ const Wallet: React.FC = () => {
                   severity: 'success',
                 })
               }
-              onFailure={() =>
+              onFailure={(message?: string) =>
                 setSnackbarState({
                   open: true,
-                  message: 'Something went wrong. Please check the console.',
+                  message: message || 'Something went wrong. Please check the console.',
                   severity: 'error',
                 })
               }
@@ -442,7 +441,7 @@ const Wallet: React.FC = () => {
           </TabPanel>
           <TabPanel index={3} tab={tab} title="Send tokens">
             <SendCoinsForm
-              accountContract={accountContract}
+              walletClient={walletClient}
               coinContractAddress={coinContract.target}
               user={user}
               values={sendCoinsFormValues}
@@ -450,18 +449,18 @@ const Wallet: React.FC = () => {
               onSuccess={() => {
                 setSnackbarState({ open: true, severity: 'success', message: 'Tokens sent successfully.' });
               }}
-              onFailure={() =>
+              onFailure={(message?: string) =>
                 setSnackbarState({
                   open: true,
                   severity: 'error',
-                  message: 'Something went wrong. Please check the console.',
+                  message: message || 'Something went wrong. Please check the console.',
                 })
               }
             />
           </TabPanel>
         </Box>
       </Card>
-      <CustomSnackbar {...snackbarState} onClose={onSnackbarClose} />;
+      <CustomSnackbar {...snackbarState} onClose={onSnackbarClose} />
     </Container>
   );
 };

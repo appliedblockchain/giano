@@ -2,8 +2,6 @@
 pragma solidity ^0.8.23;
 
 import {WebAuthn} from './WebAuthn.sol';
-import {IERC721} from '@openzeppelin/contracts/token/ERC721/IERC721.sol';
-import {IERC20} from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
 struct Signature {
     bytes authenticatorData;
@@ -22,7 +20,7 @@ struct Call {
 }
 
 /**
-A minimalist smart wallet implementation that allows you to transfer tokens
+A smart wallet implementation that allows you to execute arbitrary functions in contracts
  */
 contract Account {
     struct PublicKey {
@@ -68,11 +66,12 @@ contract Account {
 
     // solhint-disable-next-line no-empty-blocks
     receive() external payable {}
+    // solhint-disable-next-line no-empty-blocks
+    fallback() external payable {}
 
     function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge()), call.signature) {
         (bool success, bytes memory result) = call.target.call{value: call.value}(call.data);
         if (!success) {
-            // FIXME: apparently this does not work with custom errors. Investigate.
             assembly {
                 revert(add(result, 32), mload(result))
             }
