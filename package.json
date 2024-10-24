@@ -1,8 +1,4 @@
 {
   "name": "giano",
-  "packageManager": "yarn@4.1.0",
-  "workspaces": [
-    "packages/*",
-    "services/*"
-  ]
+  "packageManager": "pnpm@8.15.6"
 }

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {WebAuthn} from "./WebAuthn.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {WebAuthn} from './WebAuthn.sol';
 
 struct Signature {
     bytes authenticatorData;
@@ -14,8 +12,15 @@ struct Signature {
     uint256 s;
 }
 
+struct Call {
+    address target;
+    uint256 value;
+    bytes data;
+    bytes signature;
+}
+
 /**
-A minimalist smart wallet implementation that allows you to transfer tokens
+A smart wallet implementation that allows you to execute arbitrary functions in contracts
  */
 contract Account {
     struct PublicKey {
@@ -42,15 +47,12 @@ contract Account {
     }
 
     function validateAndIncrementNonce(uint256 nonce) private returns (bool) {
-       return currentNonce++ == nonce;
+        return currentNonce++ == nonce;
     }
 
     modifier validNonce(uint256 nonce) {
         if (!validateAndIncrementNonce(nonce)) {
-            revert InvalidNonce({
-                expected: currentNonce,
-                actual: nonce
-            });
+            revert InvalidNonce({expected: currentNonce, actual: nonce});
         }
         _;
     }
@@ -64,14 +66,19 @@ contract Account {
 
     // solhint-disable-next-line no-empty-blocks
     receive() external payable {}
-
     // solhint-disable-next-line no-empty-blocks
     fallback() external payable {}
 
-    function _validateSignature(
-        bytes memory message,
-        bytes calldata signature
-    ) private view returns (bool) {
+    function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge()), call.signature) {
+        (bool success, bytes memory result) = call.target.call{value: call.value}(call.data);
+        if (!success) {
+            assembly {
+                revert(add(result, 32), mload(result))
+            }
+        }
+    }
+
+    function _validateSignature(bytes memory message, bytes calldata signature) private view returns (bool) {
         Signature memory sig = abi.decode(signature, (Signature));
 
         return
@@ -88,23 +95,4 @@ contract Account {
                 y: uint256(publicKey.y)
             });
     }
-
-    function transferToken(
-        address token,
-        address to,
-        uint256 tokenId,
-        bytes calldata signature
-    ) external validSignature(bytes.concat(getChallenge()), signature) {
-        IERC721(token).transferFrom(address(this), to, tokenId);
-    }
-
-    function transferERC20(
-        address token,
-        address to,
-        uint256 amount,
-        bytes calldata signature
-    ) external validSignature(bytes.concat(getChallenge()), signature) {
-        IERC20(token).transfer(to, amount);
-    }
-
 }

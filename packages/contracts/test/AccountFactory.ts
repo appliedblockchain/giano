@@ -18,9 +18,7 @@ describe('AccountFactory', () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      await expect(accountFactoryContract.createUser(123n, { x, y }))
-        .to.emit(accountFactoryContract, 'UserCreated')
-        .withArgs(123n, [x, y], anyValue);
+      await expect(accountFactoryContract.createUser(123n, { x, y })).to.emit(accountFactoryContract, 'UserCreated').withArgs(123n, [x, y], anyValue);
     });
     it('should deploy a contract', async () => {
       const { accountFactoryContract } = await loadFixture(deploy);
