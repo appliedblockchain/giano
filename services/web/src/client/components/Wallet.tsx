@@ -1,14 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Account, GenericERC721 } from '@giano/contracts/typechain-types';
-import { Account__factory, GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import type { GenericERC20, GenericERC721 } from '@giano/contracts/typechain-types';
+import { GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
-import type { Addressable, ContractRunner } from 'ethers';
 import { ethers } from 'ethers';
 import { getCredential } from 'services/web/src/client/common/credentials';
-import type { WalletClient } from 'services/web/src/client/common/gianoWalletClient';
+import type { ProxiedContract } from 'services/web/src/client/common/gianoWalletClient';
 import { GianoWalletClient } from 'services/web/src/client/common/gianoWalletClient';
 import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
@@ -23,8 +22,7 @@ type TransferFormValues = {
 };
 
 type TransferFormProps = {
-  walletClient?: WalletClient;
-  tokenContract: GenericERC721;
+  tokenProxy?: ProxiedContract<GenericERC721>;
   user?: User;
   formValues: TransferFormValues;
   onSuccess: () => void;
@@ -57,20 +55,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, title, ...oth
   );
 };
 
-const TransferForm = ({ user, walletClient, onSuccess, onFailure, tokenContract, formValues, onChange }: TransferFormProps) => {
+const TransferForm = ({ user, onSuccess, onFailure, tokenProxy, formValues, onChange }: TransferFormProps) => {
   const [transferring, setTransferring] = useState(false);
   const transfer = async (e) => {
     e.preventDefault();
     setTransferring(true);
-    const tokenIface = ethers.Interface.from(GenericERC721__factory.abi);
     try {
-      if (walletClient && user) {
+      if (tokenProxy && user) {
         const { recipient, tokenId } = formValues;
-        const signature = await signAndEncodeChallenge(user, walletClient.account);
-        const tx = await walletClient.proxyFor(tokenIface, tokenContract.target).transferFrom({
-          args: [user.account, recipient, tokenId],
-          signature,
-        });
+        const tx = await tokenProxy.transferFrom(user.account, recipient, tokenId).send();
         await tx.wait();
         onSuccess();
       }
@@ -104,29 +97,23 @@ type SendCoinsFormValues = {
 };
 
 type SendCoinsFormProps = {
-  walletClient?: WalletClient;
   user?: User;
-  coinContractAddress: string | Addressable;
+  coinContractProxy?: ProxiedContract<GenericERC20>;
   values: SendCoinsFormValues;
   onSuccess: () => void;
   onFailure: (message?: string) => void;
   onChange: (e: React.SyntheticEvent) => void;
 };
 
-const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ walletClient, user, onSuccess, onFailure, coinContractAddress, values, onChange }) => {
+const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ user, onSuccess, onFailure, coinContractProxy, values, onChange }) => {
   const [sending, setSending] = useState(false);
 
   const send = async (e: React.FormEvent<HTMLFormElement>) => {
-    const erc20Iface = ethers.Interface.from(GenericERC20__factory.abi);
     try {
-      if (walletClient && user) {
+      if (user && coinContractProxy) {
         e.preventDefault();
         setSending(true);
-        const signature = await signAndEncodeChallenge(user, walletClient.account);
-        const tx = await walletClient.proxyFor(erc20Iface, coinContractAddress).transfer({
-          signature,
-          args: [values.recipient, ethers.parseEther(values.amount)],
-        });
+        const tx = await coinContractProxy.transfer(values.recipient, ethers.parseEther(values.amount)).send();
         await tx.wait();
         onSuccess();
       }
@@ -170,30 +157,31 @@ const SubmitButtonWithProgress: React.FC<SubmitButtonWithProgressProps> = ({ run
   );
 };
 
-async function signAndEncodeChallenge(user: User, accountContract: Account) {
-  const challengeHex = await accountContract.getChallenge();
-  const challenge = hexToUint8Array(challengeHex);
+function getChallengeSigner(user: User) {
+  return async (challengeHex: string) => {
+    const challenge = hexToUint8Array(challengeHex);
 
-  const credential = await getCredential(user.rawId, challenge);
+    const credential = await getCredential(user.rawId, challenge);
 
-  const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
+    const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
 
-  const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
-  const responseTypeLocation = clientDataJson.indexOf('"type":');
-  const challengeLocation = clientDataJson.indexOf('"challenge":');
-  return ethers.AbiCoder.defaultAbiCoder().encode(
-    ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
-    [
+    const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
+    const responseTypeLocation = clientDataJson.indexOf('"type":');
+    const challengeLocation = clientDataJson.indexOf('"challenge":');
+    return ethers.AbiCoder.defaultAbiCoder().encode(
+      ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
       [
-        new Uint8Array(credential.response.authenticatorData),
-        clientDataJson,
-        challengeLocation,
-        responseTypeLocation,
-        uint8ArrayToUint256(parsedSignature.r),
-        uint8ArrayToUint256(parsedSignature.s),
+        [
+          new Uint8Array(credential.response.authenticatorData),
+          clientDataJson,
+          challengeLocation,
+          responseTypeLocation,
+          uint8ArrayToUint256(parsedSignature.r),
+          uint8ArrayToUint256(parsedSignature.s),
+        ],
       ],
-    ],
-  );
+    );
+  };
 }
 
 const Wallet: React.FC = () => {
@@ -209,10 +197,14 @@ const Wallet: React.FC = () => {
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
-  const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
-  const walletClient = useMemo(() => (user ? GianoWalletClient(user.account, signer) : undefined), [user?.account, signer]);
+  const walletClient = useMemo(
+    () => (user && signer ? GianoWalletClient({ address: user.account, signer: signer, challengeSigner: getChallengeSigner(user) }) : undefined),
+    [user, signer],
+  );
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
   const coinContract = useMemo(() => GenericERC20__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
+  const tokenProxy = useMemo(() => (walletClient ? walletClient.proxyFor(tokenContract) : undefined), [tokenContract, walletClient]);
+  const coinProxy = useMemo(() => (walletClient ? walletClient.proxyFor(coinContract) : undefined), [coinContract, walletClient]);
 
   const handleFormChange = (setter: React.SetStateAction<any>) => (event) => {
     const { name, value } = event.target;
@@ -404,8 +396,7 @@ const Wallet: React.FC = () => {
           </TabPanel>
           <TabPanel index={1} tab={tab} title="Transfer token">
             <TransferForm
-              walletClient={walletClient}
-              tokenContract={tokenContract}
+              tokenProxy={tokenProxy}
               user={user}
               formValues={transferFormValues}
               onChange={handleFormChange(setTransferFormValues)}
@@ -441,8 +432,7 @@ const Wallet: React.FC = () => {
           </TabPanel>
           <TabPanel index={3} tab={tab} title="Send tokens">
             <SendCoinsForm
-              walletClient={walletClient}
-              coinContractAddress={coinContract.target}
+              coinContractProxy={coinProxy}
               user={user}
               values={sendCoinsFormValues}
               onChange={handleFormChange(setSendCoinsFormValues)}

@@ -1,56 +1,85 @@
 import type { Account } from '@giano/contracts/typechain-types';
 import { Account__factory } from '@giano/contracts/typechain-types';
-import type { Addressable, Contract, ContractRunner, Interface } from 'ethers';
-import { ethers } from 'ethers';
+import type { TypedContractMethod } from '@giano/contracts/typechain-types/common';
+import type { BaseContract, BigNumberish, ContractRunner, ContractTransactionResponse } from 'ethers';
 
-type WalletClient = {
-  account: Account;
-  proxyFor: (iface: Interface, contractAddress: string | Addressable) => Contract;
+type SendTransactionProps = {
+  value: BigNumberish;
 };
 
-const GianoWalletClient = (address: string, signer: ContractRunner): WalletClient => {
+export type ProxiedMethod<Inputs extends any[]> = (...args: Inputs) => {
+  send(opts?: SendTransactionProps): Promise<ContractTransactionResponse>;
+};
+
+export type ProxiedContract<T extends BaseContract> = {
+  [K in keyof T]: T[K] extends TypedContractMethod<infer Inputs, any, infer StateMutability>
+    ? StateMutability extends 'view' | 'pure'
+      ? T[K] // Keep view and pure methods as is
+      : ProxiedMethod<Inputs> // Replace non-view methods with proxied methods
+    : T[K]; // Keep other properties unchanged
+};
+
+export type WalletClient = {
+  account: Account;
+  proxyFor: <T extends BaseContract>(contract: T) => ProxiedContract<T>;
+};
+
+type GianoWalletClientParams = {
+  address: string;
+  signer: ContractRunner;
+  challengeSigner: (challenge: string) => Promise<string>;
+};
+
+export const GianoWalletClient = function ({ address, signer, challengeSigner }: GianoWalletClientParams): WalletClient {
   const account = Account__factory.connect(address, signer);
   return {
     account,
-    proxyFor: (iface: Interface, contractAddress: string | Addressable) => {
-      const readInstance = new ethers.Contract(contractAddress, iface);
-      return new Proxy(readInstance, {
-        get(target, prop, receiver) {
-          const functionName = prop.toString();
-          return async function ({ args, signature }: { args: any[]; signature: Uint8Array }) {
-            // // if it's a read-only function, relay to the actual contract directly to have access to the return value
-            // if (['view', 'pure'].includes(iface.getFunction(functionName)?.stateMutability as string)) {
-            //   return await Reflect.get(target, prop, receiver)(args);
-            // }
-            try {
-              return await account.execute({
-                target: contractAddress,
-                value: 0n,
-                data: iface.encodeFunctionData(functionName, args),
-                signature,
-              });
-            } catch (err) {
-              const e: any = err;
-              if (e.code === 'CALL_EXCEPTION' && !e.revert && e.data) {
-                const parsed = iface.parseError(e.data);
-                if (parsed) {
-                  const { name, signature, args } = parsed;
-                  e.revert = {
-                    name,
-                    signature,
-                    args,
-                  };
-                  e.reason = signature;
-                  e.message = `execution reverted: ${e.reason}`;
-                }
-              }
-              throw e;
+    proxyFor: <T extends BaseContract>(contract: T): ProxiedContract<T> => {
+      return new Proxy(contract, {
+        get(target, prop) {
+          const original = target[prop];
+          if (typeof original === 'function' && typeof prop === 'string') {
+            const contractFn = contract.getFunction(prop);
+            if (!contractFn || contractFn?.fragment.stateMutability === 'view') {
+              return original;
             }
+          } else {
+            return original;
+          }
+          const functionName = prop;
+          return function (...args: any[]) {
+            return {
+              async send(props?: SendTransactionProps) {
+                try {
+                  const challenge = await account.getChallenge();
+                  return await account.execute({
+                    target: contract.target,
+                    value: props?.value || 0n,
+                    data: contract.interface.encodeFunctionData(functionName, args),
+                    signature: await challengeSigner(challenge),
+                  });
+                } catch (err) {
+                  const e: any = err;
+                  if (e.code === 'CALL_EXCEPTION' && !e.revert && e.data) {
+                    const parsed = contract.interface.parseError(e.data);
+                    if (parsed) {
+                      const { name, signature, args } = parsed;
+                      e.revert = {
+                        name,
+                        signature,
+                        args,
+                      };
+                      e.reason = signature;
+                      e.message = `execution reverted: ${e.reason}`;
+                    }
+                  }
+                  throw e;
+                }
+              },
+            };
           };
         },
-      });
+      }) as ProxiedContract<T>;
     },
   };
 };
-
-export { GianoWalletClient, type WalletClient };
