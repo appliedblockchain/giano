@@ -26,7 +26,7 @@ type TransferFormProps = {
   user?: User;
   formValues: TransferFormValues;
   onSuccess: () => void;
-  onFailure: () => void;
+  onFailure: (message?: string) => void;
   onChange: (event: React.SyntheticEvent) => void;
 };
 
@@ -68,8 +68,9 @@ const TransferForm = ({ user, onSuccess, onFailure, tokenProxy, formValues, onCh
         onSuccess();
       }
     } catch (e) {
-      console.error(e);
-      onFailure();
+      const err = e as Error;
+      console.error(err);
+      onFailure(err.message);
     } finally {
       setTransferring(false);
     }
