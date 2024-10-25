@@ -16,7 +16,8 @@ describe.skip('Account', () => {
     return { x, y, keyPair, signer, accountContract, tokenContract };
   };
 
-  describe('transferToken', () => {
+  // TODO: simulate passkey signature to test contract
+  describe.skip('execute', () => {
     it('should work when signed by the associated keypair', async () => {
       const { keyPair, signer, accountContract, tokenContract } = await loadFixture(deploy);
 

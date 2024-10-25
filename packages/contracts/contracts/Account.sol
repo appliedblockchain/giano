@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {WebAuthn} from './WebAuthn.sol';
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 struct Signature {
     bytes authenticatorData;
@@ -22,7 +23,7 @@ struct Call {
 /**
 A smart wallet implementation that allows you to execute arbitrary functions in contracts
  */
-contract Account {
+contract Account is ReentrancyGuard {
     struct PublicKey {
         bytes32 x;
         bytes32 y;
@@ -69,7 +70,7 @@ contract Account {
     // solhint-disable-next-line no-empty-blocks
     fallback() external payable {}
 
-    function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge()), call.signature) {
+    function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge()), call.signature) nonReentrant {
         (bool success, bytes memory result) = call.target.call{value: call.value}(call.data);
         if (!success) {
             assembly {
