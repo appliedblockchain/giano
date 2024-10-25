@@ -1,22 +1,19 @@
 import type { Account } from '@giano/contracts/typechain-types';
 import { Account__factory } from '@giano/contracts/typechain-types';
-import type { TypedContractMethod } from '@giano/contracts/typechain-types/common';
 import type { BaseContract, BigNumberish, ContractRunner, ContractTransactionResponse } from 'ethers';
 
 type SendTransactionProps = {
   value: BigNumberish;
 };
 
-export type ProxiedMethod<Inputs extends any[]> = (...args: Inputs) => {
-  send(opts?: SendTransactionProps): Promise<ContractTransactionResponse>;
-};
+type ExcludeBaseContractMethods<T> = Omit<T, keyof BaseContract>;
 
-export type ProxiedContract<T extends BaseContract> = {
-  [K in keyof T]: T[K] extends TypedContractMethod<infer Inputs, any, infer StateMutability>
-    ? StateMutability extends 'view' | 'pure'
-      ? T[K] // Keep view and pure methods as is
-      : ProxiedMethod<Inputs> // Replace non-view methods with proxied methods
-    : T[K]; // Keep other properties unchanged
+export type ProxiedContract<T extends BaseContract> = BaseContract & {
+  [K in keyof ExcludeBaseContractMethods<T>]: T[K] extends (...args: infer Args) => any
+    ? (...args: Args) => {
+        send(): Promise<ContractTransactionResponse>;
+      }
+    : T[K];
 };
 
 export type WalletClient = {

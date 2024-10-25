@@ -57,7 +57,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, tab, index, title, ...oth
 
 const TransferForm = ({ user, onSuccess, onFailure, tokenProxy, formValues, onChange }: TransferFormProps) => {
   const [transferring, setTransferring] = useState(false);
-  const transfer = async (e) => {
+  const transfer = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setTransferring(true);
     try {
@@ -118,9 +118,9 @@ const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ user, onSuccess, onFailur
         onSuccess();
       }
     } catch (e) {
+      const err = e as Error;
       console.error(e);
-      onFailure(e.message);
-      // }
+      onFailure(err.message);
     } finally {
       setSending(false);
     }
@@ -198,7 +198,14 @@ const Wallet: React.FC = () => {
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
   const walletClient = useMemo(
-    () => (user && signer ? GianoWalletClient({ address: user.account, signer: signer, challengeSigner: getChallengeSigner(user) }) : undefined),
+    () =>
+      user && signer
+        ? GianoWalletClient({
+            address: user.account,
+            signer: signer,
+            challengeSigner: getChallengeSigner(user),
+          })
+        : undefined,
     [user, signer],
   );
   const tokenContract = useMemo(() => GenericERC721__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
@@ -247,15 +254,12 @@ const Wallet: React.FC = () => {
   };
 
   useEffect(() => {
-    console.log('mounting wallet');
-    const cleanup = () => console.log('unmounting wallet');
     const user = getSessionUser();
     if (!user) {
       window.location.replace('/');
-      return cleanup;
+      return;
     }
     setUser(user);
-    return cleanup;
   }, []);
 
   const mint = async (e: React.SyntheticEvent) => {
