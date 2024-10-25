@@ -3,7 +3,6 @@ pragma solidity ^0.8.23;
 
 import {WebAuthn} from './WebAuthn.sol';
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {console} from "hardhat/console.sol";
 
 struct Signature {
     bytes authenticatorData;
@@ -60,7 +59,6 @@ contract Account is ReentrancyGuard {
     }
 
     modifier validSignature(bytes memory message, bytes calldata signature) {
-        console.log("Validating signature");
         if (!_validateSignature(message, signature)) {
             revert InvalidSignature();
         }
@@ -82,10 +80,7 @@ contract Account is ReentrancyGuard {
     }
 
     function _validateSignature(bytes memory message, bytes calldata signature) private view returns (bool) {
-        console.log("decoding signature");
         Signature memory sig = abi.decode(signature, (Signature));
-        console.log("decoded signature");
-        console.log(sig.clientDataJSON);
 
         return
             WebAuthn.verifySignature({
