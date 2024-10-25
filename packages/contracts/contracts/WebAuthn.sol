@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import {P256} from "./P256.sol";
 import {Base64} from "./Base64.sol";
+import {console} from "hardhat/console.sol";
 
 /**
  * Helper library for external contracts to verify WebAuthn signatures.
@@ -133,17 +134,20 @@ library WebAuthn {
         uint256 x,
         uint256 y
     ) internal view returns (bool) {
+        console.log("verify start");
         // Check that authenticatorData has good flags
         if (
             authenticatorData.length < 32 ||
             !checkAuthFlags(authenticatorData[32], requireUserVerification)
         ) {
+            console.log("Invalid auth flags");
             return false;
         }
 
         // Check that response is for an authentication assertion
         string memory responseType = '"type":"webauthn.get"';
         if (!contains(responseType, clientDataJSON, responseTypeLocation)) {
+            console.log("Invalid response type");
             return false;
         }
 
@@ -156,16 +160,29 @@ library WebAuthn {
         );
 
         if (!contains(challengeProperty, clientDataJSON, challengeLocation)) {
+            console.log("Invalid challenge");
+            console.log(challengeProperty);
+            console.log(clientDataJSON);
+            console.log(challengeLocation);
             return false;
         }
 
         // Check that the public key signed sha256(authenticatorData || sha256(clientDataJSON))
+        console.log("will hash client data json");
         bytes32 clientDataJSONHash = sha256(bytes(clientDataJSON));
+        console.log("will hash authenticator data and client data json hash");
         bytes32 messageHash = sha256(
             abi.encodePacked(authenticatorData, clientDataJSONHash)
         );
+        console.log("hashed message");
 
         // check that the signature is valid while allowing malleability
-        return P256.verifySignatureAllowMalleability(messageHash, r, s, x, y);
+        bool isValid = P256.verifySignatureAllowMalleability(messageHash, r, s, x, y);
+        if (!isValid) {
+            console.log("Invalid signature");
+        } else {
+            console.log("Valid signature");
+        }
+        return isValid;
     }
 }

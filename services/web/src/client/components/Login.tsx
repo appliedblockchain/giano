@@ -93,8 +93,8 @@ const Login: React.FC = () => {
     setLoggingIn(true);
     try {
       const credential = await getCredential();
-      const userId = uint8ArrayToUint256(credential.rawId.slice(-32));
       if (credential) {
+        const userId = uint8ArrayToUint256(credential.rawId.slice(-32));
         const user = await accountFactory.getUser(userId);
         if (user.account !== ethers.ZeroAddress) {
           setUser({

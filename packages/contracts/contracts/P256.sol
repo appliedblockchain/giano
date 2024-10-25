@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
-
+import {console} from "hardhat/console.sol";
 /**
  * Helper library for external contracts to verify P256 signatures.
  **/
@@ -15,11 +15,17 @@ library P256 {
         uint256 x,
         uint256 y
     ) internal view returns (bool) {
+        console.log("VSAM start");
         bytes memory args = abi.encode(message_hash, r, s, x, y);
+        console.log("VSAM encoded args");
         (bool success, bytes memory ret) = VERIFIER.staticcall(args);
-        assert(success); // never reverts, always returns 0 or 1
-
-        return abi.decode(ret, (uint256)) == 1;
+        console.log("VSAM call result");
+        assert(success); //never reverts, always returns 0 or 1
+        console.log("asserted");
+        bool isValid = abi.decode(ret, (uint256)) == 1;
+        console.log("isValid");
+        console.log(isValid);
+        return isValid;
     }
 
     /// P256 curve order n/2 for malleability check

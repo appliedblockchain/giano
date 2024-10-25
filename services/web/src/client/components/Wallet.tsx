@@ -165,7 +165,6 @@ function getChallengeSigner(user: User) {
     const credential = await getCredential(user.rawId, challenge);
 
     const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
-
     const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
     const responseTypeLocation = clientDataJson.indexOf('"type":');
     const challengeLocation = clientDataJson.indexOf('"challenge":');
