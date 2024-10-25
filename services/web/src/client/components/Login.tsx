@@ -2,9 +2,9 @@ import { Button, Card, CircularProgress, Container, Divider, TextField, Typograp
 import { ethers } from 'ethers';
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { credentialClient } from '@giano/client/credential/web';
-import { extractPublicKey } from '@giano/client/extractPublicKey';
 import { AccountFactory__factory } from '@giano/contracts/typechain-types';
+import { extractPublicKey } from '@giano/extract-public-key';
+import { credentialClient } from '@giano/web-credential';
 
 import { uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';

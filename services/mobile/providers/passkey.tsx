@@ -4,9 +4,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import { Passkey } from 'react-native-passkey';
 
-import { credentialClient } from '@giano/client/credential/rm-mobile';
-import { extractPublicKey } from '@giano/client/extractPublicKey';
-import { uint8ArrayToUint256 } from '@giano/client/misc/uint';
+import { extractPublicKey, uint8ArrayToUint256 } from '@giano/extract-public-key';
+import { credentialClient } from '@giano/rn-credential';
+
 import { Account, Account__factory, AccountFactory__factory, GenericERC20, GenericERC20__factory, GenericERC721, GenericERC721__factory } from '@giano/contracts/typechain-types';
 
 const { getCredential, createCredential } = credentialClient({
@@ -54,7 +54,7 @@ export const PasskeyProvider = ({ children }: { children: React.ReactNode; }) =>
     const accountFactory = useMemo(() => AccountFactory__factory.connect('0x5fbdb2315678afecb367f032d93f642f64180aa3', signer), [signer]);
     const tokenContract = useMemo(() => GenericERC721__factory.connect('0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', signer), [signer]);
     const coinContract = useMemo(() => GenericERC20__factory.connect('0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', signer), [signer]);
-  const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
+    const accountContract = useMemo(() => (user ? Account__factory.connect(user.account, signer) : undefined), [user?.account, signer]);
 
     useEffect(() => {
         setIsSupported(Passkey.isSupported());
@@ -69,9 +69,6 @@ export const PasskeyProvider = ({ children }: { children: React.ReactNode; }) =>
         if (!credential) {
             return;
         }
-        console.log('credential')
-        console.log(JSON.stringify(credential, null, 2));
-        // return;
 
         const rawId = new TextEncoder().encode(credential.rawId);
         const userId = uint8ArrayToUint256(rawId.slice(-32));
@@ -97,10 +94,9 @@ export const PasskeyProvider = ({ children }: { children: React.ReactNode; }) =>
             return;
         }
         try {
-            console.log('createUser', username);
             // giano specific
             const credential = await createCredential(username);
-        console.log('createCredential', JSON.stringify(credential, null, 2));
+            console.log('createCredential', JSON.stringify(credential, null, 2));
             const { x, y } = await extractPublicKey(
                 Buffer.from(credential.response.attestationObject, 'base64')
             );

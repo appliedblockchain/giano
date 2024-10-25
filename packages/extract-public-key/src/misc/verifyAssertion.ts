@@ -1,4 +1,4 @@
-import * as helpers from './helpers';
+import * as helpers from './helpers.js';
 
 type PublicKeyEncoded = string;
 type ChallengeEncoded = string;
@@ -47,7 +47,7 @@ const verifyAssertion = async (
   const expectedRpIdHash = new Uint8Array(await crypto.subtle.digest('SHA-256', rpIdData));
   if (!helpers.areBytewiseEqual(rpIdHash, expectedRpIdHash)) throw new Error("Failed to verify 'rpId' hash");
 
-  const flagsBits = authenticatorData[32].toString(2);
+  const flagsBits = authenticatorData[32]?.toString(2) ?? '';
   if (flagsBits.charAt(flagsBits.length - 1) !== '1') throw new Error('Failed to verify user present flag');
 
   const signature = helpers.convertDERSignatureToECDSASignature(helpers.base64URLToBuffer(assertionResponse.signature));

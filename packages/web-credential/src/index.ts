@@ -1,6 +1,5 @@
 import { deepMerge, publicKey as defaultPublicKey } from "./defaults/publicKey";
 
-
 /**
  * Credential client for web
  * create a client for the navigator.credentials API using the publicKey as parameter
@@ -13,7 +12,6 @@ import { deepMerge, publicKey as defaultPublicKey } from "./defaults/publicKey";
  * }
  */
 export const credentialClient = (pk: Partial<PublicKeyCredentialCreationOptions> = {}) => {
-  // deep merge the default publicKey with the publicKey passed as parameter
   const publicKey = deepMerge(defaultPublicKey, pk);
 
   const getCredential = async (id?: BufferSource, challenge?: BufferSource) => {

@@ -19,8 +19,10 @@ export interface PublicKey {
  * @param {Buffer} attestationObject - The CBOR encoded attestation object
  * @returns {Promise<Buffer>} - The extracted public key
  */
-export async function extractPublicKey(attestationObject): Promise<PublicKey> {
+export async function extractPublicKey(attestationObject:any): Promise<PublicKey> {
+    console.log('attestationObject', attestationObject);
     const decodedAttestationObject = await Decoder.decodeFirst(attestationObject);
+    console.log('decodedAttestationObject', decodedAttestationObject);
     const authenticatorData = decodedAttestationObject.authData;
     let offset = 0;
     offset += 32;
@@ -55,7 +57,7 @@ export async function extractPublicKey(attestationObject): Promise<PublicKey> {
  * @param {Object} cosePublicKey - The decoded COSE public key object
  * @returns {Buffer} - The parsed public key in a suitable format
  */
-function parseCOSEPublicKey(cosePublicKey) {
+function parseCOSEPublicKey(cosePublicKey:any) {
     const kty = cosePublicKey.get(1); // Key Type
     const alg = cosePublicKey.get(3); // Algorithm
 

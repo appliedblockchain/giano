@@ -58,7 +58,7 @@ export const convertDERSignatureToECDSASignature = (DERSignature: ArrayLike<numb
 
   const rStart = 4;
   const rLength = signatureBytes[3];
-  const rEnd = rStart + rLength;
+  const rEnd = rStart + (rLength ?? 32);
   const DEREncodedR = signatureBytes.slice(rStart, rEnd);
   // DER encoded 32 bytes integers can have leading 0x00s or be smaller than 32 bytes
   const r = decodeDERInteger(DEREncodedR, 32);

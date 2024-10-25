@@ -1,6 +1,6 @@
 
-import { Passkey, PasskeyCreateRequest } from 'react-native-passkey';
-import { deepMerge, publicKey as defaultPublicKey } from './defaults/publicKey';
+import { Passkey, type PasskeyCreateRequest } from 'react-native-passkey';
+import { deepMerge, publicKey as defaultPublicKey } from './defaults/publicKey.js';
 
 /**
  * create a client for the Passkey API using the publicKey as parameter

@@ -1,8 +1,0 @@
-{
-  "name": "@giano/client",
-  "packageManager": "yarn@4.1.0",
-  "dependencies": {
-    "buffer": "^6.0.3",
-    "cbor-web": "^9.0.2"
-  }
-}

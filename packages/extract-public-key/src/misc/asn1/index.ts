@@ -1,10 +1,10 @@
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
-import { base64URLToBuffer } from '../helpers';
-import { ECDSAPublicKey } from './types/ecdsaPublicKey';
+import { base64URLToBuffer } from '../helpers.js';
+import { ECDSAPublicKey } from './types/ecdsaPublicKey.js';
 
 function shouldRemoveLeadingZero(bytes: Uint8Array): boolean {
-  return bytes[0] === 0x0 && (bytes[1] & (1 << 7)) !== 0;
+  return !!(bytes[0] === 0x0 && bytes[1] && (bytes[1] & (1 << 7)) !== 0);
 }
 
 export const parsePublicKey = (publicKey: string) => {

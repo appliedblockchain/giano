@@ -10,6 +10,9 @@
     "test": "jest"
   },
   "dependencies": {
+    "@giano/contracts": "workspace:^",
+    "@giano/extract-public-key": "workspace:^",
+    "@giano/rn-credential": "workspace:^",
     "@oslojs/webauthn": "^1.0.0",
     "buffer": "^6.0.3",
     "cbor-web": "^9.0.2",
