@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ProxiedContract } from '@giano/client';
+import { GianoWalletClient } from '@giano/client';
+import { encodeChallenge, hexToUint8Array } from '@giano/common';
 import type { GenericERC20, GenericERC721 } from '@giano/contracts/typechain-types';
 import { GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
-import { ECDSASigValue } from '@peculiar/asn1-ecc';
-import { AsnParser } from '@peculiar/asn1-schema';
 import { ethers } from 'ethers';
 import { getCredential } from 'services/web/src/client/common/credentials';
-import type { ProxiedContract } from 'services/web/src/client/common/gianoWalletClient';
-import { GianoWalletClient } from 'services/web/src/client/common/gianoWalletClient';
-import { hexToUint8Array, uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
 import type { User } from 'services/web/src/client/common/user';
 import { getSessionUser } from 'services/web/src/client/common/user';
 import type { CustomSnackbarProps } from 'services/web/src/client/components/CustomSnackbar';
@@ -163,24 +161,7 @@ function getChallengeSigner(user: User) {
     const challenge = hexToUint8Array(challengeHex);
 
     const credential = await getCredential(user.rawId, challenge);
-
-    const parsedSignature = AsnParser.parse(credential.response.signature, ECDSASigValue);
-    const clientDataJson = new TextDecoder().decode(credential.response.clientDataJSON);
-    const responseTypeLocation = clientDataJson.indexOf('"type":');
-    const challengeLocation = clientDataJson.indexOf('"challenge":');
-    return ethers.AbiCoder.defaultAbiCoder().encode(
-      ['tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)'],
-      [
-        [
-          new Uint8Array(credential.response.authenticatorData),
-          clientDataJson,
-          challengeLocation,
-          responseTypeLocation,
-          uint8ArrayToUint256(parsedSignature.r),
-          uint8ArrayToUint256(parsedSignature.s),
-        ],
-      ],
-    );
+    return encodeChallenge(credential.response);
   };
 }
 
@@ -335,7 +316,7 @@ const Wallet: React.FC = () => {
         <Box display="flex" justifyContent="space-between" width="100%">
           <img alt="Giano logo" src="/logo_horizontal.svg" />
           <FormControl sx={{ width: '50%' }}>
-            <Select labelId="account-select-label" value="account">
+            <Select labelId="account-select-label" value="account" variant="outlined">
               <MenuItem onClick={writeAccountToClipboard} value="account">
                 {user?.account}
               </MenuItem>

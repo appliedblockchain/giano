@@ -13,3 +13,37 @@ export const createKeypair = () => {
 
   return { x, y, keyPair };
 };
+
+export const signWebAuthnChallenge = (privateKey: crypto.KeyObject, challenge: Uint8Array): AuthenticatorAssertionResponse => {
+  // Step 2: Prepare clientDataJSON
+  const clientData = {
+    type: 'webauthn.get',
+    challenge: Buffer.from(challenge).toString('base64url'),
+    origin: 'https://localhost:3000',
+    crossOrigin: false,
+  };
+  const clientDataJSON = Buffer.from(JSON.stringify(clientData));
+
+  // Step 3: Hash the clientDataJSON
+  const clientDataHash = crypto.createHash('sha256').update(clientDataJSON).digest();
+
+  // Step 4: Prepare authenticatorData
+  const rpIdHash = crypto.createHash('sha256').update('localhost').digest();
+  const flags = Buffer.from([0x01]); // User Present flag
+  const signCount = Buffer.alloc(4); // 32-bit signature counter
+  const authenticatorData = Buffer.concat([rpIdHash, flags, signCount]);
+
+  // Step 5: Concatenate authenticatorData and clientDataHash
+  const dataToSign = Buffer.concat([authenticatorData, clientDataHash]);
+
+  // Step 6: Sign the concatenated data
+  const signature = crypto.createSign('SHA256').update(dataToSign).sign(privateKey);
+
+  // Step 7: Assemble the response
+  return {
+    clientDataJSON: clientDataJSON,
+    authenticatorData: authenticatorData,
+    signature: signature,
+    userHandle: null,
+  };
+};

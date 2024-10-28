@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { uint8ArrayToUint256 } from '@giano/common';
 import { AccountFactory__factory } from '@giano/contracts/typechain-types';
 import { Button, Card, CircularProgress, Container, Divider, TextField, Typography } from '@mui/material';
 import { parseAuthenticatorData } from '@simplewebauthn/server/helpers';
 import { decode as cborDecode } from 'cbor-web';
 import { ethers } from 'ethers';
-import { getCredential } from 'services/web/src/client/common/credentials';
-import { uint8ArrayToUint256 } from 'services/web/src/client/common/uint';
-import type { User } from 'services/web/src/client/common/user';
-import { setSessionUser } from 'services/web/src/client/common/user';
-import type { CustomSnackbarProps } from 'services/web/src/client/components/CustomSnackbar';
-import CustomSnackbar from 'services/web/src/client/components/CustomSnackbar';
+import type { User } from '../../client/common/user';
+import { setSessionUser } from '../../client/common/user';
+import type { CustomSnackbarProps } from '../../client/components/CustomSnackbar';
+import CustomSnackbar from '../../client/components/CustomSnackbar';
+import { getCredential } from '../common/credentials';
 
 const ES256 = -7;
 

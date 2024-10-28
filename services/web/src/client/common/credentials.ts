@@ -1,5 +1,5 @@
 export const getCredential = async (id?: BufferSource, challenge?: BufferSource) => {
-  const params = {
+  const params: PublicKeyCredentialRequestOptions = {
     challenge: challenge || new TextEncoder().encode('abc'),
     rpId: window.location.hostname,
     userVerification: 'preferred',

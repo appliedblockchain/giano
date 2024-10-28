@@ -8,7 +8,7 @@ type SendTransactionProps = {
 
 type ExcludeBaseContractMethods<T> = Omit<T, keyof BaseContract>;
 
-export type ProxiedContract<T extends BaseContract> = BaseContract & {
+export type ProxiedContract<T extends BaseContract> = {
   [K in keyof ExcludeBaseContractMethods<T>]: T[K] extends (...args: infer Args) => any
     ? (...args: Args) => {
         send(): Promise<ContractTransactionResponse>;
