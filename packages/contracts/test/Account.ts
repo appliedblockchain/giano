@@ -47,7 +47,7 @@ describe('Account Contract', () => {
       const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
 
       // Generate a valid signature
-      const challenge = await account.getChallenge();
+      const challenge = await account.getChallenge(transferData);
       const signature = signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge));
 
       // Execute transfer via Account contract
@@ -72,9 +72,11 @@ describe('Account Contract', () => {
       const recipient = otherSigner.address;
       const amount = ethers.parseEther('10');
       const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
+      const badSigData = genericERC20.interface.encodeFunctionData('transfer', [recipient, ethers.parseEther('150')]);
 
+      const badChallenge = await account.getChallenge(badSigData);
       // Generate an invalid signature (e.g., random bytes)
-      const invalidSignature = encodeChallenge(signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array('0xDEADBEEF')));
+      const invalidSignature = encodeChallenge(signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(badChallenge)));
 
       // Attempt to execute transfer via Account contract
       await expect(

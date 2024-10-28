@@ -39,8 +39,8 @@ contract Account is ReentrancyGuard {
         publicKey = _publicKey;
     }
 
-    function getChallenge() public view returns (bytes32) {
-        return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce)));
+    function getChallenge(bytes calldata callData) public view returns (bytes32) {
+        return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce), callData));
     }
 
     function getNonce() public view returns (uint256) {
@@ -70,7 +70,7 @@ contract Account is ReentrancyGuard {
     // solhint-disable-next-line no-empty-blocks
     fallback() external payable {}
 
-    function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge()), call.signature) nonReentrant {
+    function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge(call.data)), call.signature) nonReentrant {
         (bool success, bytes memory result) = call.target.call{value: call.value}(call.data);
         if (!success) {
             assembly {
