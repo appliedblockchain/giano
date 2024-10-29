@@ -47,15 +47,17 @@ describe('Account Contract', () => {
       const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
 
       // Generate a valid signature
-      const challenge = await account.getChallenge(transferData);
+      const challenge = await account.getChallenge({ target: genericERC20.target, value: 0, data: transferData });
       const signature = signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge));
 
       // Execute transfer via Account contract
       await expect(
         account.execute({
-          target: genericERC20.target,
-          value: 0,
-          data: transferData,
+          call: {
+            target: genericERC20.target,
+            value: 0,
+            data: transferData,
+          },
           signature: encodeChallenge(signature),
         }),
       )
@@ -68,23 +70,56 @@ describe('Account Contract', () => {
     });
 
     it('should revert with InvalidSignature for incorrect signature', async () => {
-      // Prepare call data for transfer
+      await genericERC20.transfer(account.target, ethers.parseEther('100'));
+
+      const recipient = otherSigner.address;
+      const amount = ethers.parseEther('50');
+      const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
+      const badSigData = genericERC20.interface.encodeFunctionData('transfer', [recipient, ethers.parseEther('10')]);
+
+      const badChallenge = await account.getChallenge({ target: genericERC20.target, value: 0, data: badSigData });
+      const invalidSignature = encodeChallenge(signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(badChallenge)));
+
+      // Attempt to execute a transfer of 50 tokens with a signature for 10 tokens
+      await expect(
+        account.execute({
+          call: {
+            target: genericERC20.target,
+            value: 0,
+            data: transferData,
+          },
+          signature: invalidSignature,
+        }),
+      ).to.be.revertedWithCustomError(account, 'InvalidSignature');
+    });
+
+    it('should revert if the same signature is used twice', async () => {
+      await genericERC20.transfer(account.target, ethers.parseEther('100'));
+
       const recipient = otherSigner.address;
       const amount = ethers.parseEther('10');
       const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
-      const badSigData = genericERC20.interface.encodeFunctionData('transfer', [recipient, ethers.parseEther('150')]);
 
-      const badChallenge = await account.getChallenge(badSigData);
-      // Generate an invalid signature (e.g., random bytes)
-      const invalidSignature = encodeChallenge(signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(badChallenge)));
+      const challenge = await account.getChallenge({ target: genericERC20.target, value: 0, data: transferData });
+      const signature = signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge));
 
-      // Attempt to execute transfer via Account contract
-      await expect(
-        account.execute({
+      await account.execute({
+        call: {
           target: genericERC20.target,
           value: 0,
           data: transferData,
-          signature: invalidSignature,
+        },
+        signature: encodeChallenge(signature),
+      });
+
+      await expect(
+        account.execute({
+          call: {
+            target: genericERC20.target,
+            value: 0,
+            data: transferData,
+          },
+          signature: encodeChallenge(signature),
         }),
       ).to.be.revertedWithCustomError(account, 'InvalidSignature');
     });

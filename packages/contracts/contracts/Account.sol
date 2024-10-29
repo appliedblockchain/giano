@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {WebAuthn} from './WebAuthn.sol';
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuard} from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 
 struct Signature {
     bytes authenticatorData;
@@ -17,6 +17,9 @@ struct Call {
     address target;
     uint256 value;
     bytes data;
+}
+struct SignedCall {
+    Call call;
     bytes signature;
 }
 
@@ -29,33 +32,21 @@ contract Account is ReentrancyGuard {
         bytes32 y;
     }
 
-    error InvalidNonce(uint256 expected, uint256 actual);
     error InvalidSignature();
 
-    PublicKey public publicKey;
-    uint256 public currentNonce = 0;
+    PublicKey private publicKey;
+    uint256 private currentNonce = 0;
 
     constructor(PublicKey memory _publicKey) {
         publicKey = _publicKey;
     }
 
-    function getChallenge(bytes calldata callData) public view returns (bytes32) {
-        return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce), callData));
+    function getChallenge(Call calldata call) public view returns (bytes32) {
+        return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce), bytes20(call.target), bytes32(call.value), call.data));
     }
 
-    function getNonce() public view returns (uint256) {
-        return currentNonce;
-    }
-
-    function validateAndIncrementNonce(uint256 nonce) private returns (bool) {
-        return currentNonce++ == nonce;
-    }
-
-    modifier validNonce(uint256 nonce) {
-        if (!validateAndIncrementNonce(nonce)) {
-            revert InvalidNonce({expected: currentNonce, actual: nonce});
-        }
-        _;
+    function getPublicKey() public view returns (PublicKey memory) {
+        return publicKey;
     }
 
     modifier validSignature(bytes memory message, bytes calldata signature) {
@@ -67,16 +58,18 @@ contract Account is ReentrancyGuard {
 
     // solhint-disable-next-line no-empty-blocks
     receive() external payable {}
+
     // solhint-disable-next-line no-empty-blocks
     fallback() external payable {}
 
-    function execute(Call calldata call) external payable validSignature(bytes.concat(getChallenge(call.data)), call.signature) nonReentrant {
-        (bool success, bytes memory result) = call.target.call{value: call.value}(call.data);
+    function execute(SignedCall calldata signed) external payable validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) nonReentrant {
+        (bool success, bytes memory result) = signed.call.target.call{value: signed.call.value}(signed.call.data);
         if (!success) {
             assembly {
                 revert(add(result, 32), mload(result))
             }
         }
+        currentNonce++;
     }
 
     function _validateSignature(bytes memory message, bytes calldata signature) private view returns (bool) {
