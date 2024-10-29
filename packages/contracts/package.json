@@ -10,6 +10,9 @@
     "hh:compile": "hardhat compile",
     "hh:clean": "hardhat clean"
   },
+  "files": [
+    "contracts/**/*.sol"
+  ],
   "devDependencies": {
     "@giano/common": "workspace:",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
