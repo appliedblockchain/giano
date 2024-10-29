@@ -93,6 +93,50 @@ describe('Account Contract', () => {
       ).to.be.revertedWithCustomError(account, 'InvalidSignature');
     });
 
+    it('should revert with InvalidSignature if the value parameter does not match', async () => {
+      await genericERC20.transfer(account.target, ethers.parseEther('100'));
+
+      const recipient = otherSigner.address;
+      const amount = ethers.parseEther('10');
+      const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
+
+      const challenge = await account.getChallenge({ target: genericERC20.target, value: 0, data: transferData });
+      const signature = signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge));
+
+      await expect(
+        account.execute({
+          call: {
+            target: genericERC20.target,
+            value: 50,
+            data: transferData,
+          },
+          signature: encodeChallenge(signature),
+        }),
+      ).to.be.revertedWithCustomError(account, 'InvalidSignature');
+    });
+
+    it('should revert with InvalidSignature if the target parameter does not match', async () => {
+      await genericERC20.transfer(account.target, ethers.parseEther('100'));
+
+      const recipient = otherSigner.address;
+      const amount = ethers.parseEther('10');
+      const transferData = genericERC20.interface.encodeFunctionData('transfer', [recipient, amount]);
+
+      const challenge = await account.getChallenge({ target: genericERC20.target, value: 0, data: transferData });
+      const signature = signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge));
+
+      await expect(
+        account.execute({
+          call: {
+            target: ethers.Wallet.createRandom().address,
+            value: 0,
+            data: transferData,
+          },
+          signature: encodeChallenge(signature),
+        }),
+      ).to.be.revertedWithCustomError(account, 'InvalidSignature');
+    });
+
     it('should revert if the same signature is used twice', async () => {
       await genericERC20.transfer(account.target, ethers.parseEther('100'));
 
