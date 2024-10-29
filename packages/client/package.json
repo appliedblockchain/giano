@@ -1,10 +1,11 @@
 {
-  "name": "@giano/common",
-  "description": "Common code for the Giano packages",
+  "name": "@giano/client",
+  "description": "Client code for the Giano contracts",
   "version": "1.0.0",
   "license": "MIT",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
+    "@giano/contracts": "workspace:",
     "ethers": "^6.13.4",
     "@peculiar/asn1-schema": "^2.3.13",
     "@peculiar/asn1-ecc": "^2.3.14"
