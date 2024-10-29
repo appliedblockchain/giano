@@ -49,11 +49,13 @@ export const GianoWalletClient = function ({ address, signer, challengeSigner }:
               async send(props?: SendTransactionProps) {
                 const fnData = contract.interface.encodeFunctionData(functionName, args);
                 try {
-                  const challenge = await account.getChallenge(fnData);
+                  const challenge = await account.getChallenge({ target: contract.target, value: props?.value || 0, data: fnData });
                   return await account.execute({
-                    target: contract.target,
-                    value: props?.value || 0n,
-                    data: fnData,
+                    call: {
+                      target: contract.target,
+                      value: props?.value || 0n,
+                      data: fnData,
+                    },
                     signature: await challengeSigner(challenge),
                   });
                 } catch (err) {
