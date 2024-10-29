@@ -15,8 +15,9 @@ import { deepMerge, publicKey as defaultPublicKey } from './defaults/publicKey.j
  * npx pod-install
  * 
  * @example
- * import { client } from '@passkey/client';
- * const { getCredential, createCredential } = client({
+ * import { credentialClient } from '@giano/rn-credential';
+import { getCredential } from '../../../services/web/src/client/common/credentials';
+ * const { getCredential, createCredential } = credentialClient({
  *    rp: {
  *      id: 'teamId.and.your.bundle.id',
  *      name: 'Giano',
@@ -29,22 +30,17 @@ import { deepMerge, publicKey as defaultPublicKey } from './defaults/publicKey.j
  * createCredential: (username: string, challenge?: string) => Promise<any>;
  * }
  */
+
+
+
 export const credentialClient = (pk: Partial<PasskeyCreateRequest>) => {
     const publicKey = deepMerge(defaultPublicKey, pk);
-    const getCredential = async (id?: string, challenge?: string) => {
+    const getCredential = async (username?: string, challenge?: string) => {
         const requestJson = {
             'challenge': challenge ?? publicKey.challenge,
-            ...(id && {
-                allowCredentials: [
-                    {
-                        id: id,
-                        type: 'public-key' as string,
-                    },
-                ],
-            }),
             'timeout': publicKey.timeout,
             'userVerification': publicKey.authenticatorSelection.userVerification,
-            'rpId': id ?? publicKey.rp.id,
+            'rpId': publicKey.rp.id,
         };
         return Passkey.get(requestJson);
     }
