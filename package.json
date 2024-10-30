@@ -1,4 +1,5 @@
 {
-  "name": "giano",
+  "name": "@appliedblockchain/giano",
+  "private": true,
   "packageManager": "pnpm@8.15.6"
 }

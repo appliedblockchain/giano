@@ -1,5 +1,5 @@
 {
-  "name": "@giano/contracts",
+  "name": "@appliedblockchain/giano-contracts",
   "version": "1.0.0",
   "license": "MIT",
   "type": "commonjs",
@@ -11,10 +11,11 @@
     "hh:clean": "hardhat clean"
   },
   "files": [
-    "contracts/**/*.sol"
+    "contracts/**/*.sol",
+    "typechain-types/**/*"
   ],
   "devDependencies": {
-    "@giano/common": "workspace:",
+    "@appliedblockchain/giano-common": "workspace:",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
     "@nomicfoundation/hardhat-ignition": "^0.15.7",

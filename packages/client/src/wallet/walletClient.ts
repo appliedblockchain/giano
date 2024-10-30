@@ -1,5 +1,5 @@
-import type { Account } from '@giano/contracts/typechain-types';
-import { Account__factory } from '@giano/contracts/typechain-types';
+import type { Account } from '@appliedblockchain/giano-contracts/typechain-types';
+import { Account__factory } from '@appliedblockchain/giano-contracts/typechain-types';
 import type { BaseContract, BigNumberish, ContractRunner, ContractTransactionResponse } from 'ethers';
 
 type SendTransactionProps = {

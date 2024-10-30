@@ -10,7 +10,7 @@ importers:
 
   packages/client:
     dependencies:
-      '@giano/contracts':
+      '@appliedblockchain/giano-contracts':
         specifier: 'workspace:'
         version: link:../contracts
       '@peculiar/asn1-ecc':
@@ -37,7 +37,7 @@ importers:
 
   packages/contracts:
     devDependencies:
-      '@giano/common':
+      '@appliedblockchain/giano-common':
         specifier: 'workspace:'
         version: link:../common
       '@nomicfoundation/hardhat-chai-matchers':
@@ -115,6 +115,15 @@ importers:
 
   services/web:
     dependencies:
+      '@appliedblockchain/giano-client':
+        specifier: 'workspace:'
+        version: link:../../packages/client
+      '@appliedblockchain/giano-common':
+        specifier: 'workspace:'
+        version: link:../../packages/common
+      '@appliedblockchain/giano-contracts':
+        specifier: 'workspace:'
+        version: link:../../packages/contracts
       '@cfworker/base64url':
         specifier: ^1.12.5
         version: 1.12.5
@@ -124,15 +133,6 @@ importers:
       '@emotion/styled':
         specifier: ^11.11.5
         version: 11.13.0(@emotion/react@11.13.3)(@types/react@18.3.12)(react@18.3.1)
-      '@giano/client':
-        specifier: 'workspace:'
-        version: link:../../packages/client
-      '@giano/common':
-        specifier: 'workspace:'
-        version: link:../../packages/common
-      '@giano/contracts':
-        specifier: 'workspace:'
-        version: link:../../packages/contracts
       '@koa/cors':
         specifier: ^5.0.0
         version: 5.0.0

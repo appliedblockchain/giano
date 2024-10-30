@@ -1,4 +1,4 @@
-import { encodeChallenge, hexToUint8Array } from '@giano/common';
+import { encodeChallenge, hexToUint8Array } from '@appliedblockchain/giano-common';
 import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers';
 import { expect } from 'chai';
 import { ethers, ignition } from 'hardhat';
