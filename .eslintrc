@@ -2,6 +2,7 @@
   "extends": [
     "eslint-config-xs"
   ],
+  "ignorePatterns": ["dist/"],
   "rules": {
     "node/no-missing-import": "off",
     "react/prop-types": "off",

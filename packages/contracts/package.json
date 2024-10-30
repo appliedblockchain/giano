@@ -4,6 +4,7 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
+    "hh:build": "pnpm hh:compile && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "hardhat node",
     "hh:deploy": "hardhat ignition deploy ignition/modules/Giano.ts",
@@ -12,8 +13,9 @@
   },
   "files": [
     "contracts/**/*.sol",
-    "typechain-types/**/*"
+    "dist/**/*"
   ],
+  "main": "dist/index",
   "devDependencies": {
     "@appliedblockchain/giano-common": "workspace:",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
