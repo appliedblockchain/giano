@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.23;
 
-import { Account } from '../Account.sol';
+import { Account } from './Account.sol';
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract ERC721SafeTransferAccount is Account, IERC721Receiver {
