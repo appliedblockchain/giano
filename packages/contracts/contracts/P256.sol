@@ -6,7 +6,7 @@ pragma solidity ^0.8.23;
  **/
 library P256 {
     // official address of the precompile contract
-    address constant VERIFIER = 0xc2b78104907F722DABAc4C69f826a522B2754De4;
+    address constant VERIFIER = 0x0000000000000000000000000000000000000100;
 
     function verifySignatureAllowMalleability(
         bytes32 message_hash,

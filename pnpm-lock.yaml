@@ -108,6 +108,9 @@ importers:
       hardhat-gas-reporter:
         specifier: ^1.0.9
         version: 1.0.10(hardhat@2.22.14)
+      hardhat-tracer:
+        specifier: ^3.1.0
+        version: 3.1.0(chai@4.5.0)(hardhat@2.22.14)
       mocha:
         specifier: ^10.2.0
         version: 10.7.3
@@ -5865,6 +5868,24 @@ packages:
       - '@codechecks/client'
       - bufferutil
       - debug
+      - utf-8-validate
+    dev: true
+
+  /hardhat-tracer@3.1.0(chai@4.5.0)(hardhat@2.22.14):
+    resolution: {integrity: sha512-Ip16HQAuzbqbNJUIEVfqmbPmOY90bxZSpwu5Q73cwloy+LUYA04BATUM9Gui5H7zcgsgZ1IVy7pSYn6ZMjLmag==}
+    peerDependencies:
+      chai: 4.x
+      hardhat: '>=2.22.5 <3.x'
+    dependencies:
+      chai: 4.5.0
+      chalk: 4.1.2
+      debug: 4.3.7(supports-color@8.1.1)
+      ethers: 5.7.2
+      hardhat: 2.22.14(ts-node@10.9.2)(typescript@5.6.3)
+      semver: 7.6.3
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
       - utf-8-validate
     dev: true
 

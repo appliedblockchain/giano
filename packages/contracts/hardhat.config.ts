@@ -3,6 +3,7 @@ import { extendEnvironment } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import 'hardhat-gas-reporter';
+import 'hardhat-tracer';
 
 /** @type import('hardhat/config').HardhatUserConfig */
 const config: HardhatUserConfig = {
@@ -22,14 +23,15 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
+      enableRip7212: true,
       mining: {
         auto: false,
         interval: 10000,
       },
     },
     localhost: {
+      enableRip7212: true,
       url: 'http://localhost:8545',
-      accounts: ['0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'],
     },
   },
   gasReporter: {
