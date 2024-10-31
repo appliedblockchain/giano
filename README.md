@@ -40,6 +40,15 @@ Application available at <http://localhost:3000>.
 yarn hh:test
 ```
 
+## Deployment
+
+Until the official RIP-7212 P256 precompile at address `0x100` is more widespread, this contract relies on [this implementation](https://github.com/daimo-eth/p256-verifier).
+
+It is deterministically deployed at address `0xc2b78104907F722DABAc4C69f826a522B2754De4` on all major chains.
+
+If you need to deploy it at a new chain, please read [this guide](DEPLOY_VERIFIER.md).
+
+
 ## Setting up Blockscout (block explorer)
 If you want, you can use `docker compose` to start up a local Blockscout instance to explore the transactions and 
 contracts deployed on the local network. Start the Hardhat node at the default port and then run these commands to clone the 
