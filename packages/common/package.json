@@ -1,6 +1,7 @@
 {
-  "name": "@giano/common",
+  "name": "@appliedblockchain/giano-common",
   "description": "Common code for the Giano packages",
+  "private": true,
   "version": "1.0.0",
   "license": "MIT",
   "type": "commonjs",

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ProxiedContract } from '@giano/client';
-import { GianoWalletClient } from '@giano/client';
-import { encodeChallenge, hexToUint8Array } from '@giano/common';
-import type { GenericERC20, GenericERC721 } from '@giano/contracts/typechain-types';
-import { GenericERC20__factory, GenericERC721__factory } from '@giano/contracts/typechain-types';
+import type { ProxiedContract } from '@appliedblockchain/giano-client';
+import { GianoWalletClient } from '@appliedblockchain/giano-client';
+import { encodeChallenge, hexToUint8Array } from '@appliedblockchain/giano-common';
+import type { GenericERC20, GenericERC721 } from '@appliedblockchain/giano-contracts';
+import { GenericERC20__factory, GenericERC721__factory } from '@appliedblockchain/giano-contracts';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { ethers } from 'ethers';

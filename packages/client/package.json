@@ -1,13 +1,25 @@
 {
-  "name": "@giano/client",
+  "name": "@appliedblockchain/giano-client",
   "description": "Client code for the Giano contracts",
   "version": "1.0.0",
   "license": "MIT",
   "type": "module",
+  "scripts": {
+    "client:build": "tsup src/"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "default": "./dist/index.cjs"
+    }
+  },
   "dependencies": {
-    "@giano/contracts": "workspace:",
-    "ethers": "^6.13.4",
+    "@appliedblockchain/giano-contracts": "workspace:",
+    "@peculiar/asn1-ecc": "^2.3.14",
     "@peculiar/asn1-schema": "^2.3.13",
-    "@peculiar/asn1-ecc": "^2.3.14"
+    "ethers": "^6.13.4"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5"
   }
 }

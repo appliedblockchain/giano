@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import type { Contract, TransactionResponse } from 'ethers';
 import { ethers, ignition } from 'hardhat';
 import ERC721SafeTransferAccountModule from '../ignition/modules/ERC721SafeTransferAccount';
-import { ERC721SafeTransferAccountFactory__factory } from '../typechain-types';
+import { ERC721SafeTransferAccountFactory__factory } from '..';
 import { createKeypair } from './utils';
 
 describe('ERC721SafeTransferAccount', () => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { uint8ArrayToUint256 } from '@giano/common';
-import { AccountFactory__factory } from '@giano/contracts/typechain-types';
+import { uint8ArrayToUint256 } from '@appliedblockchain/giano-common';
+import { AccountFactory__factory } from '@appliedblockchain/giano-contracts';
 import { Button, Card, CircularProgress, Container, Divider, TextField, Typography } from '@mui/material';
 import { parseAuthenticatorData } from '@simplewebauthn/server/helpers';
 import { decode as cborDecode } from 'cbor-web';
