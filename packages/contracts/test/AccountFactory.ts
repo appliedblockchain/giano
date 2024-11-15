@@ -30,5 +30,15 @@ describe('AccountFactory', () => {
       const [, , address] = event!.args;
       expect(await ethers.provider.getCode(address)).to.exist;
     });
+    it('should revert if the user already exists', async () => {
+      const { accountFactoryContract } = await loadFixture(deploy);
+      const { x, y } = createKeypair();
+      const { x: x1, y: y1 } = createKeypair();
+
+      await accountFactoryContract.createUser(123n, { x, y });
+      await expect(accountFactoryContract.createUser(123n, { x: x1, y: y1 }))
+        .to.be.revertedWithCustomError(accountFactoryContract, 'UserAlreadyExists')
+        .withArgs(123n);
+    });
   });
 });
