@@ -102,6 +102,8 @@ const Login: React.FC = () => {
             rawId: new Uint8Array(credential.rawId),
             credentialId: userId.toString(),
           });
+        } else {
+          setSnackbarState({ severity: 'error', open: true, message: 'No user found with the selected passkey' });
         }
       }
     } catch (e) {

@@ -168,7 +168,7 @@ describe('Account Contract', () => {
       ).to.be.revertedWithCustomError(account, 'InvalidSignature');
     });
   });
-  describe.only('ERC-1271 compliance', () => {
+  describe('ERC-1271 compliance', () => {
     it('should return the magic value when checking a valid signature', async () => {
       const hash = new Uint8Array(32);
       crypto.getRandomValues(hash);

@@ -1,11 +1,13 @@
+import type { FormEvent } from 'react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ProxiedContract } from '@appliedblockchain/giano-client';
 import { GianoWalletClient } from '@appliedblockchain/giano-client';
 import { encodeChallenge, hexToUint8Array } from '@appliedblockchain/giano-common';
-import type { GenericERC20, GenericERC721 } from '@appliedblockchain/giano-contracts';
+import type { Account, GenericERC20, GenericERC721 } from '@appliedblockchain/giano-contracts';
 import { GenericERC20__factory, GenericERC721__factory } from '@appliedblockchain/giano-contracts';
 import { Logout } from '@mui/icons-material';
 import { Box, Button, Card, CircularProgress, Container, FormControl, MenuItem, Select, Tab, Tabs, TextField, Typography } from '@mui/material';
+import type { TypedDataDomain } from 'ethers';
 import { ethers } from 'ethers';
 import { getCredential } from 'services/web/src/client/common/credentials';
 import type { User } from 'services/web/src/client/common/user';
@@ -104,6 +106,21 @@ type SendCoinsFormProps = {
   onChange: (e: React.SyntheticEvent) => void;
 };
 
+type SignFormValues = {
+  name: string;
+  age: string;
+};
+
+type SignFormProps = {
+  user: User;
+  account: Account;
+  provider: ethers.Provider;
+  values: SignFormValues;
+  onSuccess: () => void;
+  onFailure: (message?: string) => void;
+  onChange: (e: React.SyntheticEvent) => void;
+};
+
 const SendCoinsForm: React.FC<SendCoinsFormProps> = ({ user, onSuccess, onFailure, coinContractProxy, values, onChange }) => {
   const [sending, setSending] = useState(false);
 
@@ -156,6 +173,70 @@ const SubmitButtonWithProgress: React.FC<SubmitButtonWithProgressProps> = ({ run
   );
 };
 
+const SignForm: React.FC<SignFormProps> = ({ values: formValues, onChange, provider, account, onSuccess, onFailure, user }: SignFormProps) => {
+  const getEip712Parameters = async (name: string, age: bigint) => {
+    const domain: TypedDataDomain = {
+      name: 'Giano Account',
+      version: '1.0',
+      chainId: (await provider.getNetwork()).chainId,
+      verifyingContract: await account.getAddress(),
+    };
+    const types = {
+      SignUpData: [
+        { name: 'name', type: 'string' },
+        { name: 'age', type: 'uint256' },
+      ],
+    };
+    const values = {
+      name,
+      age,
+    };
+    return { domain, types, values };
+  };
+
+  const validateSignature = async ({ name, age }: { name: string; age: bigint }, signature: string) => {
+    const ERC1271_MAGIC = '0x1626ba7e';
+    const { domain, types, values } = await getEip712Parameters(name, age);
+    const hash = ethers.TypedDataEncoder.hash(domain, types, values);
+    const check = await account.isValidSignature(hash, signature);
+    if (check === ERC1271_MAGIC) {
+      return true;
+    }
+    return false;
+  };
+
+  const [signing, setSigning] = useState(false);
+  const sign = async (e: FormEvent) => {
+    e.preventDefault();
+    setSigning(true);
+    try {
+      const { domain, types, values } = await getEip712Parameters(formValues.name, BigInt(formValues.age));
+      const hash = ethers.TypedDataEncoder.hash(domain, types, values);
+      const signature = await getChallengeSigner(user)(hash);
+      // pretend this is a backend call
+      const valid = await validateSignature({ name: formValues.name, age: BigInt(formValues.age) }, signature);
+      if (valid) {
+        onSuccess();
+      } else {
+        onFailure('Invalid signature!');
+      }
+    } catch (e) {
+      const err: Error = e as any;
+      console.error(err);
+      onFailure(err.message);
+    } finally {
+      setSigning(false);
+    }
+  };
+  return (
+    <form style={{ display: 'flex', flexDirection: 'column', gap: 20 }} onSubmit={sign}>
+      <TextField name="name" value={formValues.name} onChange={onChange} label="Name" variant="standard" disabled={signing} required />
+      <TextField name="age" value={formValues.age} label="Age" type="number" onChange={onChange} required disabled={signing} />
+      <SubmitButtonWithProgress running={signing} label="Sign message" />
+    </form>
+  );
+};
+
 function getChallengeSigner(user: User) {
   return async (challengeHex: string) => {
     const challenge = hexToUint8Array(challengeHex);
@@ -175,6 +256,7 @@ const Wallet: React.FC = () => {
   const [faucetRunning, setFaucetRunning] = useState(false);
   const [transferFormValues, setTransferFormValues] = useState<TransferFormValues>({ recipient: '', tokenId: '' });
   const [sendCoinsFormValues, setSendCoinsFormValues] = useState<SendCoinsFormValues>({ recipient: '', amount: '' });
+  const [signFormValues, setSignFormValues] = useState<SignFormValues>({ name: '', age: '' });
 
   const provider = useMemo(() => new ethers.WebSocketProvider('ws://localhost:8545'), []);
   const signer = useMemo(() => new ethers.Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', provider), [provider]);
@@ -339,6 +421,7 @@ const Wallet: React.FC = () => {
             <Tab label="Transfer" />
             <Tab label="Faucet" />
             <Tab label="Send" />
+            <Tab label="Sign" />
           </Tabs>
           <TabPanel index={0} tab={tab} title="Mint">
             <form onSubmit={mint}>
@@ -432,6 +515,23 @@ const Wallet: React.FC = () => {
                 })
               }
             />
+          </TabPanel>
+          <TabPanel index={4} tab={tab} title="Sign typed data (EIP-712)">
+            {walletClient && user && (
+              <SignForm
+                account={walletClient.account}
+                provider={provider}
+                user={user}
+                values={signFormValues}
+                onChange={handleFormChange(setSignFormValues)}
+                onSuccess={() => {
+                  setSnackbarState({ open: true, message: 'Signature validated successfully' });
+                }}
+                onFailure={(message?: string) => {
+                  setSnackbarState({ open: true, message: message ?? 'Something went wrong; please check the console' });
+                }}
+              />
+            )}
           </TabPanel>
         </Box>
       </Card>
