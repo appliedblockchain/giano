@@ -3,13 +3,16 @@ pragma solidity ^0.8.23;
 
 import {WebAuthn} from './WebAuthn.sol';
 import {ReentrancyGuard} from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
+import {IERC1271} from '@openzeppelin/contracts/interfaces/IERC1271.sol';
 import {Types} from './Types.sol';
-
 
 /**
 A smart wallet implementation that allows you to execute arbitrary functions in contracts
  */
-contract Account is ReentrancyGuard {
+contract Account is ReentrancyGuard, IERC1271 {
+    // bytes4(keccak256("isValidSignature(bytes32,bytes)")
+    bytes4 internal constant ERC1271_MAGICVALUE = 0x1626ba7e;
+
     error InvalidSignature();
 
     Types.PublicKey private publicKey;
@@ -66,5 +69,12 @@ contract Account is ReentrancyGuard {
                 x: uint256(publicKey.x),
                 y: uint256(publicKey.y)
             });
+    }
+
+    function isValidSignature(bytes32 messageHash, bytes calldata signature) public view override returns (bytes4 magicValue) {
+        if (_validateSignature(bytes.concat(messageHash), signature)) {
+            return ERC1271_MAGICVALUE;
+        }
+        return 0xffffffff;
     }
 }
