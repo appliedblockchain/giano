@@ -168,4 +168,20 @@ describe('Account Contract', () => {
       ).to.be.revertedWithCustomError(account, 'InvalidSignature');
     });
   });
+  describe('ERC-1271 compliance', () => {
+    it('should return the magic value when checking a valid signature', async () => {
+      const hash = new Uint8Array(32);
+      crypto.getRandomValues(hash);
+      const signature = encodeChallenge(signWebAuthnChallenge(keypair.keyPair.privateKey, hash));
+      const result = await account.isValidSignature(hash, signature);
+      expect(result).to.equal('0x1626ba7e');
+    });
+    it('should return a constant value when checking an invalid signature', async () => {
+      const hash = new Uint8Array(32);
+      crypto.getRandomValues(hash);
+      const signature = encodeChallenge(signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array('0xDEADBEEF')));
+      const result = await account.isValidSignature(hash, signature);
+      expect(result).to.equal('0xffffffff');
+    });
+  });
 });
