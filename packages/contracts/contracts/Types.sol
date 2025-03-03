@@ -9,6 +9,7 @@ library Types {
         uint256 responseTypeLocation;
         uint256 r;
         uint256 s;
+        PublicKey publicKey;
     }
     struct Call {
         address target;

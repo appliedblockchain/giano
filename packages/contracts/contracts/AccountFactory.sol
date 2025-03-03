@@ -6,7 +6,7 @@ import {AbstractAccountFactory} from './AbstractAccountFactory.sol';
 import {Types} from './Types.sol';
 
 contract AccountFactory is AbstractAccountFactory {
-    function deployContract(Types.PublicKey memory publicKey) internal virtual override returns (address) {
-        return address(new Account(publicKey));
+    function deployAccount(Types.PublicKey calldata publicKey, address registry) external override returns (address) {
+        return address(new Account(publicKey, registry));
     }
 }
