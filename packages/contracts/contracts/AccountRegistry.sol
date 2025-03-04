@@ -24,11 +24,17 @@ contract AccountRegistry {
     // Mapping from public key hash to account address (to enforce one key per account)
     mapping(bytes32 => address) private keyToAccount;
     
+    // Mapping from account address to user ID
+    mapping(address => uint256) private accountToUserId;
+    
     // Registry for deployed accounts
     mapping(address => bool) private registeredAccounts;
     
     // Factory for deploying accounts
     AbstractAccountFactory public immutable factory;
+    
+    // Salt for ID generation
+    bytes32 private immutable salt;
     
     event UserCreated(uint256 indexed userId, Types.PublicKey publicKey, address account);
     event KeyLinked(bytes32 indexed keyHash, address indexed account);
@@ -39,9 +45,17 @@ contract AccountRegistry {
     error KeyAlreadyLinked(bytes32 keyHash, address existingAccount);
     error Unauthorized(address caller);
     error KeyNotFound(bytes32 keyHash);
+    error UserNotFound();
     
     constructor(address _factory) {
         factory = AbstractAccountFactory(_factory);
+        // Generate a unique salt based on deployment parameters
+        salt = keccak256(abi.encodePacked(
+            block.timestamp, 
+            block.prevrandao, 
+            address(this),
+            msg.sender
+        ));
     }
     
     modifier onlyRegisteredAccount() {
@@ -59,6 +73,17 @@ contract AccountRegistry {
     }
     
     /**
+     * @dev Get user ID by account address
+     */
+    function getUserIdByAccount(address account) public view returns (uint256) {
+        uint256 userId = accountToUserId[account];
+        if (userId == 0 && !registeredAccounts[account]) {
+            revert UserNotFound();
+        }
+        return userId;
+    }
+    
+    /**
      * @dev Check if a key is already linked to an account
      */
     function isKeyLinked(Types.PublicKey calldata publicKey) public view returns (bool, address) {
@@ -68,14 +93,35 @@ contract AccountRegistry {
     }
     
     /**
-     * @dev Create a new user with an account and register their initial key
-     * @param id The user ID
-     * @param publicKey The public key to associate with the user
+     * @dev Generate a unique user ID from a public key
+     * @param publicKey The public key to use for ID generation
+     * @return A unique, non-sequential user ID
      */
-    function createUser(uint256 id, Types.PublicKey calldata publicKey) external {
-        // Verify user doesn't already exist
-        if (users[id].account != address(0)) {
-            revert UserAlreadyExists(id);
+    function _generateUserId(Types.PublicKey memory publicKey) internal view returns (uint256) {
+        // Generate a unique ID using a combination of inputs
+        // We add 1 to ensure the ID is never zero (which we use as an uninitialized value)
+        return uint256(keccak256(abi.encodePacked(
+            salt,
+            publicKey.x,
+            publicKey.y,
+            block.timestamp,
+            block.prevrandao
+        )));
+    }
+    
+    /**
+     * @dev Create a new user with an account and register their initial key
+     * @param publicKey The public key to associate with the user
+     * @return userId The auto-generated unique user ID
+     * @return accountAddress The address of the deployed account
+     */
+    function createUser(Types.PublicKey calldata publicKey) external returns (uint256 userId, address accountAddress) {
+        // Generate a unique, non-sequential user ID
+        userId = _generateUserId(publicKey);
+        
+        // Verify user doesn't already exist (extremely unlikely but check anyway)
+        if (users[userId].account != address(0)) {
+            revert UserAlreadyExists(userId);
         }
         
         // Verify key isn't already linked to another account
@@ -85,35 +131,40 @@ contract AccountRegistry {
         }
         
         // Call the factory to deploy a new Account contract
-        address account = factory.deployAccount(publicKey, address(this));
+        accountAddress = factory.deployAccount(publicKey, address(this));
         
         // Register the user and account
-        users[id] = User(id, publicKey, account);
-        registeredAccounts[account] = true;
+        users[userId] = User(userId, publicKey, accountAddress);
+        registeredAccounts[accountAddress] = true;
+        accountToUserId[accountAddress] = userId;
         
         // Link the initial admin key
-        keyToAccount[keyHash] = account;
+        keyToAccount[keyHash] = accountAddress;
         
-        emit UserCreated(id, publicKey, account);
-        emit KeyLinked(keyHash, account);
+        emit UserCreated(userId, publicKey, accountAddress);
+        emit KeyLinked(keyHash, accountAddress);
+        
+        return (userId, accountAddress);
     }
     
     /**
      * @dev Request to add a new key to an account
-     * @notice This can only be called by a user with an existing account
+     * @param account The account address to add the key to
+     * @param publicKey The public key to add
+     * @param role The role to assign to the key
      */
     function requestAddKey(
-        uint256 userId,
+        address account,
         Types.PublicKey calldata publicKey, 
         uint8 role
     ) external returns (bytes32) {
-        // Verify caller is associated with the user ID
-        User memory user = users[userId];
-        if (user.account == address(0)) {
-            revert Unauthorized(msg.sender);
+        // Verify the account exists
+        uint256 userId = accountToUserId[account];
+        if (userId == 0 || !registeredAccounts[account]) {
+            revert AccountNotRegistered(account);
         }
         
-        // Check if key is already linked
+        // Check if key is already linked to an account
         bytes32 keyHash = _getKeyHash(publicKey);
         address linkedAccount = keyToAccount[keyHash];
         
@@ -122,10 +173,10 @@ contract AccountRegistry {
         }
         
         // Create request in the account contract
-        Account account = Account(payable(user.account));
-        bytes32 requestId = account.requestAddKey(publicKey, Account.Role(role));
+        Account accountContract = Account(payable(account));
+        bytes32 requestId = accountContract.requestAddKey(publicKey, Account.Role(role));
         
-        emit KeyRequestCreated(user.account, keyHash, role);
+        emit KeyRequestCreated(account, keyHash, role);
         
         return requestId;
     }

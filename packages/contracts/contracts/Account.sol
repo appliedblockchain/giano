@@ -7,6 +7,7 @@ import {IERC1271} from '@openzeppelin/contracts/interfaces/IERC1271.sol';
 import {IERC721Receiver} from '@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol';
 import {IERC1155Receiver} from '@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol';
 import {Types} from './Types.sol';
+import {AccountRegistry} from './AccountRegistry.sol';
 
 /**
 A smart wallet implementation that allows you to execute arbitrary functions in contracts
@@ -236,6 +237,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         delete keyRequests[requestId];
 
+        // Notify the registry about the new key
+        AccountRegistry(registry).notifyKeyAdded(request.publicKey);
+
         emit KeyRequestApproved(requestId, request.publicKey.x, request.publicKey.y, request.requestedRole);
         emit KeyAdded(request.publicKey.x, request.publicKey.y, request.requestedRole);
     }
@@ -282,6 +286,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         keys[keyHash].role = Role.NONE;
         keyCount--;
+
+        // Notify the registry about the removed key
+        AccountRegistry(registry).notifyKeyRemoved(_publicKey);
 
         emit KeyRemoved(_publicKey.x, _publicKey.y);
     }
@@ -406,5 +413,4 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             interfaceId == type(IERC721Receiver).interfaceId ||
             interfaceId == type(IERC1271).interfaceId;
     }
-
 }
