@@ -78,6 +78,16 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error OnlyRegistryCanAddKeys();
 
     /**
+     * @notice Error thrown when a standard signature validation fails
+     */
+    error InvalidExecutorSignature();
+
+    /**
+     * @notice Error thrown when an admin signature validation fails
+     */
+    error InvalidAdminSignature();
+
+    /**
      * @notice Role levels for keys associated with the account
      * @dev Higher role levels include the permissions of lower levels
      */
@@ -312,7 +322,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      */
     modifier validSignature(bytes memory message, bytes calldata signature) {
         if (!_validateSignature(message, signature)) {
-            revert InvalidSignature('Signature verification failed');
+            revert InvalidExecutorSignature();
         }
         _;
     }
@@ -334,7 +344,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         bytes32 challenge = getAdminChallenge(adminAction);
 
         if (!_validateAdminSignature(bytes.concat(challenge), adminAction.signature)) {
-            revert InvalidSignature('Admin signature verification failed');
+            revert InvalidAdminSignature();
         }
 
         if (adminAction.nonce != adminNonce) {
