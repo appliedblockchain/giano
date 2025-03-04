@@ -88,6 +88,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error InvalidAdminSignature();
 
     /**
+     * @notice Error thrown when attempting to remove or downgrade the last admin key
+     */
+    error LastAdminKey();
+
+    /**
      * @notice Role levels for keys associated with the account
      * @dev Higher role levels include the permissions of lower levels
      */
@@ -203,9 +208,6 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     // Mapping from request ID to key request information
     mapping(bytes32 => KeyRequest) private keyRequests;
     
-    // Total number of active keys
-    uint256 private keyCount;
-    
     // Current request nonce (incremented for each request)
     uint256 private requestNonce;
     
@@ -218,6 +220,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     // Address of the registry contract
     address public immutable registry;
 
+    // Counter for admin keys
+    uint256 private adminKeyCount;
+
     /**
      * @notice Initializes the Account with an initial admin key and registry
      * @dev Sets up the initial admin key and registers the registry
@@ -228,8 +233,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         // Add the initial admin key
         bytes32 keyHash = _getKeyHash(_initialAdminKey);
         keys[keyHash] = KeyInfo({publicKey: _initialAdminKey, role: Role.ADMIN});
-        keyCount = 1;
         registry = _registry;
+        adminKeyCount = 1;
 
         emit KeyAdded(_initialAdminKey.x, _initialAdminKey.y, Role.ADMIN);
     }
@@ -295,14 +300,6 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     function getKeyInfo(Types.PublicKey calldata _publicKey) external view returns (KeyInfo memory) {
         bytes32 keyHash = _getKeyHash(_publicKey);
         return keys[keyHash];
-    }
-
-    /**
-     * @notice Gets the total number of active keys
-     * @return The number of active keys associated with this account
-     */
-    function getKeyCount() external view returns (uint256) {
-        return keyCount;
     }
 
     /**
@@ -421,7 +418,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         bytes32 keyHash = _getKeyHash(request.publicKey);
         keys[keyHash] = KeyInfo({publicKey: request.publicKey, role: request.requestedRole});
-        keyCount++;
+
+        // Increment admin count if adding an admin key
+        if (request.requestedRole == Role.ADMIN) {
+            adminKeyCount++;
+        }
 
         delete keyRequests[requestId];
 
@@ -474,8 +475,15 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             revert KeyDoesNotExist(_publicKey.x, _publicKey.y);
         }
 
+        // If removing an admin key, ensure it's not the last one
+        if (keys[keyHash].role == Role.ADMIN) {
+            if (adminKeyCount <= 1) {
+                revert LastAdminKey();
+            }
+            adminKeyCount--;
+        }
+
         keys[keyHash].role = Role.NONE;
-        keyCount--;
 
         // Notify the registry about the removed key
         AccountRegistry(registry).notifyKeyRemoved(_publicKey);
@@ -502,6 +510,18 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         bytes32 keyHash = _getKeyHash(_publicKey);
         if (keys[keyHash].role == Role.NONE) {
             revert KeyDoesNotExist(_publicKey.x, _publicKey.y);
+        }
+
+        // Handle admin role changes
+        if (keys[keyHash].role == Role.ADMIN && _newRole != Role.ADMIN) {
+            // Downgrading an admin key
+            if (adminKeyCount <= 1) {
+                revert LastAdminKey();
+            }
+            adminKeyCount--;
+        } else if (keys[keyHash].role != Role.ADMIN && _newRole == Role.ADMIN) {
+            // Upgrading to admin role
+            adminKeyCount++;
         }
 
         keys[keyHash].role = _newRole;
