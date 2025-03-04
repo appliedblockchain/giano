@@ -5,10 +5,21 @@ import {P256} from "./P256.sol";
 import {Base64} from "./Base64.sol";
 
 /**
- * Helper library for external contracts to verify WebAuthn signatures.
- **/
+ * @title WebAuthn
+ * @author Giano Team
+ * @notice Helper library for verifying WebAuthn signatures in Solidity
+ * @dev Implements verification of WebAuthn authentication assertions following
+ * the W3C WebAuthn specification (https://w3c.github.io/webauthn/)
+ */
 library WebAuthn {
-    /// Checks whether substr occurs in str starting at a given byte offset.
+    /**
+     * @notice Checks whether a substring occurs in a string at a given byte offset
+     * @dev Used to verify challenge and response type in the clientDataJSON
+     * @param substr The substring to search for
+     * @param str The string to search in
+     * @param location The starting byte offset in the string
+     * @return True if the substring was found at the specified location
+     */
     function contains(
         string memory substr,
         string memory str,
@@ -33,14 +44,19 @@ library WebAuthn {
         return true;
     }
 
-    bytes1 constant AUTH_DATA_FLAGS_UP = 0x01; // Bit 0
-    bytes1 constant AUTH_DATA_FLAGS_UV = 0x04; // Bit 2
-    bytes1 constant AUTH_DATA_FLAGS_BE = 0x08; // Bit 3
-    bytes1 constant AUTH_DATA_FLAGS_BS = 0x10; // Bit 4
+    // Constants for authenticator data flags
+    bytes1 constant AUTH_DATA_FLAGS_UP = 0x01; // User Present (Bit 0)
+    bytes1 constant AUTH_DATA_FLAGS_UV = 0x04; // User Verified (Bit 2)
+    bytes1 constant AUTH_DATA_FLAGS_BE = 0x08; // Backup Eligibility (Bit 3)
+    bytes1 constant AUTH_DATA_FLAGS_BS = 0x10; // Backup State (Bit 4)
 
-    /// Verifies the authFlags in authenticatorData. Numbers in inline comment
-    /// correspond to the same numbered bullets in
-    /// https://w3c.github.io/webauthn/#sctn-verifying-assertion.
+    /**
+     * @notice Verifies the authentication flags in authenticatorData
+     * @dev Validates flags according to the WebAuthn spec section on verifying assertion
+     * @param flags The flags byte from the authenticatorData
+     * @param requireUserVerification Whether user verification is required
+     * @return True if the flags are valid according to the spec
+     */
     function checkAuthFlags(
         bytes1 flags,
         bool requireUserVerification
@@ -72,54 +88,30 @@ library WebAuthn {
     }
 
     /**
-     * Verifies a Webauthn P256 signature (Authentication Assertion) as described
-     * in https://w3c.github.io/webauthn/#sctn-verifying-assertion. We do not
-     * verify all the steps as described in the specification, only ones relevant
-     * to our context. Please carefully read through this list before usage.
-     * Specifically, we do verify the following:
-     * - Verify that authenticatorData (which comes from the authenticator,
-     *   such as iCloud Keychain) indicates a well-formed assertion. If
-     *   requireUserVerification is set, checks that the authenticator enforced
-     *   user verification. User verification should be required if,
-     *   and only if, options.userVerification is set to required in the request
-     * - Verifies that the client JSON is of type "webauthn.get", i.e. the client
-     *   was responding to a request to assert authentication.
-     * - Verifies that the client JSON contains the requested challenge.
-     * - Finally, verifies that (r, s) constitute a valid signature over both
-     *   the authenicatorData and client JSON, for public key (x, y).
-     *
-     * We make some assumptions about the particular use case of this verifier,
-     * so we do NOT verify the following:
-     * - Does NOT verify that the origin in the clientDataJSON matches the
-     *   Relying Party's origin: It is considered the authenticator's
-     *   responsibility to ensure that the user is interacting with the correct
-     *   RP. This is enforced by most high quality authenticators properly,
-     *   particularly the iCloud Keychain and Google Password Manager were
-     *   tested.
-     * - Does NOT verify That c.topOrigin is well-formed: We assume c.topOrigin
-     *   would never be present, i.e. the credentials are never used in a
-     *   cross-origin/iframe context. The website/app set up should disallow
-     *   cross-origin usage of the credentials. This is the default behaviour for
-     *   created credentials in common settings.
-     * - Does NOT verify that the rpIdHash in authData is the SHA-256 hash of an
-     *   RP ID expected by the Relying Party: This means that we rely on the
-     *   authenticator to properly enforce credentials to be used only by the
-     *   correct RP. This is generally enforced with features like Apple App Site
-     *   Association and Google Asset Links. To protect from edge cases in which
-     *   a previously-linked RP ID is removed from the authorised RP IDs,
-     *   we recommend that messages signed by the authenticator include some
-     *   expiry mechanism.
-     * - Does NOT verify the credential backup state: This assumes the credential
-     *   backup state is NOT used as part of Relying Party business logic or
-     *   policy.
-     * - Does NOT verify the values of the client extension outputs: This assumes
-     *   that the Relying Party does not use client extension outputs.
-     * - Does NOT verify the signature counter: Signature counters are intended
-     *   to enable risk scoring for the Relying Party. This assumes risk scoring
-     *   is not used as part of Relying Party business logic or policy.
-     * - Does NOT verify the attestation object: This assumes that
-     *   response.attestationObject is NOT present in the response, i.e. the
-     *   RP does not intend to verify an attestation.
+     * @notice Verifies a WebAuthn P256 signature (Authentication Assertion)
+     * @dev Implements partial verification of WebAuthn assertions as described in
+     * https://w3c.github.io/webauthn/#sctn-verifying-assertion
+     * 
+     * This function verifies:
+     * - That authenticatorData indicates a well-formed assertion with appropriate flags
+     * - That the client JSON is of type "webauthn.get"
+     * - That the client JSON contains the requested challenge
+     * - That the signature is valid for the provided P256 public key
+     * 
+     * Note that this implementation makes certain assumptions suitable for the Giano
+     * protocol and does NOT verify all aspects of the WebAuthn specification.
+     * 
+     * @param challenge The challenge that was sent to the authenticator
+     * @param authenticatorData The raw authenticator data from the WebAuthn response
+     * @param requireUserVerification Whether user verification is required
+     * @param clientDataJSON The client data JSON from the WebAuthn response
+     * @param challengeLocation Location of the challenge in the clientDataJSON
+     * @param responseTypeLocation Location of the response type in the clientDataJSON
+     * @param r The r component of the signature
+     * @param s The s component of the signature
+     * @param x The x coordinate of the public key
+     * @param y The y coordinate of the public key
+     * @return True if the signature is valid
      */
     function verifySignature(
         bytes memory challenge,

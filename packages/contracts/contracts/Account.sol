@@ -10,41 +10,108 @@ import {Types} from './Types.sol';
 import {AccountRegistry} from './AccountRegistry.sol';
 
 /**
-A smart wallet implementation that allows you to execute arbitrary functions in contracts
-with multiple signers having different roles
+ * @title Account
+ * @author Giano Team
+ * @notice A smart wallet implementation that allows execution of arbitrary functions with multiple signers having different roles
+ * @dev This contract implements WebAuthn signature verification and supports multiple keys with different permissions
  */
 contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver {
     // bytes4(keccak256("isValidSignature(bytes32,bytes)")
     bytes4 internal constant ERC1271_MAGICVALUE = 0x1626ba7e;
 
+    /**
+     * @notice Error thrown when signature validation fails
+     * @param reason Human-readable reason for the failure
+     */
     error InvalidSignature(string reason);
+
+    /**
+     * @notice Error thrown when a key attempts an operation it is not authorized for
+     * @param keyX The X coordinate of the unauthorized key
+     * @param keyY The Y coordinate of the unauthorized key
+     * @param requiredRole The minimum role required for the operation
+     */
     error NotAuthorized(bytes32 keyX, bytes32 keyY, Role requiredRole);
+
+    /**
+     * @notice Error thrown when an operation is attempted on a non-existent key
+     * @param keyX The X coordinate of the non-existent key
+     * @param keyY The Y coordinate of the non-existent key
+     */
     error KeyDoesNotExist(bytes32 keyX, bytes32 keyY);
+
+    /**
+     * @notice Error thrown when an operation is attempted on a non-existent request
+     * @param requestId The ID of the non-existent request
+     */
     error RequestDoesNotExist(bytes32 requestId);
+
+    /**
+     * @notice Error thrown when attempting to add a key that already exists
+     * @param keyX The X coordinate of the existing key
+     * @param keyY The Y coordinate of the existing key
+     */
     error KeyAlreadyExists(bytes32 keyX, bytes32 keyY);
+
+    /**
+     * @notice Error thrown when an admin operation type doesn't match the expected type
+     * @param expected The expected operation type
+     * @param received The received operation type
+     */
     error InvalidOperation(AdminOperation expected, AdminOperation received);
+
+    /**
+     * @notice Error thrown when a nonce doesn't match the expected value
+     * @param expected The expected nonce
+     * @param received The received nonce
+     */
     error InvalidNonce(uint256 expected, uint256 received);
+
+    /**
+     * @notice Error thrown when invalid operation data is provided
+     */
     error InvalidOperationData();
+
+    /**
+     * @notice Error thrown when an unauthorized address attempts to add keys
+     */
     error OnlyRegistryCanAddKeys();
 
+    /**
+     * @notice Role levels for keys associated with the account
+     * @dev Higher role levels include the permissions of lower levels
+     */
     enum Role {
         NONE, // Key doesn't exist or has no permissions
         EXECUTOR,
         ADMIN
     }
 
+    /**
+     * @notice Structure to store information about a key
+     * @param publicKey The public key
+     * @param role The role assigned to the key
+     */
     struct KeyInfo {
         Types.PublicKey publicKey;
         Role role;
     }
 
+    /**
+     * @notice Structure to store information about a key request
+     * @param publicKey The public key being requested
+     * @param requestedRole The role being requested for the key
+     * @param exists Whether the request exists
+     */
     struct KeyRequest {
         Types.PublicKey publicKey;
         Role requestedRole;
         bool exists;
     }
 
-    // Admin operation types
+    /**
+     * @notice Types of administrative operations that can be performed
+     */
     enum AdminOperation {
         APPROVE_KEY_REQUEST,
         REJECT_KEY_REQUEST,
@@ -52,6 +119,13 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         CHANGE_KEY_ROLE
     }
 
+    /**
+     * @notice Structure for administrative actions
+     * @param operation The type of admin operation
+     * @param operationData The encoded data for the operation
+     * @param nonce The nonce for the operation to prevent replay attacks
+     * @param signature The signature authorizing the operation
+     */
     struct AdminAction {
         AdminOperation operation;
         bytes operationData;
@@ -59,24 +133,87 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         bytes signature;
     }
 
+    /**
+     * @notice Emitted when a key addition is requested
+     * @param requestId The ID of the created request
+     * @param x The X coordinate of the public key
+     * @param y The Y coordinate of the public key
+     * @param requestedRole The requested role for the key
+     */
     event KeyRequested(bytes32 indexed requestId, bytes32 x, bytes32 y, Role requestedRole);
+
+    /**
+     * @notice Emitted when a key request is approved
+     * @param requestId The ID of the approved request
+     * @param x The X coordinate of the public key
+     * @param y The Y coordinate of the public key
+     * @param role The assigned role for the key
+     */
     event KeyRequestApproved(bytes32 indexed requestId, bytes32 x, bytes32 y, Role role);
+
+    /**
+     * @notice Emitted when a key request is rejected
+     * @param requestId The ID of the rejected request
+     */
     event KeyRequestRejected(bytes32 indexed requestId);
+
+    /**
+     * @notice Emitted when a key is added to the account
+     * @param x The X coordinate of the public key
+     * @param y The Y coordinate of the public key
+     * @param role The assigned role for the key
+     */
     event KeyAdded(bytes32 indexed x, bytes32 indexed y, Role role);
+
+    /**
+     * @notice Emitted when a key is removed from the account
+     * @param x The X coordinate of the removed public key
+     * @param y The Y coordinate of the removed public key
+     */
     event KeyRemoved(bytes32 indexed x, bytes32 indexed y);
+
+    /**
+     * @notice Emitted when a key's role is changed
+     * @param x The X coordinate of the public key
+     * @param y The Y coordinate of the public key
+     * @param newRole The new role assigned to the key
+     */
     event KeyRoleChanged(bytes32 indexed x, bytes32 indexed y, Role newRole);
+
+    /**
+     * @notice Emitted when an administrative action is executed
+     * @param operation The type of operation that was executed
+     * @param nonce The nonce used for the operation
+     */
     event AdminActionExecuted(AdminOperation indexed operation, uint256 nonce);
 
+    // Mapping from key hash to key information
     mapping(bytes32 => KeyInfo) private keys;
+    
+    // Mapping from request ID to key request information
     mapping(bytes32 => KeyRequest) private keyRequests;
+    
+    // Total number of active keys
     uint256 private keyCount;
+    
+    // Current request nonce (incremented for each request)
     uint256 private requestNonce;
+    
+    // Current admin operation nonce (incremented for each admin operation)
     uint256 private adminNonce = 0;
 
+    // Current transaction nonce (incremented for each execute call)
     uint256 private currentNonce = 0;
 
+    // Address of the registry contract
     address public immutable registry;
 
+    /**
+     * @notice Initializes the Account with an initial admin key and registry
+     * @dev Sets up the initial admin key and registers the registry
+     * @param _initialAdminKey The initial public key to be given admin role
+     * @param _registry The address of the AccountRegistry contract
+     */
     constructor(Types.PublicKey memory _initialAdminKey, address _registry) {
         // Add the initial admin key
         bytes32 keyHash = _getKeyHash(_initialAdminKey);
@@ -88,30 +225,41 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Returns the expected challenge for a given call payload
+     * @notice Returns the expected challenge for a given call payload
+     * @dev Used to verify signatures for execute calls
      * @param call The call parameters to generate the challenge against
+     * @return The challenge hash for signature verification
      */
     function getChallenge(Types.Call calldata call) public view returns (bytes32) {
         return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce), bytes20(call.target), bytes32(call.value), call.data));
     }
 
     /**
-     * Returns the expected challenge for an admin operation
+     * @notice Returns the expected challenge for an admin operation
+     * @dev Used to verify signatures for admin operations
      * @param adminAction The admin action to generate the challenge against
+     * @return The challenge hash for signature verification
      */
     function getAdminChallenge(AdminAction memory adminAction) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), adminAction.operation, adminAction.operationData, adminAction.nonce));
     }
 
     /**
-     * Get the hash of a public key
+     * @notice Computes the hash of a public key
+     * @dev Used for efficiently storing and looking up keys
+     * @param _publicKey The public key to hash
+     * @return The keccak256 hash of the public key
      */
     function _getKeyHash(Types.PublicKey memory _publicKey) internal pure returns (bytes32) {
         return keccak256(abi.encode(_publicKey.x, _publicKey.y));
     }
 
     /**
-     * Check if a key exists and has at least the specified role
+     * @notice Checks if a key exists and has at least the specified role
+     * @dev Used to verify authorization for operations
+     * @param _publicKey The public key to check
+     * @param _minimumRole The minimum role required
+     * @return Boolean indicating whether the key has the required role
      */
     function _hasRole(Types.PublicKey memory _publicKey, Role _minimumRole) internal view returns (bool) {
         bytes32 keyHash = _getKeyHash(_publicKey);
@@ -119,7 +267,10 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Check if a key exists (has any role)
+     * @notice Checks if a key exists (has any role)
+     * @dev Used to determine whether a key has been registered
+     * @param _publicKey The public key to check
+     * @return Boolean indicating whether the key exists
      */
     function _keyExists(Types.PublicKey memory _publicKey) internal view returns (bool) {
         bytes32 keyHash = _getKeyHash(_publicKey);
@@ -127,7 +278,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Returns information about a specific key
+     * @notice Returns information about a specific key
+     * @param _publicKey The public key to get information for
+     * @return KeyInfo struct containing the key's information
      */
     function getKeyInfo(Types.PublicKey calldata _publicKey) external view returns (KeyInfo memory) {
         bytes32 keyHash = _getKeyHash(_publicKey);
@@ -135,19 +288,28 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Get the total number of keys
+     * @notice Gets the total number of active keys
+     * @return The number of active keys associated with this account
      */
     function getKeyCount() external view returns (uint256) {
         return keyCount;
     }
 
     /**
-     * Get the current admin nonce
+     * @notice Gets the current admin nonce
+     * @dev Used to prevent replay attacks for admin operations
+     * @return The current admin nonce
      */
     function getAdminNonce() external view returns (uint256) {
         return adminNonce;
     }
 
+    /**
+     * @notice Verifies that a signature is valid
+     * @dev Reverts if the signature verification fails
+     * @param message The message that was signed
+     * @param signature The signature to verify
+     */
     modifier validSignature(bytes memory message, bytes calldata signature) {
         if (!_validateSignature(message, signature)) {
             revert InvalidSignature('Signature verification failed');
@@ -155,6 +317,12 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         _;
     }
 
+    /**
+     * @notice Verifies that an admin operation is authorized
+     * @dev Validates the operation type, signature, and nonce
+     * @param expectedOperation The expected operation type
+     * @param adminAction The admin action to validate
+     */
     modifier onlyAdmin(
         AdminOperation expectedOperation,
         AdminAction memory adminAction
@@ -179,6 +347,10 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         _;
     }
 
+    /**
+     * @notice Ensures the caller is the registry contract
+     * @dev Used to restrict key management functions to the registry
+     */
     modifier onlyRegistry() {
         if (msg.sender != registry) {
             revert OnlyRegistryCanAddKeys();
@@ -186,14 +358,19 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         _;
     }
 
-    // solhint-disable-next-line no-empty-blocks
+    /**
+     * @notice Allows the account to receive ETH
+     */
     receive() external payable {}
 
-    // solhint-disable-next-line no-empty-blocks
+    /**
+     * @notice Fallback function that allows the account to receive ETH
+     */
     fallback() external payable {}
 
     /**
-     * Request to add a new key to the contract
+     * @notice Requests to add a new key to the contract
+     * @dev Can only be called by the registry
      * @param _publicKey The public key to add
      * @param _requestedRole The requested role for the key
      * @return requestId The ID of the created request
@@ -214,7 +391,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Approve a key addition request (admin only)
+     * @notice Approves a key addition request
+     * @dev Can only be called by an admin and notifies the registry
      * @param requestId The ID of the request to approve
      * @param adminAction The admin action details with operation data, nonce and signature
      */
@@ -245,7 +423,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Reject a key addition request (admin only)
+     * @notice Rejects a key addition request
+     * @dev Can only be called by an admin
      * @param requestId The ID of the request to reject
      * @param adminAction The admin action details with operation data, nonce and signature
      */
@@ -267,7 +446,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Remove an existing key (admin only)
+     * @notice Removes an existing key
+     * @dev Can only be called by an admin and notifies the registry
      * @param _publicKey The public key to remove
      * @param adminAction The admin action details with operation data, nonce and signature
      */
@@ -294,7 +474,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Change the role of an existing key (admin only)
+     * @notice Changes the role of an existing key
+     * @dev Can only be called by an admin
      * @param _publicKey The public key to update
      * @param _newRole The new role for the key
      * @param adminAction The admin action details with operation data, nonce and signature
@@ -319,9 +500,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Execute an arbitrary call on a smart contract, optionally sending a value in ETH
+     * @notice Executes an arbitrary call on a smart contract
+     * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
      * @param signed The parameters of the call to be executed
-     * @notice The call parameters must be signed with a key that has EXECUTOR or ADMIN role
      */
     function execute(Types.SignedCall calldata signed) external payable validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) nonReentrant {
         (bool success, bytes memory result) = signed.call.target.call{value: signed.call.value}(signed.call.data);
@@ -334,7 +515,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * Validates a signature for an admin operation
+     * @notice Validates a signature for an admin operation
+     * @dev Checks if the signer has ADMIN role and verifies the WebAuthn signature
+     * @param message The message that was signed
+     * @param signature The signature to verify
+     * @return Boolean indicating whether the signature is valid
      */
     function _validateAdminSignature(bytes memory message, bytes memory signature) private view returns (bool) {
         Types.Signature memory sig = abi.decode(signature, (Types.Signature));
@@ -358,6 +543,13 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             });
     }
 
+    /**
+     * @notice Validates a signature for an execute operation
+     * @dev Checks if the signer has at least EXECUTOR role and verifies the WebAuthn signature
+     * @param message The message that was signed
+     * @param signature The signature to verify
+     * @return Boolean indicating whether the signature is valid
+     */
     function _validateSignature(bytes memory message, bytes calldata signature) private view returns (bool) {
         Types.Signature memory sig = abi.decode(signature, (Types.Signature));
 
@@ -383,7 +575,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * @inheritdoc IERC1271
+     * @notice Implements ERC-1271 signature verification
+     * @dev Allows the account to be used with ERC-1271 compatible contracts
+     * @param messageHash The hash of the message that was signed
+     * @param signature The signature to verify
+     * @return magicValue The magic value if the signature is valid, or 0xffffffff if invalid
      */
     function isValidSignature(bytes32 messageHash, bytes calldata signature) public view override returns (bytes4 magicValue) {
         if (_validateSignature(bytes.concat(messageHash), signature)) {
@@ -392,20 +588,38 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         return 0xffffffff;
     }
 
+    /**
+     * @notice Handles the receipt of an ERC721 token
+     * @dev Implements IERC721Receiver interface
+     * @return The ERC721Receiver selector
+     */
     function onERC721Received(address, address, uint256, bytes calldata) external pure override returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
+    /**
+     * @notice Handles the receipt of a single ERC1155 token
+     * @dev Implements IERC1155Receiver interface
+     * @return The ERC1155Receiver selector
+     */
     function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure override returns (bytes4) {
         return IERC1155Receiver.onERC1155Received.selector;
     }
 
+    /**
+     * @notice Handles the receipt of multiple ERC1155 tokens
+     * @dev Implements IERC1155Receiver interface
+     * @return The ERC1155BatchReceived selector
+     */
     function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata) external pure override returns (bytes4) {
         return IERC1155Receiver.onERC1155BatchReceived.selector;
     }
 
     /**
-     * @dev See {IERC165-supportsInterface}.
+     * @notice Indicates which interfaces this contract supports
+     * @dev Implements the ERC-165 standard
+     * @param interfaceId The interface identifier to check
+     * @return Boolean indicating whether the interface is supported
      */
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return
