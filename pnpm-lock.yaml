@@ -112,7 +112,7 @@ importers:
         specifier: ^3.1.0
         version: 3.1.0(chai@4.5.0)(hardhat@2.22.14)
       mocha:
-        specifier: ^10.2.0
+        specifier: ^10.7.3
         version: 10.7.3
       solidity-coverage:
         specifier: ^0.8.5
