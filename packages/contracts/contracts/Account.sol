@@ -93,6 +93,12 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error LastAdminKey();
 
     /**
+     * @notice Error thrown when attempting operations while the account is paused
+     * @param until The timestamp until which the account is paused
+     */
+    error AccountIsPaused(uint256 until);
+
+    /**
      * @notice Role levels for keys associated with the account
      * @dev Higher role levels include the permissions of lower levels
      */
@@ -131,7 +137,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         APPROVE_KEY_REQUEST,
         REJECT_KEY_REQUEST,
         REMOVE_KEY,
-        CHANGE_KEY_ROLE
+        CHANGE_KEY_ROLE,
+        PAUSE_ACCOUNT,
+        UNPAUSE_ACCOUNT
     }
 
     /**
@@ -145,6 +153,16 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         AdminOperation operation;
         bytes operationData;
         uint256 nonce;
+        bytes signature;
+    }
+
+    /**
+     * @notice Structure for batch execution
+     * @param calls Array of call parameters to execute in sequence
+     * @param signature The signature authorizing all calls
+     */
+    struct BatchCall {
+        Types.Call[] calls;
         bytes signature;
     }
 
@@ -202,26 +220,47 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      */
     event AdminActionExecuted(AdminOperation indexed operation, uint256 nonce);
 
+    /**
+     * @notice Emitted when an operation is executed
+     * @param nonce The nonce used for the operation
+     * @param target The target address of the call
+     * @param value The value sent with the call
+     * @param data The calldata sent with the call
+     */
+    event Executed(uint256 indexed nonce, address indexed target, uint256 value, bytes data);
+
+    /**
+     * @notice Emitted when the account is paused
+     * @param until The timestamp until which the account is paused (0 for indefinite)
+     */
+    event AccountPaused(uint256 until);
+
+    /**
+     * @notice Emitted when the account is unpaused
+     */
+    event AccountUnpaused();
+
     // Mapping from key hash to key information
     mapping(bytes32 => KeyInfo) private keys;
     
     // Mapping from request ID to key request information
     mapping(bytes32 => KeyRequest) private keyRequests;
     
+    // Storage optimization: Pack related uint values into a single storage slot
     // Current request nonce (incremented for each request)
-    uint256 private requestNonce;
-    
     // Current admin operation nonce (incremented for each admin operation)
-    uint256 private adminNonce = 0;
-
     // Current transaction nonce (incremented for each execute call)
-    uint256 private currentNonce = 0;
+    // Counter for admin keys
+    uint64 private requestNonce;
+    uint64 private adminNonce;
+    uint64 private currentNonce; 
+    uint64 private adminKeyCount;
 
     // Address of the registry contract
     address public immutable registry;
 
-    // Counter for admin keys
-    uint256 private adminKeyCount;
+    // Pause mechanism
+    uint256 private pausedUntil;
 
     /**
      * @notice Initializes the Account with an initial admin key and registry
@@ -246,7 +285,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @return The challenge hash for signature verification
      */
     function getChallenge(Types.Call calldata call) public view returns (bytes32) {
-        return keccak256(bytes.concat(bytes20(address(this)), bytes32(currentNonce), bytes20(call.target), bytes32(call.value), call.data));
+        return keccak256(bytes.concat(bytes20(address(this)), bytes32(uint256(currentNonce)), bytes20(call.target), bytes32(call.value), call.data));
     }
 
     /**
@@ -309,6 +348,23 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      */
     function getAdminNonce() external view returns (uint256) {
         return adminNonce;
+    }
+
+    /**
+     * @notice Gets the current transaction nonce
+     * @dev Used to prevent replay attacks for execute operations
+     * @return The current transaction nonce
+     */
+    function getNonce() external view returns (uint256) {
+        return currentNonce;
+    }
+
+    /**
+     * @notice Gets the current admin key count
+     * @return The current number of admin keys
+     */
+    function getAdminKeyCount() external view returns (uint256) {
+        return adminKeyCount;
     }
 
     /**
@@ -530,17 +586,67 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
+     * @notice Returns the expected challenge for a batch of calls
+     * @dev Used to verify signatures for batch execute calls
+     * @param calls The array of call parameters to generate the challenge against
+     * @return The challenge hash for signature verification
+     */
+    function getBatchChallenge(Types.Call[] calldata calls) public view returns (bytes32) {
+        bytes32[] memory callHashes = new bytes32[](calls.length);
+        for (uint256 i = 0; i < calls.length; i++) {
+            callHashes[i] = keccak256(abi.encode(calls[i].target, calls[i].value, calls[i].data));
+        }
+        return keccak256(abi.encode(address(this), currentNonce, callHashes));
+    }
+
+    /**
+     * @notice Ensures the account is not paused
+     * @dev Reverts if account is currently paused
+     */
+    modifier whenNotPaused() {
+        if (pausedUntil > block.timestamp) {
+            revert AccountIsPaused(pausedUntil);
+        }
+        _;
+    }
+
+    /**
      * @notice Executes an arbitrary call on a smart contract
      * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
      * @param signed The parameters of the call to be executed
      */
-    function execute(Types.SignedCall calldata signed) external payable validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) nonReentrant {
+    function execute(Types.SignedCall calldata signed) external payable validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) nonReentrant whenNotPaused {
         (bool success, bytes memory result) = signed.call.target.call{value: signed.call.value}(signed.call.data);
         if (!success) {
             assembly {
                 revert(add(result, 32), mload(result))
             }
         }
+        
+        emit Executed(currentNonce, signed.call.target, signed.call.value, signed.call.data);
+        currentNonce++;
+    }
+
+    /**
+     * @notice Executes multiple calls in a single transaction
+     * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
+     * @param batch The batch of calls to be executed with signature
+     */
+    function executeBatch(BatchCall calldata batch) external payable validSignature(bytes.concat(getBatchChallenge(batch.calls)), batch.signature) nonReentrant whenNotPaused {
+        uint256 callsLength = batch.calls.length;
+        require(callsLength > 0, "No calls to execute");
+
+        for (uint256 i = 0; i < callsLength; i++) {
+            Types.Call calldata currentCall = batch.calls[i];
+            (bool success, bytes memory result) = currentCall.target.call{value: currentCall.value}(currentCall.data);
+            if (!success) {
+                assembly {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+        }
+
+        emit Executed(currentNonce, address(0), 0, abi.encode(batch.calls));
         currentNonce++;
     }
 
@@ -656,5 +762,45 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             interfaceId == type(IERC1155Receiver).interfaceId ||
             interfaceId == type(IERC721Receiver).interfaceId ||
             interfaceId == type(IERC1271).interfaceId;
+    }
+
+    /**
+     * @notice Returns whether the account is currently paused
+     * @return paused Boolean indicating if the account is paused
+     * @return until The timestamp until which the account is paused (0 if not paused)
+     */
+    function isPaused() external view returns (bool paused, uint256 until) {
+        return (pausedUntil > block.timestamp, pausedUntil);
+    }
+
+    /**
+     * @notice Pause the account until a specified time
+     * @dev Can only be called by an admin
+     * @param _until The timestamp until which the account should be paused (0 for indefinite)
+     * @param adminAction The admin action details with operation data, nonce and signature
+     */
+    function pauseAccount(
+        uint256 _until,
+        AdminAction memory adminAction
+    ) external onlyAdmin(AdminOperation.PAUSE_ACCOUNT, adminAction) {
+        if (keccak256(adminAction.operationData) != keccak256(abi.encode(_until))) {
+            revert InvalidOperationData();
+        }
+
+        pausedUntil = _until == 0 ? type(uint256).max : _until;
+        emit AccountPaused(pausedUntil);
+    }
+
+    /**
+     * @notice Unpause the account
+     * @dev Can only be called by an admin
+     * @param adminAction The admin action details with nonce and signature
+     */
+    function unpauseAccount(
+        AdminAction memory adminAction
+    ) external onlyAdmin(AdminOperation.UNPAUSE_ACCOUNT, adminAction) {
+        // No need to verify operation data for this operation
+        pausedUntil = 0;
+        emit AccountUnpaused();
     }
 }
