@@ -1,3 +1,4 @@
+import { encodeChallenge } from '@appliedblockchain/giano-common';
 import type crypto from 'crypto';
 import { ethers } from 'hardhat';
 import { createKeypair, signWebAuthnChallenge } from '../utils';
@@ -70,57 +71,22 @@ export function generateTestKeypair(): KeyPair {
  * @param message Message to sign
  * @returns Encoded signature for use with Account contract
  */
-export function createSignature(keyPair: crypto.KeyPairKeyObjectResult, message: string | Uint8Array): string {
+export function createSignature(keyPair: KeyPair, message: string | Uint8Array): string {
   // Convert message to Uint8Array if it's a string
   const messageBytes = typeof message === 'string' ? ethers.toUtf8Bytes(message) : message;
 
   // Get the private key from the keypair
-  const privateKey = keyPair.privateKey;
+  const privateKey = keyPair.keyPair.privateKey;
 
   // Sign the challenge
   const webAuthnResponse = signWebAuthnChallenge(privateKey, messageBytes);
-
-  // Get the public key
-  const publicKeyBuffer = keyPair.publicKey.export({ type: 'spki', format: 'der' });
-  const x = publicKeyBuffer.subarray(27, 59);
-  const y = publicKeyBuffer.subarray(59, 91);
-
-  // Find challenge and response type locations in clientDataJSON
-  const clientDataJSON = webAuthnResponse.clientDataJSON.toString();
-  const challengeLocation = clientDataJSON.indexOf('"challenge"');
-  const responseTypeLocation = clientDataJSON.indexOf('"type"');
-
-  // Get the signature components r and s
-  // Simple ASN.1 parsing (in a real implementation, use a proper ASN.1 parser)
-  const signature = webAuthnResponse.signature;
-  const rLength = signature[3];
-  const rStart = 4;
-  const sStart = rStart + rLength + 2;
-  const sLength = signature[rStart + rLength + 1];
-
-  const r = ethers.toBigInt(signature.slice(rStart, rStart + rLength));
-  const s = ethers.toBigInt(signature.slice(sStart, sStart + sLength));
-
-  const signatureObj: WebAuthnSignature = {
-    publicKey: {
-      x: ethers.zeroPadValue(ethers.hexlify(x), 32),
-      y: ethers.zeroPadValue(ethers.hexlify(y), 32),
-    },
-    authenticatorData: webAuthnResponse.authenticatorData,
-    clientDataJSON,
-    challengeLocation,
-    responseTypeLocation,
-    r,
-    s,
-  };
-
   // Encode the signature as expected by the contracts
   return ethers.AbiCoder.defaultAbiCoder().encode(
     [
       'tuple(tuple(bytes32 x, bytes32 y) publicKey, bytes authenticatorData, string clientDataJSON, ' +
         'uint256 challengeLocation, uint256 responseTypeLocation, uint256 r, uint256 s)',
     ],
-    [signatureObj],
+    [[keyPair.publicKey.x, keyPair.publicKey.y], webAuthnResponse.authenticatorData, webAuthnResponse.clientDataJSON],
   );
 }
 
@@ -132,15 +98,11 @@ export function createSignature(keyPair: crypto.KeyPairKeyObjectResult, message:
  * @param keyPair Keypair for signing
  * @returns The signed admin action
  */
-export function createSignedAdminAction(
-  operation: number,
-  operationData: string,
-  nonce: number,
-  keyPair: crypto.KeyPairKeyObjectResult,
-): SignedAdminAction {
+export function createSignedAdminAction(operation: number, operationData: string, nonce: number, keyPair: crypto.KeyPairKeyObjectResult): SignedAdminAction {
   // Prepare the message to sign: keccak256(operation + operationData + nonce)
   const message = ethers.solidityPackedKeccak256(['uint256', 'bytes', 'uint256'], [operation, operationData, nonce]);
 
+  // update create signature to handle the new requirement of inserting the public key
   const signature = createSignature(keyPair, ethers.getBytes(message));
 
   return {
@@ -177,9 +139,7 @@ export function createSignedCall(call: Call, keyPair: crypto.KeyPairKeyObjectRes
  */
 export function createBatchCall(calls: Call[], keyPair: crypto.KeyPairKeyObjectResult): BatchCall {
   // Prepare the message containing all calls
-  const encodedCalls = calls.map((call) =>
-    ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'bytes'], [call.target, call.value, call.data]),
-  );
+  const encodedCalls = calls.map((call) => ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'bytes'], [call.target, call.value, call.data]));
 
   const message = ethers.solidityPackedKeccak256(['bytes[]'], [encodedCalls]);
 

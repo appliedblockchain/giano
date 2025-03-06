@@ -15,14 +15,10 @@ export const createKeypair = () => {
 };
 
 // Add type definition for WebAuthn response format
-interface AuthenticatorAssertionResponse {
-  clientDataJSON: string | Buffer;
-  authenticatorData: Buffer;
-  signature: Buffer;
-  userHandle: null;
-}
-
-export const signWebAuthnChallenge = (privateKey: crypto.KeyObject, challenge: Uint8Array): AuthenticatorAssertionResponse => {
+export const signWebAuthnChallenge = (
+  privateKey: crypto.KeyObject,
+  challenge: Uint8Array,
+): AuthenticatorAssertionResponse => {
   // Step 2: Prepare clientDataJSON
   const clientData = {
     type: 'webauthn.get',
@@ -49,9 +45,9 @@ export const signWebAuthnChallenge = (privateKey: crypto.KeyObject, challenge: U
 
   // Step 7: Assemble the response
   return {
-    clientDataJSON: clientDataJSON.toString(),
-    authenticatorData: authenticatorData,
-    signature: signature,
+    clientDataJSON: clientDataJSON.buffer,
+    authenticatorData: authenticatorData.buffer,
+    signature: signature.buffer as ArrayBuffer,
     userHandle: null,
   };
 };

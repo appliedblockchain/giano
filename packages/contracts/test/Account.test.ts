@@ -3,6 +3,8 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import type { Account, AccountRegistry } from '../typechain-types';
 import { deployContracts } from './helpers/testSetup';
+import { signWebAuthnChallenge } from './utils';
+import { encodeChallenge } from '@appliedblockchain/giano-common';
 
 // Define PublicKey type consistent with the WebAuthnSignatures file
 type PublicKey = {
@@ -240,14 +242,431 @@ describe('Account Contract', function () {
       });
     });
 
+    // Note: The Key Request Approval tests currently have an issue with WebAuthn signature verification.
+    // The challenge signing mechanism needs to be properly aligned with the contract's expectations.
+    // To complete these tests:
+    // 1. The format of the Signature struct in Solidity needs to match the encoded signature from createSignature
+    // 2. The challenge hash generation needs to match between contract and test
+    // 3. The onlyAdmin modifier expects the bytes.concat(challenge) format for signature verification
+    //
+    // Current implementation attempts to use the contract's getAdminChallenge method to ensure proper hash creation,
+    // but there may be differences in how the signature is encoded or validated in the WebAuthn.sol contract.
     describe('Key Request Approval', function () {
-      it('should add a key when request is approved by admin');
-      it('should increment admin key count when adding admin key');
-      it('should emit KeyRequestApproved and KeyAdded events');
-      it('should remove the key request after approval');
-      it('should notify registry about the added key');
-      it('should only allow approved requests with valid signatures');
-      it('should validate operation data matches request ID');
+      it('should add a key when request is approved by admin', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request ID from the emitted event
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId = keyRequestedEvents?.[0].args.requestId;
+
+        // Create an admin operation to approve the key request
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+
+        // Log public key for debugging
+        console.log('Admin Public Key:', adminKeypair.publicKey);
+
+        // Verify admin key exists and has admin role
+        const keyInfo = await account.getKeyInfo(adminKeypair.publicKey);
+        console.log('Admin Key Info:', keyInfo);
+
+        // Create the AdminAction object
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash using the contract's function
+        const challengeHash = await account.getAdminChallenge(adminAction);
+        console.log('Challenge Hash:', challengeHash);
+
+        // Create signature using the challenge hash
+        adminAction.signature = encodeChallenge(executorKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+        console.log('Signature created:', adminAction.signature.slice(0, 100) + '...');
+
+        try {
+          // Approve the request
+          await account.approveKeyRequest(requestId, adminAction);
+
+          // Verify the key was added with the correct role
+          const keyInfo = await account.getKeyInfo(executorKeypair.publicKey);
+          expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
+        } catch (error) {
+          console.error('Error in approveKeyRequest:', error);
+          throw error;
+        }
+      });
+
+      it('should increment admin key count when adding admin key', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Initial admin key count should be 1
+        const initialAdminKeyCount = await account.getAdminKeyCount();
+        expect(initialAdminKeyCount).to.equal(1);
+
+        // Request adding a new admin key
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          2, // Role.ADMIN = 2
+        );
+
+        // Get the request ID
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId = keyRequestedEvents?.[0].args.requestId;
+
+        // Approve the request
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+
+        // Create the AdminAction object
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash using the contract's function
+        const challengeHash = await account.getAdminChallenge(adminAction);
+
+        // Create signature using the challenge hash
+        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+
+        await account.approveKeyRequest(requestId, adminAction);
+
+        // Verify admin key count increased
+        const newAdminKeyCount = await account.getAdminKeyCount();
+        expect(newAdminKeyCount).to.equal(2);
+      });
+
+      it('should emit KeyRequestApproved and KeyAdded events', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request ID
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId = keyRequestedEvents?.[0].args.requestId;
+
+        // Prepare approval
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+
+        // Create the AdminAction object
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash using the contract's function
+        const challengeHash = await account.getAdminChallenge(adminAction);
+
+        // Create signature using the challenge hash
+        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+
+        // Verify events are emitted
+        await expect(account.approveKeyRequest(requestId, adminAction))
+          .to.emit(account, 'KeyRequestApproved')
+          .withArgs(requestId, executorKeypair.publicKey.x, executorKeypair.publicKey.y, 1) // Role.EXECUTOR = 1
+          .and.to.emit(account, 'KeyAdded')
+          .withArgs(executorKeypair.publicKey.x, executorKeypair.publicKey.y, 1); // Role.EXECUTOR = 1
+      });
+
+      it('should remove the key request after approval', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request ID
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId = keyRequestedEvents?.[0].args.requestId;
+
+        // Approve the request
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+
+        // Create the AdminAction object for the first approval
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash and sign the first action
+        const challengeHash = await account.getAdminChallenge(adminAction);
+        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+
+        await account.approveKeyRequest(requestId, adminAction);
+
+        // Try to approve the same request again - should fail because it was removed
+        const newAdminNonce = await account.getAdminNonce();
+
+        // Create the AdminAction object for the second attempt
+        const newAdminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(newAdminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash and sign the second action
+        const newChallengeHash = await account.getAdminChallenge(newAdminAction);
+        newAdminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(newChallengeHash));
+
+        await expect(account.approveKeyRequest(requestId, newAdminAction))
+          .to.be.revertedWithCustomError(account, 'RequestDoesNotExist')
+          .withArgs(requestId);
+      });
+
+      it('should notify registry about the added key', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request ID
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId = keyRequestedEvents?.[0].args.requestId;
+
+        // Approve the request
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+
+        // Create the AdminAction object
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash and create signature
+        const challengeHash = await account.getAdminChallenge(adminAction);
+        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+
+        // Check the registry is notified (KeyLinked event is emitted)
+        await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(accountRegistry, 'KeyLinked');
+
+        // Verify the key is linked in the registry
+        const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(executorKeypair.publicKey);
+        expect(isLinked).to.be.true;
+        expect(linkedAccount).to.equal(accountAddress);
+      });
+
+      it('should only allow approved requests with valid signatures', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair, userKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request ID
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId = keyRequestedEvents?.[0].args.requestId;
+
+        // Try to approve with a non-admin signature
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+
+        // Create the AdminAction object
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash and sign with non-admin keypair
+        const challengeHash = await account.getAdminChallenge(adminAction);
+        adminAction.signature = createSignature(userKeypair.keyPair, ethers.getBytes(challengeHash));
+
+        await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(
+          account,
+          'InvalidAdminSignature',
+        );
+      });
+
+      it('should validate operation data matches request ID', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair, userKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding two different keys
+        const tx1 = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        const tx2 = await accountRegistry.requestAddKey(
+          accountAddress,
+          userKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request IDs
+        const receipt1 = await tx1.wait();
+        const keyRequestedEvents1 = receipt1?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const receipt2 = await tx2.wait();
+        const keyRequestedEvents2 = receipt2?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const requestId1 = keyRequestedEvents1?.[0].args.requestId;
+        const requestId2 = keyRequestedEvents2?.[0].args.requestId;
+
+        // Try to approve requestId1 but provide requestId2 in the operation data
+        const adminNonce = await account.getAdminNonce();
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId2]);
+
+        // Create the AdminAction object with mismatched data
+        const adminAction = {
+          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+          operationData,
+          nonce: Number(adminNonce),
+          signature: '0x', // Will be set below
+        };
+
+        // Get the challenge hash and create signature
+        const challengeHash = await account.getAdminChallenge(adminAction);
+        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+
+        await expect(account.approveKeyRequest(requestId1, adminAction)).to.be.revertedWithCustomError(
+          account,
+          'InvalidOperationData',
+        );
+      });
     });
 
     describe('Key Request Rejection', function () {
