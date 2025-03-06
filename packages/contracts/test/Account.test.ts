@@ -1,7 +1,7 @@
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import type { Account, AccountFactory, AccountRegistry } from '../typechain-types';
+import type { Account, AccountRegistry } from '../typechain-types';
 import { deployContracts } from './helpers/testSetup';
 
 // Define PublicKey type consistent with the WebAuthnSignatures file
@@ -12,31 +12,29 @@ type PublicKey = {
 
 // Helper function to create and get an account instance
 async function createAndGetAccount(
-  accountFactory: AccountFactory,
   adminKeypair: { publicKey: PublicKey },
   accountRegistry: AccountRegistry,
 ): Promise<Account> {
-  // Create a new account with the admin keypair
-  const registryAddress = await accountRegistry.getAddress();
-  const tx = await accountFactory.deployAccount(adminKeypair.publicKey, registryAddress);
+  // Create a new account with the admin keypair through the registry
+  const tx = await accountRegistry.createUser(adminKeypair.publicKey);
   const receipt = await tx.wait();
 
   // Get the account address from the event logs
-  const deployedEvents = receipt?.logs
+  const userCreatedEvents = receipt?.logs
     .map((log) => {
       try {
-        return accountFactory.interface.parseLog({ topics: log.topics, data: log.data });
+        return accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
       } catch (e) {
         return null;
       }
     })
-    .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'AccountDeployed');
+    .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'UserCreated');
 
-  if (!deployedEvents?.length || !deployedEvents[0].args) {
-    throw new Error('AccountDeployed event not found');
+  if (!userCreatedEvents?.length || !userCreatedEvents[0].args) {
+    throw new Error('UserCreated event not found');
   }
 
-  const accountAddress = deployedEvents[0].args.account;
+  const accountAddress = userCreatedEvents[0].args.account;
   return await ethers.getContractAt('Account', accountAddress);
 }
 
@@ -48,18 +46,18 @@ describe('Account Contract', function () {
   describe('Initialization', function () {
     it('should initialize with correct registry address', async function () {
       // Deploy a new account using the factory from the fixture
-      const { accountFactory, accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
 
-      const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
       // Verify the registry is set correctly
       expect(await account.registry()).to.equal(await accountRegistry.getAddress());
     });
 
     it('should set up the initial admin key correctly', async function () {
-      const { accountFactory, accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
 
-      const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
       // Check the key exists and has admin role (role=2)
       const keyInfo = await account.getKeyInfo(adminKeypair.publicKey);
@@ -69,26 +67,26 @@ describe('Account Contract', function () {
     });
 
     it('should start with admin key count of 1', async function () {
-      const { accountFactory, accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
 
-      const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
       expect(await account.getAdminKeyCount()).to.equal(1);
     });
 
     it('should start with nonces at 0', async function () {
-      const { accountFactory, accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
 
-      const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
       expect(await account.getNonce()).to.equal(0); // Transaction nonce
       expect(await account.getAdminNonce()).to.equal(0); // Admin nonce
     });
 
     it('should not be paused initially', async function () {
-      const { accountFactory, accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
 
-      const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
       const [isPaused, pausedUntil] = await account.isPaused();
       expect(isPaused).to.be.false;
@@ -98,11 +96,148 @@ describe('Account Contract', function () {
 
   describe('Key Management', function () {
     describe('Key Requests', function () {
-      it('should allow registry to request adding a key');
-      it('should emit KeyRequested event with correct parameters');
-      it('should reject requests for keys that already exist');
-      it('should only allow registry to request keys');
-      it('should generate unique request IDs');
+      it('should allow registry to request adding a key', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key with EXECUTOR role
+        const tx = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Verify the request was created by checking the emitted event
+        const receipt = await tx.wait();
+        const keyRequestedEvents = receipt?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        expect(keyRequestedEvents?.length).to.be.greaterThan(0);
+        expect(keyRequestedEvents?.[0].args.x).to.equal(executorKeypair.publicKey.x);
+        expect(keyRequestedEvents?.[0].args.y).to.equal(executorKeypair.publicKey.y);
+        expect(keyRequestedEvents?.[0].args.requestedRole).to.equal(1); // Role.EXECUTOR = 1
+      });
+
+      it('should emit KeyRequested event with correct parameters', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding a new key and check for event
+        await expect(
+          accountRegistry.requestAddKey(
+            accountAddress,
+            executorKeypair.publicKey,
+            1, // Role.EXECUTOR = 1
+          ),
+        )
+          .to.emit(account, 'KeyRequested')
+          .withArgs(
+            // We can't predict the exact requestId, so we use a matcher function
+            (requestId: string) => ethers.isHexString(requestId, 32), // 32 bytes
+            executorKeypair.publicKey.x,
+            executorKeypair.publicKey.y,
+            1, // Role.EXECUTOR = 1
+          );
+      });
+
+      it('should reject requests for keys that already exist', async function () {
+        const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Try to request adding the same admin key again
+        await expect(
+          accountRegistry.requestAddKey(
+            accountAddress,
+            adminKeypair.publicKey,
+            2, // Role.ADMIN = 2
+          ),
+        ).to.be.revertedWithCustomError(accountRegistry, 'KeyAlreadyLinked');
+      });
+
+      it('should only allow registry to request keys', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair, user1 } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+        // Try to call requestAddKey directly on the account contract from a non-registry address
+        await expect(
+          account.connect(user1).requestAddKey(
+            executorKeypair.publicKey,
+            1, // Role.EXECUTOR = 1
+          ),
+        ).to.be.revertedWithCustomError(account, 'OnlyRegistryCanAddKeys');
+      });
+
+      it('should generate unique request IDs', async function () {
+        const { accountRegistry, adminKeypair, executorKeypair, userKeypair } = await loadFixture(deployContracts);
+
+        // Create an account
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        const accountAddress = await account.getAddress();
+
+        // Request adding two different keys
+        const tx1 = await accountRegistry.requestAddKey(
+          accountAddress,
+          executorKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        const tx2 = await accountRegistry.requestAddKey(
+          accountAddress,
+          userKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Get the request IDs from the events
+        const receipt1 = await tx1.wait();
+        const receipt2 = await tx2.wait();
+
+        const keyRequestedEvents1 = receipt1?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        const keyRequestedEvents2 = receipt2?.logs
+          .map((log) => {
+            try {
+              return account.interface.parseLog({ topics: log.topics, data: log.data });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+
+        expect(keyRequestedEvents1?.length).to.be.greaterThan(0);
+        expect(keyRequestedEvents2?.length).to.be.greaterThan(0);
+
+        const requestId1 = keyRequestedEvents1?.[0].args.requestId;
+        const requestId2 = keyRequestedEvents2?.[0].args.requestId;
+
+        // Verify the request IDs are different
+        expect(requestId1).to.not.equal(requestId2);
+      });
     });
 
     describe('Key Request Approval', function () {
