@@ -81,11 +81,8 @@ describe('Account Contract', function () {
 
       const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
 
-      // Check all nonces start at 0
       expect(await account.getNonce()).to.equal(0); // Transaction nonce
       expect(await account.getAdminNonce()).to.equal(0); // Admin nonce
-
-      // We cannot directly check requestNonce as it's private
     });
 
     it('should not be paused initially', async function () {
@@ -93,7 +90,6 @@ describe('Account Contract', function () {
 
       const account = await createAndGetAccount(accountFactory, adminKeypair, accountRegistry);
 
-      // Check pause status
       const [isPaused, pausedUntil] = await account.isPaused();
       expect(isPaused).to.be.false;
       expect(pausedUntil).to.equal(0);
@@ -157,6 +153,7 @@ describe('Account Contract', function () {
       it('should pass correct value to target contract');
       it('should forward revert reasons from target contracts');
       it('should prevent execution when paused');
+      it('should respect rate limits');
     });
 
     describe('Batch Transactions', function () {
@@ -167,6 +164,7 @@ describe('Account Contract', function () {
       it('should emit one Executed event for the batch');
       it('should revert entire batch if one call fails');
       it('should prevent execution when paused');
+      it('should respect rate limits');
     });
   });
 
@@ -188,6 +186,13 @@ describe('Account Contract', function () {
     it('should emit AccountUnpaused event');
     it('should allow transaction execution after unpausing');
     it('should report pause status correctly');
+  });
+
+  describe('Rate Limiting', function () {
+    it('should track operation count correctly');
+    it('should reset counter after the rate limit period');
+    it('should reject operations exceeding rate limit');
+    it('should report rate limit status correctly');
   });
 
   describe('ERC Support', function () {
