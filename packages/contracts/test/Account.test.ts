@@ -1092,7 +1092,7 @@ describe('Account Contract', function () {
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
+        const approveAction = {
           operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
           operationData: approveOperationData,
           nonce: Number(approveNonce),
@@ -1111,18 +1111,17 @@ describe('Account Contract', function () {
           [executorKeypair.publicKey.x, executorKeypair.publicKey.y]
         ]);
 
-        const adminAction = {
+        const removeAction = {
           operation: 2, // AdminOperation.REMOVE_KEY = 2
           operationData: operationData,
           nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
+          signature: '0x',
         };
 
-        const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+        const challengeHash = await account.getAdminChallenge(removeAction);
+        removeAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        // Verify event is emitted
-        await expect(account.removeKey(executorKeypair.publicKey, adminAction))
+        await expect(account.removeKey(executorKeypair.publicKey, removeAction))
           .to.emit(account, 'KeyRemoved')
           .withArgs(executorKeypair.publicKey.x, executorKeypair.publicKey.y);
       });
@@ -1160,7 +1159,7 @@ describe('Account Contract', function () {
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
+        const approveAction = {
           operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
           operationData: approveOperationData,
           nonce: Number(approveNonce),
@@ -1184,18 +1183,18 @@ describe('Account Contract', function () {
           [executorKeypair.publicKey.x, executorKeypair.publicKey.y]
         ]);
 
-        const adminAction = {
+        const removeAction = {
           operation: 2, // AdminOperation.REMOVE_KEY = 2
           operationData: operationData,
           nonce: Number(adminNonce),
           signature: '0x', // Will be set below
         };
 
-        const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+        const challengeHash = await account.getAdminChallenge(removeAction);
+        removeAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Verify the registry's KeyUnlinked event is emitted
-        await expect(account.removeKey(executorKeypair.publicKey, adminAction))
+        await expect(account.removeKey(executorKeypair.publicKey, removeAction))
           .to.emit(accountRegistry, 'KeyUnlinked');
 
         // Verify the key is no longer linked in the registry
@@ -1236,7 +1235,7 @@ describe('Account Contract', function () {
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
+        const approveAction = {
           operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
           operationData: approveOperationData,
           nonce: Number(approveNonce),
