@@ -60,6 +60,13 @@ contract AccountRegistry {
     event KeyLinked(bytes32 indexed keyHash, address indexed account);
 
     /**
+     * @notice Emitted when a key is unlinked from an account
+     * @param keyHash The hash of the unlinked public key
+     * @param account The address of the account the key was unlinked from
+     */
+    event KeyUnlinked(bytes32 indexed keyHash, address indexed account);
+
+    /**
      * @notice Emitted when a key request is created
      * @param account The address of the account for which the key is requested
      * @param keyHash The hash of the requested public key
@@ -284,7 +291,10 @@ contract AccountRegistry {
             revert KeyNotFound(keyHash);
         }
         
+        address account = keyToAccount[keyHash];
         delete keyToAccount[keyHash];
+        
+        emit KeyUnlinked(keyHash, account);
     }
     
     /**
