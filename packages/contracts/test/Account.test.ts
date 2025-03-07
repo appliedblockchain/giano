@@ -2,21 +2,12 @@ import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import type { Account, AccountRegistry } from '../typechain-types';
-import { deployContracts } from './helpers/testSetup';
+import { deployContracts, HexifiedPublicKey } from './helpers/testSetup';
 import { signWebAuthnChallenge } from './utils';
 import { encodeChallenge } from '@appliedblockchain/giano-common';
 
-// Define PublicKey type consistent with the WebAuthnSignatures file
-type PublicKey = {
-  x: string;
-  y: string;
-};
-
 // Helper function to create and get an account instance
-async function createAndGetAccount(
-  adminKeypair: { publicKey: PublicKey },
-  accountRegistry: AccountRegistry,
-): Promise<Account> {
+async function createAndGetAccount(adminKeypair: { publicKey: HexifiedPublicKey }, accountRegistry: AccountRegistry): Promise<Account> {
   // Create a new account with the admin keypair through the registry
   const tx = await accountRegistry.createUser(adminKeypair.publicKey);
   const receipt = await tx.wait();
@@ -242,15 +233,6 @@ describe('Account Contract', function () {
       });
     });
 
-    // Note: The Key Request Approval tests currently have an issue with WebAuthn signature verification.
-    // The challenge signing mechanism needs to be properly aligned with the contract's expectations.
-    // To complete these tests:
-    // 1. The format of the Signature struct in Solidity needs to match the encoded signature from createSignature
-    // 2. The challenge hash generation needs to match between contract and test
-    // 3. The onlyAdmin modifier expects the bytes.concat(challenge) format for signature verification
-    //
-    // Current implementation attempts to use the contract's getAdminChallenge method to ensure proper hash creation,
-    // but there may be differences in how the signature is encoded or validated in the WebAuthn.sol contract.
     describe('Key Request Approval', function () {
       it('should add a key when request is approved by admin', async function () {
         const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
@@ -280,18 +262,9 @@ describe('Account Contract', function () {
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
-        // Create an admin operation to approve the key request
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        // Log public key for debugging
-        console.log('Admin Public Key:', adminKeypair.publicKey);
-
-        // Verify admin key exists and has admin role
-        const keyInfo = await account.getKeyInfo(adminKeypair.publicKey);
-        console.log('Admin Key Info:', keyInfo);
-
-        // Create the AdminAction object
         const adminAction = {
           operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
           operationData,
@@ -299,25 +272,13 @@ describe('Account Contract', function () {
           signature: '0x', // Will be set below
         };
 
-        // Get the challenge hash using the contract's function
         const challengeHash = await account.getAdminChallenge(adminAction);
-        console.log('Challenge Hash:', challengeHash);
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        // Create signature using the challenge hash
-        adminAction.signature = encodeChallenge(executorKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
-        console.log('Signature created:', adminAction.signature.slice(0, 100) + '...');
+        await account.approveKeyRequest(requestId, adminAction);
 
-        try {
-          // Approve the request
-          await account.approveKeyRequest(requestId, adminAction);
-
-          // Verify the key was added with the correct role
-          const keyInfo = await account.getKeyInfo(executorKeypair.publicKey);
-          expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
-        } catch (error) {
-          console.error('Error in approveKeyRequest:', error);
-          throw error;
-        }
+        const keyInfo = await account.getKeyInfo(executorKeypair.publicKey);
+        expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
       });
 
       it('should increment admin key count when adding admin key', async function () {
@@ -368,7 +329,7 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
 
         // Create signature using the challenge hash
-        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.approveKeyRequest(requestId, adminAction);
 
@@ -421,7 +382,7 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
 
         // Create signature using the challenge hash
-        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Verify events are emitted
         await expect(account.approveKeyRequest(requestId, adminAction))
@@ -473,7 +434,7 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and sign the first action
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.approveKeyRequest(requestId, adminAction);
 
@@ -490,11 +451,9 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and sign the second action
         const newChallengeHash = await account.getAdminChallenge(newAdminAction);
-        newAdminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(newChallengeHash));
+        newAdminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(newChallengeHash)));
 
-        await expect(account.approveKeyRequest(requestId, newAdminAction))
-          .to.be.revertedWithCustomError(account, 'RequestDoesNotExist')
-          .withArgs(requestId);
+        await expect(account.approveKeyRequest(requestId, newAdminAction)).to.be.revertedWithCustomError(account, 'RequestDoesNotExist').withArgs(requestId);
       });
 
       it('should notify registry about the added key', async function () {
@@ -539,7 +498,7 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and create signature
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Check the registry is notified (KeyLinked event is emitted)
         await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(accountRegistry, 'KeyLinked');
@@ -592,12 +551,9 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and sign with non-admin keypair
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = createSignature(userKeypair.keyPair, ethers.getBytes(challengeHash));
+        adminAction.signature = encodeChallenge(userKeypair.publicKey, signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidAdminSignature',
-        );
+        await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
 
       it('should validate operation data matches request ID', async function () {
@@ -660,12 +616,9 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and create signature
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = createSignature(adminKeypair.keyPair, ethers.getBytes(challengeHash));
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.approveKeyRequest(requestId1, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidOperationData',
-        );
+        await expect(account.approveKeyRequest(requestId1, adminAction)).to.be.revertedWithCustomError(account, 'InvalidOperationData');
       });
     });
 

@@ -45,9 +45,12 @@ export const signWebAuthnChallenge = (
 
   // Step 7: Assemble the response
   return {
-    clientDataJSON: clientDataJSON.buffer,
-    authenticatorData: authenticatorData.buffer,
-    signature: signature.buffer as ArrayBuffer,
+    //@ts-ignore
+    clientDataJSON: clientDataJSON,
+    //@ts-ignore
+    authenticatorData: authenticatorData,
+    //@ts-ignore
+    signature: signature,
     userHandle: null,
   };
 };

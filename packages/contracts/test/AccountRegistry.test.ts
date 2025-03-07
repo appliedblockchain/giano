@@ -1,6 +1,6 @@
 import { ethers } from 'hardhat';
 import type { AccountFactory, AccountRegistry } from '../typechain-types';
-import { generateTestKeypair } from './helpers/WebAuthnSignatures';
+import { generateTestKeypair } from './helpers/testSetup';
 
 describe('AccountRegistry Contract', function () {
   // Account Role enum for testing
