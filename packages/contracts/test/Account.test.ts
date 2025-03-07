@@ -1683,14 +1683,204 @@ describe('Account Contract', function () {
 
   describe('Transaction Execution', function () {
     describe('Single Transactions', function () {
-      it('should execute a transaction with valid signature');
-      it('should reject execution with invalid signature');
-      it('should increment nonce after successful execution');
-      it('should emit Executed event');
-      it('should pass correct value to target contract');
-      it('should forward revert reasons from target contracts');
-      it('should prevent execution when paused');
-      it('should respect rate limits');
+      it('should execute a transaction with valid signature', async function () {
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Prepare the transaction to set a value in the test contract
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData
+        };
+        
+        // Get the challenge hash and create the signature
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
+        
+        // Execute the transaction
+        await account.execute({ call, signature });
+        
+        // Verify the value was set in the test contract
+        expect(await testContract.value()).to.equal(42);
+        expect(await testContract.lastCaller()).to.equal(await account.getAddress());
+      });
+
+      it('should reject execution with invalid signature', async function () {
+        const { accountRegistry, adminKeypair, userKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Prepare the transaction to set a value in the test contract
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData
+        };
+        
+        // Get the challenge hash but sign with the wrong key
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const signature = encodeChallenge(userKeypair.publicKey, webAuthnSignature);
+        
+        // The transaction should be rejected
+        await expect(account.execute({ call, signature }))
+          .to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
+      });
+
+      it('should increment nonce after successful execution', async function () {
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Check initial nonce
+        expect(await account.getNonce()).to.equal(0);
+        
+        // Prepare and execute a transaction
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData
+        };
+        
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
+        
+        await account.execute({ call, signature });
+        
+        // Verify nonce was incremented
+        expect(await account.getNonce()).to.equal(1);
+      });
+
+      it('should emit Executed event', async function () {
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Prepare transaction data
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData
+        };
+        
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
+        
+        // Verify the event is emitted with correct parameters
+        await expect(account.execute({ call, signature }))
+          .to.emit(account, 'Executed')
+          .withArgs(0, await testContract.getAddress(), 0, callData);
+      });
+
+      it('should pass correct value to target contract', async function () {
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Fund the account
+        await ethers.provider.send('hardhat_setBalance', [
+          await account.getAddress(),
+          '0x1000000000000000000' // 1 ETH
+        ]);
+        
+        // Prepare the deposit transaction with ETH value
+        const callData = testContract.interface.encodeFunctionData('deposit');
+        const ethToSend = ethers.parseEther('0.5');
+        const call = {
+          target: await testContract.getAddress(),
+          value: ethToSend,
+          data: callData
+        };
+        
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
+        
+        // Execute the deposit
+        await account.execute({ call, signature });
+        
+        // Verify the value was correctly sent
+        expect(await testContract.balances(await account.getAddress())).to.equal(ethToSend);
+      });
+
+      it('should forward revert reasons from target contracts', async function () {
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Prepare a transaction that will revert
+        const errorMessage = "This operation will fail";
+        const callData = testContract.interface.encodeFunctionData('willRevert', [errorMessage]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData
+        };
+        
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
+        
+        // The error should be passed through from the target contract
+        await expect(account.execute({ call, signature }))
+          .to.be.revertedWith(errorMessage);
+      });
+
+      it('should prevent execution when paused', async function () {
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+        
+        // Create a new account with the admin key
+        const account = await createAndGetAccount(adminKeypair, accountRegistry);
+        
+        // Pause the account first
+        const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+        const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+        const adminAction = {
+          operation: 4, // PAUSE_ACCOUNT
+          operationData: pauseData,
+          nonce: 0,
+          signature: '0x'
+        };
+        
+        // Sign the admin action
+        const challengeHash = await account.getAdminChallenge(adminAction);
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+        
+        // Pause the account
+        await account.pauseAccount(pauseUntil, adminAction);
+        
+        // Now try to execute a transaction
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData
+        };
+        
+        const txChallengeHash = await account.getChallenge(call);
+        const txWebAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+        const txSignature = encodeChallenge(adminKeypair.publicKey, txWebAuthnSignature);
+        
+        // The transaction should be rejected because the account is paused
+        await expect(account.execute({ call, signature: txSignature }))
+          .to.be.revertedWithCustomError(account, 'AccountIsPaused')
+          .withArgs(pauseUntil);
+      });
     });
 
     describe('Batch Transactions', function () {
@@ -1701,7 +1891,6 @@ describe('Account Contract', function () {
       it('should emit one Executed event for the batch');
       it('should revert entire batch if one call fails');
       it('should prevent execution when paused');
-      it('should respect rate limits');
     });
   });
 
@@ -1723,13 +1912,6 @@ describe('Account Contract', function () {
     it('should emit AccountUnpaused event');
     it('should allow transaction execution after unpausing');
     it('should report pause status correctly');
-  });
-
-  describe('Rate Limiting', function () {
-    it('should track operation count correctly');
-    it('should reset counter after the rate limit period');
-    it('should reject operations exceeding rate limit');
-    it('should report rate limit status correctly');
   });
 
   describe('ERC Support', function () {
