@@ -8,10 +8,7 @@ import { deployContracts } from './helpers/testSetup';
 import { signWebAuthnChallenge } from './utils';
 
 // Helper function to create and get an account instance
-async function createAndGetAccount(
-  adminKeypair: { publicKey: HexifiedPublicKey },
-  accountRegistry: AccountRegistry,
-): Promise<Account> {
+async function createAndGetAccount(adminKeypair: { publicKey: HexifiedPublicKey }, accountRegistry: AccountRegistry): Promise<Account> {
   // Create a new account with the admin keypair through the registry
   const tx = await accountRegistry.createUser(adminKeypair.publicKey);
   const receipt = await tx.wait();
@@ -277,10 +274,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.approveKeyRequest(requestId, adminAction);
 
@@ -336,10 +330,7 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
 
         // Create signature using the challenge hash
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.approveKeyRequest(requestId, adminAction);
 
@@ -392,10 +383,7 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
 
         // Create signature using the challenge hash
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Verify events are emitted
         await expect(account.approveKeyRequest(requestId, adminAction))
@@ -447,10 +435,7 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and sign the first action
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.approveKeyRequest(requestId, adminAction);
 
@@ -472,9 +457,7 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(newChallengeHash)),
         );
 
-        await expect(account.approveKeyRequest(requestId, newAdminAction))
-          .to.be.revertedWithCustomError(account, 'RequestDoesNotExist')
-          .withArgs(requestId);
+        await expect(account.approveKeyRequest(requestId, newAdminAction)).to.be.revertedWithCustomError(account, 'RequestDoesNotExist').withArgs(requestId);
       });
 
       it('should notify registry about the added key', async function () {
@@ -519,10 +502,7 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and create signature
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Check the registry is notified (KeyLinked event is emitted)
         await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(accountRegistry, 'KeyLinked');
@@ -575,15 +555,9 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and sign with non-admin keypair
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          userKeypair.publicKey,
-          signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(userKeypair.publicKey, signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidAdminSignature',
-        );
+        await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
 
       it('should validate operation data matches request ID', async function () {
@@ -646,15 +620,9 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and create signature
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.approveKeyRequest(requestId1, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidOperationData',
-        );
+        await expect(account.approveKeyRequest(requestId1, adminAction)).to.be.revertedWithCustomError(account, 'InvalidOperationData');
       });
     });
 
@@ -699,10 +667,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Reject the key request
         await account.rejectKeyRequest(requestId, adminAction);
@@ -752,14 +717,9 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.rejectKeyRequest(requestId, adminAction))
-          .to.emit(account, 'KeyRequestRejected')
-          .withArgs(requestId);
+        await expect(account.rejectKeyRequest(requestId, adminAction)).to.emit(account, 'KeyRequestRejected').withArgs(requestId);
       });
 
       it('should remove the key request after rejection', async function () {
@@ -802,10 +762,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Reject the key request
         await account.rejectKeyRequest(requestId, adminAction);
@@ -827,9 +784,7 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(newChallengeHash)),
         );
 
-        await expect(account.rejectKeyRequest(requestId, newAdminAction))
-          .to.be.revertedWithCustomError(account, 'RequestDoesNotExist')
-          .withArgs(requestId);
+        await expect(account.rejectKeyRequest(requestId, newAdminAction)).to.be.revertedWithCustomError(account, 'RequestDoesNotExist').withArgs(requestId);
       });
 
       it('should fail when request does not exist', async function () {
@@ -853,10 +808,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Attempt to reject a non-existent request
         await expect(account.rejectKeyRequest(nonExistentRequestId, adminAction))
@@ -905,16 +857,10 @@ describe('Account Contract', function () {
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         // Sign with a non-admin keypair
-        adminAction.signature = encodeChallenge(
-          userKeypair.publicKey,
-          signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(userKeypair.publicKey, signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Attempt to reject with invalid signature
-        await expect(account.rejectKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidAdminSignature',
-        );
+        await expect(account.rejectKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
     });
 
@@ -985,10 +931,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.removeKey(executorKeypair.publicKey, adminAction);
 
@@ -1005,10 +948,7 @@ describe('Account Contract', function () {
 
         // Attempt to remove a key that doesn't exist
         const adminNonce = await account.getAdminNonce();
-        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
-          ['tuple(bytes32 x, bytes32 y)'],
-          [[userKeypair.publicKey.x, userKeypair.publicKey.y]],
-        );
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['tuple(bytes32 x, bytes32 y)'], [[userKeypair.publicKey.x, userKeypair.publicKey.y]]);
 
         const adminAction = {
           operation: 2, // AdminOperation.REMOVE_KEY = 2
@@ -1018,10 +958,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await expect(account.removeKey(userKeypair.publicKey, adminAction))
           .to.be.revertedWithCustomError(account, 'KeyDoesNotExist')
@@ -1093,10 +1030,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.removeKey(executorKeypair.publicKey, adminAction);
 
@@ -1115,10 +1049,7 @@ describe('Account Contract', function () {
 
         // Try to remove the only admin key
         const adminNonce = await account.getAdminNonce();
-        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
-          ['tuple(bytes32 x, bytes32 y)'],
-          [[adminKeypair.publicKey.x, adminKeypair.publicKey.y]],
-        );
+        const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['tuple(bytes32 x, bytes32 y)'], [[adminKeypair.publicKey.x, adminKeypair.publicKey.y]]);
 
         const adminAction = {
           operation: 2, // AdminOperation.REMOVE_KEY = 2
@@ -1128,15 +1059,9 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.removeKey(adminKeypair.publicKey, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'LastAdminKey',
-        );
+        await expect(account.removeKey(adminKeypair.publicKey, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminKey');
       });
 
       it('should emit KeyRemoved event', async function () {
@@ -1288,10 +1213,7 @@ describe('Account Contract', function () {
         );
 
         // Verify the registry's KeyUnlinked event is emitted
-        await expect(account.removeKey(executorKeypair.publicKey, removeAction)).to.emit(
-          accountRegistry,
-          'KeyUnlinked',
-        );
+        await expect(account.removeKey(executorKeypair.publicKey, removeAction)).to.emit(accountRegistry, 'KeyUnlinked');
 
         // Verify the key is no longer linked in the registry
         const [isStillLinked, _] = await accountRegistry.isKeyLinked(executorKeypair.publicKey);
@@ -1363,16 +1285,10 @@ describe('Account Contract', function () {
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         // Sign with a non-admin key
-        adminAction.signature = encodeChallenge(
-          userKeypair.publicKey,
-          signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(userKeypair.publicKey, signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Should revert when using a non-admin signature
-        await expect(account.removeKey(executorKeypair.publicKey, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidAdminSignature',
-        );
+        await expect(account.removeKey(executorKeypair.publicKey, adminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
     });
 
@@ -1443,10 +1359,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.changeKeyRole(executorKeypair.publicKey, 2, adminAction); // Role.ADMIN = 2
 
@@ -1476,10 +1389,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await expect(account.changeKeyRole(userKeypair.publicKey, 2, adminAction))
           .to.be.revertedWithCustomError(account, 'KeyDoesNotExist')
@@ -1555,10 +1465,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.changeKeyRole(executorKeypair.publicKey, 2, adminAction); // Role.ADMIN = 2
 
@@ -1631,10 +1538,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         await account.changeKeyRole(executorKeypair.publicKey, 1, adminAction); // Role.EXECUTOR = 1
 
@@ -1666,15 +1570,9 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.changeKeyRole(adminKeypair.publicKey, 1, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'LastAdminKey',
-        );
+        await expect(account.changeKeyRole(adminKeypair.publicKey, 1, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminKey');
       });
 
       it('should emit KeyRoleChanged event', async function () {
@@ -1739,10 +1637,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Verify event is emitted
         await expect(account.changeKeyRole(executorKeypair.publicKey, 2, adminAction))
@@ -1812,10 +1707,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Should revert due to mismatched operationData
         await expect(account.changeKeyRole(executorKeypair.publicKey, 2, adminAction)) // Role.ADMIN = 2
@@ -1842,10 +1734,7 @@ describe('Account Contract', function () {
 
         // Get the challenge hash and create the signature
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // Execute the transaction
@@ -1876,10 +1765,7 @@ describe('Account Contract', function () {
         const signature = encodeChallenge(userKeypair.publicKey, webAuthnSignature);
 
         // The transaction should be rejected
-        await expect(account.execute({ call, signature })).to.be.revertedWithCustomError(
-          account,
-          'InvalidExecutorSignature',
-        );
+        await expect(account.execute({ call, signature })).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
       });
 
       it('should increment nonce after successful execution', async function () {
@@ -1900,10 +1786,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         await account.execute({ call, signature });
@@ -1927,10 +1810,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // Verify the event is emitted with correct parameters
@@ -1961,10 +1841,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // Execute the deposit
@@ -1990,10 +1867,7 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // The error should be passed through from the target contract
@@ -2018,10 +1892,7 @@ describe('Account Contract', function () {
 
         // Sign the admin action
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Pause the account
         await account.pauseAccount(pauseUntil, adminAction);
@@ -2035,10 +1906,7 @@ describe('Account Contract', function () {
         };
 
         const txChallengeHash = await account.getChallenge(call);
-        const txWebAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(txChallengeHash),
-        );
+        const txWebAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
         const txSignature = encodeChallenge(adminKeypair.publicKey, txWebAuthnSignature);
 
         // The transaction should be rejected because the account is paused
@@ -2072,10 +1940,7 @@ describe('Account Contract', function () {
 
         // Get the batch challenge hash and create the signature
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // Execute the batch transaction
@@ -2123,17 +1988,11 @@ describe('Account Contract', function () {
 
         // Sign the original batch but try to execute with modified calls
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // This should fail because the challenge hash won't match
-        await expect(account.executeBatch({ calls: modifiedCalls, signature })).to.be.revertedWithCustomError(
-          account,
-          'InvalidExecutorSignature',
-        );
+        await expect(account.executeBatch({ calls: modifiedCalls, signature })).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
       });
 
       it('should reject with invalid signature', async function () {
@@ -2162,10 +2021,7 @@ describe('Account Contract', function () {
         const signature = encodeChallenge(userKeypair.publicKey, webAuthnSignature);
 
         // Should be rejected because userKeypair isn't authorized for this account
-        await expect(account.executeBatch({ calls, signature })).to.be.revertedWithCustomError(
-          account,
-          'InvalidExecutorSignature',
-        );
+        await expect(account.executeBatch({ calls, signature })).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
       });
 
       it('should increment nonce only once for the batch', async function () {
@@ -2198,10 +2054,7 @@ describe('Account Contract', function () {
 
         // Sign and execute batch
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         await account.executeBatch({ calls, signature });
@@ -2232,10 +2085,7 @@ describe('Account Contract', function () {
 
         // Sign batch
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // Create a transaction to check events
@@ -2255,10 +2105,7 @@ describe('Account Contract', function () {
               return null;
             }
           })
-          .filter(
-            (event): event is NonNullable<ReturnType<typeof account.interface.parseLog>> =>
-              event !== null && event.name === 'Executed',
-          );
+          .filter((event): event is NonNullable<ReturnType<typeof account.interface.parseLog>> => event !== null && event.name === 'Executed');
 
         // Verify we found the event
         expect(executedEvents.length).to.equal(1);
@@ -2299,10 +2146,7 @@ describe('Account Contract', function () {
 
         // Sign batch
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(
-          adminKeypair.keyPair.privateKey,
-          ethers.getBytes(challengeHash),
-        );
+        const webAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(adminKeypair.publicKey, webAuthnSignature);
 
         // Execution should revert with the error from the failing call
@@ -2330,10 +2174,7 @@ describe('Account Contract', function () {
 
         // Sign the admin action
         const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
         // Pause the account
         await account.pauseAccount(pauseUntil, adminAction);
@@ -2409,10 +2250,7 @@ describe('Account Contract', function () {
 
       // Get challenge hash and sign it
       const challengeHash = await account.getAdminChallenge(adminAction);
-      adminAction.signature = encodeChallenge(
-        adminKeypair.publicKey,
-        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-      );
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
       // The operation should succeed with a valid admin signature
       await expect(account.approveKeyRequest(requestId, adminAction)).to.not.be.reverted;
@@ -2465,10 +2303,7 @@ describe('Account Contract', function () {
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
-      adminAction.signature = encodeChallenge(
-        adminKeypair.publicKey,
-        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-      );
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
       // Execute the admin operation
       await account.approveKeyRequest(requestId, adminAction);
@@ -2509,10 +2344,7 @@ describe('Account Contract', function () {
 
       // Sign the second action
       const challengeHash2 = await account.getAdminChallenge(adminAction2);
-      adminAction2.signature = encodeChallenge(
-        adminKeypair.publicKey,
-        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash2)),
-      );
+      adminAction2.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash2)));
 
       // Execute the second admin operation
       await account.approveKeyRequest(requestId2, adminAction2);
@@ -2563,15 +2395,10 @@ describe('Account Contract', function () {
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
-      adminAction.signature = encodeChallenge(
-        adminKeypair.publicKey,
-        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-      );
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
       // Verify AdminActionExecuted event is emitted with correct parameters
-      await expect(account.approveKeyRequest(requestId, adminAction))
-        .to.emit(account, 'AdminActionExecuted')
-        .withArgs(0, adminNonce); // AdminOperation.APPROVE_KEY_REQUEST = 0
+      await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(account, 'AdminActionExecuted').withArgs(0, adminNonce); // AdminOperation.APPROVE_KEY_REQUEST = 0
     });
 
     it('should reject operations with invalid nonce', async function () {
@@ -2616,10 +2443,7 @@ describe('Account Contract', function () {
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
-      adminAction.signature = encodeChallenge(
-        adminKeypair.publicKey,
-        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-      );
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
       // Verify operation is rejected with InvalidNonce error
       await expect(account.approveKeyRequest(requestId, adminAction))
@@ -2669,15 +2493,10 @@ describe('Account Contract', function () {
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
-      adminAction.signature = encodeChallenge(
-        adminKeypair.publicKey,
-        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-      );
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
       // Verify operation is rejected with InvalidOperation error
-      await expect(account.approveKeyRequest(requestId, adminAction))
-        .to.be.revertedWithCustomError(account, 'InvalidOperation')
-        .withArgs(0, 1); // Expected APPROVE_KEY_REQUEST=0, got REJECT_KEY_REQUEST=1
+      await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidOperation').withArgs(0, 1); // Expected APPROVE_KEY_REQUEST=0, got REJECT_KEY_REQUEST=1
     });
 
     it('should reject operations with invalid signature', async function () {
@@ -2728,22 +2547,372 @@ describe('Account Contract', function () {
       );
 
       // Verify operation is rejected with InvalidAdminSignature error
-      await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(
-        account,
-        'InvalidAdminSignature',
-      );
+      await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
     });
   });
 
   describe('Pause Functionality', function () {
-    it('should allow admin to pause the account');
-    it('should emit AccountPaused event with correct timestamp');
-    it('should prevent transaction execution while paused');
-    it('should handle indefinite pausing');
-    it('should allow admin to unpause the account');
-    it('should emit AccountUnpaused event');
-    it('should allow transaction execution after unpausing');
-    it('should report pause status correctly');
+    it('should allow admin to pause the account', async function () {
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Prepare pause data - pause for 1 hour
+      const pauseUntil = Math.floor(Date.now() / 1000) + 3600;
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      const adminNonce = await account.getAdminNonce();
+      const adminAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x', // Will be set below
+      };
+
+      // Get the challenge hash and sign it
+      const challengeHash = await account.getAdminChallenge(adminAction);
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+
+      // Pause the account - should not revert
+      await expect(account.pauseAccount(pauseUntil, adminAction)).to.not.be.reverted;
+
+      // Verify account is paused
+      const [isPaused, pausedUntilTime] = await account.isPaused();
+      expect(isPaused).to.be.true;
+      expect(pausedUntilTime).to.equal(pauseUntil);
+    });
+
+    it('should emit AccountPaused event with correct timestamp', async function () {
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Prepare pause data
+      const pauseUntil = Math.floor(Date.now() / 1000) + 7200; // 2 hours from now
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      const adminNonce = await account.getAdminNonce();
+      const adminAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the admin action
+      const challengeHash = await account.getAdminChallenge(adminAction);
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+
+      // Verify the AccountPaused event is emitted with the correct timestamp
+      await expect(account.pauseAccount(pauseUntil, adminAction)).to.emit(account, 'AccountPaused').withArgs(pauseUntil);
+    });
+
+    it('should prevent transaction execution while paused', async function () {
+      const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Pause the account first
+      const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      const adminNonce = await account.getAdminNonce();
+      const adminAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the admin action
+      const challengeHash = await account.getAdminChallenge(adminAction);
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+
+      // Pause the account
+      await account.pauseAccount(pauseUntil, adminAction);
+
+      // Now try to execute a transaction
+      const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+      const call = {
+        target: await testContract.getAddress(),
+        value: 0n,
+        data: callData,
+      };
+
+      const txChallengeHash = await account.getChallenge(call);
+      const txWebAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+      const txSignature = encodeChallenge(adminKeypair.publicKey, txWebAuthnSignature);
+
+      // The transaction should be rejected with AccountIsPaused error
+      await expect(account.execute({ call, signature: txSignature }))
+        .to.be.revertedWithCustomError(account, 'AccountIsPaused')
+        .withArgs(pauseUntil);
+
+      // Batch execution should also be rejected
+      const batchChallengeHash = await account.getBatchChallenge([call]);
+      const batchWebAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(batchChallengeHash));
+      const batchSignature = encodeChallenge(adminKeypair.publicKey, batchWebAuthnSignature);
+
+      await expect(account.executeBatch({ calls: [call], signature: batchSignature }))
+        .to.be.revertedWithCustomError(account, 'AccountIsPaused')
+        .withArgs(pauseUntil);
+    });
+
+    it('should handle indefinite pausing', async function () {
+      const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Pause the account indefinitely (0 means indefinite)
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [0]);
+
+      const adminNonce = await account.getAdminNonce();
+      const adminAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the admin action
+      const challengeHash = await account.getAdminChallenge(adminAction);
+      adminAction.signature = encodeChallenge(adminKeypair.publicKey, signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+
+      // Pause the account indefinitely
+      await account.pauseAccount(0, adminAction);
+
+      // Verify account is paused indefinitely (max uint256 value)
+      const [isPaused, pausedUntilTime] = await account.isPaused();
+      expect(isPaused).to.be.true;
+      expect(pausedUntilTime).to.equal(ethers.MaxUint256);
+
+      // Try to execute a transaction
+      const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+      const call = {
+        target: await testContract.getAddress(),
+        value: 0n,
+        data: callData,
+      };
+
+      const txChallengeHash = await account.getChallenge(call);
+      const txWebAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+      const txSignature = encodeChallenge(adminKeypair.publicKey, txWebAuthnSignature);
+
+      // The transaction should be rejected with AccountIsPaused error and max uint256 value
+      await expect(account.execute({ call, signature: txSignature }))
+        .to.be.revertedWithCustomError(account, 'AccountIsPaused')
+        .withArgs(ethers.MaxUint256);
+    });
+
+    it('should allow admin to unpause the account', async function () {
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Pause the account first
+      const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      let adminNonce = await account.getAdminNonce();
+      const pauseAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the pause action
+      const pauseChallengeHash = await account.getAdminChallenge(pauseAction);
+      pauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(pauseChallengeHash)),
+      );
+
+      // Pause the account
+      await account.pauseAccount(pauseUntil, pauseAction);
+
+      // Now unpause the account
+      adminNonce = await account.getAdminNonce();
+      const unpauseAction = {
+        operation: 5, // AdminOperation.UNPAUSE_ACCOUNT = 5
+        operationData: '0x', // No data needed for unpause
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the unpause action
+      const unpauseChallengeHash = await account.getAdminChallenge(unpauseAction);
+      unpauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(unpauseChallengeHash)),
+      );
+
+      // Unpause the account - should not revert
+      await expect(account.unpauseAccount(unpauseAction)).to.not.be.reverted;
+
+      // Verify account is no longer paused
+      const [isPaused, pausedUntilTime] = await account.isPaused();
+      expect(isPaused).to.be.false;
+      expect(pausedUntilTime).to.equal(0);
+    });
+
+    it('should emit AccountUnpaused event', async function () {
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Pause the account first
+      const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      let adminNonce = await account.getAdminNonce();
+      const pauseAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the pause action
+      const pauseChallengeHash = await account.getAdminChallenge(pauseAction);
+      pauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(pauseChallengeHash)),
+      );
+
+      // Pause the account
+      await account.pauseAccount(pauseUntil, pauseAction);
+
+      // Now unpause the account and check for the event
+      adminNonce = await account.getAdminNonce();
+      const unpauseAction = {
+        operation: 5, // AdminOperation.UNPAUSE_ACCOUNT = 5
+        operationData: '0x', // No data needed for unpause
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the unpause action
+      const unpauseChallengeHash = await account.getAdminChallenge(unpauseAction);
+      unpauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(unpauseChallengeHash)),
+      );
+
+      // Verify the AccountUnpaused event is emitted
+      await expect(account.unpauseAccount(unpauseAction)).to.emit(account, 'AccountUnpaused');
+    });
+
+    it('should allow transaction execution after unpausing', async function () {
+      const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Pause the account first
+      const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      let adminNonce = await account.getAdminNonce();
+      const pauseAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the pause action
+      const pauseChallengeHash = await account.getAdminChallenge(pauseAction);
+      pauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(pauseChallengeHash)),
+      );
+
+      // Pause the account
+      await account.pauseAccount(pauseUntil, pauseAction);
+
+      // Now unpause the account
+      adminNonce = await account.getAdminNonce();
+      const unpauseAction = {
+        operation: 5, // AdminOperation.UNPAUSE_ACCOUNT = 5
+        operationData: '0x', // No data needed for unpause
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the unpause action
+      const unpauseChallengeHash = await account.getAdminChallenge(unpauseAction);
+      unpauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(unpauseChallengeHash)),
+      );
+
+      // Unpause the account
+      await account.unpauseAccount(unpauseAction);
+
+      // Now execute a transaction - should work after unpausing
+      const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+      const call = {
+        target: await testContract.getAddress(),
+        value: 0n,
+        data: callData,
+      };
+
+      const txChallengeHash = await account.getChallenge(call);
+      const txWebAuthnSignature = signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+      const txSignature = encodeChallenge(adminKeypair.publicKey, txWebAuthnSignature);
+
+      // The transaction should execute successfully
+      await account.execute({ call, signature: txSignature });
+
+      // Verify the value was set in the test contract
+      expect(await testContract.value()).to.equal(42);
+    });
+
+    it('should report pause status correctly', async function () {
+      const { accountRegistry, adminKeypair } = await loadFixture(deployContracts);
+
+      // Create a new account with the admin key
+      const account = await createAndGetAccount(adminKeypair, accountRegistry);
+
+      // Initially the account should not be paused
+      let [isPaused, pausedUntilTime] = await account.isPaused();
+      expect(isPaused).to.be.false;
+      expect(pausedUntilTime).to.equal(0);
+
+      // Pause the account
+      const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+
+      const adminNonce = await account.getAdminNonce();
+      const pauseAction = {
+        operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
+        operationData: pauseData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      // Sign the pause action
+      const pauseChallengeHash = await account.getAdminChallenge(pauseAction);
+      pauseAction.signature = encodeChallenge(
+        adminKeypair.publicKey,
+        signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(pauseChallengeHash)),
+      );
+
+      // Pause the account
+      await account.pauseAccount(pauseUntil, pauseAction);
+
+      // Now the account should be paused with the correct timestamp
+      [isPaused, pausedUntilTime] = await account.isPaused();
+      expect(isPaused).to.be.true;
+      expect(pausedUntilTime).to.equal(pauseUntil);
+    });
   });
 
   describe('ERC Support', function () {
