@@ -7,25 +7,66 @@ import type { HexifiedPublicKey, KeyPair } from './helpers/testSetup';
 import { deployContracts, generateTestKeypair } from './helpers/testSetup';
 import { signWebAuthnChallenge } from './utils';
 
+/**
+ * Helper functions for common test operations
+ */
+
+/**
+ * Extract events of a specific type from transaction receipt logs
+ * @param receipt Transaction receipt
+ * @param contract Contract to parse logs for
+ * @param eventName Name of the event to filter for
+ * @returns Array of parsed events
+ */
+function extractEvents(receipt: any, contract: any, eventName: string) {
+  if (!receipt?.logs) return [];
+
+  return receipt.logs
+    .map((log: any) => {
+      try {
+        return contract.interface.parseLog({ topics: log.topics, data: log.data });
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter((event: any): event is NonNullable<typeof event> => event !== null && event.name === eventName);
+}
+
+/**
+ * Get an admin action with signature for specified operation
+ * @param account Account contract
+ * @param adminKeypair Admin keypair to sign with
+ * @param operation Admin operation code
+ * @param operationData ABI encoded operation data
+ * @returns Signed admin action object
+ */
+async function getSignedAdminAction(account: Account, adminKeypair: KeyPair, operation: number, operationData: string) {
+  const adminNonce = await account.getAdminNonce();
+
+  const adminAction = {
+    operation,
+    operationData,
+    nonce: Number(adminNonce),
+    signature: '0x', // Will be set below
+  };
+
+  const challengeHash = await account.getAdminChallenge(adminAction);
+  adminAction.signature = encodeChallenge(
+    adminKeypair.publicKey,
+    signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
+  );
+
+  return adminAction;
+}
+
 // Helper function to create and get an account instance
-async function createAndGetAccount(
-  adminKeypair: { publicKey: HexifiedPublicKey },
-  accountRegistry: AccountRegistry,
-): Promise<Account> {
+async function createAndGetAccount(adminKeypair: KeyPair, accountRegistry: AccountRegistry): Promise<Account> {
   // Create a new account with the admin keypair through the registry
   const tx = await accountRegistry.createUser(adminKeypair.publicKey);
   const receipt = await tx.wait();
 
   // Get the account address from the event logs
-  const userCreatedEvents = receipt?.logs
-    .map((log) => {
-      try {
-        return accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-      } catch (e) {
-        return null;
-      }
-    })
-    .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'UserCreated');
+  const userCreatedEvents = await extractEvents(receipt, accountRegistry, 'UserCreated');
 
   if (!userCreatedEvents?.length || !userCreatedEvents[0].args) {
     throw new Error('UserCreated event not found');
@@ -33,6 +74,98 @@ async function createAndGetAccount(
 
   const accountAddress = userCreatedEvents[0].args.account;
   return await ethers.getContractAt('Account', accountAddress);
+}
+
+/**
+ * Request a key to be added to an account
+ * @param account Account contract instance
+ * @param accountRegistry Registry contract instance
+ * @param keyToAdd Public key to add
+ * @param role Role to assign to the key
+ * @returns The request ID
+ */
+async function requestAddKey(
+  account: Account,
+  accountRegistry: AccountRegistry,
+  keyToAdd: HexifiedPublicKey,
+  role: number,
+): Promise<string> {
+  const accountAddress = await account.getAddress();
+  const tx = await accountRegistry.requestAddKey(accountAddress, keyToAdd, role);
+  const receipt = await tx.wait();
+
+  const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+  if (!keyRequestedEvents?.length || !keyRequestedEvents[0].args) {
+    throw new Error('KeyRequested event not found');
+  }
+
+  return keyRequestedEvents[0].args.requestId;
+}
+
+/**
+ * Approve a key request
+ * @param account Account contract instance
+ * @param adminKeypair Admin keypair to sign with
+ * @param requestId ID of the key request to approve
+ */
+async function approveKeyRequest(account: Account, adminKeypair: KeyPair, requestId: string): Promise<void> {
+  const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+  const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData); // 0 = APPROVE_KEY_REQUEST
+  await account.approveKeyRequest(requestId, adminAction);
+}
+
+/**
+ * Creates a signedAction for pausing an account
+ * @param account Account contract instance
+ * @param adminKeypair Admin keypair to sign with
+ * @param pauseUntil Timestamp until when the account should be paused
+ * @returns Signed admin action for pausing
+ */
+async function getPauseAccountAction(account: Account, adminKeypair: KeyPair, pauseUntil: number) {
+  const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
+  return await getSignedAdminAction(account, adminKeypair, 4, pauseData); // 4 = PAUSE_ACCOUNT
+}
+
+/**
+ * Creates a signedAction for unpausing an account
+ * @param account Account contract instance
+ * @param adminKeypair Admin keypair to sign with
+ * @returns Signed admin action for unpausing
+ */
+async function getUnpauseAccountAction(account: Account, adminKeypair: KeyPair) {
+  return await getSignedAdminAction(account, adminKeypair, 5, '0x'); // 5 = UNPAUSE_ACCOUNT, no data needed
+}
+
+/**
+ * Sign a call to be executed by the account
+ * @param account Account contract instance
+ * @param keypair Keypair to sign with
+ * @param call The call object to sign
+ * @returns Signed call object ready for execution
+ */
+async function signCall(account: Account, keypair: KeyPair, call: { target: string; value: bigint; data: string }) {
+  const challengeHash = await account.getChallenge(call);
+  const webAuthnSignature = signWebAuthnChallenge(keypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+  const signature = encodeChallenge(keypair.publicKey, webAuthnSignature);
+  return { call, signature };
+}
+
+/**
+ * Sign a batch of calls to be executed by the account
+ * @param account Account contract instance
+ * @param keypair Keypair to sign with
+ * @param calls The array of call objects to sign
+ * @returns Signed batch call object ready for execution
+ */
+async function signBatchCall(
+  account: Account,
+  keypair: KeyPair,
+  calls: { target: string; value: bigint; data: string }[],
+) {
+  const challengeHash = await account.getBatchChallenge(calls);
+  const webAuthnSignature = signWebAuthnChallenge(keypair.keyPair.privateKey, ethers.getBytes(challengeHash));
+  const signature = encodeChallenge(keypair.publicKey, webAuthnSignature);
+  return { calls, signature };
 }
 
 describe('Account Contract', function () {
@@ -105,15 +238,7 @@ describe('Account Contract', function () {
 
         // Verify the request was created by checking the emitted event
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         expect(keyRequestedEvents?.length).to.be.greaterThan(0);
         expect(keyRequestedEvents?.[0].args.x).to.equal(executorKeypair.publicKey.x);
@@ -202,25 +327,9 @@ describe('Account Contract', function () {
         const receipt1 = await tx1.wait();
         const receipt2 = await tx2.wait();
 
-        const keyRequestedEvents1 = receipt1?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents1 = await extractEvents(receipt1, account, 'KeyRequested');
 
-        const keyRequestedEvents2 = receipt2?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents2 = await extractEvents(receipt2, account, 'KeyRequested');
 
         expect(keyRequestedEvents1?.length).to.be.greaterThan(0);
         expect(keyRequestedEvents2?.length).to.be.greaterThan(0);
@@ -250,33 +359,14 @@ describe('Account Contract', function () {
 
         // Get the request ID from the emitted event
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
-
-        const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         await account.approveKeyRequest(requestId, adminAction);
 
@@ -304,15 +394,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -321,12 +403,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash using the contract's function
         const challengeHash = await account.getAdminChallenge(adminAction);
@@ -360,15 +437,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -377,12 +446,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash using the contract's function
         const challengeHash = await account.getAdminChallenge(adminAction);
@@ -417,15 +481,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -434,12 +490,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object for the first approval
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash and sign the first action
         const challengeHash = await account.getAdminChallenge(adminAction);
@@ -454,12 +505,7 @@ describe('Account Contract', function () {
         const newAdminNonce = await account.getAdminNonce();
 
         // Create the AdminAction object for the second attempt
-        const newAdminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(newAdminNonce),
-          signature: '0x', // Will be set below
-        };
+        const newAdminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash and sign the second action
         const newChallengeHash = await account.getAdminChallenge(newAdminAction);
@@ -489,15 +535,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -506,12 +544,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash and create signature
         const challengeHash = await account.getAdminChallenge(adminAction);
@@ -545,15 +578,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -562,12 +587,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash and sign with non-admin keypair
         const challengeHash = await account.getAdminChallenge(adminAction);
@@ -604,26 +624,10 @@ describe('Account Contract', function () {
 
         // Get the request IDs
         const receipt1 = await tx1.wait();
-        const keyRequestedEvents1 = receipt1?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents1 = await extractEvents(receipt1, account, 'KeyRequested');
 
         const receipt2 = await tx2.wait();
-        const keyRequestedEvents2 = receipt2?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents2 = await extractEvents(receipt2, account, 'KeyRequested');
 
         const requestId1 = keyRequestedEvents1?.[0].args.requestId;
         const requestId2 = keyRequestedEvents2?.[0].args.requestId;
@@ -633,12 +637,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId2]);
 
         // Create the AdminAction object with mismatched data
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         // Get the challenge hash and create signature
         const challengeHash = await account.getAdminChallenge(adminAction);
@@ -671,15 +670,7 @@ describe('Account Contract', function () {
 
         // Get the request ID from the emitted event
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -687,18 +678,7 @@ describe('Account Contract', function () {
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const adminAction = {
-          operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
-
-        const challengeHash = await account.getAdminChallenge(adminAction);
-        adminAction.signature = encodeChallenge(
-          adminKeypair.publicKey,
-          signWebAuthnChallenge(adminKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
-        );
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
 
         // Reject the key request
         await account.rejectKeyRequest(requestId, adminAction);
@@ -724,15 +704,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -740,12 +712,7 @@ describe('Account Contract', function () {
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const adminAction = {
-          operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -774,15 +741,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -790,12 +749,7 @@ describe('Account Contract', function () {
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const adminAction = {
-          operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -810,12 +764,7 @@ describe('Account Contract', function () {
         const newAdminNonce = await account.getAdminNonce();
         const newOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const newAdminAction = {
-          operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1
-          operationData: newOperationData,
-          nonce: Number(newAdminNonce),
-          signature: '0x', // Will be set below
-        };
+        const newAdminAction = await getSignedAdminAction(account, adminKeypair, 1, newOperationData);
 
         const newChallengeHash = await account.getAdminChallenge(newAdminAction);
         newAdminAction.signature = encodeChallenge(
@@ -841,12 +790,7 @@ describe('Account Contract', function () {
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [nonExistentRequestId]);
 
-        const adminAction = {
-          operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -876,15 +820,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -892,12 +828,7 @@ describe('Account Contract', function () {
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const adminAction = {
-          operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         // Sign with a non-admin keypair
@@ -931,15 +862,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -947,12 +870,7 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -973,12 +891,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
         );
 
-        const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1006,12 +919,7 @@ describe('Account Contract', function () {
           [[userKeypair.publicKey.x, userKeypair.publicKey.y]],
         );
 
-        const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1040,15 +948,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1056,12 +956,8 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        // Create the AdminAction object
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -1081,12 +977,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
         );
 
-        const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1116,12 +1007,7 @@ describe('Account Contract', function () {
           [[adminKeypair.publicKey.x, adminKeypair.publicKey.y]],
         );
 
-        const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1151,15 +1037,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1168,12 +1046,7 @@ describe('Account Contract', function () {
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         // Get the challenge hash and create signature
         const approveChallenge = await account.getAdminChallenge(approveAction);
@@ -1191,12 +1064,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
         );
 
-        const removeAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x',
-        };
+        const removeAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(removeAction);
         removeAction.signature = encodeChallenge(
@@ -1225,15 +1093,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1242,12 +1102,7 @@ describe('Account Contract', function () {
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         // Get the challenge hash and create signature
         const approveChallenge = await account.getAdminChallenge(approveAction);
@@ -1270,12 +1125,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
         );
 
-        const removeAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const removeAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(removeAction);
         removeAction.signature = encodeChallenge(
@@ -1310,15 +1160,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1327,12 +1169,7 @@ describe('Account Contract', function () {
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         // Get the challenge hash and create signature
         const approveChallenge = await account.getAdminChallenge(approveAction);
@@ -1350,12 +1187,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
         );
 
-        const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
-          operationData: operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         // Sign with a non-admin key
@@ -1389,15 +1221,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1405,12 +1229,7 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -1431,12 +1250,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 2], // Role.ADMIN = 2
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1464,12 +1278,7 @@ describe('Account Contract', function () {
           [[userKeypair.publicKey.x, userKeypair.publicKey.y], 2], // Role.ADMIN = 2
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1502,15 +1311,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1518,12 +1319,7 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -1543,12 +1339,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 2], // Role.ADMIN = 2
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1578,15 +1369,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1594,12 +1377,8 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        // Create the AdminAction object
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -1619,12 +1398,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 1], // Role.EXECUTOR = 1
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1654,12 +1428,7 @@ describe('Account Contract', function () {
           [[adminKeypair.publicKey.x, adminKeypair.publicKey.y], 1], // Role.EXECUTOR = 1
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1689,15 +1458,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1705,12 +1466,7 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -1727,12 +1483,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 2], // Role.ADMIN = 2
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -1762,15 +1513,7 @@ describe('Account Contract', function () {
 
         // Get the request ID
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1778,12 +1521,7 @@ describe('Account Contract', function () {
         const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const approveAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData: approveOperationData,
-          nonce: Number(approveNonce),
-          signature: '0x', // Will be set below
-        };
+        const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
 
         const approveChallenge = await account.getAdminChallenge(approveAction);
         approveAction.signature = encodeChallenge(
@@ -1800,12 +1538,7 @@ describe('Account Contract', function () {
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 1], // Role.EXECUTOR = 1 (incorrect)
         );
 
-        const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 3, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -2380,15 +2113,7 @@ describe('Account Contract', function () {
 
       // Get the request ID from events
       const receipt = await tx.wait();
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2396,12 +2121,7 @@ describe('Account Contract', function () {
       const adminNonce = await account.getAdminNonce();
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-      const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-        operationData,
-        nonce: Number(adminNonce),
-        signature: '0x', // Will be set below
-      };
+      const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
       // Get challenge hash and sign it
       const challengeHash = await account.getAdminChallenge(adminAction);
@@ -2438,26 +2158,13 @@ describe('Account Contract', function () {
 
       // Get the request ID
       const receipt = await tx.wait();
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
       // Create admin action
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
-      const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-        operationData,
-        nonce: Number(initialAdminNonce),
-        signature: '0x',
-      };
+      const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
@@ -2482,26 +2189,13 @@ describe('Account Contract', function () {
 
       // Get the second request ID
       const receipt2 = await tx2.wait();
-      const keyRequestedEvents2 = receipt2?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents2 = await extractEvents(receipt2, account, 'KeyRequested');
 
       const requestId2 = keyRequestedEvents2?.[0].args.requestId;
 
       // Create second admin action
       const operationData2 = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId2]);
-      const adminAction2 = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-        operationData: operationData2,
-        nonce: Number(newAdminNonce),
-        signature: '0x',
-      };
+      const adminAction2 = await getSignedAdminAction(account, adminKeypair, 0, operationData2);
 
       // Sign the second action
       const challengeHash2 = await account.getAdminChallenge(adminAction2);
@@ -2534,15 +2228,7 @@ describe('Account Contract', function () {
 
       // Get the request ID
       const receipt = await tx.wait();
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2550,12 +2236,7 @@ describe('Account Contract', function () {
       const adminNonce = await account.getAdminNonce();
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-      const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-        operationData,
-        nonce: Number(adminNonce),
-        signature: '0x',
-      };
+      const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
@@ -2578,31 +2259,14 @@ describe('Account Contract', function () {
       const accountAddress = await account.getAddress();
 
       // Request adding a new key
-      const tx = await accountRegistry.requestAddKey(
-        accountAddress,
-        executorKeypair.publicKey,
-        1, // Role.EXECUTOR = 1
-      );
-
-      // Get the request ID
-      const receipt = await tx.wait();
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
-
-      const requestId = keyRequestedEvents?.[0].args.requestId;
+      const requestId = await requestAddKey(account, accountRegistry, executorKeypair.publicKey, 1);
 
       // Get the current admin nonce
       const adminNonce = await account.getAdminNonce();
 
       // Create admin action with incorrect nonce (current nonce + 1)
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
+      // Instead of using our helper, manually create an action with invalid nonce
       const adminAction = {
         operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
         operationData,
@@ -2610,7 +2274,7 @@ describe('Account Contract', function () {
         signature: '0x',
       };
 
-      // Sign the action
+      // Get the challenge hash and sign it
       const challengeHash = await account.getAdminChallenge(adminAction);
       adminAction.signature = encodeChallenge(
         adminKeypair.publicKey,
@@ -2639,15 +2303,7 @@ describe('Account Contract', function () {
 
       // Get the request ID
       const receipt = await tx.wait();
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2656,12 +2312,7 @@ describe('Account Contract', function () {
 
       // Create admin action with wrong operation type (REJECT_KEY_REQUEST instead of APPROVE_KEY_REQUEST)
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
-      const adminAction = {
-        operation: 1, // AdminOperation.REJECT_KEY_REQUEST = 1 (Wrong operation type)
-        operationData,
-        nonce: Number(adminNonce),
-        signature: '0x',
-      };
+      const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
 
       // Sign the action
       const challengeHash = await account.getAdminChallenge(adminAction);
@@ -2692,15 +2343,7 @@ describe('Account Contract', function () {
 
       // Get the request ID
       const receipt = await tx.wait();
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2709,12 +2352,7 @@ describe('Account Contract', function () {
 
       // Create admin action
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
-      const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-        operationData,
-        nonce: Number(adminNonce),
-        signature: '0x',
-      };
+      const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
       // Get challenge hash but sign it with a non-admin key
       const challengeHash = await account.getAdminChallenge(adminAction);
@@ -3152,15 +2790,7 @@ describe('Account Contract', function () {
 
         // Get the request ID from the emitted event
         const receipt = await tx.wait();
-        const keyRequestedEvents = receipt?.logs
-          .map((log) => {
-            try {
-              return account.interface.parseLog({ topics: log.topics, data: log.data });
-            } catch (e) {
-              return null;
-            }
-          })
-          .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -3168,12 +2798,7 @@ describe('Account Contract', function () {
         const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
-        const adminAction = {
-          operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
-          operationData,
-          nonce: Number(adminNonce),
-          signature: '0x', // Will be set below
-        };
+        const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
 
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(
@@ -3475,15 +3100,7 @@ describe('Account Contract', function () {
       const receipt = await tx.wait();
 
       // Get the requestId from events
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       if (!keyRequestedEvents?.length) {
         throw new Error('KeyRequested event not found');
@@ -3549,15 +3166,7 @@ describe('Account Contract', function () {
       const receipt = await tx.wait();
 
       // Get the requestId from events
-      const keyRequestedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return account.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
       if (!keyRequestedEvents?.length) {
         throw new Error('KeyRequested event not found');
