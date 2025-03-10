@@ -3048,10 +3048,83 @@ describe('Account Contract', function () {
     });
 
     describe('ERC721/ERC1155 Receiver', function () {
-      it('should implement onERC721Received correctly');
-      it('should implement onERC1155Received correctly');
-      it('should implement onERC1155BatchReceived correctly');
-      it('should support relevant interfaces');
+      let account: Account;
+      let adminKeypair: KeyPair;
+      let accountRegistry: AccountRegistry;
+
+      beforeEach(async function () {
+        // Load the fixture and set up an account for testing
+        const fixture = await loadFixture(deployContracts);
+        adminKeypair = fixture.adminKeypair;
+        accountRegistry = fixture.accountRegistry;
+        account = await createAndGetAccount(adminKeypair, accountRegistry);
+      });
+
+      it('should implement onERC721Received correctly', async function () {
+        // Get the ERC721Receiver interface selector
+        const ERC721ReceiverSelector = '0x150b7a02'; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
+        
+        // Call the onERC721Received function directly
+        const result = await account.onERC721Received(
+          ethers.ZeroAddress, 
+          ethers.ZeroAddress, 
+          0, 
+          '0x'
+        );
+        
+        // Verify it returns the correct selector
+        expect(result).to.equal(ERC721ReceiverSelector);
+      });
+
+      it('should implement onERC1155Received correctly', async function () {
+        // Get the ERC1155Receiver interface selector for single token receipt
+        const ERC1155ReceivedSelector = '0xf23a6e61'; // bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"))
+        
+        // Call the onERC1155Received function directly
+        const result = await account.onERC1155Received(
+          ethers.ZeroAddress, 
+          ethers.ZeroAddress, 
+          0, 
+          1, 
+          '0x'
+        );
+        
+        // Verify it returns the correct selector
+        expect(result).to.equal(ERC1155ReceivedSelector);
+      });
+
+      it('should implement onERC1155BatchReceived correctly', async function () {
+        // Get the ERC1155Receiver interface selector for batch token receipt
+        const ERC1155BatchReceivedSelector = '0xbc197c81'; // bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))
+        
+        // Call the onERC1155BatchReceived function directly
+        const result = await account.onERC1155BatchReceived(
+          ethers.ZeroAddress, 
+          ethers.ZeroAddress, 
+          [], 
+          [], 
+          '0x'
+        );
+        
+        // Verify it returns the correct selector
+        expect(result).to.equal(ERC1155BatchReceivedSelector);
+      });
+
+      it('should support relevant interfaces', async function () {
+        // Interface IDs
+        const ERC721ReceiverInterfaceId = '0x150b7a02'; // IERC721Receiver
+        const ERC1155ReceiverInterfaceId = '0x4e2312e0'; // IERC1155Receiver
+        const ERC1271InterfaceId = '0x1626ba7e'; // IERC1271
+        
+        // Check that each interface is supported
+        expect(await account.supportsInterface(ERC721ReceiverInterfaceId)).to.be.true;
+        expect(await account.supportsInterface(ERC1155ReceiverInterfaceId)).to.be.true;
+        expect(await account.supportsInterface(ERC1271InterfaceId)).to.be.true;
+        
+        // Check that a random interface ID is not supported
+        const randomInterfaceId = '0x12345678';
+        expect(await account.supportsInterface(randomInterfaceId)).to.be.false;
+      });
     });
   });
 
