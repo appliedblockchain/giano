@@ -2527,7 +2527,7 @@ describe('Account Contract', function () {
       const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
       const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
 
-      let adminNonce = await account.getAdminNonce();
+      const adminNonce = await account.getAdminNonce();
       const pauseAction = {
         operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
         operationData: pauseData,
@@ -2615,7 +2615,7 @@ describe('Account Contract', function () {
       const pauseUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
       const pauseData = ethers.AbiCoder.defaultAbiCoder().encode(['uint256'], [pauseUntil]);
 
-      let adminNonce = await account.getAdminNonce();
+      const adminNonce = await account.getAdminNonce();
       const pauseAction = {
         operation: 4, // AdminOperation.PAUSE_ACCOUNT = 4
         operationData: pauseData,
@@ -2930,6 +2930,7 @@ describe('Account Contract', function () {
       // In contract: keccak256(bytes.concat(bytes20(address(this)), bytes32(uint256(currentNonce)), bytes20(call.target), bytes32(call.value), call.data))
       const expectedHash = ethers.keccak256(
         ethers.concat([
+          // eslint-disable-next-line @typescript-eslint/no-base-to-string
           ethers.zeroPadValue(ethers.hexlify(account.target.toString()), 20),
           ethers.zeroPadValue(ethers.toBeHex(call.nonce), 32),
           ethers.zeroPadValue(ethers.hexlify(call.target.toString()), 20),
