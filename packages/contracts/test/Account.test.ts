@@ -348,7 +348,6 @@ describe('Account Contract', function () {
 
         // Create an account
         const account = await createAndGetAccount(adminKeypair, accountRegistry);
-        const accountAddress = await account.getAddress();
 
         // Request adding a new key
         const requestId = await requestAddKey(account, accountRegistry, executorKeypair.publicKey, 1); // Role.EXECUTOR = 1
@@ -386,7 +385,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the request
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -429,7 +427,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Prepare approval
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -473,7 +470,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the request
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object for the first approval
@@ -489,7 +485,6 @@ describe('Account Contract', function () {
         await account.approveKeyRequest(requestId, adminAction);
 
         // Try to approve the same request again - should fail because it was removed
-        const newAdminNonce = await account.getAdminNonce();
 
         // Create the AdminAction object for the second attempt
         const newAdminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
@@ -527,7 +522,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the request
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -570,7 +564,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Try to approve with a non-admin signature
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -620,7 +613,6 @@ describe('Account Contract', function () {
         const requestId2 = keyRequestedEvents2?.[0].args.requestId;
 
         // Try to approve requestId1 but provide requestId2 in the operation data
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId2]);
 
         // Create the AdminAction object with mismatched data
@@ -662,7 +654,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Prepare the admin action to reject the key request
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
@@ -696,7 +687,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Prepare admin action
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
@@ -733,7 +723,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Prepare admin action for rejection
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
@@ -748,7 +737,6 @@ describe('Account Contract', function () {
         await account.rejectKeyRequest(requestId, adminAction);
 
         // Try to reject the same request again - should fail because it was removed
-        const newAdminNonce = await account.getAdminNonce();
         const newOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const newAdminAction = await getSignedAdminAction(account, adminKeypair, 1, newOperationData);
@@ -774,7 +762,6 @@ describe('Account Contract', function () {
         const nonExistentRequestId = ethers.keccak256(ethers.toUtf8Bytes('non-existent-request'));
 
         // Prepare admin action
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [nonExistentRequestId]);
 
         const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
@@ -812,7 +799,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Prepare admin action with non-admin signature
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const adminAction = await getSignedAdminAction(account, adminKeypair, 1, operationData);
@@ -854,7 +840,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
@@ -872,7 +857,6 @@ describe('Account Contract', function () {
         expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
 
         // Now remove the key
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
@@ -900,7 +884,6 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
         // Attempt to remove a key that doesn't exist
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)'],
           [[userKeypair.publicKey.x, userKeypair.publicKey.y]],
@@ -940,7 +923,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -958,7 +940,6 @@ describe('Account Contract', function () {
         expect(await account.getAdminKeyCount()).to.equal(2);
 
         // Now remove the second admin key
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
@@ -1034,7 +1015,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -1050,7 +1030,6 @@ describe('Account Contract', function () {
         await account.approveKeyRequest(requestId, approveAction);
 
         // Prepare to remove the key
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
@@ -1090,7 +1069,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -1111,7 +1089,6 @@ describe('Account Contract', function () {
         expect(linkedAccount).to.equal(accountAddress);
 
         // Prepare to remove the key
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
@@ -1157,7 +1134,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -1173,7 +1149,6 @@ describe('Account Contract', function () {
         await account.approveKeyRequest(requestId, approveAction);
 
         // Prepare to remove the key with a non-admin signature
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y]],
@@ -1218,7 +1193,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
@@ -1236,7 +1210,6 @@ describe('Account Contract', function () {
         expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
 
         // Now change the role to ADMIN
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)', 'uint8'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 2], // Role.ADMIN = 2
@@ -1264,7 +1237,6 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeypair, accountRegistry);
 
         // Try to change role of a non-existent key
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)', 'uint8'],
           [[userKeypair.publicKey.x, userKeypair.publicKey.y], 2], // Role.ADMIN = 2
@@ -1308,7 +1280,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
@@ -1325,7 +1296,6 @@ describe('Account Contract', function () {
         expect(await account.getAdminKeyCount()).to.equal(1);
 
         // Now upgrade the executor key to admin
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)', 'uint8'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 2], // Role.ADMIN = 2
@@ -1366,7 +1336,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         // Create the AdminAction object
@@ -1384,7 +1353,6 @@ describe('Account Contract', function () {
         expect(await account.getAdminKeyCount()).to.equal(2);
 
         // Now downgrade the new admin key to executor
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)', 'uint8'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 1], // Role.EXECUTOR = 1
@@ -1495,7 +1463,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
@@ -1509,7 +1476,6 @@ describe('Account Contract', function () {
         await account.approveKeyRequest(requestId, approveAction);
 
         // Prepare to change role
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)', 'uint8'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 2], // Role.ADMIN = 2
@@ -1550,7 +1516,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const approveNonce = await account.getAdminNonce();
         const approveOperationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const approveAction = await getSignedAdminAction(account, adminKeypair, 0, approveOperationData);
@@ -1564,7 +1529,6 @@ describe('Account Contract', function () {
         await account.approveKeyRequest(requestId, approveAction);
 
         // Prepare operation data with incorrect role (passing EXECUTOR=1 in operationData but ADMIN=2 in function call)
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['tuple(bytes32 x, bytes32 y)', 'uint8'],
           [[executorKeypair.publicKey.x, executorKeypair.publicKey.y], 1], // Role.EXECUTOR = 1 (incorrect)
@@ -1839,7 +1803,7 @@ describe('Account Contract', function () {
       });
 
       it('should validate batch challenge correctly', async function () {
-        const { accountRegistry, adminKeypair, userKeypair, testContract } = await loadFixture(deployContracts);
+        const { accountRegistry, adminKeypair, testContract } = await loadFixture(deployContracts);
 
         // Create a new account with the admin key
         const account = await createAndGetAccount(adminKeypair, accountRegistry);
@@ -2140,7 +2104,6 @@ describe('Account Contract', function () {
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
       // Create admin action for approving the key request
-      const adminNonce = await account.getAdminNonce();
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
       const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
@@ -2278,7 +2241,6 @@ describe('Account Contract', function () {
 
       // Create an account
       const account = await createAndGetAccount(adminKeypair, accountRegistry);
-      const accountAddress = await account.getAddress();
 
       // Request adding a new key
       const requestId = await requestAddKey(account, accountRegistry, executorKeypair.publicKey, 1);
@@ -2330,7 +2292,6 @@ describe('Account Contract', function () {
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
       // Get the current admin nonce
-      const adminNonce = await account.getAdminNonce();
 
       // Create admin action with wrong operation type (REJECT_KEY_REQUEST instead of APPROVE_KEY_REQUEST)
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
@@ -2370,7 +2331,6 @@ describe('Account Contract', function () {
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
       // Get the current admin nonce
-      const adminNonce = await account.getAdminNonce();
 
       // Create admin action
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
@@ -2784,7 +2744,6 @@ describe('Account Contract', function () {
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
         // Approve the key request
-        const adminNonce = await account.getAdminNonce();
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
         const adminAction = await getSignedAdminAction(account, adminKeypair, 0, operationData);
