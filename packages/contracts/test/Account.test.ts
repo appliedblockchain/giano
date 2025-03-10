@@ -36,10 +36,6 @@ async function createAndGetAccount(
 }
 
 describe('Account Contract', function () {
-  beforeEach(async () => {
-    await loadFixture(deployContracts);
-  });
-
   describe('Initialization', function () {
     it('should initialize with correct registry address', async function () {
       // Deploy a new account using the factory from the fixture
