@@ -240,26 +240,20 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      */
     event AccountUnpaused();
 
-    // Mapping from key hash to key information
     mapping(bytes32 => KeyInfo) private keys;
-    
-    // Mapping from request ID to key request information
+
     mapping(bytes32 => KeyRequest) private keyRequests;
-    
+
     // Storage optimization: Pack related uint values into a single storage slot
-    // Current request nonce (incremented for each request)
-    // Current admin operation nonce (incremented for each admin operation)
-    // Current transaction nonce (incremented for each execute call)
-    // Counter for admin keys
+
     uint64 private requestNonce;
     uint64 private adminNonce;
-    uint64 private currentNonce; 
+    uint64 private currentNonce;
     uint64 private adminKeyCount;
 
     // Address of the registry contract
     address public immutable registry;
 
-    // Pause mechanism
     uint256 private pausedUntil;
 
     /**
@@ -269,7 +263,6 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param _registry The address of the AccountRegistry contract
      */
     constructor(Types.PublicKey memory _initialAdminKey, address _registry) {
-        // Add the initial admin key
         bytes32 keyHash = _getKeyHash(_initialAdminKey);
         keys[keyHash] = KeyInfo({publicKey: _initialAdminKey, role: Role.ADMIN});
         registry = _registry;
@@ -386,10 +379,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param expectedOperation The expected operation type
      * @param adminAction The admin action to validate
      */
-    modifier onlyAdmin(
-        AdminOperation expectedOperation,
-        AdminAction memory adminAction
-    ) {
+    modifier onlyAdmin(AdminOperation expectedOperation, AdminAction memory adminAction) {
         if (adminAction.operation != expectedOperation) {
             revert InvalidOperation(expectedOperation, adminAction.operation);
         }
@@ -459,10 +449,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param requestId The ID of the request to approve
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function approveKeyRequest(
-        bytes32 requestId,
-        AdminAction memory adminAction
-    ) external onlyAdmin(AdminOperation.APPROVE_KEY_REQUEST, adminAction) {
+    function approveKeyRequest(bytes32 requestId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.APPROVE_KEY_REQUEST, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(requestId))) {
             revert InvalidOperationData();
         }
@@ -475,14 +462,12 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         bytes32 keyHash = _getKeyHash(request.publicKey);
         keys[keyHash] = KeyInfo({publicKey: request.publicKey, role: request.requestedRole});
 
-        // Increment admin count if adding an admin key
         if (request.requestedRole == Role.ADMIN) {
             adminKeyCount++;
         }
 
         delete keyRequests[requestId];
 
-        // Notify the registry about the new key
         AccountRegistry(registry).notifyKeyAdded(request.publicKey);
 
         emit KeyRequestApproved(requestId, request.publicKey.x, request.publicKey.y, request.requestedRole);
@@ -495,10 +480,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param requestId The ID of the request to reject
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function rejectKeyRequest(
-        bytes32 requestId,
-        AdminAction memory adminAction
-    ) external onlyAdmin(AdminOperation.REJECT_KEY_REQUEST, adminAction) {
+    function rejectKeyRequest(bytes32 requestId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REJECT_KEY_REQUEST, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(requestId))) {
             revert InvalidOperationData();
         }
@@ -518,10 +500,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param _publicKey The public key to remove
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function removeKey(
-        Types.PublicKey calldata _publicKey,
-        AdminAction memory adminAction
-    ) external onlyAdmin(AdminOperation.REMOVE_KEY, adminAction) {
+    function removeKey(Types.PublicKey calldata _publicKey, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REMOVE_KEY, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(_publicKey))) {
             revert InvalidOperationData();
         }
@@ -531,7 +510,6 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             revert KeyDoesNotExist(_publicKey.x, _publicKey.y);
         }
 
-        // If removing an admin key, ensure it's not the last one
         if (keys[keyHash].role == Role.ADMIN) {
             if (adminKeyCount <= 1) {
                 revert LastAdminKey();
@@ -541,7 +519,6 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         keys[keyHash].role = Role.NONE;
 
-        // Notify the registry about the removed key
         AccountRegistry(registry).notifyKeyRemoved(_publicKey);
 
         emit KeyRemoved(_publicKey.x, _publicKey.y);
@@ -568,15 +545,12 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             revert KeyDoesNotExist(_publicKey.x, _publicKey.y);
         }
 
-        // Handle admin role changes
         if (keys[keyHash].role == Role.ADMIN && _newRole != Role.ADMIN) {
-            // Downgrading an admin key
             if (adminKeyCount <= 1) {
                 revert LastAdminKey();
             }
             adminKeyCount--;
         } else if (keys[keyHash].role != Role.ADMIN && _newRole == Role.ADMIN) {
-            // Upgrading to admin role
             adminKeyCount++;
         }
 
@@ -615,14 +589,16 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
      * @param signed The parameters of the call to be executed
      */
-    function execute(Types.SignedCall calldata signed) external payable validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) nonReentrant whenNotPaused {
+    function execute(
+        Types.SignedCall calldata signed
+    ) external payable validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) nonReentrant whenNotPaused {
         (bool success, bytes memory result) = signed.call.target.call{value: signed.call.value}(signed.call.data);
         if (!success) {
             assembly {
                 revert(add(result, 32), mload(result))
             }
         }
-        
+
         emit Executed(currentNonce, signed.call.target, signed.call.value, signed.call.data);
         currentNonce++;
     }
@@ -632,9 +608,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
      * @param batch The batch of calls to be executed with signature
      */
-    function executeBatch(BatchCall calldata batch) external payable validSignature(bytes.concat(getBatchChallenge(batch.calls)), batch.signature) nonReentrant whenNotPaused {
+    function executeBatch(
+        BatchCall calldata batch
+    ) external payable validSignature(bytes.concat(getBatchChallenge(batch.calls)), batch.signature) nonReentrant whenNotPaused {
         uint256 callsLength = batch.calls.length;
-        require(callsLength > 0, "No calls to execute");
+        require(callsLength > 0, 'No calls to execute');
 
         for (uint256 i = 0; i < callsLength; i++) {
             Types.Call calldata currentCall = batch.calls[i];
@@ -759,9 +737,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      */
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return
-            interfaceId == type(IERC1155Receiver).interfaceId ||
-            interfaceId == type(IERC721Receiver).interfaceId ||
-            interfaceId == type(IERC1271).interfaceId;
+            interfaceId == type(IERC1155Receiver).interfaceId || interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1271).interfaceId;
     }
 
     /**
@@ -779,10 +755,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param _until The timestamp until which the account should be paused (0 for indefinite)
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function pauseAccount(
-        uint256 _until,
-        AdminAction memory adminAction
-    ) external onlyAdmin(AdminOperation.PAUSE_ACCOUNT, adminAction) {
+    function pauseAccount(uint256 _until, AdminAction memory adminAction) external onlyAdmin(AdminOperation.PAUSE_ACCOUNT, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(_until))) {
             revert InvalidOperationData();
         }
@@ -796,10 +769,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @dev Can only be called by an admin
      * @param adminAction The admin action details with nonce and signature
      */
-    function unpauseAccount(
-        AdminAction memory adminAction
-    ) external onlyAdmin(AdminOperation.UNPAUSE_ACCOUNT, adminAction) {
-        // No need to verify operation data for this operation
+    function unpauseAccount(AdminAction memory adminAction) external onlyAdmin(AdminOperation.UNPAUSE_ACCOUNT, adminAction) {
         pausedUntil = 0;
         emit AccountUnpaused();
     }
