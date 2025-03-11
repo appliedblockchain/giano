@@ -42,7 +42,7 @@ async function createAndGetAccount(adminKeypair: KeyPair, accountRegistry: Accou
   const tx = await accountRegistry.createUser(adminKeypair.publicKey);
   const receipt = await tx.wait();
 
-  const userCreatedEvents = await extractEvents(receipt, accountRegistry, 'UserCreated');
+  const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
 
   if (!userCreatedEvents?.length || !userCreatedEvents[0].args) {
     throw new Error('UserCreated event not found');
@@ -70,7 +70,7 @@ async function requestAddKey(
   const tx = await accountRegistry.requestAddKey(accountAddress, keyToAdd, role);
   const receipt = await tx.wait();
 
-  const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+  const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
   if (!keyRequestedEvents?.length || !keyRequestedEvents[0].args) {
     throw new Error('KeyRequested event not found');
   }
@@ -208,7 +208,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         expect(keyRequestedEvents?.length).to.be.greaterThan(0);
         expect(keyRequestedEvents?.[0].args.publicKey.x).to.equal(executorKeypair.publicKey.x);
@@ -288,9 +288,9 @@ describe('Account Contract', function () {
         const receipt1 = await tx1.wait();
         const receipt2 = await tx2.wait();
 
-        const keyRequestedEvents1 = await extractEvents(receipt1, account, 'KeyRequested');
+        const keyRequestedEvents1 = extractEvents(receipt1, account, 'KeyRequested');
 
-        const keyRequestedEvents2 = await extractEvents(receipt2, account, 'KeyRequested');
+        const keyRequestedEvents2 = extractEvents(receipt2, account, 'KeyRequested');
 
         expect(keyRequestedEvents1?.length).to.be.greaterThan(0);
         expect(keyRequestedEvents2?.length).to.be.greaterThan(0);
@@ -332,7 +332,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -359,7 +359,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -374,15 +374,12 @@ describe('Account Contract', function () {
             (publicKey: any) => {
               return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
             },
-            1
+            1,
           ) // Role.EXECUTOR = 1
           .and.to.emit(account, 'KeyAdded')
-          .withArgs(
-            (publicKey: any) => {
-              return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
-            },
-            1
-          ); // Role.EXECUTOR = 1
+          .withArgs((publicKey: any) => {
+            return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
+          }, 1); // Role.EXECUTOR = 1
       });
 
       it('should remove the key request after approval', async function () {
@@ -398,7 +395,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -428,7 +425,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -456,7 +453,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -495,10 +492,10 @@ describe('Account Contract', function () {
         );
 
         const receipt1 = await tx1.wait();
-        const keyRequestedEvents1 = await extractEvents(receipt1, account, 'KeyRequested');
+        const keyRequestedEvents1 = extractEvents(receipt1, account, 'KeyRequested');
 
         const receipt2 = await tx2.wait();
-        const keyRequestedEvents2 = await extractEvents(receipt2, account, 'KeyRequested');
+        const keyRequestedEvents2 = extractEvents(receipt2, account, 'KeyRequested');
 
         const requestId1 = keyRequestedEvents1?.[0].args.requestId;
         const requestId2 = keyRequestedEvents2?.[0].args.requestId;
@@ -528,7 +525,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -555,7 +552,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -581,7 +578,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -629,7 +626,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -665,7 +662,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -721,7 +718,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -790,7 +787,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -827,7 +824,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -848,8 +845,10 @@ describe('Account Contract', function () {
 
         const removeAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
-        await expect(account.removeKey(executorKeypair.publicKey, removeAction))
-          .to.emit(accountRegistry, 'KeyUnlinked');
+        await expect(account.removeKey(executorKeypair.publicKey, removeAction)).to.emit(
+          accountRegistry,
+          'KeyUnlinked',
+        );
 
         const [isStillLinked, _] = await accountRegistry.isKeyLinked(executorKeypair.publicKey);
         expect(isStillLinked).to.be.false;
@@ -868,7 +867,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -913,7 +912,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -972,7 +971,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1009,7 +1008,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1110,7 +1109,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1147,7 +1146,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1615,7 +1614,7 @@ describe('Account Contract', function () {
 
   describe('Admin Operations', function () {
     it('should validate admin signatures correctly', async function () {
-        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+      const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
 
       const account = await createAndGetAccount(adminKeypair, accountRegistry);
       const accountAddress = await account.getAddress();
@@ -1627,7 +1626,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1657,7 +1656,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1676,7 +1675,7 @@ describe('Account Contract', function () {
       );
 
       const receipt2 = await tx2.wait();
-      const keyRequestedEvents2 = await extractEvents(receipt2, account, 'KeyRequested');
+      const keyRequestedEvents2 = extractEvents(receipt2, account, 'KeyRequested');
 
       const requestId2 = keyRequestedEvents2?.[0].args.requestId;
 
@@ -1702,7 +1701,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1758,7 +1757,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1789,7 +1788,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2139,7 +2138,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2382,7 +2381,7 @@ describe('Account Contract', function () {
       const tx = await accountRegistry.requestAddKey(account.target, userKeypair.publicKey, 1); // Role.EXECUTOR = 1
       const receipt = await tx.wait();
 
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       if (!keyRequestedEvents?.length) {
         throw new Error('KeyRequested event not found');
@@ -2436,7 +2435,7 @@ describe('Account Contract', function () {
       const tx = await accountRegistry.requestAddKey(account.target, userKeypair.publicKey, 1); // Role.EXECUTOR = 1
       const receipt = await tx.wait();
 
-      const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
 
       if (!keyRequestedEvents?.length) {
         throw new Error('KeyRequested event not found');

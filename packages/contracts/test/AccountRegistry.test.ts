@@ -234,7 +234,6 @@ describe('AccountRegistry Contract', function () {
 
       // Create second user with the new key
       const tx2 = await accountRegistry.createUser(newKeypair.publicKey);
-      const receipt2 = await tx2.wait();
 
       // Get the first account address
       const userCreatedEvents = extractEvents(receipt1, accountRegistry, 'UserCreated');
@@ -271,7 +270,7 @@ describe('AccountRegistry Contract', function () {
     });
 
     it('should revert notifyKeyRemoved when key not found', async function () {
-      const { accountRegistry, accountFactory } = await loadFixture(deployContracts);
+      const { accountRegistry } = await loadFixture(deployContracts);
       const adminKeypair = generateTestKeypair();
       const unusedKeypair = generateTestKeypair();
       const [owner] = await ethers.getSigners();
