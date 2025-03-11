@@ -169,20 +169,18 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Emitted when a key addition is requested
      * @param requestId The ID of the created request
-     * @param x The X coordinate of the public key
-     * @param y The Y coordinate of the public key
+     * @param publicKey The public key requested to be added
      * @param requestedRole The requested role for the key
      */
-    event KeyRequested(bytes32 indexed requestId, bytes32 x, bytes32 y, Role requestedRole);
+    event KeyRequested(bytes32 indexed requestId, Types.PublicKey publicKey, Role requestedRole);
 
     /**
      * @notice Emitted when a key request is approved
      * @param requestId The ID of the approved request
-     * @param x The X coordinate of the public key
-     * @param y The Y coordinate of the public key
+     * @param publicKey The public key that was approved
      * @param role The assigned role for the key
      */
-    event KeyRequestApproved(bytes32 indexed requestId, bytes32 x, bytes32 y, Role role);
+    event KeyRequestApproved(bytes32 indexed requestId, Types.PublicKey publicKey, Role role);
 
     /**
      * @notice Emitted when a key request is rejected
@@ -192,26 +190,23 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Emitted when a key is added to the account
-     * @param x The X coordinate of the public key
-     * @param y The Y coordinate of the public key
+     * @param publicKey The public key that was added
      * @param role The assigned role for the key
      */
-    event KeyAdded(bytes32 indexed x, bytes32 indexed y, Role role);
+    event KeyAdded(Types.PublicKey publicKey, Role role);
 
     /**
      * @notice Emitted when a key is removed from the account
-     * @param x The X coordinate of the removed public key
-     * @param y The Y coordinate of the removed public key
+     * @param publicKey The public key that was removed
      */
-    event KeyRemoved(bytes32 indexed x, bytes32 indexed y);
+    event KeyRemoved(Types.PublicKey publicKey);
 
     /**
      * @notice Emitted when a key's role is changed
-     * @param x The X coordinate of the public key
-     * @param y The Y coordinate of the public key
+     * @param publicKey The public key whose role was changed
      * @param newRole The new role assigned to the key
      */
-    event KeyRoleChanged(bytes32 indexed x, bytes32 indexed y, Role newRole);
+    event KeyRoleChanged(Types.PublicKey publicKey, Role newRole);
 
     /**
      * @notice Emitted when an administrative action is executed
@@ -268,7 +263,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         registry = _registry;
         adminKeyCount = 1;
 
-        emit KeyAdded(_initialAdminKey.x, _initialAdminKey.y, Role.ADMIN);
+        emit KeyAdded(_initialAdminKey, Role.ADMIN);
     }
 
     /**
@@ -438,7 +433,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         keyRequests[requestId] = KeyRequest({publicKey: _publicKey, requestedRole: _requestedRole, exists: true});
 
-        emit KeyRequested(requestId, _publicKey.x, _publicKey.y, _requestedRole);
+        emit KeyRequested(requestId, _publicKey, _requestedRole);
 
         return requestId;
     }
@@ -470,8 +465,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         AccountRegistry(registry).notifyKeyAdded(request.publicKey);
 
-        emit KeyRequestApproved(requestId, request.publicKey.x, request.publicKey.y, request.requestedRole);
-        emit KeyAdded(request.publicKey.x, request.publicKey.y, request.requestedRole);
+        emit KeyRequestApproved(requestId, request.publicKey, request.requestedRole);
+        emit KeyAdded(request.publicKey, request.requestedRole);
     }
 
     /**
@@ -521,7 +516,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         AccountRegistry(registry).notifyKeyRemoved(_publicKey);
 
-        emit KeyRemoved(_publicKey.x, _publicKey.y);
+        emit KeyRemoved(_publicKey);
     }
 
     /**
@@ -556,7 +551,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
         keys[keyHash].role = _newRole;
 
-        emit KeyRoleChanged(_publicKey.x, _publicKey.y, _newRole);
+        emit KeyRoleChanged(_publicKey, _newRole);
     }
 
     /**

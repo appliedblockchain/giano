@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { ContractTransactionReceipt } from 'ethers';
 
 export const createKeypair = () => {
   const keyPair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -54,3 +55,28 @@ export const signWebAuthnChallenge = (
     userHandle: null,
   };
 };
+
+/**
+ * Extract events of a specific type from transaction receipt logs
+ * @param receipt Transaction receipt
+ * @param contract Contract to parse logs for
+ * @param eventName Name of the event to filter for
+ * @returns Array of parsed events
+ */
+export function extractEvents(
+  receipt: ContractTransactionReceipt | null | undefined,
+  contract: any,
+  eventName: string,
+) {
+  if (!receipt?.logs) return [];
+
+  return receipt.logs
+    .map((log) => {
+      try {
+        return contract.interface.parseLog({ topics: log.topics, data: log.data });
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter((event): event is NonNullable<typeof event> => event !== null && event.name === eventName);
+}

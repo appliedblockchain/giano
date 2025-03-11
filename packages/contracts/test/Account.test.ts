@@ -5,32 +5,11 @@ import { ethers } from 'hardhat';
 import type { Account, AccountRegistry } from '../typechain-types';
 import type { HexifiedPublicKey, KeyPair } from './helpers/testSetup';
 import { deployContracts, generateTestKeypair } from './helpers/testSetup';
-import { signWebAuthnChallenge } from './utils';
+import { extractEvents, signWebAuthnChallenge } from './utils';
 
 /**
  * Helper functions for common test operations
  */
-
-/**
- * Extract events of a specific type from transaction receipt logs
- * @param receipt Transaction receipt
- * @param contract Contract to parse logs for
- * @param eventName Name of the event to filter for
- * @returns Array of parsed events
- */
-function extractEvents(receipt: any, contract: any, eventName: string) {
-  if (!receipt?.logs) return [];
-
-  return receipt.logs
-    .map((log: any) => {
-      try {
-        return contract.interface.parseLog({ topics: log.topics, data: log.data });
-      } catch (e) {
-        return null;
-      }
-    })
-    .filter((event: any): event is NonNullable<typeof event> => event !== null && event.name === eventName);
-}
 
 /**
  * Get an admin action with signature for specified operation
@@ -232,8 +211,8 @@ describe('Account Contract', function () {
         const keyRequestedEvents = await extractEvents(receipt, account, 'KeyRequested');
 
         expect(keyRequestedEvents?.length).to.be.greaterThan(0);
-        expect(keyRequestedEvents?.[0].args.x).to.equal(executorKeypair.publicKey.x);
-        expect(keyRequestedEvents?.[0].args.y).to.equal(executorKeypair.publicKey.y);
+        expect(keyRequestedEvents?.[0].args.publicKey.x).to.equal(executorKeypair.publicKey.x);
+        expect(keyRequestedEvents?.[0].args.publicKey.y).to.equal(executorKeypair.publicKey.y);
         expect(keyRequestedEvents?.[0].args.requestedRole).to.equal(1); // Role.EXECUTOR = 1
       });
 
@@ -253,8 +232,9 @@ describe('Account Contract', function () {
           .to.emit(account, 'KeyRequested')
           .withArgs(
             (requestId: string) => ethers.isHexString(requestId, 32), // 32 bytes
-            executorKeypair.publicKey.x,
-            executorKeypair.publicKey.y,
+            (publicKey: any) => {
+              return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
+            },
             1, // Role.EXECUTOR = 1
           );
       });
@@ -389,9 +369,20 @@ describe('Account Contract', function () {
 
         await expect(account.approveKeyRequest(requestId, adminAction))
           .to.emit(account, 'KeyRequestApproved')
-          .withArgs(requestId, executorKeypair.publicKey.x, executorKeypair.publicKey.y, 1) // Role.EXECUTOR = 1
+          .withArgs(
+            requestId,
+            (publicKey: any) => {
+              return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
+            },
+            1
+          ) // Role.EXECUTOR = 1
           .and.to.emit(account, 'KeyAdded')
-          .withArgs(executorKeypair.publicKey.x, executorKeypair.publicKey.y, 1); // Role.EXECUTOR = 1
+          .withArgs(
+            (publicKey: any) => {
+              return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
+            },
+            1
+          ); // Role.EXECUTOR = 1
       });
 
       it('should remove the key request after approval', async function () {
@@ -818,7 +809,9 @@ describe('Account Contract', function () {
 
         await expect(account.removeKey(executorKeypair.publicKey, removeAction))
           .to.emit(account, 'KeyRemoved')
-          .withArgs(executorKeypair.publicKey.x, executorKeypair.publicKey.y);
+          .withArgs((publicKey: any) => {
+            return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
+          });
       });
 
       it('should notify registry about the removed key', async function () {
@@ -855,10 +848,8 @@ describe('Account Contract', function () {
 
         const removeAction = await getSignedAdminAction(account, adminKeypair, 2, operationData);
 
-        await expect(account.removeKey(executorKeypair.publicKey, removeAction)).to.emit(
-          accountRegistry,
-          'KeyUnlinked',
-        );
+        await expect(account.removeKey(executorKeypair.publicKey, removeAction))
+          .to.emit(accountRegistry, 'KeyUnlinked');
 
         const [isStillLinked, _] = await accountRegistry.isKeyLinked(executorKeypair.publicKey);
         expect(isStillLinked).to.be.false;
@@ -1138,7 +1129,9 @@ describe('Account Contract', function () {
 
         await expect(account.changeKeyRole(executorKeypair.publicKey, 2, adminAction))
           .to.emit(account, 'KeyRoleChanged')
-          .withArgs(executorKeypair.publicKey.x, executorKeypair.publicKey.y, 2); // Role.ADMIN = 2
+          .withArgs((publicKey: any) => {
+            return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
+          }, 2); // Role.ADMIN = 2
       });
 
       it('should validate operation data matches key and new role', async function () {
@@ -1622,7 +1615,7 @@ describe('Account Contract', function () {
 
   describe('Admin Operations', function () {
     it('should validate admin signatures correctly', async function () {
-      const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
+        const { accountRegistry, adminKeypair, executorKeypair } = await loadFixture(deployContracts);
 
       const account = await createAndGetAccount(adminKeypair, accountRegistry);
       const accountAddress = await account.getAddress();

@@ -2,6 +2,7 @@ import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
 import hre, { ethers } from 'hardhat';
 import { deployContracts, generateTestKeypair } from './helpers/testSetup';
+import { extractEvents } from './utils';
 
 describe('AccountRegistry Contract', function () {
   describe('Construction', function () {
@@ -21,15 +22,7 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Verify the UserCreated event was emitted
-      const userCreatedEvents = receipt?.logs
-        .map((log) => {
-          try {
-            return accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-          } catch (e) {
-            return null;
-          }
-        })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'UserCreated');
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
 
       expect(userCreatedEvents).to.not.be.undefined;
       expect(userCreatedEvents.length).to.be.at.least(1);
@@ -56,27 +49,11 @@ describe('AccountRegistry Contract', function () {
       const receipt2 = await tx2.wait();
 
       // Extract user IDs from events
-      const userCreatedEvents1 = receipt1?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
+      const userCreatedEvents1 = extractEvents(receipt1, accountRegistry, 'UserCreated');
+      const userCreatedEvents2 = extractEvents(receipt2, accountRegistry, 'UserCreated');
 
-      const userCreatedEvents2 = receipt2?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
+      expect(userCreatedEvents1).to.have.length.gt(0);
+      expect(userCreatedEvents2).to.have.length.gt(0);
 
       const userId1 = userCreatedEvents1[0].args.userId;
       const userId2 = userCreatedEvents2[0].args.userId;
@@ -108,32 +85,14 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Check for UserCreated event
-      const userCreatedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
 
       expect(userCreatedEvents.length).to.equal(1);
       expect(userCreatedEvents[0].args.publicKey.x).to.equal(keypair.publicKey.x);
       expect(userCreatedEvents[0].args.publicKey.y).to.equal(keypair.publicKey.y);
 
       // Check for KeyLinked event
-      const keyLinkedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'KeyLinked';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
+      const keyLinkedEvents = extractEvents(receipt, accountRegistry, 'KeyLinked');
 
       expect(keyLinkedEvents.length).to.equal(1);
       expect(keyLinkedEvents[0].args.account).to.equal(userCreatedEvents[0].args.account);
@@ -165,17 +124,7 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Extract account address
-      const userCreatedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
       // Check if the used key is linked
@@ -200,17 +149,7 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Get the user ID from the event
-      const userCreatedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const userId = userCreatedEvents[0].args.userId;
 
       // Retrieve and check user info
@@ -230,17 +169,7 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Get the user ID and account address from the event
-      const userCreatedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const userId = userCreatedEvents[0].args.userId;
       const accountAddress = userCreatedEvents[0].args.account;
 
@@ -270,17 +199,7 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Get the account address
-      const userCreatedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
       // Request adding a new key (Role.EXECUTOR = 1)
@@ -288,17 +207,7 @@ describe('AccountRegistry Contract', function () {
       const requestReceipt = await requestTx.wait();
 
       // Check that KeyRequestCreated event was emitted
-      const keyRequestEvents = requestReceipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'KeyRequestCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const keyRequestEvents = extractEvents(requestReceipt, accountRegistry, 'KeyRequestCreated');
       expect(keyRequestEvents.length).to.equal(1);
       expect(keyRequestEvents[0].args.account).to.equal(accountAddress);
       expect(keyRequestEvents[0].args.role).to.equal(1); // Role.EXECUTOR
@@ -328,17 +237,7 @@ describe('AccountRegistry Contract', function () {
       const receipt2 = await tx2.wait();
 
       // Get the first account address
-      const userCreatedEvents = receipt1?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const userCreatedEvents = extractEvents(receipt1, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
       // Try to add the already linked key to the first account
@@ -382,17 +281,7 @@ describe('AccountRegistry Contract', function () {
       const receipt = await tx.wait();
 
       // Get the account address
-      const userCreatedEvents = receipt?.logs
-        .filter((log) => {
-          try {
-            const parsed = accountRegistry.interface.parseLog({ topics: log.topics, data: log.data });
-            return parsed.name === 'UserCreated';
-          } catch (e) {
-            return false;
-          }
-        })
-        .map((log) => accountRegistry.interface.parseLog({ topics: log.topics, data: log.data }));
-
+      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
       // Impersonate the account to call notifyKeyRemoved with an unlinked key
