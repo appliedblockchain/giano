@@ -71,3 +71,7 @@ docker compose -f hardhat-network.yml up -d
 ```
 
 You can then access the Blockscout instance at `http://127.0.0.1/`
+
+# Test comment
+
+This is a test comment
