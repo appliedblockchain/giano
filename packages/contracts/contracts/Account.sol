@@ -13,7 +13,7 @@ import {AccountRegistry} from './AccountRegistry.sol';
  * @title Account
  * @author Giano Team
  * @notice A smart wallet implementation that allows execution of arbitrary functions with multiple signers having different roles
- * @dev This contract implements WebAuthn signature verification and supports multiple keys with different permissions
+ * @dev This contract implements WebAuthn signature verification and supports multiple credentials with different permissions
  */
 contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver {
     // bytes4(keccak256("isValidSignature(bytes32,bytes)")
@@ -26,17 +26,17 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error InvalidSignature(string reason);
 
     /**
-     * @notice Error thrown when a key attempts an operation it is not authorized for
-     * @param credentialId The credential ID of the unauthorized key
+     * @notice Error thrown when a credential attempts an operation it is not authorized for
+     * @param credentialId The credential ID of the unauthorized credential
      * @param requiredRole The minimum role required for the operation
      */
     error NotAuthorized(bytes credentialId, Role requiredRole);
 
     /**
-     * @notice Error thrown when an operation is attempted on a non-existent key
-     * @param credentialId The credential ID of the non-existent key
+     * @notice Error thrown when an operation is attempted on a non-existent credential
+     * @param credentialId The credential ID of the non-existent credential
      */
-    error KeyDoesNotExist(bytes credentialId);
+    error CredentialDoesNotExist(bytes credentialId);
 
     /**
      * @notice Error thrown when an operation is attempted on a non-existent request
@@ -45,10 +45,10 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error RequestDoesNotExist(bytes32 requestId);
 
     /**
-     * @notice Error thrown when attempting to add a key that already exists
-     * @param credentialId The credential ID of the existing key
+     * @notice Error thrown when attempting to add a credential that already exists
+     * @param credentialId The credential ID of the existing credential
      */
-    error KeyAlreadyExists(bytes credentialId);
+    error CredentialAlreadyExists(bytes credentialId);
 
     /**
      * @notice Error thrown when an admin operation type doesn't match the expected type
@@ -70,9 +70,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error InvalidOperationData();
 
     /**
-     * @notice Error thrown when an unauthorized address attempts to add keys
+     * @notice Error thrown when an unauthorized address attempts to add credentials
      */
-    error OnlyRegistryCanAddKeys();
+    error OnlyRegistryCanAddCredentials();
 
     /**
      * @notice Error thrown when a standard signature validation fails
@@ -85,9 +85,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error InvalidAdminSignature();
 
     /**
-     * @notice Error thrown when attempting to remove or downgrade the last admin key
+     * @notice Error thrown when attempting to remove or downgrade the last admin credential
      */
-    error LastAdminKey();
+    error LastAdminCredential();
 
     /**
      * @notice Error thrown when attempting operations while the account is paused
@@ -96,7 +96,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     error AccountIsPaused(uint256 until);
 
     /**
-     * @notice Role levels for keys associated with the account
+     * @notice Role levels for credentials associated with the account
      * @dev Higher role levels include the permissions of lower levels
      */
     enum Role {
@@ -106,22 +106,22 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * @notice Structure to store information about a key
+     * @notice Structure to store information about a credential
      * @param credentialId The credential identifier
      * @param publicKey The public key
-     * @param role The role assigned to the key
+     * @param role The role assigned to the credential
      */
-    struct KeyInfo {
+    struct CredentialInfo {
         bytes credentialId;
         Types.PublicKey publicKey;
         Role role;
     }
 
     /**
-     * @notice Structure to store information about a key request
+     * @notice Structure to store information about a credential request
      * @param credentialId The credential identifier
      * @param publicKey The public key being requested
-     * @param requestedRole The role being requested for the key
+     * @param requestedRole The role being requested for the credential
      * @param exists Whether the request exists
      */
     struct KeyRequest {
@@ -135,10 +135,10 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @notice Types of administrative operations that can be performed
      */
     enum AdminOperation {
-        APPROVE_KEY_REQUEST,
-        REJECT_KEY_REQUEST,
-        REMOVE_KEY,
-        CHANGE_KEY_ROLE,
+        APPROVE_CREDENTIAL_REQUEST,
+        REJECT_CREDENTIAL_REQUEST,
+        REMOVE_CREDENTIAL,
+        CHANGE_CREDENTIAL_ROLE,
         PAUSE_ACCOUNT,
         UNPAUSE_ACCOUNT
     }
@@ -168,44 +168,44 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * @notice Emitted when a key addition is requested
+     * @notice Emitted when a credential addition is requested
      * @param requestId The ID of the created request
      * @param publicKey The public key requested to be added
-     * @param requestedRole The requested role for the key
+     * @param requestedRole The requested role for the credential
      */
-    event KeyRequested(bytes32 indexed requestId, Types.PublicKey publicKey, Role requestedRole);
+    event AddCredentialRequested(bytes32 indexed requestId, Types.PublicKey publicKey, Role requestedRole);
 
     /**
-     * @notice Emitted when a key request is approved
+     * @notice Emitted when a credential request is approved
      * @param requestId The ID of the approved request
      * @param publicKey The public key that was approved
-     * @param role The assigned role for the key
+     * @param role The assigned role for the credential
      */
     event KeyRequestApproved(bytes32 indexed requestId, Types.PublicKey publicKey, Role role);
 
     /**
-     * @notice Emitted when a key request is rejected
+     * @notice Emitted when a credential request is rejected
      * @param requestId The ID of the rejected request
      */
     event KeyRequestRejected(bytes32 indexed requestId);
 
     /**
-     * @notice Emitted when a key is added to the account
+     * @notice Emitted when a credential is added to the account
      * @param publicKey The public key that was added
-     * @param role The assigned role for the key
+     * @param role The assigned role for the credential
      */
     event KeyAdded(Types.PublicKey publicKey, Role role);
 
     /**
-     * @notice Emitted when a key is removed from the account
+     * @notice Emitted when a credential is removed from the account
      * @param publicKey The public key that was removed
      */
     event KeyRemoved(Types.PublicKey publicKey);
 
     /**
-     * @notice Emitted when a key's role is changed
+     * @notice Emitted when a credential's role is changed
      * @param publicKey The public key whose role was changed
-     * @param newRole The new role assigned to the key
+     * @param newRole The new role assigned to the credential
      */
     event KeyRoleChanged(Types.PublicKey publicKey, Role newRole);
 
@@ -236,9 +236,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      */
     event AccountUnpaused();
 
-    mapping(bytes => KeyInfo) private keys;
+    mapping(bytes => CredentialInfo) private credentials;
 
-    mapping(bytes32 => KeyRequest) private keyRequests;
+    mapping(bytes32 => KeyRequest) private credentialRequests;
 
     // Storage optimization: Pack related uint values into a single storage slot
 
@@ -253,14 +253,14 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     uint256 private pausedUntil;
 
     /**
-     * @notice Initializes the Account with an initial admin key and registry
-     * @dev Sets up the initial admin key and registers the registry
+     * @notice Initializes the Account with an initial admin credential and registry
+     * @dev Sets up the initial admin credential and registers the registry
      * @param _initialAdminKey The initial public key to be given admin role
-     * @param _initialCredentialId The initial credential identifier for the admin key
+     * @param _initialCredentialId The initial credential identifier for the admin credential
      * @param _registry The address of the AccountRegistry contract
      */
     constructor(Types.PublicKey memory _initialAdminKey, bytes memory _initialCredentialId, address _registry) {
-        keys[_initialCredentialId] = KeyInfo({publicKey: _initialAdminKey, role: Role.ADMIN, credentialId: _initialCredentialId});
+        credentials[_initialCredentialId] = CredentialInfo({publicKey: _initialAdminKey, role: Role.ADMIN, credentialId: _initialCredentialId});
         registry = _registry;
         adminKeyCount = 1;
 
@@ -289,7 +289,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Computes the hash of a public key
-     * @dev Used for efficiently storing and looking up keys
+     * @dev Used for efficiently storing and looking up credentials
      * @param _credentialId The credential identifier to hash
      * @return The keccak256 hash of the credential identifier
      */
@@ -298,33 +298,33 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * @notice Checks if a key exists and has at least the specified role
+     * @notice Checks if a credential exists and has at least the specified role
      * @dev Used to verify authorization for operations
      * @param _credentialId The credential identifier
      * @param _minimumRole The minimum role required
-     * @return Boolean indicating whether the key has the required role
+     * @return Boolean indicating whether the credential has the required role
      */
     function _hasRole(bytes memory _credentialId, Role _minimumRole) internal view returns (bool) {
-        return uint8(keys[_credentialId].role) >= uint8(_minimumRole);
+        return uint8(credentials[_credentialId].role) >= uint8(_minimumRole);
     }
 
     /**
-     * @notice Checks if a key exists (has any role)
-     * @dev Used to determine whether a key has been registered
+     * @notice Checks if a credential exists (has any role)
+     * @dev Used to determine whether a credential has been registered
      * @param _credentialId The credential identifier
-     * @return Boolean indicating whether the key exists
+     * @return Boolean indicating whether the credential exists
      */
-    function _keyExists(bytes memory _credentialId) internal view returns (bool) {
-        return keys[_credentialId].role != Role.NONE;
+    function _credentialExists(bytes memory _credentialId) internal view returns (bool) {
+        return credentials[_credentialId].role != Role.NONE;
     }
 
     /**
-     * @notice Returns information about a specific key
+     * @notice Returns information about a specific credential
      * @param _credentialId The credential identifier
-     * @return KeyInfo struct containing the key's information
+     * @return CredentialInfo struct containing the credential's information
      */
-    function getKeyInfo(bytes calldata _credentialId) external view returns (KeyInfo memory) {
-        return keys[_credentialId];
+    function getCredentialInfo(bytes calldata _credentialId) external view returns (CredentialInfo memory) {
+        return credentials[_credentialId];
     }
 
     /**
@@ -346,8 +346,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * @notice Gets the current admin key count
-     * @return The current number of admin keys
+     * @notice Gets the current admin credential count
+     * @return The current number of admin credentials
      */
     function getAdminKeyCount() external view returns (uint256) {
         return adminKeyCount;
@@ -395,11 +395,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Ensures the caller is the registry contract
-     * @dev Used to restrict key management functions to the registry
+     * @dev Used to restrict credential management functions to the registry
      */
     modifier onlyRegistry() {
         if (msg.sender != registry) {
-            revert OnlyRegistryCanAddKeys();
+            revert OnlyRegistryCanAddCredentials();
         }
         _;
     }
@@ -415,50 +415,50 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     fallback() external payable {}
 
     /**
-     * @notice Requests to add a new key to the contract
+     * @notice Requests to add a new credential to the contract
      * @dev Can only be called by the registry
      * @param credentialId The credential identifier
      * @param publicKey The public key to add
-     * @param role The requested role for the key
+     * @param role The requested role for the credential
      * @return requestId The ID of the created request
      */
-    function requestAddKey(bytes calldata credentialId, Types.PublicKey calldata publicKey, Role role) external onlyRegistry returns (bytes32 requestId) {
-        if (keys[credentialId].role != Role.NONE) {
-            revert KeyAlreadyExists(credentialId);
+    function requestAddCredential(bytes calldata credentialId, Types.PublicKey calldata publicKey, Role role) external onlyRegistry returns (bytes32 requestId) {
+        if (credentials[credentialId].role != Role.NONE) {
+            revert CredentialAlreadyExists(credentialId);
         }
 
         requestId = keccak256(abi.encodePacked(block.timestamp, msg.sender, credentialId));
 
-        keyRequests[requestId] = KeyRequest({credentialId: credentialId, publicKey: publicKey, requestedRole: role, exists: true});
+        credentialRequests[requestId] = KeyRequest({credentialId: credentialId, publicKey: publicKey, requestedRole: role, exists: true});
 
-        emit KeyRequested(requestId, publicKey, role);
+        emit AddCredentialRequested(requestId, publicKey, role);
 
         return requestId;
     }
 
     /**
-     * @notice Approves a key addition request
+     * @notice Approves a credential addition request
      * @dev Can only be called by an admin and notifies the registry
      * @param requestId The ID of the request to approve
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function approveKeyRequest(bytes32 requestId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.APPROVE_KEY_REQUEST, adminAction) {
+    function approveKeyRequest(bytes32 requestId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.APPROVE_CREDENTIAL_REQUEST, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(requestId))) {
             revert InvalidOperationData();
         }
 
-        KeyRequest memory request = keyRequests[requestId];
+        KeyRequest memory request = credentialRequests[requestId];
         if (!request.exists) {
             revert RequestDoesNotExist(requestId);
         }
 
-        keys[request.credentialId] = KeyInfo({publicKey: request.publicKey, role: request.requestedRole, credentialId: request.credentialId});
+        credentials[request.credentialId] = CredentialInfo({publicKey: request.publicKey, role: request.requestedRole, credentialId: request.credentialId});
 
         if (request.requestedRole == Role.ADMIN) {
             adminKeyCount++;
         }
 
-        delete keyRequests[requestId];
+        delete credentialRequests[requestId];
 
         AccountRegistry(registry).notifyKeyAdded(request.credentialId);
 
@@ -467,86 +467,86 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     }
 
     /**
-     * @notice Rejects a key addition request
+     * @notice Rejects a credential addition request
      * @dev Can only be called by an admin
      * @param requestId The ID of the request to reject
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function rejectKeyRequest(bytes32 requestId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REJECT_KEY_REQUEST, adminAction) {
+    function rejectKeyRequest(bytes32 requestId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REJECT_CREDENTIAL_REQUEST, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(requestId))) {
             revert InvalidOperationData();
         }
 
-        if (!keyRequests[requestId].exists) {
+        if (!credentialRequests[requestId].exists) {
             revert RequestDoesNotExist(requestId);
         }
 
-        delete keyRequests[requestId];
+        delete credentialRequests[requestId];
 
         emit KeyRequestRejected(requestId);
     }
 
     /**
-     * @notice Removes an existing key
+     * @notice Removes an existing credential
      * @dev Can only be called by an admin and notifies the registry
      * @param credentialId The credential identifier
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function removeKey(bytes calldata credentialId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REMOVE_KEY, adminAction) {
+    function removeKey(bytes calldata credentialId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REMOVE_CREDENTIAL, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(credentialId))) {
             revert InvalidOperationData();
         }
 
-        if (keys[credentialId].role == Role.NONE) {
-            revert KeyDoesNotExist(credentialId);
+        if (credentials[credentialId].role == Role.NONE) {
+            revert CredentialDoesNotExist(credentialId);
         }
 
-        if (keys[credentialId].role == Role.ADMIN) {
+        if (credentials[credentialId].role == Role.ADMIN) {
             if (adminKeyCount <= 1) {
-                revert LastAdminKey();
+                revert LastAdminCredential();
             }
             adminKeyCount--;
         }
 
-        Types.PublicKey memory publicKey = keys[credentialId].publicKey;
-        keys[credentialId].role = Role.NONE;
+        Types.PublicKey memory publicKey = credentials[credentialId].publicKey;
+        credentials[credentialId].role = Role.NONE;
 
-        AccountRegistry(registry).notifyKeyRemoved(credentialId);
+        AccountRegistry(registry).notifyCredentialRemoved(credentialId);
 
         emit KeyRemoved(publicKey);
     }
 
     /**
-     * @notice Changes the role of an existing key
+     * @notice Changes the role of an existing credential
      * @dev Can only be called by an admin
      * @param credentialId The credential identifier
-     * @param newRole The new role for the key
+     * @param newRole The new role for the credential
      * @param adminAction The admin action details with operation data, nonce and signature
      */
     function changeKeyRole(
         bytes calldata credentialId,
         Role newRole,
         AdminAction memory adminAction
-    ) external onlyAdmin(AdminOperation.CHANGE_KEY_ROLE, adminAction) {
+    ) external onlyAdmin(AdminOperation.CHANGE_CREDENTIAL_ROLE, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(credentialId, newRole))) {
             revert InvalidOperationData();
         }
 
-        if (keys[credentialId].role == Role.NONE) {
-            revert KeyDoesNotExist(credentialId);
+        if (credentials[credentialId].role == Role.NONE) {
+            revert CredentialDoesNotExist(credentialId);
         }
 
-        if (keys[credentialId].role == Role.ADMIN && newRole != Role.ADMIN) {
+        if (credentials[credentialId].role == Role.ADMIN && newRole != Role.ADMIN) {
             if (adminKeyCount <= 1) {
-                revert LastAdminKey();
+                revert LastAdminCredential();
             }
             adminKeyCount--;
-        } else if (keys[credentialId].role != Role.ADMIN && newRole == Role.ADMIN) {
+        } else if (credentials[credentialId].role != Role.ADMIN && newRole == Role.ADMIN) {
             adminKeyCount++;
         }
 
-        Types.PublicKey memory publicKey = keys[credentialId].publicKey;
-        keys[credentialId].role = newRole;
+        Types.PublicKey memory publicKey = credentials[credentialId].publicKey;
+        credentials[credentialId].role = newRole;
 
         emit KeyRoleChanged(publicKey, newRole);
     }
@@ -578,7 +578,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Executes an arbitrary call on a smart contract
-     * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
+     * @dev Requires a valid signature from a credential with EXECUTOR or ADMIN role
      * @param signed The parameters of the call to be executed
      */
     function execute(
@@ -597,7 +597,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Executes multiple calls in a single transaction
-     * @dev Requires a valid signature from a key with EXECUTOR or ADMIN role
+     * @dev Requires a valid signature from a credential with EXECUTOR or ADMIN role
      * @param batch The batch of calls to be executed with signature
      */
     function executeBatch(
@@ -634,7 +634,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             return false;
         }
 
-        KeyInfo memory keyInfo = keys[sig.credentialId];
+        CredentialInfo memory credentialInfo = credentials[sig.credentialId];
 
         return
             WebAuthn.verifySignature({
@@ -646,8 +646,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
                 responseTypeLocation: sig.responseTypeLocation,
                 r: sig.r,
                 s: sig.s,
-                x: uint256(keyInfo.publicKey.x),
-                y: uint256(keyInfo.publicKey.y)
+                x: uint256(credentialInfo.publicKey.x),
+                y: uint256(credentialInfo.publicKey.y)
             });
     }
 
@@ -661,8 +661,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     function _validateSignature(bytes memory message, bytes calldata signature) private view returns (bool) {
         Types.Signature memory sig = abi.decode(signature, (Types.Signature));
 
-        KeyInfo memory keyInfo = keys[sig.credentialId];
-        if (keyInfo.role == Role.NONE) {
+        CredentialInfo memory credentialInfo = credentials[sig.credentialId];
+        if (credentialInfo.role == Role.NONE) {
             return false;
         }
 
@@ -676,8 +676,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
                 responseTypeLocation: sig.responseTypeLocation,
                 r: sig.r,
                 s: sig.s,
-                x: uint256(keyInfo.publicKey.x),
-                y: uint256(keyInfo.publicKey.y)
+                x: uint256(credentialInfo.publicKey.x),
+                y: uint256(credentialInfo.publicKey.y)
             });
     }
 

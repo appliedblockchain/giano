@@ -50,35 +50,35 @@ async function createAndGetAccount(adminKeyPair: PublicKeyCredential, accountReg
 }
 
 /**
- * Request a key to be added to an account
+ * Request a credential to be added to an account
  * @param account Account contract instance
  * @param accountRegistry Registry contract instance
- * @param keyToAdd Public key to add
- * @param role Role to assign to the key
+ * @param credentialToAdd Credential to add
+ * @param role Role to assign to the credential
  * @returns The request ID
  */
-async function requestAddKey(account: Account, accountRegistry: AccountRegistry, keyToAdd: PublicKeyCredential, role: number): Promise<string> {
+async function requestAddCredential(account: Account, accountRegistry: AccountRegistry, credentialToAdd: PublicKeyCredential, role: number): Promise<string> {
   const accountAddress = await account.getAddress();
-  const tx = await accountRegistry.requestAddKey(keyToAdd.credentialId, accountAddress, keyToAdd.publicKey, role);
+  const tx = await accountRegistry.requestAddCredential(credentialToAdd.credentialId, accountAddress, credentialToAdd.publicKey, role);
   const receipt = await tx.wait();
 
-  const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+  const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
   if (!keyRequestedEvents?.length || !keyRequestedEvents[0].args) {
-    throw new Error('KeyRequested event not found');
+    throw new Error('AddCredentialRequested event not found');
   }
 
   return keyRequestedEvents[0].args.requestId;
 }
 
 /**
- * Approve a key request
+ * Approve a credential request
  * @param account Account contract instance
  * @param adminKeyPair Admin keypair to sign with
- * @param requestId ID of the key request to approve
+ * @param requestId ID of the credential request to approve
  */
 async function approveKeyRequest(account: Account, adminKeyPair: PublicKeyCredential, requestId: string): Promise<void> {
   const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
-  const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData); // 0 = APPROVE_KEY_REQUEST
+  const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData); // 0 = APPROVE_CREDENTIAL_REQUEST
   await account.approveKeyRequest(requestId, adminAction);
 }
 
@@ -142,18 +142,18 @@ describe('Account Contract', function () {
       expect(await account.registry()).to.equal(await accountRegistry.getAddress());
     });
 
-    it('should set up the initial admin key correctly', async function () {
+    it('should set up the initial admin credential correctly', async function () {
       const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
 
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
 
-      const keyInfo = await account.getKeyInfo(adminKeyPair.credentialId);
-      expect(keyInfo.publicKey.x).to.equal(adminKeyPair.publicKey.x);
-      expect(keyInfo.publicKey.y).to.equal(adminKeyPair.publicKey.y);
-      expect(keyInfo.role).to.equal(2); // Role.ADMIN = 2
+      const credentialInfo = await account.getCredentialInfo(adminKeyPair.credentialId);
+      expect(credentialInfo.publicKey.x).to.equal(adminKeyPair.publicKey.x);
+      expect(credentialInfo.publicKey.y).to.equal(adminKeyPair.publicKey.y);
+      expect(credentialInfo.role).to.equal(2); // Role.ADMIN = 2
     });
 
-    it('should start with admin key count of 1', async function () {
+    it('should start with admin credential count of 1', async function () {
       const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
 
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -183,13 +183,13 @@ describe('Account Contract', function () {
 
   describe('Key Management', function () {
     describe('Key Requests', function () {
-      it('should allow registry to request adding a key', async function () {
+      it('should allow registry to request adding a credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -197,7 +197,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         expect(keyRequestedEvents?.length).to.be.greaterThan(0);
         expect(keyRequestedEvents?.[0].args.publicKey.x).to.equal(executorKeypair.publicKey.x);
@@ -205,21 +205,21 @@ describe('Account Contract', function () {
         expect(keyRequestedEvents?.[0].args.requestedRole).to.equal(1); // Role.EXECUTOR = 1
       });
 
-      it('should emit KeyRequested event with correct parameters', async function () {
+      it('should emit AddCredentialRequested event with correct parameters', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
         await expect(
-          accountRegistry.requestAddKey(
+          accountRegistry.requestAddCredential(
             executorKeypair.credentialId,
             accountAddress,
             executorKeypair.publicKey,
             1, // Role.EXECUTOR = 1
           ),
         )
-          .to.emit(account, 'KeyRequested')
+          .to.emit(account, 'AddCredentialRequested')
           .withArgs(
             (requestId: string) => ethers.isHexString(requestId, 32), // 32 bytes
             (publicKey: any) => {
@@ -236,13 +236,13 @@ describe('Account Contract', function () {
         const accountAddress = await account.getAddress();
 
         await expect(
-          accountRegistry.requestAddKey(
+          accountRegistry.requestAddCredential(
             adminKeyPair.credentialId,
             accountAddress,
             adminKeyPair.publicKey,
             2, // Role.ADMIN = 2
           ),
-        ).to.be.revertedWithCustomError(accountRegistry, 'KeyAlreadyLinked');
+        ).to.be.revertedWithCustomError(accountRegistry, 'CredentialAlreadyUnlinked');
       });
 
       it('should only allow registry to request keys', async function () {
@@ -251,12 +251,12 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
 
         await expect(
-          account.connect(user1).requestAddKey(
+          account.connect(user1).requestAddCredential(
             executorKeypair.credentialId,
             executorKeypair.publicKey,
             1, // Role.EXECUTOR = 1
           ),
-        ).to.be.revertedWithCustomError(account, 'OnlyRegistryCanAddKeys');
+        ).to.be.revertedWithCustomError(account, 'OnlyRegistryCanAddCredentials');
       });
 
       it('should generate unique request IDs', async function () {
@@ -265,14 +265,14 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx1 = await accountRegistry.requestAddKey(
+        const tx1 = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
           1, // Role.EXECUTOR = 1
         );
 
-        const tx2 = await accountRegistry.requestAddKey(
+        const tx2 = await accountRegistry.requestAddCredential(
           userKeypair.credentialId,
           accountAddress,
           userKeypair.publicKey,
@@ -282,9 +282,9 @@ describe('Account Contract', function () {
         const receipt1 = await tx1.wait();
         const receipt2 = await tx2.wait();
 
-        const keyRequestedEvents1 = extractEvents(receipt1, account, 'KeyRequested');
+        const keyRequestedEvents1 = extractEvents(receipt1, account, 'AddCredentialRequested');
 
-        const keyRequestedEvents2 = extractEvents(receipt2, account, 'KeyRequested');
+        const keyRequestedEvents2 = extractEvents(receipt2, account, 'AddCredentialRequested');
 
         expect(keyRequestedEvents1?.length).to.be.greaterThan(0);
         expect(keyRequestedEvents2?.length).to.be.greaterThan(0);
@@ -297,20 +297,20 @@ describe('Account Contract', function () {
     });
 
     describe('Key Request Approval', function () {
-      it('should add a key when request is approved by admin', async function () {
+      it('should add a credential when request is approved by admin', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
 
-        const requestId = await requestAddKey(account, accountRegistry, executorKeypair, 1); // Role.EXECUTOR = 1
+        const requestId = await requestAddCredential(account, accountRegistry, executorKeypair, 1); // Role.EXECUTOR = 1
 
         await approveKeyRequest(account, adminKeyPair, requestId);
 
-        const keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-        expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
+        const credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+        expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
       });
 
-      it('should increment admin key count when adding admin key', async function () {
+      it('should increment admin credential count when adding admin credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -319,7 +319,7 @@ describe('Account Contract', function () {
         const initialAdminKeyCount = await account.getAdminKeyCount();
         expect(initialAdminKeyCount).to.equal(1);
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -327,7 +327,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -347,7 +347,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -355,7 +355,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -378,13 +378,13 @@ describe('Account Contract', function () {
           }, 1); // Role.EXECUTOR = 1
       });
 
-      it('should remove the key request after approval', async function () {
+      it('should remove the credential request after approval', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -392,7 +392,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -407,13 +407,13 @@ describe('Account Contract', function () {
         await expect(account.approveKeyRequest(requestId, newAdminAction)).to.be.revertedWithCustomError(account, 'RequestDoesNotExist').withArgs(requestId);
       });
 
-      it('should notify registry about the added key', async function () {
+      it('should notify registry about the added credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -421,7 +421,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -429,9 +429,9 @@ describe('Account Contract', function () {
 
         const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData);
 
-        await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(accountRegistry, 'KeyLinked');
+        await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(accountRegistry, 'CredentialLinked');
 
-        const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(executorKeypair.credentialId);
+        const [isLinked, linkedAccount] = await accountRegistry.isCredentialLinked(executorKeypair.credentialId);
         expect(isLinked).to.be.true;
         expect(linkedAccount).to.equal(accountAddress);
       });
@@ -442,7 +442,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -450,7 +450,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -470,14 +470,14 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx1 = await accountRegistry.requestAddKey(
+        const tx1 = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
           1, // Role.EXECUTOR = 1
         );
 
-        const tx2 = await accountRegistry.requestAddKey(
+        const tx2 = await accountRegistry.requestAddCredential(
           userKeypair.credentialId,
           accountAddress,
           userKeypair.publicKey,
@@ -485,10 +485,10 @@ describe('Account Contract', function () {
         );
 
         const receipt1 = await tx1.wait();
-        const keyRequestedEvents1 = extractEvents(receipt1, account, 'KeyRequested');
+        const keyRequestedEvents1 = extractEvents(receipt1, account, 'AddCredentialRequested');
 
         const receipt2 = await tx2.wait();
-        const keyRequestedEvents2 = extractEvents(receipt2, account, 'KeyRequested');
+        const keyRequestedEvents2 = extractEvents(receipt2, account, 'AddCredentialRequested');
 
         const requestId1 = keyRequestedEvents1?.[0].args.requestId;
         const requestId2 = keyRequestedEvents2?.[0].args.requestId;
@@ -502,13 +502,13 @@ describe('Account Contract', function () {
     });
 
     describe('Key Request Rejection', function () {
-      it('should reject a key request when called by admin', async function () {
+      it('should reject a credential request when called by admin', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -516,7 +516,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -526,8 +526,8 @@ describe('Account Contract', function () {
 
         await account.rejectKeyRequest(requestId, adminAction);
 
-        const keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-        expect(keyInfo.role).to.equal(0); // Role.NONE = 0
+        const credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+        expect(credentialInfo.role).to.equal(0); // Role.NONE = 0
       });
 
       it('should emit KeyRequestRejected event', async function () {
@@ -536,7 +536,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -544,7 +544,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -555,13 +555,13 @@ describe('Account Contract', function () {
         await expect(account.rejectKeyRequest(requestId, adminAction)).to.emit(account, 'KeyRequestRejected').withArgs(requestId);
       });
 
-      it('should remove the key request after rejection', async function () {
+      it('should remove the credential request after rejection', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -569,7 +569,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -608,7 +608,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -616,7 +616,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -633,13 +633,13 @@ describe('Account Contract', function () {
     });
 
     describe('Key Removal', function () {
-      it('should remove an existing key', async function () {
+      it('should remove an existing credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -647,7 +647,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -657,8 +657,8 @@ describe('Account Contract', function () {
 
         await account.approveKeyRequest(requestId, approveAction);
 
-        let keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-        expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
+        let credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+        expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
 
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['bytes'],
@@ -669,11 +669,11 @@ describe('Account Contract', function () {
 
         await account.removeKey(executorKeypair.credentialId, adminAction);
 
-        keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-        expect(keyInfo.role).to.equal(0); // Role.NONE = 0
+        credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+        expect(credentialInfo.role).to.equal(0); // Role.NONE = 0
       });
 
-      it('should fail to remove a non-existent key', async function () {
+      it('should fail to remove a non-existent credential', async function () {
         const { accountRegistry, adminKeyPair, userKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -683,17 +683,17 @@ describe('Account Contract', function () {
         const adminAction = await getSignedAdminAction(account, adminKeyPair, 2, operationData);
 
         await expect(account.removeKey(userKeypair.credentialId, adminAction))
-          .to.be.revertedWithCustomError(account, 'KeyDoesNotExist')
+          .to.be.revertedWithCustomError(account, 'CredentialDoesNotExist')
           .withArgs(userKeypair.credentialId);
       });
 
-      it('should decrement admin key count when removing admin key', async function () {
+      it('should decrement admin credential count when removing admin credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -701,7 +701,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -725,7 +725,7 @@ describe('Account Contract', function () {
         expect(await account.getAdminKeyCount()).to.equal(1);
       });
 
-      it('should prevent removing the last admin key', async function () {
+      it('should prevent removing the last admin credential', async function () {
         const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -736,7 +736,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes'], [adminKeyPair.credentialId]);
 
         const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
+          operation: 2, // AdminOperation.REMOVE_CREDENTIAL = 2
           operationData: operationData,
           nonce: Number(adminNonce),
           signature: '0x', // Will be set below
@@ -745,7 +745,7 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(adminKeyPair.credentialId, signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.removeKey(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminKey');
+        await expect(account.removeKey(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminCredential');
       });
 
       it('should emit KeyRemoved event', async function () {
@@ -754,7 +754,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -762,7 +762,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -786,13 +786,13 @@ describe('Account Contract', function () {
           });
       });
 
-      it('should notify registry about the removed key', async function () {
+      it('should notify registry about the removed credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -800,7 +800,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -810,7 +810,7 @@ describe('Account Contract', function () {
 
         await account.approveKeyRequest(requestId, approveAction);
 
-        const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(executorKeypair.credentialId);
+        const [isLinked, linkedAccount] = await accountRegistry.isCredentialLinked(executorKeypair.credentialId);
         expect(isLinked).to.be.true;
         expect(linkedAccount).to.equal(accountAddress);
 
@@ -821,9 +821,9 @@ describe('Account Contract', function () {
 
         const removeAction = await getSignedAdminAction(account, adminKeyPair, 2, operationData);
 
-        await expect(account.removeKey(executorKeypair.credentialId, removeAction)).to.emit(accountRegistry, 'KeyUnlinked');
+        await expect(account.removeKey(executorKeypair.credentialId, removeAction)).to.emit(accountRegistry, 'CredentialUnlinked');
 
-        const [isStillLinked, _] = await accountRegistry.isKeyLinked(executorKeypair.credentialId);
+        const [isStillLinked, _] = await accountRegistry.isCredentialLinked(executorKeypair.credentialId);
         expect(isStillLinked).to.be.false;
       });
 
@@ -833,7 +833,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -841,7 +841,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -867,13 +867,13 @@ describe('Account Contract', function () {
     });
 
     describe('Key Role Changes', function () {
-      it('should change role of an existing key', async function () {
+      it('should change role of an existing credential', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -881,7 +881,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -891,8 +891,8 @@ describe('Account Contract', function () {
 
         await account.approveKeyRequest(requestId, approveAction);
 
-        let keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-        expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
+        let credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+        expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
 
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
           ['bytes', 'uint8'],
@@ -903,11 +903,11 @@ describe('Account Contract', function () {
 
         await account.changeKeyRole(executorKeypair.credentialId, 2, adminAction); // Role.ADMIN = 2
 
-        keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-        expect(keyInfo.role).to.equal(2); // Role.ADMIN = 2
+        credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+        expect(credentialInfo.role).to.equal(2); // Role.ADMIN = 2
       });
 
-      it('should fail to change role of a non-existent key', async function () {
+      it('should fail to change role of a non-existent credential', async function () {
         const { accountRegistry, adminKeyPair, userKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -920,11 +920,11 @@ describe('Account Contract', function () {
         const adminAction = await getSignedAdminAction(account, adminKeyPair, 3, operationData);
 
         await expect(account.changeKeyRole(userKeypair.credentialId, 2, adminAction))
-          .to.be.revertedWithCustomError(account, 'KeyDoesNotExist')
+          .to.be.revertedWithCustomError(account, 'CredentialDoesNotExist')
           .withArgs(userKeypair.credentialId);
       });
 
-      it('should increment admin key count when upgrading to admin', async function () {
+      it('should increment admin credential count when upgrading to admin', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -933,7 +933,7 @@ describe('Account Contract', function () {
         const initialAdminKeyCount = await account.getAdminKeyCount();
         expect(initialAdminKeyCount).to.equal(1);
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -941,7 +941,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -965,13 +965,13 @@ describe('Account Contract', function () {
         expect(await account.getAdminKeyCount()).to.equal(2);
       });
 
-      it('should decrement admin key count when downgrading from admin', async function () {
+      it('should decrement admin credential count when downgrading from admin', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -979,7 +979,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1003,7 +1003,7 @@ describe('Account Contract', function () {
         expect(await account.getAdminKeyCount()).to.equal(1);
       });
 
-      it('should prevent removing the last admin key', async function () {
+      it('should prevent removing the last admin credential', async function () {
         const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -1014,7 +1014,7 @@ describe('Account Contract', function () {
         const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes'], [adminKeyPair.credentialId]);
 
         const adminAction = {
-          operation: 2, // AdminOperation.REMOVE_KEY = 2
+          operation: 2, // AdminOperation.REMOVE_CREDENTIAL = 2
           operationData: operationData,
           nonce: Number(adminNonce),
           signature: '0x', // Will be set below
@@ -1023,10 +1023,10 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(adminKeyPair.credentialId, signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.removeKey(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminKey');
+        await expect(account.removeKey(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminCredential');
       });
 
-      it('should prevent downgrading the last admin key', async function () {
+      it('should prevent downgrading the last admin credential', async function () {
         const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
@@ -1040,7 +1040,7 @@ describe('Account Contract', function () {
         );
 
         const adminAction = {
-          operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
+          operation: 3, // AdminOperation.CHANGE_CREDENTIAL_ROLE = 3
           operationData,
           nonce: Number(adminNonce),
           signature: '0x', // Will be set below
@@ -1049,7 +1049,7 @@ describe('Account Contract', function () {
         const challengeHash = await account.getAdminChallenge(adminAction);
         adminAction.signature = encodeChallenge(adminKeyPair.credentialId, signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-        await expect(account.changeKeyRole(adminKeyPair.credentialId, 1, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminKey');
+        await expect(account.changeKeyRole(adminKeyPair.credentialId, 1, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminCredential');
       });
 
       it('should emit KeyRoleChanged event', async function () {
@@ -1058,7 +1058,7 @@ describe('Account Contract', function () {
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -1066,7 +1066,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1090,13 +1090,13 @@ describe('Account Contract', function () {
           }, 2); // Role.ADMIN = 2
       });
 
-      it('should validate operation data matches key and new role', async function () {
+      it('should validate operation data matches credential and new role', async function () {
         const { accountRegistry, adminKeyPair, executorKeypair } = await loadFixture(deployContracts);
 
         const account = await createAndGetAccount(adminKeyPair, accountRegistry);
         const accountAddress = await account.getAddress();
 
-        const tx = await accountRegistry.requestAddKey(
+        const tx = await accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -1104,7 +1104,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1538,7 +1538,7 @@ describe('Account Contract', function () {
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
       const accountAddress = await account.getAddress();
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         executorKeypair.credentialId,
         accountAddress,
         executorKeypair.publicKey,
@@ -1546,7 +1546,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1556,8 +1556,8 @@ describe('Account Contract', function () {
 
       await expect(account.approveKeyRequest(requestId, adminAction)).to.not.be.reverted;
 
-      const keyInfo = await account.getKeyInfo(executorKeypair.credentialId);
-      expect(keyInfo.role).to.equal(1); // Role.EXECUTOR = 1
+      const credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
+      expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
     });
 
     it('should increment admin nonce after operations', async function () {
@@ -1569,7 +1569,7 @@ describe('Account Contract', function () {
       const initialAdminNonce = await account.getAdminNonce();
       expect(initialAdminNonce).to.equal(0);
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         executorKeypair.credentialId,
         accountAddress,
         executorKeypair.publicKey,
@@ -1577,7 +1577,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1589,7 +1589,7 @@ describe('Account Contract', function () {
       const newAdminNonce = await account.getAdminNonce();
       expect(newAdminNonce).to.equal(1);
 
-      const tx2 = await accountRegistry.requestAddKey(
+      const tx2 = await accountRegistry.requestAddCredential(
         ethers.randomBytes(32),
         accountAddress,
         { x: ethers.hexlify(ethers.randomBytes(32)), y: ethers.hexlify(ethers.randomBytes(32)) },
@@ -1597,7 +1597,7 @@ describe('Account Contract', function () {
       );
 
       const receipt2 = await tx2.wait();
-      const keyRequestedEvents2 = extractEvents(receipt2, account, 'KeyRequested');
+      const keyRequestedEvents2 = extractEvents(receipt2, account, 'AddCredentialRequested');
 
       const requestId2 = keyRequestedEvents2?.[0].args.requestId;
 
@@ -1616,7 +1616,7 @@ describe('Account Contract', function () {
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
       const accountAddress = await account.getAddress();
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         executorKeypair.credentialId,
         accountAddress,
         executorKeypair.publicKey,
@@ -1624,7 +1624,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1633,7 +1633,7 @@ describe('Account Contract', function () {
 
       const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData);
 
-      await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(account, 'AdminActionExecuted').withArgs(0, adminNonce); // AdminOperation.APPROVE_KEY_REQUEST = 0
+      await expect(account.approveKeyRequest(requestId, adminAction)).to.emit(account, 'AdminActionExecuted').withArgs(0, adminNonce); // AdminOperation.APPROVE_CREDENTIAL_REQUEST = 0
     });
 
     it('should reject operations with invalid nonce', async function () {
@@ -1641,14 +1641,14 @@ describe('Account Contract', function () {
 
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
 
-      const requestId = await requestAddKey(account, accountRegistry, executorKeypair, 1);
+      const requestId = await requestAddCredential(account, accountRegistry, executorKeypair, 1);
 
       const adminNonce = await account.getAdminNonce();
 
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]);
 
       const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST = 0
+        operation: 0, // AdminOperation.APPROVE_CREDENTIAL_REQUEST = 0
         operationData,
         nonce: Number(adminNonce) + 1, // Incorrect nonce
         signature: '0x',
@@ -1668,7 +1668,7 @@ describe('Account Contract', function () {
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
       const accountAddress = await account.getAddress();
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         executorKeypair.credentialId,
         accountAddress,
         executorKeypair.publicKey,
@@ -1676,7 +1676,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1686,7 +1686,7 @@ describe('Account Contract', function () {
       const challengeHash = await account.getAdminChallenge(adminAction);
       adminAction.signature = encodeChallenge(adminKeyPair.credentialId, signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)));
 
-      await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidOperation').withArgs(0, 1); // Expected APPROVE_KEY_REQUEST=0, got REJECT_KEY_REQUEST=1
+      await expect(account.approveKeyRequest(requestId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidOperation').withArgs(0, 1); // Expected APPROVE_CREDENTIAL_REQUEST=0, got REJECT_CREDENTIAL_REQUEST=1
     });
 
     it('should reject operations with invalid signature', async function () {
@@ -1695,7 +1695,7 @@ describe('Account Contract', function () {
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
       const accountAddress = await account.getAddress();
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         executorKeypair.credentialId,
         accountAddress,
         executorKeypair.publicKey,
@@ -1703,7 +1703,7 @@ describe('Account Contract', function () {
       );
 
       const receipt = await tx.wait();
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -1712,7 +1712,7 @@ describe('Account Contract', function () {
 
       const challengeHash = await account.getAdminChallenge(adminAction);
       adminAction.signature = encodeChallenge(
-        userKeypair.credentialId, // Non-admin key
+        userKeypair.credentialId, // Non-admin credential
         signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
       );
 
@@ -2020,7 +2020,7 @@ describe('Account Contract', function () {
 
         const accountAddress = await account.getAddress();
 
-        const tx = await fixture.accountRegistry.requestAddKey(
+        const tx = await fixture.accountRegistry.requestAddCredential(
           executorKeypair.credentialId,
           accountAddress,
           executorKeypair.publicKey,
@@ -2028,7 +2028,7 @@ describe('Account Contract', function () {
         );
 
         const receipt = await tx.wait();
-        const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+        const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
         const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2077,7 +2077,7 @@ describe('Account Contract', function () {
         expect(isValid).to.equal('0xffffffff');
       });
 
-      it('should not return the magic value for a signature from unauthorized key', async function () {
+      it('should not return the magic value for a signature from unauthorized credential', async function () {
         const messageHash = ethers.keccak256(ethers.toUtf8Bytes('Hello, ERC1271!'));
 
         const webAuthnSignature = signWebAuthnChallenge(nonAuthorizedKeypair.keyPair.privateKey, ethers.getBytes(messageHash));
@@ -2212,7 +2212,7 @@ describe('Account Contract', function () {
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['tuple(bytes32 x, bytes32 y)'], [[userKeypair.publicKey.x, userKeypair.publicKey.y]]);
 
       const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST
+        operation: 0, // AdminOperation.APPROVE_CREDENTIAL_REQUEST
         nonce: adminNonce,
         operationData,
         signature: '0x', // Empty signature for now
@@ -2227,37 +2227,37 @@ describe('Account Contract', function () {
       expect(challengeHash).to.equal(expectedHash);
     });
 
-    it('should return correct key info for existing key', async function () {
-      const keyInfo = await account.getKeyInfo(adminKeyPair.credentialId);
+    it('should return correct credential info for existing credential', async function () {
+      const credentialInfo = await account.getCredentialInfo(adminKeyPair.credentialId);
 
-      expect(keyInfo.publicKey.x).to.equal(adminKeyPair.publicKey.x);
-      expect(keyInfo.publicKey.y).to.equal(adminKeyPair.publicKey.y);
-      expect(keyInfo.role).to.equal(2); // Role.ADMIN = 2
+      expect(credentialInfo.publicKey.x).to.equal(adminKeyPair.publicKey.x);
+      expect(credentialInfo.publicKey.y).to.equal(adminKeyPair.publicKey.y);
+      expect(credentialInfo.role).to.equal(2); // Role.ADMIN = 2
     });
 
-    it('should return empty key info for non-existent key', async function () {
-      const keyInfo = await account.getKeyInfo(userKeypair.credentialId);
+    it('should return empty credential info for non-existent credential', async function () {
+      const credentialInfo = await account.getCredentialInfo(userKeypair.credentialId);
 
-      expect(keyInfo.role).to.equal(0); // Role.NONE = 0
+      expect(credentialInfo.role).to.equal(0); // Role.NONE = 0
     });
 
     it('should return correct admin nonce', async function () {
       const initialNonce = await account.getAdminNonce();
       expect(initialNonce).to.equal(0);
 
-      const tx = await accountRegistry.requestAddKey(userKeypair.credentialId, account.target, userKeypair.publicKey, 1); // Role.EXECUTOR = 1
+      const tx = await accountRegistry.requestAddCredential(userKeypair.credentialId, account.target, userKeypair.publicKey, 1); // Role.EXECUTOR = 1
       const receipt = await tx.wait();
 
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       if (!keyRequestedEvents?.length) {
-        throw new Error('KeyRequested event not found');
+        throw new Error('AddCredentialRequested event not found');
       }
 
       const requestId = keyRequestedEvents[0].args.requestId;
 
       const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST
+        operation: 0, // AdminOperation.APPROVE_CREDENTIAL_REQUEST
         nonce: initialNonce,
         operationData: ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]),
         signature: '0x',
@@ -2293,22 +2293,22 @@ describe('Account Contract', function () {
       expect(newNonce).to.equal(1);
     });
 
-    it('should return correct admin key count', async function () {
+    it('should return correct admin credential count', async function () {
       expect(await account.getAdminKeyCount()).to.equal(1);
 
-      const tx = await accountRegistry.requestAddKey(userKeypair.credentialId, account.target, userKeypair.publicKey, 1); // Role.EXECUTOR = 1
+      const tx = await accountRegistry.requestAddCredential(userKeypair.credentialId, account.target, userKeypair.publicKey, 1); // Role.EXECUTOR = 1
       const receipt = await tx.wait();
 
-      const keyRequestedEvents = extractEvents(receipt, account, 'KeyRequested');
+      const keyRequestedEvents = extractEvents(receipt, account, 'AddCredentialRequested');
 
       if (!keyRequestedEvents?.length) {
-        throw new Error('KeyRequested event not found');
+        throw new Error('AddCredentialRequested event not found');
       }
 
       const requestId = keyRequestedEvents[0].args.requestId;
 
       const adminAction = {
-        operation: 0, // AdminOperation.APPROVE_KEY_REQUEST
+        operation: 0, // AdminOperation.APPROVE_CREDENTIAL_REQUEST
         nonce: await account.getAdminNonce(),
         operationData: ethers.AbiCoder.defaultAbiCoder().encode(['bytes32'], [requestId]),
         signature: '0x',
@@ -2322,7 +2322,7 @@ describe('Account Contract', function () {
       expect(await account.getAdminKeyCount()).to.equal(1);
 
       const changeKeyRoleAction = {
-        operation: 3, // AdminOperation.CHANGE_KEY_ROLE = 3
+        operation: 3, // AdminOperation.CHANGE_CREDENTIAL_ROLE = 3
         nonce: await account.getAdminNonce(),
         operationData: ethers.AbiCoder.defaultAbiCoder().encode(
           ['bytes', 'uint8'],
@@ -2416,7 +2416,7 @@ describe('Account Contract', function () {
 
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         userKeypair.credentialId,
         account.target,
         userKeypair.publicKey,
@@ -2432,7 +2432,7 @@ describe('Account Contract', function () {
             return null;
           }
         })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 
@@ -2449,14 +2449,14 @@ describe('Account Contract', function () {
       await expect(account.pauseAccount(pauseUntil, unauthorizedAdminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
     });
 
-    it('should handle key rotation securely', async function () {
+    it('should handle credential rotation securely', async function () {
       const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
 
       const account = await createAndGetAccount(adminKeyPair, accountRegistry);
 
       const newAdminKeypair = generateTestKeypair();
 
-      const tx = await accountRegistry.requestAddKey(
+      const tx = await accountRegistry.requestAddCredential(
         newAdminKeypair.credentialId,
         account.target,
         newAdminKeypair.publicKey,
@@ -2472,7 +2472,7 @@ describe('Account Contract', function () {
             return null;
           }
         })
-        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'KeyRequested');
+        .filter((event): event is NonNullable<typeof event> => event !== null && event.name === 'AddCredentialRequested');
 
       const requestId = keyRequestedEvents?.[0].args.requestId;
 

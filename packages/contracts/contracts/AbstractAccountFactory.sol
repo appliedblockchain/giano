@@ -14,8 +14,8 @@ abstract contract AbstractAccountFactory {
     /**
      * @notice Deploys a new Account contract
      * @dev Must be implemented by derived contracts
-     * @param credentialId The credential identifier for the admin key
-     * @param publicKey The public key for the admin key
+     * @param credentialId The credential identifier for the admin credential
+     * @param publicKey The public key for the admin credential
      * @param registry The address of the AccountRegistry contract
      * @return The address of the deployed Account contract
      */

@@ -62,7 +62,7 @@ describe('AccountRegistry Contract', function () {
       expect(userId1).to.not.equal(userId2);
     });
 
-    it('should link the initial key to the account', async function () {
+    it('should link the initial credential to the account', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
 
@@ -70,8 +70,8 @@ describe('AccountRegistry Contract', function () {
       const tx = await accountRegistry.createUser(keypair.credentialId,keypair.publicKey);
       await tx.wait();
 
-      // Check if key is linked
-      const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(keypair.credentialId);
+      // Check if credential is linked
+      const [isLinked, linkedAccount] = await accountRegistry.isCredentialLinked(keypair.credentialId);
       expect(isLinked).to.be.true;
       expect(linkedAccount).to.not.equal(ethers.ZeroAddress);
     });
@@ -91,8 +91,8 @@ describe('AccountRegistry Contract', function () {
       expect(userCreatedEvents[0].args.publicKey.x).to.equal(keypair.publicKey.x);
       expect(userCreatedEvents[0].args.publicKey.y).to.equal(keypair.publicKey.y);
 
-      // Check for KeyLinked event
-      const keyLinkedEvents = extractEvents(receipt, accountRegistry, 'KeyLinked');
+      // Check for CredentialLinked event
+      const keyLinkedEvents = extractEvents(receipt, accountRegistry, 'CredentialLinked');
 
       expect(keyLinkedEvents.length).to.equal(1);
       expect(keyLinkedEvents[0].args.account).to.equal(userCreatedEvents[0].args.account);
@@ -100,21 +100,21 @@ describe('AccountRegistry Contract', function () {
   });
 
   describe('Key Management', function () {
-    it('should prevent linking a key to multiple accounts', async function () {
+    it('should prevent linking a credential to multiple accounts', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
 
-      // Create first user with the key
+      // Create first user with the credential
       await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
 
-      // Attempt to create second user with the same key
+      // Attempt to create second user with the same credential
       await expect(accountRegistry.createUser(keypair.credentialId, keypair.publicKey)).to.be.revertedWithCustomError(
         accountRegistry,
-        'KeyAlreadyLinked',
+        'CredentialAlreadyUnlinked',
       );
     });
 
-    it('should allow checking if a key is linked', async function () {
+    it('should allow checking if a credential is linked', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
       const unusedKeypair = generateTestKeypair();
@@ -127,13 +127,13 @@ describe('AccountRegistry Contract', function () {
       const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
-      // Check if the used key is linked
-      const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(keypair.credentialId);
+      // Check if the used credential is linked
+      const [isLinked, linkedAccount] = await accountRegistry.isCredentialLinked(keypair.credentialId);
       expect(isLinked).to.be.true;
       expect(linkedAccount).to.equal(accountAddress);
 
-      // Check if an unused key is not linked
-      const [isUnusedLinked, unusedLinkedAccount] = await accountRegistry.isKeyLinked(unusedKeypair.credentialId);
+      // Check if an unused credential is not linked
+      const [isUnusedLinked, unusedLinkedAccount] = await accountRegistry.isCredentialLinked(unusedKeypair.credentialId);
       expect(isUnusedLinked).to.be.false;
       expect(unusedLinkedAccount).to.equal(ethers.ZeroAddress);
     });
@@ -189,12 +189,12 @@ describe('AccountRegistry Contract', function () {
   });
 
   describe('Key Request Functionality', function () {
-    it('should allow requesting to add a key to an account', async function () {
+    it('should allow requesting to add a credential to an account', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const adminKeypair = generateTestKeypair();
       const newKeypair = generateTestKeypair();
 
-      // Create a user with admin key
+      // Create a user with admin credential
       const tx = await accountRegistry.createUser(adminKeypair.credentialId, adminKeypair.publicKey);
       const receipt = await tx.wait();
 
@@ -202,47 +202,47 @@ describe('AccountRegistry Contract', function () {
       const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
-      // Request adding a new key (Role.EXECUTOR = 1)
-      const requestTx = await accountRegistry.requestAddKey(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1);
+      // Request adding a new credential (Role.EXECUTOR = 1)
+      const requestTx = await accountRegistry.requestAddCredential(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1);
       const requestReceipt = await requestTx.wait();
 
-      // Check that KeyRequestCreated event was emitted
-      const keyRequestEvents = extractEvents(requestReceipt, accountRegistry, 'KeyRequestCreated');
+      // Check that AddCredentialRequestCreated event was emitted
+      const keyRequestEvents = extractEvents(requestReceipt, accountRegistry, 'AddCredentialRequestCreated');
       expect(keyRequestEvents.length).to.equal(1);
       expect(keyRequestEvents[0].args.account).to.equal(accountAddress);
       expect(keyRequestEvents[0].args.role).to.equal(1); // Role.EXECUTOR
     });
 
-    it('should revert when requesting to add a key to a non-existent account', async function () {
+    it('should revert when requesting to add a credential to a non-existent account', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
 
-      // Try to request a key for a non-existent account
+      // Try to request a credential for a non-existent account
       await expect(
-        accountRegistry.requestAddKey(ethers.randomBytes(32), ethers.Wallet.createRandom().address, keypair.publicKey, 1),
+        accountRegistry.requestAddCredential(ethers.randomBytes(32), ethers.Wallet.createRandom().address, keypair.publicKey, 1),
       ).to.be.revertedWithCustomError(accountRegistry, 'AccountNotRegistered');
     });
 
-    it('should revert when requesting to add a key that is already linked', async function () {
+    it('should revert when requesting to add a credential that is already linked', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const adminKeypair = generateTestKeypair();
       const newKeypair = generateTestKeypair();
 
-      // Create first user with admin key
+      // Create first user with admin credential
       const tx1 = await accountRegistry.createUser(adminKeypair.credentialId, adminKeypair.publicKey);
       const receipt1 = await tx1.wait();
 
-      // Create second user with the new key
+      // Create second user with the new credential
       const tx2 = await accountRegistry.createUser(newKeypair.credentialId, newKeypair.publicKey);
 
       // Get the first account address
       const userCreatedEvents = extractEvents(receipt1, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
-      // Try to add the already linked key to the first account
+      // Try to add the already linked credential to the first account
       await expect(
-        accountRegistry.requestAddKey(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1),
-      ).to.be.revertedWithCustomError(accountRegistry, 'KeyAlreadyLinked');
+        accountRegistry.requestAddCredential(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1),
+      ).to.be.revertedWithCustomError(accountRegistry, 'CredentialAlreadyUnlinked');
     });
   });
 
@@ -258,18 +258,18 @@ describe('AccountRegistry Contract', function () {
       );
     });
 
-    it('should revert notifyKeyRemoved when called by non-registered account', async function () {
+    it('should revert notifyCredentialRemoved when called by non-registered account', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
 
-      // Call notifyKeyRemoved from a non-registered address
-      await expect(accountRegistry.notifyKeyRemoved(keypair.credentialId)).to.be.revertedWithCustomError(
+      // Call notifyCredentialRemoved from a non-registered address
+      await expect(accountRegistry.notifyCredentialRemoved(keypair.credentialId)).to.be.revertedWithCustomError(
         accountRegistry,
         'AccountNotRegistered',
       );
     });
 
-    it('should revert notifyKeyRemoved when key not found', async function () {
+    it('should revert notifyCredentialRemoved when credential not found', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const adminKeypair = generateTestKeypair();
       const unusedKeypair = generateTestKeypair();
@@ -283,7 +283,7 @@ describe('AccountRegistry Contract', function () {
       const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
       const accountAddress = userCreatedEvents[0].args.account;
 
-      // Impersonate the account to call notifyKeyRemoved with an unlinked key
+      // Impersonate the account to call notifyCredentialRemoved with an unlinked credential
       await hre.network.provider.request({
         method: 'hardhat_impersonateAccount',
         params: [accountAddress],
@@ -298,9 +298,9 @@ describe('AccountRegistry Contract', function () {
       const accountSigner = await ethers.getSigner(accountAddress);
 
       const registryAsAccount = accountRegistry.connect(accountSigner);
-      await expect(registryAsAccount.notifyKeyRemoved(unusedKeypair.credentialId)).to.be.revertedWithCustomError(
+      await expect(registryAsAccount.notifyCredentialRemoved(unusedKeypair.credentialId)).to.be.revertedWithCustomError(
         accountRegistry,
-        'KeyNotFound',
+        'CredentialNotFound',
       );
 
       await hre.network.provider.request({

@@ -8,8 +8,8 @@ import {AbstractAccountFactory} from './AbstractAccountFactory.sol';
 /**
  * @title AccountRegistry
  * @author Giano Team
- * @notice Registry that tracks which keys are linked to which Account contracts
- * @dev This contract prevents keys from being linked to more than one Account
+ * @notice Registry that tracks which credentials are linked to which Account contracts
+ * @dev This contract prevents credentials from being linked to more than one Account
  * and acts as the main entrypoint for account creation and management.
  * It auto-generates unique IDs for new users based on their public keys.
  */
@@ -18,13 +18,13 @@ contract AccountRegistry {
      * @notice Structure to store user information
      * @param id Unique identifier for the user
      * @param publicKey The initial public key associated with the user
-     * @param keyId The ID of the key associated with the user
+     * @param credentialId The ID of the credential associated with the user
      * @param account The address of the user's Account contract
      */
     struct User {
         uint256 id;
         Types.PublicKey publicKey;
-        bytes keyId;
+        bytes credentialId;
         address account;
     }
 
@@ -33,8 +33,8 @@ contract AccountRegistry {
     // Mapping from user ID to user info
     mapping(uint256 => User) private users;
     
-    // Mapping from key ID to account address (to enforce one key per account)
-    mapping(bytes => address) private keyToAccount;
+    // Mapping from credential ID to account address (to enforce one credential per account)
+    mapping(bytes => address) private credentialToAccount;
     
     // Mapping from account address to user ID
     mapping(address => uint256) private accountToUserId;
@@ -57,26 +57,26 @@ contract AccountRegistry {
     event UserCreated(uint256 indexed userId, Types.PublicKey publicKey, address account);
 
     /**
-     * @notice Emitted when a key is linked to an account
-     * @param keyHash The hash of the linked public key
-     * @param account The address of the account the key is linked to
+     * @notice Emitted when a credential is linked to an account
+     * @param credentialId The ID of the linked credential
+     * @param account The address of the account the credential is linked to
      */
-    event KeyLinked(bytes32 indexed keyHash, address indexed account);
+    event CredentialLinked(bytes indexed credentialId, address indexed account);
 
     /**
-     * @notice Emitted when a key is unlinked from an account
-     * @param keyHash The hash of the unlinked public key
-     * @param account The address of the account the key was unlinked from
+     * @notice Emitted when a credential is unlinked from an account
+     * @param credentialId The ID of the unlinked credential
+     * @param account The address of the account the credential was unlinked from
      */
-    event KeyUnlinked(bytes32 indexed keyHash, address indexed account);
+    event CredentialUnlinked(bytes indexed credentialId, address indexed account);
 
     /**
-     * @notice Emitted when a key request is created
-     * @param account The address of the account for which the key is requested
-     * @param keyHash The hash of the requested public key
-     * @param role The role requested for the key (0=NONE, 1=EXECUTOR, 2=ADMIN)
+     * @notice Emitted when a credential request is created
+     * @param account The address of the account for which the credential is requested
+     * @param credentialId The ID of the requested credential
+     * @param role The role requested for the credential (0=NONE, 1=EXECUTOR, 2=ADMIN)
      */
-    event KeyRequestCreated(address indexed account, bytes32 indexed keyHash, uint8 role);
+    event AddCredentialRequestCreated(address indexed account, bytes indexed credentialId, uint8 role);
     
     /**
      * @notice Error thrown when attempting to create a user with an ID that already exists
@@ -91,11 +91,11 @@ contract AccountRegistry {
     error AccountNotRegistered(address account);
 
     /**
-     * @notice Error thrown when attempting to link a key that's already linked to another account
-     * @param keyHash The hash of the already linked key
-     * @param existingAccount The address of the account the key is already linked to
+     * @notice Error thrown when attempting to link a credential that's already linked to another account
+     * @param credentialId The ID of the already linked credential
+     * @param existingAccount The address of the account the credential is already linked to
      */
-    error KeyAlreadyLinked(bytes32 keyHash, address existingAccount);
+    error CredentialAlreadyUnlinked(bytes credentialId, address existingAccount);
 
     /**
      * @notice Error thrown when an unauthorized address attempts an operation
@@ -104,10 +104,10 @@ contract AccountRegistry {
     error Unauthorized(address caller);
 
     /**
-     * @notice Error thrown when a key operation is attempted on a non-existent key
-     * @param keyHash The hash of the non-existent key
+     * @notice Error thrown when a credential operation is attempted on a non-existent credential
+     * @param credentialId The non-existent credential
      */
-    error KeyNotFound(bytes32 keyHash);
+    error CredentialNotFound(bytes credentialId);
 
     /**
      * @notice Error thrown when a user lookup fails
@@ -164,13 +164,13 @@ contract AccountRegistry {
     }
     
     /**
-     * @notice Checks if a key is already linked to an account
-     * @param keyId The ID of the key to check
-     * @return isLinked Boolean indicating whether the key is linked
-     * @return linkedAccount The address of the account the key is linked to (if any)
+     * @notice Checks if a credential is already linked to an account
+     * @param credentialId The ID of the credential to check
+     * @return isLinked Boolean indicating whether the credential is linked
+     * @return linkedAccount The address of the account the credential is linked to (if any)
      */
-    function isKeyLinked(bytes calldata keyId) public view returns (bool, address) {
-        address linkedAccount = keyToAccount[keyId];
+    function isCredentialLinked(bytes calldata credentialId) public view returns (bool, address) {
+        address linkedAccount = credentialToAccount[credentialId];
         return (linkedAccount != address(0), linkedAccount);
     }
     
@@ -195,14 +195,14 @@ contract AccountRegistry {
     }
     
     /**
-     * @notice Creates a new user with an account and registers their initial key
-     * @dev Deploys a new Account contract and links the initial key
-     * @param keyId The ID of the key to associate with the user
+     * @notice Creates a new user with an account and registers their initial credential
+     * @dev Deploys a new Account contract and links the initial credential
+     * @param credentialId The ID of the credential to associate with the user
      * @param publicKey The public key to associate with the user
      * @return userId The auto-generated unique user ID
      * @return accountAddress The address of the deployed account
      */
-    function createUser(bytes calldata keyId, Types.PublicKey calldata publicKey) external returns (uint256 userId, address accountAddress) {
+    function createUser(bytes calldata credentialId, Types.PublicKey calldata publicKey) external returns (uint256 userId, address accountAddress) {
         // Generate a unique, non-sequential user ID
         userId = _generateUserId(publicKey);
         
@@ -211,39 +211,39 @@ contract AccountRegistry {
             revert UserAlreadyExists(userId);
         }
         
-        // Verify key isn't already linked to another account
-        if (keyToAccount[keyId] != address(0)) {
-            revert KeyAlreadyLinked(keccak256(keyId), keyToAccount[keyId]);
+        // Verify credential isn't already linked to another account
+        if (credentialToAccount[credentialId] != address(0)) {
+            revert CredentialAlreadyUnlinked(credentialId, credentialToAccount[credentialId]);
         }
         
         // Call the factory to deploy a new Account contract
-        accountAddress = factory.deployAccount(keyId, publicKey, address(this));
+        accountAddress = factory.deployAccount(credentialId, publicKey, address(this));
         
         // Register the user and account
-        users[userId] = User(userId, publicKey, keyId, accountAddress);
+        users[userId] = User(userId, publicKey, credentialId, accountAddress);
         registeredAccounts[accountAddress] = true;
         accountToUserId[accountAddress] = userId;
         
-        // Link the initial admin key
-        keyToAccount[keyId] = accountAddress;
+        // Link the initial admin credential
+        credentialToAccount[credentialId] = accountAddress;
         
         emit UserCreated(userId, publicKey, accountAddress);
-        emit KeyLinked(keccak256(keyId), accountAddress);
+        emit CredentialLinked(credentialId, accountAddress);
         
         return (userId, accountAddress);
     }
     
     /**
-     * @notice Requests adding a new key to an account
-     * @dev Verifies the account exists and the key isn't already linked
-     * @param keyId The ID of the key to add
-     * @param account The account address to add the key to
+     * @notice Requests adding a new credential to an account
+     * @dev Verifies the account exists and the credential isn't already linked
+     * @param credentialId The ID of the credential to add
+     * @param account The account address to add the credential to
      * @param publicKey The public key to add
-     * @param role The role to assign to the key
+     * @param role The role to assign to the credential
      * @return requestId The ID of the created request
      */
-    function requestAddKey(
-        bytes calldata keyId,
+    function requestAddCredential(
+        bytes calldata credentialId,
         address account,
         Types.PublicKey calldata publicKey,
         uint8 role
@@ -254,47 +254,47 @@ contract AccountRegistry {
             revert AccountNotRegistered(account);
         }
         
-        // Check if key is already linked to an account
-        address linkedAccount = keyToAccount[keyId];
+        // Check if credential is already linked to an account
+        address linkedAccount = credentialToAccount[credentialId];
         
         if (linkedAccount != address(0)) {
-            revert KeyAlreadyLinked(keccak256(keyId), linkedAccount);
+            revert CredentialAlreadyUnlinked(credentialId, linkedAccount);
         }
         
         // Create request in the account contract
         Account accountContract = Account(payable(account));
-        bytes32 requestId = accountContract.requestAddKey(keyId, publicKey, Account.Role(role));
+        bytes32 requestId = accountContract.requestAddCredential(credentialId, publicKey, Account.Role(role));
         
-        emit KeyRequestCreated(account, keccak256(keyId), role);
+        emit AddCredentialRequestCreated(account, credentialId, role);
         
         return requestId;
     }
     
     /**
-     * @notice Called by an account when a key request is approved
-     * @dev Links the key to the calling account in the registry
-     * @param keyId The ID of the key that was added
+     * @notice Called by an account when a credential request is approved
+     * @dev Links the credential to the calling account in the registry
+     * @param credentialId The ID of the credential that was added
      */
-    function notifyKeyAdded(bytes calldata keyId) public onlyRegisteredAccount {
-        keyToAccount[keyId] = msg.sender;
+    function notifyKeyAdded(bytes calldata credentialId) public onlyRegisteredAccount {
+        credentialToAccount[credentialId] = msg.sender;
         
-        emit KeyLinked(keccak256(keyId), msg.sender);
+        emit CredentialLinked(credentialId, msg.sender);
     }
     
     /**
-     * @notice Called by an account when a key is removed
-     * @dev Removes the key-account link from the registry
-     * @param keyId The ID of the key that was removed
+     * @notice Called by an account when a credential is removed
+     * @dev Removes the credential-account link from the registry
+     * @param credentialId The ID of the credential that was removed
      */
-    function notifyKeyRemoved(bytes calldata keyId) public onlyRegisteredAccount {
-        // Verify the key was linked to this account
-        if (keyToAccount[keyId] != msg.sender) {
-            revert KeyNotFound(keccak256(keyId));
+    function notifyCredentialRemoved(bytes calldata credentialId) public onlyRegisteredAccount {
+        // Verify the credential was linked to this account
+        if (credentialToAccount[credentialId] != msg.sender) {
+            revert CredentialNotFound(credentialId);
         }
         
-        address account = keyToAccount[keyId];
-        delete keyToAccount[keyId];
+        address account = credentialToAccount[credentialId];
+        delete credentialToAccount[credentialId];
         
-        emit KeyUnlinked(keccak256(keyId), account);
+        emit CredentialUnlinked(credentialId, account);
     }
 } 
