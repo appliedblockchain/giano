@@ -107,7 +107,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Structure to store information about a key
-     * @param credentialId The key identifier
+     * @param credentialId The credential identifier
      * @param publicKey The public key
      * @param role The role assigned to the key
      */
@@ -119,7 +119,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Structure to store information about a key request
-     * @param credentialId The key identifier
+     * @param credentialId The credential identifier
      * @param publicKey The public key being requested
      * @param requestedRole The role being requested for the key
      * @param exists Whether the request exists
@@ -256,7 +256,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @notice Initializes the Account with an initial admin key and registry
      * @dev Sets up the initial admin key and registers the registry
      * @param _initialAdminKey The initial public key to be given admin role
-     * @param _initialCredentialId The initial key identifier for the admin key
+     * @param _initialCredentialId The initial credential identifier for the admin key
      * @param _registry The address of the AccountRegistry contract
      */
     constructor(Types.PublicKey memory _initialAdminKey, bytes memory _initialCredentialId, address _registry) {
@@ -290,8 +290,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Computes the hash of a public key
      * @dev Used for efficiently storing and looking up keys
-     * @param _credentialId The key identifier to hash
-     * @return The keccak256 hash of the key identifier
+     * @param _credentialId The credential identifier to hash
+     * @return The keccak256 hash of the credential identifier
      */
     function _getKeyHash(bytes memory _credentialId) internal pure returns (bytes32) {
         return keccak256(_credentialId);
@@ -300,7 +300,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Checks if a key exists and has at least the specified role
      * @dev Used to verify authorization for operations
-     * @param _credentialId The key identifier
+     * @param _credentialId The credential identifier
      * @param _minimumRole The minimum role required
      * @return Boolean indicating whether the key has the required role
      */
@@ -311,7 +311,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Checks if a key exists (has any role)
      * @dev Used to determine whether a key has been registered
-     * @param _credentialId The key identifier
+     * @param _credentialId The credential identifier
      * @return Boolean indicating whether the key exists
      */
     function _keyExists(bytes memory _credentialId) internal view returns (bool) {
@@ -320,7 +320,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Returns information about a specific key
-     * @param _credentialId The key identifier
+     * @param _credentialId The credential identifier
      * @return KeyInfo struct containing the key's information
      */
     function getKeyInfo(bytes calldata _credentialId) external view returns (KeyInfo memory) {
@@ -417,7 +417,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Requests to add a new key to the contract
      * @dev Can only be called by the registry
-     * @param credentialId The key identifier
+     * @param credentialId The credential identifier
      * @param publicKey The public key to add
      * @param role The requested role for the key
      * @return requestId The ID of the created request
@@ -489,7 +489,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Removes an existing key
      * @dev Can only be called by an admin and notifies the registry
-     * @param credentialId The key identifier
+     * @param credentialId The credential identifier
      * @param adminAction The admin action details with operation data, nonce and signature
      */
     function removeKey(bytes calldata credentialId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REMOVE_KEY, adminAction) {
@@ -519,7 +519,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     /**
      * @notice Changes the role of an existing key
      * @dev Can only be called by an admin
-     * @param credentialId The key identifier
+     * @param credentialId The credential identifier
      * @param newRole The new role for the key
      * @param adminAction The admin action details with operation data, nonce and signature
      */
