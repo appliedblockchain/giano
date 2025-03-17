@@ -76,7 +76,7 @@ contract AccountRegistry {
      * @param credentialId The ID of the requested credential
      * @param role The role requested for the credential (0=NONE, 1=EXECUTOR, 2=ADMIN)
      */
-    event AddCredentialRequestCreated(address indexed account, bytes indexed credentialId, uint8 role);
+    event CredentialRequestCreated(address indexed account, bytes indexed credentialId, uint8 role);
     
     /**
      * @notice Error thrown when attempting to create a user with an ID that already exists
@@ -240,14 +240,13 @@ contract AccountRegistry {
      * @param account The account address to add the credential to
      * @param publicKey The public key to add
      * @param role The role to assign to the credential
-     * @return requestId The ID of the created request
      */
     function requestAddCredential(
         bytes calldata credentialId,
         address account,
         Types.PublicKey calldata publicKey,
         uint8 role
-    ) external returns (bytes32) {
+    ) external {
         // Verify the account exists
         uint256 userId = accountToUserId[account];
         if (userId == 0 || !registeredAccounts[account]) {
@@ -263,11 +262,9 @@ contract AccountRegistry {
         
         // Create request in the account contract
         Account accountContract = Account(payable(account));
-        bytes32 requestId = accountContract.requestAddCredential(credentialId, publicKey, Account.Role(role));
+        accountContract.requestAddCredential(credentialId, publicKey, Account.Role(role));
         
-        emit AddCredentialRequestCreated(account, credentialId, role);
-        
-        return requestId;
+        emit CredentialRequestCreated(account, credentialId, role);
     }
     
     /**
@@ -275,7 +272,7 @@ contract AccountRegistry {
      * @dev Links the credential to the calling account in the registry
      * @param credentialId The ID of the credential that was added
      */
-    function notifyKeyAdded(bytes calldata credentialId) public onlyRegisteredAccount {
+    function notifyCredentialAdded(bytes calldata credentialId) public onlyRegisteredAccount {
         credentialToAccount[credentialId] = msg.sender;
         
         emit CredentialLinked(credentialId, msg.sender);
