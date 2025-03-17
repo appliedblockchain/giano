@@ -180,9 +180,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
 
     /**
      * @notice Emitted when a credential is removed from the account
-     * @param publicKey The public key that was removed
+     * @param credentialId The credential ID that was removed
      */
-    event CredentialRemoved(Types.PublicKey publicKey);
+    event CredentialRemoved(bytes indexed credentialId);
 
     /**
      * @notice Emitted when a credential's role is changed
@@ -486,12 +486,11 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             adminKeyCount--;
         }
 
-        Types.PublicKey memory publicKey = credentials[credentialId].publicKey;
         credentials[credentialId].role = Role.NONE;
 
         AccountRegistry(registry).notifyCredentialRemoved(credentialId);
 
-        emit CredentialRemoved(publicKey);
+        emit CredentialRemoved(credentialId);
     }
 
     /**
