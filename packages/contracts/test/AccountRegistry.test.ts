@@ -18,7 +18,7 @@ describe('AccountRegistry Contract', function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
 
-      const tx = await accountRegistry.createUser(keypair.publicKey);
+      const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
       const receipt = await tx.wait();
 
       // Verify the UserCreated event was emitted
@@ -42,10 +42,10 @@ describe('AccountRegistry Contract', function () {
       const keypair2 = generateTestKeypair();
 
       // Create two users with different keys
-      const tx1 = await accountRegistry.createUser(keypair1.publicKey);
+      const tx1 = await accountRegistry.createUser(keypair1.credentialId, keypair1.publicKey);
       const receipt1 = await tx1.wait();
 
-      const tx2 = await accountRegistry.createUser(keypair2.publicKey);
+      const tx2 = await accountRegistry.createUser(keypair2.credentialId, keypair2.publicKey);
       const receipt2 = await tx2.wait();
 
       // Extract user IDs from events
@@ -67,11 +67,11 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Create a user
-      const tx = await accountRegistry.createUser(keypair.publicKey);
+      const tx = await accountRegistry.createUser(keypair.credentialId,keypair.publicKey);
       await tx.wait();
 
       // Check if key is linked
-      const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(keypair.publicKey);
+      const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(keypair.credentialId);
       expect(isLinked).to.be.true;
       expect(linkedAccount).to.not.equal(ethers.ZeroAddress);
     });
@@ -81,7 +81,7 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Create a user
-      const tx = await accountRegistry.createUser(keypair.publicKey);
+      const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
       const receipt = await tx.wait();
 
       // Check for UserCreated event
@@ -105,10 +105,10 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Create first user with the key
-      await accountRegistry.createUser(keypair.publicKey);
+      await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
 
       // Attempt to create second user with the same key
-      await expect(accountRegistry.createUser(keypair.publicKey)).to.be.revertedWithCustomError(
+      await expect(accountRegistry.createUser(keypair.credentialId, keypair.publicKey)).to.be.revertedWithCustomError(
         accountRegistry,
         'KeyAlreadyLinked',
       );
@@ -120,7 +120,7 @@ describe('AccountRegistry Contract', function () {
       const unusedKeypair = generateTestKeypair();
 
       // Create a user
-      const tx = await accountRegistry.createUser(keypair.publicKey);
+      const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
       const receipt = await tx.wait();
 
       // Extract account address
@@ -128,12 +128,12 @@ describe('AccountRegistry Contract', function () {
       const accountAddress = userCreatedEvents[0].args.account;
 
       // Check if the used key is linked
-      const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(keypair.publicKey);
+      const [isLinked, linkedAccount] = await accountRegistry.isKeyLinked(keypair.credentialId);
       expect(isLinked).to.be.true;
       expect(linkedAccount).to.equal(accountAddress);
 
       // Check if an unused key is not linked
-      const [isUnusedLinked, unusedLinkedAccount] = await accountRegistry.isKeyLinked(unusedKeypair.publicKey);
+      const [isUnusedLinked, unusedLinkedAccount] = await accountRegistry.isKeyLinked(unusedKeypair.credentialId);
       expect(isUnusedLinked).to.be.false;
       expect(unusedLinkedAccount).to.equal(ethers.ZeroAddress);
     });
@@ -145,7 +145,7 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Create a user
-      const tx = await accountRegistry.createUser(keypair.publicKey);
+      const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
       const receipt = await tx.wait();
 
       // Get the user ID from the event
@@ -165,7 +165,7 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Create a user
-      const tx = await accountRegistry.createUser(keypair.publicKey);
+      const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
       const receipt = await tx.wait();
 
       // Get the user ID and account address from the event
@@ -195,7 +195,7 @@ describe('AccountRegistry Contract', function () {
       const newKeypair = generateTestKeypair();
 
       // Create a user with admin key
-      const tx = await accountRegistry.createUser(adminKeypair.publicKey);
+      const tx = await accountRegistry.createUser(adminKeypair.credentialId, adminKeypair.publicKey);
       const receipt = await tx.wait();
 
       // Get the account address
@@ -203,7 +203,7 @@ describe('AccountRegistry Contract', function () {
       const accountAddress = userCreatedEvents[0].args.account;
 
       // Request adding a new key (Role.EXECUTOR = 1)
-      const requestTx = await accountRegistry.requestAddKey(accountAddress, newKeypair.publicKey, 1);
+      const requestTx = await accountRegistry.requestAddKey(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1);
       const requestReceipt = await requestTx.wait();
 
       // Check that KeyRequestCreated event was emitted
@@ -219,7 +219,7 @@ describe('AccountRegistry Contract', function () {
 
       // Try to request a key for a non-existent account
       await expect(
-        accountRegistry.requestAddKey(ethers.Wallet.createRandom().address, keypair.publicKey, 1),
+        accountRegistry.requestAddKey(ethers.randomBytes(32), ethers.Wallet.createRandom().address, keypair.publicKey, 1),
       ).to.be.revertedWithCustomError(accountRegistry, 'AccountNotRegistered');
     });
 
@@ -229,11 +229,11 @@ describe('AccountRegistry Contract', function () {
       const newKeypair = generateTestKeypair();
 
       // Create first user with admin key
-      const tx1 = await accountRegistry.createUser(adminKeypair.publicKey);
+      const tx1 = await accountRegistry.createUser(adminKeypair.credentialId, adminKeypair.publicKey);
       const receipt1 = await tx1.wait();
 
       // Create second user with the new key
-      const tx2 = await accountRegistry.createUser(newKeypair.publicKey);
+      const tx2 = await accountRegistry.createUser(newKeypair.credentialId, newKeypair.publicKey);
 
       // Get the first account address
       const userCreatedEvents = extractEvents(receipt1, accountRegistry, 'UserCreated');
@@ -241,7 +241,7 @@ describe('AccountRegistry Contract', function () {
 
       // Try to add the already linked key to the first account
       await expect(
-        accountRegistry.requestAddKey(accountAddress, newKeypair.publicKey, 1),
+        accountRegistry.requestAddKey(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1),
       ).to.be.revertedWithCustomError(accountRegistry, 'KeyAlreadyLinked');
     });
   });
@@ -252,7 +252,7 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Call notifyKeyAdded from a non-registered address
-      await expect(accountRegistry.notifyKeyAdded(keypair.publicKey)).to.be.revertedWithCustomError(
+      await expect(accountRegistry.notifyKeyAdded(keypair.credentialId)).to.be.revertedWithCustomError(
         accountRegistry,
         'AccountNotRegistered',
       );
@@ -263,7 +263,7 @@ describe('AccountRegistry Contract', function () {
       const keypair = generateTestKeypair();
 
       // Call notifyKeyRemoved from a non-registered address
-      await expect(accountRegistry.notifyKeyRemoved(keypair.publicKey)).to.be.revertedWithCustomError(
+      await expect(accountRegistry.notifyKeyRemoved(keypair.credentialId)).to.be.revertedWithCustomError(
         accountRegistry,
         'AccountNotRegistered',
       );
@@ -276,7 +276,7 @@ describe('AccountRegistry Contract', function () {
       const [owner] = await ethers.getSigners();
 
       // Create a user
-      const tx = await accountRegistry.createUser(adminKeypair.publicKey);
+      const tx = await accountRegistry.createUser(adminKeypair.credentialId, adminKeypair.publicKey);
       const receipt = await tx.wait();
 
       // Get the account address
@@ -298,7 +298,7 @@ describe('AccountRegistry Contract', function () {
       const accountSigner = await ethers.getSigner(accountAddress);
 
       const registryAsAccount = accountRegistry.connect(accountSigner);
-      await expect(registryAsAccount.notifyKeyRemoved(unusedKeypair.publicKey)).to.be.revertedWithCustomError(
+      await expect(registryAsAccount.notifyKeyRemoved(unusedKeypair.credentialId)).to.be.revertedWithCustomError(
         accountRegistry,
         'KeyNotFound',
       );

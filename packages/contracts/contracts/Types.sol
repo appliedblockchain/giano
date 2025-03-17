@@ -9,23 +9,23 @@ pragma solidity ^0.8.23;
  */
 library Types {
     /**
-     * @notice Structure for WebAuthn signatures with public key
+     * @notice Structure for WebAuthn signatures with key ID
      * @param authenticatorData The raw authenticator data from the WebAuthn response
      * @param clientDataJSON The client data JSON from the WebAuthn response
      * @param challengeLocation Location of the challenge in the clientDataJSON
      * @param responseTypeLocation Location of the response type in the clientDataJSON
      * @param r The r component of the signature
      * @param s The s component of the signature
-     * @param publicKey The public key used for the signature
+     * @param credentialId The key ID associated with the signature
      */
     struct Signature {
+        bytes credentialId;
         bytes authenticatorData;
         string clientDataJSON;
         uint256 challengeLocation;
         uint256 responseTypeLocation;
         uint256 r;
         uint256 s;
-        PublicKey publicKey;
     }
 
     /**

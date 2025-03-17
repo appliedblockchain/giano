@@ -18,19 +18,23 @@ contract AccountRegistry {
      * @notice Structure to store user information
      * @param id Unique identifier for the user
      * @param publicKey The initial public key associated with the user
+     * @param keyId The ID of the key associated with the user
      * @param account The address of the user's Account contract
      */
     struct User {
         uint256 id;
         Types.PublicKey publicKey;
+        bytes keyId;
         address account;
     }
+
+    mapping(bytes => User) private bytesUser;
 
     // Mapping from user ID to user info
     mapping(uint256 => User) private users;
     
-    // Mapping from public key hash to account address (to enforce one key per account)
-    mapping(bytes32 => address) private keyToAccount;
+    // Mapping from key ID to account address (to enforce one key per account)
+    mapping(bytes => address) private keyToAccount;
     
     // Mapping from account address to user ID
     mapping(address => uint256) private accountToUserId;
@@ -161,13 +165,12 @@ contract AccountRegistry {
     
     /**
      * @notice Checks if a key is already linked to an account
-     * @param publicKey The public key to check
+     * @param keyId The ID of the key to check
      * @return isLinked Boolean indicating whether the key is linked
      * @return linkedAccount The address of the account the key is linked to (if any)
      */
-    function isKeyLinked(Types.PublicKey calldata publicKey) public view returns (bool, address) {
-        bytes32 keyHash = _getKeyHash(publicKey);
-        address linkedAccount = keyToAccount[keyHash];
+    function isKeyLinked(bytes calldata keyId) public view returns (bool, address) {
+        address linkedAccount = keyToAccount[keyId];
         return (linkedAccount != address(0), linkedAccount);
     }
     
@@ -194,11 +197,12 @@ contract AccountRegistry {
     /**
      * @notice Creates a new user with an account and registers their initial key
      * @dev Deploys a new Account contract and links the initial key
+     * @param keyId The ID of the key to associate with the user
      * @param publicKey The public key to associate with the user
      * @return userId The auto-generated unique user ID
      * @return accountAddress The address of the deployed account
      */
-    function createUser(Types.PublicKey calldata publicKey) external returns (uint256 userId, address accountAddress) {
+    function createUser(bytes calldata keyId, Types.PublicKey calldata publicKey) external returns (uint256 userId, address accountAddress) {
         // Generate a unique, non-sequential user ID
         userId = _generateUserId(publicKey);
         
@@ -208,24 +212,23 @@ contract AccountRegistry {
         }
         
         // Verify key isn't already linked to another account
-        bytes32 keyHash = _getKeyHash(publicKey);
-        if (keyToAccount[keyHash] != address(0)) {
-            revert KeyAlreadyLinked(keyHash, keyToAccount[keyHash]);
+        if (keyToAccount[keyId] != address(0)) {
+            revert KeyAlreadyLinked(keccak256(keyId), keyToAccount[keyId]);
         }
         
         // Call the factory to deploy a new Account contract
-        accountAddress = factory.deployAccount(publicKey, address(this));
+        accountAddress = factory.deployAccount(keyId, publicKey, address(this));
         
         // Register the user and account
-        users[userId] = User(userId, publicKey, accountAddress);
+        users[userId] = User(userId, publicKey, keyId, accountAddress);
         registeredAccounts[accountAddress] = true;
         accountToUserId[accountAddress] = userId;
         
         // Link the initial admin key
-        keyToAccount[keyHash] = accountAddress;
+        keyToAccount[keyId] = accountAddress;
         
         emit UserCreated(userId, publicKey, accountAddress);
-        emit KeyLinked(keyHash, accountAddress);
+        emit KeyLinked(keccak256(keyId), accountAddress);
         
         return (userId, accountAddress);
     }
@@ -233,14 +236,16 @@ contract AccountRegistry {
     /**
      * @notice Requests adding a new key to an account
      * @dev Verifies the account exists and the key isn't already linked
+     * @param keyId The ID of the key to add
      * @param account The account address to add the key to
      * @param publicKey The public key to add
      * @param role The role to assign to the key
      * @return requestId The ID of the created request
      */
     function requestAddKey(
+        bytes calldata keyId,
         address account,
-        Types.PublicKey calldata publicKey, 
+        Types.PublicKey calldata publicKey,
         uint8 role
     ) external returns (bytes32) {
         // Verify the account exists
@@ -250,18 +255,17 @@ contract AccountRegistry {
         }
         
         // Check if key is already linked to an account
-        bytes32 keyHash = _getKeyHash(publicKey);
-        address linkedAccount = keyToAccount[keyHash];
+        address linkedAccount = keyToAccount[keyId];
         
         if (linkedAccount != address(0)) {
-            revert KeyAlreadyLinked(keyHash, linkedAccount);
+            revert KeyAlreadyLinked(keccak256(keyId), linkedAccount);
         }
         
         // Create request in the account contract
         Account accountContract = Account(payable(account));
-        bytes32 requestId = accountContract.requestAddKey(publicKey, Account.Role(role));
+        bytes32 requestId = accountContract.requestAddKey(keyId, publicKey, Account.Role(role));
         
-        emit KeyRequestCreated(account, keyHash, role);
+        emit KeyRequestCreated(account, keccak256(keyId), role);
         
         return requestId;
     }
@@ -269,41 +273,28 @@ contract AccountRegistry {
     /**
      * @notice Called by an account when a key request is approved
      * @dev Links the key to the calling account in the registry
-     * @param publicKey The public key that was added
+     * @param keyId The ID of the key that was added
      */
-    function notifyKeyAdded(Types.PublicKey calldata publicKey) public onlyRegisteredAccount {
-        bytes32 keyHash = _getKeyHash(publicKey);
-        keyToAccount[keyHash] = msg.sender;
+    function notifyKeyAdded(bytes calldata keyId) public onlyRegisteredAccount {
+        keyToAccount[keyId] = msg.sender;
         
-        emit KeyLinked(keyHash, msg.sender);
+        emit KeyLinked(keccak256(keyId), msg.sender);
     }
     
     /**
      * @notice Called by an account when a key is removed
      * @dev Removes the key-account link from the registry
-     * @param publicKey The public key that was removed
+     * @param keyId The ID of the key that was removed
      */
-    function notifyKeyRemoved(Types.PublicKey calldata publicKey) public onlyRegisteredAccount {
-        bytes32 keyHash = _getKeyHash(publicKey);
-        
+    function notifyKeyRemoved(bytes calldata keyId) public onlyRegisteredAccount {
         // Verify the key was linked to this account
-        if (keyToAccount[keyHash] != msg.sender) {
-            revert KeyNotFound(keyHash);
+        if (keyToAccount[keyId] != msg.sender) {
+            revert KeyNotFound(keccak256(keyId));
         }
         
-        address account = keyToAccount[keyHash];
-        delete keyToAccount[keyHash];
+        address account = keyToAccount[keyId];
+        delete keyToAccount[keyId];
         
-        emit KeyUnlinked(keyHash, account);
-    }
-    
-    /**
-     * @notice Calculates the hash of a public key
-     * @dev Used for efficiently storing and looking up keys
-     * @param _publicKey The public key to hash
-     * @return The keccak256 hash of the public key
-     */
-    function _getKeyHash(Types.PublicKey memory _publicKey) internal pure returns (bytes32) {
-        return keccak256(abi.encode(_publicKey.x, _publicKey.y));
+        emit KeyUnlinked(keccak256(keyId), account);
     }
 } 

@@ -3,23 +3,25 @@ import hre from 'hardhat';
 import ignitionModules from '../../ignition/modules';
 import type { AccountFactory, AccountRegistry, TestContract } from '../../typechain-types';
 import { createKeypair } from '../utils';
-import crypto from 'node:crypto'
+import crypto from 'node:crypto';
+import { BytesLike } from 'ethers';
 
 export type HexifiedPublicKey = {
-  x: string
-  y: string
-}
+  x: string;
+  y: string;
+};
 
-export type KeyPair = {
-  publicKey: HexifiedPublicKey,
-  keyPair: crypto.KeyPairKeyObjectResult
-}
+export type PublicKeyCredential = {
+  publicKey: HexifiedPublicKey;
+  keyPair: crypto.KeyPairKeyObjectResult;
+  credentialId: BytesLike;
+};
 
 /**
  * Generate a testing keypair for WebAuthn signatures
  * @returns The keypair with formatted public key for Solidity
  */
-export function generateTestKeypair(): KeyPair {
+export function generateTestKeypair(): PublicKeyCredential {
   const { x, y, keyPair } = createKeypair();
 
   // Format the public key for Solidity contracts
@@ -28,7 +30,10 @@ export function generateTestKeypair(): KeyPair {
     y: ethers.hexlify(y),
   };
 
-  return { publicKey, keyPair };
+  // Generate a random credential ID
+  const credentialId = ethers.randomBytes(32);
+
+  return { publicKey, keyPair, credentialId };
 }
 
 /**
@@ -38,7 +43,7 @@ export function generateTestKeypair(): KeyPair {
 async function deployContracts() {
   const [owner, user1, user2] = await ethers.getSigners();
 
-  const adminKeypair = generateTestKeypair();
+  const adminKeyPair = generateTestKeypair();
   const executorKeypair = generateTestKeypair();
   const userKeypair = generateTestKeypair();
 
@@ -54,7 +59,7 @@ async function deployContracts() {
     owner,
     user1,
     user2,
-    adminKeypair,
+    adminKeyPair,
     executorKeypair,
     userKeypair,
   };

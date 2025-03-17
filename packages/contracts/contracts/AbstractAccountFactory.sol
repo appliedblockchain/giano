@@ -12,11 +12,12 @@ import {Types} from './Types.sol';
  */
 abstract contract AbstractAccountFactory {
     /**
-     * @notice Deploys an account contract with the given public key and registry address
-     * @dev This function must be implemented by concrete factory contracts
-     * @param publicKey The public key to associate with the account as the admin key
-     * @param registry The address of the registry contract that will manage the account
-     * @return The address of the deployed account contract
+     * @notice Deploys a new Account contract
+     * @dev Must be implemented by derived contracts
+     * @param credentialId The key identifier for the admin key
+     * @param publicKey The public key for the admin key
+     * @param registry The address of the AccountRegistry contract
+     * @return The address of the deployed Account contract
      */
-    function deployAccount(Types.PublicKey calldata publicKey, address registry) external virtual returns (address);
+    function deployAccount(bytes calldata credentialId, Types.PublicKey calldata publicKey, address registry) public virtual returns (address);
 }
