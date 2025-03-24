@@ -111,7 +111,7 @@ describe('AccountRegistry Contract', function () {
       // Attempt to create second user with the same credential
       await expect(accountRegistry.createUser(keypair.credentialId, keypair.publicKey)).to.be.revertedWithCustomError(
         accountRegistry,
-        'CredentialAlreadyUnlinked',
+        'CredentialAlreadyLinked',
       );
     });
 
@@ -239,7 +239,7 @@ describe('AccountRegistry Contract', function () {
       // Try to add the already linked credential to the first account
       await expect(
         accountRegistry.requestAddCredential(newKeypair.credentialId, accountAddress, newKeypair.publicKey, 1),
-      ).to.be.revertedWithCustomError(accountRegistry, 'CredentialAlreadyUnlinked');
+      ).to.be.revertedWithCustomError(accountRegistry, 'CredentialAlreadyLinked');
     });
 
     it('should properly store credential in pending state until approved', async function() {

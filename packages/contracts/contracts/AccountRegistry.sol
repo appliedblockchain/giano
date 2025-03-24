@@ -78,7 +78,7 @@ contract AccountRegistry {
      * @param credentialId The ID of the already linked credential
      * @param existingAccount The address of the account the credential is already linked to
      */
-    error CredentialAlreadyUnlinked(bytes credentialId, address existingAccount);
+    error CredentialAlreadyLinked(bytes credentialId, address existingAccount);
 
     /**
      * @notice Error thrown when an unauthorized address attempts an operation
@@ -156,7 +156,7 @@ contract AccountRegistry {
     function createUser(bytes calldata credentialId, Types.PublicKey calldata publicKey) external returns (address accountAddress) {
         // Verify credential isn't already linked to another account
         if (credentialToAccount[credentialId] != address(0)) {
-            revert CredentialAlreadyUnlinked(credentialId, credentialToAccount[credentialId]);
+            revert CredentialAlreadyLinked(credentialId, credentialToAccount[credentialId]);
         }
         
         // Call the factory to deploy a new Account contract
@@ -198,7 +198,7 @@ contract AccountRegistry {
         address linkedAccount = credentialToAccount[credentialId];
         
         if (linkedAccount != address(0)) {
-            revert CredentialAlreadyUnlinked(credentialId, linkedAccount);
+            revert CredentialAlreadyLinked(credentialId, linkedAccount);
         }
         
         // Create request in the account contract

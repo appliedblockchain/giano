@@ -235,7 +235,7 @@ describe('Account Contract', function () {
             adminKeyPair.publicKey,
             2, // Role.ADMIN = 2
           ),
-        ).to.be.revertedWithCustomError(accountRegistry, 'CredentialAlreadyUnlinked');
+        ).to.be.revertedWithCustomError(accountRegistry, 'CredentialAlreadyLinked');
       });
 
       it('should only allow registry to request keys', async function () {
