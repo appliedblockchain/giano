@@ -6,32 +6,46 @@
 pragma solidity ^0.8.20;
 
 /**
- * @dev Provides a set of functions to operate with Base64 strings.
+ * @title Base64
+ * @author OpenZeppelin (modified by Giano Team)
+ * @notice Provides functions to encode data in Base64 and Base64URL formats
+ * @dev Implementation follows RFC 4648 (https://datatracker.ietf.org/doc/html/rfc4648)
  */
 library Base64 {
     /**
-     * @dev Base64 Encoding/Decoding Table
+     * @dev Base64 Encoding/Decoding Tables
      * See sections 4 and 5 of https://datatracker.ietf.org/doc/html/rfc4648
      */
     string internal constant _TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     string internal constant _TABLE_URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
     /**
-     * @dev Converts a `bytes` to its Bytes64 `string` representation.
+     * @notice Converts bytes data to its standard Base64 string representation
+     * @dev Uses the standard Base64 alphabet with '+' and '/' characters and padding with '='
+     * @param data The bytes data to encode
+     * @return The Base64 encoded string
      */
     function encode(bytes memory data) internal pure returns (string memory) {
         return _encode(data, _TABLE, true);
     }
 
     /**
-     * @dev Converts a `bytes` to its Bytes64Url `string` representation.
+     * @notice Converts bytes data to its URL-safe Base64 string representation
+     * @dev Uses the URL-safe Base64 alphabet with '-' and '_' characters and no padding
+     * @param data The bytes data to encode
+     * @return The Base64URL encoded string
      */
     function encodeURL(bytes memory data) internal pure returns (string memory) {
         return _encode(data, _TABLE_URL, false);
     }
 
     /**
-     * @dev Internal table-agnostic conversion
+     * @notice Internal function that handles both standard and URL-safe Base64 encoding
+     * @dev Efficiently encodes bytes to Base64 using assembly for optimized gas usage
+     * @param data The bytes data to encode
+     * @param table The character table to use for encoding (standard or URL-safe)
+     * @param withPadding Whether to include padding characters ('=') in the output
+     * @return The Base64 encoded string
      */
     function _encode(bytes memory data, string memory table, bool withPadding) private pure returns (string memory) {
         /**

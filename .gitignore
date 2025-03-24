@@ -2,6 +2,7 @@
 !**/.env.sample
 dist/
 node_modules/
+.pnpm-store/
 .idea/
 stats.html
 latest.sql
