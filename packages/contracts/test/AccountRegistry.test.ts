@@ -31,12 +31,13 @@ describe('AccountRegistry Contract', function () {
       expect(userCreatedEvents[0].args.account).to.not.equal(ethers.ZeroAddress);
 
       // Verify account exists in registry
-      const userId = userCreatedEvents[0].args.userId;
-      const user = await accountRegistry.getUser(userId);
-      expect(user.account).to.equal(userCreatedEvents[0].args.account);
+      const accountAddress = userCreatedEvents[0].args.account;
+      const user = await accountRegistry.getUser(accountAddress);
+      expect(user.publicKey.x).to.equal(keypair.publicKey.x);
+      expect(user.publicKey.y).to.equal(keypair.publicKey.y);
     });
 
-    it('should generate a unique user ID', async function () {
+    it('should create unique accounts for different keypairs', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair1 = generateTestKeypair();
       const keypair2 = generateTestKeypair();
@@ -48,18 +49,18 @@ describe('AccountRegistry Contract', function () {
       const tx2 = await accountRegistry.createUser(keypair2.credentialId, keypair2.publicKey);
       const receipt2 = await tx2.wait();
 
-      // Extract user IDs from events
+      // Extract account addresses from events
       const userCreatedEvents1 = extractEvents(receipt1, accountRegistry, 'UserCreated');
       const userCreatedEvents2 = extractEvents(receipt2, accountRegistry, 'UserCreated');
 
       expect(userCreatedEvents1).to.have.length.gt(0);
       expect(userCreatedEvents2).to.have.length.gt(0);
 
-      const userId1 = userCreatedEvents1[0].args.userId;
-      const userId2 = userCreatedEvents2[0].args.userId;
+      const accountAddress1 = userCreatedEvents1[0].args.account;
+      const accountAddress2 = userCreatedEvents2[0].args.account;
 
-      // Verify IDs are unique
-      expect(userId1).to.not.equal(userId2);
+      // Verify addresses are unique
+      expect(accountAddress1).to.not.equal(accountAddress2);
     });
 
     it('should link the initial credential to the account', async function () {
@@ -140,7 +141,7 @@ describe('AccountRegistry Contract', function () {
   });
 
   describe('Account Lookup', function () {
-    it('should retrieve user information by ID', async function () {
+    it('should retrieve user information by account address', async function () {
       const { accountRegistry } = await loadFixture(deployContracts);
       const keypair = generateTestKeypair();
 
@@ -148,34 +149,15 @@ describe('AccountRegistry Contract', function () {
       const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
       const receipt = await tx.wait();
 
-      // Get the user ID from the event
+      // Get the account address from the event
       const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
-      const userId = userCreatedEvents[0].args.userId;
-
-      // Retrieve and check user info
-      const user = await accountRegistry.getUser(userId);
-      expect(user.id).to.equal(userId);
-      expect(user.publicKey.x).to.equal(keypair.publicKey.x);
-      expect(user.publicKey.y).to.equal(keypair.publicKey.y);
-      expect(user.account).to.equal(userCreatedEvents[0].args.account);
-    });
-
-    it('should get user ID by account address', async function () {
-      const { accountRegistry } = await loadFixture(deployContracts);
-      const keypair = generateTestKeypair();
-
-      // Create a user
-      const tx = await accountRegistry.createUser(keypair.credentialId, keypair.publicKey);
-      const receipt = await tx.wait();
-
-      // Get the user ID and account address from the event
-      const userCreatedEvents = extractEvents(receipt, accountRegistry, 'UserCreated');
-      const userId = userCreatedEvents[0].args.userId;
       const accountAddress = userCreatedEvents[0].args.account;
 
-      // Look up by account address
-      const retrievedUserId = await accountRegistry.getUserIdByAccount(accountAddress);
-      expect(retrievedUserId).to.equal(userId);
+      // Retrieve and check user info
+      const user = await accountRegistry.getUser(accountAddress);
+      expect(user.publicKey.x).to.equal(keypair.publicKey.x);
+      expect(user.publicKey.y).to.equal(keypair.publicKey.y);
+      expect(ethers.hexlify(user.credentialId)).to.equal(ethers.hexlify(keypair.credentialId));
     });
 
     it('should revert when looking up a non-existent account', async function () {
@@ -183,7 +165,7 @@ describe('AccountRegistry Contract', function () {
 
       // Attempt to look up a random, non-existent account
       await expect(
-        accountRegistry.getUserIdByAccount(ethers.Wallet.createRandom().address),
+        accountRegistry.getUser(ethers.Wallet.createRandom().address),
       ).to.be.revertedWithCustomError(accountRegistry, 'UserNotFound');
     });
   });
