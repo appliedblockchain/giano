@@ -639,7 +639,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
         Types.Signature memory sig = abi.decode(signature, (Types.Signature));
 
         CredentialInfo memory credentialInfo = credentials[sig.credentialId];
-        if (credentialInfo.role == Role.NONE) {
+        if (!_hasRole(sig.credentialId, Role.EXECUTOR)) {
             return false;
         }
 
