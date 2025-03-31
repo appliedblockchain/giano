@@ -1,12 +1,12 @@
 import { encodeChallenge } from '@appliedblockchain/giano-common';
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
+import type { BytesLike, Indexed } from 'ethers';
 import { ethers } from 'hardhat';
 import type { Account, AccountRegistry } from '../typechain-types';
 import type { PublicKeyCredential } from './helpers/testSetup';
 import { deployContracts, generateTestKeypair } from './helpers/testSetup';
 import { extractEvents, signWebAuthnChallenge } from './utils';
-import { BytesLike, Indexed } from 'ethers';
 
 /**
  * Helper functions for common test operations
@@ -20,7 +20,12 @@ import { BytesLike, Indexed } from 'ethers';
  * @param operationData ABI encoded operation data
  * @returns Signed admin action object
  */
-async function getSignedAdminAction(account: Account, adminKeyPair: PublicKeyCredential, operation: number, operationData: string) {
+async function getSignedAdminAction(
+  account: Account,
+  adminKeyPair: PublicKeyCredential,
+  operation: number,
+  operationData: string,
+) {
   const adminNonce = await account.getAdminNonce();
 
   const adminAction = {
@@ -31,12 +36,18 @@ async function getSignedAdminAction(account: Account, adminKeyPair: PublicKeyCre
   };
 
   const challengeHash = await account.getAdminChallenge(adminAction);
-  adminAction.signature = encodeChallenge(adminKeyPair.credentialId, signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+  adminAction.signature = encodeChallenge(
+    adminKeyPair.credentialId,
+    signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)),
+  );
 
   return adminAction;
 }
 
-async function createAndGetAccount(adminKeyPair: PublicKeyCredential, accountRegistry: AccountRegistry): Promise<Account> {
+async function createAndGetAccount(
+  adminKeyPair: PublicKeyCredential,
+  accountRegistry: AccountRegistry,
+): Promise<Account> {
   const tx = await accountRegistry.createUser(adminKeyPair.credentialId, adminKeyPair.publicKey);
   const receipt = await tx.wait();
 
@@ -58,9 +69,19 @@ async function createAndGetAccount(adminKeyPair: PublicKeyCredential, accountReg
  * @param role Role to assign to the credential
  * @returns The request ID
  */
-async function requestAddCredential(account: Account, accountRegistry: AccountRegistry, credentialToAdd: PublicKeyCredential, role: number): Promise<void> {
+async function requestAddCredential(
+  account: Account,
+  accountRegistry: AccountRegistry,
+  credentialToAdd: PublicKeyCredential,
+  role: number,
+): Promise<void> {
   const accountAddress = await account.getAddress();
-  await accountRegistry.requestAddCredential(credentialToAdd.credentialId, accountAddress, credentialToAdd.publicKey, role);
+  await accountRegistry.requestAddCredential(
+    credentialToAdd.credentialId,
+    accountAddress,
+    credentialToAdd.publicKey,
+    role,
+  );
 }
 
 /**
@@ -69,7 +90,11 @@ async function requestAddCredential(account: Account, accountRegistry: AccountRe
  * @param adminKeyPair Admin keypair to sign with
  * @param credentialId ID of the credential to approve
  */
-async function approveKeyRequest(account: Account, adminKeyPair: PublicKeyCredential, credentialId: BytesLike): Promise<void> {
+async function approveKeyRequest(
+  account: Account,
+  adminKeyPair: PublicKeyCredential,
+  credentialId: BytesLike,
+): Promise<void> {
   const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes'], [credentialId]);
   const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData); // 0 = APPROVE_CREDENTIAL_REQUEST
   await account.approveCredentialRequest(credentialId, adminAction);
@@ -104,7 +129,11 @@ async function getUnpauseAccountAction(account: Account, adminKeyPair: PublicKey
  * @param call The call object to sign
  * @returns Signed call object ready for execution
  */
-async function signCall(account: Account, keypair: PublicKeyCredential, call: { target: string; value: bigint; data: string }) {
+async function signCall(
+  account: Account,
+  keypair: PublicKeyCredential,
+  call: { target: string; value: bigint; data: string },
+) {
   const challengeHash = await account.getChallenge(call);
   const webAuthnSignature = signWebAuthnChallenge(keypair.keyPair.privateKey, ethers.getBytes(challengeHash));
   const signature = encodeChallenge(keypair.credentialId, webAuthnSignature);
@@ -118,7 +147,11 @@ async function signCall(account: Account, keypair: PublicKeyCredential, call: { 
  * @param calls The array of call objects to sign
  * @returns Signed batch call object ready for execution
  */
-async function signBatchCall(account: Account, keypair: PublicKeyCredential, calls: { target: string; value: bigint; data: string }[]) {
+async function signBatchCall(
+  account: Account,
+  keypair: PublicKeyCredential,
+  calls: { target: string; value: bigint; data: string }[],
+) {
   const challengeHash = await account.getBatchChallenge(calls);
   const webAuthnSignature = signWebAuthnChallenge(keypair.keyPair.privateKey, ethers.getBytes(challengeHash));
   const signature = encodeChallenge(keypair.credentialId, webAuthnSignature);
@@ -214,7 +247,8 @@ describe('Account Contract', function () {
         )
           .to.emit(account, 'CredentialRequestCreated')
           .withArgs(
-            (credentialIdIndexed: Indexed) => credentialIdIndexed.hash === ethers.keccak256(executorKeypair.credentialId),
+            (credentialIdIndexed: Indexed) =>
+              credentialIdIndexed.hash === ethers.keccak256(executorKeypair.credentialId),
             (publicKey: any) => {
               return publicKey.x === executorKeypair.publicKey.x && publicKey.y === executorKeypair.publicKey.y;
             },
@@ -368,7 +402,10 @@ describe('Account Contract', function () {
 
         const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData);
 
-        await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction)).to.emit(accountRegistry, 'CredentialLinked');
+        await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction)).to.emit(
+          accountRegistry,
+          'CredentialLinked',
+        );
 
         const [isLinked, linkedAccount] = await accountRegistry.isCredentialLinked(executorKeypair.credentialId);
         expect(isLinked).to.be.true;
@@ -398,10 +435,9 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
         );
 
-        await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidAdminSignature',
-        );
+        await expect(
+          account.approveCredentialRequest(executorKeypair.credentialId, adminAction),
+        ).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
 
       it('should validate operation data matches request ID', async function () {
@@ -428,10 +464,9 @@ describe('Account Contract', function () {
 
         const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData);
 
-        await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidOperationData',
-        );
+        await expect(
+          account.approveCredentialRequest(executorKeypair.credentialId, adminAction),
+        ).to.be.revertedWithCustomError(account, 'InvalidOperationData');
       });
     });
 
@@ -548,10 +583,9 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
         );
 
-        await expect(account.rejectCredentialRequest(executorKeypair.credentialId, adminAction)).to.be.revertedWithCustomError(
-          account,
-          'InvalidAdminSignature',
-        );
+        await expect(
+          account.rejectCredentialRequest(executorKeypair.credentialId, adminAction),
+        ).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
     });
 
@@ -655,7 +689,10 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)),
         );
 
-        await expect(account.removeCredential(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminCredential');
+        await expect(account.removeCredential(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(
+          account,
+          'LastAdminCredential',
+        );
       });
 
       it('should emit CredentialRemoved event', async function () {
@@ -684,7 +721,7 @@ describe('Account Contract', function () {
         await expect(account.removeCredential(executorKeypair.credentialId, removeKeyAction))
           .to.emit(account, 'CredentialRemoved')
           .withArgs((indexed: Indexed) => {
-            return indexed.hash === ethers.keccak256(executorKeypair.credentialId)
+            return indexed.hash === ethers.keccak256(executorKeypair.credentialId);
           });
       });
 
@@ -715,7 +752,10 @@ describe('Account Contract', function () {
 
         const removeKeyAction = await getSignedAdminAction(account, adminKeyPair, 2, removeKeyData);
 
-        await expect(account.removeCredential(executorKeypair.credentialId, removeKeyAction)).to.emit(accountRegistry, 'CredentialUnlinked');
+        await expect(account.removeCredential(executorKeypair.credentialId, removeKeyAction)).to.emit(
+          accountRegistry,
+          'CredentialUnlinked',
+        );
 
         const [isStillLinked, _] = await accountRegistry.isCredentialLinked(executorKeypair.credentialId);
         expect(isStillLinked).to.be.false;
@@ -749,7 +789,9 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.randomBytes(32)),
         );
 
-        await expect(account.removeCredential(executorKeypair.credentialId, removeKeyAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
+        await expect(
+          account.removeCredential(executorKeypair.credentialId, removeKeyAction),
+        ).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
       });
     });
 
@@ -772,7 +814,10 @@ describe('Account Contract', function () {
 
         await account.approveCredentialRequest(executorKeypair.credentialId, adminAction);
 
-        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'uint8'], [executorKeypair.credentialId, 2]); // Role.ADMIN = 2
+        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes', 'uint8'],
+          [executorKeypair.credentialId, 2],
+        ); // Role.ADMIN = 2
         const changeKeyRoleAction = await getSignedAdminAction(account, adminKeyPair, 3, changeKeyRoleData);
 
         await expect(account.changeCredentialRole(executorKeypair.credentialId, 2, changeKeyRoleAction))
@@ -804,7 +849,10 @@ describe('Account Contract', function () {
         let credentialInfo = await account.getCredentialInfo(executorKeypair.credentialId);
         expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
 
-        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'uint8'], [executorKeypair.credentialId, 2]); // Role.ADMIN = 2
+        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes', 'uint8'],
+          [executorKeypair.credentialId, 2],
+        ); // Role.ADMIN = 2
 
         const changeKeyRoleAction = await getSignedAdminAction(account, adminKeyPair, 3, changeKeyRoleData);
 
@@ -855,7 +903,10 @@ describe('Account Contract', function () {
 
         expect(await account.getAdminKeyCount()).to.equal(1);
 
-        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'uint8'], [executorKeypair.credentialId, 2]); // Role.ADMIN = 2
+        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes', 'uint8'],
+          [executorKeypair.credentialId, 2],
+        ); // Role.ADMIN = 2
 
         const changeKeyRoleAction = await getSignedAdminAction(account, adminKeyPair, 3, changeKeyRoleData);
 
@@ -885,7 +936,10 @@ describe('Account Contract', function () {
 
         expect(await account.getAdminKeyCount()).to.equal(2);
 
-        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'uint8'], [executorKeypair.credentialId, 1]); // Role.EXECUTOR = 1
+        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes', 'uint8'],
+          [executorKeypair.credentialId, 1],
+        ); // Role.EXECUTOR = 1
 
         const changeKeyRoleAction = await getSignedAdminAction(account, adminKeyPair, 3, changeKeyRoleData);
 
@@ -917,7 +971,10 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)),
         );
 
-        await expect(account.removeCredential(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminCredential');
+        await expect(account.removeCredential(adminKeyPair.credentialId, adminAction)).to.be.revertedWithCustomError(
+          account,
+          'LastAdminCredential',
+        );
       });
 
       it('should prevent downgrading the last admin credential', async function () {
@@ -946,7 +1003,9 @@ describe('Account Contract', function () {
           signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)),
         );
 
-        await expect(account.changeCredentialRole(adminKeyPair.credentialId, 1, adminAction)).to.be.revertedWithCustomError(account, 'LastAdminCredential');
+        await expect(
+          account.changeCredentialRole(adminKeyPair.credentialId, 1, adminAction),
+        ).to.be.revertedWithCustomError(account, 'LastAdminCredential');
       });
 
       it('should emit CredentialRoleChanged event', async function () {
@@ -967,7 +1026,10 @@ describe('Account Contract', function () {
 
         await account.approveCredentialRequest(executorKeypair.credentialId, adminAction);
 
-        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'uint8'], [executorKeypair.credentialId, 2]); // Role.ADMIN = 2
+        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes', 'uint8'],
+          [executorKeypair.credentialId, 2],
+        ); // Role.ADMIN = 2
         const changeKeyRoleAction = await getSignedAdminAction(account, adminKeyPair, 3, changeKeyRoleData);
 
         await expect(account.changeCredentialRole(executorKeypair.credentialId, 2, changeKeyRoleAction))
@@ -996,7 +1058,10 @@ describe('Account Contract', function () {
 
         await account.approveCredentialRequest(executorKeypair.credentialId, adminAction);
 
-        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes', 'uint8'], [executorKeypair.credentialId, 1]); // Role.EXECUTOR = 1 (incorrect)
+        const changeKeyRoleData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['bytes', 'uint8'],
+          [executorKeypair.credentialId, 1],
+        ); // Role.EXECUTOR = 1 (incorrect)
 
         const changeKeyRoleAction = await getSignedAdminAction(account, adminKeyPair, 3, changeKeyRoleData);
 
@@ -1044,7 +1109,10 @@ describe('Account Contract', function () {
         const webAuthnSignature = signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(userKeypair.credentialId, webAuthnSignature);
 
-        await expect(account.execute({ call, signature })).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
+        await expect(account.execute({ call, signature })).to.be.revertedWithCustomError(
+          account,
+          'InvalidExecutorSignature',
+        );
       });
 
       it('should increment nonce after successful execution', async function () {
@@ -1062,7 +1130,10 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         await account.execute({ call, signature });
@@ -1083,7 +1154,10 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         await expect(account.execute({ call, signature }))
@@ -1110,7 +1184,10 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         await account.execute({ call, signature });
@@ -1132,7 +1209,10 @@ describe('Account Contract', function () {
         };
 
         const challengeHash = await account.getChallenge(call);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         await expect(account.execute({ call, signature })).to.be.revertedWith(errorMessage);
@@ -1157,12 +1237,62 @@ describe('Account Contract', function () {
         };
 
         const txChallengeHash = await account.getChallenge(call);
-        const txWebAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+        const txWebAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(txChallengeHash),
+        );
         const txSignature = encodeChallenge(adminKeyPair.credentialId, txWebAuthnSignature);
 
         await expect(account.execute({ call, signature: txSignature }))
           .to.be.revertedWithCustomError(account, 'AccountIsPaused')
           .withArgs(pauseUntil);
+      });
+
+      it('should prevent execution by pending credentials', async function () {
+        const { accountRegistry, adminKeyPair, testContract } = await loadFixture(deployContracts);
+
+        // Create account with admin
+        const account = await createAndGetAccount(adminKeyPair, accountRegistry);
+
+        // Generate a new keypair for a credential that will remain in pending state
+        const pendingKeypair = generateTestKeypair();
+
+        // Request to add the credential but don't approve it
+        await accountRegistry.requestAddCredential(
+          pendingKeypair.credentialId,
+          account.target,
+          pendingKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Verify the credential is in pending state
+        const credentialInfo = await account.getCredentialInfo(pendingKeypair.credentialId);
+        expect(credentialInfo.pending).to.be.true;
+        expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
+
+        // Try to execute a transaction with the pending credential
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const call = {
+          target: await testContract.getAddress(),
+          value: 0n,
+          data: callData,
+        };
+
+        const challengeHash = await account.getChallenge(call);
+        const webAuthnSignature = signWebAuthnChallenge(
+          pendingKeypair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
+        const signature = encodeChallenge(pendingKeypair.credentialId, webAuthnSignature);
+
+        // Execution should fail because the credential is pending
+        await expect(account.execute({ call, signature })).to.be.revertedWithCustomError(
+          account,
+          'InvalidExecutorSignature',
+        );
+
+        // Verify the transaction did not execute
+        expect(await testContract.value()).to.equal(0);
       });
     });
 
@@ -1227,10 +1357,16 @@ describe('Account Contract', function () {
         ];
 
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
-        await expect(account.executeBatch({ calls: modifiedCalls, signature })).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
+        await expect(account.executeBatch({ calls: modifiedCalls, signature })).to.be.revertedWithCustomError(
+          account,
+          'InvalidExecutorSignature',
+        );
       });
 
       it('should reject with invalid signature', async function () {
@@ -1255,7 +1391,10 @@ describe('Account Contract', function () {
         const webAuthnSignature = signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash));
         const signature = encodeChallenge(userKeypair.credentialId, webAuthnSignature);
 
-        await expect(account.executeBatch({ calls, signature })).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
+        await expect(account.executeBatch({ calls, signature })).to.be.revertedWithCustomError(
+          account,
+          'InvalidExecutorSignature',
+        );
       });
 
       it('should increment nonce only once for the batch', async function () {
@@ -1284,7 +1423,10 @@ describe('Account Contract', function () {
         ];
 
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         await account.executeBatch({ calls, signature });
@@ -1311,7 +1453,10 @@ describe('Account Contract', function () {
         ];
 
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         const tx = await account.executeBatch({ calls, signature });
@@ -1329,7 +1474,10 @@ describe('Account Contract', function () {
               return null;
             }
           })
-          .filter((event): event is NonNullable<ReturnType<typeof account.interface.parseLog>> => event !== null && event.name === 'Executed');
+          .filter(
+            (event): event is NonNullable<ReturnType<typeof account.interface.parseLog>> =>
+              event !== null && event.name === 'Executed',
+          );
 
         expect(executedEvents.length).to.equal(1);
         const executedEvent = executedEvents[0];
@@ -1365,7 +1513,10 @@ describe('Account Contract', function () {
         ];
 
         const challengeHash = await account.getBatchChallenge(calls);
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(challengeHash),
+        );
         const signature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
         await expect(account.executeBatch({ calls, signature })).to.be.revertedWith('Intentional failure');
@@ -1406,6 +1557,53 @@ describe('Account Contract', function () {
         await expect(account.executeBatch({ calls, signature: batchSignature }))
           .to.be.revertedWithCustomError(account, 'AccountIsPaused')
           .withArgs(pauseUntil);
+      });
+
+      it('should prevent batch execution by pending credentials', async function () {
+        const { accountRegistry, adminKeyPair, testContract } = await loadFixture(deployContracts);
+
+        // Create account with admin
+        const account = await createAndGetAccount(adminKeyPair, accountRegistry);
+
+        // Generate a new keypair for a credential that will remain in pending state
+        const pendingKeypair = generateTestKeypair();
+
+        // Request to add the credential but don't approve it
+        await accountRegistry.requestAddCredential(
+          pendingKeypair.credentialId,
+          account.target,
+          pendingKeypair.publicKey,
+          1, // Role.EXECUTOR = 1
+        );
+
+        // Verify the credential is in pending state
+        const credentialInfo = await account.getCredentialInfo(pendingKeypair.credentialId);
+        expect(credentialInfo.pending).to.be.true;
+        expect(credentialInfo.role).to.equal(1); // Role.EXECUTOR = 1
+
+        // Try to execute a batch transaction
+        const callData = testContract.interface.encodeFunctionData('setValue', [42]);
+        const batchCalls = [
+          {
+            target: await testContract.getAddress(),
+            value: 0n,
+            data: callData,
+          },
+        ];
+
+        const batchChallengeHash = await account.getBatchChallenge(batchCalls);
+        const batchSignature = encodeChallenge(
+          pendingKeypair.credentialId,
+          signWebAuthnChallenge(pendingKeypair.keyPair.privateKey, ethers.getBytes(batchChallengeHash)),
+        );
+
+        // Batch execution should also fail
+        await expect(
+          account.executeBatch({ calls: batchCalls, signature: batchSignature }),
+        ).to.be.revertedWithCustomError(account, 'InvalidExecutorSignature');
+
+        // Verify the transaction did not execute
+        expect(await testContract.value()).to.equal(0);
       });
     });
   });
@@ -1458,7 +1656,7 @@ describe('Account Contract', function () {
       const newAdminNonce = await account.getAdminNonce();
       expect(newAdminNonce).to.equal(1);
 
-      const credentialId2 = ethers.randomBytes(32)
+      const credentialId2 = ethers.randomBytes(32);
       await accountRegistry.requestAddCredential(
         credentialId2,
         accountAddress,
@@ -1485,7 +1683,9 @@ describe('Account Contract', function () {
       const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes'], [executorKeypair.credentialId]);
       const adminAction = await getSignedAdminAction(account, adminKeyPair, 0, operationData);
 
-      await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction)).to.emit(account, 'AdminActionExecuted').withArgs(0, adminNonce); // AdminOperation.APPROVE_CREDENTIAL_REQUEST = 0
+      await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction))
+        .to.emit(account, 'AdminActionExecuted')
+        .withArgs(0, adminNonce); // AdminOperation.APPROVE_CREDENTIAL_REQUEST = 0
     });
 
     it('should reject operations with invalid signature', async function () {
@@ -1504,7 +1704,9 @@ describe('Account Contract', function () {
         signWebAuthnChallenge(userKeypair.keyPair.privateKey, ethers.getBytes(challengeHash)),
       );
 
-      await expect(account.approveCredentialRequest(executorKeypair.credentialId, adminAction)).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
+      await expect(
+        account.approveCredentialRequest(executorKeypair.credentialId, adminAction),
+      ).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
     });
 
     it('should increment admin nonce after admin operations', async function () {
@@ -1588,6 +1790,60 @@ describe('Account Contract', function () {
         .to.be.revertedWithCustomError(account, 'InvalidOperation')
         .withArgs(0, 1); // Expected APPROVE_CREDENTIAL_REQUEST=0, got REJECT_CREDENTIAL_REQUEST=1
     });
+
+    it('should prevent admin operations by pending credentials', async function () {
+      const { accountRegistry, adminKeyPair } = await loadFixture(deployContracts);
+
+      // Create account with admin
+      const account = await createAndGetAccount(adminKeyPair, accountRegistry);
+
+      // Generate a new keypair for a credential that will remain in pending state
+      const pendingKeypair = generateTestKeypair();
+
+      // Request to add the credential but don't approve it - give it ADMIN role
+      await accountRegistry.requestAddCredential(
+        pendingKeypair.credentialId,
+        account.target,
+        pendingKeypair.publicKey,
+        2, // Role.ADMIN = 2
+      );
+
+      // Verify the credential is in pending state
+      const credentialInfo = await account.getCredentialInfo(pendingKeypair.credentialId);
+      expect(credentialInfo.pending).to.be.true;
+      expect(credentialInfo.role).to.equal(2); // Role.ADMIN = 2
+
+      // Create a credential request for another user that the pending admin would try to approve
+      const anotherKeypair = generateTestKeypair();
+      await accountRegistry.requestAddCredential(
+        anotherKeypair.credentialId,
+        account.target,
+        anotherKeypair.publicKey,
+        1, // Role.EXECUTOR = 1
+      );
+
+      // Try to approve it with the pending credential (which has admin role in pending state)
+      const adminNonce = await account.getAdminNonce();
+      const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['bytes'], [anotherKeypair.credentialId]);
+
+      const adminAction = {
+        operation: 0, // AdminOperation.APPROVE_CREDENTIAL_REQUEST = 0
+        operationData,
+        nonce: Number(adminNonce),
+        signature: '0x',
+      };
+
+      const adminChallengeHash = await account.getAdminChallenge(adminAction);
+      adminAction.signature = encodeChallenge(
+        pendingKeypair.credentialId,
+        signWebAuthnChallenge(pendingKeypair.keyPair.privateKey, ethers.getBytes(adminChallengeHash)),
+      );
+
+      // The admin operation should fail
+      await expect(
+        account.approveCredentialRequest(anotherKeypair.credentialId, adminAction),
+      ).to.be.revertedWithCustomError(account, 'InvalidAdminSignature');
+    });
   });
 
   describe('Pause Functionality', function () {
@@ -1629,7 +1885,9 @@ describe('Account Contract', function () {
         signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)),
       );
 
-      await expect(account.pauseAccount(pauseUntil, adminAction)).to.emit(account, 'AccountPaused').withArgs(pauseUntil);
+      await expect(account.pauseAccount(pauseUntil, adminAction))
+        .to.emit(account, 'AccountPaused')
+        .withArgs(pauseUntil);
     });
 
     it('should prevent transaction execution while paused', async function () {
@@ -1664,7 +1922,10 @@ describe('Account Contract', function () {
       };
 
       const txChallengeHash = await account.getChallenge(call);
-      const txWebAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+      const txWebAuthnSignature = signWebAuthnChallenge(
+        adminKeyPair.keyPair.privateKey,
+        ethers.getBytes(txChallengeHash),
+      );
       const txSignature = encodeChallenge(adminKeyPair.credentialId, txWebAuthnSignature);
 
       await expect(account.execute({ call, signature: txSignature }))
@@ -1672,7 +1933,10 @@ describe('Account Contract', function () {
         .withArgs(pauseUntil);
 
       const batchChallengeHash = await account.getBatchChallenge([call]);
-      const batchWebAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(batchChallengeHash));
+      const batchWebAuthnSignature = signWebAuthnChallenge(
+        adminKeyPair.keyPair.privateKey,
+        ethers.getBytes(batchChallengeHash),
+      );
       const batchSignature = encodeChallenge(adminKeyPair.credentialId, batchWebAuthnSignature);
 
       await expect(account.executeBatch({ calls: [call], signature: batchSignature }))
@@ -1715,7 +1979,10 @@ describe('Account Contract', function () {
       };
 
       const txChallengeHash = await account.getChallenge(call);
-      const txWebAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+      const txWebAuthnSignature = signWebAuthnChallenge(
+        adminKeyPair.keyPair.privateKey,
+        ethers.getBytes(txChallengeHash),
+      );
       const txSignature = encodeChallenge(adminKeyPair.credentialId, txWebAuthnSignature);
 
       await expect(account.execute({ call, signature: txSignature }))
@@ -1839,7 +2106,10 @@ describe('Account Contract', function () {
       };
 
       const txChallengeHash = await account.getChallenge(call);
-      const txWebAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(txChallengeHash));
+      const txWebAuthnSignature = signWebAuthnChallenge(
+        adminKeyPair.keyPair.privateKey,
+        ethers.getBytes(txChallengeHash),
+      );
       const txSignature = encodeChallenge(adminKeyPair.credentialId, txWebAuthnSignature);
 
       await account.execute({ call, signature: txSignature });
@@ -1923,7 +2193,10 @@ describe('Account Contract', function () {
       it('should return the magic value for a valid executor signature', async function () {
         const messageHash = ethers.keccak256(ethers.toUtf8Bytes('Hello from executor!'));
 
-        const webAuthnSignature = signWebAuthnChallenge(executorKeypair.keyPair.privateKey, ethers.getBytes(messageHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          executorKeypair.keyPair.privateKey,
+          ethers.getBytes(messageHash),
+        );
 
         const encodedSignature = encodeChallenge(executorKeypair.credentialId, webAuthnSignature);
 
@@ -1937,7 +2210,10 @@ describe('Account Contract', function () {
 
         const differentMessageHash = ethers.keccak256(ethers.toUtf8Bytes('Different message!'));
 
-        const webAuthnSignature = signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(differentMessageHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          adminKeyPair.keyPair.privateKey,
+          ethers.getBytes(differentMessageHash),
+        );
 
         const encodedSignature = encodeChallenge(adminKeyPair.credentialId, webAuthnSignature);
 
@@ -1949,7 +2225,10 @@ describe('Account Contract', function () {
       it('should not return the magic value for a signature from unauthorized credential', async function () {
         const messageHash = ethers.keccak256(ethers.toUtf8Bytes('Hello, ERC1271!'));
 
-        const webAuthnSignature = signWebAuthnChallenge(nonAuthorizedKeypair.keyPair.privateKey, ethers.getBytes(messageHash));
+        const webAuthnSignature = signWebAuthnChallenge(
+          nonAuthorizedKeypair.keyPair.privateKey,
+          ethers.getBytes(messageHash),
+        );
 
         const encodedSignature = encodeChallenge(nonAuthorizedKeypair.credentialId, webAuthnSignature);
 
@@ -2064,11 +2343,19 @@ describe('Account Contract', function () {
       ];
 
       const callHashes = calls.map((call) =>
-        ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'bytes'], [call.target, call.value, call.data])),
+        ethers.keccak256(
+          ethers.AbiCoder.defaultAbiCoder().encode(
+            ['address', 'uint256', 'bytes'],
+            [call.target, call.value, call.data],
+          ),
+        ),
       );
 
       const expectedHash = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'bytes32[]'], [account.target, calls[0].nonce, callHashes]),
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['address', 'uint256', 'bytes32[]'],
+          [account.target, calls[0].nonce, callHashes],
+        ),
       );
 
       const challengeHash = await account.getBatchChallenge(calls);
@@ -2078,7 +2365,10 @@ describe('Account Contract', function () {
 
     it('should calculate admin challenge hash correctly', async function () {
       const adminNonce = await account.getAdminNonce();
-      const operationData = ethers.AbiCoder.defaultAbiCoder().encode(['tuple(bytes32 x, bytes32 y)'], [[userKeypair.publicKey.x, userKeypair.publicKey.y]]);
+      const operationData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['tuple(bytes32 x, bytes32 y)'],
+        [[userKeypair.publicKey.x, userKeypair.publicKey.y]],
+      );
 
       const adminAction = {
         operation: 0, // AdminOperation.APPROVE_CREDENTIAL_REQUEST
@@ -2088,7 +2378,10 @@ describe('Account Contract', function () {
       };
 
       const expectedHash = ethers.keccak256(
-        ethers.solidityPacked(['address', 'uint8', 'bytes', 'uint256'], [account.target, adminAction.operation, adminAction.operationData, adminAction.nonce]),
+        ethers.solidityPacked(
+          ['address', 'uint8', 'bytes', 'uint256'],
+          [account.target, adminAction.operation, adminAction.operationData, adminAction.nonce],
+        ),
       );
 
       const challengeHash = await account.getAdminChallenge(adminAction);
@@ -2122,8 +2415,11 @@ describe('Account Contract', function () {
         signature: '0x',
       };
 
-      const challengeHash = await account.getAdminChallenge(adminAction)
-      adminAction.signature = encodeChallenge(adminKeyPair.credentialId, signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)));
+      const challengeHash = await account.getAdminChallenge(adminAction);
+      adminAction.signature = encodeChallenge(
+        adminKeyPair.credentialId,
+        signWebAuthnChallenge(adminKeyPair.keyPair.privateKey, ethers.getBytes(challengeHash)),
+      );
 
       await account.approveCredentialRequest(userKeypair.credentialId, adminAction);
 
