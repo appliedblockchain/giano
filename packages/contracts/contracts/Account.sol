@@ -4,10 +4,9 @@ pragma solidity ^0.8.23;
 import {WebAuthn} from './WebAuthn.sol';
 import {ReentrancyGuard} from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 import {IERC1271} from '@openzeppelin/contracts/interfaces/IERC1271.sol';
-import {IERC721Receiver} from '@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol';
-import {IERC1155Receiver} from '@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol';
 import {Types} from './Types.sol';
 import {AccountRegistry} from './AccountRegistry.sol';
+import {TokenReceiver} from './TokenReceiver.sol';
 
 /**
  * @title Account
@@ -15,10 +14,7 @@ import {AccountRegistry} from './AccountRegistry.sol';
  * @notice A smart wallet implementation that allows execution of arbitrary functions with multiple signers having different roles
  * @dev This contract implements WebAuthn signature verification and supports multiple credentials with different permissions
  */
-contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver {
-    // bytes4(keccak256("isValidSignature(bytes32,bytes)")
-    bytes4 internal constant ERC1271_MAGICVALUE = 0x1626ba7e;
-
+contract Account is ReentrancyGuard, TokenReceiver, IERC1271 {
     /**
      * @notice Error thrown when signature validation fails
      * @param reason Human-readable reason for the failure
@@ -405,12 +401,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
             revert CredentialAlreadyExists(credentialId);
         }
 
-        credentials[credentialId] = CredentialInfo({
-            credentialId: credentialId,
-            publicKey: publicKey,
-            role: role,
-            pending: true
-        });
+        credentials[credentialId] = CredentialInfo({credentialId: credentialId, publicKey: publicKey, role: role, pending: true});
 
         emit CredentialRequestCreated(credentialId, publicKey, role);
     }
@@ -421,7 +412,10 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param credentialId The ID of the credential to approve
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function approveCredentialRequest(bytes calldata credentialId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.APPROVE_CREDENTIAL_REQUEST, adminAction) {
+    function approveCredentialRequest(
+        bytes calldata credentialId,
+        AdminAction memory adminAction
+    ) external onlyAdmin(AdminOperation.APPROVE_CREDENTIAL_REQUEST, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(credentialId))) {
             revert InvalidOperationData();
         }
@@ -449,7 +443,10 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @param credentialId The ID of the credential to reject
      * @param adminAction The admin action details with operation data, nonce and signature
      */
-    function rejectCredentialRequest(bytes calldata credentialId, AdminAction memory adminAction) external onlyAdmin(AdminOperation.REJECT_CREDENTIAL_REQUEST, adminAction) {
+    function rejectCredentialRequest(
+        bytes calldata credentialId,
+        AdminAction memory adminAction
+    ) external onlyAdmin(AdminOperation.REJECT_CREDENTIAL_REQUEST, adminAction) {
         if (keccak256(adminAction.operationData) != keccak256(abi.encode(credentialId))) {
             revert InvalidOperationData();
         }
@@ -623,8 +620,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
                 responseTypeLocation: sig.responseTypeLocation,
                 r: sig.r,
                 s: sig.s,
-                x: uint256(credentialInfo.publicKey.x),
-                y: uint256(credentialInfo.publicKey.y)
+                x: credentialInfo.publicKey.x,
+                y: credentialInfo.publicKey.y
             });
     }
 
@@ -653,8 +650,8 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
                 responseTypeLocation: sig.responseTypeLocation,
                 r: sig.r,
                 s: sig.s,
-                x: uint256(credentialInfo.publicKey.x),
-                y: uint256(credentialInfo.publicKey.y)
+                x: credentialInfo.publicKey.x,
+                y: credentialInfo.publicKey.y
             });
     }
 
@@ -666,48 +663,7 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
      * @return magicValue The magic value if the signature is valid, or 0xffffffff if invalid
      */
     function isValidSignature(bytes32 messageHash, bytes calldata signature) public view override returns (bytes4 magicValue) {
-        if (_validateSignature(bytes.concat(messageHash), signature)) {
-            return ERC1271_MAGICVALUE;
-        }
-        return 0xffffffff;
-    }
-
-    /**
-     * @notice Handles the receipt of an ERC721 token
-     * @dev Implements IERC721Receiver interface
-     * @return The ERC721Receiver selector
-     */
-    function onERC721Received(address, address, uint256, bytes calldata) external pure override returns (bytes4) {
-        return IERC721Receiver.onERC721Received.selector;
-    }
-
-    /**
-     * @notice Handles the receipt of a single ERC1155 token
-     * @dev Implements IERC1155Receiver interface
-     * @return The ERC1155Receiver selector
-     */
-    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure override returns (bytes4) {
-        return IERC1155Receiver.onERC1155Received.selector;
-    }
-
-    /**
-     * @notice Handles the receipt of multiple ERC1155 tokens
-     * @dev Implements IERC1155Receiver interface
-     * @return The ERC1155BatchReceived selector
-     */
-    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata) external pure override returns (bytes4) {
-        return IERC1155Receiver.onERC1155BatchReceived.selector;
-    }
-
-    /**
-     * @notice Indicates which interfaces this contract supports
-     * @dev Implements the ERC-165 standard
-     * @param interfaceId The interface identifier to check
-     * @return Boolean indicating whether the interface is supported
-     */
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return
-            interfaceId == type(IERC1155Receiver).interfaceId || interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1271).interfaceId;
+        return _validateSignature(bytes.concat(messageHash), signature) ? this.isValidSignature.selector : bytes4(0xffffffff);
     }
 
     /**
@@ -742,5 +698,9 @@ contract Account is ReentrancyGuard, IERC1271, IERC721Receiver, IERC1155Receiver
     function unpauseAccount(AdminAction memory adminAction) external onlyAdmin(AdminOperation.UNPAUSE_ACCOUNT, adminAction) {
         pausedUntil = 0;
         emit AccountUnpaused();
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view virtual override(TokenReceiver) returns (bool) {
+        return super.supportsInterface(interfaceId) || interfaceId == type(IERC1271).interfaceId;
     }
 }

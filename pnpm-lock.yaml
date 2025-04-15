@@ -73,8 +73,8 @@ importers:
         specifier: ^0.15.1
         version: 0.15.7
       '@openzeppelin/contracts':
-        specifier: ^5.0.2
-        version: 5.1.0
+        specifier: ^5.3.0
+        version: 5.3.0
       '@peculiar/asn1-ecc':
         specifier: ^2.3.14
         version: 2.3.14
@@ -113,6 +113,87 @@ importers:
         version: 3.1.0(chai@4.5.0)(hardhat@2.22.14)
       mocha:
         specifier: ^10.7.3
+        version: 10.7.3
+      solidity-coverage:
+        specifier: ^0.8.5
+        version: 0.8.13(hardhat@2.22.14)
+      ts-node:
+        specifier: ^10.9.1
+        version: 10.9.2(@types/node@20.17.0)(typescript@5.6.3)
+      typechain:
+        specifier: ^8.3.2
+        version: 8.3.2(typescript@5.6.3)
+
+  packages/contracts_1.0.1:
+    devDependencies:
+      '@appliedblockchain/giano-common':
+        specifier: 'workspace:'
+        version: link:../common
+      '@nomicfoundation/hardhat-chai-matchers':
+        specifier: ^2.0.2
+        version: 2.0.8(@nomicfoundation/hardhat-ethers@3.0.8)(chai@4.5.0)(ethers@6.13.4)(hardhat@2.22.14)
+      '@nomicfoundation/hardhat-ethers':
+        specifier: ^3.0.5
+        version: 3.0.8(ethers@6.13.4)(hardhat@2.22.14)
+      '@nomicfoundation/hardhat-ignition':
+        specifier: ^0.15.7
+        version: 0.15.7(@nomicfoundation/hardhat-verify@2.0.11)(hardhat@2.22.14)
+      '@nomicfoundation/hardhat-ignition-ethers':
+        specifier: ^0.15.7
+        version: 0.15.7(@nomicfoundation/hardhat-ethers@3.0.8)(@nomicfoundation/hardhat-ignition@0.15.7)(@nomicfoundation/ignition-core@0.15.7)(ethers@6.13.4)(hardhat@2.22.14)
+      '@nomicfoundation/hardhat-network-helpers':
+        specifier: ^1.0.9
+        version: 1.0.12(hardhat@2.22.14)
+      '@nomicfoundation/hardhat-toolbox':
+        specifier: ^5.0.0
+        version: 5.0.0(@nomicfoundation/hardhat-chai-matchers@2.0.8)(@nomicfoundation/hardhat-ethers@3.0.8)(@nomicfoundation/hardhat-ignition-ethers@0.15.7)(@nomicfoundation/hardhat-network-helpers@1.0.12)(@nomicfoundation/hardhat-verify@2.0.11)(@typechain/ethers-v6@0.5.1)(@typechain/hardhat@9.1.0)(@types/chai@4.3.20)(@types/mocha@10.0.9)(@types/node@20.17.0)(chai@4.5.0)(ethers@6.13.4)(hardhat-gas-reporter@1.0.10)(hardhat@2.22.14)(solidity-coverage@0.8.13)(ts-node@10.9.2)(typechain@8.3.2)(typescript@5.6.3)
+      '@nomicfoundation/hardhat-verify':
+        specifier: ^2.0.6
+        version: 2.0.11(hardhat@2.22.14)
+      '@nomicfoundation/ignition-core':
+        specifier: ^0.15.1
+        version: 0.15.7
+      '@openzeppelin/contracts':
+        specifier: ^5.0.2
+        version: 5.3.0
+      '@peculiar/asn1-ecc':
+        specifier: ^2.3.14
+        version: 2.3.14
+      '@peculiar/asn1-schema':
+        specifier: ^2.3.13
+        version: 2.3.13
+      '@typechain/ethers-v6':
+        specifier: ^0.5.1
+        version: 0.5.1(ethers@6.13.4)(typechain@8.3.2)(typescript@5.6.3)
+      '@typechain/hardhat':
+        specifier: ^9.1.0
+        version: 9.1.0(@typechain/ethers-v6@0.5.1)(ethers@6.13.4)(hardhat@2.22.14)(typechain@8.3.2)
+      '@types/chai':
+        specifier: ^4.3.11
+        version: 4.3.20
+      '@types/mocha':
+        specifier: ^10.0.6
+        version: 10.0.9
+      chai:
+        specifier: ^4.3.10
+        version: 4.5.0
+      eslint-config-xs:
+        specifier: ^2.6.3
+        version: 2.6.10(@types/eslint@8.56.12)(ts-node@10.9.2)
+      ethers:
+        specifier: ^6.12.0
+        version: 6.13.4
+      hardhat:
+        specifier: ^2.22.14
+        version: 2.22.14(ts-node@10.9.2)(typescript@5.6.3)
+      hardhat-gas-reporter:
+        specifier: ^1.0.9
+        version: 1.0.10(hardhat@2.22.14)
+      hardhat-tracer:
+        specifier: ^3.1.0
+        version: 3.1.0(chai@4.5.0)(hardhat@2.22.14)
+      mocha:
+        specifier: ^10.2.0
         version: 10.7.3
       solidity-coverage:
         specifier: ^0.8.5
@@ -2258,8 +2339,8 @@ packages:
       '@nomicfoundation/solidity-analyzer-win32-x64-msvc': 0.1.2
     dev: true
 
-  /@openzeppelin/contracts@5.1.0:
-    resolution: {integrity: sha512-p1ULhl7BXzjjbha5aqst+QMLY+4/LCWADXOCsmLHRM77AqiPjnd9vvUN9sosUfhL9JGKpZ0TjEGxgvnizmWGSA==}
+  /@openzeppelin/contracts@5.3.0:
+    resolution: {integrity: sha512-zj/KGoW7zxWUE8qOI++rUM18v+VeLTTzKs/DJFkSzHpQFPD/jKKF0TrMxBfGLl3kpdELCNccvB3zmofSzm4nlA==}
     dev: true
 
   /@peculiar/asn1-android@2.3.13:

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {P256} from "./P256.sol";
-import {Base64} from "./Base64.sol";
+import {P256} from "@openzeppelin/contracts/utils/cryptography/P256.sol";
+import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 
 /**
  * @title WebAuthn
@@ -120,10 +120,10 @@ library WebAuthn {
         string memory clientDataJSON,
         uint256 challengeLocation,
         uint256 responseTypeLocation,
-        uint256 r,
-        uint256 s,
-        uint256 x,
-        uint256 y
+        bytes32 r,
+        bytes32 s,
+        bytes32 x,
+        bytes32 y
     ) internal view returns (bool) {
         // Check that authenticatorData has good flags
         if (
@@ -157,7 +157,7 @@ library WebAuthn {
             abi.encodePacked(authenticatorData, clientDataJSONHash)
         );
 
-        // check that the signature is valid while allowing malleability
-        return P256.verifySignatureAllowMalleability(messageHash, r, s, x, y);
+        // check that the signature is valid
+        return P256.verify(messageHash, r, s, x, y);
     }
 }

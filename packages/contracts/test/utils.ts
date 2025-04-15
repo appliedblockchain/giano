@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { ContractTransactionReceipt } from 'ethers';
 
+
 export const createKeypair = () => {
   const keyPair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
   // Export the public key in uncompressed format
