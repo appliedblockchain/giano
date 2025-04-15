@@ -87,4 +87,8 @@ contract SingleKeyAccount is ReentrancyGuard, TokenReceiver, IERC1271 {
     function isValidSignature(bytes32 messageHash, bytes calldata signature) public view override returns (bytes4 magicValue) {
         return _validateSignature(bytes.concat(messageHash), signature) ? this.isValidSignature.selector : bytes4(0xffffffff);
     }
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return super.supportsInterface(interfaceId) || interfaceId == type(IERC1271).interfaceId;
+    }
 }

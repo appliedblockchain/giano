@@ -6,7 +6,7 @@ import { uint8ArrayToUint256 } from './numbers';
 const N = BigInt('0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551')
 const HALF_N = N / 2n;
 
-export function encodeChallenge(credentialId: BytesLike, assertionResponse: AuthenticatorAssertionResponse) {
+export function encodeChallenge(credentialId: BytesLike | null, assertionResponse: AuthenticatorAssertionResponse) {
   const decodedClientDataJson = new TextDecoder().decode(assertionResponse.clientDataJSON);
   const responseTypeLocation = decodedClientDataJson.indexOf('"type":');
   const challengeLocation = decodedClientDataJson.indexOf('"challenge":');
@@ -23,7 +23,7 @@ export function encodeChallenge(credentialId: BytesLike, assertionResponse: Auth
 
   return ethers.AbiCoder.defaultAbiCoder().encode(
     [
-      'tuple(bytes credentialId, bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, bytes32 r, bytes32 s)',
+      `tuple(${credentialId ? 'bytes credentialId, ': ''}bytes authenticatorData, string clientDataJSON, uint256 challengeLocation, uint256 responseTypeLocation, bytes32 r, bytes32 s)`,
     ],
     [
       [
@@ -34,7 +34,7 @@ export function encodeChallenge(credentialId: BytesLike, assertionResponse: Auth
         responseTypeLocation,
         rHex,
         sHex,
-      ],
+      ].filter(v => !!v),
     ],
   );
 }
