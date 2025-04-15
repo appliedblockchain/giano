@@ -12,9 +12,24 @@ A smart wallet implementation that allows you to execute arbitrary functions in 
  */
 contract SingleKeyAccount is ReentrancyGuard, TokenReceiver, IERC1271 {
     error InvalidSignature();
+    error ExpiredStaticSignature(uint256 expiredAt, uint256 currentTimestamp);
+
+    // todo: worth it to make it configurable?
+    uint256 constant private STATIC_CHALLENGE_VALIDITY_SECONDS = 60;
 
     Types.PublicKey private publicKey;
     uint256 private currentNonce = 0;
+
+    struct StaticCall {
+        address target;
+        bytes data;
+        uint256 expiresAt;
+    }
+
+    struct SignedStaticCall {
+        StaticCall call;
+        bytes signature;
+    }
 
     constructor(Types.PublicKey memory _publicKey) {
         publicKey = _publicKey;
@@ -29,6 +44,15 @@ contract SingleKeyAccount is ReentrancyGuard, TokenReceiver, IERC1271 {
     }
 
     /**
+     * Returns a valid challenge for static calls, good for STATIC_CHALLENGE_VALIDITY_SECONDS seconds
+     * @param call The call parameters to generate the challenge against
+     * @return payload The payload to be signed
+     */
+    function getStaticChallenge(StaticCall calldata call) public view returns (bytes32 payload) {
+        payload = keccak256(bytes.concat(bytes20(address(this)), bytes32(call.expiresAt), bytes20(call.target), call.data));
+    }
+
+    /**
      * Returns the x and y coordinates of the public key associated with this contract
      */
     function getPublicKey() public view returns (Types.PublicKey memory) {
@@ -36,9 +60,7 @@ contract SingleKeyAccount is ReentrancyGuard, TokenReceiver, IERC1271 {
     }
 
     modifier validSignature(bytes memory message, bytes calldata signature) {
-        if (!_validateSignature(message, signature)) {
-            revert InvalidSignature();
-        }
+        require(_validateSignature(message, signature), InvalidSignature());
         _;
     }
 
@@ -69,8 +91,9 @@ contract SingleKeyAccount is ReentrancyGuard, TokenReceiver, IERC1271 {
      * @notice The call parameters must be signed with the key associated with this contract
      */
     function staticCall(
-        Types.SignedCall calldata signed
-    ) external view validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) returns (bytes memory) {
+        SignedStaticCall calldata signed
+    ) external view validSignature(bytes.concat(getStaticChallenge(signed.call)), signed.signature) returns (bytes memory) {
+        require(block.timestamp < signed.call.expiresAt, ExpiredStaticSignature(signed.call.expiresAt, block.timestamp));
         (bool success, bytes memory result) = signed.call.target.staticcall(signed.call.data);
         if (!success) {
             assembly {

@@ -177,11 +177,41 @@ describe('SingleKeyAccount Contract', () => {
     });
     it('should execute the static call if the signature is valid', async () => {
       const data = privateERC20.interface.encodeFunctionData('balanceOf', [account.target]);
-      const challenge = await account.getChallenge({ target: privateERC20.target, data, value: 0 });
+      const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! + 60;
+      const challenge = await account.getStaticChallenge({ target: privateERC20.target, data, expiresAt });
       const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
-      const responseBytes = await account.staticCall({ call: { target: privateERC20.target, data, value: 0 }, signature });
-      const balance = ethers.AbiCoder.defaultAbiCoder().decode(['uint256'], responseBytes)
-      expect(balance.toString()).to.eq(ethers.parseEther('123').toString())
+      const responseBytes = await account.staticCall({ call: { target: privateERC20.target, data, expiresAt }, signature });
+      const balance = ethers.AbiCoder.defaultAbiCoder().decode(['uint256'], responseBytes);
+      expect(balance.toString()).to.eq(ethers.parseEther('123').toString());
+    });
+    it('should revert if the signature is valid but expired', async () => {
+      const data = privateERC20.interface.encodeFunctionData('balanceOf', [account.target]);
+      const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! - 60;
+      const challenge = await account.getStaticChallenge({ target: privateERC20.target, data, expiresAt });
+      const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
+      await expect(account.staticCall({ call: { target: privateERC20.target, data, expiresAt }, signature })).to.be.revertedWithCustomError(
+        account,
+        'ExpiredStaticSignature',
+      );
+    });
+    it('should revert if the passed expiration timestamp does not match the signed one', async () => {
+      const data = privateERC20.interface.encodeFunctionData('balanceOf', [account.target]);
+      const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! - 60;
+      const challenge = await account.getStaticChallenge({ target: privateERC20.target, data, expiresAt });
+      const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
+      await expect(
+        account.staticCall({ call: { target: privateERC20.target, data, expiresAt: expiresAt + 600_000 }, signature }),
+      ).to.be.revertedWithCustomError(account, 'InvalidSignature');
+    });
+    it('should revert if the call data does not match the signed data', async () => {
+      const signedData = privateERC20.interface.encodeFunctionData('balanceOf', [account.target]);
+      const badData = privateERC20.interface.encodeFunctionData('balanceOf', [ethers.Wallet.createRandom().address]);
+      const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! + 60;
+      const challenge = await account.getStaticChallenge({ target: privateERC20.target, data: signedData, expiresAt });
+      const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
+      await expect(
+        account.staticCall({ call: { target: privateERC20.target, data: badData, expiresAt: expiresAt }, signature }),
+      ).to.be.revertedWithCustomError(account, 'InvalidSignature');
     });
   });
   describe('ERC-1271 compliance', () => {
