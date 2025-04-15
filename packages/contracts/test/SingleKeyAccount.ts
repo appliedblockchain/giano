@@ -10,6 +10,7 @@ import TestingModule from '../ignition/modules/Testing';
 describe('SingleKeyAccount Contract', () => {
   let account: SingleKeyAccount;
   let genericERC20: any;
+  let privateERC20: any;
   let signer: any;
   let otherSigner: any;
   let publicKey: any;
@@ -17,14 +18,14 @@ describe('SingleKeyAccount Contract', () => {
 
   const deployFixture = async () => {
     const [signer, otherSigner] = await ethers.getSigners();
-    const { accountFactory } = await ignition.deploy(SingleKeyAccountFactoryModule);
-    const {genericERC20: erc20, genericERC721: erc721} = await ignition.deploy(TestingModule)
+    const { singleKeyAccountFactory } = await ignition.deploy(SingleKeyAccountFactoryModule);
+    const { genericERC20: erc20, genericERC721: erc721, privateERC20 } = await ignition.deploy(TestingModule);
 
-    return { signer, otherSigner, erc20, erc721, accountFactory };
+    return { signer, otherSigner, erc20, erc721, privateERC20, singleKeyAccountFactory };
   };
 
   beforeEach(async () => {
-    ({ signer, otherSigner, erc20: genericERC20 } = await loadFixture(deployFixture));
+    ({ signer, otherSigner, erc20: genericERC20, privateERC20 } = await loadFixture(deployFixture));
 
     // Create keypair and deploy Account
     keypair = createKeypair();
@@ -168,6 +169,19 @@ describe('SingleKeyAccount Contract', () => {
           signature: encodeChallenge(null, signature),
         }),
       ).to.be.revertedWithCustomError(account, 'InvalidSignature');
+    });
+  });
+  describe('staticCall', () => {
+    beforeEach(async () => {
+      privateERC20.mint(account.target, ethers.parseEther('123'));
+    });
+    it('should execute the static call if the signature is valid', async () => {
+      const data = privateERC20.interface.encodeFunctionData('balanceOf', [account.target]);
+      const challenge = await account.getChallenge({ target: privateERC20.target, data, value: 0 });
+      const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
+      const responseBytes = await account.staticCall({ call: { target: privateERC20.target, data, value: 0 }, signature });
+      const balance = ethers.AbiCoder.defaultAbiCoder().decode(['uint256'], responseBytes)
+      expect(balance.toString()).to.eq(ethers.parseEther('123').toString())
     });
   });
   describe('ERC-1271 compliance', () => {

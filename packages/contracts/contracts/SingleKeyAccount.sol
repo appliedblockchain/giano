@@ -63,6 +63,23 @@ contract SingleKeyAccount is ReentrancyGuard, TokenReceiver, IERC1271 {
         currentNonce++;
     }
 
+    /**
+     * Execute an arbitrary static (view) call on a smart contract, optionally sending a value in ETH
+     * @param signed The parameters of the call to be executed
+     * @notice The call parameters must be signed with the key associated with this contract
+     */
+    function staticCall(
+        Types.SignedCall calldata signed
+    ) external view validSignature(bytes.concat(getChallenge(signed.call)), signed.signature) returns (bytes memory) {
+        (bool success, bytes memory result) = signed.call.target.staticcall(signed.call.data);
+        if (!success) {
+            assembly {
+                revert(add(result, 32), mload(result))
+            }
+        }
+        return result;
+    }
+
     function _validateSignature(bytes memory message, bytes calldata signature) private view returns (bool) {
         Types.SingleKeyAccountSignature memory sig = abi.decode(signature, (Types.SingleKeyAccountSignature));
 
