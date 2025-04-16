@@ -1,3 +1,4 @@
+.cursorrules
 **/.env*
 !**/.env.sample
 dist/
