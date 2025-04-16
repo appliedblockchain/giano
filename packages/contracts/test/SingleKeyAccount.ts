@@ -213,6 +213,16 @@ describe('SingleKeyAccount Contract', () => {
         account.staticCall({ call: { target: privateERC20.target, data: badData, expiresAt: expiresAt }, signature }),
       ).to.be.revertedWithCustomError(account, 'InvalidSignature');
     });
+    it('should propagate the revert reason of the target function', async () => {
+      const randomAddress = ethers.Wallet.createRandom().address
+      const data = privateERC20.interface.encodeFunctionData('balanceOf', [randomAddress]);
+      const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! + 60;
+      const challenge = await account.getStaticChallenge({ target: privateERC20.target, data, expiresAt });
+      const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
+      await expect(
+        account.staticCall({ call: { target: privateERC20.target, data, expiresAt }, signature }),
+      ).to.be.revertedWithCustomError(privateERC20, 'Unauthorized');
+    })
   });
   describe('ERC-1271 compliance', () => {
     it('should return the magic value when checking a valid signature', async () => {
