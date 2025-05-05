@@ -33,6 +33,7 @@
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.11",
     "@types/mocha": "^10.0.6",
+    "@wagmi/cli": "^2.2.1",
     "chai": "^4.3.10",
     "eslint-config-xs": "^2.6.3",
     "ethers": "^6.12.0",

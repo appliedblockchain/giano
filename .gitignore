@@ -10,3 +10,4 @@ latest.sql
 .DS_Store
 .yarn/install-state.gz
 .vite/
+packages/contracts/generated.ts
