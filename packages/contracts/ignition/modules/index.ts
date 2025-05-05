@@ -5,7 +5,7 @@ import TestingModule from './Testing';
 
 export default buildModule('All', (m) => {
   const giano = m.useModule(GianoModule);
-  const singleKey = m.useModule(SingleKeyAccountFactoryModule)
+  const singleKey = m.useModule(SingleKeyAccountFactoryModule);
   const testing = m.useModule(TestingModule);
 
   return { ...giano, ...testing, ...singleKey };
