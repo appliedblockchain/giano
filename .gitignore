@@ -1,6 +1,5 @@
 .cursorrules
-**/.env*
-!**/.env.sample
+**/.env
 dist/
 node_modules/
 .pnpm-store/

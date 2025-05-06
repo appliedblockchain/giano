@@ -1,4 +1,4 @@
 artifacts/
 cache/
-ignition/deployments
+ignition/deployments/chain-31337
 typechain-types/

@@ -18,6 +18,8 @@
   "main": "dist/index",
   "devDependencies": {
     "@appliedblockchain/giano-common": "workspace:",
+    "@appliedblockchain/silentdatarollup-core": "1.0.0",
+    "@appliedblockchain/silentdatarollup-hardhat-plugin": "1.0.0",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
     "@nomicfoundation/hardhat-ignition": "^0.15.7",
@@ -35,6 +37,7 @@
     "@types/mocha": "^10.0.6",
     "@wagmi/cli": "^2.2.1",
     "chai": "^4.3.10",
+    "dotenv": "^16.5.0",
     "eslint-config-xs": "^2.6.3",
     "ethers": "^6.12.0",
     "hardhat": "^2.22.14",
