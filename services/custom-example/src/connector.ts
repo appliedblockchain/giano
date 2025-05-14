@@ -53,10 +53,12 @@ const createCredential = async (): Promise<PublicKeyAttestation | null> => {
   })) as PublicKeyAttestation | null;
 };
 
-export function createCustomConnector(details: WalletDetailsParams): CreateConnectorFn {
+export function gianoConnector(details: WalletDetailsParams): CreateConnectorFn {
   let chainId: number | null;
   let account: Address | null;
   const FACTORY_ADDRESS = '0x811BccaEF5AB2dB5857c32D70a2cfd16A45178f4';
+
+  console.log({ details });
 
   return createConnector((config) => ({
     id: 'giano',
@@ -120,6 +122,7 @@ export function createCustomConnector(details: WalletDetailsParams): CreateConne
       };
     },
     disconnect: () => {
+      console.log('disconnect');
       account = null;
       chainId = null;
       return Promise.resolve();
@@ -129,6 +132,7 @@ export function createCustomConnector(details: WalletDetailsParams): CreateConne
       return Promise.resolve(account ? [account] : []);
     },
     getProvider: async () => {
+      console.log('getProvider');
       return Promise.resolve({
         request: () => {
           console.log('request...');
@@ -136,13 +140,22 @@ export function createCustomConnector(details: WalletDetailsParams): CreateConne
       });
     },
     isAuthorized: async () => {
-      return Promise.resolve(!!account);
+      const authorized = Promise.resolve(!!account);
+      console.log('isAuthorized called', authorized);
+      return Promise.resolve(authorized);
+    },
+    setup: async () => {
+      console.log('setup called');
+      return Promise.resolve();
+    },
+    switchChain: async (params) => {
+      console.log('switch chain', params);
+      return Promise.resolve();
     },
     getChainId: async () => {
-      if (!chainId) {
-        throw new Error('Not connected');
-      }
-      return Promise.resolve(chainId);
+      console.log('getChainId', chainId);
+      // throwing an exception here makes rainbowkit fail silently and show your wallet as loading forever
+      return Promise.resolve(-1);
     },
     onAccountsChanged: (accounts: string[]) => {
       console.log('onAccountsChanged called');
