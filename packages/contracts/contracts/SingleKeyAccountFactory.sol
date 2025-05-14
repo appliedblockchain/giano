@@ -7,26 +7,26 @@ import {Create2} from '@openzeppelin/contracts/utils/Create2.sol';
 
 contract SingleKeyAccountFactory {
     struct User {
-        uint256 id;
+        bytes id;
         Types.PublicKey publicKey;
         address account;
     }
 
-    mapping(uint256 => User) private _users;
+    mapping(bytes => User) private _users;
     bytes32 private immutable _factorySalt;
 
-    event UserCreated(uint256 userId, Types.PublicKey publicKey, address account);
-    error UserAlreadyExists(uint256 id);
+    event UserCreated(bytes userId, Types.PublicKey publicKey, address account);
+    error UserAlreadyExists(bytes id);
 
     constructor(bytes32 factorySalt) {
         _factorySalt = factorySalt;
     }
 
-    function getUser(uint256 id) public view returns (User memory) {
+    function getUser(bytes memory id) public view returns (User memory) {
         return _users[id];
     }
 
-    function createUser(uint256 id, Types.PublicKey memory publicKey) public {
+    function createUser(bytes memory id, Types.PublicKey memory publicKey) public {
         if (_users[id].account != address(0)) {
             revert UserAlreadyExists(id);
         }
@@ -42,7 +42,7 @@ contract SingleKeyAccountFactory {
             type(SingleKeyAccount).creationCode,
             abi.encode(publicKey)
         );
-        
+
         return Create2.deploy(0, salt, bytecode);
     }
 
@@ -52,7 +52,7 @@ contract SingleKeyAccountFactory {
             type(SingleKeyAccount).creationCode,
             abi.encode(publicKey)
         );
-        
+
         return Create2.computeAddress(salt, keccak256(bytecode));
     }
 }

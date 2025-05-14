@@ -1,10 +1,11 @@
 import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs';
 import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers';
 import { expect } from 'chai';
+import { keccak256 } from 'ethers';
 import { ethers } from 'hardhat';
 import { createKeypair } from './utils';
 
-describe('AccountFactory', () => {
+describe('SingleKeyAccountFactory', () => {
   const deploy = async () => {
     const [signer] = await ethers.getSigners();
     const accountFactory = await ethers.getContractFactory('SingleKeyAccountFactory', signer);
@@ -15,17 +16,25 @@ describe('AccountFactory', () => {
   };
 
   describe('createUser', () => {
-    it('should emit an UserCreated event', async () => {
+    const userId = new Uint8Array([1, 2, 3]);
+    it('should emit a UserCreated event', async () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      await expect(accountFactoryContract.createUser(123n, { x, y })).to.emit(accountFactoryContract, 'UserCreated').withArgs(123n, [x, y], anyValue);
+      await expect(
+        accountFactoryContract.createUser(userId, {
+          x,
+          y,
+        }),
+      )
+        .to.emit(accountFactoryContract, 'UserCreated')
+        .withArgs(userId, [x, y], anyValue);
     });
     it('should deploy a contract', async () => {
       const { accountFactoryContract } = await loadFixture(deploy);
       const { x, y } = createKeypair();
 
-      const receipt = await (await accountFactoryContract.createUser(123n, { x, y })).wait();
+      const receipt = await (await accountFactoryContract.createUser(userId, { x, y })).wait();
       expect(receipt).to.exist;
       const event = accountFactoryContract.interface.parseLog(receipt!.logs[0]);
       const [, , address] = event!.args;
@@ -36,10 +45,10 @@ describe('AccountFactory', () => {
       const { x, y } = createKeypair();
       const { x: x1, y: y1 } = createKeypair();
 
-      await accountFactoryContract.createUser(123n, { x, y });
-      await expect(accountFactoryContract.createUser(123n, { x: x1, y: y1 }))
+      await accountFactoryContract.createUser(userId, { x, y });
+      await expect(accountFactoryContract.createUser(userId, { x: x1, y: y1 }))
         .to.be.revertedWithCustomError(accountFactoryContract, 'UserAlreadyExists')
-        .withArgs(123n);
+        .withArgs(userId);
     });
   });
 });

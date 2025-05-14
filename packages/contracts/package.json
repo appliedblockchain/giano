@@ -7,19 +7,22 @@
     "hh:build": "pnpm hh:compile && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "hardhat node",
-    "hh:deploy": "hardhat ignition deploy ignition/modules/Giano.ts",
+    "hh:deploy": "hardhat ignition deploy ignition/modules/SingleKeyAccountFactory.ts --strategy create2",
     "hh:compile": "hardhat compile",
-    "hh:clean": "hardhat clean"
+    "hh:clean": "hardhat clean",
+    "hh:wagmi": "wagmi generate"
   },
   "files": [
     "contracts/**/*.sol",
     "dist/**/*"
   ],
+  "packageManager": "pnpm@8.15.6",
   "main": "dist/index",
   "devDependencies": {
     "@appliedblockchain/giano-common": "workspace:",
     "@appliedblockchain/silentdatarollup-core": "1.0.0",
     "@appliedblockchain/silentdatarollup-hardhat-plugin": "1.0.0",
+    "@nomicfoundation/ethereumjs-util": "^9.0.4",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
     "@nomicfoundation/hardhat-ignition": "^0.15.7",

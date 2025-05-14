@@ -3,9 +3,9 @@ import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers';
 import { expect } from 'chai';
 import { ethers, ignition } from 'hardhat';
 import SingleKeyAccountFactoryModule from '../ignition/modules/SingleKeyAccountFactory';
+import TestingModule from '../ignition/modules/Testing';
 import type { SingleKeyAccount } from '../typechain-types';
 import { createKeypair, signWebAuthnChallenge } from './utils';
-import TestingModule from '../ignition/modules/Testing';
 
 describe('SingleKeyAccount Contract', () => {
   let account: SingleKeyAccount;
@@ -173,7 +173,7 @@ describe('SingleKeyAccount Contract', () => {
   });
   describe('staticCall', () => {
     beforeEach(async () => {
-      privateERC20.mint(account.target, ethers.parseEther('123'));
+      await privateERC20.mint(account.target, ethers.parseEther('123'));
     });
     it('should execute the static call if the signature is valid', async () => {
       const data = privateERC20.interface.encodeFunctionData('balanceOf', [account.target]);
@@ -209,20 +209,22 @@ describe('SingleKeyAccount Contract', () => {
       const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! + 60;
       const challenge = await account.getStaticChallenge({ target: privateERC20.target, data: signedData, expiresAt });
       const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
-      await expect(
-        account.staticCall({ call: { target: privateERC20.target, data: badData, expiresAt: expiresAt }, signature }),
-      ).to.be.revertedWithCustomError(account, 'InvalidSignature');
+      await expect(account.staticCall({ call: { target: privateERC20.target, data: badData, expiresAt: expiresAt }, signature })).to.be.revertedWithCustomError(
+        account,
+        'InvalidSignature',
+      );
     });
     it('should propagate the revert reason of the target function', async () => {
-      const randomAddress = ethers.Wallet.createRandom().address
+      const randomAddress = ethers.Wallet.createRandom().address;
       const data = privateERC20.interface.encodeFunctionData('balanceOf', [randomAddress]);
       const expiresAt = (await ethers.provider.getBlock('latest'))?.timestamp! + 60;
       const challenge = await account.getStaticChallenge({ target: privateERC20.target, data, expiresAt });
       const signature = encodeChallenge(null, signWebAuthnChallenge(keypair.keyPair.privateKey, hexToUint8Array(challenge)));
-      await expect(
-        account.staticCall({ call: { target: privateERC20.target, data, expiresAt }, signature }),
-      ).to.be.revertedWithCustomError(privateERC20, 'Unauthorized');
-    })
+      await expect(account.staticCall({ call: { target: privateERC20.target, data, expiresAt }, signature })).to.be.revertedWithCustomError(
+        privateERC20,
+        'Unauthorized',
+      );
+    });
   });
   describe('ERC-1271 compliance', () => {
     it('should return the magic value when checking a valid signature', async () => {
