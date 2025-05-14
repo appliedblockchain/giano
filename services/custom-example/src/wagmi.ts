@@ -9,7 +9,7 @@ const connectors = connectorsForWallets(
   [
     {
       groupName: 'Passkeys',
-      wallets: [giano],
+      wallets: [giano(hardhat.id)],
     },
     { groupName: 'Test', wallets: [metaMaskWallet] },
   ],

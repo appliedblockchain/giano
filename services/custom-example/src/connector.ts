@@ -1,6 +1,7 @@
 import { singleKeyAccountFactoryAbi } from '@appliedblockchain/giano-contracts';
 import type { WalletDetailsParams } from '@rainbow-me/rainbowkit';
 import type { Address } from 'viem';
+import { zeroAddress } from 'viem';
 import { createPublicClient, toHex } from 'viem';
 import { readContract } from 'viem/actions';
 import type { CreateConnectorFn } from 'wagmi';
@@ -8,6 +9,11 @@ import { createConnector } from 'wagmi';
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 type PublicKeyAttestation = PublicKeyCredential & { response: AuthenticatorAttestationResponse };
+
+type CreateGianoConnectorParams = {
+  details: WalletDetailsParams;
+  initialChainId: number;
+};
 
 const getCredential = async (): Promise<PublicKeyAssertion | null> => {
   const challenge = new Uint8Array(32);
@@ -53,10 +59,10 @@ const createCredential = async (): Promise<PublicKeyAttestation | null> => {
   })) as PublicKeyAttestation | null;
 };
 
-export function gianoConnector(details: WalletDetailsParams): CreateConnectorFn {
-  let chainId: number | null;
+export function gianoConnector({ details, initialChainId }: CreateGianoConnectorParams): CreateConnectorFn {
+  let chainId = initialChainId;
   let account: Address | null;
-  const FACTORY_ADDRESS = '0x811BccaEF5AB2dB5857c32D70a2cfd16A45178f4';
+  const FACTORY_ADDRESS = '0x35Df176c6e216003A356159E1edF76A0647C828D';
 
   console.log({ details });
 
@@ -65,61 +71,64 @@ export function gianoConnector(details: WalletDetailsParams): CreateConnectorFn 
     name: 'Giano Connector',
     type: 'custom',
     connect: async (params) => {
-      console.log('dbg');
-      if (!params?.chainId) {
-        console.log({ params });
-        throw new Error('no chain id');
-      }
-      console.log('dbg2');
-      chainId = params.chainId;
-      let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
-      if (!credential) {
-        credential = await createCredential();
+      try {
+        let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
         if (!credential) {
-          throw new Error('Could not obtain credential');
+          credential = await createCredential();
+          if (!credential) {
+            throw new Error('Could not obtain credential');
+          }
         }
-      }
 
-      const chain = config.chains.find((chain) => chain.id === chainId);
-      if (!chain) {
-        throw new Error('Unknown chain');
-      }
-      const transports = config.transports ?? {};
-      const transport = transports[chain.id];
-      if (!transport) {
-        throw new Error('No transport for chain');
-      }
-
-      const factoryContract = Object.freeze({
-        address: FACTORY_ADDRESS,
-        abi: singleKeyAccountFactoryAbi,
-      });
-      const client = createPublicClient({ chain, transport });
-      if (credential.response instanceof AuthenticatorAttestationResponse) {
-        const publicKey = credential.response.getPublicKey();
-        if (!publicKey) {
-          throw new Error('Could not obtain public key');
+        const chain = config.chains.find((chain) => chain.id === chainId);
+        if (!chain) {
+          throw new Error('Unknown chain');
         }
-        const x = new Uint8Array(publicKey.slice(-64, -32));
-        const y = new Uint8Array(publicKey.slice(-32));
-        account = await readContract(client, {
-          ...factoryContract,
+        const transports = config.transports ?? {};
+        const transport = transports[chain.id];
+        if (!transport) {
+          throw new Error('No transport for chain');
+        }
+
+        const factoryContract = Object.freeze({
           address: FACTORY_ADDRESS,
-          functionName: 'getAccountAddress',
-          args: [{ x: toHex(x), y: toHex(y) }],
+          abi: singleKeyAccountFactoryAbi,
         });
-      } else {
-        const user = await readContract(client, {
-          ...factoryContract,
-          functionName: 'getUser',
-          args: [toHex(new Uint8Array(credential.rawId))],
-        });
-        account = user.account;
+        const client = createPublicClient({ chain, transport });
+        if (credential.response instanceof AuthenticatorAttestationResponse) {
+          const publicKey = credential.response.getPublicKey();
+          if (!publicKey) {
+            throw new Error('Could not obtain public key');
+          }
+          const x = new Uint8Array(publicKey.slice(-64, -32));
+          const y = new Uint8Array(publicKey.slice(-32));
+          account = await readContract(client, {
+            ...factoryContract,
+            functionName: 'getAccountAddress',
+            args: [{ x: toHex(x), y: toHex(y) }],
+          });
+        } else {
+          const user = await readContract(client, {
+            ...factoryContract,
+            functionName: 'getUser',
+            args: [toHex(new Uint8Array(credential.rawId))],
+          });
+          if (user.account === zeroAddress) {
+            throw new Error('User not found');
+          }
+          account = user.account;
+        }
+        if (params?.chainId) {
+          chainId = params.chainId;
+        }
+        return {
+          accounts: [account],
+          chainId,
+        };
+      } catch (e) {
+        console.error('connect error', e);
+        throw e;
       }
-      return {
-        accounts: [account],
-        chainId,
-      };
     },
     disconnect: () => {
       console.log('disconnect');
@@ -140,6 +149,7 @@ export function gianoConnector(details: WalletDetailsParams): CreateConnectorFn 
       });
     },
     isAuthorized: async () => {
+      // todo: leverage localStorage to restore connection status?
       const authorized = Promise.resolve(!!account);
       console.log('isAuthorized called', authorized);
       return Promise.resolve(authorized);
@@ -154,8 +164,7 @@ export function gianoConnector(details: WalletDetailsParams): CreateConnectorFn 
     },
     getChainId: async () => {
       console.log('getChainId', chainId);
-      // throwing an exception here makes rainbowkit fail silently and show your wallet as loading forever
-      return Promise.resolve(-1);
+      return chainId;
     },
     onAccountsChanged: (accounts: string[]) => {
       console.log('onAccountsChanged called');

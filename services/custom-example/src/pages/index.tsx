@@ -1,8 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { useAccount, useWriteContract } from 'wagmi';
+import { useAccount, useConnect, useSwitchChain, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
 
 const Home: NextPage = () => {
@@ -23,8 +23,6 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
-
-        <button onClick={sendTx}>Send tx</button>
 
         <h1 className={styles.title}>
           Welcome to <a href="https://www.rainbowkit.com">RainbowKit</a> + <a href="https://wagmi.sh">wagmi</a> + <a href="https://nextjs.org">Next.js!</a>
