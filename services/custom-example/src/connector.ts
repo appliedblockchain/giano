@@ -58,8 +58,6 @@ export function createCustomConnector(details: WalletDetailsParams): CreateConne
   let account: Address | null;
   const FACTORY_ADDRESS = '0x811BccaEF5AB2dB5857c32D70a2cfd16A45178f4';
 
-  console.log('is it returning at all???...');
-
   return createConnector((config) => ({
     id: 'giano',
     name: 'Giano Connector',
@@ -138,7 +136,7 @@ export function createCustomConnector(details: WalletDetailsParams): CreateConne
       });
     },
     isAuthorized: async () => {
-      return Promise.resolve(false);
+      return Promise.resolve(!!account);
     },
     getChainId: async () => {
       if (!chainId) {
