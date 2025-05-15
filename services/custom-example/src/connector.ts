@@ -1,18 +1,23 @@
 import { singleKeyAccountFactoryAbi } from '@appliedblockchain/giano-contracts';
 import type { WalletDetailsParams } from '@rainbow-me/rainbowkit';
-import type { Address } from 'viem';
-import { zeroAddress } from 'viem';
-import { createPublicClient, toHex } from 'viem';
-import { readContract } from 'viem/actions';
+import type { Address, Chain, Hash, TransactionRequest, Transport } from 'viem';
+import { createPublicClient, encodeFunctionData, parseEventLogs, toHex, zeroAddress } from 'viem';
+import { readContract, waitForTransactionReceipt } from 'viem/actions';
 import type { CreateConnectorFn } from 'wagmi';
 import { createConnector } from 'wagmi';
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 type PublicKeyAttestation = PublicKeyCredential & { response: AuthenticatorAttestationResponse };
 
-type CreateGianoConnectorParams = {
+export type SendTransactionFnParams = {
+  chain: Chain;
+  transport: Transport;
+  request: TransactionRequest;
+};
+export type CreateGianoConnectorParams = {
   details: WalletDetailsParams;
   initialChainId: number;
+  sendTransaction: (params: SendTransactionFnParams) => Promise<Hash>;
 };
 
 const getCredential = async (): Promise<PublicKeyAssertion | null> => {
@@ -59,56 +64,89 @@ const createCredential = async (): Promise<PublicKeyAttestation | null> => {
   })) as PublicKeyAttestation | null;
 };
 
-export function gianoConnector({ details, initialChainId }: CreateGianoConnectorParams): CreateConnectorFn {
+function base64UrlToBase64(u: string) {
+  return u.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((u.length + 3) % 4);
+}
+
+function base64ToBytes(base64: string) {
+  const binString = atob(base64UrlToBase64(base64));
+  return Uint8Array.from(binString, (m) => m.codePointAt(0) as number);
+}
+
+const extractKeyCoordinates = async (spki: ArrayBuffer) => {
+  const key = await crypto.subtle.importKey('spki', spki, { name: 'ECDSA', namedCurve: 'P-256' }, true, []);
+  const { x, y } = await crypto.subtle.exportKey('jwk', key);
+  return { x: base64ToBytes(x!), y: base64ToBytes(y!) };
+};
+
+export function gianoConnector({ details, initialChainId, sendTransaction }: CreateGianoConnectorParams): CreateConnectorFn {
   let chainId = initialChainId;
   let account: Address | null;
   const FACTORY_ADDRESS = '0x35Df176c6e216003A356159E1edF76A0647C828D';
 
-  console.log({ details });
+  const factoryContract = Object.freeze({
+    address: FACTORY_ADDRESS,
+    abi: singleKeyAccountFactoryAbi,
+  });
 
   return createConnector((config) => ({
     id: 'giano',
     name: 'Giano Connector',
     type: 'custom',
     connect: async (params) => {
+      if (params?.chainId) {
+        chainId = params.chainId;
+      }
       try {
-        let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
-        if (!credential) {
-          credential = await createCredential();
-          if (!credential) {
-            throw new Error('Could not obtain credential');
-          }
-        }
-
         const chain = config.chains.find((chain) => chain.id === chainId);
         if (!chain) {
-          throw new Error('Unknown chain');
+          throw new Error(`Unknown chain: ${chainId}`);
         }
         const transports = config.transports ?? {};
         const transport = transports[chain.id];
         if (!transport) {
           throw new Error('No transport for chain');
         }
+        const publicClient = createPublicClient({ chain, transport });
 
-        const factoryContract = Object.freeze({
-          address: FACTORY_ADDRESS,
-          abi: singleKeyAccountFactoryAbi,
-        });
-        const client = createPublicClient({ chain, transport });
-        if (credential.response instanceof AuthenticatorAttestationResponse) {
+        let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
+        if (!credential) {
+          credential = await createCredential();
+          if (!credential) {
+            throw new Error('Could not obtain credential');
+          }
           const publicKey = credential.response.getPublicKey();
           if (!publicKey) {
             throw new Error('Could not obtain public key');
           }
-          const x = new Uint8Array(publicKey.slice(-64, -32));
-          const y = new Uint8Array(publicKey.slice(-32));
-          account = await readContract(client, {
+          const { x, y } = await extractKeyCoordinates(publicKey);
+          account = await readContract(publicClient, {
             ...factoryContract,
             functionName: 'getAccountAddress',
             args: [{ x: toHex(x), y: toHex(y) }],
           });
-        } else {
-          const user = await readContract(client, {
+          const data = encodeFunctionData({
+            ...factoryContract,
+            functionName: 'createUser',
+            args: [toHex(new Uint8Array(credential.rawId)), { x: toHex(x), y: toHex(y) }],
+          });
+          const hash = await sendTransaction({
+            transport,
+            chain,
+            request: {
+              to: factoryContract.address,
+              data,
+            },
+          });
+          console.log({ hash });
+          const receipt = await waitForTransactionReceipt(publicClient, { hash });
+          console.log(receipt.logs);
+          const events = parseEventLogs({ abi: factoryContract.abi, logs: receipt.logs });
+          console.log('expected account ->', account);
+          console.log('created account ->', events);
+        }
+        if (!account) {
+          const user = await readContract(publicClient, {
             ...factoryContract,
             functionName: 'getUser',
             args: [toHex(new Uint8Array(credential.rawId))],
@@ -117,9 +155,6 @@ export function gianoConnector({ details, initialChainId }: CreateGianoConnector
             throw new Error('User not found');
           }
           account = user.account;
-        }
-        if (params?.chainId) {
-          chainId = params.chainId;
         }
         return {
           accounts: [account],
@@ -133,7 +168,7 @@ export function gianoConnector({ details, initialChainId }: CreateGianoConnector
     disconnect: () => {
       console.log('disconnect');
       account = null;
-      chainId = null;
+      chainId = -1;
       return Promise.resolve();
     },
     getAccounts: async () => {
@@ -143,8 +178,8 @@ export function gianoConnector({ details, initialChainId }: CreateGianoConnector
     getProvider: async () => {
       console.log('getProvider');
       return Promise.resolve({
-        request: () => {
-          console.log('request...');
+        request: (params) => {
+          console.log('request...', params);
         },
       });
     },
@@ -164,7 +199,7 @@ export function gianoConnector({ details, initialChainId }: CreateGianoConnector
     },
     getChainId: async () => {
       console.log('getChainId', chainId);
-      return chainId;
+      return Promise.resolve(chainId);
     },
     onAccountsChanged: (accounts: string[]) => {
       console.log('onAccountsChanged called');

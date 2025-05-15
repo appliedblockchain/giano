@@ -4,12 +4,13 @@ import { http } from 'viem';
 import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
 import { giano } from './gianoWallet';
+import { hardhatDefaultAccountSender } from './senders/hardhatDefaultAccountSender';
 
 const connectors = connectorsForWallets(
   [
     {
       groupName: 'Passkeys',
-      wallets: [giano(hardhat.id)],
+      wallets: [giano({ initialChainId: hardhat.id, sendTransaction: hardhatDefaultAccountSender })],
     },
     { groupName: 'Test', wallets: [metaMaskWallet] },
   ],
