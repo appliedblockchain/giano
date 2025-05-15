@@ -8,9 +8,9 @@ import styles from '../styles/Home.module.css';
 
 const Home: NextPage = () => {
   const { isConnected } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync, isPending } = useWriteContract();
 
-  const TESTING_CONTRACT_ADDRESS = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9';
+  const TESTING_CONTRACT_ADDRESS = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
 
   const sendTx = async () => {
     const result = await writeContractAsync({
@@ -19,6 +19,7 @@ const Home: NextPage = () => {
       functionName: 'setMessage',
       args: ['Hello!'],
     });
+    console.log(result);
   };
 
   return (
@@ -31,6 +32,9 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
+        <button disabled={!isConnected || isPending} onClick={sendTx}>
+          Send Hello Tx
+        </button>
       </main>
     </div>
   );
