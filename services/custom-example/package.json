@@ -8,9 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
+    "@appliedblockchain/giano-contracts": "workspace:",
+    "@peculiar/asn1-ecc": "^2.3.14",
+    "@peculiar/asn1-schema": "^2.3.13",
     "@rainbow-me/rainbowkit": "^2.2.4",
     "@tanstack/react-query": "^5.55.3",
-    "@appliedblockchain/giano-contracts": "workspace:",
     "next": "^15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
