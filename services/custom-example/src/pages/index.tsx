@@ -3,14 +3,18 @@ import { testContractAbi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { useAccount, useWriteContract } from 'wagmi';
+import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
 
+const TESTING_CONTRACT_ADDRESS = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
 const Home: NextPage = () => {
   const { isConnected } = useAccount();
-  const { writeContractAsync, isPending } = useWriteContract();
-
-  const TESTING_CONTRACT_ADDRESS = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
+  const { writeContractAsync, isPending: isWritePending } = useWriteContract();
+  const { refetch: readContract, isPending: isReadPending } = useReadContract({
+    address: TESTING_CONTRACT_ADDRESS,
+    abi: testContractAbi,
+    functionName: 'getState',
+  });
 
   const sendTx = async () => {
     const result = await writeContractAsync({
@@ -19,6 +23,11 @@ const Home: NextPage = () => {
       functionName: 'setMessage',
       args: ['Hello!'],
     });
+    console.log(result);
+  };
+
+  const sendCall = async () => {
+    const result = await readContract();
     console.log(result);
   };
 
@@ -32,8 +41,11 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
-        <button disabled={!isConnected || isPending} onClick={sendTx}>
+        <button disabled={!isConnected || isWritePending} onClick={sendTx}>
           Send Hello Tx
+        </button>
+        <button disabled={!isConnected || isReadPending} onClick={sendCall}>
+          Execute a read call
         </button>
       </main>
     </div>

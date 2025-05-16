@@ -3,8 +3,8 @@ import { metaMaskWallet } from '@rainbow-me/rainbowkit/wallets';
 import { http } from 'viem';
 import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
-import { giano } from './gianoWallet';
 import { hardhatDefaultAccountSender } from './senders/hardhatDefaultAccountSender';
+import { giano } from './gianoWallet';
 
 const connectors = connectorsForWallets(
   [
