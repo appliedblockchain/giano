@@ -7,6 +7,7 @@ export const hardhatDefaultAccountSender = async ({ chain, transport, request }:
   const client = createWalletClient({ transport, chain, account });
 
   const prepared = await client.prepareTransactionRequest(request);
-  const signed = await client.signTransaction(prepared);
+  // TODO: investigate why Viem is underestimating the gas here
+  const signed = await client.signTransaction({ ...prepared, gas: prepared.gas * 5n });
   return client.sendRawTransaction({ serializedTransaction: signed });
 };
