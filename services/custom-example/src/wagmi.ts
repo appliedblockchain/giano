@@ -1,16 +1,33 @@
 import { connectorsForWallets } from '@rainbow-me/rainbowkit';
 import { metaMaskWallet } from '@rainbow-me/rainbowkit/wallets';
-import { http } from 'viem';
+import { custom, http } from 'viem';
 import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
 import { hardhatDefaultAccountSender } from './senders/hardhatDefaultAccountSender';
 import { giano } from './gianoWallet';
+import { createGianoProvider } from './provider';
+
+const rpcs = {
+  chains: [hardhat],
+  transports: {
+    [hardhat.id]: http('http://localhost:8545/'),
+  },
+};
+
+const provider = createGianoProvider({
+  chains: rpcs.chains,
+  transports: rpcs.transports,
+  initialChainId: hardhat.id,
+  sendTransaction: hardhatDefaultAccountSender,
+});
+
+const providerTransport = custom(provider);
 
 const connectors = connectorsForWallets(
   [
     {
       groupName: 'Passkeys',
-      wallets: [giano({ initialChainId: hardhat.id, sendTransaction: hardhatDefaultAccountSender })],
+      wallets: [giano({ provider })],
     },
     { groupName: 'Test', wallets: [metaMaskWallet] },
   ],
@@ -23,9 +40,13 @@ const connectors = connectorsForWallets(
 console.log(connectors);
 
 export const config = createConfig({
-  chains: [hardhat],
+  chains: [...rpcs.chains],
   transports: {
-    [hardhat.id]: http('http://localhost:8545/'),
+    ...Object.fromEntries(
+      Object.keys(rpcs.transports).map((k) => {
+        return [k, providerTransport];
+      }),
+    ),
   },
   connectors,
 });

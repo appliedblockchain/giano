@@ -10,26 +10,17 @@ export type SendTransactionFnParams = {
 };
 export type CreateGianoConnectorParams = {
   details: WalletDetailsParams;
-  initialChainId: number;
-  sendTransaction: (params: SendTransactionFnParams) => Promise<Hash>;
+  provider: EIP1193Provider;
 };
 
-export function gianoConnector({ details, initialChainId, sendTransaction }: CreateGianoConnectorParams) {
-  return createConnector(({ chains, transports }) => {
-    let provider: EIP1193Provider | null = null;
-
-    provider = createGianoProvider({
-      chains,
-      transports,
-      initialChainId,
-      sendTransaction,
-    });
-
+export function gianoConnector({ details, provider }: CreateGianoConnectorParams) {
+  return createConnector(({ chains }) => {
     const connector = {
       id: 'giano',
       name: 'Giano Connector',
       type: 'custom',
       connect: async () => {
+        console.log('connect?!');
         const accounts = await provider.request({ method: 'eth_requestAccounts' });
         const chainId = await connector.getChainId();
         console.log({ accounts, chainId });
@@ -39,6 +30,7 @@ export function gianoConnector({ details, initialChainId, sendTransaction }: Cre
         console.log('disconnect');
       },
       getAccounts: async () => {
+        console.log('get accounts');
         return provider.request({ method: 'eth_accounts' });
       },
       getProvider: async (): Promise<EIP1193Provider> => {

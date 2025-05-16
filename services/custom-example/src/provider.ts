@@ -10,6 +10,7 @@ import {
   encodeAbiParameters,
   encodeFunctionData,
   type Hash,
+  maxUint256,
   parseEventLogs,
   toBytes,
   toHex,
@@ -179,7 +180,11 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       return account ? ([account] as `0x${string}`[]) : [];
     },
     eth_chainId: async () => {
+      console.log({ chain });
       return `0x${chain!.id.toString(16)}`;
+    },
+    wallet_addEthereumChain: () => {
+      //TODO: implement
     },
     wallet_switchEthereumChain: (params) => {
       const [{ chainId: chainIdHex }] = params;
@@ -260,7 +265,41 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       }
     },
     eth_call: async (args) => {
-      console.log(args);
+      // TODO: Implement a separate, custom method for authenticated calls, so the user is not overwhelmed with signature requests needlessly
+      console.log('-> eth_call:', args);
+      const [params, block] = args;
+      console.log({ account });
+      if (account) {
+        const call = {
+          target: params.to,
+          data: params.data,
+          expiresAt: maxUint256,
+        };
+        console.log({ call });
+        const challenge = await readContract(client!, {
+          address: account as Address,
+          abi: singleKeyAccountAbi,
+          functionName: 'getStaticChallenge',
+          args: [call],
+        });
+        const credential = await getCredential({ id: connectedCredential!.rawId, challenge: new Uint8Array(toBytes(challenge)) });
+        if (!credential) {
+          throw new Error('Could not obtain signature for eth_call');
+        }
+        const signature = encodeSignature(credential.response);
+        const readResponse = await readContract(client!, {
+          address: account as Address,
+          abi: singleKeyAccountAbi,
+          functionName: 'staticCall',
+          args: [{ call, signature }],
+          blockTag: block,
+        });
+        console.log({ readResponse });
+      } else {
+        const response = await client!.request({ method: 'eth_call', params: args });
+        console.log('<- eth_call:', response);
+        return response;
+      }
     },
     eth_sendTransaction: async ([{ to, data, value }]: any) => {
       try {
@@ -281,7 +320,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
           challenge: new Uint8Array(toBytes(challenge)),
         });
         if (!credential) {
-          console.log('oopsie will throw');
           throw new Error('Error signing challenge!');
         }
         console.log('after get cred');
@@ -318,7 +356,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
   const provider: EIP1193Provider = {
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
-      console.log('==> REQUEST', { method, params });
       if (!(method in methods)) {
         return client!.request({ ...args } as any);
       }
