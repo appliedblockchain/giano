@@ -23,7 +23,8 @@ const Home: NextPage = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [contractState, setContractState] = useState<[bigint, string, string] | null>(null);
 
-  const sendTx = async () => {
+  const sendTx = async (e: SubmitEvent & { currentTarget: HTMLFormElement }) => {
+    e.preventDefault();
     if (!inputMessage.trim()) return;
     const result = await writeContractAsync({
       address: TESTING_CONTRACT_ADDRESS,
@@ -49,12 +50,12 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
-        <div className={styles.formContainer}>
+        <form className={styles.formContainer} onSubmit={sendTx}>
           <input className={styles.input} type="text" placeholder="Enter message" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
-          <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()} onClick={sendTx}>
+          <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()}>
             Send Message
           </button>
-        </div>
+        </form>
         <button className={styles.readButton} disabled={!isConnected || isReadPending} onClick={sendCall}>
           Read the contract&apos;s state
         </button>
