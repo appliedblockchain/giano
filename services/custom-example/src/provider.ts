@@ -115,12 +115,6 @@ function encodeSignature(assertionResponse: PublicKeyAssertion['response']) {
   // Normalize s to the lower value to prevent signature malleability
   const nonMalleableS = toHex(numericS > HALF_N ? N - numericS : numericS, { size: 32 });
 
-  const malleableChange = nonMalleableS !== toHex(normalizedS);
-  console.log('normalizedS !== nonMalleableS?', malleableChange);
-  if (malleableChange) {
-    console.log({ nonMalleableS, normalizedS: toHex(normalizedS) });
-  }
-
   return encodeAbiParameters(
     [
       {
