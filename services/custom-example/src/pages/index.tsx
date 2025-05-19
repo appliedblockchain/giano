@@ -1,43 +1,56 @@
-import React, { useState } from 'react';
-import { testContractAbi } from '@appliedblockchain/giano-contracts';
+import type { FormEvent } from 'react';
+import React, { useEffect, useState } from 'react';
+import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
 import Head from 'next/head';
+import { formatEther, parseEther } from 'viem';
 import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
 
-const TESTING_CONTRACT_ADDRESS = '0x6DEfc5b3B18f4380C6D0D9dFB6a62cf9886D5FE2';
+const PRIVATE_ERC20_ADDRESS = '0x79D2c71271A3cB73930B32a2539d613BBCBFF556';
 const Home: NextPage = () => {
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
-  const { refetch: readContract, isPending: isReadPending } = useReadContract({
-    address: TESTING_CONTRACT_ADDRESS,
-    abi: testContractAbi,
-    functionName: 'getState',
+  const {
+    refetch: readContract,
+    isPending: isReadPending,
+    error,
+  } = useReadContract({
+    address: PRIVATE_ERC20_ADDRESS,
+    abi: privateErc20Abi,
+    functionName: 'balanceOf',
+    args: [address!],
     query: {
+      enabled: !!address,
       retry: false,
       retryOnMount: false,
     },
   });
 
   const [inputMessage, setInputMessage] = useState('');
-  const [contractState, setContractState] = useState<[bigint, string, string] | null>(null);
+  const [contractState, setContractState] = useState<bigint | null>(null);
+  useEffect(() => {
+    if (error) {
+      console.error(error);
+    }
+  }, [error]);
 
-  const sendTx = async (e: SubmitEvent & { currentTarget: HTMLFormElement }) => {
+  const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
     const result = await writeContractAsync({
-      address: TESTING_CONTRACT_ADDRESS,
-      abi: testContractAbi,
-      functionName: 'setMessage',
-      args: [inputMessage.trim()],
+      address: PRIVATE_ERC20_ADDRESS,
+      abi: privateErc20Abi,
+      functionName: 'mint',
+      args: [address!, parseEther(inputMessage.trim())],
     });
     console.log(result);
   };
 
   const sendCall = async () => {
     const { data } = await readContract();
-    if (data) setContractState(data as [bigint, string, string]);
+    if (data) setContractState(data);
   };
 
   return (
@@ -51,28 +64,23 @@ const Home: NextPage = () => {
       <main className={styles.main}>
         <ConnectButton />
         <form className={styles.formContainer} onSubmit={sendTx}>
-          <input className={styles.input} type="text" placeholder="Enter message" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
+          <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
           <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()}>
-            Send Message
+            Mint
           </button>
         </form>
         <button className={styles.readButton} disabled={!isConnected || isReadPending} onClick={sendCall}>
-          Read the contract&apos;s state
+          Read balance
         </button>
 
         {contractState && (
           <div className={styles.stateCard}>
             <p>
-              <strong>Value:</strong> {contractState[0].toString()}
-            </p>
-            <p>
-              <strong>Message:</strong> {contractState[1]}
-            </p>
-            <p>
-              <strong>Last Caller:</strong> {contractState[2].slice(0, 6)}…{contractState[2].slice(-4)}
+              <strong>Balance:</strong> {formatEther(contractState)}
             </p>
           </div>
         )}
+        {error && <p>Error reading balance: {error.message}</p>}
       </main>
     </div>
   );

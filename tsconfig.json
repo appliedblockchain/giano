@@ -7,7 +7,7 @@
       "dom",
       "dom.iterable",
       "esnext",
-      "WebWorker",
+      "WebWorker"
     ],
     "allowJs": true,
     "skipLibCheck": true,
@@ -23,30 +23,69 @@
     "noImplicitAny": false,
     "isolatedModules": true,
     "jsx": "preserve",
-    "incremental": true,
+    // "incremental": true,
     "rootDir": ".",
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
       // common
-      "@type/*": ["services/types/*"],
-      "@schema/*": ["services/types/schemas/*"],
+      "@type/*": [
+        "services/types/*"
+      ],
+      "@schema/*": [
+        "services/types/schemas/*"
+      ],
       // back-end
-      "@controller/*": ["services/api/src/controller/*"],
-      "@database/*": ["services/api/src/database/*"],
-      "@decorator/*": ["services/api/src/decorator/*"],
-      "@middleware/*": ["services/api/src/middleware/*"],
-      "@repository/*": ["services/api/src/repository/*"],
-      "@service/*": ["services/api/src/service/*"],
+      "@controller/*": [
+        "services/api/src/controller/*"
+      ],
+      "@database/*": [
+        "services/api/src/database/*"
+      ],
+      "@decorator/*": [
+        "services/api/src/decorator/*"
+      ],
+      "@middleware/*": [
+        "services/api/src/middleware/*"
+      ],
+      "@repository/*": [
+        "services/api/src/repository/*"
+      ],
+      "@service/*": [
+        "services/api/src/service/*"
+      ],
       // front-end
-      "@admin/*": ["services/webapp/src/admin/*"],
-      "@user/*": ["services/webapp/src/user/*"],
-      "@component/*": ["services/webapp/src/components/*"],
-      "@control/*": ["services/webapp/src/controls/*"],
-      "@helper/*": ["services/webapp/src/helpers/*"],
-      "@hook/*": ["services/webapp/src/hooks/*"],
+      "@admin/*": [
+        "services/webapp/src/admin/*"
+      ],
+      "@user/*": [
+        "services/webapp/src/user/*"
+      ],
+      "@component/*": [
+        "services/webapp/src/components/*"
+      ],
+      "@control/*": [
+        "services/webapp/src/controls/*"
+      ],
+      "@helper/*": [
+        "services/webapp/src/helpers/*"
+      ],
+      "@hook/*": [
+        "services/webapp/src/hooks/*"
+      ],
       // contracts
-      "@contract/*": ["services/bcm/artifacts/contracts/*"]
-    }
-  }
+      "@contract/*": [
+        "services/bcm/artifacts/contracts/*"
+      ]
+    },
+    "incremental": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

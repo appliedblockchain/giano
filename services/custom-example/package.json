@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@appliedblockchain/giano-connector": "workspace:^",
     "@appliedblockchain/giano-contracts": "workspace:",
     "@peculiar/asn1-ecc": "^2.3.14",
     "@peculiar/asn1-schema": "^2.3.13",
@@ -17,7 +18,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "2.29.2",
-    "wagmi": "^2.15.4"
+    "wagmi": "2.15.4"
   },
   "devDependencies": {
     "@types/node": "^20.14.8",

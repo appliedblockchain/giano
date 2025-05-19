@@ -1,0 +1,29 @@
+{
+  "name": "@appliedblockchain/giano-connector",
+  "version": "1.0.0",
+  "description": "wagmi connector and RainbowKit wallet for Giano",
+  "scripts": {
+    "build": "tsup src/"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "main": "dist/index",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-contracts": "workspace:^",
+    "@peculiar/asn1-ecc": "^2.3.14",
+    "@peculiar/asn1-schema": "^2.3.13",
+    "@rainbow-me/rainbowkit": "^2.2.4",
+    "viem": "2.29.2",
+    "wagmi": "2.15.4"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

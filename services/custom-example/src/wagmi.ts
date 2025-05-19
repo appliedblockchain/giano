@@ -1,11 +1,11 @@
+import { giano } from '@appliedblockchain/giano-connector';
+import { createGianoProvider } from '@appliedblockchain/giano-connector';
+import { hardhatDefaultAccountSender } from '@appliedblockchain/giano-connector';
 import { connectorsForWallets } from '@rainbow-me/rainbowkit';
 import { metaMaskWallet } from '@rainbow-me/rainbowkit/wallets';
 import { custom, http } from 'viem';
 import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
-import { hardhatDefaultAccountSender } from './senders/hardhatDefaultAccountSender';
-import { giano } from './gianoWallet';
-import { createGianoProvider } from './provider';
 
 const rpcs = {
   chains: [hardhat],

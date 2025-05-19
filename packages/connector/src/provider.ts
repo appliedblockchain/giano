@@ -26,6 +26,12 @@ const FACTORY_ADDRESS = '0x35Df176c6e216003A356159E1edF76A0647C828D';
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 type PublicKeyAttestation = PublicKeyCredential & { response: AuthenticatorAttestationResponse };
 
+const generateRandomChallenge = () => {
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  return challenge;
+};
+
 const getCredential = async ({
   id,
   challenge,
@@ -34,8 +40,7 @@ const getCredential = async ({
   challenge?: BufferSource;
 } = {}): Promise<PublicKeyAssertion | null> => {
   if (!challenge) {
-    challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
+    challenge = generateRandomChallenge();
   }
 
   try {
@@ -47,7 +52,6 @@ const getCredential = async ({
     })) as PublicKeyAssertion | null;
   } catch (error) {
     if (['NotAllowedError', 'AbortError'].includes((error as Error).name)) {
-      console.error(error);
       return null;
     }
     throw error;
@@ -55,8 +59,7 @@ const getCredential = async ({
 };
 
 const createCredential = async (): Promise<PublicKeyAttestation | null> => {
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
+  const challenge = generateRandomChallenge();
 
   const date = new Date().toISOString();
 
@@ -210,55 +213,50 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       if (account) {
         return { accounts: [account], chainId: `0x${chain!.id.toString(16)}` };
       }
-      try {
-        let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
+      let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
+      if (!credential) {
+        credential = await createCredential();
         if (!credential) {
-          credential = await createCredential();
-          if (!credential) {
-            throw new Error('Could not obtain credential');
-          }
-          const publicKey = credential.response.getPublicKey();
-          if (!publicKey) {
-            throw new Error('Could not obtain public key');
-          }
-          const { x, y } = await extractKeyCoordinates(publicKey);
-          account = await readContract(client!, {
-            ...factoryContract,
-            functionName: 'getAccountAddress',
-            args: [{ x: toHex(x), y: toHex(y) }],
-          });
-          const data = encodeFunctionData({
-            ...factoryContract,
-            functionName: 'createUser',
-            args: [toHex(new Uint8Array(credential.rawId)), { x: toHex(x), y: toHex(y) }],
-          });
-          const hash = await sendTransaction({
-            transport: transport!,
-            chain: chain!,
-            request: {
-              to: factoryContract.address,
-              data,
-            },
-          });
-          await waitForTransactionReceipt(client!, { hash });
+          throw new Error('Could not obtain credential');
         }
-        connectedCredential = credential;
-        if (!account) {
-          const user = await readContract(client!, {
-            ...factoryContract,
-            functionName: 'getUser',
-            args: [toHex(new Uint8Array(credential.rawId))],
-          });
-          if (user.account === zeroAddress) {
-            throw new Error('User not found');
-          }
-          account = user.account;
+        const publicKey = credential.response.getPublicKey();
+        if (!publicKey) {
+          throw new Error('Could not obtain public key');
         }
-        return [account] as `0x${string}`[];
-      } catch (e) {
-        console.error('connect error', e);
-        throw e;
+        const { x, y } = await extractKeyCoordinates(publicKey);
+        account = await readContract(client!, {
+          ...factoryContract,
+          functionName: 'getAccountAddress',
+          args: [{ x: toHex(x), y: toHex(y) }],
+        });
+        const data = encodeFunctionData({
+          ...factoryContract,
+          functionName: 'createUser',
+          args: [toHex(new Uint8Array(credential.rawId)), { x: toHex(x), y: toHex(y) }],
+        });
+        const hash = await sendTransaction({
+          transport: transport!,
+          chain: chain!,
+          request: {
+            to: factoryContract.address,
+            data,
+          },
+        });
+        await waitForTransactionReceipt(client!, { hash });
       }
+      connectedCredential = credential;
+      if (!account) {
+        const user = await readContract(client!, {
+          ...factoryContract,
+          functionName: 'getUser',
+          args: [toHex(new Uint8Array(credential.rawId))],
+        });
+        if (user.account === zeroAddress) {
+          throw new Error('User not found');
+        }
+        account = user.account;
+      }
+      return [account] as `0x${string}`[];
     },
     eth_call: async (args) => {
       console.log('-> eth_call:', args);
@@ -280,7 +278,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
         });
         const credential = await getCredential({ id: connectedCredential!.rawId, challenge: new Uint8Array(toBytes(challenge)) });
         if (!credential) {
-          throw new Error('Could not obtain signature for eth_call');
+          throw new Error('User rejected signing the challenge');
         }
         const signature = encodeSignature(credential.response);
         const readResponse = await readContract(client!, {
@@ -359,11 +357,11 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       return response;
     },
     on: (event, listener) => {
-      console.log('on event', event);
+      console.log('(STUB) on event', event);
       return provider;
     },
     removeListener: (event, listener) => {
-      console.log('remove listener', event);
+      console.log('(STUB) remove listener', event);
       return provider;
     },
   };
