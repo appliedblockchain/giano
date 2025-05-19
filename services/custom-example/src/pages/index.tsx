@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { testContractAbi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
@@ -6,7 +6,7 @@ import Head from 'next/head';
 import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
 
-const TESTING_CONTRACT_ADDRESS = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
+const TESTING_CONTRACT_ADDRESS = '0x6DEfc5b3B18f4380C6D0D9dFB6a62cf9886D5FE2';
 const Home: NextPage = () => {
   const { isConnected } = useAccount();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
@@ -14,21 +14,29 @@ const Home: NextPage = () => {
     address: TESTING_CONTRACT_ADDRESS,
     abi: testContractAbi,
     functionName: 'getState',
+    query: {
+      retry: false,
+      retryOnMount: false,
+    },
   });
 
+  const [inputMessage, setInputMessage] = useState('');
+  const [contractState, setContractState] = useState<[bigint, string, string] | null>(null);
+
   const sendTx = async () => {
+    if (!inputMessage.trim()) return;
     const result = await writeContractAsync({
       address: TESTING_CONTRACT_ADDRESS,
       abi: testContractAbi,
       functionName: 'setMessage',
-      args: ['Hello!'],
+      args: [inputMessage.trim()],
     });
     console.log(result);
   };
 
   const sendCall = async () => {
-    const result = await readContract();
-    console.log(result);
+    const { data } = await readContract();
+    if (data) setContractState(data as [bigint, string, string]);
   };
 
   return (
@@ -41,12 +49,29 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
-        <button disabled={!isConnected || isWritePending} onClick={sendTx}>
-          Send Hello Tx
+        <div className={styles.formContainer}>
+          <input className={styles.input} type="text" placeholder="Enter message" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
+          <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()} onClick={sendTx}>
+            Send Message
+          </button>
+        </div>
+        <button className={styles.readButton} disabled={!isConnected || isReadPending} onClick={sendCall}>
+          Read the contract&apos;s state
         </button>
-        <button disabled={!isConnected || isReadPending} onClick={sendCall}>
-          Execute a read call
-        </button>
+
+        {contractState && (
+          <div className={styles.stateCard}>
+            <p>
+              <strong>Value:</strong> {contractState[0].toString()}
+            </p>
+            <p>
+              <strong>Message:</strong> {contractState[1]}
+            </p>
+            <p>
+              <strong>Last Caller:</strong> {contractState[2].slice(0, 6)}…{contractState[2].slice(-4)}
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );

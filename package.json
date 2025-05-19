@@ -2,6 +2,11 @@
   "name": "@appliedblockchain/giano",
   "private": true,
   "packageManager": "pnpm@8.15.6",
+  "scripts": {
+    "hh:node": "pnpm --filter @appliedblockchain/giano-contracts hh:node",
+    "hh:deploy": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy",
+    "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing"
+  },
   "devDependencies": {
     "tsup": "^8.3.5"
   }

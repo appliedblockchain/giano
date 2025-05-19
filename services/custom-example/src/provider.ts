@@ -59,6 +59,8 @@ const createCredential = async (): Promise<PublicKeyAttestation | null> => {
   const challenge = new Uint8Array(32);
   crypto.getRandomValues(challenge);
 
+  const date = new Date().toISOString();
+
   return (await navigator.credentials.create({
     publicKey: {
       rp: {
@@ -73,8 +75,8 @@ const createCredential = async (): Promise<PublicKeyAttestation | null> => {
       ],
       user: {
         id: new TextEncoder().encode(crypto.randomUUID()),
-        displayName: 'Giano Credential',
-        name: 'giano',
+        displayName: `Giano Credential (${date})`,
+        name: `giano-${date}`,
       },
       challenge,
     },
@@ -243,8 +245,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
           const receipt = await waitForTransactionReceipt(client!, { hash });
           console.log(receipt.logs);
           const events = parseEventLogs({ abi: factoryContract.abi, logs: receipt.logs });
-          console.log('expected account ->', account);
-          console.log('created account ->', events);
         }
         connectedCredential = credential;
         if (!account) {
@@ -265,8 +265,8 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       }
     },
     eth_call: async (args) => {
-      // TODO: Implement a separate, custom method for authenticated calls, so the user is not overwhelmed with signature requests needlessly
       console.log('-> eth_call:', args);
+      console.log({ args });
       const [params, block] = args;
       console.log({ account });
       if (account) {
@@ -295,6 +295,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
           blockTag: block,
         });
         console.log({ readResponse });
+        return readResponse;
       } else {
         const response = await client!.request({ method: 'eth_call', params: args });
         console.log('<- eth_call:', response);
@@ -322,7 +323,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
         if (!credential) {
           throw new Error('Error signing challenge!');
         }
-        console.log('after get cred');
         const encodedSignature = encodeSignature(credential.response);
         const gianoExecuteData = encodeFunctionData({
           abi: singleKeyAccountAbi,
@@ -334,7 +334,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
             },
           ],
         });
-        console.log({ gianoExecuteData });
         const hash = await sendTransaction({
           chain: chain!,
           transport: transport!,

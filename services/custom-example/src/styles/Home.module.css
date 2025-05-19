@@ -100,3 +100,73 @@
     flex-direction: column;
   }
 }
+
+/* Custom form styling */
+
+.formContainer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.input {
+  padding: 0.5rem 1rem;
+  border: 1px solid #eaeaea;
+  border-radius: 6px;
+  font-size: 1rem;
+  min-width: 240px;
+}
+
+.sendButton {
+  padding: 0.5rem 1.25rem;
+  background-color: #0d76fc;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.sendButton:disabled {
+  background-color: #b3d1ff;
+  cursor: not-allowed;
+}
+
+.sendButton:not(:disabled):hover {
+  background-color: #095ed1;
+}
+
+.readButton {
+  padding: 0.5rem 1.25rem;
+  background-color: #34a853;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  margin-top: 1rem;
+}
+
+.readButton:disabled {
+  background-color: #b7e5c4;
+  cursor: not-allowed;
+}
+
+.readButton:not(:disabled):hover {
+  background-color: #2b8a46;
+}
+
+.stateCard {
+  margin-top: 2rem;
+  border: 1px solid #eaeaea;
+  border-radius: 10px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 380px;
+  background-color: #fafafa;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  line-height: 1.5;
+  font-size: 1rem;
+}

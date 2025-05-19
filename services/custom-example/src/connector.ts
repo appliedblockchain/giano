@@ -20,7 +20,6 @@ export function gianoConnector({ details, provider }: CreateGianoConnectorParams
       name: 'Giano Connector',
       type: 'custom',
       connect: async () => {
-        console.log('connect?!');
         const accounts = await provider.request({ method: 'eth_requestAccounts' });
         const chainId = await connector.getChainId();
         console.log({ accounts, chainId });
