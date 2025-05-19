@@ -1,6 +1,6 @@
 {
   "name": "@appliedblockchain/giano-connector",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "wagmi connector and RainbowKit wallet for Giano",
   "scripts": {
     "build": "tsup src/"

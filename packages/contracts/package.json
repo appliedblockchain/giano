@@ -17,7 +17,6 @@
     "contracts/**/*.sol",
     "dist/**/*"
   ],
-  "packageManager": "pnpm@8.15.6",
   "main": "dist/index",
   "devDependencies": {
     "@appliedblockchain/giano-common": "workspace:",
