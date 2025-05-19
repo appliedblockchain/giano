@@ -11,15 +11,14 @@ import {
   encodeFunctionData,
   type Hash,
   maxUint256,
-  parseEventLogs,
   toBytes,
   toHex,
+  type Transport,
   zeroAddress,
 } from 'viem';
 import { readContract, waitForTransactionReceipt } from 'viem/actions';
 import type { EIP1193Parameters } from 'viem/types/eip1193';
 import { bytesToBigint } from 'viem/utils';
-import { type Transport } from 'wagmi';
 import { type SendTransactionFnParams } from './connector';
 
 const FACTORY_ADDRESS = '0x35Df176c6e216003A356159E1edF76A0647C828D';
@@ -98,9 +97,9 @@ function normalizeSignatureCoordinate(bytes: Uint8Array, componentLength = 32) {
   return normalizedBytes;
 }
 
-// secp256k1 order
-const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
-const HALF_N = N >> 1n;
+// P-256 (secp256r1) subgroup order
+const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+const HALF_N = N / 2n;
 
 function encodeSignature(assertionResponse: PublicKeyAssertion['response']) {
   const decodedClientDataJson = new TextDecoder().decode(assertionResponse.clientDataJSON);
@@ -114,7 +113,13 @@ function encodeSignature(assertionResponse: PublicKeyAssertion['response']) {
   const numericS = bytesToBigint(normalizedS);
 
   // Normalize s to the lower value to prevent signature malleability
-  const nonMalleableS = toHex(numericS > HALF_N ? N - numericS : normalizedS, { size: 32 });
+  const nonMalleableS = toHex(numericS > HALF_N ? N - numericS : numericS, { size: 32 });
+
+  const malleableChange = nonMalleableS !== toHex(normalizedS);
+  console.log('normalizedS !== nonMalleableS?', malleableChange);
+  if (malleableChange) {
+    console.log({ nonMalleableS, normalizedS: toHex(normalizedS) });
+  }
 
   return encodeAbiParameters(
     [
@@ -241,10 +246,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
               data,
             },
           });
-          console.log({ hash });
-          const receipt = await waitForTransactionReceipt(client!, { hash });
-          console.log(receipt.logs);
-          const events = parseEventLogs({ abi: factoryContract.abi, logs: receipt.logs });
+          await waitForTransactionReceipt(client!, { hash });
         }
         connectedCredential = credential;
         if (!account) {
