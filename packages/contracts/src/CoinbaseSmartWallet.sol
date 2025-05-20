@@ -218,11 +218,11 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
         }
     }
 
-    /// @notice Returns the address of the EntryPoint v0.6.
+    /// @notice Returns the address of the EntryPoint v0.8.
     ///
-    /// @return The address of the EntryPoint v0.6
+    /// @return The address of the EntryPoint v0.8
     function entryPoint() public view virtual returns (address) {
-        return 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789;
+        return 0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108;
     }
 
     /// @notice Computes the hash of the `UserOperation` in the same way as EntryPoint v0.6, but
