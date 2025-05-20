@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react';
 import React, { useEffect, useState } from 'react';
+import { toCoinbaseSmartAccount } from '@appliedblockchain/giano-connector';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
@@ -7,6 +8,7 @@ import Head from 'next/head';
 import { formatEther, parseEther } from 'viem';
 import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
+import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/_types/account-abstraction';
 
 const PRIVATE_ERC20_ADDRESS = '0x79D2c71271A3cB73930B32a2539d613BBCBFF556';
 const Home: NextPage = () => {
@@ -48,6 +50,15 @@ const Home: NextPage = () => {
     console.log(result);
   };
 
+  const connectViem = async () => {
+    const challenge = new Uint8Array();
+    crypto.getRandomValues(challenge);
+    const credential = await createWebAuthnCredential({ name: 'Giano' });
+    const owner = toWebAuthnAccount({ credential });
+    const client = 
+    const gianoAccount = toCoinbaseSmartAccount({ owner });
+  };
+
   const sendCall = async () => {
     const { data } = await readContract();
     if (data) setContractState(data);
@@ -63,6 +74,9 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
+        <button className={styles.sendButton} onClick={connectViem}>
+          Connect viem account
+        </button>
         <form className={styles.formContainer} onSubmit={sendTx}>
           <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
           <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()}>

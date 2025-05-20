@@ -71,7 +71,7 @@ export async function toCoinbaseSmartAccount(parameters: ToCoinbaseSmartAccountP
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0x2D93346990d1755DF781437Ee6bd42a218dE8998',
+    address: '0x0ba5ed0c6aa8c49038f819e587e2633c4a9f428a',
   } as const;
 
   const owners_bytes = owners.map((owner) => {
