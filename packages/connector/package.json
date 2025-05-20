@@ -20,6 +20,8 @@
     "@peculiar/asn1-ecc": "^2.3.14",
     "@peculiar/asn1-schema": "^2.3.13",
     "@rainbow-me/rainbowkit": "^2.2.4",
+    "abitype": "^1.0.8",
+    "ox": "^0.7.1",
     "viem": "2.29.2",
     "wagmi": "2.15.4"
   },

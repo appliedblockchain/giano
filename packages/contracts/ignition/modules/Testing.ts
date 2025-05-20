@@ -1,12 +1,8 @@
 import { buildModule } from '@nomicfoundation/hardhat-ignition/modules';
-import { ethers } from 'ethers';
+import { parseEther } from 'ethers';
 
 export default buildModule('Testing', (m) => {
-  const initialERC20Supply = m.getParameter('initialERC20Supply', ethers.parseEther('1000000000'))
-  const testContract = m.contract('TestContract');
-  const genericERC20 = m.contract('GenericERC20', [initialERC20Supply]);
-  const privateERC20 = m.contract('PrivateERC20');
-  const genericERC721 = m.contract('GenericERC721');
+  const privateERC20 = m.contract('PrivateERC20', [parseEther('100000000000000')]);
 
-  return { testContract, genericERC20, genericERC721, privateERC20 };
+  return { privateERC20 };
 });
