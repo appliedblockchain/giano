@@ -6,6 +6,7 @@ import '@nomicfoundation/hardhat-ignition-ethers';
 import 'hardhat-gas-reporter';
 import 'hardhat-tracer';
 import '@appliedblockchain/silentdatarollup-hardhat-plugin';
+import '@nomicfoundation/hardhat-foundry';
 import { TASK_COMPILE } from 'hardhat/builtin-tasks/task-names';
 dotenv.config();
 
@@ -18,7 +19,7 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: '0.8.27',
+        version: '0.8.28',
         settings: {
           optimizer: {
             enabled: true,
@@ -47,6 +48,9 @@ const config: HardhatUserConfig = {
   },
   gasReporter: {
     enabled: true,
+  },
+  paths: {
+      sources: "./src"
   },
   ignition: {
     strategyConfig: {

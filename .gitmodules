@@ -1,0 +1,15 @@
+[submodule "packages/contracts/lib/forge-std"]
+	path = packages/contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "packages/contracts/lib/p256-verifier"]
+	path = packages/contracts/lib/p256-verifier
+	url = https://github.com/daimo-eth/p256-verifier
+[submodule "packages/contracts/lib/webauthn-sol"]
+	path = packages/contracts/lib/webauthn-sol
+	url = https://github.com/base/webauthn-sol
+[submodule "packages/contracts/lib/safe-singleton-deployer-sol"]
+	path = packages/contracts/lib/safe-singleton-deployer-sol
+	url = https://github.com/wilsoncusack/safe-singleton-deployer-sol
+[submodule "packages/contracts/lib/solady"]
+	path = packages/contracts/lib/solady
+	url = https://github.com/Vectorized/solady
