@@ -2,6 +2,10 @@
   "name": "@appliedblockchain/giano",
   "private": true,
   "scripts": {
+    "git:init": "git submodule update --init --recursive",
+    "bundler:init": "cd vendor/bundler && corepack yarn@1 && corepack yarn@1 preprocess",
+    "bundler:start": "cd vendor/bundler && corepack yarn@1 run bundler --network http://127.0.0.1:8545 --unsafe --mnemonic mnemonic.txt",
+    "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",
     "hh:node": "pnpm --filter @appliedblockchain/giano-contracts hh:node",
     "hh:deploy": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy",
     "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing"

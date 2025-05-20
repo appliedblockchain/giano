@@ -1,13 +1,14 @@
 import { SignatureType } from '@appliedblockchain/silentdatarollup-core';
 import * as dotenv from 'dotenv';
-import { HardhatUserConfig, task } from 'hardhat/config';
+import { TASK_COMPILE } from 'hardhat/builtin-tasks/task-names';
+import type { HardhatUserConfig } from 'hardhat/config';
+import { task } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import 'hardhat-gas-reporter';
 import 'hardhat-tracer';
 import '@appliedblockchain/silentdatarollup-hardhat-plugin';
 import '@nomicfoundation/hardhat-foundry';
-import { TASK_COMPILE } from 'hardhat/builtin-tasks/task-names';
 dotenv.config();
 
 task(TASK_COMPILE).setAction(async (taskArgs, hre, runSuper) => {
@@ -50,7 +51,7 @@ const config: HardhatUserConfig = {
     enabled: true,
   },
   paths: {
-      sources: "./src"
+    sources: './src',
   },
   ignition: {
     strategyConfig: {

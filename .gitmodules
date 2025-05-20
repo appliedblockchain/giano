@@ -13,3 +13,9 @@
 [submodule "packages/contracts/lib/solady"]
 	path = packages/contracts/lib/solady
 	url = https://github.com/Vectorized/solady
+[submodule "vendor/bundler"]
+	path = vendor/bundler
+	url = https://github.com/gabspeck/bundler
+[submodule "vendor/account-abstraction"]
+	path = vendor/account-abstraction
+	url = https://github.com/eth-infinitism/account-abstraction

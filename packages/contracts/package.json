@@ -7,7 +7,7 @@
     "hh:build": "pnpm hh:compile && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "hardhat node",
-    "hh:deploy": "hardhat ignition deploy ignition/modules/SingleKeyAccountFactory.ts --strategy create2",
+    "hh:deploy": "hardhat ignition deploy ignition/modules/GianoAccountFactory.ts --strategy create2",
     "hh:deploy:testing": "hardhat ignition deploy ignition/modules/Testing.ts --strategy create2",
     "hh:compile": "hardhat compile",
     "hh:clean": "hardhat clean",
