@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {CoinbaseSmartWallet, UserOperation} from "../../src/CoinbaseSmartWallet.sol";
+import {CoinbaseSmartWallet, PackedUserOperation} from '../../src/CoinbaseSmartWallet.sol';
 
 contract MockEntryPoint {
     mapping(address => uint256) public balanceOf;
@@ -12,13 +12,13 @@ contract MockEntryPoint {
 
     function withdrawTo(address to, uint256 amount) public payable {
         balanceOf[msg.sender] -= amount;
-        (bool success,) = payable(to).call{value: amount}("");
+        (bool success, ) = payable(to).call{value: amount}('');
         require(success);
     }
 
     function validateUserOp(
         address account,
-        UserOperation memory userOp,
+        PackedUserOperation memory userOp,
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) public payable returns (uint256 validationData) {

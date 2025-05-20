@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {IAccount} from "@account-abstraction/contracts/interfaces/IAccount.sol";
+import {IAccount} from '@account-abstraction/contracts/interfaces/IAccount.sol';
 
-import {UserOperation, UserOperationLib} from "@account-abstraction/contracts/interfaces/UserOperation.sol";
-import {Receiver} from "solady/accounts/Receiver.sol";
-import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
-import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
-import {WebAuthn} from "webauthn-sol/WebAuthn.sol";
+import {PackedUserOperation} from '@account-abstraction/contracts/interfaces/PackedUserOperation.sol';
+import {UserOperationLib} from '@account-abstraction/contracts/core/UserOperationLib.sol';
+import {Receiver} from 'solady/accounts/Receiver.sol';
+import {SignatureCheckerLib} from 'solady/utils/SignatureCheckerLib.sol';
+import {UUPSUpgradeable} from 'solady/utils/UUPSUpgradeable.sol';
+import {WebAuthn} from 'webauthn-sol/WebAuthn.sol';
 
-import {ERC1271} from "./ERC1271.sol";
-import {MultiOwnable} from "./MultiOwnable.sol";
+import {ERC1271} from './ERC1271.sol';
+import {MultiOwnable} from './MultiOwnable.sol';
 
 /// @title Coinbase Smart Wallet
 ///
@@ -97,7 +98,7 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
     modifier payPrefund(uint256 missingAccountFunds) virtual {
         _;
 
-        assembly ("memory-safe") {
+        assembly ('memory-safe') {
             if missingAccountFunds {
                 // Ignore failure (it's EntryPoint's job to verify, not the account's).
                 pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))
@@ -146,13 +147,11 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
     /// @return validationData The encoded `ValidationData` structure:
     ///                        `(uint256(validAfter) << (160 + 48)) | (uint256(validUntil) << 160) | (success ? 0 : 1)`
     ///                        where `validUntil` is 0 (indefinite) and `validAfter` is 0.
-    function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
-        external
-        virtual
-        onlyEntryPoint
-        payPrefund(missingAccountFunds)
-        returns (uint256 validationData)
-    {
+    function validateUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash,
+        uint256 missingAccountFunds
+    ) external virtual onlyEntryPoint payPrefund(missingAccountFunds) returns (uint256 validationData) {
         uint256 key = userOp.nonce >> 64;
 
         if (bytes4(userOp.callData) == this.executeWithoutChainIdValidation.selector) {
@@ -204,12 +203,7 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
     /// @param target The address to call.
     /// @param value  The value to send with the call.
     /// @param data   The data of the call.
-    function execute(address target, uint256 value, bytes calldata data)
-        external
-        payable
-        virtual
-        onlyEntryPointOrOwner
-    {
+    function execute(address target, uint256 value, bytes calldata data) external payable virtual onlyEntryPointOrOwner {
         _call(target, value, data);
     }
 
@@ -239,8 +233,8 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
     /// @param userOp The `UserOperation` to compute the hash for.
     ///
     /// @return The `UserOperation` hash, which does not depend on chain ID.
-    function getUserOpHashWithoutChainId(UserOperation calldata userOp) public view virtual returns (bytes32) {
-        return keccak256(abi.encode(UserOperationLib.hash(userOp), entryPoint()));
+    function getUserOpHashWithoutChainId(PackedUserOperation calldata userOp) public view virtual returns (bytes32) {
+        return keccak256(abi.encode(UserOperationLib.hash(userOp, bytes32(0)), entryPoint()));
     }
 
     /// @notice Returns the implementation of the ERC1967 proxy.
@@ -259,11 +253,11 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
     /// @return `true` is the function selector is allowed to skip the chain ID validation, else `false`.
     function canSkipChainIdValidation(bytes4 functionSelector) public pure returns (bool) {
         if (
-            functionSelector == MultiOwnable.addOwnerPublicKey.selector
-                || functionSelector == MultiOwnable.addOwnerAddress.selector
-                || functionSelector == MultiOwnable.removeOwnerAtIndex.selector
-                || functionSelector == MultiOwnable.removeLastOwner.selector
-                || functionSelector == UUPSUpgradeable.upgradeToAndCall.selector
+            functionSelector == MultiOwnable.addOwnerPublicKey.selector ||
+            functionSelector == MultiOwnable.addOwnerAddress.selector ||
+            functionSelector == MultiOwnable.removeOwnerAtIndex.selector ||
+            functionSelector == MultiOwnable.removeLastOwner.selector ||
+            functionSelector == UUPSUpgradeable.upgradeToAndCall.selector
         ) {
             return true;
         }
@@ -282,7 +276,7 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
     function _call(address target, uint256 value, bytes memory data) internal {
         (bool success, bytes memory result) = target.call{value: value}(data);
         if (!success) {
-            assembly ("memory-safe") {
+            assembly ('memory-safe') {
                 revert(add(result, 32), mload(result))
             }
         }
@@ -306,7 +300,7 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
             }
 
             address owner;
-            assembly ("memory-safe") {
+            assembly ('memory-safe') {
                 owner := mload(add(ownerBytes, 32))
             }
 
@@ -332,6 +326,6 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
 
     /// @inheritdoc ERC1271
     function _domainNameAndVersion() internal pure override(ERC1271) returns (string memory, string memory) {
-        return ("Coinbase Smart Wallet", "1");
+        return ('Coinbase Smart Wallet', '1');
     }
 }
