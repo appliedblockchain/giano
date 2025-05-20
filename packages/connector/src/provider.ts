@@ -190,6 +190,9 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
     wallet_addEthereumChain: () => {
       //TODO: implement
     },
+    wallet_revokePermissions: () => {
+      account = null;
+    },
     wallet_switchEthereumChain: (params) => {
       const [{ chainId: chainIdHex }] = params;
       const chainId = parseInt(chainIdHex, 16);
@@ -258,44 +261,44 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       }
       return [account] as `0x${string}`[];
     },
-    eth_call: async (args) => {
-      console.log('-> eth_call:', args);
-      console.log({ args });
-      const [params, block] = args;
-      console.log({ account });
-      if (account) {
-        const call = {
-          target: params.to,
-          data: params.data,
-          expiresAt: maxUint256,
-        };
-        console.log({ call });
-        const challenge = await readContract(client!, {
-          address: account as Address,
-          abi: singleKeyAccountAbi,
-          functionName: 'getStaticChallenge',
-          args: [call],
-        });
-        const credential = await getCredential({ id: connectedCredential!.rawId, challenge: new Uint8Array(toBytes(challenge)) });
-        if (!credential) {
-          throw new Error('User rejected signing the challenge');
-        }
-        const signature = encodeSignature(credential.response);
-        const readResponse = await readContract(client!, {
-          address: account as Address,
-          abi: singleKeyAccountAbi,
-          functionName: 'staticCall',
-          args: [{ call, signature }],
-          blockTag: block,
-        });
-        console.log({ readResponse });
-        return readResponse;
-      } else {
-        const response = await client!.request({ method: 'eth_call', params: args });
-        console.log('<- eth_call:', response);
-        return response;
-      }
-    },
+    // eth_call: async (args) => {
+    //   console.log('-> eth_call:', args);
+    //   console.log({ args });
+    //   const [params, block] = args;
+    //   console.log({ account });
+    //   if (account) {
+    //     const call = {
+    //       target: params.to,
+    //       data: params.data,
+    //       expiresAt: maxUint256,
+    //     };
+    //     console.log({ call });
+    //     const challenge = await readContract(client!, {
+    //       address: account as Address,
+    //       abi: singleKeyAccountAbi,
+    //       functionName: 'getStaticChallenge',
+    //       args: [call],
+    //     });
+    //     const credential = await getCredential({ id: connectedCredential!.rawId, challenge: new Uint8Array(toBytes(challenge)) });
+    //     if (!credential) {
+    //       throw new Error('User rejected signing the challenge');
+    //     }
+    //     const signature = encodeSignature(credential.response);
+    //     const readResponse = await readContract(client!, {
+    //       address: account as Address,
+    //       abi: singleKeyAccountAbi,
+    //       functionName: 'staticCall',
+    //       args: [{ call, signature }],
+    //       blockTag: block,
+    //     });
+    //     console.log({ readResponse });
+    //     return readResponse;
+    //   } else {
+    //     const response = await client!.request({ method: 'eth_call', params: args });
+    //     console.log('<- eth_call:', response);
+    //     return response;
+    //   }
+    // },
     eth_sendTransaction: async ([{ to, data, value }]: any) => {
       try {
         const call = {
@@ -349,6 +352,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
   const provider: EIP1193Provider = {
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
+      console.log('provide.request ->', { method, params });
       if (!(method in methods)) {
         return client!.request({ ...args } as any);
       }

@@ -23,7 +23,6 @@
     "noImplicitAny": false,
     "isolatedModules": true,
     "jsx": "preserve",
-    // "incremental": true,
     "rootDir": ".",
     "outDir": "./dist",
     "baseUrl": ".",
@@ -78,7 +77,7 @@
         "services/bcm/artifacts/contracts/*"
       ]
     },
-    "incremental": true
+    "incremental": false
   },
   "include": [
     "next-env.d.ts",

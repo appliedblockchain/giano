@@ -26,12 +26,14 @@ export function gianoConnector({ details, provider }: CreateGianoConnectorParams
       },
       disconnect: async () => {
         console.log('disconnect');
+        await provider.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: [] }] });
       },
       getAccounts: async () => {
         console.log('get accounts');
         return provider.request({ method: 'eth_accounts' });
       },
       getProvider: async (): Promise<EIP1193Provider> => {
+        console.log('getProvider');
         return provider;
       },
       isAuthorized: async () => {
@@ -45,7 +47,7 @@ export function gianoConnector({ details, provider }: CreateGianoConnectorParams
         }
       },
       setup: async () => {
-        console.log('setup called');
+        console.log('setup');
       },
       switchChain: async ({ chainId }: { chainId: number }) => {
         await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${chainId.toString(16)}` }] });
@@ -55,13 +57,11 @@ export function gianoConnector({ details, provider }: CreateGianoConnectorParams
         const chainId = await provider.request({ method: 'eth_chainId' });
         return parseInt(chainId, 16);
       },
-      onAccountsChanged: (accounts: string[]) => {
-        if (accounts.length === 0) {
-          void connector.disconnect();
-        }
+      onAccountsChanged: () => {
+        console.log('onAccountsChanged');
       },
-      onChainChanged: (chainId: string) => {
-        console.log('onChainChanged', chainId);
+      onChainChanged: () => {
+        console.log('onChainChanged');
       },
       onDisconnect: () => {
         console.log('onDisconnect');
