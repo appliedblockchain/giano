@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "hh:build": "pnpm hh:compile && tsup index.ts",
+    "hh:build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "hardhat node",
     "hh:deploy": "hardhat ignition deploy ignition/modules/GianoAccountFactory.ts --strategy create2",
@@ -18,6 +18,7 @@
     "dist/**/*"
   ],
   "main": "dist/index",
+  "types": "dist/index.d.ts",
   "devDependencies": {
     "@account-abstraction/contracts": "^0.8.0",
     "@appliedblockchain/giano-common": "workspace:",

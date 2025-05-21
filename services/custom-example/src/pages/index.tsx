@@ -1,16 +1,20 @@
-import type { FormEvent } from 'react';
-import React, { useEffect, useState } from 'react';
+import 'react';
 import { toCoinbaseSmartAccount } from '@appliedblockchain/giano-connector';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { formatEther, parseEther } from 'viem';
+import type { FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import type { Address } from 'viem';
+import { createPublicClient, encodeFunctionData, formatEther, http, parseEther, parseGwei } from 'viem';
+import { createBundlerClient, createWebAuthnCredential, toSmartAccount, toWebAuthnAccount } from 'viem/account-abstraction';
+import { hardhat } from 'viem/chains';
 import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
-import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/_types/account-abstraction';
 
-const PRIVATE_ERC20_ADDRESS = '0x79D2c71271A3cB73930B32a2539d613BBCBFF556';
+const PRIVATE_ERC20_ADDRESS = '0xA6ED5f9baB12B749CD9Dc2ED73320eadb055D9B9';
+const PAYMASTER_ADDRESS = '0xbD17F0671A1a214125D162AE1bdf35ab815d1aa8';
 const Home: NextPage = () => {
   const { address, isConnected } = useAccount();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
@@ -45,7 +49,7 @@ const Home: NextPage = () => {
       address: PRIVATE_ERC20_ADDRESS,
       abi: privateErc20Abi,
       functionName: 'mint',
-      args: [address!, parseEther(inputMessage.trim())],
+      args: [parseEther(inputMessage.trim())],
     });
     console.log(result);
   };
@@ -55,8 +59,56 @@ const Home: NextPage = () => {
     crypto.getRandomValues(challenge);
     const credential = await createWebAuthnCredential({ name: 'Giano' });
     const owner = toWebAuthnAccount({ credential });
-    const client = 
-    const gianoAccount = toCoinbaseSmartAccount({ owner });
+    const publicClient = createPublicClient({
+      chain: hardhat,
+      transport: http('http://localhost:8545'),
+    });
+    const gianoAccount = await toCoinbaseSmartAccount({ client: publicClient, owners: [owner] });
+    const bundlerClient = createBundlerClient({
+      transport: http('http://localhost:8080/rpc'),
+      client: publicClient,
+    });
+    const data = encodeFunctionData({
+      abi: privateErc20Abi,
+      functionName: 'mint',
+      args: [parseEther('1')],
+    });
+    const smartAccount = await toSmartAccount(gianoAccount);
+    const op = {
+      account: smartAccount,
+      paymaster: PAYMASTER_ADDRESS as Address,
+      callGasLimit: 0n, // added here because the schema requires it, but this will be calculated by the bundler
+      paymasterPostOpGasLimit: 100_000n, // can this be calculated somehow?
+      paymasterVerificationGasLimit: 100_000n,
+      calls: [
+        {
+          to: PRIVATE_ERC20_ADDRESS as Address,
+          value: 0n,
+          data,
+        },
+      ],
+    };
+    const estimate = await bundlerClient.estimateUserOperationGas(op);
+    console.log({ estimate });
+    const prepared = await bundlerClient.prepareUserOperation({
+      ...op,
+      ...estimate,
+    });
+    const finalOp = {
+      ...prepared,
+      preVerificationGas: prepared.preVerificationGas + 1000n, // safety margin
+      maxFeePerGas: parseGwei('200'),
+      maxPriorityFeePerGas: parseGwei('400'),
+    };
+    const signature = await smartAccount.signUserOperation(finalOp);
+    const hash = await bundlerClient.sendUserOperation({
+      ...finalOp,
+      signature,
+    });
+
+    const receipt = await bundlerClient.waitForUserOperationReceipt({ hash });
+
+    console.log({ receipt });
   };
 
   const sendCall = async () => {

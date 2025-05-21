@@ -1,4 +1,4 @@
-import { singleKeyAccountAbi, singleKeyAccountFactoryAbi } from '@appliedblockchain/giano-contracts';
+import { coinbaseSmartWalletAbi, coinbaseSmartWalletFactoryAbi } from '@appliedblockchain/giano-contracts';
 import { ECDSASigValue } from '@peculiar/asn1-ecc';
 import { AsnParser } from '@peculiar/asn1-schema';
 import type { PublicClient } from 'viem';
@@ -169,7 +169,7 @@ export type CreateGianoProviderParams = {
 
 const factoryContract = Object.freeze({
   address: FACTORY_ADDRESS,
-  abi: singleKeyAccountFactoryAbi,
+  // abi: singleKeyAccountFactoryAbi,
 });
 
 export const createGianoProvider = ({ transports, chains, initialChainId, sendTransaction }: CreateGianoProviderParams) => {
@@ -212,55 +212,55 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
       transport = newTransport;
       client = createPublicClient({ transport, chain });
     },
-    eth_requestAccounts: async () => {
-      if (account) {
-        return { accounts: [account], chainId: `0x${chain!.id.toString(16)}` };
-      }
-      let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
-      if (!credential) {
-        credential = await createCredential();
-        if (!credential) {
-          throw new Error('Could not obtain credential');
-        }
-        const publicKey = credential.response.getPublicKey();
-        if (!publicKey) {
-          throw new Error('Could not obtain public key');
-        }
-        const { x, y } = await extractKeyCoordinates(publicKey);
-        account = await readContract(client!, {
-          ...factoryContract,
-          functionName: 'getAccountAddress',
-          args: [{ x: toHex(x), y: toHex(y) }],
-        });
-        const data = encodeFunctionData({
-          ...factoryContract,
-          functionName: 'createUser',
-          args: [toHex(new Uint8Array(credential.rawId)), { x: toHex(x), y: toHex(y) }],
-        });
-        const hash = await sendTransaction({
-          transport: transport!,
-          chain: chain!,
-          request: {
-            to: factoryContract.address,
-            data,
-          },
-        });
-        await waitForTransactionReceipt(client!, { hash });
-      }
-      connectedCredential = credential;
-      if (!account) {
-        const user = await readContract(client!, {
-          ...factoryContract,
-          functionName: 'getUser',
-          args: [toHex(new Uint8Array(credential.rawId))],
-        });
-        if (user.account === zeroAddress) {
-          throw new Error('User not found');
-        }
-        account = user.account;
-      }
-      return [account] as `0x${string}`[];
-    },
+    // eth_requestAccounts: async () => {
+    //   if (account) {
+    //     return { accounts: [account], chainId: `0x${chain!.id.toString(16)}` };
+    //   }
+    //   let credential: PublicKeyAttestation | PublicKeyAssertion | null = await getCredential();
+    //   if (!credential) {
+    //     credential = await createCredential();
+    //     if (!credential) {
+    //       throw new Error('Could not obtain credential');
+    //     }
+    //     const publicKey = credential.response.getPublicKey();
+    //     if (!publicKey) {
+    //       throw new Error('Could not obtain public key');
+    //     }
+    //     const { x, y } = await extractKeyCoordinates(publicKey);
+    //     account = await readContract(client!, {
+    //       ...factoryContract,
+    //       functionName: 'getAccountAddress',
+    //       args: [{ x: toHex(x), y: toHex(y) }],
+    //     });
+    //     const data = encodeFunctionData({
+    //       ...factoryContract,
+    //       functionName: 'createUser',
+    //       args: [toHex(new Uint8Array(credential.rawId)), { x: toHex(x), y: toHex(y) }],
+    //     });
+    //     const hash = await sendTransaction({
+    //       transport: transport!,
+    //       chain: chain!,
+    //       request: {
+    //         to: factoryContract.address,
+    //         data,
+    //       },
+    //     });
+    //     await waitForTransactionReceipt(client!, { hash });
+    //   }
+    //   connectedCredential = credential;
+    //   if (!account) {
+    //     const user = await readContract(client!, {
+    //       ...factoryContract,
+    //       functionName: 'getUser',
+    //       args: [toHex(new Uint8Array(credential.rawId))],
+    //     });
+    //     if (user.account === zeroAddress) {
+    //       throw new Error('User not found');
+    //     }
+    //     account = user.account;
+    //   }
+    //   return [account] as `0x${string}`[];
+    // },
     // eth_call: async (args) => {
     //   console.log('-> eth_call:', args);
     //   console.log({ args });
@@ -299,52 +299,52 @@ export const createGianoProvider = ({ transports, chains, initialChainId, sendTr
     //     return response;
     //   }
     // },
-    eth_sendTransaction: async ([{ to, data, value }]: any) => {
-      try {
-        const call = {
-          target: to,
-          data,
-          value: value || 0,
-        };
-        const challenge = await readContract(client!, {
-          address: account as Address,
-          abi: singleKeyAccountAbi,
-          functionName: 'getChallenge',
-          args: [call],
-        });
-        console.log('before get cred');
-        const credential = await getCredential({
-          id: connectedCredential!.rawId,
-          challenge: new Uint8Array(toBytes(challenge)),
-        });
-        if (!credential) {
-          throw new Error('Error signing challenge!');
-        }
-        const encodedSignature = encodeSignature(credential.response);
-        const gianoExecuteData = encodeFunctionData({
-          abi: singleKeyAccountAbi,
-          functionName: 'execute',
-          args: [
-            {
-              call,
-              signature: encodedSignature,
-            },
-          ],
-        });
-        const hash = await sendTransaction({
-          chain: chain!,
-          transport: transport!,
-          request: {
-            to: account as Address,
-            data: gianoExecuteData,
-          },
-        });
-        return hash;
-      } catch (e) {
-        console.error('request error', e);
-        throw e;
-      }
-    },
+    // eth_sendTransaction: async ([{ to, data, value }]: any) => {
+    //   try {
+    //     const call = {
+    //       target: to,
+    //       data,
+    //       value: value || 0,
+    //     };
+    //     const challenge = await readContract(client!, {
+    //       address: account as Address,
+    //       abi: singleKeyAccountAbi,
+    //       functionName: 'getChallenge',
+    //       args: [call],
+    //     });
+    //     console.log('before get cred');
+    //     const credential = await getCredential({
+    //       id: connectedCredential!.rawId,
+    //       challenge: new Uint8Array(toBytes(challenge)),
+    //     });
+    //     if (!credential) {
+    //       throw new Error('Error signing challenge!');
+    //     }
+    //     const encodedSignature = encodeSignature(credential.response);
+    //     const gianoExecuteData = encodeFunctionData({
+    //       abi: singleKeyAccountAbi,
+    //       functionName: 'execute',
+    //       args: [
+    //         {
+    //           call,
+    //           signature: encodedSignature,
+    //         },
+    //       ],
+    //     });
+    //     const hash = await sendTransaction({
+    //       chain: chain!,
+    //       transport: transport!,
+    //       request: {
+    //         to: account as Address,
+    //         data: gianoExecuteData,
+    //       },
+    //     });
+    //     return hash;
+    //   } catch (e) {
+    //     console.error('request error', e);
+    //     throw e;
+    //   }
+    // },
   };
 
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }]);

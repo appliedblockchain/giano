@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "main": "dist/index",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.mjs",
