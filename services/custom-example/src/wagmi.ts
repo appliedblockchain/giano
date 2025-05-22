@@ -1,9 +1,9 @@
 import { giano } from '@appliedblockchain/giano-connector';
 import { createGianoProvider } from '@appliedblockchain/giano-connector';
-import { hardhatDefaultAccountSender } from '@appliedblockchain/giano-connector';
 import { connectorsForWallets } from '@rainbow-me/rainbowkit';
 import { metaMaskWallet } from '@rainbow-me/rainbowkit/wallets';
 import { custom, http } from 'viem';
+import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
 
@@ -14,11 +14,17 @@ const rpcs = {
   },
 };
 
+const bundler = createBundlerClient({
+  chain: hardhat,
+  transport: http('http://localhost:8080/rpc'),
+});
+
 const provider = createGianoProvider({
+  bundler,
+  paymaster: '0x0A8285879FD97FBe15f9402fDED9511Ef3Abf04d',
   chains: rpcs.chains,
   transports: rpcs.transports,
   initialChainId: hardhat.id,
-  sendTransaction: hardhatDefaultAccountSender,
 });
 
 const providerTransport = custom(provider);

@@ -1,41 +1,35 @@
-import type { Address, TypedData } from 'abitype';
 import * as Signature from 'ox/Signature';
 import type * as WebAuthnP256 from 'ox/WebAuthnP256';
 import { coinbaseSmartWalletAbi, coinbaseSmartWalletFactoryAbi } from 'packages/contracts';
-import type { Hash, Hex } from 'viem';
-import type { TypedDataDefinition } from 'viem';
-import type { Assign, OneOf, Prettify } from 'viem';
-import { BaseError } from 'viem';
-import { decodeFunctionData } from 'viem';
-import { encodeAbiParameters } from 'viem';
-import { encodeFunctionData } from 'viem';
-import { encodePacked } from 'viem';
-import { pad } from 'viem';
-import { size } from 'viem';
-import { stringToHex } from 'viem';
-import { hashMessage } from 'viem';
-import { hashTypedData } from 'viem';
-import { parseSignature } from 'viem';
-import type { UserOperation } from 'viem/account-abstraction';
-import type { SmartAccount, SmartAccountImplementation, WebAuthnAccount } from 'viem/account-abstraction';
-import { entryPoint08Address } from 'viem/account-abstraction';
-import { entryPoint08Abi } from 'viem/account-abstraction';
-import { getUserOperationHash } from 'viem/account-abstraction';
-import { toSmartAccount } from 'viem/account-abstraction';
-import type { LocalAccount } from 'viem/accounts';
+import type { Address, Assign, Hash, Hex, LocalAccount, OneOf, Prettify, TypedData, TypedDataDefinition } from 'viem';
+import {
+  BaseError,
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeFunctionData,
+  encodePacked,
+  hashMessage,
+  hashTypedData,
+  pad,
+  parseSignature,
+  size,
+  stringToHex,
+} from 'viem';
+import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
+import { entryPoint08Abi, entryPoint08Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
 
-export type ToCoinbaseSmartAccountParameters = {
+export type ToGianoSmartAccountParameters = {
   address?: Address | undefined;
-  client: CoinbaseSmartAccountImplementation['client'];
+  client: GianoSmartAccountImplementation['client'];
   ownerIndex?: number | undefined;
   owners: readonly (Address | OneOf<LocalAccount | WebAuthnAccount>)[];
   nonce?: bigint | undefined;
 };
 
-export type ToCoinbaseSmartAccountReturnType = Prettify<SmartAccount<CoinbaseSmartAccountImplementation>>;
+export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
 
-export type CoinbaseSmartAccountImplementation = Assign<
+export type GianoSmartAccountImplementation = Assign<
   SmartAccountImplementation<typeof entryPoint08Abi, '0.8', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
@@ -44,22 +38,22 @@ export type CoinbaseSmartAccountImplementation = Assign<
 >;
 
 /**
- * @description Create a Coinbase Smart Account.
+ * @description Create a Giano Smart Account.
  *
- * @param parameters - {@link ToCoinbaseSmartAccountParameters}
- * @returns Coinbase Smart Account. {@link ToCoinbaseSmartAccountReturnType}
+ * @param parameters - {@link ToGianoSmartAccountParameters}
+ * @returns Giano Smart Account. {@link ToGianoSmartAccountReturnType}
  *
  * @example
- * import { toCoinbaseSmartAccount } from 'viem/account-abstraction'
+ * import { toGianoSmartAccount } from 'viem/account-abstraction'
  * import { privateKeyToAccount } from 'viem/accounts'
  * import { client } from './client.js'
  *
- * const account = toCoinbaseSmartAccount({
+ * const account = toGianoSmartAccount({
  *   client,
  *   owners: [privateKeyToAccount('0x...')],
  * })
  */
-export async function toCoinbaseSmartAccount(parameters: ToCoinbaseSmartAccountParameters): Promise<ToCoinbaseSmartAccountReturnType> {
+export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParameters): Promise<ToGianoSmartAccountReturnType> {
   const { client, ownerIndex = 0, owners, nonce = 0n } = parameters;
 
   let address = parameters.address;
@@ -285,19 +279,19 @@ export function toReplaySafeTypedData({ address, chainId, hash }: { address: Add
   return {
     domain: {
       chainId,
-      name: 'Coinbase Smart Wallet',
+      name: 'Giano Smart Wallet',
       verifyingContract: address,
       version: '1',
     },
     types: {
-      CoinbaseSmartWalletMessage: [
+      GianoSmartWalletMessage: [
         {
           name: 'hash',
           type: 'bytes32',
         },
       ],
     },
-    primaryType: 'CoinbaseSmartWalletMessage',
+    primaryType: 'GianoSmartWalletMessage',
     message: {
       hash,
     },
