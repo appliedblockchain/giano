@@ -13,7 +13,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         (bytes32 r, bytes32 s) = vm.signP256(passkeyPrivateKey, webAuthn.messageHash);
         s = bytes32(Utils.normalizeS(uint256(s)));
         bytes memory sig = abi.encode(
-            CoinbaseSmartWallet.SignatureWrapper({
+            GianoSmartWallet.SignatureWrapper({
                 ownerIndex: 1,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
@@ -34,7 +34,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
     }
 
     function testSmartWalletSigner() public {
-        MockCoinbaseSmartWallet otherAccount = new MockCoinbaseSmartWallet();
+        MockGianoSmartWallet otherAccount = new MockGianoSmartWallet();
         otherAccount.initialize(owners);
 
         vm.prank(signer);
@@ -45,11 +45,11 @@ contract TestIsValidSignature is SmartWalletTestBase {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, otherAccount.replaySafeHash(toSign));
         bytes memory signature = abi.encodePacked(r, s, v);
 
-        CoinbaseSmartWallet.SignatureWrapper memory wrapperForOtherAccount =
-            CoinbaseSmartWallet.SignatureWrapper(0, signature);
+        GianoSmartWallet.SignatureWrapper memory wrapperForOtherAccount =
+            GianoSmartWallet.SignatureWrapper(0, signature);
 
         bytes memory sig = abi.encode(
-            CoinbaseSmartWallet.SignatureWrapper({ownerIndex: 2, signatureData: abi.encode(wrapperForOtherAccount)})
+            GianoSmartWallet.SignatureWrapper({ownerIndex: 2, signatureData: abi.encode(wrapperForOtherAccount)})
         );
 
         // check a valid signature
@@ -67,7 +67,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
 
         uint8 badOwnerIndex = 2;
         bytes memory sig = abi.encode(
-            CoinbaseSmartWallet.SignatureWrapper({
+            GianoSmartWallet.SignatureWrapper({
                 ownerIndex: badOwnerIndex,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
@@ -95,7 +95,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         s = bytes32(Utils.normalizeS(uint256(s)));
 
         bytes memory sig = abi.encode(
-            CoinbaseSmartWallet.SignatureWrapper({
+            GianoSmartWallet.SignatureWrapper({
                 ownerIndex: 1,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
@@ -120,7 +120,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes32 toSign = account.replaySafeHash(hash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
         bytes memory signature = abi.encodePacked(r, s, v);
-        bytes4 ret = account.isValidSignature(hash, abi.encode(CoinbaseSmartWallet.SignatureWrapper(0, signature)));
+        bytes4 ret = account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(0, signature)));
         assertEq(ret, bytes4(0x1626ba7e));
     }
 
@@ -128,7 +128,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xa12ce, hash);
         bytes memory signature = abi.encodePacked(r, s, v);
-        bytes4 ret = account.isValidSignature(hash, abi.encode(CoinbaseSmartWallet.SignatureWrapper(0, signature)));
+        bytes4 ret = account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(0, signature)));
         assertEq(ret, bytes4(0xffffffff));
     }
 
@@ -142,7 +142,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
 
         uint8 addressOwnerIndex = 0;
         bytes memory sig = abi.encode(
-            CoinbaseSmartWallet.SignatureWrapper({
+            GianoSmartWallet.SignatureWrapper({
                 ownerIndex: addressOwnerIndex,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
@@ -167,7 +167,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
         bytes memory signature = abi.encodePacked(r, s, v);
         vm.expectRevert();
-        account.isValidSignature(hash, abi.encode(CoinbaseSmartWallet.SignatureWrapper(1, signature)));
+        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(1, signature)));
     }
 
     /// @dev this case should not be possible, but we need to explicitly test the revert case
@@ -178,7 +178,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes memory signature = abi.encodePacked(r, s, v);
         bytes32 invalidAddress = bytes32(uint256(type(uint160).max) + 1);
         bytes32 slot_ownerAtIndex =
-            bytes32(uint256(0x97e2c6aad4ce5d562ebfaa00db6b9e0fb66ea5d8162ed5b243f51a2e03086f00) + 2); // MUTLI_OWNABLE_STORAGE_LOCATION
+            bytes32(uint256(0x0627f72af0e6f412195b0d8acbe438b28090dd545b7d2331fccf77723561f500) + 2); // MUTLI_OWNABLE_STORAGE_LOCATION
             // + 2
         bytes32 slot_ownerAtIndex_zeroIndex =
             bytes32(uint256(keccak256(abi.encodePacked(keccak256(abi.encode(0, slot_ownerAtIndex))))));
@@ -186,6 +186,6 @@ contract TestIsValidSignature is SmartWalletTestBase {
         vm.expectRevert(
             abi.encodeWithSelector(MultiOwnable.InvalidEthereumAddressOwner.selector, abi.encode(invalidAddress))
         );
-        account.isValidSignature(hash, abi.encode(CoinbaseSmartWallet.SignatureWrapper(0, signature)));
+        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(0, signature)));
     }
 }

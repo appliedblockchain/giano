@@ -13,14 +13,15 @@ import {WebAuthn} from 'webauthn-sol/WebAuthn.sol';
 import {ERC1271} from './ERC1271.sol';
 import {MultiOwnable} from './MultiOwnable.sol';
 
-/// @title Coinbase Smart Wallet
+/// @title Giano Smart Wallet
 ///
 /// @notice ERC-4337-compatible smart account, based on Solady's ERC4337 account implementation
 ///         with inspiration from Alchemy's LightAccount and Daimo's DaimoAccount.
 ///
+/// @author Applied Blockchain (https://github.com/appliedblockchain/giano)
 /// @author Coinbase (https://github.com/coinbase/smart-wallet)
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/accounts/ERC4337.sol)
-contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, Receiver {
+contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, Receiver {
     /// @notice A wrapper struct used for signature validation so that callers
     ///         can identify the owner that signed.
     struct SignatureWrapper {
@@ -326,6 +327,6 @@ contract CoinbaseSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable
 
     /// @inheritdoc ERC1271
     function _domainNameAndVersion() internal pure override(ERC1271) returns (string memory, string memory) {
-        return ('Coinbase Smart Wallet', '1');
+        return ('Giano Smart Wallet', '1');
     }
 }

@@ -3,24 +3,24 @@ pragma solidity ^0.8.0;
 
 import {Test, console2} from "forge-std/Test.sol";
 
-import {CoinbaseSmartWallet} from "../src/CoinbaseSmartWallet.sol";
-import {CoinbaseSmartWalletFactory} from "../src/CoinbaseSmartWalletFactory.sol";
+import {GianoSmartWallet} from "../src/GianoSmartWallet.sol";
+import {GianoSmartWalletFactory} from "../src/GianoSmartWalletFactory.sol";
 import {ERC1271InputGenerator} from "../src/utils/ERC1271InputGenerator.sol";
 
-contract CoinbaseSmartWallet1271InputGeneratorTest is Test {
-    CoinbaseSmartWalletFactory factory;
-    CoinbaseSmartWallet implementation;
-    CoinbaseSmartWallet deployedAccount;
+contract GianoSmartWallet1271InputGeneratorTest is Test {
+    GianoSmartWalletFactory factory;
+    GianoSmartWallet implementation;
+    GianoSmartWallet deployedAccount;
     bytes[] owners;
 
     function setUp() public {
-        implementation = new CoinbaseSmartWallet();
-        factory = new CoinbaseSmartWalletFactory(address(implementation));
+        implementation = new GianoSmartWallet();
+        factory = new GianoSmartWalletFactory(address(implementation));
     }
 
     function testGetReplaySafeHashForDeployedAccount() public {
         owners.push(abi.encode(address(1)));
-        deployedAccount = CoinbaseSmartWallet(payable(factory.createAccount(owners, 0)));
+        deployedAccount = GianoSmartWallet(payable(factory.createAccount(owners, 0)));
 
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 replaySafeHash = deployedAccount.replaySafeHash(hash);
@@ -30,7 +30,7 @@ contract CoinbaseSmartWallet1271InputGeneratorTest is Test {
 
     function testGetReplaySafeHashForUndeployedAccount() public {
         owners.push(abi.encode(address(1)));
-        CoinbaseSmartWallet undeployedAccount = CoinbaseSmartWallet(payable(factory.getAddress(owners, 0)));
+        GianoSmartWallet undeployedAccount = GianoSmartWallet(payable(factory.getAddress(owners, 0)));
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         ERC1271InputGenerator generator = new ERC1271InputGenerator(
             undeployedAccount,

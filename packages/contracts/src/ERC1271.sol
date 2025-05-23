@@ -11,6 +11,7 @@ pragma solidity ^0.8.4;
 ///      hash. The domain separator of this outer hash contains the chain id and address of this contract, so that
 ///      it cannot be used on two accounts (see `replaySafeHash()` for the implementation details).
 ///
+/// @author Applied Blockchain (https://github.com/appliedblockchain/giano)
 /// @author Coinbase (https://github.com/coinbase/smart-wallet)
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/accounts/ERC1271.sol)
 abstract contract ERC1271 {
@@ -20,7 +21,7 @@ abstract contract ERC1271 {
     ///      The original hash must either be:
     ///         - An EIP-191 hash: keccak256("\x19Ethereum Signed Message:\n" || len(someMessage) || someMessage)
     ///         - An EIP-712 hash: keccak256("\x19\x01" || someDomainSeparator || hashStruct(someStruct))
-    bytes32 private constant _MESSAGE_TYPEHASH = keccak256("CoinbaseSmartWalletMessage(bytes32 hash)");
+    bytes32 private constant _MESSAGE_TYPEHASH = keccak256("GianoSmartWalletMessage(bytes32 hash)");
 
     /// @notice Returns information about the `EIP712Domain` used to create EIP-712 compliant hashes.
     ///
@@ -81,7 +82,7 @@ abstract contract ERC1271 {
     ///      keccak256(
     ///         \x19\x01 ||
     ///         this.domainSeparator ||
-    ///         hashStruct(CoinbaseSmartWalletMessage({ hash: `hash`}))
+    ///         hashStruct(GianoSmartWalletMessage({ hash: `hash`}))
     ///      )
     ///
     /// @param hash The original hash.
@@ -110,26 +111,26 @@ abstract contract ERC1271 {
         );
     }
 
-    /// @notice Returns the EIP-712 typed hash of the `CoinbaseSmartWalletMessage(bytes32 hash)` data structure.
+    /// @notice Returns the EIP-712 typed hash of the `GianoSmartWalletMessage(bytes32 hash)` data structure.
     ///
     /// @dev Implements encode(domainSeparator : 𝔹²⁵⁶, message : 𝕊) = "\x19\x01" || domainSeparator ||
     ///      hashStruct(message).
     /// @dev See https://eips.ethereum.org/EIPS/eip-712#specification.
     ///
-    /// @param hash The `CoinbaseSmartWalletMessage.hash` field to hash.
+    /// @param hash The `GianoSmartWalletMessage.hash` field to hash.
     ////
     /// @return The resulting EIP-712 hash.
     function _eip712Hash(bytes32 hash) internal view virtual returns (bytes32) {
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), _hashStruct(hash)));
     }
 
-    /// @notice Returns the EIP-712 `hashStruct` result of the `CoinbaseSmartWalletMessage(bytes32 hash)` data
+    /// @notice Returns the EIP-712 `hashStruct` result of the `GianoSmartWalletMessage(bytes32 hash)` data
     ///         structure.
     ///
     /// @dev Implements hashStruct(s : 𝕊) = keccak256(typeHash || encodeData(s)).
     /// @dev See https://eips.ethereum.org/EIPS/eip-712#definition-of-hashstruct.
     ///
-    /// @param hash The `CoinbaseSmartWalletMessage.hash` field.
+    /// @param hash The `GianoSmartWalletMessage.hash` field.
     ///
     /// @return The EIP-712 `hashStruct` result.
     function _hashStruct(bytes32 hash) internal view virtual returns (bytes32) {

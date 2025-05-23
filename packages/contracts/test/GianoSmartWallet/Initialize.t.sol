@@ -10,8 +10,8 @@ contract TestInitialize is SmartWalletTestBase {
     }
 
     function test_cannotInitImplementation() public {
-        account = new CoinbaseSmartWallet();
-        vm.expectRevert(CoinbaseSmartWallet.Initialized.selector);
+        account = new GianoSmartWallet();
+        vm.expectRevert(GianoSmartWallet.Initialized.selector);
         account.initialize(owners);
     }
 }

@@ -4,12 +4,12 @@ pragma solidity ^0.8.0;
 import {IEntryPoint} from '@account-abstraction/contracts/interfaces/IEntryPoint.sol';
 import {Test, console2, stdError} from 'forge-std/Test.sol';
 
-import '../../src/CoinbaseSmartWallet.sol';
-import {MockCoinbaseSmartWallet} from '../mocks/MockCoinbaseSmartWallet.sol';
+import '../../src/GianoSmartWallet.sol';
+import {MockGianoSmartWallet} from '../mocks/MockGianoSmartWallet.sol';
 import {Static} from './Static.sol';
 
 contract SmartWalletTestBase is Test {
-    CoinbaseSmartWallet public account;
+    GianoSmartWallet public account;
     uint256 signerPrivateKey = 0xa11ce;
     address signer = vm.addr(signerPrivateKey);
     bytes[] owners;
@@ -24,7 +24,7 @@ contract SmartWalletTestBase is Test {
 
     function setUp() public virtual {
         vm.etch(0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108, Static.ENTRY_POINT_BYTES);
-        account = new MockCoinbaseSmartWallet();
+        account = new MockGianoSmartWallet();
         owners.push(abi.encode(signer));
         owners.push(passkeyOwner);
         account.initialize(owners);

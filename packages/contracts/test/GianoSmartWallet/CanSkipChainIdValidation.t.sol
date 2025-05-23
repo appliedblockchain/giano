@@ -11,7 +11,7 @@ contract TestCanSkipChainIdValidation is SmartWalletTestBase {
         MultiOwnable.removeLastOwner.selector,
         UUPSUpgradeable.upgradeToAndCall.selector
     ];
-    bytes4[] otherSelectors = [CoinbaseSmartWallet.execute.selector, CoinbaseSmartWallet.executeBatch.selector];
+    bytes4[] otherSelectors = [GianoSmartWallet.execute.selector, GianoSmartWallet.executeBatch.selector];
 
     function test_approvedSelectorsReturnTrue() public {
         for (uint256 i; i < approvedSelectors.length; i++) {

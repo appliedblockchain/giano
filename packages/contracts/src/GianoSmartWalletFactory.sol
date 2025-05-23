@@ -1,31 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {CoinbaseSmartWallet} from "./CoinbaseSmartWallet.sol";
-import {LibClone} from "solady/utils/LibClone.sol";
+import {GianoSmartWallet} from './GianoSmartWallet.sol';
+import {LibClone} from 'solady/utils/LibClone.sol';
 
-/// @title Coinbase Smart Wallet Factory
+/// @title Giano Smart Wallet Factory
 ///
-/// @notice CoinbaseSmartWallet factory, based on Solady's ERC4337Factory.
+/// @notice GianoSmartWallet factory, based on Solady's ERC4337Factory.
 ///
+/// @author Applied Blockchain (https://github.com/appliedblockchain/giano)
 /// @author Coinbase (https://github.com/coinbase/smart-wallet)
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/accounts/ERC4337Factory.sol)
-contract CoinbaseSmartWalletFactory {
+contract GianoSmartWalletFactory {
     /// @notice Address of the ERC-4337 implementation used as implementation for new accounts.
     address public immutable implementation;
 
-    /// @notice Thrown when trying to create a new `CoinbaseSmartWallet` account without any owner.
+    /// @notice Thrown when trying to create a new `GianoSmartWallet` account without any owner.
     error OwnerRequired();
 
     /// @notice Factory constructor used to initialize the implementation address to use for future
-    ///         CoinbaseSmartWallet deployments.
+    ///         GianoSmartWallet deployments.
     ///
-    /// @param implementation_ The address of the CoinbaseSmartWallet implementation which new accounts will proxy to.
+    /// @param implementation_ The address of the GianoSmartWallet implementation which new accounts will proxy to.
     constructor(address implementation_) payable {
         implementation = implementation_;
     }
 
-    /// @notice Returns the deterministic address for a CoinbaseSmartWallet created with `owners` and `nonce`
+    /// @notice Returns the deterministic address for a GianoSmartWallet created with `owners` and `nonce`
     ///         deploys and initializes contract if it has not yet been created.
     ///
     /// @dev Deployed as a ERC-1967 proxy that's implementation is `this.implementation`.
@@ -36,20 +37,14 @@ contract CoinbaseSmartWalletFactory {
     ///
     /// @return account The address of the ERC-1967 proxy created with inputs `owners`, `nonce`, and
     ///                 `this.implementation`.
-    function createAccount(bytes[] calldata owners, uint256 nonce)
-        external
-        payable
-        virtual
-        returns (CoinbaseSmartWallet account)
-    {
+    function createAccount(bytes[] calldata owners, uint256 nonce) external payable virtual returns (GianoSmartWallet account) {
         if (owners.length == 0) {
             revert OwnerRequired();
         }
 
-        (bool alreadyDeployed, address accountAddress) =
-            LibClone.createDeterministicERC1967(msg.value, implementation, _getSalt(owners, nonce));
+        (bool alreadyDeployed, address accountAddress) = LibClone.createDeterministicERC1967(msg.value, implementation, _getSalt(owners, nonce));
 
-        account = CoinbaseSmartWallet(payable(accountAddress));
+        account = GianoSmartWallet(payable(accountAddress));
 
         if (!alreadyDeployed) {
             account.initialize(owners);

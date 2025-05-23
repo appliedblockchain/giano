@@ -1,6 +1,6 @@
+import { gianoSmartWalletAbi, gianoSmartWalletFactoryAbi } from '@appliedblockchain/giano-contracts';
 import * as Signature from 'ox/Signature';
 import type * as WebAuthnP256 from 'ox/WebAuthnP256';
-import { coinbaseSmartWalletAbi, coinbaseSmartWalletFactoryAbi } from 'packages/contracts';
 import type { Address, Assign, Hash, Hex, LocalAccount, OneOf, Prettify, TypedData, TypedDataDefinition } from 'viem';
 import {
   BaseError,
@@ -65,7 +65,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0x2D93346990d1755DF781437Ee6bd42a218dE8998',
+    address: '0x7C8BcFd7Ef2165Ec5aEfBA81b152d2Be54Eb02F2',
   } as const;
 
   const owners_bytes = owners.map((owner) => {
@@ -374,6 +374,6 @@ export function wrapSignature(parameters: { ownerIndex?: number | undefined; sig
 // Constants
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-const abi = coinbaseSmartWalletAbi;
+const abi = gianoSmartWalletAbi;
 
-const factoryAbi = coinbaseSmartWalletFactoryAbi;
+const factoryAbi = gianoSmartWalletFactoryAbi;

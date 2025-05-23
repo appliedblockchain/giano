@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {CoinbaseSmartWalletFactory} from "../../src/CoinbaseSmartWalletFactory.sol";
+import {GianoSmartWalletFactory} from "../../src/GianoSmartWalletFactory.sol";
 
 import "./SmartWalletTestBase.sol";
 
@@ -10,7 +10,7 @@ contract TestUpgradeToAndCall is SmartWalletTestBase {
 
     function setUp() public override {
         super.setUp();
-        CoinbaseSmartWalletFactory factory = new CoinbaseSmartWalletFactory(address(new CoinbaseSmartWallet()));
+        GianoSmartWalletFactory factory = new GianoSmartWalletFactory(address(new GianoSmartWallet()));
         account = factory.createAccount(owners, 1);
         vm.startPrank(signer);
     }

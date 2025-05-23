@@ -9,7 +9,7 @@ contract TestExecuteWithoutChainIdValidation is SmartWalletTestBase {
     function setUp() public override {
         super.setUp();
         userOpNonce = account.REPLAYABLE_NONCE_KEY() << 64;
-        userOpCalldata = abi.encodeWithSelector(CoinbaseSmartWallet.executeWithoutChainIdValidation.selector);
+        userOpCalldata = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector);
     }
 
     function test_reverts_whenCallerNotEntryPoint() public {
@@ -23,27 +23,27 @@ contract TestExecuteWithoutChainIdValidation is SmartWalletTestBase {
         address newOwner = address(6);
         assertFalse(account.isOwnerAddress(newOwner));
         calls.push(abi.encodeWithSelector(selector, newOwner));
-        userOpCalldata = abi.encodeWithSelector(CoinbaseSmartWallet.executeWithoutChainIdValidation.selector, calls);
+        userOpCalldata = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, calls);
         _sendUserOperation(_getUserOpWithSignature());
         assertTrue(account.isOwnerAddress(newOwner));
     }
 
     function test_reverts_whenSelectorNotApproved() public {
-        bytes4 selector = CoinbaseSmartWallet.execute.selector;
+        bytes4 selector = GianoSmartWallet.execute.selector;
         assertFalse(account.canSkipChainIdValidation(selector));
         bytes memory restrictedSelectorCalldata = abi.encodeWithSelector(selector, "");
         calls.push(restrictedSelectorCalldata);
         vm.prank(address(entryPoint));
         vm.expectRevert(
             abi.encodeWithSelector(
-                CoinbaseSmartWallet.SelectorNotAllowed.selector, CoinbaseSmartWallet.execute.selector
+                GianoSmartWallet.SelectorNotAllowed.selector, GianoSmartWallet.execute.selector
             )
         );
         account.executeWithoutChainIdValidation(calls);
     }
 
     function test_reverts_whenOneSelectorNotApproved() public {
-        bytes4 badSelector = CoinbaseSmartWallet.execute.selector;
+        bytes4 badSelector = GianoSmartWallet.execute.selector;
         bytes4 goodSelector = MultiOwnable.addOwnerAddress.selector;
         assertFalse(account.canSkipChainIdValidation(badSelector));
         assertTrue(account.canSkipChainIdValidation(goodSelector));
@@ -54,7 +54,7 @@ contract TestExecuteWithoutChainIdValidation is SmartWalletTestBase {
         vm.prank(address(entryPoint));
         vm.expectRevert(
             abi.encodeWithSelector(
-                CoinbaseSmartWallet.SelectorNotAllowed.selector, CoinbaseSmartWallet.execute.selector
+                GianoSmartWallet.SelectorNotAllowed.selector, GianoSmartWallet.execute.selector
             )
         );
         account.executeWithoutChainIdValidation(calls);
@@ -67,7 +67,7 @@ contract TestExecuteWithoutChainIdValidation is SmartWalletTestBase {
         assertFalse(account.isOwnerAddress(newOwner));
         calls.push(abi.encodeWithSelector(selector, newOwner));
         calls.push(abi.encodeWithSelector(selector, newOwner));
-        userOpCalldata = abi.encodeWithSelector(CoinbaseSmartWallet.executeWithoutChainIdValidation.selector, calls);
+        userOpCalldata = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, calls);
         vm.prank(address(entryPoint));
         vm.expectRevert();
         account.executeWithoutChainIdValidation(calls);
@@ -76,6 +76,6 @@ contract TestExecuteWithoutChainIdValidation is SmartWalletTestBase {
     function _sign(PackedUserOperation memory userOp) internal view override returns (bytes memory signature) {
         bytes32 toSign = account.getUserOpHashWithoutChainId(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
-        signature = abi.encode(CoinbaseSmartWallet.SignatureWrapper(0, abi.encodePacked(r, s, v)));
+        signature = abi.encode(GianoSmartWallet.SignatureWrapper(0, abi.encodePacked(r, s, v)));
     }
 }
