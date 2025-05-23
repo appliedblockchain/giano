@@ -4,16 +4,21 @@ import type * as WebAuthnP256 from 'ox/WebAuthnP256';
 import type { Address, Assign, Hash, Hex, LocalAccount, OneOf, Prettify, TypedData, TypedDataDefinition } from 'viem';
 import {
   BaseError,
+  concatHex,
   decodeFunctionData,
   encodeAbiParameters,
   encodeFunctionData,
   encodePacked,
+  getAbiItem,
   hashMessage,
   hashTypedData,
+  keccak256,
   pad,
   parseSignature,
   size,
   stringToHex,
+  toFunctionSelector,
+  toHex,
 } from 'viem';
 import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
 import { entryPoint08Abi, entryPoint08Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
@@ -34,6 +39,7 @@ export type GianoSmartAccountImplementation = Assign<
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
     sign: NonNullable<SmartAccountImplementation['sign']>;
+    signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
   }
 >;
 
@@ -65,7 +71,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0x7C8BcFd7Ef2165Ec5aEfBA81b152d2Be54Eb02F2',
+    address: '0x0De69517fEcf4668804C26DB3dd835d490a999E5',
   } as const;
 
   const owners_bytes = owners.map((owner) => {
@@ -81,11 +87,32 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
     return owner;
   })();
 
+  async function signStaticCallPermission(this: SmartAccount<GianoSmartAccountImplementation>) {
+    const address = await this.getAddress();
+    const item = getAbiItem({ abi: gianoSmartWalletAbi, name: 'signedStaticCall' });
+    const signedAt = Math.floor(Date.now() / 1000);
+    const hash = keccak256(concatHex([toFunctionSelector(item), toHex(signedAt)]));
+    const typedData = toReplaySafeTypedData({
+      address,
+      chainId: client.chain!.id,
+      hash,
+    });
+
+    if (owner.type === 'address') throw new Error('owner cannot sign');
+    const signature = await signTypedData({ owner, typedData });
+
+    return {
+      signature: wrapSignature({
+        ownerIndex,
+        signature,
+      }),
+      signedAt,
+    };
+  }
+
   return toSmartAccount({
     client,
     entryPoint,
-
-    extend: { abi, factory },
 
     async decodeCalls(data) {
       const result = decodeFunctionData({
@@ -233,7 +260,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
         signature,
       });
     },
-
+    signStaticCallPermission,
     userOperation: {
       async estimateGas(userOperation) {
         if (owner.type !== 'webAuthn') return;
@@ -244,6 +271,8 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
         };
       },
     },
+
+    extend: { abi, factory, signStaticCallPermission },
   });
 }
 

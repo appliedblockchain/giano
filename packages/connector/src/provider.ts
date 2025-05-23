@@ -11,6 +11,7 @@ import {
   type Hash,
   keccak256,
   parseGwei,
+  toFunctionSelector,
   toHex,
   type Transport,
 } from 'viem';
@@ -19,6 +20,7 @@ import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstra
 import type { EIP1193Parameters } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
+import { readContract } from 'viem/actions/public/readContract';
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 
@@ -54,6 +56,8 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
   let chain: Chain | undefined;
   let transport: Transport | undefined;
   let client: PublicClient | undefined;
+  let staticSignature: Hex | null = null;
+  let staticSignatureSignedAt = 0;
 
   const getPublicKeyByCredentialId = async (id: Hash) =>
     client!.readContract({
@@ -110,6 +114,28 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
     eth_chainId: async () => {
       console.log({ chain });
       return `0x${chain!.id.toString(16)}`;
+    },
+    eth_call: async ([call, blockTag]) => {
+      //not working
+      console.log('eth_call', { call });
+      const selector = toFunctionSelector('function balanceOf(address)');
+      console.log({ selector });
+      if (!call.data!.startsWith(selector)) {
+        return client!.request({ method: 'eth_call', params: call, blockTag });
+      }
+      if (!staticSignature || Date.now() - staticSignatureSignedAt * 1000 > 30 * 60) {
+        const { signature, signedAt } = await smartAccount!.signStaticCallPermission();
+        staticSignature = signature;
+        staticSignatureSignedAt = signedAt;
+      }
+      const result = await client!.readContract({
+        abi: smartAccount!.abi,
+        address: smartAccount!.address,
+        functionName: 'signedStaticCall',
+        args: [{ target: call.to, data: call.data!, signedAt: BigInt(staticSignatureSignedAt), signature: staticSignature }],
+      });
+      console.log({ result });
+      return result;
     },
     wallet_addEthereumChain: () => {
       //TODO: implement
@@ -206,9 +232,14 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
       if (!(method in methods)) {
         return client!.request({ ...args } as any);
       }
-      const response = await methods[method](params);
-      console.log({ response });
-      return response;
+      try {
+        const response = await methods[method](params);
+        console.log({ response });
+        return response;
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
     },
     on: (event, listener) => {
       console.log('(STUB) on event', event);

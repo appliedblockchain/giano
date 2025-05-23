@@ -9,6 +9,7 @@ import {Receiver} from 'solady/accounts/Receiver.sol';
 import {SignatureCheckerLib} from 'solady/utils/SignatureCheckerLib.sol';
 import {UUPSUpgradeable} from 'solady/utils/UUPSUpgradeable.sol';
 import {WebAuthn} from 'webauthn-sol/WebAuthn.sol';
+import {AuthenticatedStaticCaller} from './AuthenticatedStaticCaller.sol';
 
 import {ERC1271} from './ERC1271.sol';
 import {MultiOwnable} from './MultiOwnable.sol';
@@ -21,7 +22,7 @@ import {MultiOwnable} from './MultiOwnable.sol';
 /// @author Applied Blockchain (https://github.com/appliedblockchain/giano)
 /// @author Coinbase (https://github.com/coinbase/smart-wallet)
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/accounts/ERC4337.sol)
-contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, Receiver {
+contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, Receiver, AuthenticatedStaticCaller {
     /// @notice A wrapper struct used for signature validation so that callers
     ///         can identify the owner that signed.
     struct SignatureWrapper {
