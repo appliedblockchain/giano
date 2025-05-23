@@ -1,5 +1,6 @@
 import { credentialKeyMapperAbi } from '@appliedblockchain/giano-contracts';
 import type { Hex, PublicClient } from 'viem';
+import type { Call } from 'viem';
 import {
   type Address,
   type Chain,
@@ -13,11 +14,11 @@ import {
   toHex,
   type Transport,
 } from 'viem';
-import { Call } from 'viem';
-import { BundlerClient, createWebAuthnCredential, SmartAccount, toWebAuthnAccount, WebAuthnAccount } from 'viem/account-abstraction';
+import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction';
+import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
 import type { EIP1193Parameters } from 'viem/types/eip1193';
-import { GianoSmartAccountImplementation, toGianoSmartAccount } from './account';
-import { type SendTransactionFnParams } from './connector';
+import type { GianoSmartAccountImplementation } from './account';
+import { toGianoSmartAccount } from './account';
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 
@@ -45,7 +46,6 @@ export type CreateGianoProviderParams = {
   paymaster?: Address;
   chains: readonly Chain[];
   transports: Record<number, Transport> | undefined;
-  sendTransaction: (s: SendTransactionFnParams) => Promise<Hash>;
 };
 
 export const createGianoProvider = ({ transports, chains, initialChainId, paymaster, bundler }: CreateGianoProviderParams) => {
@@ -168,7 +168,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
           paymasterPostOpGasLimit: 100_000n, // can this be calculated somehow?
           paymasterVerificationGasLimit: 100_000n,
         }),
-        callGasLimit: 0n, // added here because the RPC schema requires it, but this will be calculated by the bundler
         calls,
       };
       const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op });

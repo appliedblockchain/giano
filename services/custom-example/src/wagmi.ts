@@ -16,7 +16,7 @@ const rpcs = {
 
 const bundler = createBundlerClient({
   chain: hardhat,
-  transport: http('http://localhost:8080/rpc'),
+  transport: http('http://localhost:4337/proxy/rpc'),
 });
 
 const provider = createGianoProvider({
