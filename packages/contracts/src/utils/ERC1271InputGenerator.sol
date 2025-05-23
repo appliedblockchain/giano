@@ -40,7 +40,7 @@ contract ERC1271InputGenerator {
         // in a single eth_call, i.e. without deploying the contract. We do this by calling replaySafeHash on a deployed
         // account,
         // or by simulating the deployment of an undeployed account and then calling replaySafeHash on it.
-        bytes32 replaySafeHash = _coinbaseSmartWallet1271Input(account, hash, accountFactory, factoryCalldata);
+        bytes32 replaySafeHash = _gianoSmartWallet1271Input(account, hash, accountFactory, factoryCalldata);
         assembly {
             // store replay safe hash
             mstore(0x80, replaySafeHash)
@@ -62,7 +62,7 @@ contract ERC1271InputGenerator {
     /// @param factoryCalldata The calldata that will be used to deploy the account (if not already deployed).
     ///
     /// @return The replay-safe hash.
-    function _coinbaseSmartWallet1271Input(
+    function _gianoSmartWallet1271Input(
         GianoSmartWallet account,
         bytes32 hash,
         address accountFactory,
