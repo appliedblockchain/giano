@@ -165,8 +165,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
       const op = {
         ...(paymaster && {
           paymaster,
-          paymasterPostOpGasLimit: 100_000n, // can this be calculated somehow?
-          paymasterVerificationGasLimit: 100_000n,
         }),
         calls,
       };
@@ -181,16 +179,18 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
       });
       const finalOp = {
         ...prepared,
-        preVerificationGas: prepared.preVerificationGas + 1000n, // safety margin
+        preVerificationGas: prepared.preVerificationGas,
         //TODO: implement callback to fetch these prices
         maxFeePerGas: parseGwei('200'),
         maxPriorityFeePerGas: parseGwei('400'),
       };
       const signature = await smartAccount.signUserOperation(finalOp);
-      const hash = await bundler.sendUserOperation({
+      const signedOp = {
         ...finalOp,
         signature,
-      });
+      };
+      console.log({ signedOp });
+      const hash = await bundler.sendUserOperation(signedOp);
 
       const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash });
       return txReceipt;

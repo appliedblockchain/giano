@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "hh:build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
+    "build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "hardhat node",
     "hh:deploy": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",

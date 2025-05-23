@@ -1,17 +1,15 @@
+import type { FormEvent } from 'react';
+import React from 'react';
+import { useEffect, useState } from 'react';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import 'react';
-import type { FormEvent } from 'react';
-import { useEffect, useState } from 'react';
 import { formatEther, parseEther } from 'viem';
 import { useAccount, useReadContract, useWriteContract } from 'wagmi';
 import styles from '../styles/Home.module.css';
 
-const CREDENTIAL_MAPPER_ADDRESS = '0x2BF3Ec07f07C52df9DE3Ac40e142d64F95762ECB';
 const PRIVATE_ERC20_ADDRESS = '0xA6ED5f9baB12B749CD9Dc2ED73320eadb055D9B9';
-const PAYMASTER_ADDRESS = '0x0A8285879FD97FBe15f9402fDED9511Ef3Abf04d';
 const Home: NextPage = () => {
   const { address, isConnected } = useAccount();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
