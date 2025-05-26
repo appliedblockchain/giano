@@ -60,8 +60,14 @@ Application available at <http://localhost:3000>.
 
 ### Test contracts
 
+#### Coinbase tests (Foundry-based)
+```sh (Foundry-based)
+forge test
+```
+
+#### Hardhat tests
 ```sh
-yarn hh:test
+pnpm hh:test
 ```
 
 ## Components
