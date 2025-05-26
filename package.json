@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
+    "demo:dev": "pnpm -F @appliedblockchain/giano-example dev",
     "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
     "git:init": "git submodule update --init --recursive",
     "bundler:start": "alto --config ./alto-local.json",
