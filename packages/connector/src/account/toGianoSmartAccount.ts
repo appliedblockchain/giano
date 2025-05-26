@@ -71,7 +71,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0x0De69517fEcf4668804C26DB3dd835d490a999E5',
+    address: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
   } as const;
 
   const owners_bytes = owners.map((owner) => {
@@ -88,24 +88,13 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   })();
 
   async function signStaticCallPermission(this: SmartAccount<GianoSmartAccountImplementation>) {
-    const address = await this.getAddress();
     const item = getAbiItem({ abi: gianoSmartWalletAbi, name: 'signedStaticCall' });
     const signedAt = Math.floor(Date.now() / 1000);
-    const hash = keccak256(concatHex([toFunctionSelector(item), toHex(signedAt)]));
-    const typedData = toReplaySafeTypedData({
-      address,
-      chainId: client.chain!.id,
-      hash,
-    });
-
-    if (owner.type === 'address') throw new Error('owner cannot sign');
-    const signature = await signTypedData({ owner, typedData });
+    const hash = keccak256(concatHex([toFunctionSelector(item), toHex(signedAt, { size: 32 })]));
+    const signature = await this.sign({ hash });
 
     return {
-      signature: wrapSignature({
-        ownerIndex,
-        signature,
-      }),
+      signature,
       signedAt,
     };
   }
@@ -284,7 +273,9 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
 export async function signTypedData({ typedData, owner }: { typedData: TypedDataDefinition; owner: OneOf<LocalAccount | WebAuthnAccount> }) {
   if (owner.type === 'local' && owner.signTypedData) return owner.signTypedData(typedData);
 
+  console.log({ typedData });
   const hash = hashTypedData(typedData);
+  console.log({ hash });
   return sign({ hash, owner });
 }
 

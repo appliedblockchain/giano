@@ -9,6 +9,7 @@
     "bundler:cors": "lcp --proxyUrl http://localhost:3000 --port 4337",
     "bundler:dev": "npm-run-all -p --race bundler:start bundler:cors",
     "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",
+    "hh:initlocal": "pnpm --filter @appliedblockchain/giano-contracts hh:initlocal",
     "hh:node": "pnpm --filter @appliedblockchain/giano-contracts hh:node",
     "hh:deploy": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy",
     "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing"

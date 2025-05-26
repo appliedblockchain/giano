@@ -20,13 +20,12 @@ import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstra
 import type { EIP1193Parameters } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
-import { readContract } from 'viem/actions/public/readContract';
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 
 const credentialMapperContract = {
   abi: credentialKeyMapperAbi,
-  address: '0x2BF3Ec07f07C52df9DE3Ac40e142d64F95762ECB' as const,
+  address: '0x297406bb0c4cBDB6A722Cf2728c5592eEd774195' as const,
 };
 
 const generateRandomChallenge = () => {
@@ -58,6 +57,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
   let client: PublicClient | undefined;
   let staticSignature: Hex | null = null;
   let staticSignatureSignedAt = 0;
+  let staticSignatureLifetime = 0n;
 
   const getPublicKeyByCredentialId = async (id: Hash) =>
     client!.readContract({
@@ -116,18 +116,29 @@ export const createGianoProvider = ({ transports, chains, initialChainId, paymas
       return `0x${chain!.id.toString(16)}`;
     },
     eth_call: async ([call, blockTag]) => {
-      //not working
       console.log('eth_call', { call });
+      //TODO: Provide a way to configure when to trigger signature authentication of read calls
       const selector = toFunctionSelector('function balanceOf(address)');
-      console.log({ selector });
       if (!call.data!.startsWith(selector)) {
+        // passthrough non whitelisted requests to the underlying client
         return client!.request({ method: 'eth_call', params: call, blockTag });
       }
-      if (!staticSignature || Date.now() - staticSignatureSignedAt * 1000 > 30 * 60) {
+      // if the lifetime of the static signature is not known, fetch and cache it
+      if (staticSignatureLifetime === 0n) {
+        staticSignatureLifetime = await client!.readContract({
+          address: await smartAccount!.getAddress(),
+          abi: smartAccount!.abi,
+          functionName: 'getSignatureLifetime',
+        });
+      }
+      const staticSignatureAge = BigInt(Date.now() - staticSignatureSignedAt * 1000);
+      // no cached signature or it's expired? request a new on
+      if (!staticSignature || staticSignatureAge > staticSignatureLifetime * 1000n) {
         const { signature, signedAt } = await smartAccount!.signStaticCallPermission();
         staticSignature = signature;
         staticSignatureSignedAt = signedAt;
       }
+      // encode the intended call and forward it to the Giano account contract
       const result = await client!.readContract({
         abi: smartAccount!.abi,
         address: smartAccount!.address,

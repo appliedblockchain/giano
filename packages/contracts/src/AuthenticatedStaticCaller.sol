@@ -16,12 +16,16 @@ abstract contract AuthenticatedStaticCaller is ERC1271 {
     //TODO: Make this configurable?
     uint256 constant signatureLifetime = 30 minutes;
 
+    function getSignatureLifetime() external view returns (uint256) {
+        return signatureLifetime;
+    }
+
     function signedStaticCall(StaticCall calldata call) external view returns (bytes memory) {
         if (call.signedAt + signatureLifetime < block.timestamp) {
             revert SignatureExpired(call.signedAt + signatureLifetime, block.timestamp);
         }
         bytes32 hash = keccak256(bytes.concat(this.signedStaticCall.selector, bytes32(call.signedAt)));
-        if (!_isValidSignature(hash, call.signature)) {
+        if (!_isValidSignature(replaySafeHash(hash), call.signature)) {
             revert InvalidSignature();
         }
         (bool success, bytes memory result) = call.target.staticcall(call.data);
