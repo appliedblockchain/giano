@@ -1,6 +1,5 @@
-import type { WalletDetailsParams } from '@rainbow-me/rainbowkit';
-import type { Chain, EIP1193Provider, TransactionRequest, Transport } from 'viem';
-import { createConnector, type CreateConnectorFn } from 'wagmi';
+import type { Chain, EIP1193Provider, TransactionRequest, Transport } from 'viem'
+import { createConnector, type CreateConnectorFn } from 'wagmi'
 
 export type SendTransactionFnParams = {
   chain: Chain;
@@ -8,11 +7,10 @@ export type SendTransactionFnParams = {
   request: TransactionRequest;
 };
 export type CreateGianoConnectorParams = {
-  details: WalletDetailsParams;
   provider: EIP1193Provider;
 };
 
-export function gianoConnector({ details, provider }: CreateGianoConnectorParams): CreateConnectorFn {
+export function createGianoConnector({ provider }: CreateGianoConnectorParams): CreateConnectorFn {
   return createConnector(({ chains }) => {
     const connector = {
       id: 'giano',
@@ -66,7 +64,6 @@ export function gianoConnector({ details, provider }: CreateGianoConnectorParams
       onDisconnect: () => {
         console.log('onDisconnect');
       },
-      ...details,
     };
 
     return connector;
