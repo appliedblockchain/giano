@@ -1,18 +1,26 @@
-import type { FormEvent } from 'react';
-import React from 'react';
-import { useEffect, useState } from 'react';
-import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import type { NextPage } from 'next';
-import Head from 'next/head';
-import { formatEther, parseEther } from 'viem';
-import { useAccount, useReadContract, useWriteContract } from 'wagmi';
-import styles from '../styles/Home.module.css';
+import { privateErc20Abi } from '@appliedblockchain/giano-contracts'
+import type { NextPage } from 'next'
+import Head from 'next/head'
+import type { FormEvent } from 'react'
+import { useEffect, useState } from 'react'
+import { formatEther, parseEther } from 'viem'
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useReadContract,
+  useWriteContract,
+} from 'wagmi'
+import styles from '../styles/Home.module.css'
+import { gianoConnector } from '../wagmi'
 
-const PRIVATE_ERC20_ADDRESS = '0xA6ED5f9baB12B749CD9Dc2ED73320eadb055D9B9';
+const PRIVATE_ERC20_ADDRESS = '0xA6ED5f9baB12B749CD9Dc2ED73320eadb055D9B9'
+
 const Home: NextPage = () => {
-  const { address, isConnected } = useAccount();
-  const { writeContractAsync, isPending: isWritePending } = useWriteContract();
+  const { connect } = useConnect()
+  const { disconnect } = useDisconnect()
+  const { address, isConnected } = useAccount()
+  const { writeContractAsync, isPending: isWritePending } = useWriteContract()
   const {
     refetch: readContract,
     isPending: isReadPending,
@@ -27,32 +35,32 @@ const Home: NextPage = () => {
       retry: false,
       retryOnMount: false,
     },
-  });
+  })
 
-  const [inputMessage, setInputMessage] = useState('');
-  const [contractState, setContractState] = useState<bigint | null>(null);
+  const [inputMessage, setInputMessage] = useState('')
+  const [contractState, setContractState] = useState<bigint | null>(null)
   useEffect(() => {
     if (error) {
-      console.error(error);
+      console.error(error)
     }
-  }, [error]);
+  }, [error])
 
   const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
-    e.preventDefault();
-    if (!inputMessage.trim()) return;
+    e.preventDefault()
+    if (!inputMessage.trim()) return
     const result = await writeContractAsync({
       address: PRIVATE_ERC20_ADDRESS,
       abi: privateErc20Abi,
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
-    });
-    console.log(result);
-  };
+    })
+    console.log(result)
+  }
 
   const sendCall = async () => {
-    const { data } = await readContract();
-    if (data) setContractState(data);
-  };
+    const { data } = await readContract()
+    if (data) setContractState(data)
+  }
 
   return (
     <div className={styles.container}>
@@ -63,7 +71,10 @@ const Home: NextPage = () => {
       </Head>
 
       <main className={styles.main}>
-        <ConnectButton />
+        {isConnected
+          ? <button onClick={() => disconnect()}>Disconnect</button>
+          : <button onClick={() => connect({ connector: gianoConnector })}>Connect</button>
+        }
         <form className={styles.formContainer} onSubmit={sendTx}>
           <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
           <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()}>
@@ -84,7 +95,7 @@ const Home: NextPage = () => {
         {error && <p>Error reading balance: {error.message}</p>}
       </main>
     </div>
-  );
-};
+  )
+}
 
-export default Home;
+export default Home
