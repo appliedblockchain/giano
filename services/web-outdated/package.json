@@ -14,8 +14,6 @@
     "web:serve": "serve -s dist -p 80 --config ../serve.json"
   },
   "dependencies": {
-    "@appliedblockchain/giano-client": "workspace:",
-    "@appliedblockchain/giano-common": "workspace:",
     "@appliedblockchain/giano-contracts": "workspace:",
     "@peculiar/asn1-ecc": "^2.3.14",
     "@peculiar/asn1-schema": "^2.3.13",

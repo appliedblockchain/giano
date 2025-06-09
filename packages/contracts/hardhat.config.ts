@@ -37,15 +37,15 @@ const config: HardhatUserConfig = {
     },
     localhost: {
       enableRip7212: true,
-      url: 'http://localhost:8545',
+      url: 'http://127.0.0.1:8545',
     },
-    sdr: {
-      url: process.env.SDR_URL,
-      accounts: [process.env.SDR_PRIVATE_KEY!],
-      silentdata: {
-        authSignatureType: SignatureType.Raw,
-      },
-    },
+    // sdr: {
+    //   url: process.env.SDR_URL,
+    //   accounts: [process.env.SDR_PRIVATE_KEY!],
+    //   silentdata: {
+    //     authSignatureType: SignatureType.Raw,
+    //   },
+    // },
   },
   gasReporter: {
     enabled: true,

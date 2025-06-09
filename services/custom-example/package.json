@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "env PORT=4000 next dev",
+    "dev": "env PORT=4001 next dev",
     "build": "next build",
     "start": "next start"
   },

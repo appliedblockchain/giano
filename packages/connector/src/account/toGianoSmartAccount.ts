@@ -71,7 +71,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
+    address: '0xAb4b10C412257BA99f1cEaB669069Aa4E28834Fd',
   } as const;
 
   const owners_bytes = owners.map((owner) => {

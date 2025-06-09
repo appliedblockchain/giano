@@ -6,7 +6,7 @@
   "scripts": {
     "build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
-    "hh:node": "anvil --enable-trace-printing",
+    "hh:node": "anvil --steps-tracing",
     "hh:deploy": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",
     "hh:localwipe": "rm -rf ignition/deployments/chain-31337",
     "hh:initlocal": "pnpm hh:localwipe && pnpm build && pnpm -w aa:deploy:local && pnpm hh:deploy --network localhost && pnpm hh:deploy:testing --network localhost",
@@ -23,9 +23,8 @@
   "types": "dist/index.d.ts",
   "devDependencies": {
     "@account-abstraction/contracts": "^0.8.0",
-    "@appliedblockchain/giano-common": "workspace:",
-    "@appliedblockchain/silentdatarollup-core": "1.0.0",
-    "@appliedblockchain/silentdatarollup-hardhat-plugin": "1.0.0",
+    "@appliedblockchain/silentdatarollup-core": "1.0.1",
+    "@appliedblockchain/silentdatarollup-hardhat-plugin": "1.0.1",
     "@nomicfoundation/ethereumjs-util": "^9.0.4",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
