@@ -1,57 +1,69 @@
-import type { FormEvent } from 'react';
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useState, type FormEvent } from 'react';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
 import Head from 'next/head';
 import { formatEther, parseEther } from 'viem';
-import { useAccount, useReadContract, useWriteContract } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract } from 'wagmi';
+import GianoConnectionModal from '../components/GianoConnectionModal';
 import styles from '../styles/Home.module.css';
+import { provider } from '../wagmi';
 
-const PRIVATE_ERC20_ADDRESS = '0xA6ED5f9baB12B749CD9Dc2ED73320eadb055D9B9';
+const PRIVATE_ERC20_ADDRESS = '0xfE96b00Fb176b14Ee1dd87ecFf1eEEADb8562571';
+
 const Home: NextPage = () => {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
   const {
     refetch: readContract,
     isPending: isReadPending,
     error,
+    data: contractBalance,
   } = useReadContract({
     address: PRIVATE_ERC20_ADDRESS,
     abi: privateErc20Abi,
     functionName: 'balanceOf',
     args: [address!],
     query: {
-      enabled: !!address,
+      enabled: false,
       retry: false,
       retryOnMount: false,
     },
   });
 
   const [inputMessage, setInputMessage] = useState('');
-  const [contractState, setContractState] = useState<bigint | null>(null);
-  useEffect(() => {
-    if (error) {
-      console.error(error);
-    }
-  }, [error]);
+
+  // Find Giano connector
+  const gianoConnector = connectors.find((c) => c.id === 'giano');
+  const isGianoConnected = isConnected && connector?.id === 'giano';
 
   const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
-    const result = await writeContractAsync({
-      address: PRIVATE_ERC20_ADDRESS,
-      abi: privateErc20Abi,
-      functionName: 'mint',
-      args: [parseEther(inputMessage.trim())],
-    });
-    console.log(result);
+
+    try {
+      const result = await writeContractAsync({
+        address: PRIVATE_ERC20_ADDRESS,
+        abi: privateErc20Abi,
+        functionName: 'mint',
+        args: [parseEther(inputMessage.trim())],
+      });
+      console.log('Transaction result:', result);
+    } catch (error) {
+      console.error('Transaction failed:', error);
+    }
   };
 
-  const sendCall = async () => {
-    const { data } = await readContract();
-    if (data) setContractState(data);
+  const handleGianoConnect = () => {
+    if (gianoConnector) {
+      connect({ connector: gianoConnector });
+    }
+  };
+
+  const handleGianoDisconnect = () => {
+    disconnect();
   };
 
   return (
@@ -64,25 +76,63 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         <ConnectButton />
+
+        {/* Giano Connection Section */}
+        <div className={styles.gianoSection}>
+          {!isGianoConnected ? (
+            <button onClick={handleGianoConnect} className={styles.gianoButton} type="button">
+              🔑 Connect with Giano Passkey
+            </button>
+          ) : (
+            <div className={styles.gianoConnected}>
+              <div className={styles.accountInfo}>
+                <h3>🔑 Connected with Giano</h3>
+                <p className={styles.accountAddress}>
+                  {address?.slice(0, 6)}...{address?.slice(-4)}
+                </p>
+                <button onClick={handleGianoDisconnect} className={styles.disconnectButton} type="button">
+                  Disconnect
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <form className={styles.formContainer} onSubmit={sendTx}>
-          <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
-          <button className={styles.sendButton} disabled={!isConnected || isWritePending || !inputMessage.trim()}>
+          <input
+            className={styles.input}
+            type="number"
+            placeholder="Enter amount"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+          />
+          <button
+            className={styles.sendButton}
+            disabled={!isConnected || isWritePending || !inputMessage.trim()}
+          >
             Mint
           </button>
         </form>
-        <button className={styles.readButton} disabled={!isConnected || isReadPending} onClick={sendCall}>
+
+        <button
+          className={styles.readButton}
+          disabled={!isConnected}
+          onClick={() => readContract()}
+        >
           Read balance
         </button>
 
-        {contractState && (
+        {contractBalance && (
           <div className={styles.stateCard}>
             <p>
-              <strong>Balance:</strong> {formatEther(contractState)}
+              <strong>Balance:</strong> {formatEther(contractBalance)}
             </p>
           </div>
         )}
         {error && <p>Error reading balance: {error.message}</p>}
       </main>
+
+      <GianoConnectionModal provider={provider as any} />
     </div>
   );
 };
