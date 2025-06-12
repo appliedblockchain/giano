@@ -274,9 +274,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
 export async function signTypedData({ typedData, owner }: { typedData: TypedDataDefinition; owner: OneOf<LocalAccount | WebAuthnAccount> }) {
   if (owner.type === 'local' && owner.signTypedData) return owner.signTypedData(typedData);
 
-  console.log({ typedData });
   const hash = hashTypedData(typedData);
-  console.log({ hash });
   return sign({ hash, owner });
 }
 
