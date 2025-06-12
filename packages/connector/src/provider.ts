@@ -117,7 +117,6 @@ export const createGianoProvider = ({
     credentialId?: BufferSource
     challenge?: BufferSource
   } = {}): Promise<WebAuthnAccount | null> => {
-    console.log('getWebAuthnAccount', { credentialId, challenge })
 
     try {
       const rawCredential = await navigator.credentials.get({
@@ -159,11 +158,9 @@ export const createGianoProvider = ({
         : []
     },
     eth_chainId: async () => {
-      console.log({ chain })
       return `0x${chain!.id.toString(16)}`
     },
     eth_call: async ([call, blockTag]) => {
-      console.log('eth_call', { call })
       //TODO: Provide a way to configure when to trigger signature authentication of read calls
       const selector = toFunctionSelector('function balanceOf(address)')
       if (!call.data!.startsWith(selector)) {
@@ -192,14 +189,12 @@ export const createGianoProvider = ({
         functionName: 'signedStaticCall',
         args: [{ target: call.to, data: call.data!, signedAt: BigInt(staticSignatureSignedAt), signature: staticSignature }],
       })
-      console.log({ result })
       return result
     },
     wallet_addEthereumChain: () => {
       //TODO: implement
     },
     wallet_revokePermissions: () => {
-      console.log('wallet_revokePermissions')
       smartAccount = null
       emit('accountsChanged', [])
       emit('disconnect', {
@@ -231,7 +226,6 @@ export const createGianoProvider = ({
       emit('chainChanged', `0x${chainId.toString(16)}`)
     },
     eth_requestAccounts: async () => {
-      console.log('eth_requestAccounts')
       if (smartAccount) {
         return { accounts: [smartAccount], chainId: `0x${chain!.id.toString(16)}` }
       }
@@ -248,8 +242,6 @@ export const createGianoProvider = ({
 
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
         emit('accountsChanged', [smartAccountAddress])
-
-        console.log('returning', [smartAccountAddress])
 
         return [smartAccountAddress]
       }
@@ -332,7 +324,6 @@ export const createGianoProvider = ({
         ...finalOp,
         signature,
       }
-      console.log({ signedOp })
       const hash = await bundler.sendUserOperation(signedOp)
 
       const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
@@ -346,13 +337,11 @@ export const createGianoProvider = ({
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args
 
-      console.log('provide.request ->', { method, params })
       if (!(method in methods)) {
         return client!.request({ ...args } as any)
       }
       try {
         const response = await methods[method](params)
-        console.log({ response })
         return response
       } catch (e) {
         console.error(e)
