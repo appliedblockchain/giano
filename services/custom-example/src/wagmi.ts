@@ -27,6 +27,8 @@ export const { gianoClient, gianoProvider } = createGianoProvider({
   transports: rpcs.transports,
   initialChainId: hardhat.id,
   injection: gianoLocalStorageInjection,
+  credentialKeyMapperAddress: '0x297406bb0c4cBDB6A722Cf2728c5592eEd774195',
+  gianoSmartWalletFactoryAddress: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
 })
 
 const providerTransport = custom(gianoProvider)

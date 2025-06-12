@@ -26,11 +26,6 @@ export enum ChainType {
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse }
 
-const credentialMapperContract = {
-  abi: credentialKeyMapperAbi,
-  address: '0x297406bb0c4cBDB6A722Cf2728c5592eEd774195' as const,
-};
-
 const generateRandomChallenge = () => {
   const challenge = new Uint8Array(32)
   crypto.getRandomValues(challenge)
@@ -83,6 +78,8 @@ export type CreateGianoProviderParams = {
   chains: readonly Chain[]
   transports: Record<number, Transport> | undefined
   injection: GianoProviderInjection
+  credentialKeyMapperAddress: Address
+  gianoSmartWalletFactoryAddress: Address
 }
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void
@@ -97,6 +94,8 @@ export const createGianoProvider = ({
   paymaster,
   bundler,
   injection,
+  credentialKeyMapperAddress,
+  gianoSmartWalletFactoryAddress,
 }: CreateGianoProviderParams) => {
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null
   let chain: Chain | undefined
@@ -106,6 +105,11 @@ export const createGianoProvider = ({
   let staticSignatureSignedAt = 0
   let staticSignatureLifetime = 0n
   const eventListeners: Partial<EventListeners> = {}
+
+  const credentialMapperContract = {
+    abi: credentialKeyMapperAbi,
+    address: credentialKeyMapperAddress,
+  };
 
   const emit = <E extends keyof EIP1193EventMap>(
     event: E,
@@ -263,7 +267,7 @@ export const createGianoProvider = ({
         if (!webAuthnAccount) {
           throw new Error('Invalid credential')
         }
-        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount] })
+        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: gianoSmartWalletFactoryAddress })
         const smartAccountAddress = await smartAccount.getAddress()
 
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
@@ -299,6 +303,7 @@ export const createGianoProvider = ({
           client: client!,
           owners: [toWebAuthnAccount({ credential })],
           address: handlerCreatedAddress,
+          factoryAddress: gianoSmartWalletFactoryAddress,
         })
 
         emit('connect', { chainId })
@@ -309,6 +314,7 @@ export const createGianoProvider = ({
       smartAccount = await toGianoSmartAccount({
         client: client!,
         owners: [toWebAuthnAccount({ credential })],
+        factoryAddress: gianoSmartWalletFactoryAddress,
       })
       const smartAccountAddress = await smartAccount.getAddress()
 

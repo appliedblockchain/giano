@@ -30,6 +30,7 @@ export type ToGianoSmartAccountParameters = {
   ownerIndex?: number | undefined;
   owners: readonly (Address | OneOf<LocalAccount | WebAuthnAccount>)[];
   nonce?: bigint | undefined;
+  factoryAddress: Address;
 };
 
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
@@ -60,7 +61,7 @@ export type GianoSmartAccountImplementation = Assign<
  * })
  */
 export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParameters): Promise<ToGianoSmartAccountReturnType> {
-  const { client, ownerIndex = 0, owners, nonce = 0n } = parameters;
+  const { client, ownerIndex = 0, owners, nonce = 0n, factoryAddress } = parameters;
 
   let address = parameters.address;
 
@@ -71,7 +72,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
+    address: factoryAddress,
   } as const;
 
   const owners_bytes = owners.map((owner) => {
