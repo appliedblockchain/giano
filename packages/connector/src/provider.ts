@@ -57,6 +57,7 @@ export interface GianoProviderInjection {
     challenge: BufferSource,
     credential: Omit<PublicKeyCredential, 'toJSON'>
   ): null | Promise<null> | Hex | Promise<Hex>
+  onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
 }
 
 export type CreateGianoProviderParams = {
@@ -128,6 +129,13 @@ export const createGianoProvider = ({
       if (!rawCredential) {
         return null
       }
+
+      // call the method injected and wait for the result true or false to continue or not
+      const isSignedIn = await injection.onCredentialSignedIn(rawCredential)
+      if (!isSignedIn) {
+        throw new Error('Failed to sign in with credential')
+      }
+
       const idHash = keccak256(new Uint8Array(rawCredential.rawId))
       const { x, y } = await getPublicKeyByCredentialId(idHash)
 
