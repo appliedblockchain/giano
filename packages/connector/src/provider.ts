@@ -44,70 +44,6 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
   return { x: `0x${key.slice(-128, -64)}`, y: `0x${key.slice(-64)}` }
 }
 
-function hexToBytes(hex: string) {
-  hex = hex.replace(/^0x/g, '')
-  const bytes = new Uint8Array(Math.ceil(hex.length / 2))
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[Math.floor(i / 2)] = parseInt(hex.slice(i, i + 2), 16)
-  }
-  return bytes
-}
-
-function concatBytes(bytes: Uint8Array[]) {
-  const totalLength = bytes.reduce((acc, curr) => acc + curr.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-  for (const byte of bytes) {
-    result.set(byte, offset)
-    offset += byte.length
-  }
-  return result
-}
-
-function bytesToHex(bytes: Uint8Array) {
-  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-}
-
-function padBytes(bytes: Uint8Array, size: number) {
-  if (bytes.length < size) {
-    return concatBytes([new Uint8Array(size - bytes.length).fill(0), bytes])
-  }
-  return bytes
-}
-
-export function encodeUserId(
-  id: string,
-  gianoSmartWalletFactoryAddress: string,
-  chainId: string,
-  chainType: ChainType,
-) {
-  return concatBytes([
-    padBytes(hexToBytes(id), 16),
-    padBytes(hexToBytes(gianoSmartWalletFactoryAddress), 20),
-    padBytes(hexToBytes(chainId), 4),
-    padBytes(hexToBytes(chainType.toString(16)), 1),
-  ])
-}
-
-export function decodeUserId(_userId: Uint8Array) {
-  const userId = _userId.slice(0, 16)
-  const walletFactoryAddress = _userId.slice(16, 36)
-  const chainId = _userId.slice(36, 40)
-  const chainType = _userId.slice(40, 41)
-  return {
-    userId: [
-      bytesToHex(userId.slice(0, 4)),
-      bytesToHex(userId.slice(4, 6)),
-      bytesToHex(userId.slice(6, 8)),
-      bytesToHex(userId.slice(8, 10)),
-      bytesToHex(userId.slice(10)),
-    ].join('-'),
-    walletFactoryAddress: '0x' + bytesToHex(walletFactoryAddress),
-    chainId: parseInt(bytesToHex(chainId), 16),
-    chainType: parseInt(bytesToHex(chainType), 16) as ChainType,
-  }
-}
-
 export interface GianoProviderInjection {
   getNameForCredential(): string | Promise<string>
   getCredentialId(): BufferSource | null | Promise<BufferSource | null>
@@ -125,6 +61,18 @@ export interface GianoProviderInjection {
     challenge: BufferSource,
     credential: Omit<PublicKeyCredential, 'toJSON'>
   ): null | Promise<null> | Hex | Promise<Hex>
+  encodeUserId(
+    id: string,
+    gianoSmartWalletFactoryAddress: string,
+    chainId: string,
+    chainType: ChainType
+  ): Uint8Array
+  decodeUserId(userId: Uint8Array): {
+    userId: string
+    walletFactoryAddress: string
+    chainId: number
+    chainType: ChainType
+  }
 }
 
 export type CreateGianoProviderParams = {
@@ -324,7 +272,7 @@ export const createGianoProvider = ({
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
-          id: encodeUserId(
+          id: injection.encodeUserId(
             self.crypto.randomUUID().replace(/-/g, ''),
             gianoSmartWalletFactoryAddress,
             chainId,
