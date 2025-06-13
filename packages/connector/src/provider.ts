@@ -20,6 +20,10 @@ import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193'
 import type { GianoSmartAccountImplementation } from './account'
 import { toGianoSmartAccount } from './account'
 
+export enum ChainType {
+  HARDHAT = 0, // NOTE: This is just a placeholder for now
+}
+
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse }
 
 const credentialMapperContract = {
@@ -38,6 +42,70 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
     key = toHex(key.slice(-64), { size: 64 })
   }
   return { x: `0x${key.slice(-128, -64)}`, y: `0x${key.slice(-64)}` }
+}
+
+function hexToBytes(hex: string) {
+  hex = hex.replace(/^0x/g, '')
+  const bytes = new Uint8Array(Math.ceil(hex.length / 2))
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[Math.floor(i / 2)] = parseInt(hex.slice(i, i + 2), 16)
+  }
+  return bytes
+}
+
+function concatBytes(bytes: Uint8Array[]) {
+  const totalLength = bytes.reduce((acc, curr) => acc + curr.length, 0)
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const byte of bytes) {
+    result.set(byte, offset)
+    offset += byte.length
+  }
+  return result
+}
+
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function padBytes(bytes: Uint8Array, size: number) {
+  if (bytes.length < size) {
+    return concatBytes([new Uint8Array(size - bytes.length).fill(0), bytes])
+  }
+  return bytes
+}
+
+export function encodeUserId(
+  id: string,
+  gianoSmartWalletFactoryAddress: string,
+  chainId: string,
+  chainType: ChainType,
+) {
+  return concatBytes([
+    padBytes(hexToBytes(id), 16),
+    padBytes(hexToBytes(gianoSmartWalletFactoryAddress), 20),
+    padBytes(hexToBytes(chainId), 4),
+    padBytes(hexToBytes(chainType.toString(16)), 1),
+  ])
+}
+
+export function decodeUserId(_userId: Uint8Array) {
+  const userId = _userId.slice(0, 16)
+  const walletFactoryAddress = _userId.slice(16, 36)
+  const chainId = _userId.slice(36, 40)
+  const chainType = _userId.slice(40, 41)
+  return {
+    userId: [
+      bytesToHex(userId.slice(0, 4)),
+      bytesToHex(userId.slice(4, 6)),
+      bytesToHex(userId.slice(6, 8)),
+      bytesToHex(userId.slice(8, 10)),
+      bytesToHex(userId.slice(10)),
+    ].join('-'),
+    walletFactoryAddress: '0x' + bytesToHex(walletFactoryAddress),
+    chainId: parseInt(bytesToHex(chainId), 16),
+    chainType: parseInt(bytesToHex(chainType), 16) as ChainType,
+  }
 }
 
 export interface GianoProviderInjection {
@@ -252,8 +320,18 @@ export const createGianoProvider = ({
 
       const credentialName = await injection.getNameForCredential()
       const challenge = await injection.getChallenge()
+      const chainId = `0x${chain!.id.toString(16)}`
       const credential = await createWebAuthnCredential({
-        name: credentialName, challenge,
+        user: {
+          name: credentialName,
+          id: encodeUserId(
+            self.crypto.randomUUID().replace(/-/g, ''),
+            gianoSmartWalletFactoryAddress,
+            chainId,
+            ChainType.HARDHAT,
+          ),
+        },
+        challenge,
       })
 
       const handlerCreatedAddress = await injection.onCredentialCreated(
@@ -267,7 +345,7 @@ export const createGianoProvider = ({
           address: handlerCreatedAddress,
         })
 
-        emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
+        emit('connect', { chainId })
         emit('accountsChanged', [handlerCreatedAddress])
         return [handlerCreatedAddress]
       }
