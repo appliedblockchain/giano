@@ -7,6 +7,7 @@ import { createBundlerClient } from 'viem/account-abstraction'
 import { createConfig } from 'wagmi'
 import { hardhat } from 'wagmi/chains'
 import { gianoLocalStorageInjection } from './giano-local-storage-injection'
+import { config as envConfig } from './config'
 
 const rpcs = <const>{
   chains: [hardhat],
@@ -22,13 +23,13 @@ const bundler = createBundlerClient({
 
 export const { gianoClient, gianoProvider } = createGianoProvider({
   bundler,
-  paymaster: '0x0A8285879FD97FBe15f9402fDED9511Ef3Abf04d',
+  paymaster: envConfig.paymasterAddress,
   chains: rpcs.chains,
   transports: rpcs.transports,
   initialChainId: hardhat.id,
   injection: gianoLocalStorageInjection,
-  credentialKeyMapperAddress: '0x297406bb0c4cBDB6A722Cf2728c5592eEd774195',
-  gianoSmartWalletFactoryAddress: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
+  credentialKeyMapperAddress: envConfig.credentialKeyMapperAddress,
+  gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress,
 })
 
 const providerTransport = custom(gianoProvider)
