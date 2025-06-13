@@ -92,5 +92,8 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
       chainId: parseInt(bytesToHex(chainId), 16),
       chainType: parseInt(bytesToHex(chainType), 16) as ChainType,
     }
+  onCredentialSignedIn: async (credential) => {
+    console.log('Credential signed in', { credential })
+    return true
   },
 }
