@@ -93,4 +93,35 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
     console.log('Credential signed in', { credential })
     return true
   },
+  encodeUserId: (
+    id: string,
+    gianoSmartWalletFactoryAddress: string,
+    chainId: string,
+    chainType: ChainType,
+  ) => {
+    return concatBytes([
+      padBytes(hexToBytes(id), 16),
+      padBytes(hexToBytes(gianoSmartWalletFactoryAddress), 20),
+      padBytes(hexToBytes(chainId), 4),
+      padBytes(hexToBytes(chainType.toString(16)), 1),
+    ])
+  },
+  decodeUserId: (userId: Uint8Array) => {
+    const userIdSlice = userId.slice(0, 16)
+    const walletFactoryAddress = userId.slice(16, 36)
+    const chainId = userId.slice(36, 40)
+    const chainType = userId.slice(40, 41)
+    return {
+      userId: [
+        bytesToHex(userIdSlice.slice(0, 4)),
+        bytesToHex(userIdSlice.slice(4, 6)),
+        bytesToHex(userIdSlice.slice(6, 8)),
+        bytesToHex(userIdSlice.slice(8, 10)),
+        bytesToHex(userIdSlice.slice(10)),
+      ].join('-'),
+      walletFactoryAddress: '0x' + bytesToHex(walletFactoryAddress),
+      chainId: parseInt(bytesToHex(chainId), 16),
+      chainType: parseInt(bytesToHex(chainType), 16) as ChainType,
+    }
+  },
 }
