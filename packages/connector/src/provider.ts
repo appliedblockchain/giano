@@ -164,27 +164,35 @@ export const createGianoProvider = ({
       const selector = toFunctionSelector('function balanceOf(address)')
       if (!call.data!.startsWith(selector)) {
         // passthrough non whitelisted requests to the underlying client
-        return client!.request({ method: 'eth_call', params: call, blockTag })
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
+      
+      // Check if smartAccount is available before proceeding with authenticated calls
+      // If not available, fall back to a regular call instead of throwing an error
+      if (!smartAccount) {
+        console.warn('Smart account not yet initialized, falling back to regular call')
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
+      }
+      
       // if the lifetime of the static signature is not known, fetch and cache it
       if (staticSignatureLifetime === 0n) {
         staticSignatureLifetime = await client!.readContract({
-          address: await smartAccount!.getAddress(),
-          abi: smartAccount!.abi,
+          address: await smartAccount.getAddress(),
+          abi: smartAccount.abi,
           functionName: 'getSignatureLifetime',
         })
       }
       const staticSignatureAge = BigInt(Date.now() - staticSignatureSignedAt * 1000)
       // no cached signature or it's expired? request a new on
       if (!staticSignature || staticSignatureAge > staticSignatureLifetime * 1000n) {
-        const { signature, signedAt } = await smartAccount!.signStaticCallPermission()
+        const { signature, signedAt } = await smartAccount.signStaticCallPermission()
         staticSignature = signature
         staticSignatureSignedAt = signedAt
       }
       // encode the intended call and forward it to the Giano account contract
       const result = await client!.readContract({
-        abi: smartAccount!.abi,
-        address: smartAccount!.address,
+        abi: smartAccount.abi,
+        address: smartAccount.address,
         functionName: 'signedStaticCall',
         args: [{ target: call.to, data: call.data!, signedAt: BigInt(staticSignatureSignedAt), signature: staticSignature }],
       })
