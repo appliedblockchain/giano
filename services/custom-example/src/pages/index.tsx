@@ -25,7 +25,7 @@ const Home: NextPage = () => {
   const { writeContractAsync, isPending: isWritePending } = useWriteContract()
   const {
     refetch: readContract,
-    isPending: isReadPending,
+    isFetching: isReadFetching,
     error,
   } = useReadContract({
     address: PRIVATE_ERC20_ADDRESS,
@@ -33,7 +33,7 @@ const Home: NextPage = () => {
     functionName: 'balanceOf',
     args: [address!],
     query: {
-      enabled: !!address && mounted && connectionReady && isConnected,
+      enabled: false,
       retry: false,
       retryOnMount: false,
     },
@@ -45,6 +45,29 @@ const Home: NextPage = () => {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Auto-connect effect for session restoration
+  useEffect(() => {
+    if (mounted && !isConnected) {
+      const storedCredentialId = localStorage.getItem('giano_credential_id')
+      const storedAccountAddress = localStorage.getItem('giano_account_address')
+      
+      if (storedCredentialId && storedAccountAddress) {
+        // Attempt to restore session
+        const connectAsync = async () => {
+          try {
+            await connect({ connector: gianoConnector })
+          } catch (error) {
+            console.warn('Failed to auto-restore session:', error)
+            // Clear invalid stored data
+            localStorage.removeItem('giano_credential_id')
+            localStorage.removeItem('giano_account_address')
+          }
+        }
+        connectAsync()
+      }
+    }
+  }, [mounted, isConnected, connect])
 
   // Wait for the connection to be fully established before allowing contract calls
   useEffect(() => {
@@ -113,11 +136,21 @@ const Home: NextPage = () => {
         }
         <form className={styles.formContainer} onSubmit={sendTx}>
           <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
-          <button className={styles.sendButton} disabled={!connectionReady || isWritePending || !inputMessage.trim()}>
+          <button className={styles.sendButton} disabled={isWritePending || !inputMessage.trim()}>
             Mint
           </button>
         </form>
-        <button className={styles.readButton} disabled={!connectionReady || isReadPending} onClick={sendCall}>
+        <button
+          className={styles.readButton}
+          disabled={
+            !address ||
+            !mounted ||
+            !connectionReady ||
+            !isConnected ||
+            isReadFetching
+          }
+          onClick={sendCall}
+        >
           Read balance
         </button>
 
