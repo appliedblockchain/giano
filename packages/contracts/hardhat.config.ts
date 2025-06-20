@@ -1,4 +1,3 @@
-import { SignatureType } from '@appliedblockchain/silentdatarollup-core';
 import * as dotenv from 'dotenv';
 import { TASK_COMPILE } from 'hardhat/builtin-tasks/task-names';
 import type { HardhatUserConfig } from 'hardhat/config';
@@ -38,13 +37,6 @@ const config: HardhatUserConfig = {
     localhost: {
       enableRip7212: true,
       url: 'http://localhost:8545',
-    },
-    sdr: {
-      url: process.env.SDR_URL,
-      accounts: [process.env.SDR_PRIVATE_KEY!],
-      silentdata: {
-        authSignatureType: SignatureType.Raw,
-      },
     },
   },
   gasReporter: {
