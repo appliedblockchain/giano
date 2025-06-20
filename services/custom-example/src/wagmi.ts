@@ -47,6 +47,7 @@ export const config = createConfig({
     ),
   },
   connectors: [createGianoConnectorFn],
+  ssr: false,
 })
 
 export const gianoConnector = config.connectors[0]

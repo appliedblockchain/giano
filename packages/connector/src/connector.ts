@@ -32,6 +32,14 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams): 
       },
       isAuthorized: async () => {
         try {
+          // Check if we have stored session data
+          const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null;
+          const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null;
+
+          if (storedCredentialId && storedAccountAddress) {
+            return true;
+          }
+
           const accounts = await connector.getAccounts();
           return accounts.length > 0;
         } catch {
