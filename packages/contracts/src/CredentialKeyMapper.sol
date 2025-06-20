@@ -76,7 +76,7 @@ contract CredentialKeyMapper {
             revert CredentialIdAlreadySet(idHash);
         }
 
-        if (idHash.length == 0) {
+        if (idHash == bytes32(0)) {
             revert EmptyCredentialId();
         }
 

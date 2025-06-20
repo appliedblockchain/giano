@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
+    "forge:test": "forge test",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "anvil --enable-trace-printing",
     "hh:deploy": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",
