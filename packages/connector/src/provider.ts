@@ -529,6 +529,54 @@ export const createGianoProvider = ({
       const parsedTypedData = typeof typedData === 'string' ? JSON.parse(typedData) : typedData
       return smartAccount.signTypedData(parsedTypedData)
     },
+    eth_signUserOperation: async ([userOp]: [any]) => {
+      console.log('eth_signUserOperation', { userOp })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      
+      return smartAccount.signUserOperation(userOp)
+    },
+    eth_sendSignedUserOperation: async ([signedUserOp]: [any]) => {
+      console.log('eth_sendSignedUserOperation', { signedUserOp })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      
+      const hash = await bundler.sendUserOperation(signedUserOp)
+      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
+      return txReceipt
+    },
+    eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
+      console.log('eth_prepareUserOperation', { calls, options })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      
+      const op = {
+        ...(paymaster && { paymaster }),
+        calls,
+        ...options,
+      }
+      
+      const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op })
+      if (!estimate) {
+        throw new Error('Could not estimate user operation')
+      }
+      
+      const prepared = await bundler.prepareUserOperation({
+        account: smartAccount,
+        ...op,
+        ...estimate,
+      })
+      
+      return {
+        ...prepared,
+        preVerificationGas: prepared.preVerificationGas,
+        maxFeePerGas: options.maxFeePerGas || parseGwei('200'),
+        maxPriorityFeePerGas: options.maxPriorityFeePerGas || parseGwei('400'),
+      }
+    },
   }
 
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }])
