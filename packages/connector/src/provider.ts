@@ -341,7 +341,6 @@ export const createGianoProvider = ({
       return txReceipt
     },
     personal_sign: async ([message, address]: [string, Address]) => {
-      console.log('personal_sign', { message, address })
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
@@ -355,7 +354,6 @@ export const createGianoProvider = ({
       return smartAccount.signMessage({ message: messageBytes })
     },
     eth_sign: async ([address, message]: [Address, string]) => {
-      console.log('eth_sign', { address, message })
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
