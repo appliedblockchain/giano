@@ -69,18 +69,6 @@ export interface GianoProviderInjection {
     chainType: ChainType
   }
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
-  encodeUserId(
-    id: string,
-    gianoSmartWalletFactoryAddress: string,
-    chainId: string,
-    chainType: ChainType
-  ): Uint8Array
-  decodeUserId(userId: Uint8Array): {
-    userId: string
-    walletFactoryAddress: string
-    chainId: number
-    chainType: ChainType
-  }
 }
 
 export type CreateGianoProviderParams = {
