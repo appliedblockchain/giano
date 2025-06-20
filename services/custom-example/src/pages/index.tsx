@@ -59,7 +59,6 @@ const Home: NextPage = () => {
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
     })
-    console.log(result)
   }
 
   const sendCall = async () => {
