@@ -1,7 +1,7 @@
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts'
 import type { NextPage } from 'next'
 import Head from 'next/head'
-import type { FormEvent } from 'react'
+import React, { type FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { formatEther, parseEther } from 'viem'
 import {
@@ -9,6 +9,7 @@ import {
   useConnect,
   useDisconnect,
   useReadContract,
+  useWalletClient,
   useWriteContract,
 } from 'wagmi'
 import styles from '../styles/Home.module.css'
@@ -20,6 +21,7 @@ const Home: NextPage = () => {
   const { connect } = useConnect()
   const { disconnect } = useDisconnect()
   const { address, isConnected } = useAccount()
+  const { data: walletClient } = useWalletClient()
   const { writeContractAsync, isPending: isWritePending } = useWriteContract()
   const {
     refetch: readContract,
@@ -39,6 +41,9 @@ const Home: NextPage = () => {
 
   const [inputMessage, setInputMessage] = useState('')
   const [contractState, setContractState] = useState<bigint | null>(null)
+  const [signatureResult, setSignatureResult] = useState<string>('')
+  const [messageToSign, setMessageToSign] = useState('Hello, please sign this message!')
+
   useEffect(() => {
     if (error) {
       console.error(error)
@@ -60,6 +65,65 @@ const Home: NextPage = () => {
   const sendCall = async () => {
     const { data } = await readContract()
     if (data) setContractState(data)
+  }
+  
+  const signMessage = async () => {
+    if (!walletClient || !address) {
+      console.error('Wallet not connected')
+      return
+    }
+
+    try {
+      const signature = await walletClient.signMessage({
+        message: messageToSign,
+      } as any)
+      setSignatureResult(signature as string)
+      console.log('Message signed successfully:', signature)
+    } catch (error) {
+      console.error('Message signing failed:', error)
+      setSignatureResult('Error: ' + (error as Error).message)
+    }
+  }
+
+  const signTypedData = async () => {
+    if (!walletClient || !address) {
+      console.error('Wallet not connected')
+      return
+    }
+
+    try {
+      // Example EIP-712 typed data
+      const typedData = {
+        domain: {
+          name: 'Giano Demo',
+          version: '1',
+          chainId: 1,
+          verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+        },
+        types: {
+          Message: [
+            { name: 'content', type: 'string' },
+            { name: 'timestamp', type: 'uint256' },
+          ],
+        },
+        primaryType: 'Message',
+        message: {
+          content: 'Hello from Giano!',
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      }
+
+      const signature = await walletClient.request({
+        method: 'eth_signTypedData_v4',
+        params: [address, JSON.stringify(typedData)],
+      } as any)
+      
+      setSignatureResult(signature as string)
+      console.log('Typed data signed successfully:', signature)
+    } catch (error) {
+      console.error('Typed data signing failed:', error)
+      setSignatureResult('Error: ' + (error as Error).message)
+    }
   }
 
   return (
@@ -85,6 +149,31 @@ const Home: NextPage = () => {
           Read balance
         </button>
 
+        {/* Message Signing Section */}
+        <div className={styles.formContainer}>
+          <input 
+            className={styles.input} 
+            type="text" 
+            placeholder="Message to sign" 
+            value={messageToSign} 
+            onChange={(e) => setMessageToSign(e.target.value)} 
+          />
+          <button 
+            className={styles.readButton} 
+            disabled={!isConnected} 
+            onClick={signMessage}
+          >
+            Sign Message (Personal)
+          </button>
+          <button 
+            className={styles.readButton} 
+            disabled={!isConnected} 
+            onClick={signTypedData}
+          >
+            Sign Typed Data (EIP-712)
+          </button>
+        </div>
+
         {contractState && (
           <div className={styles.stateCard}>
             <p>
@@ -92,6 +181,18 @@ const Home: NextPage = () => {
             </p>
           </div>
         )}
+
+        {signatureResult && (
+          <div className={styles.stateCard}>
+            <p>
+              <strong>Signature:</strong>
+            </p>
+            <p style={{ wordBreak: 'break-all', fontSize: '0.8em' }}>
+              {signatureResult}
+            </p>
+          </div>
+        )}
+
         {error && <p>Error reading balance: {error.message}</p>}
       </main>
     </div>

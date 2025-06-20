@@ -57,6 +57,7 @@ export interface GianoProviderInjection {
     challenge: BufferSource,
     credential: Omit<PublicKeyCredential, 'toJSON'>
   ): null | Promise<null> | Hex | Promise<Hex>
+  onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
 }
 
 export type CreateGianoProviderParams = {
@@ -128,6 +129,13 @@ export const createGianoProvider = ({
       if (!rawCredential) {
         return null
       }
+
+      // call the method injected and wait for the result true or false to continue or not
+      const isSignedIn = await injection.onCredentialSignedIn(rawCredential)
+      if (!isSignedIn) {
+        throw new Error('Failed to sign in with credential')
+      }
+
       const idHash = keccak256(new Uint8Array(rawCredential.rawId))
       const { x, y } = await getPublicKeyByCredentialId(idHash)
 
@@ -331,6 +339,57 @@ export const createGianoProvider = ({
 
       const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
       return txReceipt
+    },
+    personal_sign: async ([message, address]: [string, Address]) => {
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      // Convert hex string message to bytes if needed
+      const messageBytes = message.startsWith('0x') ? message : toHex(message)
+      return smartAccount.signMessage({ message: messageBytes })
+    },
+    eth_sign: async ([address, message]: [Address, string]) => {
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      // eth_sign expects raw message hash, not prefixed
+      return smartAccount.signMessage({ message })
+    },
+    eth_signTypedData: async ([address, typedData]: [Address, any]) => {
+      console.log('eth_signTypedData', { address, typedData })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      return smartAccount.signTypedData(typedData)
+    },
+    eth_signTypedData_v4: async ([address, typedData]: [Address, string]) => {
+      console.log('eth_signTypedData_v4', { address, typedData })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      // Parse the JSON string if it's a string
+      const parsedTypedData = typeof typedData === 'string' ? JSON.parse(typedData) : typedData
+      return smartAccount.signTypedData(parsedTypedData)
     },
   }
 
