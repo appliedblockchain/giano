@@ -20,6 +20,10 @@ import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193'
 import type { GianoSmartAccountImplementation } from './account'
 import { toGianoSmartAccount } from './account'
 
+export enum ChainType {
+  HARDHAT = 0, // NOTE: This is just a placeholder for now
+}
+
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse }
 
 const generateRandomChallenge = () => {
@@ -52,6 +56,18 @@ export interface GianoProviderInjection {
     challenge: BufferSource,
     credential: Omit<PublicKeyCredential, 'toJSON'>
   ): null | Promise<null> | Hex | Promise<Hex>
+  encodeUserId(
+    id: string,
+    gianoSmartWalletFactoryAddress: string,
+    chainId: string,
+    chainType: ChainType
+  ): Uint8Array
+  decodeUserId(userId: Uint8Array): {
+    userId: string
+    walletFactoryAddress: string
+    chainId: number
+    chainType: ChainType
+  }
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
 }
 
@@ -256,8 +272,18 @@ export const createGianoProvider = ({
 
       const credentialName = await injection.getNameForCredential()
       const challenge = await injection.getChallenge()
+      const chainId = `0x${chain!.id.toString(16)}`
       const credential = await createWebAuthnCredential({
-        name: credentialName, challenge,
+        user: {
+          name: credentialName,
+          id: injection.encodeUserId(
+            self.crypto.randomUUID().replace(/-/g, ''),
+            gianoSmartWalletFactoryAddress,
+            chainId,
+            ChainType.HARDHAT,
+          ),
+        },
+        challenge,
       })
 
       const handlerCreatedAddress = await injection.onCredentialCreated(
@@ -272,7 +298,7 @@ export const createGianoProvider = ({
           factoryAddress: gianoSmartWalletFactoryAddress,
         })
 
-        emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
+        emit('connect', { chainId })
         emit('accountsChanged', [handlerCreatedAddress])
         return [handlerCreatedAddress]
       }
