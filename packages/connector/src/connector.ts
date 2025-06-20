@@ -19,23 +19,18 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams): 
       connect: async () => {
         const accounts = await provider.request({ method: 'eth_requestAccounts' });
         const chainId = await connector.getChainId();
-        console.log({ accounts, chainId });
         return { accounts, chainId };
       },
       disconnect: async () => {
-        console.log('disconnect');
         await provider.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: [] }] });
       },
       getAccounts: async () => {
-        console.log('get accounts');
         return provider.request({ method: 'eth_accounts' });
       },
       getProvider: async (): Promise<EIP1193Provider> => {
-        console.log('getProvider');
         return provider;
       },
       isAuthorized: async () => {
-        console.log('isAuthorized');
         try {
           // Check if we have stored session data
           const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null;
@@ -48,12 +43,10 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams): 
           const accounts = await connector.getAccounts();
           return accounts.length > 0;
         } catch {
-          console.log('not authorized');
           return false;
         }
       },
       setup: async () => {
-        console.log('setup');
       },
       switchChain: async ({ chainId }: { chainId: number }) => {
         await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${chainId.toString(16)}` }] });
@@ -64,13 +57,10 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams): 
         return parseInt(chainId, 16);
       },
       onAccountsChanged: () => {
-        console.log('onAccountsChanged');
       },
       onChainChanged: () => {
-        console.log('onChainChanged');
       },
       onDisconnect: () => {
-        console.log('onDisconnect');
       },
     };
 

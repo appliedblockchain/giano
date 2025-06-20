@@ -58,11 +58,11 @@ importers:
         specifier: ^0.8.0
         version: 0.8.0
       '@appliedblockchain/silentdatarollup-core':
-        specifier: ^0.1.3
-        version: 0.1.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        specifier: ^1.0.1
+        version: 1.0.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@appliedblockchain/silentdatarollup-hardhat-plugin':
-        specifier: ^0.1.3
-        version: 0.1.3(bufferutil@4.0.9)(ethers@6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.24.0(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
+        specifier: ^1.0.1
+        version: 1.0.1(bufferutil@4.0.9)(ethers@6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.24.0(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
       '@nomicfoundation/ethereumjs-util':
         specifier: ^9.0.4
         version: 9.0.4
@@ -215,16 +215,16 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@appliedblockchain/silentdatarollup-core@0.1.3':
-    resolution: {integrity: sha512-bP/BeIk322eR3C54+pvpxfbJOhLPHDGX6M8qdgYqBvYkWYiz7oVwn3QnxnGbLnrYjA/k8Wwa9mC8RXBQkvjfjw==, tarball: https://npm.pkg.github.com/download/@appliedblockchain/silentdatarollup-core/0.1.3/668af20792e9536693a2101256cd99dfdcdd6e73}
+  '@appliedblockchain/silentdatarollup-core@1.0.1':
+    resolution: {integrity: sha512-a9b7UtgP6ROYsz2yFDzRGCbGWkquOcj9z8v2iZfO1+I3TAKQE6cyUpwrQoVDhRJF/r9N49ffqM6KLn+GVJYl7Q==}
     engines: {node: '>=18.0.0'}
 
-  '@appliedblockchain/silentdatarollup-hardhat-plugin@0.1.3':
-    resolution: {integrity: sha512-EmV1x4QHo9Yd8/nX+6rCBXt0haGzsuvMtEJfrerNNencOpQfZUirEH9t+Jr1Kvl/Py+WKt7/j7fka/eGwAPNoA==, tarball: https://npm.pkg.github.com/download/@appliedblockchain/silentdatarollup-hardhat-plugin/0.1.3/5f055fd89d8c86a4ee9aad8fa8764f7c50c1881b}
+  '@appliedblockchain/silentdatarollup-hardhat-plugin@1.0.1':
+    resolution: {integrity: sha512-oS8oU3MhJM+mgEjffZxxpKa9TGT2joZuCY/H+nnHwSL23F5nF/iXnUj9mnTlte4ffKmCmvXvllicbl1SVitRYg==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      ethers: ^6.13.2
-      hardhat: ^2.22.10
+      ethers: 6.13.2
+      hardhat: 2.22.10
 
   '@babel/code-frame@7.27.1':
     resolution: {integrity: sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg==}
@@ -6448,7 +6448,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@appliedblockchain/silentdatarollup-core@0.1.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
+  '@appliedblockchain/silentdatarollup-core@1.0.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
     dependencies:
       debug: 4.3.7
       ethers: 6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -6457,9 +6457,9 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@appliedblockchain/silentdatarollup-hardhat-plugin@0.1.3(bufferutil@4.0.9)(ethers@6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.24.0(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)':
+  '@appliedblockchain/silentdatarollup-hardhat-plugin@1.0.1(bufferutil@4.0.9)(ethers@6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.24.0(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)':
     dependencies:
-      '@appliedblockchain/silentdatarollup-core': 0.1.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@appliedblockchain/silentdatarollup-core': 1.0.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@nomicfoundation/hardhat-ethers': 3.0.8(ethers@6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.24.0(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))
       debug: 4.3.7
       ethers: 6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -12427,8 +12427,8 @@ snapshots:
   ox@0.6.9(typescript@5.5.4)(zod@3.22.4):
     dependencies:
       '@adraffy/ens-normalize': 1.11.0
-      '@noble/curves': 1.8.2
-      '@noble/hashes': 1.7.2
+      '@noble/curves': 1.9.1
+      '@noble/hashes': 1.8.0
       '@scure/bip32': 1.6.2
       '@scure/bip39': 1.5.4
       abitype: 1.0.8(typescript@5.5.4)(zod@3.22.4)
@@ -12441,8 +12441,8 @@ snapshots:
   ox@0.6.9(typescript@5.5.4)(zod@3.25.1):
     dependencies:
       '@adraffy/ens-normalize': 1.11.0
-      '@noble/curves': 1.8.2
-      '@noble/hashes': 1.7.2
+      '@noble/curves': 1.9.1
+      '@noble/hashes': 1.8.0
       '@scure/bip32': 1.6.2
       '@scure/bip39': 1.5.4
       abitype: 1.0.8(typescript@5.5.4)(zod@3.25.1)

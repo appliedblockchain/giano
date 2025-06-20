@@ -20,12 +20,11 @@ import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193'
 import type { GianoSmartAccountImplementation } from './account'
 import { toGianoSmartAccount } from './account'
 
-type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse }
+export enum ChainType {
+  HARDHAT = 0, // NOTE: This is just a placeholder for now
+}
 
-const credentialMapperContract = {
-  abi: credentialKeyMapperAbi,
-  address: '0x297406bb0c4cBDB6A722Cf2728c5592eEd774195' as const,
-};
+type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse }
 
 const generateRandomChallenge = () => {
   const challenge = new Uint8Array(32)
@@ -57,6 +56,19 @@ export interface GianoProviderInjection {
     challenge: BufferSource,
     credential: Omit<PublicKeyCredential, 'toJSON'>
   ): null | Promise<null> | Hex | Promise<Hex>
+  encodeUserId(
+    id: string,
+    gianoSmartWalletFactoryAddress: string,
+    chainId: string,
+    chainType: ChainType
+  ): Uint8Array
+  decodeUserId(userId: Uint8Array): {
+    userId: string
+    walletFactoryAddress: string
+    chainId: number
+    chainType: ChainType
+  }
+  onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
 }
 
 export type CreateGianoProviderParams = {
@@ -66,6 +78,8 @@ export type CreateGianoProviderParams = {
   chains: readonly Chain[]
   transports: Record<number, Transport> | undefined
   injection: GianoProviderInjection
+  credentialKeyMapperAddress: Address
+  gianoSmartWalletFactoryAddress: Address
 }
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void
@@ -80,6 +94,8 @@ export const createGianoProvider = ({
   paymaster,
   bundler,
   injection,
+  credentialKeyMapperAddress,
+  gianoSmartWalletFactoryAddress,
 }: CreateGianoProviderParams) => {
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null
   let chain: Chain | undefined
@@ -89,6 +105,11 @@ export const createGianoProvider = ({
   let staticSignatureSignedAt = 0
   let staticSignatureLifetime = 0n
   const eventListeners: Partial<EventListeners> = {}
+
+  const credentialMapperContract = {
+    abi: credentialKeyMapperAbi,
+    address: credentialKeyMapperAddress,
+  };
 
   const emit = <E extends keyof EIP1193EventMap>(
     event: E,
@@ -113,7 +134,6 @@ export const createGianoProvider = ({
     credentialId?: BufferSource
     challenge?: BufferSource
   } = {}): Promise<WebAuthnAccount | null> => {
-    console.log('getWebAuthnAccount', { credentialId, challenge })
 
     try {
       const rawCredential = await navigator.credentials.get({
@@ -128,6 +148,13 @@ export const createGianoProvider = ({
       if (!rawCredential) {
         return null
       }
+
+      // call the method injected and wait for the result true or false to continue or not
+      const isSignedIn = await injection.onCredentialSignedIn(rawCredential)
+      if (!isSignedIn) {
+        throw new Error('Failed to sign in with credential')
+      }
+
       const idHash = keccak256(new Uint8Array(rawCredential.rawId))
       const { x, y } = await getPublicKeyByCredentialId(idHash)
 
@@ -155,11 +182,9 @@ export const createGianoProvider = ({
         : []
     },
     eth_chainId: async () => {
-      console.log({ chain })
       return `0x${chain!.id.toString(16)}`
     },
     eth_call: async ([call, blockTag]) => {
-      console.log('eth_call', { call })
       //TODO: Provide a way to configure when to trigger signature authentication of read calls
       const selector = toFunctionSelector('function balanceOf(address)')
       if (!call.data!.startsWith(selector)) {
@@ -224,14 +249,12 @@ export const createGianoProvider = ({
         functionName: 'signedStaticCall',
         args: [{ target: call.to, data: call.data!, signedAt: BigInt(staticSignatureSignedAt), signature: staticSignature }],
       })
-      console.log({ result })
       return result
     },
     wallet_addEthereumChain: () => {
       //TODO: implement
     },
     wallet_revokePermissions: () => {
-      console.log('wallet_revokePermissions')
       smartAccount = null
       // Clear stored session data
       if (typeof window !== 'undefined') {
@@ -268,7 +291,6 @@ export const createGianoProvider = ({
       emit('chainChanged', `0x${chainId.toString(16)}`)
     },
     eth_requestAccounts: async () => {
-      console.log('eth_requestAccounts')
       if (smartAccount) {
         return [await smartAccount.getAddress()]
       }
@@ -296,7 +318,7 @@ export const createGianoProvider = ({
         if (!webAuthnAccount) {
           throw new Error('Invalid credential')
         }
-        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount] })
+        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: gianoSmartWalletFactoryAddress })
         const smartAccountAddress = await smartAccount.getAddress()
 
         // Store session data
@@ -316,15 +338,23 @@ export const createGianoProvider = ({
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
         emit('accountsChanged', [smartAccountAddress])
 
-        console.log('returning', [smartAccountAddress])
-
         return [smartAccountAddress]
       }
 
       const credentialName = await injection.getNameForCredential()
       const challenge = await injection.getChallenge()
+      const chainId = `0x${chain!.id.toString(16)}`
       const credential = await createWebAuthnCredential({
-        name: credentialName, challenge,
+        user: {
+          name: credentialName,
+          id: injection.encodeUserId(
+            self.crypto.randomUUID().replace(/-/g, ''),
+            gianoSmartWalletFactoryAddress,
+            chainId,
+            ChainType.HARDHAT,
+          ),
+        },
+        challenge,
       })
 
       const handlerCreatedAddress = await injection.onCredentialCreated(
@@ -336,9 +366,10 @@ export const createGianoProvider = ({
           client: client!,
           owners: [toWebAuthnAccount({ credential })],
           address: handlerCreatedAddress,
+          factoryAddress: gianoSmartWalletFactoryAddress,
         })
 
-        emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
+        emit('connect', { chainId })
         emit('accountsChanged', [handlerCreatedAddress])
         return [handlerCreatedAddress]
       }
@@ -346,6 +377,7 @@ export const createGianoProvider = ({
       smartAccount = await toGianoSmartAccount({
         client: client!,
         owners: [toWebAuthnAccount({ credential })],
+        factoryAddress: gianoSmartWalletFactoryAddress,
       })
       const smartAccountAddress = await smartAccount.getAddress()
 
@@ -441,11 +473,61 @@ export const createGianoProvider = ({
         ...finalOp,
         signature,
       }
-      console.log({ signedOp })
       const hash = await bundler.sendUserOperation(signedOp)
 
       const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
       return txReceipt
+    },
+    personal_sign: async ([message, address]: [string, Address]) => {
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      // Convert hex string message to bytes if needed
+      const messageBytes = message.startsWith('0x') ? message : toHex(message)
+      return smartAccount.signMessage({ message: messageBytes })
+    },
+    eth_sign: async ([address, message]: [Address, string]) => {
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      // eth_sign expects raw message hash, not prefixed
+      return smartAccount.signMessage({ message })
+    },
+    eth_signTypedData: async ([address, typedData]: [Address, any]) => {
+      console.log('eth_signTypedData', { address, typedData })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      return smartAccount.signTypedData(typedData)
+    },
+    eth_signTypedData_v4: async ([address, typedData]: [Address, string]) => {
+      console.log('eth_signTypedData_v4', { address, typedData })
+      if (!smartAccount) {
+        throw new Error('Giano not connected')
+      }
+      const accountAddress = await smartAccount.getAddress()
+      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
+        throw new Error('Address mismatch')
+      }
+      
+      // Parse the JSON string if it's a string
+      const parsedTypedData = typeof typedData === 'string' ? JSON.parse(typedData) : typedData
+      return smartAccount.signTypedData(parsedTypedData)
     },
   }
 
@@ -455,13 +537,11 @@ export const createGianoProvider = ({
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args
 
-      console.log('provide.request ->', { method, params })
       if (!(method in methods)) {
         return client!.request({ ...args } as any)
       }
       try {
         const response = await methods[method](params)
-        console.log({ response })
         return response
       } catch (e) {
         console.error(e)
