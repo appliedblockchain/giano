@@ -191,40 +191,11 @@ export const createGianoProvider = ({
         // passthrough non whitelisted requests to the underlying client
         return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
-      
+
       // Check if smartAccount is available before proceeding with authenticated calls
-      // If not available, try to restore with authentication if we have stored credentials
       if (!smartAccount) {
-        const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null
-        const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null
-
-        if (storedCredentialId && storedAccountAddress) {
-          try {
-            const credentialIdBuffer = new Uint8Array(JSON.parse(storedCredentialId))
-            const challenge = await injection.getChallenge()
-            const webAuthnAccount = await getWebAuthnAccount({
-              credentialId: credentialIdBuffer,
-              challenge,
-            })
-
-            if (webAuthnAccount) {
-              smartAccount = await toGianoSmartAccount({
-                client: client!,
-                owners: [webAuthnAccount],
-                address: storedAccountAddress as Address,
-                factoryAddress: gianoSmartWalletFactoryAddress,
-              })
-            }
-          } catch (error) {
-            console.warn('Failed to authenticate for call, falling back to regular call:', error)
-            return client!.request({ method: 'eth_call', params: [call, blockTag] })
-          }
-        }
-
-        if (!smartAccount) {
-          console.warn('Smart account not available, falling back to regular call')
-          return client!.request({ method: 'eth_call', params: [call, blockTag] })
-        }
+        console.warn('Smart account not available, falling back to regular call')
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
 
       // if the lifetime of the static signature is not known, fetch and cache it
@@ -295,18 +266,41 @@ export const createGianoProvider = ({
         return [await smartAccount.getAddress()]
       }
 
-      // Try to restore from localStorage first
+      // Try to restore from localStorage first with full authentication
       const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null
       const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null
 
       if (storedCredentialId && storedAccountAddress) {
-        // For session restoration, just return the stored address without WebAuthn authentication
-        // Authentication will happen when the user actually needs to sign something
+        try {
+          const credentialIdBuffer = new Uint8Array(JSON.parse(storedCredentialId))
+          const challenge = await injection.getChallenge()
+          const webAuthnAccount = await getWebAuthnAccount({
+            credentialId: credentialIdBuffer,
+            challenge,
+          })
 
-        emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
-        emit('accountsChanged', [storedAccountAddress as `0x${string}`])
+          if (webAuthnAccount) {
+            smartAccount = await toGianoSmartAccount({
+              client: client!,
+              owners: [webAuthnAccount],
+              address: storedAccountAddress as Address,
+              factoryAddress: gianoSmartWalletFactoryAddress,
+            })
+            const smartAccountAddress = await smartAccount.getAddress()
 
-        return [storedAccountAddress]
+            emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
+            emit('accountsChanged', [smartAccountAddress])
+
+            return [smartAccountAddress]
+          }
+        } catch (error) {
+          console.warn('Failed to restore session with authentication:', error)
+          // Clear invalid stored data
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('giano_credential_id')
+            localStorage.removeItem('giano_account_address')
+          }
+        }
       }
 
       // Fallback to original flow
@@ -415,36 +409,7 @@ export const createGianoProvider = ({
     },
     eth_sendTransaction: async (calls: Call[]) => {
       if (!smartAccount) {
-        // If no smart account but we have stored credentials, try to restore it with authentication
-        const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null
-        const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null
-
-        if (storedCredentialId && storedAccountAddress) {
-          try {
-            const credentialIdBuffer = new Uint8Array(JSON.parse(storedCredentialId))
-            const challenge = await injection.getChallenge()
-            const webAuthnAccount = await getWebAuthnAccount({
-              credentialId: credentialIdBuffer,
-              challenge,
-            })
-
-            if (webAuthnAccount) {
-              smartAccount = await toGianoSmartAccount({
-                client: client!,
-                owners: [webAuthnAccount],
-                address: storedAccountAddress as Address,
-                factoryAddress: gianoSmartWalletFactoryAddress
-              })
-            }
-          } catch (error) {
-            console.warn('Failed to authenticate for transaction:', error)
-            throw new Error('Authentication failed')
-          }
-        }
-
-        if (!smartAccount) {
-          throw new Error('Giano not connected')
-        }
+        throw new Error('Giano not connected')
       }
       const op = {
         ...(paymaster && {
