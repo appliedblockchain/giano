@@ -1,4 +1,3 @@
-import { credentialKeyMapperAbi } from '@appliedblockchain/giano-contracts'
 import type { Call, Hex, PublicClient } from 'viem'
 import {
   type Address,
@@ -6,7 +5,6 @@ import {
   concatHex,
   createPublicClient,
   type EIP1193Provider,
-  encodeFunctionData,
   type Hash,
   keccak256,
   parseGwei,
@@ -69,6 +67,8 @@ export interface GianoProviderInjection {
     chainType: ChainType
   }
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
+  getPublicKeyByCredentialId(idHash: Hash): Promise<{ x: Hex; y: Hex }>
+  onCredentialKey(idHash: Hash, xyVector: { x: Hex; y: Hex }): Promise<void>
 }
 
 export type CreateGianoProviderParams = {
@@ -78,7 +78,6 @@ export type CreateGianoProviderParams = {
   chains: readonly Chain[]
   transports: Record<number, Transport> | undefined
   injection: GianoProviderInjection
-  credentialKeyMapperAddress: Address
   gianoSmartWalletFactoryAddress: Address
 }
 
@@ -94,7 +93,6 @@ export const createGianoProvider = ({
   paymaster,
   bundler,
   injection,
-  credentialKeyMapperAddress,
   gianoSmartWalletFactoryAddress,
 }: CreateGianoProviderParams) => {
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null
@@ -106,11 +104,6 @@ export const createGianoProvider = ({
   let staticSignatureLifetime = 0n
   const eventListeners: Partial<EventListeners> = {}
 
-  const credentialMapperContract = {
-    abi: credentialKeyMapperAbi,
-    address: credentialKeyMapperAddress,
-  };
-
   const emit = <E extends keyof EIP1193EventMap>(
     event: E,
     payload: Parameters<EIP1193EventMap[E]>[0],
@@ -119,13 +112,6 @@ export const createGianoProvider = ({
       listener => listener(payload)
     )
   }
-
-  const getPublicKeyByCredentialId = async (id: Hash) =>
-    client!.readContract({
-      ...credentialMapperContract,
-      functionName: 'getCredentialKey',
-      args: [id],
-    })
 
   const getWebAuthnAccount = async ({
     credentialId,
@@ -156,7 +142,7 @@ export const createGianoProvider = ({
       }
 
       const idHash = keccak256(new Uint8Array(rawCredential.rawId))
-      const { x, y } = await getPublicKeyByCredentialId(idHash)
+      const { x, y } = await injection.getPublicKeyByCredentialId(idHash)
 
       if (x === toHex(0, { size: 32 })) {
         throw new Error('Unknown credential ID')
@@ -383,16 +369,8 @@ export const createGianoProvider = ({
 
       const idHash = keccak256(toHex(new Uint8Array(credential.raw.rawId)))
       const xyVector = extractXYCoords(credential.publicKey)
-      const setCredentialKeyTx = {
-        to: credentialMapperContract.address,
-        data: encodeFunctionData({
-          abi: credentialMapperContract.abi,
-          functionName: 'setCredentialKey',
-          args: [idHash, xyVector],
-        }),
-      }
-
-      await methods.eth_sendTransaction([setCredentialKeyTx])
+      
+      injection.onCredentialKey(idHash, xyVector)
 
       // Store session data for new credential
       if (typeof window !== 'undefined') {
