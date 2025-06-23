@@ -13,10 +13,9 @@ import {
   useWalletClient,
   useWriteContract,
 } from 'wagmi'
+import { config } from '../config'
 import styles from '../styles/Home.module.css'
 import { gianoConnector } from '../wagmi'
-
-const PRIVATE_ERC20_ADDRESS = '0xfE96b00Fb176b14Ee1dd87ecFf1eEEADb8562571'
 
 const Home: NextPage = () => {
   const [mounted, setMounted] = useState(false)
@@ -31,7 +30,7 @@ const Home: NextPage = () => {
     isFetching: isReadFetching,
     error,
   } = useReadContract({
-    address: PRIVATE_ERC20_ADDRESS,
+    address: config.privateErc20Address,
     abi: privateErc20Abi,
     functionName: 'balanceOf',
     args: [address!],
@@ -101,7 +100,7 @@ const Home: NextPage = () => {
     e.preventDefault()
     if (!inputMessage.trim()) return
     const result = await writeContractAsync({
-      address: PRIVATE_ERC20_ADDRESS,
+      address: config.privateErc20Address,
       abi: privateErc20Abi,
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
@@ -126,7 +125,7 @@ const Home: NextPage = () => {
       const userOp = await walletClient.request({
         method: 'eth_prepareUserOperation',
         params: [[{
-          to: PRIVATE_ERC20_ADDRESS,
+          to: config.privateErc20Address,
           data: mintCallData,
         }], {
           // Optional: customize gas settings
@@ -213,7 +212,7 @@ const Home: NextPage = () => {
 
       const userOp = await walletClient.request({
         method: 'eth_prepareUserOperation',
-        params: [[{ to: PRIVATE_ERC20_ADDRESS, data: mintCallData }]],
+        params: [[{ to: config.privateErc20Address, data: mintCallData }]],
       } as any)
       
       // Step 2: Sign
