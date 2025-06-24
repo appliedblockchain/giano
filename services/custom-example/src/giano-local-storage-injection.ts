@@ -38,19 +38,15 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
   getNameForCredential: async () => {
     return 'Giano Passkey'
   },
-  getCredentialId: async () => {
+  getCredentialInfo: async () => {
     const passkeyIdBase64 = localStorage.getItem('gpk-passkey-id')
-
-    if (!passkeyIdBase64) {
-      return null
-    }
-
-    return new Uint8Array(Buffer.from(passkeyIdBase64, 'base64'))
-  },
-  getChallenge: async () => {
     const challenge = new Uint8Array(32)
+    crypto.getRandomValues(challenge)
 
-    return crypto.getRandomValues(challenge)
+    return {
+      credentialId: passkeyIdBase64 ? new Uint8Array(Buffer.from(passkeyIdBase64, 'base64')) : null,
+      challenge,
+    }
   },
   onCredentialCreated: async (credentialName, challenge, credential) => {
     const passkeyIdBase64 = Buffer.from(credential.rawId).toString('base64')

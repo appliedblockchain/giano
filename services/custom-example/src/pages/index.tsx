@@ -416,9 +416,7 @@ const Home: NextPage = () => {
           
           {preparedUserOp && (
             <div className={styles.stateCard}>
-              <p>
-                <strong>UserOp Status:</strong>
-              </p>
+              <p><strong>UserOp Status:</strong></p>
               <p>Prepared: ✅</p>
               <p>Signed: {isUserOpSigned ? '✅' : '❌'}</p>
               <p>Signature: {preparedUserOp.signature || 'None'}</p>

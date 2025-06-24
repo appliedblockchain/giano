@@ -39,10 +39,12 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
   return { x: `0x${key.slice(-128, -64)}`, y: `0x${key.slice(-64)}` }
 }
 
-export interface GianoProviderInjection {
-  getNameForCredential(): string | Promise<string>
-  getCredentialId(): BufferSource | null | Promise<BufferSource | null>
-  getChallenge(): BufferSource | Promise<BufferSource>
+export type GianoProviderInjection = {
+  getNameForCredential(): string | Promise<string>;
+  getCredentialInfo(): Promise<{
+    credentialId?: BufferSource | null;
+    challenge: BufferSource;
+  }>;
   /**
    * @param credentialName - The name of the credential
    * @param challenge - The challenge used to create the credential
@@ -266,6 +268,8 @@ export const createGianoProvider = ({
         return [await smartAccount.getAddress()]
       }
 
+      const credentialInfo = await injection.getCredentialInfo()
+
       // Try to restore from localStorage first with full authentication
       const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null
       const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null
@@ -273,10 +277,9 @@ export const createGianoProvider = ({
       if (storedCredentialId && storedAccountAddress) {
         try {
           const credentialIdBuffer = new Uint8Array(JSON.parse(storedCredentialId))
-          const challenge = await injection.getChallenge()
           const webAuthnAccount = await getWebAuthnAccount({
             credentialId: credentialIdBuffer,
-            challenge,
+            challenge: credentialInfo.challenge,
           })
 
           if (webAuthnAccount) {
@@ -304,11 +307,9 @@ export const createGianoProvider = ({
       }
 
       // Fallback to original flow
-      const credentialId = await injection.getCredentialId()
-
-      if (credentialId) {
-        const challenge = await injection.getChallenge()
-        const webAuthnAccount = await getWebAuthnAccount({ credentialId: credentialId, challenge })
+      if (credentialInfo.credentialId) {
+        const challenge = credentialInfo.challenge
+        const webAuthnAccount = await getWebAuthnAccount({ credentialId: credentialInfo.credentialId, challenge })
         if (!webAuthnAccount) {
           throw new Error('Invalid credential')
         }
@@ -318,12 +319,12 @@ export const createGianoProvider = ({
         // Store session data
         if (typeof window !== 'undefined') {
           let credentialIdArray: Uint8Array
-          if (credentialId instanceof ArrayBuffer) {
-            credentialIdArray = new Uint8Array(credentialId)
-          } else if (credentialId instanceof Uint8Array) {
-            credentialIdArray = credentialId
+          if (credentialInfo.credentialId instanceof ArrayBuffer) {
+            credentialIdArray = new Uint8Array(credentialInfo.credentialId)
+          } else if (credentialInfo.credentialId instanceof Uint8Array) {
+            credentialIdArray = credentialInfo.credentialId
           } else {
-            credentialIdArray = new Uint8Array((credentialId as any).buffer || credentialId)
+            credentialIdArray = new Uint8Array((credentialInfo.credentialId as any).buffer || credentialInfo.credentialId)
           }
           localStorage.setItem('giano_credential_id', JSON.stringify(Array.from(credentialIdArray)))
           localStorage.setItem('giano_account_address', smartAccountAddress)
@@ -336,7 +337,7 @@ export const createGianoProvider = ({
       }
 
       const credentialName = await injection.getNameForCredential()
-      const challenge = await injection.getChallenge()
+      const newCredentialInfo = await injection.getCredentialInfo()
       const chainId = `0x${chain!.id.toString(16)}`
       const credential = await createWebAuthnCredential({
         user: {
@@ -348,11 +349,11 @@ export const createGianoProvider = ({
             ChainType.HARDHAT,
           ),
         },
-        challenge,
+        challenge: newCredentialInfo.challenge,
       })
 
       const handlerCreatedAddress = await injection.onCredentialCreated(
-        credentialName, challenge, credential.raw,
+        credentialName, newCredentialInfo.challenge, credential.raw,
       )
 
       if (handlerCreatedAddress) {
