@@ -89,5 +89,20 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
   onCredentialSignedIn: async (credential) => {
     console.log('Credential signed in', { credential })
     return true
-  }
+  },
+  getPublicKeyByCredentialId: async (idHash: Hash) => {
+    // get the public key from the local storage based on the onCredentialKey injection method
+    const publicKey = localStorage.getItem(`gpk-${idHash}-public-key`)
+    const publicKeyY = localStorage.getItem(`gpk-${idHash}-public-key-y`)
+    if (!publicKey || !publicKeyY) {
+      throw new Error('Public key not found')
+    }
+    return { x: publicKey, y: publicKeyY }
+  },
+  onCredentialKey: async (idHash: Hash, xyVector: { x: Hex; y: Hex }) => {
+    console.log('onCredentialKey', { idHash, xyVector })
+    // save the public key to the local storage
+    localStorage.setItem(`gpk-${idHash}-public-key`, xyVector.x)
+    localStorage.setItem(`gpk-${idHash}-public-key-y`, xyVector.y)
+  },
 }

@@ -1,4 +1,3 @@
-import { credentialKeyMapperAbi } from '@appliedblockchain/giano-contracts'
 import type { Call, Hex, PublicClient } from 'viem'
 import {
   type Address,
@@ -6,7 +5,6 @@ import {
   concatHex,
   createPublicClient,
   type EIP1193Provider,
-  encodeFunctionData,
   type Hash,
   keccak256,
   parseGwei,
@@ -71,6 +69,8 @@ export type GianoProviderInjection = {
     chainType: ChainType
   }
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
+  getPublicKeyByCredentialId(idHash: Hash): Promise<{ x: Hex; y: Hex }>
+  onCredentialKey(idHash: Hash, xyVector: { x: Hex; y: Hex }): Promise<void>
 }
 
 export type CreateGianoProviderParams = {
@@ -80,7 +80,6 @@ export type CreateGianoProviderParams = {
   chains: readonly Chain[]
   transports: Record<number, Transport> | undefined
   injection: GianoProviderInjection
-  credentialKeyMapperAddress: Address
   gianoSmartWalletFactoryAddress: Address
 }
 
@@ -96,7 +95,6 @@ export const createGianoProvider = ({
   paymaster,
   bundler,
   injection,
-  credentialKeyMapperAddress,
   gianoSmartWalletFactoryAddress,
 }: CreateGianoProviderParams) => {
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null
@@ -108,11 +106,6 @@ export const createGianoProvider = ({
   let staticSignatureLifetime = 0n
   const eventListeners: Partial<EventListeners> = {}
 
-  const credentialMapperContract = {
-    abi: credentialKeyMapperAbi,
-    address: credentialKeyMapperAddress,
-  };
-
   const emit = <E extends keyof EIP1193EventMap>(
     event: E,
     payload: Parameters<EIP1193EventMap[E]>[0],
@@ -122,12 +115,18 @@ export const createGianoProvider = ({
     )
   }
 
-  const getPublicKeyByCredentialId = async (id: Hash) =>
-    client!.readContract({
-      ...credentialMapperContract,
-      functionName: 'getCredentialKey',
-      args: [id],
-    })
+  const ensureAccountDeployed = async (): Promise<boolean> => {
+    if (!smartAccount) return false
+    
+    try {
+      const accountAddress = await smartAccount.getAddress()
+      const accountCode = await client!.getCode({ address: accountAddress })
+      return !!(accountCode && accountCode !== '0x')
+    } catch (error) {
+      console.warn('Failed to check account deployment status:', error)
+      return false
+    }
+  }
 
   const getWebAuthnAccount = async ({
     credentialId,
@@ -158,7 +157,7 @@ export const createGianoProvider = ({
       }
 
       const idHash = keccak256(new Uint8Array(rawCredential.rawId))
-      const { x, y } = await getPublicKeyByCredentialId(idHash)
+      const { x, y } = await injection.getPublicKeyByCredentialId(idHash)
 
       if (x === toHex(0, { size: 32 })) {
         throw new Error('Unknown credential ID')
@@ -197,6 +196,13 @@ export const createGianoProvider = ({
       // Check if smartAccount is available before proceeding with authenticated calls
       if (!smartAccount) {
         console.warn('Smart account not available, falling back to regular call')
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
+      }
+
+      // Check if the account is deployed before attempting authenticated calls
+      const isDeployed = await ensureAccountDeployed()
+      if (!isDeployed) {
+        console.warn('Smart account not deployed yet, falling back to regular call')
         return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
 
@@ -378,16 +384,37 @@ export const createGianoProvider = ({
 
       const idHash = keccak256(toHex(new Uint8Array(credential.raw.rawId)))
       const xyVector = extractXYCoords(credential.publicKey)
-      const setCredentialKeyTx = {
-        to: credentialMapperContract.address,
-        data: encodeFunctionData({
-          abi: credentialMapperContract.abi,
-          functionName: 'setCredentialKey',
-          args: [idHash, xyVector],
-        }),
+
+      // Check if the smart account is already deployed
+      const accountAddress = await smartAccount.getAddress()
+      const accountCode = await client!.getCode({ address: accountAddress })
+      const isDeployed = accountCode && accountCode !== '0x'
+
+      // NOTE: this is needed to deploy the smart account if we want to use it for read calls right away
+      // if not, the account will be deployed on the first actual transaction
+      if (!isDeployed) {
+        // Deploy the smart account with a minimal transaction
+        // Option 1: Send 0 ETH to self (minimal deployment transaction)
+        const deploymentTx = {
+          to: accountAddress,
+          value: '0x0',
+          data: '0x', // Empty data
+        }
+
+        try {
+          console.log('Deploying smart account...')
+          await methods.eth_sendTransaction([deploymentTx])
+          console.log('Smart account deployed successfully')
+        } catch (error) {
+          console.warn('Failed to deploy smart account:', error)
+          // If deployment fails, the account will be deployed on the first actual transaction
+        }
+      } else {
+        console.log('Smart account already deployed')
       }
 
-      await methods.eth_sendTransaction([setCredentialKeyTx])
+      // Always call the injection callback regardless of deployment status
+      await injection.onCredentialKey(idHash, xyVector)
 
       // Store session data for new credential
       if (typeof window !== 'undefined') {
