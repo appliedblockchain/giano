@@ -113,6 +113,19 @@ export const createGianoProvider = ({
     )
   }
 
+  const ensureAccountDeployed = async (): Promise<boolean> => {
+    if (!smartAccount) return false
+    
+    try {
+      const accountAddress = await smartAccount.getAddress()
+      const accountCode = await client!.getCode({ address: accountAddress })
+      return !!(accountCode && accountCode !== '0x')
+    } catch (error) {
+      console.warn('Failed to check account deployment status:', error)
+      return false
+    }
+  }
+
   const getWebAuthnAccount = async ({
     credentialId,
     challenge,
@@ -211,6 +224,13 @@ export const createGianoProvider = ({
           console.warn('Smart account not available, falling back to regular call')
           return client!.request({ method: 'eth_call', params: [call, blockTag] })
         }
+      }
+
+      // Check if the account is deployed before attempting authenticated calls
+      const isDeployed = await ensureAccountDeployed()
+      if (!isDeployed) {
+        console.warn('Smart account not deployed yet, falling back to regular call')
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
 
       // if the lifetime of the static signature is not known, fetch and cache it
@@ -369,8 +389,37 @@ export const createGianoProvider = ({
 
       const idHash = keccak256(toHex(new Uint8Array(credential.raw.rawId)))
       const xyVector = extractXYCoords(credential.publicKey)
-      
-      injection.onCredentialKey(idHash, xyVector)
+
+      // Check if the smart account is already deployed
+      const accountAddress = await smartAccount.getAddress()
+      const accountCode = await client!.getCode({ address: accountAddress })
+      const isDeployed = accountCode && accountCode !== '0x'
+
+      // NOTE: this is needed to deploy the smart account if we want to use it for read calls right away
+      // if not, the account will be deployed on the first actual transaction
+      if (!isDeployed) {
+        // Deploy the smart account with a minimal transaction
+        // Option 1: Send 0 ETH to self (minimal deployment transaction)
+        const deploymentTx = {
+          to: accountAddress,
+          value: '0x0',
+          data: '0x', // Empty data
+        }
+
+        try {
+          console.log('Deploying smart account...')
+          await methods.eth_sendTransaction([deploymentTx])
+          console.log('Smart account deployed successfully')
+        } catch (error) {
+          console.warn('Failed to deploy smart account:', error)
+          // If deployment fails, the account will be deployed on the first actual transaction
+        }
+      } else {
+        console.log('Smart account already deployed')
+      }
+
+      // Always call the injection callback regardless of deployment status
+      await injection.onCredentialKey(idHash, xyVector)
 
       // Store session data for new credential
       if (typeof window !== 'undefined') {
