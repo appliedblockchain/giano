@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "env PORT=4000 next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "append-address-env-vars": "node script/append-address-env-vars.js"
   },
   "dependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",
