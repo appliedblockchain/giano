@@ -70,6 +70,7 @@ export type GianoProviderInjection = {
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(idHash: Hash): Promise<{ x: Hex; y: Hex }>
   onCredentialKey(idHash: Hash, xyVector: { x: Hex; y: Hex }): Promise<void>
+  onUserOperationSigned?: (signedUserOp: any) => Promise<any> // optional hook for backend validation and submission
 }
 
 export type CreateGianoProviderParams = {
@@ -101,6 +102,18 @@ export const createGianoProvider = ({
   let transport: Transport | undefined
   let client: PublicClient | undefined
   const eventListeners: Partial<EventListeners> = {}
+
+  const submitUserOperation = async (signedUserOp: any) => {
+    if (injection.onUserOperationSigned) {
+      // Hook provided: use backend validation and submission
+      return await injection.onUserOperationSigned(signedUserOp);
+    } else {
+      // No hook: submit directly to bundler
+      const hash = await bundler.sendUserOperation(signedUserOp);
+      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash });
+      return txReceipt;
+    }
+  };
 
   const emit = <E extends keyof EIP1193EventMap>(
     event: E,
@@ -421,10 +434,8 @@ export const createGianoProvider = ({
         ...finalOp,
         signature,
       }
-      const hash = await bundler.sendUserOperation(signedOp)
 
-      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
-      return txReceipt
+      return await submitUserOperation(signedOp)
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -491,9 +502,7 @@ export const createGianoProvider = ({
         throw new Error('Giano not connected')
       }
       
-      const hash = await bundler.sendUserOperation(signedUserOp)
-      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
-      return txReceipt
+      return await submitUserOperation(signedUserOp)
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options })

@@ -15,8 +15,8 @@ const rpcs = <const>{
 
 const bundler = createBundlerClient({
   chain: hardhat,
-  transport: http('http://localhost:4337/proxy/rpc'),
-});
+  transport: http(envConfig.bundlerRpcUrl),
+})
 
 export const { gianoClient, gianoProvider } = createGianoProvider({
   bundler,

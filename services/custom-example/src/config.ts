@@ -11,6 +11,7 @@ function requiredAddress(s?: string): Hex {
 }
 
 export const config = {
+  bundlerRpcUrl: 'http://localhost:4337/proxy/rpc',
   paymasterAddress: requiredAddress(process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS),
   credentialKeyMapperAddress: requiredAddress(process.env.NEXT_PUBLIC_CREDENTIAL_KEY_MAPPER_ADDRESS),
   gianoSmartWalletFactoryAddress: requiredAddress(process.env.NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS),
