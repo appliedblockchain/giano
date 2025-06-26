@@ -14,7 +14,7 @@ contract PrivateERC20 is ERC20 {
 		_mint(msg.sender, amount);
 	}
 
-    function balanceOf(address account) public view override returns (uint256) {
+    function privateBalanceOf(address account) public view returns (uint256) {
         require(account == msg.sender, Unauthorized(account, msg.sender));
         return super.balanceOf(account);
     }

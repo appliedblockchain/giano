@@ -34,7 +34,6 @@ const Home: NextPage = () => {
       retryOnMount: false,
     },
   });
-
   const [inputMessage, setInputMessage] = useState('');
   const [manualMintAmount, setManualMintAmount] = useState('');
   const [contractState, setContractState] = useState<bigint | null>(null);
@@ -59,7 +58,7 @@ const Home: NextPage = () => {
         const connectAsync = async () => {
           try {
             setIsAuthenticating(true);
-            await connect({ connector: gianoConnector });
+            const response = connect({ connector: gianoConnector });
           } catch (error) {
             console.warn('Failed to auto-restore session:', error);
             // Clear invalid stored data
@@ -69,7 +68,7 @@ const Home: NextPage = () => {
             setIsAuthenticating(false);
           }
         };
-        connectAsync();
+        void connectAsync();
       }
     }
   }, [mounted, isConnected, connect, isAuthenticating]);
@@ -349,6 +348,7 @@ const Home: NextPage = () => {
         ) : (
           <button onClick={() => connect({ connector: gianoConnector })}>Connect</button>
         )}
+        {address}
 
         {/* Original mint method */}
         <form className={styles.formContainer} onSubmit={sendTx}>
@@ -409,9 +409,11 @@ const Home: NextPage = () => {
           )}
         </div>
 
-        <button className={styles.readButton} disabled={!address || !mounted || !connectionReady || !isConnected || isReadFetching} onClick={sendCall}>
-          Read balance
-        </button>
+        <div className={styles.formContainer}>
+          <button className={styles.readButton} disabled={!address || !mounted || !connectionReady || !isConnected || isReadFetching} onClick={sendCall}>
+            Read balance
+          </button>
+        </div>
 
         {/* Message Signing Section */}
         <div className={styles.formContainer}>
