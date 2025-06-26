@@ -39,13 +39,19 @@ const config: HardhatUserConfig = {
       enableRip7212: true,
       url: 'http://localhost:8545',
     },
-    sdr: {
+    ['base-sepolia']: {
+      enableRip7212: true,
+      url: process.env.BASE_SEPOLIA_RPC_URL,
+      accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
+      chainId: 84532,
+    }
+    /*sdr: {
       url: process.env.SDR_URL,
       accounts: [process.env.SDR_PRIVATE_KEY!],
       silentdata: {
         authSignatureType: SignatureType.Raw,
       },
-    },
+    },*/
   },
   gasReporter: {
     enabled: true,

@@ -15,7 +15,7 @@ import {
   type Transport,
 } from 'viem'
 import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction'
-import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction'
+import { createBundlerClient, createWebAuthnCredential, toCoinbaseSmartAccount, toWebAuthnAccount } from 'viem/account-abstraction'
 import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193'
 import type { GianoSmartAccountImplementation } from './account'
 import { toGianoSmartAccount } from './account'
@@ -24,8 +24,8 @@ type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAsserti
 
 const credentialMapperContract = {
   abi: credentialKeyMapperAbi,
-  address: '0x297406bb0c4cBDB6A722Cf2728c5592eEd774195' as const,
-};
+  address: <const>'0xCA9db0fE32EF30bEAFcD047cF97581edc78E65Fa',
+}
 
 const generateRandomChallenge = () => {
   const challenge = new Uint8Array(32)
@@ -57,6 +57,11 @@ export interface GianoProviderInjection {
     challenge: BufferSource,
     credential: Omit<PublicKeyCredential, 'toJSON'>
   ): null | Promise<null> | Hex | Promise<Hex>
+  onCredentialLoggedIn(
+    credentialId: BufferSource,
+    challenge: BufferSource,
+    credential: Omit<PublicKeyCredential, 'toJSON'>,
+  ): boolean | Promise<boolean>
 }
 
 export type CreateGianoProviderParams = {
@@ -128,6 +133,12 @@ export const createGianoProvider = ({
       if (!rawCredential) {
         return null
       }
+
+      const success = await injection.onCredentialLoggedIn(rawCredential.rawId, challenge!, rawCredential)
+      if (!success) {
+        return null
+      }
+
       const idHash = keccak256(new Uint8Array(rawCredential.rawId))
       const { x, y } = await getPublicKeyByCredentialId(idHash)
 
@@ -299,38 +310,49 @@ export const createGianoProvider = ({
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
-      const op = {
-        ...(paymaster && {
-          paymaster,
-        }),
-        calls,
-      }
-      const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op })
-      if (!estimate) {
-        throw new Error('Could not estimate user operation')
-      }
-      const prepared = await bundler.prepareUserOperation({
-        account: smartAccount,
-        ...op,
-        ...estimate,
-      })
-      const finalOp = {
-        ...prepared,
-        preVerificationGas: prepared.preVerificationGas, // ! redundant
-        //TODO: implement callback to fetch these prices
-        maxFeePerGas: parseGwei('200'),
-        maxPriorityFeePerGas: parseGwei('400'),
-      }
-      const signature = await smartAccount.signUserOperation(finalOp)
-      const signedOp = {
-        ...finalOp,
-        signature,
-      }
-      console.log({ signedOp })
-      const hash = await bundler.sendUserOperation(signedOp)
+      try {
+        // For ERC-4337, we should calculate gas fees differently than regular transactions
+        // Calculate conservative gas fees for ERC-4337
+        const block = await client!.getBlock({ blockTag: 'latest' })
+        const baseFeePerGas = block.baseFeePerGas || 0n
 
-      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
-      return txReceipt
+        const maxPriorityFeePerGas = parseGwei('1') // 1 gwei priority fee
+        const maxFeePerGas = baseFeePerGas + maxPriorityFeePerGas + parseGwei('1') // baseFee + priority + buffer
+
+        const op = {
+          calls,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+          // Initial gas estimates for paymaster estimation
+          callGasLimit: 100_000n,
+          verificationGasLimit: 100_000n,
+          preVerificationGas: 50_000n,
+        }
+        const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op })
+        if (!estimate) {
+          throw new Error('Could not estimate user operation')
+        }
+        console.warn('WHELELE estimate', { estimate }) // try bumping up by 10%
+        const preparedUserOp = await bundler.prepareUserOperation({
+          account: smartAccount,
+          ...op,
+          ...estimate,
+        })
+        const signature = await smartAccount.signUserOperation(preparedUserOp)
+        const signedOp = {
+          ...preparedUserOp,
+          signature,
+        }
+        console.log({ signedOp })
+        const hash = await bundler.sendUserOperation(signedOp)
+
+        const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash })
+        return txReceipt
+      } catch (e) {
+        await window.alert('Error sending transaction: ' + String(e))
+        console.error('Error sending transaction', e)
+        throw e
+      }
     },
   }
 

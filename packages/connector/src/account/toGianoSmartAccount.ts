@@ -21,8 +21,13 @@ import {
   toHex,
 } from 'viem';
 import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
-import { entryPoint08Abi, entryPoint08Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
+import { entryPoint07Abi, entryPoint07Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
+
+const HAS_RIP_7212_PRECOMPILE = true
+const WEB_AUTHN_MIN_VERIFICATION_GAS_LIMIT = (
+  HAS_RIP_7212_PRECOMPILE ? 100_000n : 800_000n
+)
 
 export type ToGianoSmartAccountParameters = {
   address?: Address | undefined;
@@ -34,8 +39,16 @@ export type ToGianoSmartAccountParameters = {
 
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
 
+// export type GianoSmartAccountImplementation = Assign<
+//   SmartAccountImplementation<typeof entryPoint08Abi, '0.8', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
+//   {
+//     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
+//     sign: NonNullable<SmartAccountImplementation['sign']>;
+//     signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
+//   }
+// >;
 export type GianoSmartAccountImplementation = Assign<
-  SmartAccountImplementation<typeof entryPoint08Abi, '0.8', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
+  SmartAccountImplementation<typeof entryPoint07Abi, '0.7', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
     sign: NonNullable<SmartAccountImplementation['sign']>;
@@ -65,13 +78,13 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   let address = parameters.address;
 
   const entryPoint = {
-    abi: entryPoint08Abi,
-    address: entryPoint08Address,
-    version: '0.8',
+    abi: entryPoint07Abi,
+    address: entryPoint07Address,
+    version: '0.7',
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
+    address: '0x0db779c985B7c654310Ef209f84D52dFBa8F8664',
   } as const;
 
   const owners_bytes = owners.map((owner) => {
@@ -102,7 +115,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   return toSmartAccount({
     client,
     entryPoint,
-
+    authorization: undefined,
     async decodeCalls(data) {
       const result = decodeFunctionData({
         abi,
@@ -254,13 +267,16 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
       async estimateGas(userOperation) {
         if (owner.type !== 'webAuthn') return;
 
-        // Accounts with WebAuthn owner require a minimum verification gas limit of 800,000.
+        const userOpVerificationGasLimit = userOperation.verificationGasLimit ?? 0n
+
+        // Accounts with WebAuthn owner require a minimum verification gas limit
         return {
-          verificationGasLimit: BigInt(Math.max(Number(userOperation.verificationGasLimit ?? 0n), 800_000)),
+          verificationGasLimit: userOpVerificationGasLimit > WEB_AUTHN_MIN_VERIFICATION_GAS_LIMIT
+            ? userOpVerificationGasLimit
+            : WEB_AUTHN_MIN_VERIFICATION_GAS_LIMIT
         };
       },
     },
-
     extend: { abi, factory, signStaticCallPermission },
   });
 }

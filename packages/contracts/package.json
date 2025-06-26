@@ -8,6 +8,7 @@
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "anvil --enable-trace-printing",
     "hh:deploy": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",
+    "hh:deploy:base-sepolia": "hardhat ignition deploy ignition/modules/index.ts --network base-sepolia",
     "hh:localwipe": "rm -rf ignition/deployments/chain-31337",
     "hh:initlocal": "pnpm hh:localwipe && pnpm build && pnpm -w aa:deploy:local && pnpm hh:deploy --network localhost && pnpm hh:deploy:testing --network localhost",
     "hh:deploy:testing": "hardhat ignition deploy ignition/modules/Testing.ts --strategy create2",

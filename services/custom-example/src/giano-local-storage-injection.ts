@@ -28,4 +28,9 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
 
     return null // proceed to create a smart wallet
   },
+  onCredentialLoggedIn: async (credentialId, challenge, credential) => {
+    console.log('Passkey logged in')
+
+    return true
+  },
 }
