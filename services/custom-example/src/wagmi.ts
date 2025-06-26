@@ -1,25 +1,22 @@
-import {
-  createGianoConnector,
-  createGianoProvider
-} from '@appliedblockchain/giano-connector'
-import { custom, http } from 'viem'
-import { createBundlerClient } from 'viem/account-abstraction'
-import { createConfig } from 'wagmi'
-import { hardhat } from 'wagmi/chains'
-import { gianoLocalStorageInjection } from './giano-local-storage-injection'
-import { config as envConfig } from './config'
+import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector';
+import { custom, http } from 'viem';
+import { createBundlerClient } from 'viem/account-abstraction';
+import { createConfig } from 'wagmi';
+import { hardhat } from 'wagmi/chains';
+import { config as envConfig } from './config';
+import { gianoLocalStorageInjection } from './giano-local-storage-injection';
 
 const rpcs = <const>{
   chains: [hardhat],
   transports: {
     [hardhat.id]: http('http://localhost:8545/'),
   },
-}
+};
 
 const bundler = createBundlerClient({
   chain: hardhat,
   transport: http('http://localhost:4337/proxy/rpc'),
-})
+});
 
 export const { gianoClient, gianoProvider } = createGianoProvider({
   bundler,
@@ -28,13 +25,12 @@ export const { gianoClient, gianoProvider } = createGianoProvider({
   transports: rpcs.transports,
   initialChainId: hardhat.id,
   injection: gianoLocalStorageInjection,
-  credentialKeyMapperAddress: envConfig.credentialKeyMapperAddress,
   gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress,
-})
+});
 
-const providerTransport = custom(gianoProvider)
+const providerTransport = custom(gianoProvider);
 
-const createGianoConnectorFn = createGianoConnector({ provider: gianoProvider })
+const createGianoConnectorFn = createGianoConnector({ provider: gianoProvider });
 
 export const config = createConfig({
   chains: [...rpcs.chains],
@@ -42,12 +38,11 @@ export const config = createConfig({
   transports: {
     ...Object.fromEntries(
       Object.keys(rpcs.transports).map((k) => {
-        return [k, providerTransport]
+        return [k, providerTransport];
       }),
     ),
   },
   connectors: [createGianoConnectorFn],
-  ssr: false,
-})
+});
 
-export const gianoConnector = config.connectors[0]
+export const gianoConnector = config.connectors[0];
