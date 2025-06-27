@@ -407,13 +407,21 @@ export const createGianoProvider = ({
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
+      const block = await client!.getBlock({ blockTag: 'latest' })
+      const baseFeePerGas = block.baseFeePerGas || 0n
+      
+      const maxPriorityFeePerGas = parseGwei('1') // 1 gwei priority fee
+      const maxFeePerGas = baseFeePerGas + maxPriorityFeePerGas + parseGwei('1') // baseFee + priority + buffer
+      
       const op = {
-        ...(paymaster && {
-          paymaster,
-        }),
         calls,
+        maxFeePerGas,
+        maxPriorityFeePerGas
       }
+
+      console.log('estimateUserOperationGas', op)
       const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op })
+      console.log('estimateUserOperationGas result', estimate)
       if (!estimate) {
         throw new Error('Could not estimate user operation')
       }
@@ -422,16 +430,9 @@ export const createGianoProvider = ({
         ...op,
         ...estimate,
       })
-      const finalOp = {
-        ...prepared,
-        preVerificationGas: prepared.preVerificationGas, // ! redundant
-        //TODO: implement callback to fetch these prices
-        maxFeePerGas: parseGwei('200'),
-        maxPriorityFeePerGas: parseGwei('400'),
-      }
-      const signature = await smartAccount.signUserOperation(finalOp)
+      const signature = await smartAccount.signUserOperation(prepared)
       const signedOp = {
-        ...finalOp,
+        ...prepared,
         signature,
       }
 

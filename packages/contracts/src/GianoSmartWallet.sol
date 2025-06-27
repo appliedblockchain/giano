@@ -220,11 +220,11 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
         }
     }
 
-    /// @notice Returns the address of the EntryPoint v0.8.
+    /// @notice Returns the address of the EntryPoint v0.7.
     ///
-    /// @return The address of the EntryPoint v0.8
+    /// @return The address of the EntryPoint v0.7
     function entryPoint() public view virtual returns (address) {
-        return 0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108;
+        return 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
     }
 
     /// @notice Computes the hash of the `UserOperation` in the same way as EntryPoint v0.6, but

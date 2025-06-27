@@ -5,7 +5,7 @@ import type { NextPage } from 'next';
 import Head from 'next/head';
 import { formatEther, parseEther } from 'viem';
 import { encodeFunctionData } from 'viem';
-import { useAccount, useConnect, useDisconnect, useReadContract, useWalletClient, useWriteContract } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
 import { gianoConnector } from '../wagmi';
 import styles from '../styles/Home.module.css';
@@ -19,6 +19,7 @@ const Home: NextPage = () => {
   const { address, isConnected, status } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
+  const {  sendTransaction } = useSendTransaction();
   const {
     refetch: readContract,
     isFetching: isReadFetching,
@@ -100,6 +101,14 @@ const Home: NextPage = () => {
       abi: privateErc20Abi,
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
+    });
+  };
+
+  const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
+    e.preventDefault();
+    sendTransaction({
+      to: address,
+      value: 0n,
     });
   };
 
@@ -355,6 +364,12 @@ const Home: NextPage = () => {
           <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
           <button className={styles.sendButton} disabled={!connectionReady || isWritePending || !inputMessage.trim()}>
             Mint (Standard)
+          </button>
+        </form>
+
+        <form className={styles.formContainer} onSubmit={sendEmptyTx}>
+          <button className={styles.sendButton} disabled={!connectionReady || isWritePending}>
+            Send empty transaction
           </button>
         </form>
 

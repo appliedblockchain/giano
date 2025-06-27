@@ -2,28 +2,30 @@ import { createGianoConnector, createGianoProvider } from '@appliedblockchain/gi
 import { custom, http } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
-import { hardhat } from 'wagmi/chains';
+import { baseSepolia } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { gianoLocalStorageInjection } from './giano-local-storage-injection';
 
+const coinbasePaymasterAndBundlerEndpoint = 'https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c';
+
 const rpcs = <const>{
-  chains: [hardhat],
+  chains: [baseSepolia],
   transports: {
-    [hardhat.id]: http('http://localhost:8545/'),
+    [baseSepolia.id]: http(coinbasePaymasterAndBundlerEndpoint),
   },
 };
 
 const bundler = createBundlerClient({
-  chain: hardhat,
-  transport: http(envConfig.bundlerRpcUrl),
-})
+  chain: baseSepolia,
+  transport: http(coinbasePaymasterAndBundlerEndpoint),
+  paymaster: true,
+});
 
 export const { gianoClient, gianoProvider } = createGianoProvider({
   bundler,
-  paymaster: envConfig.paymasterAddress,
   chains: rpcs.chains,
   transports: rpcs.transports,
-  initialChainId: hardhat.id,
+  initialChainId: baseSepolia.id,
   injection: gianoLocalStorageInjection,
   gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress,
 });
