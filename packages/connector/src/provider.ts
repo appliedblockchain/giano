@@ -5,8 +5,6 @@ import {
   concatHex,
   createPublicClient,
   type EIP1193Provider,
-  type Hash,
-  keccak256,
   parseGwei,
   toHex,
   type Transport,
@@ -166,8 +164,7 @@ export const createGianoProvider = ({
         throw new Error('Failed to sign in with credential')
       }
 
-      const idHash = keccak256(new Uint8Array(rawCredential.rawId))
-      const { x, y } = await injection.getPublicKeyByCredentialId(idHash)
+      const { x, y } = await injection.getPublicKeyByCredentialId(rawCredential.rawId)
 
       if (x === toHex(0, { size: 32 })) {
         throw new Error('Unknown credential ID')
@@ -351,7 +348,6 @@ export const createGianoProvider = ({
       })
       const smartAccountAddress = await smartAccount.getAddress()
 
-      const idHash = keccak256(toHex(new Uint8Array(credential.raw.rawId)))
       const xyVector = extractXYCoords(credential.publicKey)
 
       // Check if the smart account is already deployed
@@ -383,7 +379,7 @@ export const createGianoProvider = ({
       }
 
       // Always call the injection callback regardless of deployment status
-      await injection.onCredentialKey(idHash, xyVector)
+      await injection.onCredentialKey(credential.raw.rawId, xyVector)
 
       // Store session data for new credential
       if (typeof window !== 'undefined') {
