@@ -1,4 +1,5 @@
 import type { GianoProviderInjection, ChainType } from '@appliedblockchain/giano-connector'
+import { Hash } from 'viem'
 
 function hexToBytes(hex: string) {
   hex = hex.replace(/^0x/g, '')
@@ -32,6 +33,13 @@ function padBytes(bytes: Uint8Array, size: number) {
     return concatBytes([new Uint8Array(size - bytes.length).fill(0), bytes])
   }
   return bytes
+}
+
+// JSON serializer that handles BigInt values
+function serializeWithBigInt(obj: any): string {
+  return JSON.stringify(obj, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  );
 }
 
 export const gianoLocalStorageInjection: GianoProviderInjection = {
@@ -105,4 +113,28 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
     localStorage.setItem(`gpk-${idHash}-public-key`, xyVector.x)
     localStorage.setItem(`gpk-${idHash}-public-key-y`, xyVector.y)
   },
+  onUserOperationSigned: async (signedUserOp) => {
+    try {
+      // Submit to backend for validation and bundler submission
+      const response = await fetch('/api/submit-userop', {
+        method: 'POST',
+        body: serializeWithBigInt(signedUserOp),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Backend submission failed: ${errorData.error}`);
+      }
+
+      const result = await response.json();
+      console.log('Backend submission successful:', result);
+
+      // Return the transaction receipt from backend
+      return result.receipt;
+    } catch (error) {
+      console.error('UserOp submission failed:', error);
+      throw error;
+    }
+  }
 }
