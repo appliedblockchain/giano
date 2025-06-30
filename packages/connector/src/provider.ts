@@ -412,23 +412,27 @@ export const createGianoProvider = ({
       
       const maxPriorityFeePerGas = parseGwei('1') // 1 gwei priority fee
       const maxFeePerGas = baseFeePerGas + maxPriorityFeePerGas + parseGwei('1') // baseFee + priority + buffer
-      
+
       const op = {
+        account: smartAccount,
         calls,
         maxFeePerGas,
-        maxPriorityFeePerGas
+        maxPriorityFeePerGas,
+        // Initial gas estimates for paymaster estimation
+        callGasLimit: 100_000n,
+        verificationGasLimit: 300_000n,
+        preVerificationGas: 50_000n,
+        paymasterPostOpGasLimit: 50_000n,
+        paymasterVerificationGasLimit: 100_000n,
       }
 
-      console.log('estimateUserOperationGas', op)
-      const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op })
-      console.log('estimateUserOperationGas result', estimate)
-      if (!estimate) {
-        throw new Error('Could not estimate user operation')
-      }
+      const estimate = await bundler.estimateUserOperationGas(op)
       const prepared = await bundler.prepareUserOperation({
-        account: smartAccount,
         ...op,
         ...estimate,
+        // ! this fixes the UserOperation not going through and silently
+        // ! failing with the Coinbase Bundler&Paymaster
+        preVerificationGas: estimate.preVerificationGas * 2n,
       })
       const signature = await smartAccount.signUserOperation(prepared)
       const signedOp = {
