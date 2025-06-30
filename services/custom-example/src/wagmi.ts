@@ -6,18 +6,16 @@ import { baseSepolia } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { gianoLocalStorageInjection } from './giano-local-storage-injection';
 
-const coinbasePaymasterAndBundlerEndpoint = 'https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c';
-
 const rpcs = <const>{
   chains: [baseSepolia],
   transports: {
-    [baseSepolia.id]: http(coinbasePaymasterAndBundlerEndpoint),
+    [baseSepolia.id]: http(envConfig.bundlerRpcUrl),
   },
 };
 
 const bundler = createBundlerClient({
   chain: baseSepolia,
-  transport: http(coinbasePaymasterAndBundlerEndpoint),
+  transport: http(envConfig.bundlerRpcUrl),
   paymaster: true,
 });
 
