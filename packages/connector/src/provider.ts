@@ -1,4 +1,4 @@
-import type { Call, Hex, PublicClient } from 'viem'
+import type { Call, Hex, PublicClient } from 'viem';
 import {
   type Address,
   type Chain,
@@ -10,12 +10,14 @@ import {
   parseGwei,
   toHex,
   type Transport,
-} from 'viem'
-import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction'
-import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction'
-import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193'
-import type { GianoSmartAccountImplementation } from './account'
-import { toGianoSmartAccount } from './account'
+} from 'viem';
+import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction';
+import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
+import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
+import type { GianoSmartAccountImplementation } from './account';
+import { toGianoSmartAccount } from './account';
+import type { GianoStorage } from './storage';
+import { createGianoStorage } from './storage';
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -81,12 +83,13 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined
   injection: GianoProviderInjection
   gianoSmartWalletFactoryAddress: Address
-}
+  storage?: GianoStorage
+};
 
-type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void
+type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
 type EventListeners = {
-  [E in keyof EIP1193EventMap]: Set<EventHandler<E>>
-}
+  [E in keyof EIP1193EventMap]: Set<EventHandler<E>>;
+};
 
 export const createGianoProvider = ({
   transports,
@@ -96,12 +99,16 @@ export const createGianoProvider = ({
   bundler,
   injection,
   gianoSmartWalletFactoryAddress,
+  storage,
 }: CreateGianoProviderParams) => {
-  let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null
-  let chain: Chain | undefined
-  let transport: Transport | undefined
-  let client: PublicClient | undefined
-  const eventListeners: Partial<EventListeners> = {}
+  let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
+  let chain: Chain | undefined;
+  let transport: Transport | undefined;
+  let client: PublicClient | undefined;
+  const eventListeners: Partial<EventListeners> = {};
+
+  // Initialize storage with automatic fallback
+  const gianoStorage: GianoStorage = createGianoStorage(storage);
 
   const submitUserOperation = async (signedUserOp: any) => {
     if (injection.onUserOperationSigned) {
@@ -126,7 +133,7 @@ export const createGianoProvider = ({
 
   const ensureAccountDeployed = async (): Promise<boolean> => {
     if (!smartAccount) return false
-    
+
     try {
       const accountAddress = await smartAccount.getAddress()
       const accountCode = await client!.getCode({ address: accountAddress })
@@ -201,13 +208,10 @@ export const createGianoProvider = ({
     wallet_addEthereumChain: () => {
       //TODO: implement
     },
-    wallet_revokePermissions: () => {
+    wallet_revokePermissions: async () => {
       smartAccount = null
       // Clear stored session data
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('giano_credential_id')
-        localStorage.removeItem('giano_account_address')
-      }
+      await gianoStorage.clear()
       emit('accountsChanged', [])
       emit('disconnect', {
         code: 4900,
@@ -244,9 +248,9 @@ export const createGianoProvider = ({
 
       const credentialInfo = await injection.getCredentialInfo()
 
-      // Try to restore from localStorage first with full authentication
-      const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null
-      const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null
+      // Try to restore from storage first with full authentication
+      const storedCredentialId = await gianoStorage.getCredentialId();
+      const storedAccountAddress = await gianoStorage.getAccountAddress();
 
       if (storedCredentialId && storedAccountAddress) {
         try {
@@ -273,10 +277,7 @@ export const createGianoProvider = ({
         } catch (error) {
           console.warn('Failed to restore session with authentication:', error)
           // Clear invalid stored data
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('giano_credential_id')
-            localStorage.removeItem('giano_account_address')
-          }
+          await gianoStorage.clear()
         }
       }
 
@@ -291,18 +292,16 @@ export const createGianoProvider = ({
         const smartAccountAddress = await smartAccount.getAddress()
 
         // Store session data
-        if (typeof window !== 'undefined') {
-          let credentialIdArray: Uint8Array
-          if (credentialInfo.credentialId instanceof ArrayBuffer) {
-            credentialIdArray = new Uint8Array(credentialInfo.credentialId)
-          } else if (credentialInfo.credentialId instanceof Uint8Array) {
-            credentialIdArray = credentialInfo.credentialId
-          } else {
-            credentialIdArray = new Uint8Array((credentialInfo.credentialId as any).buffer || credentialInfo.credentialId)
-          }
-          localStorage.setItem('giano_credential_id', JSON.stringify(Array.from(credentialIdArray)))
-          localStorage.setItem('giano_account_address', smartAccountAddress)
+        let credentialIdArray: Uint8Array
+        if (credentialInfo.credentialId instanceof ArrayBuffer) {
+          credentialIdArray = new Uint8Array(credentialInfo.credentialId)
+        } else if (credentialInfo.credentialId instanceof Uint8Array) {
+          credentialIdArray = credentialInfo.credentialId;
+        } else {
+          credentialIdArray = new Uint8Array((credentialInfo.credentialId as any).buffer || credentialInfo.credentialId)
         }
+        await gianoStorage.setCredentialId(JSON.stringify(Array.from(credentialIdArray)))
+        await gianoStorage.setAccountAddress(smartAccountAddress)
 
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
         emit('accountsChanged', [smartAccountAddress])
@@ -385,19 +384,17 @@ export const createGianoProvider = ({
       await injection.onCredentialKey(idHash, xyVector)
 
       // Store session data for new credential
-      if (typeof window !== 'undefined') {
-        const rawId = credential.raw.rawId
-        let rawIdArray: Uint8Array
-        if (rawId instanceof ArrayBuffer) {
-          rawIdArray = new Uint8Array(rawId)
-        } else if ((rawId as unknown as any) instanceof Uint8Array) {
-          rawIdArray = rawId
-        } else {
-          rawIdArray = new Uint8Array((rawId as any).buffer || rawId)
-        }
-        localStorage.setItem('giano_credential_id', JSON.stringify(Array.from(rawIdArray)))
-        localStorage.setItem('giano_account_address', smartAccountAddress)
+      const rawId = credential.raw.rawId;
+      let rawIdArray: Uint8Array;
+      if (rawId instanceof ArrayBuffer) {
+        rawIdArray = new Uint8Array(rawId);
+      } else if ((rawId as unknown as any) instanceof Uint8Array) {
+        rawIdArray = rawId;
+      } else {
+        rawIdArray = new Uint8Array((rawId as any).buffer || rawId);
       }
+      await gianoStorage.setCredentialId(JSON.stringify(Array.from(rawIdArray)))
+      await gianoStorage.setAccountAddress(smartAccountAddress)
 
       emit('connect', { chainId: `0x${chain!.id.toString(16)}` })
       emit('accountsChanged', [smartAccountAddress])
