@@ -11,7 +11,8 @@ function requiredAddress(s?: string): Hex {
 }
 
 export const config = {
-  bundlerRpcUrl: 'http://localhost:4337/proxy/rpc',
+  // bundlerRpcUrl: 'http://localhost:4337/proxy/rpc',
+  bundlerRpcUrl: 'https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c',
   paymasterAddress: requiredAddress(process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS),
   credentialKeyMapperAddress: requiredAddress(process.env.NEXT_PUBLIC_CREDENTIAL_KEY_MAPPER_ADDRESS),
   gianoSmartWalletFactoryAddress: requiredAddress(process.env.NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS),
