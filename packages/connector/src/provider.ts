@@ -407,40 +407,7 @@ export const createGianoProvider = ({
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
-      const block = await client!.getBlock({ blockTag: 'latest' })
-      const baseFeePerGas = block.baseFeePerGas || 0n
-      
-      const maxPriorityFeePerGas = parseGwei('1') // 1 gwei priority fee
-      const maxFeePerGas = baseFeePerGas + maxPriorityFeePerGas + parseGwei('1') // baseFee + priority + buffer
-
-      const op = {
-        account: smartAccount,
-        calls,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        // Initial gas estimates for paymaster estimation
-        callGasLimit: 100_000n,
-        verificationGasLimit: 300_000n,
-        preVerificationGas: 50_000n,
-        paymasterPostOpGasLimit: 50_000n,
-        paymasterVerificationGasLimit: 100_000n,
-      }
-
-      const estimate = await bundler.estimateUserOperationGas(op)
-      const prepared = await bundler.prepareUserOperation({
-        ...op,
-        ...estimate,
-        // ! this fixes the UserOperation not going through and silently
-        // ! failing with the Coinbase Bundler&Paymaster
-        preVerificationGas: estimate.preVerificationGas * 2n,
-      })
-      const signature = await smartAccount.signUserOperation(prepared)
-      const signedOp = {
-        ...prepared,
-        signature,
-      }
-
-      return await submitUserOperation(signedOp)
+      return await submitUserOperation({ calls, account: smartAccount })
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
