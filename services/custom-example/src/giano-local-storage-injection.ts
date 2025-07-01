@@ -1,5 +1,4 @@
 import type { GianoProviderInjection, ChainType } from '@appliedblockchain/giano-connector'
-import { Hash } from 'viem'
 
 function hexToBytes(hex: string) {
   hex = hex.replace(/^0x/g, '')
@@ -98,20 +97,20 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
     console.log('Credential signed in', { credential })
     return true
   },
-  getPublicKeyByCredentialId: async (idHash: Hash) => {
+  getPublicKeyByCredentialId: async (rawId: ArrayBuffer) => {
     // get the public key from the local storage based on the onCredentialKey injection method
-    const publicKey = localStorage.getItem(`gpk-${idHash}-public-key`)
-    const publicKeyY = localStorage.getItem(`gpk-${idHash}-public-key-y`)
+    const publicKey = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`)
+    const publicKeyY = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`)
     if (!publicKey || !publicKeyY) {
       throw new Error('Public key not found')
     }
     return { x: publicKey, y: publicKeyY }
   },
-  onCredentialKey: async (idHash: Hash, xyVector: { x: Hex; y: Hex }) => {
-    console.log('onCredentialKey', { idHash, xyVector })
+  onCredentialKey: async (rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }) => {
+    console.log('onCredentialKey', { rawId, xyVector })
     // save the public key to the local storage
-    localStorage.setItem(`gpk-${idHash}-public-key`, xyVector.x)
-    localStorage.setItem(`gpk-${idHash}-public-key-y`, xyVector.y)
+    localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`, xyVector.x)
+    localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`, xyVector.y)
   },
   onUserOperationSigned: async (signedUserOp) => {
     try {
