@@ -1,51 +1,8 @@
-import type { Hash, Hex } from 'viem';
 import type { GianoProviderInjection, ChainType } from '@appliedblockchain/giano-connector';
 import type { GianoStorage } from '@appliedblockchain/giano-connector';
+import type { Hash, Hex } from 'viem';
 import { createGianoStorage, InMemoryStorage } from '@appliedblockchain/giano-connector';
-
-// Helper functions (same as in giano-local-storage-injection.ts)
-function hexToBytes(hex: string) {
-  hex = hex.replace(/^0x/g, '');
-  if (hex.length % 2 !== 0) {
-    hex = '0' + hex;
-  }
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return bytes;
-}
-
-function concatBytes(bytes: Uint8Array[]) {
-  const totalLength = bytes.reduce((acc, curr) => acc + curr.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const byte of bytes) {
-    result.set(byte, offset);
-    offset += byte.length;
-  }
-  return result;
-}
-
-function bytesToHex(bytes: Uint8Array) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function padBytes(bytes: Uint8Array, size: number) {
-  if (bytes.length < size) {
-    return concatBytes([new Uint8Array(size - bytes.length).fill(0), bytes]);
-  }
-  return bytes;
-}
-
-/**
- * Helper function to serialize with BigInt support
- */
-function serializeWithBigInt(obj: any): string {
-  return JSON.stringify(obj, (key, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  );
-}
+import { hexToBytes, concatBytes, bytesToHex, padBytes, serializeWithBigInt } from './utils';
 
 /**
  * Create a Giano injection with configurable storage
@@ -148,6 +105,8 @@ export function createGianoInjection(storage?: GianoStorage): GianoProviderInjec
     },
   };
 }
+
+
 
 /**
  * Default injection using localStorage with automatic fallback
