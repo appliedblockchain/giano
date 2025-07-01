@@ -236,7 +236,7 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     ///
     /// @return The `UserOperation` hash, which does not depend on chain ID.
     function getUserOpHashWithoutChainId(PackedUserOperation calldata userOp) public view virtual returns (bytes32) {
-        return keccak256(abi.encode(UserOperationLib.hash(userOp, bytes32(0)), entryPoint()));
+        return keccak256(abi.encode(UserOperationLib.hash(userOp), entryPoint()));
     }
 
     /// @notice Returns the implementation of the ERC1967 proxy.
