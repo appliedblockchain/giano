@@ -408,7 +408,8 @@ export const createGianoProvider = ({
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
-      return await submitUserOperation({ calls, account: smartAccount })
+      
+      return await submitUserOperation({ paymaster, calls, account: smartAccount })
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -467,15 +468,16 @@ export const createGianoProvider = ({
         throw new Error('Giano not connected')
       }
       
-      return smartAccount.signUserOperation(userOp)
+      return smartAccount.signUserOperation({ paymaster, ...userOp })
     },
     eth_sendSignedUserOperation: async ([signedUserOp]: [any]) => {
+      const op = { paymaster, ...signedUserOp }
       console.log('eth_sendSignedUserOperation', { signedUserOp })
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
       
-      return await submitUserOperation(signedUserOp)
+      return await submitUserOperation(op)
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options })
