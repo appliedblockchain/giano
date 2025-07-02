@@ -5,8 +5,6 @@ import {
   concatHex,
   createPublicClient,
   type EIP1193Provider,
-  type Hash,
-  keccak256,
   parseGwei,
   toHex,
   type Transport,
@@ -68,9 +66,9 @@ export type GianoProviderInjection = {
     chainType: ChainType
   }
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
-  getPublicKeyByCredentialId(idHash: Hash): Promise<{ x: Hex; y: Hex }>
-  onCredentialKey(idHash: Hash, xyVector: { x: Hex; y: Hex }): Promise<void>
-  /** @deprecated */
+  getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex }>
+  onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>
+    /** @deprecated */
   onUserOperationSigned?: (signedUserOp: any) => Promise<any> // optional hook for backend validation and submission
 }
 
@@ -166,8 +164,7 @@ export const createGianoProvider = ({
         throw new Error('Failed to sign in with credential')
       }
 
-      const idHash = keccak256(new Uint8Array(rawCredential.rawId))
-      const { x, y } = await injection.getPublicKeyByCredentialId(idHash)
+      const { x, y } = await injection.getPublicKeyByCredentialId(rawCredential.rawId)
 
       if (x === toHex(0, { size: 32 })) {
         throw new Error('Unknown credential ID')
@@ -351,7 +348,6 @@ export const createGianoProvider = ({
       })
       const smartAccountAddress = await smartAccount.getAddress()
 
-      const idHash = keccak256(toHex(new Uint8Array(credential.raw.rawId)))
       const xyVector = extractXYCoords(credential.publicKey)
 
       // Check if the smart account is already deployed
@@ -383,7 +379,7 @@ export const createGianoProvider = ({
       }
 
       // Always call the injection callback regardless of deployment status
-      await injection.onCredentialKey(idHash, xyVector)
+      await injection.onCredentialKey(credential.raw.rawId, xyVector)
 
       // Store session data for new credential
       if (typeof window !== 'undefined') {
@@ -408,7 +404,8 @@ export const createGianoProvider = ({
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
-      return await submitUserOperation({ calls, account: smartAccount })
+      
+      return await submitUserOperation({ paymaster, calls, account: smartAccount })
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -467,15 +464,16 @@ export const createGianoProvider = ({
         throw new Error('Giano not connected')
       }
       
-      return smartAccount.signUserOperation(userOp)
+      return smartAccount.signUserOperation({ paymaster, ...userOp })
     },
     eth_sendSignedUserOperation: async ([signedUserOp]: [any]) => {
+      const op = { paymaster, ...signedUserOp }
       console.log('eth_sendSignedUserOperation', { signedUserOp })
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
       
-      return await submitUserOperation(signedUserOp)
+      return await submitUserOperation(op)
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options })
