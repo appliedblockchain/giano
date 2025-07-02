@@ -105,10 +105,16 @@ export class LocalStorage implements GianoStorage {
       localStorage.removeItem('giano_credential_id');
       localStorage.removeItem('giano_account_address');
 
-      // Clear passkey data (note: this doesn't clear all public keys, just the main passkey ID)
+      // Clear passkey data including all public keys
       localStorage.removeItem('gpk-passkey-id');
 
-      // TODO: Consider clearing all gpk-* keys if needed
+      // Clear all public key entries (gpk-* pattern)
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('gpk-')) {
+          localStorage.removeItem(key);
+        }
+      }
     } catch {
       // Silently fail
     }
