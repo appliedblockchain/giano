@@ -66,17 +66,17 @@ export function createGianoInjection(storage?: GianoStorage): GianoProviderInjec
       return true;
     },
 
-    getPublicKeyByCredentialId: async (idHash: Hash) => {
-      const publicKey = await gianoStorage.getPublicKey(idHash);
+    getPublicKeyByCredentialId: async (rawId: ArrayBuffer) => {
+      const publicKey = await gianoStorage.getPublicKey(rawId);
       if (!publicKey) {
         throw new Error('Public key not found');
       }
       return publicKey;
     },
 
-    onCredentialKey: async (idHash: Hash, xyVector: { x: Hex; y: Hex }) => {
-      console.log('onCredentialKey', { idHash, xyVector });
-      await gianoStorage.setPublicKey(idHash, xyVector);
+    onCredentialKey: async (rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }) => {
+      console.log('onCredentialKey', { rawId: Buffer.from(rawId).toString('hex'), xyVector });
+      await gianoStorage.setPublicKey(rawId, xyVector);
     },
 
     onUserOperationSigned: async (signedUserOp) => {
@@ -105,8 +105,6 @@ export function createGianoInjection(storage?: GianoStorage): GianoProviderInjec
     },
   };
 }
-
-
 
 /**
  * Default injection using localStorage with automatic fallback
