@@ -112,28 +112,28 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
     localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`, xyVector.x)
     localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`, xyVector.y)
   },
-  onUserOperationSigned: async (signedUserOp) => {
-    try {
-      // Submit to backend for validation and bundler submission
-      const response = await fetch('/api/submit-userop', {
-        method: 'POST',
-        body: serializeWithBigInt(signedUserOp),
-        headers: { 'Content-Type': 'application/json' },
-      });
+  // onUserOperationSigned: async (signedUserOp) => {
+  //   try {
+  //     // Submit to backend for validation and bundler submission
+  //     const response = await fetch('/api/submit-userop', {
+  //       method: 'POST',
+  //       body: serializeWithBigInt(signedUserOp),
+  //       headers: { 'Content-Type': 'application/json' },
+  //     });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Backend submission failed: ${errorData.error}`);
-      }
+  //     if (!response.ok) {
+  //       const errorData = await response.json();
+  //       throw new Error(`Backend submission failed: ${errorData.error}`);
+  //     }
 
-      const result = await response.json();
-      console.log('Backend submission successful:', result);
+  //     const result = await response.json();
+  //     console.log('Backend submission successful:', result);
 
-      // Return the transaction receipt from backend
-      return result.receipt;
-    } catch (error) {
-      console.error('UserOp submission failed:', error);
-      throw error;
-    }
-  }
+  //     // Return the transaction receipt from backend
+  //     return result.receipt;
+  //   } catch (error) {
+  //     console.error('UserOp submission failed:', error);
+  //     throw error;
+  //   }
+  // }
 }
