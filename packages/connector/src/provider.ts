@@ -68,6 +68,7 @@ export type GianoProviderInjection = {
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean> // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex }>
   onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>
+    /** @deprecated */
   onUserOperationSigned?: (signedUserOp: any) => Promise<any> // optional hook for backend validation and submission
 }
 
@@ -403,35 +404,8 @@ export const createGianoProvider = ({
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
-      const op = {
-        ...(paymaster && {
-          paymaster,
-        }),
-        calls,
-      }
-      const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op })
-      if (!estimate) {
-        throw new Error('Could not estimate user operation')
-      }
-      const prepared = await bundler.prepareUserOperation({
-        account: smartAccount,
-        ...op,
-        ...estimate,
-      })
-      const finalOp = {
-        ...prepared,
-        preVerificationGas: prepared.preVerificationGas, // ! redundant
-        //TODO: implement callback to fetch these prices
-        maxFeePerGas: parseGwei('200'),
-        maxPriorityFeePerGas: parseGwei('400'),
-      }
-      const signature = await smartAccount.signUserOperation(finalOp)
-      const signedOp = {
-        ...finalOp,
-        signature,
-      }
-
-      return await submitUserOperation(signedOp)
+      
+      return await submitUserOperation({ paymaster, calls, account: smartAccount })
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -490,15 +464,16 @@ export const createGianoProvider = ({
         throw new Error('Giano not connected')
       }
       
-      return smartAccount.signUserOperation(userOp)
+      return smartAccount.signUserOperation({ paymaster, ...userOp })
     },
     eth_sendSignedUserOperation: async ([signedUserOp]: [any]) => {
+      const op = { paymaster, ...signedUserOp }
       console.log('eth_sendSignedUserOperation', { signedUserOp })
       if (!smartAccount) {
         throw new Error('Giano not connected')
       }
       
-      return await submitUserOperation(signedUserOp)
+      return await submitUserOperation(op)
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options })
