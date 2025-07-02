@@ -105,18 +105,18 @@ export class ServerStorage implements GianoStorage {
     }
   }
 
-  async getPublicKey(idHash: Hash): Promise<{ x: Hex; y: Hex } | null> {
+  async getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null> {
     try {
-      const data = await this.request(`/users/${this.userId}/public-keys/${idHash}`);
+      const data = await this.request(`/users/${this.userId}/public-keys/${Buffer.from(rawId).toString('hex')}`);
       return data.publicKey || null;
     } catch {
       return null;
     }
   }
 
-  async setPublicKey(idHash: Hash, coords: { x: Hex; y: Hex }): Promise<void> {
+  async setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void> {
     try {
-      await this.request(`/users/${this.userId}/public-keys/${idHash}`, {
+      await this.request(`/users/${this.userId}/public-keys/${Buffer.from(rawId).toString('hex')}`, {
         method: 'PUT',
         body: JSON.stringify({ publicKey: coords }),
       });

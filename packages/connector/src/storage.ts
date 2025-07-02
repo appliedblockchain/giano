@@ -13,8 +13,8 @@ export interface GianoStorage {
   // Passkey management
   getPasskeyId(): Promise<string | null>;
   setPasskeyId(id: string): Promise<void>;
-  getPublicKey(idHash: Hash): Promise<{ x: Hex; y: Hex } | null>;
-  setPublicKey(idHash: Hash, coords: { x: Hex; y: Hex }): Promise<void>;
+  getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null>;
+  setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void>;
 
   // Storage management
   clear(): Promise<void>;
@@ -93,11 +93,11 @@ export class LocalStorage implements GianoStorage {
     }
   }
 
-  async getPublicKey(idHash: Hash): Promise<{ x: Hex; y: Hex } | null> {
+  async getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null> {
     if (!this.isStorageAvailable()) return null;
     try {
-      const x = localStorage.getItem(`gpk-${idHash}-public-key`);
-      const y = localStorage.getItem(`gpk-${idHash}-public-key-y`);
+      const x = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`);
+      const y = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`);
       if (!x || !y) return null;
       return { x: x as Hex, y: y as Hex };
     } catch {
@@ -105,11 +105,11 @@ export class LocalStorage implements GianoStorage {
     }
   }
 
-  async setPublicKey(idHash: Hash, coords: { x: Hex; y: Hex }): Promise<void> {
+  async setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void> {
     if (!this.isStorageAvailable()) return;
     try {
-      localStorage.setItem(`gpk-${idHash}-public-key`, coords.x);
-      localStorage.setItem(`gpk-${idHash}-public-key-y`, coords.y);
+      localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`, coords.x);
+      localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`, coords.y);
     } catch {
       // Silently fail
     }
@@ -139,7 +139,7 @@ export class InMemoryStorage implements GianoStorage {
   private credentialId: string | null = null;
   private accountAddress: string | null = null;
   private passkeyId: string | null = null;
-  private publicKeys: Map<Hash, { x: Hex; y: Hex }> = new Map();
+  private publicKeys: Map<string, { x: Hex; y: Hex }> = new Map();
 
   isAvailable(): boolean {
     return true;
@@ -171,12 +171,12 @@ export class InMemoryStorage implements GianoStorage {
     this.passkeyId = id;
   }
 
-  async getPublicKey(idHash: Hash): Promise<{ x: Hex; y: Hex } | null> {
-    return this.publicKeys.get(idHash) || null;
+  async getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null> {
+    return this.publicKeys.get(Buffer.from(rawId).toString('hex')) || null;
   }
 
-  async setPublicKey(idHash: Hash, coords: { x: Hex; y: Hex }): Promise<void> {
-    this.publicKeys.set(idHash, coords);
+  async setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void> {
+    this.publicKeys.set(Buffer.from(rawId).toString('hex'), coords);
   }
 
   async clear(): Promise<void> {
