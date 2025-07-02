@@ -55,8 +55,8 @@ importers:
   packages/contracts:
     devDependencies:
       '@account-abstraction/contracts':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: 0.7.0
+        version: 0.7.0
       '@appliedblockchain/silentdatarollup-core':
         specifier: ^1.0.1
         version: 1.0.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -202,8 +202,8 @@ importers:
 
 packages:
 
-  '@account-abstraction/contracts@0.8.0':
-    resolution: {integrity: sha512-8krPx/gpnoT+5xAroagVCbeA7FbUigMZWXFKKPm+oghyr29Dksssdx5sI7xGv9212i4JPaDDUGFk58dpuwVgHA==}
+  '@account-abstraction/contracts@0.7.0':
+    resolution: {integrity: sha512-Bt/66ilu3u8I9+vFZ9fTd+cWs55fdb9J5YKfrhsrFafH1drkzwuCSL/xEot1GGyXXNJLQuXbMRztQPyelNbY1A==}
 
   '@adraffy/ens-normalize@1.10.1':
     resolution: {integrity: sha512-96Z2IP3mYmF1Xg2cDm8f1gWGf/HUVedQ3FMifV4kG/PQ4yEP51xDtRAEfhVNt5f/uzpNkZHwWQuUcu6D6K+Ekw==}
@@ -6437,7 +6437,7 @@ packages:
 
 snapshots:
 
-  '@account-abstraction/contracts@0.8.0':
+  '@account-abstraction/contracts@0.7.0':
     dependencies:
       '@openzeppelin/contracts': 5.3.0
       '@uniswap/v3-periphery': 1.4.4

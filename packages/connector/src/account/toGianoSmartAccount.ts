@@ -21,7 +21,8 @@ import {
   toHex,
 } from 'viem';
 import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
-import { entryPoint08Abi, entryPoint08Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
+import { entryPoint07Abi } from 'viem/account-abstraction';
+import { entryPoint07Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
 
 export type ToGianoSmartAccountParameters = {
@@ -36,7 +37,7 @@ export type ToGianoSmartAccountParameters = {
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
 
 export type GianoSmartAccountImplementation = Assign<
-  SmartAccountImplementation<typeof entryPoint08Abi, '0.8', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
+  SmartAccountImplementation<typeof entryPoint07Abi, '0.7', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
     sign: NonNullable<SmartAccountImplementation['sign']>;
@@ -66,9 +67,9 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   let address = parameters.address;
 
   const entryPoint = {
-    abi: entryPoint08Abi,
-    address: entryPoint08Address,
-    version: '0.8',
+    abi: entryPoint07Abi,
+    address: entryPoint07Address,
+    version: '0.7',
   } as const;
   const factory = {
     abi: factoryAbi,

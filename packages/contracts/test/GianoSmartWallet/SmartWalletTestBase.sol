@@ -15,7 +15,7 @@ contract SmartWalletTestBase is Test {
     bytes[] owners;
     uint256 passkeyPrivateKey = uint256(0x03d99692017473e2d631945a812607b23269d85721e0f370b8d3e7d29a874fd2);
     bytes passkeyOwner = hex'1c05286fe694493eae33312f2d2e0d0abeda8db76238b7a204be1fb87f54ce4228fef61ef4ac300f631657635c28e59bfb2fe71bce1634c81c65642042f6dc4d';
-    IEntryPoint entryPoint = IEntryPoint(0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108);
+    IEntryPoint entryPoint = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
     address bundler = address(uint160(uint256(keccak256(abi.encodePacked('bundler')))));
 
     // userOp values
@@ -23,7 +23,7 @@ contract SmartWalletTestBase is Test {
     bytes userOpCalldata;
 
     function setUp() public virtual {
-        vm.etch(0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108, Static.ENTRY_POINT_BYTES);
+        vm.etch(0x0000000071727De22E5E9d8BAf0edAc6f37da032, Static.ENTRY_POINT_BYTES);
         account = new MockGianoSmartWallet();
         owners.push(abi.encode(signer));
         owners.push(passkeyOwner);
