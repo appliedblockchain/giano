@@ -17,6 +17,7 @@ export type GianoStorage = {
   setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void>;
 
   // Storage management
-  clear(): Promise<void>;
+  clear(): Promise<void>; // Clear only session data (user can reconnect)
+  clearAll?(): Promise<void>; // Clear all data including passkey (full deletion)
   isAvailable(): boolean;
 };

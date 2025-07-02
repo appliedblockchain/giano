@@ -1,5 +1,5 @@
-import type { Hex } from 'viem';
 import type { GianoStorage } from '@appliedblockchain/giano-connector';
+import type { Hex } from 'viem';
 
 /**
  * localStorage-based implementation
@@ -101,11 +101,20 @@ export class LocalStorage implements GianoStorage {
   async clear(): Promise<void> {
     if (!this.isStorageAvailable()) return;
     try {
-      // Clear provider data
+      // Clear only session data (not passkey data - user should be able to reconnect)
       localStorage.removeItem('giano_credential_id');
       localStorage.removeItem('giano_account_address');
+    } catch {
+      // Silently fail
+    }
+  }
 
-      // Clear passkey data including all public keys
+  async clearAll(): Promise<void> {
+    if (!this.isStorageAvailable()) return;
+    try {
+      // Clear all data including passkey data (full wallet deletion)
+      localStorage.removeItem('giano_credential_id');
+      localStorage.removeItem('giano_account_address');
       localStorage.removeItem('gpk-passkey-id');
 
       // Clear all public key entries (gpk-* pattern)
@@ -171,6 +180,13 @@ export class InMemoryStorage implements GianoStorage {
   }
 
   async clear(): Promise<void> {
+    // Clear only session data (not passkey data - user should be able to reconnect)
+    this.credentialId = null;
+    this.accountAddress = null;
+  }
+
+  async clearAll(): Promise<void> {
+    // Clear all data including passkey data (full wallet deletion)
     this.credentialId = null;
     this.accountAddress = null;
     this.passkeyId = null;
@@ -194,7 +210,7 @@ export class ServerStorage implements GianoStorage {
   constructor(
     private apiEndpoint: string,
     private userId: string,
-    private authToken?: string
+    private authToken?: string,
   ) {}
 
   private async request(path: string, options: RequestInit = {}): Promise<any> {
@@ -304,6 +320,16 @@ export class ServerStorage implements GianoStorage {
 
   async clear(): Promise<void> {
     try {
+      // Clear only session data (not passkey data - user should be able to reconnect)
+      await this.request(`/users/${this.userId}/session`, { method: 'DELETE' });
+    } catch {
+      // Handle error appropriately
+    }
+  }
+
+  async clearAll(): Promise<void> {
+    try {
+      // Clear all data including passkey data (full wallet deletion)
       await this.request(`/users/${this.userId}/session`, { method: 'DELETE' });
       await this.request(`/users/${this.userId}/passkeys`, { method: 'DELETE' });
     } catch {
@@ -330,7 +356,7 @@ export function createGianoStorage(customStorage?: GianoStorage): GianoStorage {
 
   console.warn(
     'localStorage not available for Giano storage, falling back to memory storage. ' +
-      'Data will not persist across page reloads.'
+      'Data will not persist across page reloads.',
   );
   return new InMemoryStorage();
 }

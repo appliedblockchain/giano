@@ -43,6 +43,39 @@ const Home: NextPage = () => {
   const [preparedUserOp, setPreparedUserOp] = useState<any>(null);
   const [isUserOpSigned, setIsUserOpSigned] = useState(false);
 
+  // Helper function to delete passkey (clear all data including passkey)
+  const deletePasskey = async () => {
+    if (!confirm('⚠️ This will permanently delete your passkey data. You will lose access to your wallet and need to create a new passkey to reconnect. Continue?')) {
+      return;
+    }
+
+    try {
+      // Disconnect first if connected
+      if (isConnected) {
+        disconnect();
+      }
+
+      // Clear all localStorage data including passkey
+      localStorage.removeItem('giano_credential_id');
+      localStorage.removeItem('giano_account_address');
+      localStorage.removeItem('gpk-passkey-id');
+
+      // Clear all public key entries (gpk-* pattern)
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('gpk-')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+
+      console.log('Passkey deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete passkey:', error);
+    }
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -343,12 +376,33 @@ const Home: NextPage = () => {
       </Head>
 
       <main className={styles.main}>
-        {isConnected ? (
-          <button onClick={() => disconnect()}>Disconnect</button>
-        ) : (
-          <button onClick={() => connect({ connector: gianoConnector })}>Connect</button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
+          {isConnected ? (
+            <button onClick={() => disconnect()}>Disconnect</button>
+          ) : (
+            <button onClick={() => connect({ connector: gianoConnector })}>Connect</button>
+          )}
+          
+          <button 
+            onClick={deletePasskey}
+            style={{
+              backgroundColor: '#ef4444',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Delete Passkey
+          </button>
+        </div>
+        
+        {address && (
+          <div style={{ marginBottom: '20px' }}>
+            <strong>Address:</strong> {address}
+          </div>
         )}
-        {address}
 
         {/* Original mint method */}
         <form className={styles.formContainer} onSubmit={sendTx}>
