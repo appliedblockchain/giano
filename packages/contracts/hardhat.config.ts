@@ -44,6 +44,12 @@ const config: HardhatUserConfig = {
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 84532,
     },
+    ['base-mainnet']: {
+      enableRip7212: true,
+      url: process.env.BASE_MAINNET_RPC_URL ?? 'https://base-mainnet.public.blastapi.io',
+      accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
+      chainId: 8453,
+    },
   },
   gasReporter: {
     enabled: true,
