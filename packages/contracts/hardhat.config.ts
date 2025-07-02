@@ -40,10 +40,10 @@ const config: HardhatUserConfig = {
     },
     ['base-sepolia']: {
       enableRip7212: true,
-      url: process.env.BASE_SEPOLIA_RPC_URL,
+      url: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://base-sepolia.public.blastapi.io',
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 84532,
-    }
+    },
   },
   gasReporter: {
     enabled: true,

@@ -19,7 +19,7 @@ const Home: NextPage = () => {
   const { address, isConnected, status } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
-  const {  sendTransaction } = useSendTransaction();
+  const { sendTransaction } = useSendTransaction();
   const {
     refetch: readContract,
     isFetching: isReadFetching,
@@ -96,7 +96,7 @@ const Home: NextPage = () => {
   const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
-    const result = await writeContractAsync({
+    void writeContractAsync({
       address: config.privateErc20Address,
       abi: privateErc20Abi,
       functionName: 'mint',
@@ -106,10 +106,17 @@ const Home: NextPage = () => {
 
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
-    sendTransaction({
-      to: address,
-      value: 0n,
-    });
+    sendTransaction(
+      {
+        to: address,
+        value: 0n,
+      },
+      {
+        onSuccess: (...params) => console.log(params),
+        onError: (error) => console.error('Transaction failed:', error),
+      },
+    );
+
   };
 
   // New method 1: Prepare user operation manually
