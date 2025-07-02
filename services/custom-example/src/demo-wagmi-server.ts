@@ -13,7 +13,7 @@ import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { createUserServerInjection } from './demo-server-injection';
-import { ServerStorage } from './demo-server-storage';
+import { ServerStorage } from './storage-implementations';
 
 const rpcs = <const>{
   chains: [hardhat],

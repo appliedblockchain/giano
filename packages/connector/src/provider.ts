@@ -15,7 +15,7 @@ import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import type { GianoStorage } from './storage';
-import { createGianoStorage } from './storage';
+
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -81,7 +81,7 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined
   injection: GianoProviderInjection
   gianoSmartWalletFactoryAddress: Address
-  storage?: GianoStorage
+  storage: GianoStorage
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -105,8 +105,8 @@ export const createGianoProvider = ({
   let client: PublicClient | undefined;
   const eventListeners: Partial<EventListeners> = {};
 
-  // Initialize storage with automatic fallback
-  const gianoStorage: GianoStorage = createGianoStorage(storage);
+  // Use provided storage implementation
+  const gianoStorage: GianoStorage = storage;
 
   const submitUserOperation = async (signedUserOp: any) => {
     if (injection.onUserOperationSigned) {

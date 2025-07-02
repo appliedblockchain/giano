@@ -5,6 +5,7 @@ import { createConfig } from 'wagmi';
 import { hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { gianoInjection } from './giano-injection';
+import { createGianoStorage } from './storage-implementations';
 
 const rpcs = <const>{
   chains: [hardhat],
@@ -26,6 +27,7 @@ export const { gianoClient, gianoProvider } = createGianoProvider({
   initialChainId: hardhat.id,
   injection: gianoInjection,
   gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress,
+  storage: createGianoStorage(),
 });
 
 const providerTransport = custom(gianoProvider);

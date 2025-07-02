@@ -1,6 +1,6 @@
 import type { GianoProviderInjection } from '@appliedblockchain/giano-connector';
 import { createGianoInjection } from './giano-injection';
-import { ServerStorage } from './demo-server-storage';
+import { ServerStorage } from './storage-implementations';
 
 /**
  * DEMO: Create a Giano injection with server-side storage
