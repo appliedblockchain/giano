@@ -49,6 +49,15 @@ pnpm bundler:dev
 pnpm demo:dev
 ```
 
+# Using the Coinbase bundler on Base Sepolia
+To use the Coinbase bundler, you need to copy the .env.base-sepolia file to .env and set the `NEXT_PUBLIC_BUNDLER_RPC_URL` to the Coinbase bundler URL.
+
+There is no need to deploy the smart contracts again, as the addresses are already set in the `.env` file.
+There is also no need to run the local bundler, as the Coinbase bundler is already running on the Base Sepolia network.
+Moreover, you don't need to run the local blockchain node, as the Coinbase bundler will use the Base Sepolia network.
+
+```sh
+
 ### Important tips
 
 - Remember to run `build` every time you make changes to the contracts or connector packages, so that changes are picked up by packages that import them
