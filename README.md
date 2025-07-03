@@ -44,7 +44,11 @@ pnpm hh:initlocal
 ```sh
 pnpm bundler:dev
 ```
-7. Start the demo app:
+8. Build the connector package:
+```sh
+pnpm build:connector
+```
+9. Start the demo app:
 ```sh
 pnpm demo:dev
 ```
