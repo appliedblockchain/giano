@@ -10,21 +10,35 @@ import { createGianoConnector, createGianoProvider } from '@appliedblockchain/gi
 import { custom, http } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
-import { hardhat } from 'wagmi/chains';
+import { baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { createUserServerInjection } from './demo-server-injection';
 import { ServerStorage } from './storage-implementations';
 
+const configMap = {
+  hardhat: {
+    chain: hardhat,
+    transport: http('http://localhost:8545/'),
+    bundlerRpcUrl: http(envConfig.bundlerRpcUrl),
+  },
+  baseSepolia: {
+    chain: baseSepolia,
+    transport: http(envConfig.bundlerRpcUrl),
+    bundlerRpcUrl: http(envConfig.bundlerRpcUrl),
+  },
+};
+
 const rpcs = <const>{
-  chains: [hardhat],
+  chains: [configMap[envConfig.configKey].chain],
   transports: {
-    [hardhat.id]: http('http://localhost:8545/'),
+    [configMap[envConfig.configKey].chain.id]: configMap[envConfig.configKey].transport,
   },
 };
 
 const bundler = createBundlerClient({
-  chain: hardhat,
-  transport: http(envConfig.bundlerRpcUrl),
+  chain: configMap[envConfig.configKey].chain,
+  transport: configMap[envConfig.configKey].bundlerRpcUrl,
+  paymaster: envConfig.configKey === 'hardhat' ? undefined : true,
 });
 
 /**
@@ -42,7 +56,7 @@ export function createServerConfigForUser(userId: string) {
     paymaster: envConfig.paymasterAddress,
     chains: rpcs.chains,
     transports: rpcs.transports,
-    initialChainId: hardhat.id,
+    initialChainId: configMap[envConfig.configKey].chain.id,
     injection: userInjection,
     gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress,
     storage: userSessionStorage,
