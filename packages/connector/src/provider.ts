@@ -172,11 +172,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
     wallet_revokePermissions: () => {
       smartAccount = null;
       // Clear stored session data
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('giano_credential_id');
-        localStorage.removeItem('giano_account_address');
-      }
-      emit('accountsChanged', []);
+      emit('accountsChanged', [])
       emit('disconnect', {
         code: 4900,
         name: 'Disconnected',
@@ -212,65 +208,14 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
       const credentialInfo = await injection.getCredentialInfo();
 
-      // Try to restore from localStorage first with full authentication
-      const storedCredentialId = typeof window !== 'undefined' ? localStorage.getItem('giano_credential_id') : null;
-      const storedAccountAddress = typeof window !== 'undefined' ? localStorage.getItem('giano_account_address') : null;
-
-      if (storedCredentialId && storedAccountAddress) {
-        try {
-          const credentialIdBuffer = new Uint8Array(JSON.parse(storedCredentialId));
-          const webAuthnAccount = await getWebAuthnAccount({
-            credentialId: credentialIdBuffer,
-            challenge: credentialInfo.challenge,
-          });
-
-          if (webAuthnAccount) {
-            smartAccount = await toGianoSmartAccount({
-              client: client!,
-              owners: [webAuthnAccount],
-              address: storedAccountAddress as Address,
-              factoryAddress: gianoSmartWalletFactoryAddress,
-            });
-            const smartAccountAddress = await smartAccount.getAddress();
-
-            emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
-            emit('accountsChanged', [smartAccountAddress]);
-
-            return [smartAccountAddress];
-          }
-        } catch (error) {
-          console.warn('Failed to restore session with authentication:', error);
-          // Clear invalid stored data
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('giano_credential_id');
-            localStorage.removeItem('giano_account_address');
-          }
-        }
-      }
-
-      // Fallback to original flow
       if (credentialInfo.credentialId) {
         const challenge = credentialInfo.challenge;
         const webAuthnAccount = await getWebAuthnAccount({ credentialId: credentialInfo.credentialId, challenge });
         if (!webAuthnAccount) {
           throw new Error('Invalid credential');
         }
-        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: gianoSmartWalletFactoryAddress });
-        const smartAccountAddress = await smartAccount.getAddress();
-
-        // Store session data
-        if (typeof window !== 'undefined') {
-          let credentialIdArray: Uint8Array;
-          if (credentialInfo.credentialId instanceof ArrayBuffer) {
-            credentialIdArray = new Uint8Array(credentialInfo.credentialId);
-          } else if (credentialInfo.credentialId instanceof Uint8Array) {
-            credentialIdArray = credentialInfo.credentialId;
-          } else {
-            credentialIdArray = new Uint8Array((credentialInfo.credentialId as any).buffer || credentialInfo.credentialId);
-          }
-          localStorage.setItem('giano_credential_id', JSON.stringify(Array.from(credentialIdArray)));
-          localStorage.setItem('giano_account_address', smartAccountAddress);
-        }
+        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: gianoSmartWalletFactoryAddress })
+        const smartAccountAddress = await smartAccount.getAddress()
 
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
         emit('accountsChanged', [smartAccountAddress]);
@@ -355,8 +300,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
         } else {
           rawIdArray = new Uint8Array((rawId as any).buffer || rawId);
         }
-        localStorage.setItem('giano_credential_id', JSON.stringify(Array.from(rawIdArray)));
-        localStorage.setItem('giano_account_address', smartAccountAddress);
       }
 
       emit('connect', { chainId: `0x${chain!.id.toString(16)}` });

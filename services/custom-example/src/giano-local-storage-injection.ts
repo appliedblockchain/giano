@@ -1,85 +1,79 @@
-import type { GianoProviderInjection, ChainType } from '@appliedblockchain/giano-connector'
+import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
+import type { Hex } from 'viem';
 
 function hexToBytes(hex: string) {
-  hex = hex.replace(/^0x/g, '')
+  hex = hex.replace(/^0x/g, '');
   if (hex.length % 2 !== 0) {
-    hex = '0' + hex
+    hex = '0' + hex;
   }
-  const bytes = new Uint8Array(hex.length / 2)
+  const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
   }
-  return bytes
+  return bytes;
 }
 
 function concatBytes(bytes: Uint8Array[]) {
-  const totalLength = bytes.reduce((acc, curr) => acc + curr.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
+  const totalLength = bytes.reduce((acc, curr) => acc + curr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
   for (const byte of bytes) {
-    result.set(byte, offset)
-    offset += byte.length
+    result.set(byte, offset);
+    offset += byte.length;
   }
-  return result
+  return result;
 }
 
 function bytesToHex(bytes: Uint8Array) {
-  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function padBytes(bytes: Uint8Array, size: number) {
   if (bytes.length < size) {
-    return concatBytes([new Uint8Array(size - bytes.length).fill(0), bytes])
+    return concatBytes([new Uint8Array(size - bytes.length).fill(0), bytes]);
   }
-  return bytes
+  return bytes;
 }
 
 // JSON serializer that handles BigInt values
 function serializeWithBigInt(obj: any): string {
-  return JSON.stringify(obj, (key, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  );
+  return JSON.stringify(obj, (key, value) => (typeof value === 'bigint' ? value.toString() : value));
 }
 
 export const gianoLocalStorageInjection: GianoProviderInjection = {
   getNameForCredential: async () => {
-    return 'Giano Passkey'
+    return 'Giano Passkey';
   },
   getCredentialInfo: async () => {
-    const passkeyIdBase64 = localStorage.getItem('gpk-passkey-id')
-    const challenge = new Uint8Array(32)
-    crypto.getRandomValues(challenge)
+    const passkeyIdBase64 = localStorage.getItem('gpk-passkey-id');
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
 
     return {
       credentialId: passkeyIdBase64 ? new Uint8Array(Buffer.from(passkeyIdBase64, 'base64')) : null,
       challenge,
-    }
+    };
   },
   onCredentialCreated: async (credentialName, challenge, credential) => {
-    const passkeyIdBase64 = Buffer.from(credential.rawId).toString('base64')
+    const passkeyIdBase64 = Buffer.from(credential.rawId).toString('base64');
 
-    localStorage.setItem('gpk-passkey-id', passkeyIdBase64)
+    localStorage.setItem('gpk-passkey-id', passkeyIdBase64);
 
-    return null // proceed to create a smart wallet
+    return null; // proceed to create a smart wallet
   },
-  encodeUserId: (
-    id: string,
-    gianoSmartWalletFactoryAddress: string,
-    chainId: string,
-    chainType: ChainType,
-  ) => {
+  encodeUserId: (id: string, gianoSmartWalletFactoryAddress: string, chainId: string, chainType: ChainType) => {
     return concatBytes([
       padBytes(hexToBytes(id), 16),
       padBytes(hexToBytes(gianoSmartWalletFactoryAddress), 20),
       padBytes(hexToBytes(chainId), 4),
       padBytes(hexToBytes(chainType.toString(16)), 1),
-    ])
+    ]);
   },
   decodeUserId: (userId: Uint8Array) => {
-    const userIdSlice = userId.slice(0, 16)
-    const walletFactoryAddress = userId.slice(16, 36)
-    const chainId = userId.slice(36, 40)
-    const chainType = userId.slice(40, 41)
+    const userIdSlice = userId.slice(0, 16);
+    const walletFactoryAddress = userId.slice(16, 36);
+    const chainId = userId.slice(36, 40);
+    const chainType = userId.slice(40, 41);
     return {
       userId: [
         bytesToHex(userIdSlice.slice(0, 4)),
@@ -91,26 +85,26 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
       walletFactoryAddress: '0x' + bytesToHex(walletFactoryAddress),
       chainId: parseInt(bytesToHex(chainId), 16),
       chainType: parseInt(bytesToHex(chainType), 16) as ChainType,
-    }
+    };
   },
   onCredentialSignedIn: async (credential) => {
-    console.log('Credential signed in', { credential })
-    return true
+    console.log('Credential signed in', { credential });
+    return true;
   },
   getPublicKeyByCredentialId: async (rawId: ArrayBuffer) => {
     // get the public key from the local storage based on the onCredentialKey injection method
-    const publicKey = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`)
-    const publicKeyY = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`)
+    const publicKey = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`);
+    const publicKeyY = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`);
     if (!publicKey || !publicKeyY) {
-      throw new Error('Public key not found')
+      throw new Error('Public key not found');
     }
-    return { x: publicKey, y: publicKeyY }
+    return { x: publicKey, y: publicKeyY };
   },
   onCredentialKey: async (rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }) => {
-    console.log('onCredentialKey', { rawId, xyVector })
+    console.log('onCredentialKey', { rawId, xyVector });
     // save the public key to the local storage
-    localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`, xyVector.x)
-    localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`, xyVector.y)
+    localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`, xyVector.x);
+    localStorage.setItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`, xyVector.y);
   },
   // onUserOperationSigned: async (signedUserOp) => {
   //   try {
@@ -136,4 +130,4 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
   //     throw error;
   //   }
   // }
-}
+};
