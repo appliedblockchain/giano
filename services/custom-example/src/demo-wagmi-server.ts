@@ -7,24 +7,61 @@
  */
 
 import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector';
-import { custom, http } from 'viem';
+import type { Address, Hex, Transport } from 'viem';
+import { custom, http, parseGwei } from 'viem';
+import type { BundlerClient } from 'viem/account-abstraction';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
+import type { Chain } from 'wagmi/chains';
 import { baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { createUserServerInjection } from './demo-server-injection';
 import { ServerStorage } from './storage-implementations';
 
-const configMap = {
+type ConfigMap = Record<
+  string,
+  {
+    chain: Chain;
+    transport: Transport;
+    bundler: BundlerClient;
+  }
+>;
+
+const configMap: ConfigMap = {
   hardhat: {
     chain: hardhat,
     transport: http('http://localhost:8545/'),
-    bundlerRpcUrl: http(envConfig.bundlerRpcUrl),
+    bundler: createBundlerClient({
+      chain: hardhat,
+      transport: http(envConfig.bundlerRpcUrl),
+      paymaster: {
+        //@ts-ignore - the "required" fields are not needed to fulfill a user op
+        getPaymasterData: async () => ({
+          paymaster: envConfig.paymasterAddress as Address,
+        }),
+        //@ts-ignore - the "required" fields are not needed to fulfill a user op
+        getPaymasterStubData: async () => ({
+          paymaster: envConfig.paymasterAddress as Address,
+        }),
+      },
+      userOperation: {
+        estimateFeesPerGas: async () => {
+          return {
+            maxFeePerGas: parseGwei('200'),
+            maxPriorityFeePerGas: parseGwei('400'),
+          };
+        },
+      },
+    }),
   },
   baseSepolia: {
     chain: baseSepolia,
-    transport: http(envConfig.bundlerRpcUrl),
-    bundlerRpcUrl: http(envConfig.bundlerRpcUrl),
+    transport: http('https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c'),
+    bundler: createBundlerClient({
+      chain: baseSepolia,
+      transport: http(envConfig.bundlerRpcUrl),
+      paymaster: true,
+    }),
   },
 };
 
@@ -34,12 +71,6 @@ const rpcs = <const>{
     [configMap[envConfig.configKey].chain.id]: configMap[envConfig.configKey].transport,
   },
 };
-
-const bundler = createBundlerClient({
-  chain: configMap[envConfig.configKey].chain,
-  transport: configMap[envConfig.configKey].bundlerRpcUrl,
-  paymaster: envConfig.configKey === 'hardhat' ? undefined : true,
-});
 
 /**
  * DEMO: Create server storage config for a specific user
@@ -52,13 +83,12 @@ export function createServerConfigForUser(userId: string) {
   const userSessionStorage = new ServerStorage('/api/storage', userId);
 
   const { gianoProvider } = createGianoProvider({
-    bundler,
-    paymaster: envConfig.paymasterAddress,
+    bundler: configMap[envConfig.configKey].bundler,
     chains: rpcs.chains,
     transports: rpcs.transports,
     initialChainId: configMap[envConfig.configKey].chain.id,
     injection: userInjection,
-    gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress,
+    gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
     storage: userSessionStorage,
   });
 
@@ -67,7 +97,6 @@ export function createServerConfigForUser(userId: string) {
 
   return createConfig({
     chains: [...rpcs.chains],
-    // @ts-expect-error typing error for being custom transport
     transports: {
       ...Object.fromEntries(Object.keys(rpcs.transports).map((k) => [k, providerTransport])),
     },
