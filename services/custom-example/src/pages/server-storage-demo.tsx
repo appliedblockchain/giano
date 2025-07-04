@@ -1,8 +1,7 @@
 import React, { useEffect, useState, type FormEvent } from 'react';
-import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { formatEther, parseEther } from 'viem';
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useReadContract, useWriteContract } from 'wagmi';
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
+
 import { config } from '../config';
 import { createServerConfigForUser } from '../demo-wagmi-server';
 
@@ -35,28 +34,7 @@ function ServerStorageDemo() {
   const { connect, connectors } = useConnect();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-
-  // Token operation state
-  const [mintAmount, setMintAmount] = useState('');
-  const [balance, setBalance] = useState<bigint | null>(null);
-
-  // Contract interaction hooks
-  const { writeContractAsync, isPending: isMintPending } = useWriteContract();
-  const {
-    refetch: refetchBalance,
-    isFetching: isBalanceFetching,
-    error: balanceError,
-  } = useReadContract({
-    address: config.privateErc20Address as `0x${string}`,
-    abi: privateErc20Abi,
-    functionName: 'balanceOf',
-    args: [address!],
-    query: {
-      enabled: false,
-      retry: false,
-      retryOnMount: false,
-    },
-  });
+  const { sendTransaction } = useSendTransaction();
 
   // Function to fetch current server data
   const fetchServerData = async () => {
@@ -120,39 +98,19 @@ function ServerStorageDemo() {
     window.location.href = currentUrl.toString();
   };
 
-  // Token operation functions
-  const mintTokens = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
+  // Send empty transaction function
+  const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
-    if (!mintAmount.trim() || !isConnected) return;
-
-    try {
-      await writeContractAsync({
-        address: config.privateErc20Address as `0x${string}`,
-        abi: privateErc20Abi,
-        functionName: 'mint',
-        args: [parseEther(mintAmount.trim())],
-      });
-      setMintAmount(''); // Clear input after successful mint
-      // Automatically refresh balance after mint
-      setTimeout(() => {
-        void readBalance();
-      }, 1000);
-    } catch (error) {
-      console.error('Mint failed:', error);
-    }
-  };
-
-  const readBalance = async () => {
-    if (!address || !isConnected) return;
-
-    try {
-      const { data } = await refetchBalance();
-      if (data) {
-        setBalance(data);
-      }
-    } catch (error) {
-      console.error('Failed to read balance:', error);
-    }
+    sendTransaction(
+      {
+        to: address,
+        value: 0n,
+      },
+      {
+        onSuccess: (...params) => console.log(params),
+        onError: (error) => console.error('Transaction failed:', error),
+      },
+    );
   };
 
   useEffect(() => {
@@ -333,72 +291,30 @@ function ServerStorageDemo() {
         )}
       </div>
 
-      {/* Token Operations */}
+      {/* Transaction Operations */}
       {isConnected && (
         <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
-          <h3>🪙 Token Operations</h3>
+          <h3>🔄 Transaction Operations</h3>
 
-          {/* Mint Section */}
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h4>Mint Tokens</h4>
-            <form onSubmit={mintTokens} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
-              <input
-                type="number"
-                placeholder="Amount to mint"
-                value={mintAmount}
-                onChange={(e) => setMintAmount(e.target.value)}
-                style={{
-                  padding: '0.5rem',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '4px',
-                  flex: 1,
-                  maxWidth: '200px',
-                }}
-              />
+          {/* Empty Transaction Section */}
+          <div>
+            <h4>Send Empty Transaction</h4>
+            <form onSubmit={sendEmptyTx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
               <button
                 type="submit"
-                disabled={!mintAmount.trim() || isMintPending}
-                style={{
-                  ...primaryButtonStyle,
-                  opacity: !mintAmount.trim() || isMintPending ? 0.6 : 1,
-                  cursor: !mintAmount.trim() || isMintPending ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {isMintPending ? 'Minting...' : 'Mint'}
-              </button>
-            </form>
-          </div>
-
-          {/* Balance Section */}
-          <div>
-            <h4>Token Balance</h4>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
-              <button
-                onClick={readBalance}
-                disabled={isBalanceFetching}
+                disabled={!isConnected}
                 style={{
                   ...secondaryButtonStyle,
-                  opacity: isBalanceFetching ? 0.6 : 1,
-                  cursor: isBalanceFetching ? 'not-allowed' : 'pointer',
+                  opacity: !isConnected ? 0.6 : 1,
+                  cursor: !isConnected ? 'not-allowed' : 'pointer',
                 }}
               >
-                {isBalanceFetching ? 'Reading...' : 'Read Balance'}
+                Send Empty Transaction
               </button>
-              {balance !== null && (
-                <span
-                  style={{
-                    padding: '0.5rem 1rem',
-                    background: '#f0f9ff',
-                    border: '1px solid #0284c7',
-                    borderRadius: '4px',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  Balance: {formatEther(balance)} tokens
-                </span>
-              )}
-            </div>
-            {balanceError && <p style={{ color: '#ef4444', fontSize: '14px' }}>Error reading balance: {balanceError.message}</p>}
+            </form>
+            <p style={{ fontSize: '12px', color: '#6b7280', margin: '0.5rem 0' }}>
+              💡 Sends a transaction with 0 value to your own address - useful for testing transaction signing
+            </p>
           </div>
         </div>
       )}
@@ -480,7 +396,7 @@ function ServerStorageDemo() {
             <strong>Create a passkey</strong> when prompted
           </li>
           <li>
-            <strong>Try token operations</strong> - mint some tokens and read your balance
+            <strong>Send empty transaction</strong> - test transaction signing capability
           </li>
           <li>
             <strong>Check server data</strong> using the &quot;Refresh&quot; button to see stored data
@@ -492,7 +408,7 @@ function ServerStorageDemo() {
             <strong>Switch users</strong> by changing the User ID and clicking &quot;Load Page for [User]&quot;
           </li>
           <li>
-            <strong>Notice</strong> that different users have isolated data and separate balances
+            <strong>Notice</strong> that different users have isolated data
           </li>
           <li>
             <strong>Delete passkey</strong> - click &quot;Delete Passkey&quot; to permanently remove passkey data (will lose wallet access)
