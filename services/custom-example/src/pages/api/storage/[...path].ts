@@ -5,77 +5,34 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 const serverStorage = new Map<string, any>();
 
 type UserData = {
-  session?: {
-    credentialId?: string;
-    accountAddress?: string;
-  };
   passkeys?: {
     passkeyId?: string;
   };
   publicKeys?: Record<string, { x: string; y: string }>;
 };
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { method, body } = req;
   const { path } = req.query as { path: string[] };
 
   console.log('Storage API request:', method, path);
 
   try {
-    // Parse the path: /users/{userId}/session, /users/{userId}/passkeys, etc.
+    // Parse the path: /users/{userId}/passkeys, /users/{userId}/public-keys, etc.
     if (!path || path.length < 2 || path[0] !== 'users') {
       return res.status(400).json({ error: 'Invalid path. Expected /users/{userId}/...' });
     }
 
     const userId = path[1];
-    const endpoint = path[2]; // session, passkeys, public-keys
+    const endpoint = path[2]; // passkeys, public-keys
     const subPath = path[3]; // for public-keys/{idHash}
 
     // Get user's storage object
     const userKey = `user:${userId}`;
-    let userData: UserData = serverStorage.get(userKey) || {};
-
-    // Handle session endpoints: /users/{userId}/session
-    if (endpoint === 'session') {
-      switch (method) {
-        case 'GET':
-          res.status(200).json(userData.session || {});
-          break;
-
-        case 'PUT':
-          if (!userData.session) userData.session = {};
-
-          // Update session data
-          if (body.credentialId !== undefined) {
-            userData.session.credentialId = body.credentialId;
-          }
-          if (body.accountAddress !== undefined) {
-            userData.session.accountAddress = body.accountAddress;
-          }
-
-          serverStorage.set(userKey, userData);
-          console.log(`✅ Updated session for user ${userId}:`, userData.session);
-          res.status(200).json({ success: true });
-          break;
-
-        case 'DELETE':
-          userData.session = {};
-          serverStorage.set(userKey, userData);
-          console.log(`🗑️ Cleared session for user ${userId}`);
-          res.status(200).json({ success: true });
-          break;
-
-        default:
-          res.setHeader('Allow', ['GET', 'PUT', 'DELETE']);
-          res.status(405).end(`Method ${method} Not Allowed`);
-      }
-    }
+    const userData: UserData = serverStorage.get(userKey) || {};
 
     // Handle passkey endpoints: /users/{userId}/passkeys
-    else if (endpoint === 'passkeys') {
+    if (endpoint === 'passkeys') {
       switch (method) {
         case 'GET':
           res.status(200).json(userData.passkeys || {});
@@ -167,12 +124,9 @@ export default async function handler(
     // Special endpoint for demo: get all user data
     else if (endpoint === 'all') {
       res.status(200).json({ data: userData });
-    }
-
-    else {
+    } else {
       res.status(404).json({ error: `Unknown endpoint: ${endpoint}` });
     }
-
   } catch (error) {
     console.error('Storage API error:', error);
     res.status(500).json({ error: 'Internal server error' });

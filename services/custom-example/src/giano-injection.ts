@@ -1,8 +1,7 @@
+import type { Hex } from 'viem';
 import type { GianoProviderInjection, ChainType } from '@appliedblockchain/giano-connector';
-import type { GianoStorage } from '@appliedblockchain/giano-connector';
-import type { Hash, Hex } from 'viem';
-import { createGianoStorage, InMemoryStorage } from './storage-implementations';
-import { hexToBytes, concatBytes, bytesToHex, padBytes, serializeWithBigInt } from './utils';
+import { createGianoStorage, InMemoryStorage, type GianoStorage } from './storage-implementations';
+import { hexToBytes, concatBytes, bytesToHex, padBytes } from './utils';
 
 /**
  * Create a Giano injection with configurable storage

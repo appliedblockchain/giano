@@ -47,7 +47,7 @@ function ServerStorageDemo() {
     isFetching: isBalanceFetching,
     error: balanceError,
   } = useReadContract({
-    address: config.privateErc20Address,
+    address: config.privateErc20Address as `0x${string}`,
     abi: privateErc20Abi,
     functionName: 'balanceOf',
     args: [address!],
@@ -73,34 +73,26 @@ function ServerStorageDemo() {
     }
   };
 
-  // Function to clear only session data
-  const clearSessionData = async () => {
-    try {
-      // Clear only session data (user can reconnect)
-      await fetch(`/api/storage/users/${userId}/session`, { method: 'DELETE' });
-      await fetchServerData();
-    } catch (error) {
-      console.error('Failed to clear session data:', error);
-    }
-  };
-
-    // Function to clear all data including passkey
+  // Function to delete all passkey data
   const deletePasskey = async () => {
-    if (!confirm('⚠️ This will permanently delete your passkey data. You will lose access to your wallet and need to create a new passkey to reconnect. Continue?')) {
+    if (
+      !confirm(
+        '⚠️ This will permanently delete your passkey data. You will lose access to your wallet and need to create a new passkey to reconnect. Continue?',
+      )
+    ) {
       return;
     }
-    
+
     try {
       // Clear all data including passkey data (full passkey deletion)
-      await fetch(`/api/storage/users/${userId}/session`, { method: 'DELETE' });
       await fetch(`/api/storage/users/${userId}/passkeys`, { method: 'DELETE' });
       await fetch(`/api/storage/users/${userId}/public-keys`, { method: 'DELETE' });
-      
+
       // Also disconnect if currently connected
       if (isConnected) {
         disconnect();
       }
-      
+
       await fetchServerData();
     } catch (error) {
       console.error('Failed to delete passkey:', error);
@@ -112,7 +104,7 @@ function ServerStorageDemo() {
     setIsConnecting(true);
     try {
       // Connect using the current connector (which is already configured for the current user)
-      await connect({ connector: connectors[0] });
+      connect({ connector: connectors[0] });
     } catch (error) {
       console.error('Failed to connect:', error);
     } finally {
@@ -135,7 +127,7 @@ function ServerStorageDemo() {
 
     try {
       await writeContractAsync({
-        address: config.privateErc20Address,
+        address: config.privateErc20Address as `0x${string}`,
         abi: privateErc20Abi,
         functionName: 'mint',
         args: [parseEther(mintAmount.trim())],
@@ -143,7 +135,7 @@ function ServerStorageDemo() {
       setMintAmount(''); // Clear input after successful mint
       // Automatically refresh balance after mint
       setTimeout(() => {
-        readBalance();
+        void readBalance();
       }, 1000);
     } catch (error) {
       console.error('Mint failed:', error);
@@ -164,7 +156,7 @@ function ServerStorageDemo() {
   };
 
   useEffect(() => {
-    fetchServerData();
+    void fetchServerData();
   }, [userId]);
 
   // Common button styles
@@ -202,58 +194,65 @@ function ServerStorageDemo() {
     color: 'white',
   };
 
-  const warningButtonStyle = {
-    ...buttonStyle,
-    background: '#f59e0b',
-    color: 'white',
-  };
-
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
       <h1>🖥️ Server Storage Demo</h1>
 
       {!isClient && (
-        <div style={{
-          background: '#f3f4f6',
-          border: '1px solid #d1d5db',
-          borderRadius: '4px',
-          padding: '0.5rem 1rem',
-          marginBottom: '1rem',
-          fontSize: '14px',
-          color: '#6b7280'
-        }}>
+        <div
+          style={{
+            background: '#f3f4f6',
+            border: '1px solid #d1d5db',
+            borderRadius: '4px',
+            padding: '0.5rem 1rem',
+            marginBottom: '1rem',
+            fontSize: '14px',
+            color: '#6b7280',
+          }}
+        >
           <strong>Loading configuration...</strong>
         </div>
       )}
 
       {isClient && (
-        <div style={{
-          background: '#e5e7eb',
-          border: '1px solid #9ca3af',
-          borderRadius: '4px',
-          padding: '0.5rem 1rem',
-          marginBottom: '1rem',
-          fontSize: '14px'
-        }}>
+        <div
+          style={{
+            background: '#e5e7eb',
+            border: '1px solid #9ca3af',
+            borderRadius: '4px',
+            padding: '0.5rem 1rem',
+            marginBottom: '1rem',
+            fontSize: '14px',
+          }}
+        >
           <strong>Currently configured for user:</strong> <code>{getUserIdFromUrl()}</code>
         </div>
       )}
 
-      <div style={{
-        background: '#f0f9ff',
-        border: '1px solid #0284c7',
-        borderRadius: '8px',
-        padding: '1rem',
-        marginBottom: '2rem'
-      }}>
+      <div
+        style={{
+          background: '#f0f9ff',
+          border: '1px solid #0284c7',
+          borderRadius: '8px',
+          padding: '1rem',
+          marginBottom: '2rem',
+        }}
+      >
         <h3>💡 What This Demonstrates</h3>
         <p>This demo shows how Giano can store passkey data entirely on your server instead of localStorage:</p>
         <ul>
-          <li>✅ <strong>Passkey IDs</strong> stored on server</li>
-          <li>✅ <strong>Public keys</strong> stored on server</li>
-          <li>✅ <strong>Session data</strong> stored on server</li>
-          <li>✅ <strong>No localStorage</strong> dependency</li>
-          <li>✅ <strong>Multi-user support</strong> with user isolation</li>
+          <li>
+            ✅ <strong>Passkey IDs</strong> stored on server
+          </li>
+          <li>
+            ✅ <strong>Public keys</strong> stored on server
+          </li>
+          <li>
+            ✅ <strong>No localStorage</strong> dependency
+          </li>
+          <li>
+            ✅ <strong>Multi-user support</strong> with user isolation
+          </li>
         </ul>
       </div>
 
@@ -263,31 +262,29 @@ function ServerStorageDemo() {
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
           <label>
             User ID:
-            <input
-              type="text"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              style={{ marginLeft: '0.5rem', padding: '0.25rem' }}
-            />
+            <input type="text" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ marginLeft: '0.5rem', padding: '0.25rem' }} />
           </label>
-          <button
-            onClick={switchUserConfig}
-            style={primaryButtonStyle}
-          >
+          <button onClick={switchUserConfig} style={primaryButtonStyle}>
             Load Page for {userId}
           </button>
         </div>
-        <p><small>💡 Each user gets isolated storage on the server. Clicking "Load Page for {userId}" will reload the page with the new user configuration.</small></p>
+        <p>
+          <small>
+            💡 Each user gets isolated storage on the server. Clicking &quot;Load Page for {userId}&quot; will reload the page with the new user configuration.
+          </small>
+        </p>
         {isClient && userId !== getUserIdFromUrl() && (
-          <div style={{
-            background: '#fef3c7',
-            border: '1px solid #f59e0b',
-            borderRadius: '4px',
-            padding: '0.5rem',
-            marginTop: '0.5rem',
-            fontSize: '12px'
-          }}>
-            ⚠️ User ID changed. Click "Load Page for {userId}" to apply changes.
+          <div
+            style={{
+              background: '#fef3c7',
+              border: '1px solid #f59e0b',
+              borderRadius: '4px',
+              padding: '0.5rem',
+              marginTop: '0.5rem',
+              fontSize: '12px',
+            }}
+          >
+            ⚠️ User ID changed. Click &quot;Load Page for {userId}&quot; to apply changes.
           </div>
         )}
       </div>
@@ -297,26 +294,37 @@ function ServerStorageDemo() {
         <h3>🔗 Connection Status</h3>
         {isConnected ? (
           <div>
-            <p>✅ Connected: <code>{address}</code></p>
-            {isClient && <p><small>📦 Using server storage for user: <strong>{getUserIdFromUrl()}</strong></small></p>}
-            <button
-              onClick={() => disconnect()}
-              style={dangerButtonStyle}
-            >
+            <p>
+              ✅ Connected: <code>{address}</code>
+            </p>
+            {isClient && (
+              <p>
+                <small>
+                  📦 Using server storage for user: <strong>{getUserIdFromUrl()}</strong>
+                </small>
+              </p>
+            )}
+            <button onClick={() => disconnect()} style={dangerButtonStyle}>
               Disconnect
             </button>
           </div>
         ) : (
           <div>
             <p>❌ Not connected</p>
-            {isClient && <p><small>Will connect with server storage for user: <strong>{getUserIdFromUrl()}</strong></small></p>}
+            {isClient && (
+              <p>
+                <small>
+                  Will connect with server storage for user: <strong>{getUserIdFromUrl()}</strong>
+                </small>
+              </p>
+            )}
             <button
               onClick={connectWithUserId}
               disabled={isConnecting}
               style={{
                 ...successButtonStyle,
                 opacity: isConnecting ? 0.6 : 1,
-                cursor: isConnecting ? 'not-allowed' : 'pointer'
+                cursor: isConnecting ? 'not-allowed' : 'pointer',
               }}
             >
               {isClient ? (isConnecting ? 'Connecting...' : `Connect as ${getUserIdFromUrl()}`) : 'Connect with Server Storage'}
@@ -344,7 +352,7 @@ function ServerStorageDemo() {
                   border: '1px solid #d1d5db',
                   borderRadius: '4px',
                   flex: 1,
-                  maxWidth: '200px'
+                  maxWidth: '200px',
                 }}
               />
               <button
@@ -352,8 +360,8 @@ function ServerStorageDemo() {
                 disabled={!mintAmount.trim() || isMintPending}
                 style={{
                   ...primaryButtonStyle,
-                  opacity: (!mintAmount.trim() || isMintPending) ? 0.6 : 1,
-                  cursor: (!mintAmount.trim() || isMintPending) ? 'not-allowed' : 'pointer'
+                  opacity: !mintAmount.trim() || isMintPending ? 0.6 : 1,
+                  cursor: !mintAmount.trim() || isMintPending ? 'not-allowed' : 'pointer',
                 }}
               >
                 {isMintPending ? 'Minting...' : 'Mint'}
@@ -371,28 +379,26 @@ function ServerStorageDemo() {
                 style={{
                   ...secondaryButtonStyle,
                   opacity: isBalanceFetching ? 0.6 : 1,
-                  cursor: isBalanceFetching ? 'not-allowed' : 'pointer'
+                  cursor: isBalanceFetching ? 'not-allowed' : 'pointer',
                 }}
               >
                 {isBalanceFetching ? 'Reading...' : 'Read Balance'}
               </button>
               {balance !== null && (
-                <span style={{
-                  padding: '0.5rem 1rem',
-                  background: '#f0f9ff',
-                  border: '1px solid #0284c7',
-                  borderRadius: '4px',
-                  fontWeight: 'bold'
-                }}>
+                <span
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: '#f0f9ff',
+                    border: '1px solid #0284c7',
+                    borderRadius: '4px',
+                    fontWeight: 'bold',
+                  }}
+                >
                   Balance: {formatEther(balance)} tokens
                 </span>
               )}
             </div>
-            {balanceError && (
-              <p style={{ color: '#ef4444', fontSize: '14px' }}>
-                Error reading balance: {balanceError.message}
-              </p>
-            )}
+            {balanceError && <p style={{ color: '#ef4444', fontSize: '14px' }}>Error reading balance: {balanceError.message}</p>}
           </div>
         </div>
       )}
@@ -409,19 +415,12 @@ function ServerStorageDemo() {
                 ...secondaryButtonStyle,
                 marginRight: '0.5rem',
                 opacity: loading ? 0.6 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer'
+                cursor: loading ? 'not-allowed' : 'pointer',
               }}
             >
               {loading ? 'Loading...' : 'Refresh'}
             </button>
             <button
-              onClick={clearSessionData}
-              style={{...secondaryButtonStyle, marginRight: '0.5rem'}}
-              title="Clear session data only - you can still reconnect with the same passkey"
-            >
-              Clear Session
-            </button>
-                        <button 
               onClick={deletePasskey}
               style={dangerButtonStyle}
               title="Permanently delete passkey data - you will lose access to your wallet and need to create a new passkey"
@@ -431,17 +430,19 @@ function ServerStorageDemo() {
           </div>
         </div>
 
-        <div style={{
-          background: '#e5e7eb',
-          border: '1px solid #9ca3af',
-          borderRadius: '4px',
-          padding: '0.5rem 1rem',
-          marginBottom: '1rem',
-          fontSize: '14px'
-        }}>
-          <strong>💡 Button Difference:</strong><br/>
-          • <strong>Clear Session</strong>: Removes only login session (credential ID, account address). You can reconnect with the same passkey.<br/>
-          • <strong>Delete Passkey</strong>: Permanently removes passkey data. You'll lose access to your wallet and need to create a new passkey.
+        <div
+          style={{
+            background: '#e5e7eb',
+            border: '1px solid #9ca3af',
+            borderRadius: '4px',
+            padding: '0.5rem 1rem',
+            marginBottom: '1rem',
+            fontSize: '14px',
+          }}
+        >
+          <strong>💡 Storage Info:</strong>
+          <br />• <strong>Passkey data</strong> is stored on the server and persists across sessions
+          <br />• <strong>Delete Passkey</strong> permanently removes passkey data - you&apos;ll lose wallet access
         </div>
 
         <div style={{ background: '#1f2937', color: '#f9fafb', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>
@@ -450,10 +451,10 @@ function ServerStorageDemo() {
 
         {serverData && (
           <div style={{ marginTop: '1rem' }}>
-            <p><strong>Data stored for user:</strong> <code>{userId}</code></p>
+            <p>
+              <strong>Data stored for user:</strong> <code>{userId}</code>
+            </p>
             <ul>
-              {serverData.session?.credentialId && <li>✅ Credential ID: Present</li>}
-              {serverData.session?.accountAddress && <li>✅ Account Address: {serverData.session.accountAddress}</li>}
               {serverData.passkeys?.passkeyId && <li>✅ Passkey ID: Present</li>}
               {serverData.publicKeys && <li>✅ Public Keys: {Object.keys(serverData.publicKeys).length} stored</li>}
             </ul>
@@ -462,24 +463,43 @@ function ServerStorageDemo() {
       </div>
 
       {/* Instructions */}
-      <div style={{
-        background: '#fef3c7',
-        border: '1px solid #f59e0b',
-        borderRadius: '8px',
-        padding: '1rem'
-      }}>
+      <div
+        style={{
+          background: '#fef3c7',
+          border: '1px solid #f59e0b',
+          borderRadius: '8px',
+          padding: '1rem',
+        }}
+      >
         <h3>📋 How to Test</h3>
         <ol>
-          <li><strong>Connect</strong> using the "Connect with Server Storage" button</li>
-          <li><strong>Create a passkey</strong> when prompted</li>
-          <li><strong>Try token operations</strong> - mint some tokens and read your balance</li>
-          <li><strong>Check server data</strong> using the "Refresh" button to see stored data</li>
-          <li><strong>Test disconnection</strong> - click "Disconnect", then try to connect again (should work with same passkey)</li>
-          <li><strong>Clear session</strong> - click "Clear Session" to remove session data but keep passkey (can still reconnect)</li>
-          <li><strong>Switch users</strong> by changing the User ID and clicking "Load Page for [User]"</li>
-          <li><strong>Notice</strong> that different users have isolated data and separate balances</li>
-          <li><strong>Delete passkey</strong> - click "Delete Passkey" to permanently remove passkey data (will lose wallet access)</li>
-          <li><strong>Refresh the page</strong> - your session persists because it's stored on the server!</li>
+          <li>
+            <strong>Connect</strong> using the &quot;Connect with Server Storage&quot; button
+          </li>
+          <li>
+            <strong>Create a passkey</strong> when prompted
+          </li>
+          <li>
+            <strong>Try token operations</strong> - mint some tokens and read your balance
+          </li>
+          <li>
+            <strong>Check server data</strong> using the &quot;Refresh&quot; button to see stored data
+          </li>
+          <li>
+            <strong>Test disconnection</strong> - click &quot;Disconnect&quot;, then try to connect again (should work with same passkey)
+          </li>
+          <li>
+            <strong>Switch users</strong> by changing the User ID and clicking &quot;Load Page for [User]&quot;
+          </li>
+          <li>
+            <strong>Notice</strong> that different users have isolated data and separate balances
+          </li>
+          <li>
+            <strong>Delete passkey</strong> - click &quot;Delete Passkey&quot; to permanently remove passkey data (will lose wallet access)
+          </li>
+          <li>
+            <strong>Refresh the page</strong> - your session persists because it&apos;s stored on the server!
+          </li>
         </ol>
       </div>
 
@@ -487,14 +507,24 @@ function ServerStorageDemo() {
       <div style={{ marginTop: '2rem', padding: '1rem', border: '1px solid #d1d5db', borderRadius: '8px' }}>
         <h3>🔧 RESTful API Endpoints</h3>
         <ul>
-          <li><code>GET /api/storage/users/&#123;userId&#125;/session</code> - Get session data</li>
-          <li><code>PUT /api/storage/users/&#123;userId&#125;/session</code> - Update session data</li>
-          <li><code>GET /api/storage/users/&#123;userId&#125;/passkeys</code> - Get passkey data</li>
-          <li><code>PUT /api/storage/users/&#123;userId&#125;/passkeys</code> - Update passkey data</li>
-          <li><code>GET /api/storage/users/&#123;userId&#125;/public-keys/&#123;idHash&#125;</code> - Get specific public key</li>
-          <li><code>PUT /api/storage/users/&#123;userId&#125;/public-keys/&#123;idHash&#125;</code> - Store public key</li>
-          <li><code>DELETE /api/storage/users/&#123;userId&#125;/session</code> - Clear session data</li>
-          <li><code>GET /api/storage/users/&#123;userId&#125;/all</code> - Get all data (demo only)</li>
+          <li>
+            <code>GET /api/storage/users/&#123;userId&#125;/passkeys</code> - Get passkey data
+          </li>
+          <li>
+            <code>PUT /api/storage/users/&#123;userId&#125;/passkeys</code> - Update passkey data
+          </li>
+          <li>
+            <code>GET /api/storage/users/&#123;userId&#125;/public-keys/&#123;idHash&#125;</code> - Get specific public key
+          </li>
+          <li>
+            <code>PUT /api/storage/users/&#123;userId&#125;/public-keys/&#123;idHash&#125;</code> - Store public key
+          </li>
+          <li>
+            <code>DELETE /api/storage/users/&#123;userId&#125;/passkeys</code> - Delete passkey data
+          </li>
+          <li>
+            <code>GET /api/storage/users/&#123;userId&#125;/all</code> - Get all data (demo only)
+          </li>
         </ul>
       </div>
     </div>

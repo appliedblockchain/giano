@@ -1,5 +1,16 @@
-import type { GianoStorage } from '@appliedblockchain/giano-connector';
 import type { Hex } from 'viem';
+
+/**
+ * Local storage interface for injection implementations
+ */
+export type GianoStorage = {
+  // Passkey management
+  getPasskeyId(): Promise<string | null>;
+  setPasskeyId(id: string): Promise<void>;
+  getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null>;
+  setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void>;
+  isAvailable(): boolean;
+};
 
 /**
  * localStorage-based implementation
@@ -18,43 +29,6 @@ export class LocalStorage implements GianoStorage {
 
   isAvailable(): boolean {
     return this.isStorageAvailable();
-  }
-
-  // Provider session management
-  async getCredentialId(): Promise<string | null> {
-    if (!this.isStorageAvailable()) return null;
-    try {
-      return localStorage.getItem('giano_credential_id');
-    } catch {
-      return null;
-    }
-  }
-
-  async setCredentialId(id: string): Promise<void> {
-    if (!this.isStorageAvailable()) return;
-    try {
-      localStorage.setItem('giano_credential_id', id);
-    } catch {
-      // Silently fail
-    }
-  }
-
-  async getAccountAddress(): Promise<string | null> {
-    if (!this.isStorageAvailable()) return null;
-    try {
-      return localStorage.getItem('giano_account_address');
-    } catch {
-      return null;
-    }
-  }
-
-  async setAccountAddress(address: string): Promise<void> {
-    if (!this.isStorageAvailable()) return;
-    try {
-      localStorage.setItem('giano_account_address', address);
-    } catch {
-      // Silently fail
-    }
   }
 
   // Passkey management
@@ -97,37 +71,6 @@ export class LocalStorage implements GianoStorage {
       // Silently fail
     }
   }
-
-  async clear(): Promise<void> {
-    if (!this.isStorageAvailable()) return;
-    try {
-      // Clear only session data (not passkey data - user should be able to reconnect)
-      localStorage.removeItem('giano_credential_id');
-      localStorage.removeItem('giano_account_address');
-    } catch {
-      // Silently fail
-    }
-  }
-
-  async clearAll(): Promise<void> {
-    if (!this.isStorageAvailable()) return;
-    try {
-      // Clear all data including passkey data (full wallet deletion)
-      localStorage.removeItem('giano_credential_id');
-      localStorage.removeItem('giano_account_address');
-      localStorage.removeItem('gpk-passkey-id');
-
-      // Clear all public key entries (gpk-* pattern)
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('gpk-')) {
-          localStorage.removeItem(key);
-        }
-      }
-    } catch {
-      // Silently fail
-    }
-  }
 }
 
 /**
@@ -136,30 +79,11 @@ export class LocalStorage implements GianoStorage {
  * Data is lost when the page reloads. Useful for testing or temporary sessions.
  */
 export class InMemoryStorage implements GianoStorage {
-  private credentialId: string | null = null;
-  private accountAddress: string | null = null;
   private passkeyId: string | null = null;
   private publicKeys = new Map<string, { x: Hex; y: Hex }>();
 
   isAvailable(): boolean {
     return true;
-  }
-
-  // Provider session management
-  async getCredentialId(): Promise<string | null> {
-    return this.credentialId;
-  }
-
-  async setCredentialId(id: string): Promise<void> {
-    this.credentialId = id;
-  }
-
-  async getAccountAddress(): Promise<string | null> {
-    return this.accountAddress;
-  }
-
-  async setAccountAddress(address: string): Promise<void> {
-    this.accountAddress = address;
   }
 
   // Passkey management
@@ -177,20 +101,6 @@ export class InMemoryStorage implements GianoStorage {
 
   async setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void> {
     this.publicKeys.set(Buffer.from(rawId).toString('hex'), coords);
-  }
-
-  async clear(): Promise<void> {
-    // Clear only session data (not passkey data - user should be able to reconnect)
-    this.credentialId = null;
-    this.accountAddress = null;
-  }
-
-  async clearAll(): Promise<void> {
-    // Clear all data including passkey data (full wallet deletion)
-    this.credentialId = null;
-    this.accountAddress = null;
-    this.passkeyId = null;
-    this.publicKeys.clear();
   }
 }
 
@@ -236,47 +146,6 @@ export class ServerStorage implements GianoStorage {
     return navigator.onLine;
   }
 
-  // Provider session management
-  async getCredentialId(): Promise<string | null> {
-    try {
-      const data = await this.request(`/users/${this.userId}/session`);
-      return data.credentialId || null;
-    } catch {
-      return null;
-    }
-  }
-
-  async setCredentialId(id: string): Promise<void> {
-    try {
-      await this.request(`/users/${this.userId}/session`, {
-        method: 'PUT',
-        body: JSON.stringify({ credentialId: id }),
-      });
-    } catch {
-      // Handle error appropriately
-    }
-  }
-
-  async getAccountAddress(): Promise<string | null> {
-    try {
-      const data = await this.request(`/users/${this.userId}/session`);
-      return data.accountAddress || null;
-    } catch {
-      return null;
-    }
-  }
-
-  async setAccountAddress(address: string): Promise<void> {
-    try {
-      await this.request(`/users/${this.userId}/session`, {
-        method: 'PUT',
-        body: JSON.stringify({ accountAddress: address }),
-      });
-    } catch {
-      // Handle error appropriately
-    }
-  }
-
   // Passkey management
   async getPasskeyId(): Promise<string | null> {
     try {
@@ -317,25 +186,6 @@ export class ServerStorage implements GianoStorage {
       // Handle error appropriately
     }
   }
-
-  async clear(): Promise<void> {
-    try {
-      // Clear only session data (not passkey data - user should be able to reconnect)
-      await this.request(`/users/${this.userId}/session`, { method: 'DELETE' });
-    } catch {
-      // Handle error appropriately
-    }
-  }
-
-  async clearAll(): Promise<void> {
-    try {
-      // Clear all data including passkey data (full wallet deletion)
-      await this.request(`/users/${this.userId}/session`, { method: 'DELETE' });
-      await this.request(`/users/${this.userId}/passkeys`, { method: 'DELETE' });
-    } catch {
-      // Handle error appropriately
-    }
-  }
 }
 
 /**
@@ -354,9 +204,6 @@ export function createGianoStorage(customStorage?: GianoStorage): GianoStorage {
     return localStorage;
   }
 
-  console.warn(
-    'localStorage not available for Giano storage, falling back to memory storage. ' +
-      'Data will not persist across page reloads.',
-  );
+  console.warn('localStorage not available for Giano storage, falling back to memory storage. ' + 'Data will not persist across page reloads.');
   return new InMemoryStorage();
 }
