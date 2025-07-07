@@ -311,7 +311,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
         throw new Error('Giano not connected');
       }
 
-      return await submitUserOperation({ calls, account: smartAccount });
+      return await bundler.sendUserOperation({ calls, account: smartAccount });
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -379,7 +379,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
         throw new Error('Giano not connected');
       }
 
-      return await submitUserOperation(op);
+      return await bundler.sendUserOperation(op);
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options });
