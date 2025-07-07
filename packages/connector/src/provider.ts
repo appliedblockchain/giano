@@ -79,19 +79,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
   let client: PublicClient | undefined;
   const eventListeners: Partial<EventListeners> = {};
 
-  const submitUserOperation = async (userOpRequest: any) => {
-    if (injection.onUserOperationSigned) {
-      // Hook provided: use backend validation and submission
-      return await injection.onUserOperationSigned(userOpRequest);
-    } else {
-      // No hook: submit directly to bundler
-      console.log({ userOpRequest });
-      const hash = await bundler.sendUserOperation(userOpRequest);
-      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash });
-      return txReceipt;
-    }
-  };
-
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
     eventListeners[event]?.forEach((listener) => listener(payload));
   };
