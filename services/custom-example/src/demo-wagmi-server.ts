@@ -16,7 +16,6 @@ import type { Chain } from 'wagmi/chains';
 import { baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { createUserServerInjection } from './demo-server-injection';
-import { ServerStorage } from './storage-implementations';
 
 type ConfigMap = Record<
   string,
@@ -80,7 +79,6 @@ const rpcs = <const>{
  */
 export function createServerConfigForUser(userId: string) {
   const userInjection = createUserServerInjection(userId);
-  const userSessionStorage = new ServerStorage('/api/storage', userId);
 
   const { gianoProvider } = createGianoProvider({
     bundler: configMap[envConfig.configKey].bundler,
@@ -89,7 +87,6 @@ export function createServerConfigForUser(userId: string) {
     initialChainId: configMap[envConfig.configKey].chain.id,
     injection: userInjection,
     gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
-    storage: userSessionStorage,
   });
 
   const providerTransport = custom(gianoProvider);

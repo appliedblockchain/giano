@@ -8,7 +8,6 @@ import type { Chain } from 'wagmi/chains';
 import { baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { gianoInjection } from './giano-injection';
-import { createGianoStorage } from './storage-implementations';
 
 console.log('Using config:', envConfig);
 
@@ -72,7 +71,6 @@ export const { gianoClient, gianoProvider } = createGianoProvider({
   initialChainId: configMap[envConfig.configKey].chain.id,
   injection: gianoInjection,
   gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
-  storage: createGianoStorage(),
 });
 
 const providerTransport = custom(gianoProvider);
