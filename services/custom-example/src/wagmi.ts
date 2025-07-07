@@ -57,6 +57,10 @@ const configMap: ConfigMap = {
   },
 };
 
+export const getBundler = () => {
+  return configMap[envConfig.configKey].bundler;
+};
+
 const rpcs = <const>{
   chains: [configMap[envConfig.configKey].chain],
   transports: {
