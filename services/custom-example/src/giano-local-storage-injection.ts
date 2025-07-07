@@ -1,5 +1,5 @@
 import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
-import type { Hex } from 'viem';
+import { isHex, type Hex } from 'viem';
 
 function hexToBytes(hex: string) {
   hex = hex.replace(/^0x/g, '');
@@ -95,7 +95,11 @@ export const gianoLocalStorageInjection: GianoProviderInjection = {
     // get the public key from the local storage based on the onCredentialKey injection method
     const publicKey = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key`);
     const publicKeyY = localStorage.getItem(`gpk-${Buffer.from(rawId).toString('hex')}-public-key-y`);
-    if (!publicKey || !publicKeyY) {
+
+    if (
+      !isHex(publicKey, { strict: true }) ||
+      !isHex(publicKeyY, { strict: true })
+    ) {
       throw new Error('Public key not found');
     }
     return { x: publicKey, y: publicKeyY };
