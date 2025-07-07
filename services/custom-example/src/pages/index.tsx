@@ -7,7 +7,7 @@ import { formatEther, parseEther } from 'viem';
 import { encodeFunctionData } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
-import { gianoConnector } from '../wagmi';
+import { getBundler, gianoConnector } from '../wagmi';
 import styles from '../styles/Home.module.css';
 
 const Home: NextPage = () => {
@@ -96,12 +96,16 @@ const Home: NextPage = () => {
   const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
-    void writeContractAsync({
+
+    const userOperationHash = await writeContractAsync({
       address: config.privateErc20Address,
       abi: privateErc20Abi,
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
     });
+
+    const userOpReceipt = await getBundler().waitForUserOperationReceipt({ hash: userOperationHash });
+    console.log('✅ Transaction receipt received:', userOpReceipt.receipt);
   };
 
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
