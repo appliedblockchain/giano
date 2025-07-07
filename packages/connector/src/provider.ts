@@ -5,6 +5,7 @@ import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstra
 import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
+import { Hash } from 'viem'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -291,7 +292,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       emit('accountsChanged', [smartAccountAddress]);
       return [smartAccountAddress];
     },
-    eth_sendTransaction: async (calls: Call[]) => {
+    eth_sendTransaction: async (calls: Call[]): Promise<Hash> => {
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
