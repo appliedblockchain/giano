@@ -54,8 +54,6 @@ export type GianoProviderInjection = {
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex }>;
   onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>;
-  /** @deprecated */
-  onUserOperationSigned?: (signedUserOp: any) => Promise<any>; // optional hook for backend validation and submission
 };
 
 export type CreateGianoProviderParams = {
