@@ -40,6 +40,20 @@ function serializeWithBigInt(obj: any): string {
   return JSON.stringify(obj, (key, value) => (typeof value === 'bigint' ? value.toString() : value));
 }
 
+/**
+ * This is a very basic example of an injection implementation, and thus
+ * not recommended for production.
+ * 
+ * This example is pretty simple and straightforward, but it is possible
+ * to implement more complex injection logic. This could be a singleton
+ * with state and extra methods to interact with that state. You can
+ * perform API requests, return injection state data, etc.
+ * 
+ * Perhaps you have an API that has an endpoint that serves the info for
+ * `getNameForCredential` and `getCredentialInfo`, you don't want to call
+ * that endpoint twice, here comes the advantage of introducing state in
+ * the injection object.
+ */
 export const gianoLocalStorageInjection: GianoProviderInjection = {
   getNameForCredential: async () => {
     return 'Giano Passkey';
