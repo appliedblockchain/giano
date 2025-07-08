@@ -1,5 +1,8 @@
-import type { Chain, EIP1193Provider, TransactionRequest, Transport } from 'viem'
-import { createConnector, type CreateConnectorFn } from 'wagmi'
+import type { Chain, TransactionRequest, Transport } from 'viem'
+import { Hash } from 'viem'
+import { UserOperationReceipt } from 'viem/account-abstraction'
+import { Connector, createConnector } from 'wagmi'
+import { GianoProvider } from './provider'
 
 export type SendTransactionFnParams = {
   chain: Chain;
@@ -7,12 +10,19 @@ export type SendTransactionFnParams = {
   request: TransactionRequest;
 };
 export type CreateGianoConnectorParams = {
-  provider: EIP1193Provider;
+  provider: GianoProvider;
 };
 
-export function createGianoConnector({ provider }: CreateGianoConnectorParams): CreateConnectorFn {
-  return createConnector(({ chains }) => {
-    const connector = {
+type GianoConnectorProperties = {
+  waitForUserOperationReceipt: (hash: Hash) => Promise<UserOperationReceipt>;
+}
+
+export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
+  return createConnector<
+    GianoProvider,
+    GianoConnectorProperties
+  >(({ chains }) => {
+    const connector = <const>{
       id: 'giano',
       name: 'Giano Connector',
       type: 'custom',
@@ -27,7 +37,7 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams): 
       getAccounts: async () => {
         return provider.request({ method: 'eth_accounts' });
       },
-      getProvider: async (): Promise<EIP1193Provider> => {
+      getProvider: async () => {
         return provider;
       },
       isAuthorized: async () => {
@@ -61,6 +71,12 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams): 
       onChainChanged: () => {
       },
       onDisconnect: () => {
+      },
+      waitForUserOperationReceipt: async (hash: Hash) => {
+        return provider.request({
+          method: 'waitForUserOperationReceipt',
+          params: [hash],
+        });
       },
     };
 
