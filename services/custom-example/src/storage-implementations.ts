@@ -4,8 +4,11 @@ import type { Hex } from 'viem';
  * Local storage interface for injection implementations
  */
 export type GianoStorage = {
-  // Passkey management
-  getPasskeyId(): Promise<string | null>;
+  // Unified credential info retrieval
+  getCredentialInfo(): Promise<{
+    passkeyId: string | null;
+    challenge: Uint8Array;
+  }>;
   setPasskeyId(id: string): Promise<void>;
   getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null>;
   setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void>;
@@ -31,8 +34,23 @@ export class LocalStorage implements GianoStorage {
     return this.isStorageAvailable();
   }
 
-  // Passkey management
-  async getPasskeyId(): Promise<string | null> {
+  // Unified credential info retrieval
+  async getCredentialInfo(): Promise<{
+    passkeyId: string | null;
+    challenge: Uint8Array;
+  }> {
+    const passkeyId = await this.getPasskeyId();
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    return {
+      passkeyId,
+      challenge,
+    };
+  }
+
+  // Private method for internal use
+  private async getPasskeyId(): Promise<string | null> {
     if (!this.isStorageAvailable()) return null;
     try {
       return localStorage.getItem('gpk-passkey-id');
@@ -86,9 +104,18 @@ export class InMemoryStorage implements GianoStorage {
     return true;
   }
 
-  // Passkey management
-  async getPasskeyId(): Promise<string | null> {
-    return this.passkeyId;
+  // Unified credential info retrieval
+  async getCredentialInfo(): Promise<{
+    passkeyId: string | null;
+    challenge: Uint8Array;
+  }> {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    return {
+      passkeyId: this.passkeyId,
+      challenge,
+    };
   }
 
   async setPasskeyId(id: string): Promise<void> {
@@ -146,13 +173,25 @@ export class ServerStorage implements GianoStorage {
     return navigator.onLine;
   }
 
-  // Passkey management
-  async getPasskeyId(): Promise<string | null> {
+  // Unified credential info retrieval - both passkeyId and challenge from server
+  async getCredentialInfo(): Promise<{
+    passkeyId: string | null;
+    challenge: Uint8Array;
+  }> {
     try {
-      const data = await this.request(`/users/${this.userId}/passkeys`);
-      return data.passkeyId || null;
+      const data = await this.request(`/users/${this.userId}/credential-info`);
+      return {
+        passkeyId: data.passkeyId || null,
+        challenge: new Uint8Array(data.challenge),
+      };
     } catch {
-      return null;
+      // Fallback to local challenge generation if server fails
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      return {
+        passkeyId: null,
+        challenge,
+      };
     }
   }
 

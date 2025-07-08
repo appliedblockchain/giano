@@ -2,8 +2,8 @@ import React, { useEffect, useState, type FormEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
 
-import { config } from '../config';
 import { createServerConfigForUser } from '../demo-wagmi-server';
+import { config } from '../config';
 
 const queryClient = new QueryClient();
 
@@ -424,7 +424,7 @@ function ServerStorageDemo() {
         <h3>🔧 RESTful API Endpoints</h3>
         <ul>
           <li>
-            <code>GET /api/storage/users/&#123;userId&#125;/passkeys</code> - Get passkey data
+            <code>GET /api/storage/users/&#123;userId&#125;/credential-info</code> - Get unified credential info (passkeyId + server-generated challenge)
           </li>
           <li>
             <code>PUT /api/storage/users/&#123;userId&#125;/passkeys</code> - Update passkey data
@@ -439,9 +439,16 @@ function ServerStorageDemo() {
             <code>DELETE /api/storage/users/&#123;userId&#125;/passkeys</code> - Delete passkey data
           </li>
           <li>
+            <code>DELETE /api/storage/users/&#123;userId&#125;/public-keys</code> - Delete all public keys
+          </li>
+          <li>
             <code>GET /api/storage/users/&#123;userId&#125;/all</code> - Get all data (demo only)
           </li>
         </ul>
+        
+        <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f0f9ff', border: '1px solid #0284c7', borderRadius: '4px' }}>
+          <strong>🔐 Security Enhancement:</strong> The new <code>/credential-info</code> endpoint generates challenges server-side for better security, replacing the previous client-side challenge generation.
+        </div>
       </div>
     </div>
   );

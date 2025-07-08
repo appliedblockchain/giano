@@ -24,20 +24,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const userId = path[1];
-    const endpoint = path[2]; // passkeys, public-keys
+    const endpoint = path[2]; // passkeys, public-keys, credential-info
     const subPath = path[3]; // for public-keys/{idHash}
 
     // Get user's storage object
     const userKey = `user:${userId}`;
     const userData: UserData = serverStorage.get(userKey) || {};
 
-    // Handle passkey endpoints: /users/{userId}/passkeys
-    if (endpoint === 'passkeys') {
+    // Handle unified credential info endpoint: /users/{userId}/credential-info
+    if (endpoint === 'credential-info') {
       switch (method) {
         case 'GET':
-          res.status(200).json(userData.passkeys || {});
+          // Generate a secure challenge server-side
+          const challenge = new Uint8Array(32);
+          crypto.getRandomValues(challenge);
+
+          res.status(200).json({
+            passkeyId: userData.passkeys?.passkeyId || null,
+            challenge: Array.from(challenge), // Convert to array for JSON serialization
+          });
           break;
 
+        default:
+          res.setHeader('Allow', ['GET']);
+          res.status(405).end(`Method ${method} Not Allowed`);
+      }
+    }
+
+    // Handle passkey endpoints: /users/{userId}/passkeys
+    else if (endpoint === 'passkeys') {
+      switch (method) {
         case 'PUT':
           if (!userData.passkeys) userData.passkeys = {};
 
@@ -58,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           break;
 
         default:
-          res.setHeader('Allow', ['GET', 'PUT', 'DELETE']);
+          res.setHeader('Allow', ['PUT', 'DELETE']);
           res.status(405).end(`Method ${method} Not Allowed`);
       }
     }

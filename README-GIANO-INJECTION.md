@@ -186,10 +186,42 @@ const provider = createGianoProvider({
 ```
 
 **Example API Endpoints**:
+- `GET /api/storage/users/{userId}/credential-info` - Get unified credential info (passkeyId + server-generated challenge)
 - `GET /api/storage/users/{userId}/passkeys` - Get passkey data
 - `PUT /api/storage/users/{userId}/passkeys` - Update passkey data
 - `GET /api/storage/users/{userId}/public-keys/{idHash}` - Get public key
 - `PUT /api/storage/users/{userId}/public-keys/{idHash}` - Store public key
+
+#### New Unified Credential Info Endpoint
+
+The `GET /api/storage/users/{userId}/credential-info` endpoint is the key improvement for server-side storage. It returns both the passkey ID and a server-generated challenge in a single atomic operation:
+
+```json
+{
+  "passkeyId": "base64-encoded-passkey-id-or-null",
+  "challenge": [1, 2, 3, ...] // Array of 32 bytes for the challenge
+}
+```
+
+**Security Benefits**:
+- **Server-side challenge generation**: Ensures challenges are cryptographically secure and can be validated server-side
+- **Atomic operation**: Both credential ID and challenge are retrieved together, preventing race conditions
+- **Centralized validation**: Server can implement additional security measures like rate limiting, challenge expiration, etc.
+
+**Implementation Notes**:
+- The challenge is a 32-byte array generated using `crypto.getRandomValues()`
+- The passkeyId is base64-encoded for JSON transport
+- Returns `null` for passkeyId when no credential exists for the user
+
+### Security Improvements
+
+1. **Server-Generated Challenge**: The challenge is now generated server-side for the server storage implementation, allowing for better validation and security measures.
+
+2. **Unified Retrieval**: Both credential ID and challenge are retrieved in a single atomic operation from the server.
+
+3. **Fallback Safety**: If the server fails, the system falls back to local challenge generation to maintain functionality.
+
+4. **Atomic Operations**: The new `getCredentialInfo()` method ensures both passkeyId and challenge are retrieved atomically, preventing race conditions and improving consistency.
 
 ## Usage Examples
 
@@ -252,10 +284,15 @@ const bobProvider = createUserProvider('bob-456');
 class MyCustomStorage implements GianoStorage {
   constructor(private userId: string) {}
 
-  async getPasskeyId(): Promise<string | null> {
-    // Implement your storage retrieval logic
+  async getCredentialInfo(): Promise<{
+    passkeyId: string | null;
+    challenge: Uint8Array;
+  }> {
+    // Implement your unified credential info retrieval logic
     // Could be: database, API call, file system, etc.
-    return await this.retrievePasskeyId(this.userId);
+    const passkeyId = await this.retrievePasskeyId(this.userId);
+    const challenge = await this.generateChallenge();
+    return { passkeyId, challenge };
   }
 
   async setPasskeyId(id: string): Promise<void> {
@@ -287,6 +324,13 @@ class MyCustomStorage implements GianoStorage {
 
   private async persistPasskeyId(userId: string, passkeyId: string): Promise<void> {
     // Implement based on your storage system
+  }
+
+  private async generateChallenge(): Promise<Uint8Array> {
+    // Generate secure challenge - could be server-side or client-side
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    return challenge;
   }
 
   private async retrievePublicKey(userId: string, credentialId: string): Promise<{ x: Hex; y: Hex } | null> {
@@ -473,7 +517,10 @@ enum ChainType {
 }
 
 interface GianoStorage {
-  getPasskeyId(): Promise<string | null>;
+  getCredentialInfo(): Promise<{
+    passkeyId: string | null;
+    challenge: Uint8Array;
+  }>;
   setPasskeyId(id: string): Promise<void>;
   getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null>;
   setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void>;
