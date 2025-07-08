@@ -7,7 +7,7 @@ import { formatEther, parseEther } from 'viem';
 import { encodeFunctionData } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
-import { getBundler, gianoConnector } from '../wagmi';
+import { gianoConnector } from '../wagmi';
 import styles from '../styles/Home.module.css';
 
 const Home: NextPage = () => {
@@ -104,8 +104,18 @@ const Home: NextPage = () => {
       args: [parseEther(inputMessage.trim())],
     });
 
-    const userOpReceipt = await getBundler().waitForUserOperationReceipt({ hash: userOperationHash });
-    console.log('✅ Transaction receipt received:', userOpReceipt.receipt);
+    const userOpReceipt = await gianoConnector.waitForUserOperationReceipt(userOperationHash);
+    // Without wagmi connector, the provider can be used directly:
+    // const userOpReceipt = await gianoProvider.request({
+    //    method: 'getUserOperationReceipt',
+    //    params: [userOperationHash],
+    // });
+
+    if (userOpReceipt) {
+      console.log('✅ User operation receipt received:', userOpReceipt);
+      return;
+    }
+    console.log('❌ User operation receipt not found');
   };
 
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
