@@ -1,15 +1,21 @@
+/**
+ * DEMO: Wagmi configuration with server-side storage
+ *
+ * ⚠️ This is for demonstration purposes only!
+ * In production, you'd implement proper authentication, user management,
+ * and likely use a different storage strategy (database, etc.)
+ */
+
 import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector';
 import type { Address, Hex, Transport } from 'viem';
 import { custom, http, parseGwei } from 'viem';
-import type { BundlerClient, GetPaymasterDataReturnType, GetPaymasterStubDataReturnType, PaymasterActions } from 'viem/account-abstraction';
+import type { BundlerClient } from 'viem/account-abstraction';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
 import { baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
-import { gianoInjection } from './giano-injection';
-
-console.log('Using config:', envConfig);
+import { createUserServerInjection } from './demo-server-injection';
 
 type ConfigMap = Record<
   string,
@@ -19,6 +25,7 @@ type ConfigMap = Record<
     bundler: BundlerClient;
   }
 >;
+
 const configMap: ConfigMap = {
   hardhat: {
     chain: hardhat,
@@ -28,11 +35,11 @@ const configMap: ConfigMap = {
       transport: http(envConfig.bundlerRpcUrl),
       paymaster: {
         //@ts-ignore - the "required" fields are not needed to fulfill a user op
-        getPaymasterData: async (): Promise<GetPaymasterDataReturnType> => ({
+        getPaymasterData: async () => ({
           paymaster: envConfig.paymasterAddress as Address,
         }),
         //@ts-ignore - the "required" fields are not needed to fulfill a user op
-        getPaymasterStubData: async (): Promise<GetPaymasterStubDataReturnType> => ({
+        getPaymasterStubData: async () => ({
           paymaster: envConfig.paymasterAddress as Address,
         }),
       },
@@ -64,29 +71,32 @@ const rpcs = <const>{
   },
 };
 
-export const { gianoClient, gianoProvider } = createGianoProvider({
-  bundler: configMap[envConfig.configKey].bundler,
-  chains: rpcs.chains,
-  transports: rpcs.transports,
-  initialChainId: configMap[envConfig.configKey].chain.id,
-  injection: gianoInjection,
-  gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
-});
+/**
+ * DEMO: Create server storage config for a specific user
+ *
+ * ⚠️ This is for demonstration purposes only!
+ * In a real app, you'd get userId from your authentication system
+ */
+export function createServerConfigForUser(userId: string) {
+  const userInjection = createUserServerInjection(userId);
 
-const providerTransport = custom(gianoProvider);
+  const { gianoProvider } = createGianoProvider({
+    bundler: configMap[envConfig.configKey].bundler,
+    chains: rpcs.chains,
+    transports: rpcs.transports,
+    initialChainId: configMap[envConfig.configKey].chain.id,
+    injection: userInjection,
+    gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
+  });
 
-const createGianoConnectorFn = createGianoConnector({ provider: gianoProvider });
+  const providerTransport = custom(gianoProvider);
+  const connectorFn = createGianoConnector({ provider: gianoProvider });
 
-export const config = createConfig({
-  chains: [...rpcs.chains],
-  transports: {
-    ...Object.fromEntries(
-      Object.keys(rpcs.transports).map((k) => {
-        return [k, providerTransport];
-      }),
-    ),
-  },
-  connectors: [createGianoConnectorFn],
-});
-
-export const gianoConnector = config.connectors[0];
+  return createConfig({
+    chains: [...rpcs.chains],
+    transports: {
+      ...Object.fromEntries(Object.keys(rpcs.transports).map((k) => [k, providerTransport])),
+    },
+    connectors: [connectorFn],
+  });
+}

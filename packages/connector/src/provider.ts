@@ -6,6 +6,7 @@ import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 
+
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
 }
@@ -171,7 +172,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
     },
     wallet_revokePermissions: () => {
       smartAccount = null;
-      // Clear stored session data
       emit('accountsChanged', [])
       emit('disconnect', {
         code: 4900,
@@ -288,19 +288,6 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
       // Always call the injection callback regardless of deployment status
       await injection.onCredentialKey(credential.raw.rawId, xyVector);
-
-      // Store session data for new credential
-      if (typeof window !== 'undefined') {
-        const rawId = credential.raw.rawId;
-        let rawIdArray: Uint8Array;
-        if (rawId instanceof ArrayBuffer) {
-          rawIdArray = new Uint8Array(rawId);
-        } else if ((rawId as unknown as any) instanceof Uint8Array) {
-          rawIdArray = rawId;
-        } else {
-          rawIdArray = new Uint8Array((rawId as any).buffer || rawId);
-        }
-      }
 
       emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
       emit('accountsChanged', [smartAccountAddress]);
