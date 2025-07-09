@@ -20,6 +20,7 @@ The injection system serves as a bridge between the Giano provider and your appl
 - **Data Persistence**: Storing passkey IDs and public keys
 - **User Identity**: Encoding/decoding user identifiers
 - **Lifecycle Hooks**: Custom logic during credential creation and signing
+- **Transaction Submission**: Optional backend submission of user operations for validation and processing
 
 ### Key Benefits
 
@@ -72,7 +73,15 @@ interface GianoProviderInjection {
   onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>;
 
   // Optional Hooks
-  onUserOperationSigned?: (signedUserOp: any) => Promise<any>; // @deprecated
+  /**
+   * Override for sending user operations manually.
+   * When provided, this function will handle the submission of signed user operations
+   * instead of sending them directly to the bundler.
+   *
+   * @param signedUserOp - The complete signed user operation ready for submission
+   * @returns Promise that resolves to the transaction receipt
+   */
+  submitUserOperation?: (signedUserOp: any) => Promise<any>;
 }
 ```
 
@@ -131,6 +140,11 @@ Manage public key storage and retrieval.
 **getPublicKeyByCredentialId**: Retrieve stored public key coordinates
 **onCredentialKey**: Store public key coordinates for a credential
 
+#### `submitUserOperation()` (Optional)
+Override for custom user operation submission.
+
+This function is only included in the injection when `enableBackendSubmission` is set to `true` in the options. When present, it receives complete signed user operations and should handle their submission to your backend or bundler service, returning the transaction receipt.
+
 ## Storage Implementations
 
 **Important**: Storage implementations are **application-specific** and must be created by developers based on their specific requirements. Giano provides the injection interface but does not include any built-in storage implementations.
@@ -178,7 +192,10 @@ This demo implementation stores data on your server with RESTful API endpoints.
 // This is an example implementation from the demo app
 import { createGianoServerInjection } from './demo-server-injection';
 
-const injection = createGianoServerInjection('user-123', 'https://api.example.com');
+const injection = createGianoServerInjection('user-123', {
+  apiBaseUrl: 'https://api.example.com',
+  enableBackendSubmission: true
+});
 const provider = createGianoProvider({
   injection,
   // ... other config
@@ -252,8 +269,30 @@ const { gianoProvider } = createGianoProvider({
 import { gianoInjection } from './giano-injection';
 
 const { gianoProvider } = createGianoProvider({
-  injection: gianoInjection, // Demo app implementation
+  injection: gianoInjection, // Demo app implementation with backend submission enabled
   // ... other config
+});
+```
+
+### Example: Configuring Backend Submission
+
+You can control whether user operations are submitted through your backend or directly to the bundler:
+
+```typescript
+// Enable backend submission (default for demo app)
+const injectionWithBackend = createGianoInjection({ 
+  enableBackendSubmission: true 
+});
+
+// Disable backend submission - use direct bundler submission
+const injectionDirectSubmission = createGianoInjection({ 
+  enableBackendSubmission: false 
+});
+
+// Custom storage with backend submission
+const injectionCustomStorage = createGianoInjection({
+  storage: new MyCustomStorage(),
+  enableBackendSubmission: true
 });
 ```
 
@@ -263,8 +302,8 @@ const { gianoProvider } = createGianoProvider({
 // This is from the demo application - adapt to your needs
 import { createGianoServerInjection } from './demo-server-injection';
 
-function createUserProvider(userId: string) {
-  const injection = createGianoServerInjection(userId); // Demo app implementation
+function createUserProvider(userId: string, options = {}) {
+  const injection = createGianoServerInjection(userId, options); // Demo app implementation
   
   return createGianoProvider({
     injection,
@@ -272,9 +311,9 @@ function createUserProvider(userId: string) {
   });
 }
 
-// Different users get isolated storage
-const aliceProvider = createUserProvider('alice-123');
-const bobProvider = createUserProvider('bob-456');
+// Different users get isolated storage with backend submission
+const aliceProvider = createUserProvider('alice-123', { enableBackendSubmission: true });
+const bobProvider = createUserProvider('bob-456', { enableBackendSubmission: false }); // Direct bundler submission
 ```
 
 ### Creating Your Own Storage Implementation
@@ -533,11 +572,26 @@ interface GianoStorage {
 These functions are from the demo application and serve as reference implementations:
 
 ```typescript
-// Demo app: Create injection with custom storage
-function createGianoInjection(storage?: GianoStorage): GianoProviderInjection;
+// Demo app: Options for creating Giano injection
+interface CreateGianoInjectionOptions {
+  storage?: GianoStorage;
+  enableBackendSubmission?: boolean;
+}
+
+// Demo app: Create injection with custom storage and options
+function createGianoInjection(options?: CreateGianoInjectionOptions): GianoProviderInjection;
+
+// Demo app: Options for server injection
+interface CreateGianoServerInjectionOptions {
+  apiBaseUrl?: string;
+  enableBackendSubmission?: boolean;
+}
 
 // Demo app: Create server-side storage injection
-function createGianoServerInjection(userId: string, apiBaseUrl?: string): GianoProviderInjection;
+function createGianoServerInjection(
+  userId: string, 
+  options?: CreateGianoServerInjectionOptions
+): GianoProviderInjection;
 
 // Demo app: Create storage with automatic fallback
 function createGianoStorage(customStorage?: GianoStorage): GianoStorage;

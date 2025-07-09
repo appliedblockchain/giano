@@ -1,7 +1,7 @@
 import type { Call, Hex, PublicClient } from 'viem';
 import { type Address, type Chain, concatHex, createPublicClient, type EIP1193Provider, parseGwei, toHex, type Transport } from 'viem';
 import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction';
-import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
+import { createWebAuthnCredential, toWebAuthnAccount, entryPoint07Address } from 'viem/account-abstraction';
 import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
@@ -55,8 +55,15 @@ export type GianoProviderInjection = {
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex }>;
   onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>;
-  /** @deprecated */
-  onUserOperationSigned?: (signedUserOp: any) => Promise<any>; // optional hook for backend validation and submission
+  /**
+   * Override for sending user operations manually.
+   * When provided, this function will handle the submission of signed user operations
+   * instead of sending them directly to the bundler.
+   *
+   * @param signedUserOp - The complete signed user operation ready for submission
+   * @returns Promise that resolves to the transaction receipt
+   */
+  submitUserOperation?: (signedUserOp: any) => Promise<any>;
 };
 
 export type CreateGianoProviderParams = {
@@ -81,9 +88,46 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
   const eventListeners: Partial<EventListeners> = {};
 
   const submitUserOperation = async (userOpRequest: any) => {
-    if (injection.onUserOperationSigned) {
-      // Hook provided: use backend validation and submission
-      return await injection.onUserOperationSigned(userOpRequest);
+    if (injection.submitUserOperation) {
+      // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
+      const { calls, account, ...options } = userOpRequest;
+
+      // Prepare the user operation with gas estimates
+      const estimate = await bundler.estimateUserOperationGas({ account, calls, ...options });
+      if (!estimate) {
+        throw new Error('Could not estimate user operation');
+      }
+
+      const prepared = await bundler.prepareUserOperation({
+        account,
+        calls,
+        ...options,
+        ...estimate,
+      });
+
+      // Add default gas pricing if not provided
+      const preparedWithGas = {
+        ...prepared,
+        maxFeePerGas: options.maxFeePerGas || parseGwei('200'),
+        maxPriorityFeePerGas: options.maxPriorityFeePerGas || parseGwei('400'),
+      };
+
+      // Sign the user operation
+      const signature = await account.signUserOperation(preparedWithGas);
+
+      // Create the complete signed user operation
+      const signedUserOp = {
+        ...preparedWithGas,
+        sender: await account.getAddress(),
+        signature,
+        account: {
+          entryPoint: {
+            address: entryPoint07Address,
+          },
+        },
+      };
+
+      return await injection.submitUserOperation(signedUserOp);
     } else {
       // No hook: submit directly to bundler
       console.log({ userOpRequest });
