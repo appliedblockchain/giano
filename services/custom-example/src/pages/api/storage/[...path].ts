@@ -1,8 +1,23 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-// In-memory storage on the server
+// Persistent storage that survives module reloads in development
 // In production, you'd use a proper database
-const serverStorage = new Map<string, any>();
+interface GlobalWithStorage {
+  __gianoStorage?: Map<string, any>;
+}
+
+const globalWithStorage = globalThis as GlobalWithStorage;
+
+// Initialize storage - reuse existing if module reloads
+if (!globalWithStorage.__gianoStorage) {
+  globalWithStorage.__gianoStorage = new Map<string, any>();
+  console.log(`[API] Fresh storage initialized`);
+} else {
+  console.log(`[API] Reusing existing storage with ${globalWithStorage.__gianoStorage.size} entries`);
+}
+
+const serverStorage = globalWithStorage.__gianoStorage;
+
 
 type UserData = {
   passkeys?: {

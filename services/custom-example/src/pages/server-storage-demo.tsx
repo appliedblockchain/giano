@@ -36,6 +36,18 @@ function ServerStorageDemo() {
   const { disconnect } = useDisconnect();
   const { sendTransaction } = useSendTransaction();
 
+  // Enhanced disconnect handler with proper cleanup
+  const handleDisconnect = async () => {
+    console.log('[Demo] Disconnecting...');
+    console.log('[Demo] Current state before disconnect:', { isConnected, address });
+    try {
+      await disconnect();
+      console.log('[Demo] Disconnect successful');
+    } catch (error) {
+      console.error('[Demo] Disconnect error:', error);
+    }
+  };
+
   // Function to fetch current server data
   const fetchServerData = async () => {
     setLoading(true);
@@ -262,7 +274,7 @@ function ServerStorageDemo() {
                 </small>
               </p>
             )}
-            <button onClick={() => disconnect()} style={dangerButtonStyle}>
+            <button onClick={handleDisconnect} style={dangerButtonStyle}>
               Disconnect
             </button>
           </div>
