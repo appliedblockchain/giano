@@ -15,12 +15,10 @@ export function createGianoInjection(storage?: GianoStorage): GianoProviderInjec
     },
 
     getCredentialInfo: async () => {
-      const passkeyIdBase64 = await gianoStorage.getPasskeyId();
-      const challenge = new Uint8Array(32);
-      crypto.getRandomValues(challenge);
+      const { passkeyId, challenge } = await gianoStorage.getCredentialInfo();
 
       return {
-        credentialId: passkeyIdBase64 ? new Uint8Array(Buffer.from(passkeyIdBase64, 'base64')) : null,
+        credentialId: passkeyId ? new Uint8Array(Buffer.from(passkeyId, 'base64')) : null,
         challenge,
       };
     },
