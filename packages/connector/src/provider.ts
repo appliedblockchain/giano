@@ -138,10 +138,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       return await injection.submitUserOperation(signedUserOp);
     } else {
       // No hook: submit directly to bundler
-      console.log({ userOpRequest });
-      const hash = await bundler.sendUserOperation(userOpRequest);
-      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash });
-      return txReceipt;
+      return await bundler.sendUserOperation(userOpRequest);
     }
   };
 
