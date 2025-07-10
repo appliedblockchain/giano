@@ -1,9 +1,30 @@
-import { Call, Hex, PublicClient, Hash, createPublicClient, parseGwei, toHex, Address, Chain, concatHex, EIP1193Provider, Transport } from 'viem';
-import type { BundlerClient, SmartAccount, UserOperationReceipt, WebAuthnAccount } from 'viem/account-abstraction';
-import { createWebAuthnCredential, toWebAuthnAccount, entryPoint07Address } from 'viem/account-abstraction';
+import {
+  Call,
+  Hex,
+  PublicClient,
+  Hash,
+  createPublicClient,
+  parseGwei,
+  toHex,
+  Address,
+  Chain,
+  concatHex,
+  EIP1193Provider,
+  Transport,
+} from 'viem';
+import type {
+  BundlerClient,
+  SendUserOperationParameters,
+  SmartAccount,
+  UserOperation,
+  UserOperationReceipt,
+  WebAuthnAccount,
+} from 'viem/account-abstraction';
+import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
 import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
+import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -95,7 +116,11 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
   let client: PublicClient | undefined;
   const eventListeners: Partial<EventListeners> = {};
 
-  const submitUserOperation = async (userOpRequest: any) => {
+  const submitUserOperation = async (
+    userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
+      account: SmartAccount<GianoSmartAccountImplementation>
+    }
+  ) => {
     if (injection.submitUserOperation) {
       // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
       const { calls, account, ...options } = userOpRequest;
@@ -114,7 +139,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       });
 
       // Add default gas pricing if not provided
-      const preparedWithGas = {
+      const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
         ...prepared,
         maxFeePerGas: options.maxFeePerGas || parseGwei('200'),
         maxPriorityFeePerGas: options.maxPriorityFeePerGas || parseGwei('400'),
@@ -130,7 +155,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
         signature,
         account: {
           entryPoint: {
-            address: entryPoint07Address,
+            address: GianoEntryPointAddress,
           },
         },
       };
@@ -411,14 +436,16 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
       return smartAccount.signUserOperation({ ...userOp });
     },
-    eth_sendSignedUserOperation: async ([signedUserOp]: [any]) => {
-      const op = { ...signedUserOp };
+    eth_sendSignedUserOperation: async ([signedUserOp]: [UserOperation<GianoEntryPointVersion>]) => {
       console.log('eth_sendSignedUserOperation', { signedUserOp });
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
 
-      return await submitUserOperation(op);
+      return await submitUserOperation({
+        account: smartAccount,
+        ...signedUserOp
+      });
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options });
