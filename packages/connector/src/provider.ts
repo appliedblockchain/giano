@@ -121,47 +121,45 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       account: SmartAccount<GianoSmartAccountImplementation>
     }
   ) => {
-    if (injection.submitUserOperation) {
-      // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
-
-      // Prepare the user operation with gas estimates
-      const estimate = await bundler.estimateUserOperationGas(userOpRequest);
-      if (!estimate) {
-        throw new Error('Could not estimate user operation');
-      }
-
-      const prepared = await bundler.prepareUserOperation({
-        ...userOpRequest,
-        ...estimate,
-      });
-
-      // Add default gas pricing if not provided
-      const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
-        ...prepared,
-        maxFeePerGas: userOpRequest.maxFeePerGas || parseGwei('200'),
-        maxPriorityFeePerGas: userOpRequest.maxPriorityFeePerGas || parseGwei('400'),
-      };
-
-      // Sign the user operation
-      const signature = await userOpRequest.account.signUserOperation(preparedWithGas);
-
-      // Create the complete signed user operation
-      const signedUserOp = {
-        ...preparedWithGas,
-        sender: await userOpRequest.account.getAddress(),
-        signature,
-        account: {
-          entryPoint: {
-            address: GianoEntryPointAddress,
-          },
-        },
-      };
-
-      return await injection.submitUserOperation(signedUserOp);
-    } else {
-      // No hook: submit directly to bundler
+    if (injection.submitUserOperation === undefined) {
       return await bundler.sendUserOperation(userOpRequest);
     }
+    // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
+
+    // Prepare the user operation with gas estimates
+    const estimate = await bundler.estimateUserOperationGas(userOpRequest);
+    if (!estimate) {
+      throw new Error('Could not estimate user operation');
+    }
+
+    const prepared = await bundler.prepareUserOperation({
+      ...userOpRequest,
+      ...estimate,
+    });
+
+    // Add default gas pricing if not provided
+    const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
+      ...prepared,
+      maxFeePerGas: userOpRequest.maxFeePerGas || parseGwei('200'),
+      maxPriorityFeePerGas: userOpRequest.maxPriorityFeePerGas || parseGwei('400'),
+    };
+
+    // Sign the user operation
+    const signature = await userOpRequest.account.signUserOperation(preparedWithGas);
+
+    // Create the complete signed user operation
+    const signedUserOp = {
+      ...preparedWithGas,
+      sender: await userOpRequest.account.getAddress(),
+      signature,
+      account: {
+        entryPoint: {
+          address: GianoEntryPointAddress,
+        },
+      },
+    };
+
+    return await injection.submitUserOperation(signedUserOp);
   };
 
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
