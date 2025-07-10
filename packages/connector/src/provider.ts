@@ -80,9 +80,9 @@ export type GianoProviderInjection = {
    * instead of sending them directly to the bundler.
    *
    * @param signedUserOp - The complete signed user operation ready for submission
-   * @returns Promise that resolves to the transaction receipt
+   * @returns Promise that resolves to the user operation hash
    */
-  submitUserOperation?: (signedUserOp: any) => Promise<any>;
+  submitUserOperation?: (signedUserOp: UserOperation<GianoEntryPointVersion>) => Promise<Hash>;
 };
 
 export type CreateGianoProviderParams = {
