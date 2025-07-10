@@ -1,5 +1,5 @@
 import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
-import type { Hex } from 'viem';
+import { isHex, type Hex } from 'viem';
 import { createGianoStorage, type GianoStorage, InMemoryStorage } from './storage-implementations';
 import { bytesToHex, concatBytes, hexToBytes, padBytes, serializeWithBigInt } from './utils';
 
@@ -73,7 +73,8 @@ export function createGianoInjection(options: CreateGianoInjectionOptions = {}):
 
     getPublicKeyByCredentialId: async (rawId: ArrayBuffer) => {
       const publicKey = await gianoStorage.getPublicKey(rawId);
-      if (!publicKey) {
+
+      if (!publicKey || !isHex(publicKey.x, { strict: true }) || !isHex(publicKey.y, { strict: true })) {
         throw new Error('Public key not found');
       }
       return publicKey;

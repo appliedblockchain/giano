@@ -1,11 +1,9 @@
-import type { Call, Hex, PublicClient } from 'viem';
-import { type Address, type Chain, concatHex, createPublicClient, type EIP1193Provider, parseGwei, toHex, type Transport } from 'viem';
-import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction';
+import { Call, Hex, PublicClient, Hash, createPublicClient, parseGwei, toHex, Address, Chain, concatHex, EIP1193Provider, Transport } from 'viem';
+import type { BundlerClient, SmartAccount, UserOperationReceipt, WebAuthnAccount } from 'viem/account-abstraction';
 import { createWebAuthnCredential, toWebAuthnAccount, entryPoint07Address } from 'viem/account-abstraction';
-import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
+import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
-
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -79,6 +77,16 @@ type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP119
 type EventListeners = {
   [E in keyof EIP1193EventMap]: Set<EventHandler<E>>;
 };
+
+type GianoProviderCustomMethods = [{
+  Method: 'waitForUserOperationReceipt';
+  Parameters: [hash: Hash];
+  ReturnType: UserOperationReceipt;
+}]
+
+export type GianoProvider = EIP1193Provider & {
+  request: EIP1193RequestFn<GianoProviderCustomMethods>
+}
 
 export const createGianoProvider = ({ transports, chains, initialChainId, bundler, injection, gianoSmartWalletFactoryAddress }: CreateGianoProviderParams) => {
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
@@ -337,12 +345,15 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       emit('accountsChanged', [smartAccountAddress]);
       return [smartAccountAddress];
     },
-    eth_sendTransaction: async (calls: Call[]) => {
+    eth_sendTransaction: async (calls: Call[]): Promise<Hash> => {
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
 
       return await submitUserOperation({ calls, account: smartAccount });
+    },
+    waitForUserOperationReceipt: async ([hash]: [Hash]) => {
+      return bundler.waitForUserOperationReceipt({ hash });
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -445,7 +456,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }]);
 
-  const provider: EIP1193Provider = {
+  const provider: GianoProvider = {
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
 
