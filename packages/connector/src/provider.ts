@@ -345,8 +345,12 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
         try {
           console.log('Deploying smart account...');
-          await methods.eth_sendTransaction([deploymentTx]);
-          console.log('Smart account deployed successfully');
+          const deploymentHash = await methods.eth_sendTransaction([deploymentTx]);
+          console.log('Smart account deployment submitted with hash:', deploymentHash);
+
+          // Wait for the deployment transaction to be confirmed
+          const deploymentReceipt = await bundler.waitForUserOperationReceipt({ hash: deploymentHash });
+          console.log('Smart account deployed successfully:', deploymentReceipt);
         } catch (error) {
           console.warn('Failed to deploy smart account:', error);
           // If deployment fails, the account will be deployed on the first actual transaction
