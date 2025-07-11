@@ -79,7 +79,7 @@ interface GianoProviderInjection {
    * instead of sending them directly to the bundler.
    *
    * @param signedUserOp - The complete signed user operation ready for submission
-   * @returns Promise that resolves to the transaction receipt
+   * @returns Promise that resolves to the transaction hash
    */
   submitUserOperation?: (signedUserOp: any) => Promise<any>;
 }
@@ -143,7 +143,36 @@ Manage public key storage and retrieval.
 #### `submitUserOperation()` (Optional)
 Override for custom user operation submission.
 
-This function is only included in the injection when `enableBackendSubmission` is set to `true` in the options. When present, it receives complete signed user operations and should handle their submission to your backend or bundler service, returning the transaction receipt.
+This function is only included in the injection when `enableBackendSubmission` is set to `true` in the options. When present, it receives complete signed user operations and should handle their submission to your backend or bundler service, returning the transaction hash. The frontend can then use bundler wait functions to wait for the receipt, giving developers full control over the waiting process.
+
+### Transaction Flow with Backend Submission
+
+When `submitUserOperation` is provided, the transaction flow works as follows:
+
+1. **Preparation**: The provider prepares and signs the user operation
+2. **Backend Submission**: The injection's `submitUserOperation` function submits the signed operation to your backend
+3. **Immediate Response**: The backend returns the transaction hash immediately (no waiting)
+4. **Frontend Waiting**: The frontend uses bundler methods like `waitForUserOperationReceipt(hash)` to wait for the receipt
+
+**Benefits of Hash-Only Response**:
+- **Better Performance**: Backend responds immediately instead of waiting for confirmation
+- **More Control**: Developers can implement custom waiting logic, timeouts, and error handling
+- **Scalability**: Backend doesn't hold connections open for long periods
+- **Flexibility**: Frontend can show progress indicators, implement retries, or handle timeouts differently
+
+**Example Flow**:
+```typescript
+// Frontend transaction call
+const hash = await writeContractAsync({
+  address: tokenAddress,
+  abi: tokenAbi,
+  functionName: 'transfer',
+  args: [recipient, amount],
+});
+
+// Frontend handles waiting with full control
+const receipt = await gianoConnector.waitForUserOperationReceipt(hash);
+```
 
 ## Storage Implementations
 
@@ -429,6 +458,26 @@ const customInjection: GianoProviderInjection = {
   },
 
   // ... implement other required methods
+
+  // Optional: Custom backend submission
+  submitUserOperation: async (signedUserOp) => {
+    // Submit to your backend for validation and bundler submission
+    const response = await fetch('/api/submit-userop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signedUserOp),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Backend submission failed: ${errorData.error}`);
+    }
+
+    const result = await response.json();
+
+    // Return just the hash - frontend handles waiting
+    return result.hash;
+  },
 };
 ```
 
@@ -502,6 +551,70 @@ const secureInjection: GianoProviderInjection = {
 };
 ```
 
+### Transaction Handling
+
+When implementing `submitUserOperation`, follow these patterns for optimal user experience:
+
+```typescript
+const userControlledInjection: GianoProviderInjection = {
+  // ... other methods
+
+  submitUserOperation: async (signedUserOp) => {
+    try {
+      // Submit to backend - returns hash immediately
+      const response = await fetch('/api/submit-userop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(signedUserOp),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Backend submission failed: ${errorData.error}`);
+      }
+
+      const result = await response.json();
+
+      // Return hash immediately - let frontend control waiting
+      return result.hash;
+    } catch (error) {
+      console.error('Transaction submission failed:', error);
+      throw error;
+    }
+  },
+};
+```
+
+**Frontend Waiting Patterns**:
+
+```typescript
+// Basic waiting with default timeout
+const hash = await writeContractAsync({...});
+const receipt = await gianoConnector.waitForUserOperationReceipt(hash);
+
+// Custom timeout handling
+const hash = await writeContractAsync({...});
+const receipt = await Promise.race([
+  gianoConnector.waitForUserOperationReceipt(hash),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Transaction timeout')), 60000)
+  )
+]);
+
+// Progress indication
+const hash = await writeContractAsync({...});
+const progressInterval = setInterval(() => {
+  console.log('Waiting for transaction confirmation...');
+}, 1000);
+
+try {
+  const receipt = await gianoConnector.waitForUserOperationReceipt(hash);
+  console.log('Transaction confirmed!', receipt);
+} finally {
+  clearInterval(progressInterval);
+}
+```
+
 ### Error Handling
 
 Implement robust error handling in your injection methods:
@@ -540,6 +653,13 @@ const testInjection: GianoProviderInjection = {
   onCredentialCreated: async () => {
     console.log('Test: Credential created');
     return null;
+  },
+
+  // Test implementation for backend submission
+  submitUserOperation: async (signedUserOp) => {
+    console.log('Test: Submitting user operation', signedUserOp);
+    // Return a mock hash for testing
+    return '0x1234567890abcdef1234567890abcdef12345678';
   },
 
   // ... other test implementations

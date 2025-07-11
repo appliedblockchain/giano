@@ -81,51 +81,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const hash = rpcResult.result;
     console.log('UserOp submitted with hash:', hash);
 
-    // Step 4: Wait for receipt using direct RPC
-    let receipt = null;
-    let attempts = 0;
-    const maxAttempts = 600; // 5 minutes max (600 * 500ms = 300 seconds)
-
-    while (!receipt && attempts < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms
-
-      const getReceiptId = ++rpcIdCounter;
-      const receiptResponse = await fetch(config.bundlerRpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: getReceiptId,
-          method: 'eth_getUserOperationReceipt',
-          params: [hash],
-        }),
-      });
-
-      const receiptResult = await receiptResponse.json();
-
-      if (receiptResult.result) {
-        receipt = receiptResult.result;
-        break;
-      }
-
-      attempts++;
-    }
-
-    if (!receipt) {
-      return res.status(408).json({
-        error: 'Request timeout',
-        details: 'User operation was submitted but timed out waiting for receipt after 5 minutes',
-        hash,
-      });
-    }
-
-    console.log('Transaction receipt received:', receipt);
-
+    // Return just the hash - let the frontend handle waiting for receipt
     res.status(200).json({
       success: true,
       hash,
-      receipt,
-      message: 'User operation validated and submitted successfully',
+      message: 'User operation submitted successfully',
     });
   } catch (error) {
     console.error('UserOp submission error:', error);

@@ -103,8 +103,8 @@ export function createGianoInjection(options: CreateGianoInjectionOptions = {}):
           const result = await response.json();
           console.log('Backend submission successful:', result);
 
-          // Return the transaction receipt from backend
-          return result.receipt;
+          // Return the transaction hash - frontend will handle waiting for receipt
+          return result.hash;
         } catch (error) {
           console.error('UserOp submission failed:', error);
           throw error;
