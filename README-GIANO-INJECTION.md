@@ -79,9 +79,9 @@ interface GianoProviderInjection {
    * instead of sending them directly to the bundler.
    *
    * @param signedUserOp - The complete signed user operation ready for submission
-   * @returns Promise that resolves to the transaction hash
+   * @returns Promise that resolves to the user operation hash
    */
-  submitUserOperation?: (signedUserOp: any) => Promise<any>;
+  submitUserOperation?: (signedUserOp: UserOperation<GianoEntryPointVersion>) => Promise<Hash>;
 }
 ```
 
@@ -143,7 +143,7 @@ Manage public key storage and retrieval.
 #### `submitUserOperation()` (Optional)
 Override for custom user operation submission.
 
-This function is only included in the injection when `enableBackendSubmission` is set to `true` in the options. When present, it receives complete signed user operations and should handle their submission to your backend or bundler service, returning the transaction hash. The frontend can then use bundler wait functions to wait for the receipt, giving developers full control over the waiting process.
+This function is only included in the injection when `enableBackendSubmission` is set to `true` in the options. When present, it receives complete signed user operations and should handle their submission to your backend or bundler service, returning the user operation hash. The frontend can then use bundler/connector wait functions to wait for the receipt, giving developers full control over the waiting process.
 
 ### Transaction Flow with Backend Submission
 
@@ -151,8 +151,8 @@ When `submitUserOperation` is provided, the transaction flow works as follows:
 
 1. **Preparation**: The provider prepares and signs the user operation
 2. **Backend Submission**: The injection's `submitUserOperation` function submits the signed operation to your backend
-3. **Immediate Response**: The backend returns the transaction hash immediately (no waiting)
-4. **Frontend Waiting**: The frontend uses bundler methods like `waitForUserOperationReceipt(hash)` to wait for the receipt
+3. **Immediate Response**: The backend returns the user operation hash immediately (no waiting)
+4. **Frontend Waiting**: The frontend uses bundler/connector methods like `waitForUserOperationReceipt(hash)` to wait for the receipt
 
 **Benefits of Hash-Only Response**:
 - **Better Performance**: Backend responds immediately instead of waiting for confirmation
@@ -475,7 +475,7 @@ const customInjection: GianoProviderInjection = {
 
     const result = await response.json();
 
-    // Return just the hash - frontend handles waiting
+    // Return just the user operation hash - frontend handles waiting
     return result.hash;
   },
 };
@@ -575,7 +575,7 @@ const userControlledInjection: GianoProviderInjection = {
 
       const result = await response.json();
 
-      // Return hash immediately - let frontend control waiting
+      // Return user operation hash immediately - let frontend control waiting
       return result.hash;
     } catch (error) {
       console.error('Transaction submission failed:', error);
