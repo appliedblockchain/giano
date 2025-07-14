@@ -78,13 +78,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw new Error(`Bundler RPC error: ${rpcResult.error.message}`);
     }
 
-    const hash = rpcResult.result;
-    console.log('UserOp submitted with hash:', hash);
+    const userOperationHash = rpcResult.result;
+    console.log('UserOp submitted with hash:', userOperationHash);
 
-    // Return just the hash - let the frontend handle waiting for receipt
+    // Return just the user operation hash - let the frontend handle waiting for receipt
     res.status(200).json({
       success: true,
-      hash,
+      userOperationHash,
       message: 'User operation submitted successfully',
     });
   } catch (error) {
