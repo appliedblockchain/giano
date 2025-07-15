@@ -1,11 +1,30 @@
-import type { Call, Hex, PublicClient } from 'viem';
-import { type Address, type Chain, concatHex, createPublicClient, type EIP1193Provider, parseGwei, toHex, type Transport } from 'viem';
-import type { BundlerClient, SmartAccount, WebAuthnAccount } from 'viem/account-abstraction';
+import {
+  Call,
+  Hex,
+  PublicClient,
+  Hash,
+  createPublicClient,
+  parseGwei,
+  toHex,
+  Address,
+  Chain,
+  concatHex,
+  EIP1193Provider,
+  Transport,
+} from 'viem';
+import type {
+  BundlerClient,
+  SendUserOperationParameters,
+  SmartAccount,
+  UserOperation,
+  UserOperationReceipt,
+  WebAuthnAccount,
+} from 'viem/account-abstraction';
 import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
-import type { EIP1193EventMap, EIP1193Parameters } from 'viem/types/eip1193';
+import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
-
+import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -55,8 +74,15 @@ export type GianoProviderInjection = {
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex }>;
   onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>;
-  /** @deprecated */
-  onUserOperationSigned?: (signedUserOp: any) => Promise<any>; // optional hook for backend validation and submission
+  /**
+   * Override for sending user operations manually.
+   * When provided, this function will handle the submission of signed user operations
+   * instead of sending them directly to the bundler.
+   *
+   * @param signedUserOp - The complete signed user operation ready for submission
+   * @returns Promise that resolves to the user operation hash
+   */
+  submitUserOperation?: (signedUserOp: UserOperation<GianoEntryPointVersion>) => Promise<Hash>;
 };
 
 export type CreateGianoProviderParams = {
@@ -73,6 +99,16 @@ type EventListeners = {
   [E in keyof EIP1193EventMap]: Set<EventHandler<E>>;
 };
 
+type GianoProviderCustomMethods = [{
+  Method: 'waitForUserOperationReceipt';
+  Parameters: [hash: Hash];
+  ReturnType: UserOperationReceipt;
+}]
+
+export type GianoProvider = EIP1193Provider & {
+  request: EIP1193RequestFn<GianoProviderCustomMethods>
+}
+
 export const createGianoProvider = ({ transports, chains, initialChainId, bundler, injection, gianoSmartWalletFactoryAddress }: CreateGianoProviderParams) => {
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
@@ -80,17 +116,50 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
   let client: PublicClient | undefined;
   const eventListeners: Partial<EventListeners> = {};
 
-  const submitUserOperation = async (userOpRequest: any) => {
-    if (injection.onUserOperationSigned) {
-      // Hook provided: use backend validation and submission
-      return await injection.onUserOperationSigned(userOpRequest);
-    } else {
-      // No hook: submit directly to bundler
-      console.log({ userOpRequest });
-      const hash = await bundler.sendUserOperation(userOpRequest);
-      const { receipt: txReceipt } = await bundler.waitForUserOperationReceipt({ hash });
-      return txReceipt;
+  const submitUserOperation = async (
+    userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
+      account: SmartAccount<GianoSmartAccountImplementation>
     }
+  ) => {
+    if (injection.submitUserOperation === undefined) {
+      return await bundler.sendUserOperation(userOpRequest);
+    }
+    // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
+
+    // Prepare the user operation with gas estimates
+    const estimate = await bundler.estimateUserOperationGas(userOpRequest);
+    if (!estimate) {
+      throw new Error('Could not estimate user operation');
+    }
+
+    const prepared = await bundler.prepareUserOperation({
+      ...userOpRequest,
+      ...estimate,
+    });
+
+    // Add default gas pricing if not provided
+    const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
+      ...prepared,
+      maxFeePerGas: userOpRequest.maxFeePerGas || parseGwei('200'),
+      maxPriorityFeePerGas: userOpRequest.maxPriorityFeePerGas || parseGwei('400'),
+    };
+
+    // Sign the user operation
+    const signature = await userOpRequest.account.signUserOperation(preparedWithGas);
+
+    // Create the complete signed user operation
+    const signedUserOp = {
+      ...preparedWithGas,
+      sender: await userOpRequest.account.getAddress(),
+      signature,
+      account: {
+        entryPoint: {
+          address: GianoEntryPointAddress,
+        },
+      },
+    };
+
+    return await injection.submitUserOperation(signedUserOp);
   };
 
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
@@ -276,8 +345,12 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
         try {
           console.log('Deploying smart account...');
-          await methods.eth_sendTransaction([deploymentTx]);
-          console.log('Smart account deployed successfully');
+          const deploymentHash = await methods.eth_sendTransaction([deploymentTx]);
+          console.log('Smart account deployment submitted with hash:', deploymentHash);
+
+          // Wait for the deployment transaction to be confirmed
+          const deploymentReceipt = await bundler.waitForUserOperationReceipt({ hash: deploymentHash });
+          console.log('Smart account deployed successfully:', deploymentReceipt);
         } catch (error) {
           console.warn('Failed to deploy smart account:', error);
           // If deployment fails, the account will be deployed on the first actual transaction
@@ -293,12 +366,15 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       emit('accountsChanged', [smartAccountAddress]);
       return [smartAccountAddress];
     },
-    eth_sendTransaction: async (calls: Call[]) => {
+    eth_sendTransaction: async (calls: Call[]): Promise<Hash> => {
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
 
       return await submitUserOperation({ calls, account: smartAccount });
+    },
+    waitForUserOperationReceipt: async ([hash]: [Hash]) => {
+      return bundler.waitForUserOperationReceipt({ hash });
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -359,14 +435,16 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
       return smartAccount.signUserOperation({ ...userOp });
     },
-    eth_sendSignedUserOperation: async ([signedUserOp]: [any]) => {
-      const op = { ...signedUserOp };
+    eth_sendSignedUserOperation: async ([signedUserOp]: [UserOperation<GianoEntryPointVersion>]) => {
       console.log('eth_sendSignedUserOperation', { signedUserOp });
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
 
-      return await submitUserOperation(op);
+      return await submitUserOperation({
+        account: smartAccount,
+        ...signedUserOp
+      });
     },
     eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
       console.log('eth_prepareUserOperation', { calls, options });
@@ -401,7 +479,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }]);
 
-  const provider: EIP1193Provider = {
+  const provider: GianoProvider = {
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
 

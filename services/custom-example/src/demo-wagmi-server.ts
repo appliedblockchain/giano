@@ -98,5 +98,7 @@ export function createServerConfigForUser(userId: string) {
       ...Object.fromEntries(Object.keys(rpcs.transports).map((k) => [k, providerTransport])),
     },
     connectors: [connectorFn],
+    // Disable wagmi persistence since we're using server-side storage
+    storage: null,
   });
 }

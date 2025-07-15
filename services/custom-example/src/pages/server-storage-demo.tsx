@@ -1,9 +1,10 @@
-import React, { useEffect, useState, type FormEvent } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi';
-
-import { createServerConfigForUser } from '../demo-wagmi-server';
-import { config } from '../config';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Hash } from 'viem'
+import { UserOperationReceipt } from 'viem/account-abstraction'
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi'
+import { createServerConfigForUser } from '../demo-wagmi-server'
+import { gianoConnector } from '../wagmi'
 
 const queryClient = new QueryClient();
 
@@ -30,11 +31,25 @@ function ServerStorageDemo() {
   const [serverData, setServerData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isWaitingReceiptFor, setIsWaitingReceiptFor] = useState<Hash | null>(null);
+  const [userOperationReceipt, setUserOperationReceipt] = useState<UserOperationReceipt | null>(null);
 
   const { connect, connectors } = useConnect();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { sendTransaction } = useSendTransaction();
+
+  // Enhanced disconnect handler with proper cleanup
+  const handleDisconnect = async () => {
+    console.log('[Demo] Disconnecting...');
+    console.log('[Demo] Current state before disconnect:', { isConnected, address });
+    try {
+      await disconnect();
+      console.log('[Demo] Disconnect successful');
+    } catch (error) {
+      console.error('[Demo] Disconnect error:', error);
+    }
+  };
 
   // Function to fetch current server data
   const fetchServerData = async () => {
@@ -98,6 +113,19 @@ function ServerStorageDemo() {
     window.location.href = currentUrl.toString();
   };
 
+  const waitForReceipt = async (userOperationHash: Hash) => {
+    try {
+      console.log('⏳ Waiting for user operation receipt:', userOperationHash);
+      const receipt = await gianoConnector.waitForUserOperationReceipt(userOperationHash);
+      console.log('✅ User operation receipt received:', receipt);
+      setUserOperationReceipt(receipt);
+    } catch (error) {
+      console.error('❌ Failed to get user operation receipt:', error);
+    } finally {
+      setIsWaitingReceiptFor(null);
+    }
+  };
+
   // Send empty transaction function
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
@@ -107,8 +135,14 @@ function ServerStorageDemo() {
         value: 0n,
       },
       {
-        onSuccess: (...params) => console.log(params),
-        onError: (error) => console.error('Transaction failed:', error),
+        onSuccess: (userOperationHash, variables, context) => {
+          console.log('✅ User operation submitted successfully!', {
+            userOperationHash, variables, context
+          });
+          setIsWaitingReceiptFor(userOperationHash);
+          waitForReceipt(userOperationHash);
+        },
+        onError: (error) => console.error('❌ User operation submission failed:', error),
       },
     );
   };
@@ -153,8 +187,144 @@ function ServerStorageDemo() {
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <h1>🖥️ Server Storage Demo</h1>
+    <>
+      {/* CSS Animation for spinner */}
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+      
+      {/* Waiting Modal for user operation receipt */}
+      {isWaitingReceiptFor && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            textAlign: 'center',
+            maxWidth: '600px',
+            width: '90%',
+          }}>
+            <h2 style={{ marginBottom: '1rem' }}>🔄 Processing User Operation</h2>
+            <p style={{ marginBottom: '1rem', color: '#666' }}>
+              Waiting for user operation transaction receipt...
+            </p>
+            <div style={{
+              display: 'inline-block',
+              width: '40px',
+              height: '40px',
+              border: '4px solid #f3f3f3',
+              borderTop: '4px solid #3b82f6',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }} />
+            <p style={{ 
+              marginTop: '1rem', 
+              fontSize: '12px', 
+              color: '#999',
+              fontFamily: 'monospace'
+            }}>
+              Hash: {isWaitingReceiptFor.slice(0, 10)}...{isWaitingReceiptFor.slice(-8)}
+            </p>
+                      </div>
+          </div>
+        )}
+
+        {/* User Operation Receipt Modal */}
+        {userOperationReceipt && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+          }}>
+            <div style={{
+              backgroundColor: 'white',
+              padding: '2rem',
+              borderRadius: '8px',
+              textAlign: 'center',
+              maxWidth: '600px',
+              width: '90%',
+            }}>
+              <h2 style={{ marginBottom: '1rem', color: '#10b981' }}>✅ Transaction Complete!</h2>
+              <p style={{ marginBottom: '1.5rem', color: '#666' }}>
+                Your user operation has been successfully processed and confirmed on the blockchain.
+              </p>
+              
+              <div style={{
+                backgroundColor: '#f0f9ff',
+                padding: '1rem',
+                borderRadius: '4px',
+                marginBottom: '1.5rem',
+                textAlign: 'left',
+              }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', color: '#1e40af' }}>Receipt Details:</h4>
+                <p style={{ 
+                  margin: '0.25rem 0', 
+                  fontSize: '12px', 
+                  fontFamily: 'monospace',
+                  color: '#374151'
+                }}>
+                  <strong>Hash:</strong> {userOperationReceipt.receipt?.transactionHash || 'N/A'}
+                </p>
+                <p style={{ 
+                  margin: '0.25rem 0', 
+                  fontSize: '12px', 
+                  fontFamily: 'monospace',
+                  color: '#374151'
+                }}>
+                  <strong>Block:</strong> {userOperationReceipt.receipt?.blockNumber || 'N/A'}
+                </p>
+                <p style={{ 
+                  margin: '0.25rem 0', 
+                  fontSize: '12px', 
+                  fontFamily: 'monospace',
+                  color: '#374151'
+                }}>
+                  <strong>Status:</strong> {userOperationReceipt.success ? 'Success' : 'Failed'}
+                </p>
+              </div>
+              
+              <button
+                onClick={() => setUserOperationReceipt(null)}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+        
+        <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+        <h1>🖥️ Server Storage Demo</h1>
 
       {!isClient && (
         <div
@@ -262,7 +432,7 @@ function ServerStorageDemo() {
                 </small>
               </p>
             )}
-            <button onClick={() => disconnect()} style={dangerButtonStyle}>
+            <button onClick={handleDisconnect} style={dangerButtonStyle}>
               Disconnect
             </button>
           </div>
@@ -451,6 +621,7 @@ function ServerStorageDemo() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

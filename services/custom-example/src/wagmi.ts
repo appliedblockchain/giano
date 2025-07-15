@@ -19,6 +19,8 @@ type ConfigMap = Record<
     bundler: BundlerClient;
   }
 >;
+
+// TODO this is creating creating instances for all options unnecessarily
 const configMap: ConfigMap = {
   hardhat: {
     chain: hardhat,

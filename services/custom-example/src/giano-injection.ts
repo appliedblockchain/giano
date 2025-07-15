@@ -1,12 +1,20 @@
-import type { Hex } from 'viem';
-import type { GianoProviderInjection, ChainType } from '@appliedblockchain/giano-connector';
-import { createGianoStorage, InMemoryStorage, type GianoStorage } from './storage-implementations';
-import { hexToBytes, concatBytes, bytesToHex, padBytes } from './utils';
+import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
+import { isHex, type Hex } from 'viem';
+import { createGianoStorage, type GianoStorage, InMemoryStorage } from './storage-implementations';
+import { bytesToHex, concatBytes, hexToBytes, padBytes, serializeWithBigInt } from './utils';
+
+export type CreateGianoInjectionOptions = {
+  /** Custom storage implementation. If not provided, uses localStorage with fallback to in-memory storage */
+  storage?: GianoStorage;
+  /** Enable backend submission of user operations. When true, includes submitUserOperation hook */
+  enableBackendSubmission?: boolean;
+};
 
 /**
- * Create a Giano injection with configurable storage
+ * Create a Giano injection with configurable storage and options
  */
-export function createGianoInjection(storage?: GianoStorage): GianoProviderInjection {
+export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection {
+  const { storage, enableBackendSubmission = false } = options;
   const gianoStorage = createGianoStorage(storage);
 
   return {
@@ -65,7 +73,8 @@ export function createGianoInjection(storage?: GianoStorage): GianoProviderInjec
 
     getPublicKeyByCredentialId: async (rawId: ArrayBuffer) => {
       const publicKey = await gianoStorage.getPublicKey(rawId);
-      if (!publicKey) {
+
+      if (!publicKey || !isHex(publicKey.x, { strict: true }) || !isHex(publicKey.y, { strict: true })) {
         throw new Error('Public key not found');
       }
       return publicKey;
@@ -76,39 +85,44 @@ export function createGianoInjection(storage?: GianoStorage): GianoProviderInjec
       await gianoStorage.setPublicKey(rawId, xyVector);
     },
 
-    // onUserOperationSigned: async (signedUserOp) => {
-    //   try {
-    //     // Submit to backend for validation and bundler submission
-    //     const response = await fetch('/api/submit-userop', {
-    //       method: 'POST',
-    //       body: serializeWithBigInt(signedUserOp),
-    //       headers: { 'Content-Type': 'application/json' },
-    //     });
+    ...(enableBackendSubmission && {
+      submitUserOperation: async (signedUserOp) => {
+        try {
+          // Submit to backend for validation and bundler submission
+          const response = await fetch('/api/submit-userop', {
+            method: 'POST',
+            body: serializeWithBigInt(signedUserOp),
+            headers: { 'Content-Type': 'application/json' },
+          });
 
-    //     if (!response.ok) {
-    //       const errorData = await response.json();
-    //       throw new Error(`Backend submission failed: ${errorData.error}`);
-    //     }
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Backend submission failed: ${errorData.error}`);
+          }
 
-    //     const result = await response.json();
-    //     console.log('Backend submission successful:', result);
+          const result = await response.json();
+          console.log('Backend submission successful:', result);
 
-    //     // Return the transaction receipt from backend
-    //     return result.receipt;
-    //   } catch (error) {
-    //     console.error('UserOp submission failed:', error);
-    //     throw error;
-    //   }
-    // },
+          // Return the user operation hash - frontend will handle waiting for receipt
+          return result.userOperationHash;
+        } catch (error) {
+          console.error('UserOp submission failed:', error);
+          throw error;
+        }
+      },
+    }),
   };
 }
 
 /**
- * Default injection using localStorage with automatic fallback
+ * Default injection using localStorage with automatic fallback and backend submission enabled
  */
-export const gianoInjection = createGianoInjection();
+export const gianoInjection = createGianoInjection({ enableBackendSubmission: true });
 
 /**
- * Memory-only injection (no persistence)
+ * Memory-only injection (no persistence) with backend submission enabled
  */
-export const gianoMemoryInjection = createGianoInjection(new InMemoryStorage());
+export const gianoMemoryInjection = createGianoInjection({
+  storage: new InMemoryStorage(),
+  enableBackendSubmission: true,
+});

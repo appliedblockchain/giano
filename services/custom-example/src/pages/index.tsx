@@ -129,12 +129,25 @@ const Home: NextPage = () => {
   const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
-    void writeContractAsync({
+
+    const userOperationHash = await writeContractAsync({
       address: config.privateErc20Address,
       abi: privateErc20Abi,
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
     });
+
+    // Without wagmi connector, the provider can be used directly:
+    // const userOpReceipt = await gianoProvider.request({
+    //    method: 'waitForUserOperationReceipt',
+    //    params: [userOperationHash],
+    // });
+
+    if (userOpReceipt) {
+      console.log('✅ User operation receipt received:', userOpReceipt);
+      return;
+    }
+    console.log('❌ User operation receipt not found');
   };
 
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {

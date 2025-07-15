@@ -20,6 +20,7 @@ The injection system serves as a bridge between the Giano provider and your appl
 - **Data Persistence**: Storing passkey IDs and public keys
 - **User Identity**: Encoding/decoding user identifiers
 - **Lifecycle Hooks**: Custom logic during credential creation and signing
+- **Transaction Submission**: Optional backend submission of user operations for validation and processing
 
 ### Key Benefits
 
@@ -72,7 +73,15 @@ interface GianoProviderInjection {
   onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>;
 
   // Optional Hooks
-  onUserOperationSigned?: (signedUserOp: any) => Promise<any>; // @deprecated
+  /**
+   * Override for sending user operations manually.
+   * When provided, this function will handle the submission of signed user operations
+   * instead of sending them directly to the bundler.
+   *
+   * @param signedUserOp - The complete signed user operation ready for submission
+   * @returns Promise that resolves to the user operation hash
+   */
+  submitUserOperation?: (signedUserOp: UserOperation<GianoEntryPointVersion>) => Promise<Hash>;
 }
 ```
 
@@ -131,6 +140,40 @@ Manage public key storage and retrieval.
 **getPublicKeyByCredentialId**: Retrieve stored public key coordinates
 **onCredentialKey**: Store public key coordinates for a credential
 
+#### `submitUserOperation()` (Optional)
+Override for custom user operation submission.
+
+This function is only included in the injection when `enableBackendSubmission` is set to `true` in the options. When present, it receives complete signed user operations and should handle their submission to your backend or bundler service, returning the user operation hash. The frontend can then use bundler/connector wait functions to wait for the receipt, giving developers full control over the waiting process.
+
+### Transaction Flow with Backend Submission
+
+When `submitUserOperation` is provided, the transaction flow works as follows:
+
+1. **Preparation**: The provider prepares and signs the user operation
+2. **Backend Submission**: The injection's `submitUserOperation` function submits the signed operation to your backend
+3. **Immediate Response**: The backend returns the user operation hash immediately (no waiting)
+4. **Frontend Waiting**: The frontend uses bundler/connector methods like `waitForUserOperationReceipt(hash)` to wait for the receipt
+
+**Benefits of Hash-Only Response**:
+- **Better Performance**: Backend responds immediately instead of waiting for confirmation
+- **More Control**: Developers can implement custom waiting logic, timeouts, and error handling
+- **Scalability**: Backend doesn't hold connections open for long periods
+- **Flexibility**: Frontend can show progress indicators, implement retries, or handle timeouts differently
+
+**Example Flow**:
+```typescript
+// Frontend transaction call
+const hash = await writeContractAsync({
+  address: tokenAddress,
+  abi: tokenAbi,
+  functionName: 'transfer',
+  args: [recipient, amount],
+});
+
+// Frontend handles waiting with full control
+const receipt = await gianoConnector.waitForUserOperationReceipt(hash);
+```
+
 ## Storage Implementations
 
 **Important**: Storage implementations are **application-specific** and must be created by developers based on their specific requirements. Giano provides the injection interface but does not include any built-in storage implementations.
@@ -178,7 +221,10 @@ This demo implementation stores data on your server with RESTful API endpoints.
 // This is an example implementation from the demo app
 import { createGianoServerInjection } from './demo-server-injection';
 
-const injection = createGianoServerInjection('user-123', 'https://api.example.com');
+const injection = createGianoServerInjection('user-123', {
+  apiBaseUrl: 'https://api.example.com',
+  enableBackendSubmission: true
+});
 const provider = createGianoProvider({
   injection,
   // ... other config
@@ -252,8 +298,30 @@ const { gianoProvider } = createGianoProvider({
 import { gianoInjection } from './giano-injection';
 
 const { gianoProvider } = createGianoProvider({
-  injection: gianoInjection, // Demo app implementation
+  injection: gianoInjection, // Demo app implementation with backend submission enabled
   // ... other config
+});
+```
+
+### Example: Configuring Backend Submission
+
+You can control whether user operations are submitted through your backend or directly to the bundler:
+
+```typescript
+// Enable backend submission (default for demo app)
+const injectionWithBackend = createGianoInjection({ 
+  enableBackendSubmission: true 
+});
+
+// Disable backend submission - use direct bundler submission
+const injectionDirectSubmission = createGianoInjection({ 
+  enableBackendSubmission: false 
+});
+
+// Custom storage with backend submission
+const injectionCustomStorage = createGianoInjection({
+  storage: new MyCustomStorage(),
+  enableBackendSubmission: true
 });
 ```
 
@@ -263,8 +331,8 @@ const { gianoProvider } = createGianoProvider({
 // This is from the demo application - adapt to your needs
 import { createGianoServerInjection } from './demo-server-injection';
 
-function createUserProvider(userId: string) {
-  const injection = createGianoServerInjection(userId); // Demo app implementation
+function createUserProvider(userId: string, options = {}) {
+  const injection = createGianoServerInjection(userId, options); // Demo app implementation
   
   return createGianoProvider({
     injection,
@@ -272,9 +340,9 @@ function createUserProvider(userId: string) {
   });
 }
 
-// Different users get isolated storage
-const aliceProvider = createUserProvider('alice-123');
-const bobProvider = createUserProvider('bob-456');
+// Different users get isolated storage with backend submission
+const aliceProvider = createUserProvider('alice-123', { enableBackendSubmission: true });
+const bobProvider = createUserProvider('bob-456', { enableBackendSubmission: false }); // Direct bundler submission
 ```
 
 ### Creating Your Own Storage Implementation
@@ -390,6 +458,26 @@ const customInjection: GianoProviderInjection = {
   },
 
   // ... implement other required methods
+
+  // Optional: Custom backend submission
+  submitUserOperation: async (signedUserOp) => {
+    // Submit to your backend for validation and bundler submission
+    const response = await fetch('/api/submit-userop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signedUserOp),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Backend submission failed: ${errorData.error}`);
+    }
+
+    const result = await response.json();
+
+    // Return just the user operation hash - frontend handles waiting
+    return result.hash;
+  },
 };
 ```
 
@@ -463,6 +551,70 @@ const secureInjection: GianoProviderInjection = {
 };
 ```
 
+### Transaction Handling
+
+When implementing `submitUserOperation`, follow these patterns for optimal user experience:
+
+```typescript
+const userControlledInjection: GianoProviderInjection = {
+  // ... other methods
+
+  submitUserOperation: async (signedUserOp) => {
+    try {
+      // Submit to backend - returns hash immediately
+      const response = await fetch('/api/submit-userop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(signedUserOp),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Backend submission failed: ${errorData.error}`);
+      }
+
+      const result = await response.json();
+
+      // Return user operation hash immediately - let frontend control waiting
+      return result.hash;
+    } catch (error) {
+      console.error('Transaction submission failed:', error);
+      throw error;
+    }
+  },
+};
+```
+
+**Frontend Waiting Patterns**:
+
+```typescript
+// Basic waiting with default timeout
+const hash = await writeContractAsync({...});
+const receipt = await gianoConnector.waitForUserOperationReceipt(hash);
+
+// Custom timeout handling
+const hash = await writeContractAsync({...});
+const receipt = await Promise.race([
+  gianoConnector.waitForUserOperationReceipt(hash),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Transaction timeout')), 60000)
+  )
+]);
+
+// Progress indication
+const hash = await writeContractAsync({...});
+const progressInterval = setInterval(() => {
+  console.log('Waiting for transaction confirmation...');
+}, 1000);
+
+try {
+  const receipt = await gianoConnector.waitForUserOperationReceipt(hash);
+  console.log('Transaction confirmed!', receipt);
+} finally {
+  clearInterval(progressInterval);
+}
+```
+
 ### Error Handling
 
 Implement robust error handling in your injection methods:
@@ -503,6 +655,13 @@ const testInjection: GianoProviderInjection = {
     return null;
   },
 
+  // Test implementation for backend submission
+  submitUserOperation: async (signedUserOp) => {
+    console.log('Test: Submitting user operation', signedUserOp);
+    // Return a mock hash for testing
+    return '0x1234567890abcdef1234567890abcdef12345678';
+  },
+
   // ... other test implementations
 };
 ```
@@ -533,11 +692,26 @@ interface GianoStorage {
 These functions are from the demo application and serve as reference implementations:
 
 ```typescript
-// Demo app: Create injection with custom storage
-function createGianoInjection(storage?: GianoStorage): GianoProviderInjection;
+// Demo app: Options for creating Giano injection
+interface CreateGianoInjectionOptions {
+  storage?: GianoStorage;
+  enableBackendSubmission?: boolean;
+}
+
+// Demo app: Create injection with custom storage and options
+function createGianoInjection(options?: CreateGianoInjectionOptions): GianoProviderInjection;
+
+// Demo app: Options for server injection
+interface CreateGianoServerInjectionOptions {
+  apiBaseUrl?: string;
+  enableBackendSubmission?: boolean;
+}
 
 // Demo app: Create server-side storage injection
-function createGianoServerInjection(userId: string, apiBaseUrl?: string): GianoProviderInjection;
+function createGianoServerInjection(
+  userId: string, 
+  options?: CreateGianoServerInjectionOptions
+): GianoProviderInjection;
 
 // Demo app: Create storage with automatic fallback
 function createGianoStorage(customStorage?: GianoStorage): GianoStorage;
