@@ -1,12 +1,32 @@
-import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
-import type { NextPage } from 'next';
-import Head from 'next/head';
-import React, { useCallback, useEffect, useState } from 'react';
-import { decodeAbiParameters, encodeFunctionData } from 'viem';
-import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi';
-
-import styles from '../styles/Home.module.css';
-import { gianoConnector } from '../wagmi';
+import {
+  GianoEntryPointAddress,
+  GianoEntryPointVersion,
+  GianoSmartAccountImplementation,
+  toGianoSmartAccount,
+} from '@appliedblockchain/giano-connector'
+import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts'
+import type { NextPage } from 'next'
+import Head from 'next/head'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  Call,
+  concatHex, decodeAbiParameters, encodeFunctionData, Hex,
+  parseGwei,
+  toHex
+} from 'viem'
+import {
+  createWebAuthnCredential,
+  SendUserOperationParameters,
+  SmartAccount,
+  toWebAuthnAccount,
+  UserOperation,
+  WebAuthnAccount,
+} from 'viem/account-abstraction'
+import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
+import { config as envConfig } from '../config'
+import { gianoInjection } from '../giano-injection'
+import styles from '../styles/Home.module.css'
+import { bundlerClient, gianoClient, gianoConnector } from '../wagmi'
 
 const MultipleOwnersDemo: NextPage = () => {
   const [mounted, setMounted] = useState(false);
@@ -60,51 +80,31 @@ const MultipleOwnersDemo: NextPage = () => {
   const [secondPasskeyUsed, setSecondPasskeyUsed] = useState(false);
 
   // Helper function to create a new WebAuthn credential
-  const createNewPasskey = async (): Promise<{
-    credential: PublicKeyCredential;
-    publicKey: { x: string; y: string };
-  }> => {
+  const createNewPasskey = async () => {
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
 
     const userId = new TextEncoder().encode(`user-${Date.now()}-${Math.random()}`);
 
-    const credential = (await navigator.credentials.create({
-      publicKey: {
-        challenge,
-        rp: {
-          name: 'Giano Multiple Owners Demo',
-          id: window.location.hostname,
-        },
-        user: {
-          id: userId,
-          name: `user-${Date.now()}`,
-          displayName: `Demo User ${Date.now()}`,
-        },
-        pubKeyCredParams: [
-          { alg: -7, type: 'public-key' }, // ES256
-        ],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'discouraged',
-        },
-        timeout: 60000,
+    const credential = await createWebAuthnCredential({
+      rp: {
+        name: 'Giano Multiple Owners Demo',
+        id: window.location.hostname,
       },
-    })) as PublicKeyCredential;
+      user: {
+        id: userId,
+        name: `user-${Date.now()}`,
+        displayName: `Demo User ${Date.now()}`,
+      },
+      challenge,
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'discouraged',
+      },
+      timeout: 60000,
+    });
 
-    // Extract public key coordinates from the credential
-    const response = credential.response as AuthenticatorAttestationResponse;
-    const publicKeyBytes = new Uint8Array(response.getPublicKey()!);
-
-    // For P-256, the public key is 65 bytes: 0x04 || x (32 bytes) || y (32 bytes)
-    const x = `0x${Array.from(publicKeyBytes.slice(1, 33))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')}`;
-    const y = `0x${Array.from(publicKeyBytes.slice(33, 65))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')}`;
-
-    return { credential, publicKey: { x, y } };
+    return credential;
   };
 
   // Helper function to parse owner bytes for display
@@ -232,7 +232,14 @@ const MultipleOwnersDemo: NextPage = () => {
       setIsCreatingSecondPasskey(true);
 
       // Create new WebAuthn credential
-      const { credential, publicKey } = await createNewPasskey();
+      const credential = await createNewPasskey();
+      const webAuthnCredential = await toWebAuthnAccount({ credential })
+      const [ x, y ] = decodeAbiParameters(
+        [{ type: 'bytes32' }, { type: 'bytes32' }],
+        webAuthnCredential.publicKey
+      )
+
+      await gianoInjection.onCredentialKey(credential.raw.rawId, { x, y })
 
       console.log('Created new passkey with ID:', credential.id);
 
@@ -242,7 +249,7 @@ const MultipleOwnersDemo: NextPage = () => {
       const addOwnerCallData = encodeFunctionData({
         abi: gianoSmartWalletAbi,
         functionName: 'addOwnerPublicKey',
-        args: [publicKey.x as `0x${string}`, publicKey.y as `0x${string}`],
+        args: [x, y],
       });
 
       const txHash = await walletClient.request({
@@ -270,8 +277,8 @@ const MultipleOwnersDemo: NextPage = () => {
       console.log('Transaction confirmed:', receipt);
 
       // Store the second passkey info for later use
-      localStorage.setItem('second_passkey_id', credential.id);
-      localStorage.setItem('second_passkey_public_key', JSON.stringify(publicKey));
+      localStorage.setItem('second_passkey_id', Buffer.from(credential.raw.rawId).toString('base64'));
+      localStorage.setItem('second_passkey_public_key', JSON.stringify({ x, y }));
 
       setSecondPasskeyCreated(true);
       await listOwners();
@@ -346,6 +353,106 @@ const MultipleOwnersDemo: NextPage = () => {
     }
   };
 
+  const getWebAuthnAccount = async ({
+    credentialId,
+    challenge,
+  }: {
+    credentialId?: BufferSource;
+    challenge?: BufferSource;
+  } = {}): Promise<WebAuthnAccount | null> => {
+    const generateRandomChallenge = () => {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      return challenge;
+    };
+
+    try {
+      const rawCredential = (await navigator.credentials.get({
+        publicKey: {
+          ...(credentialId && { allowCredentials: [{ id: credentialId, type: 'public-key' }] }),
+          challenge: challenge || generateRandomChallenge(),
+          userVerification: 'discouraged',
+        },
+        mediation: 'silent',
+      })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse } | null;
+
+      if (!rawCredential) {
+        return null;
+      }
+
+      // call the method injected and wait for the result true or false to continue or not
+      const isSignedIn = await gianoInjection.onCredentialSignedIn(rawCredential);
+      if (!isSignedIn) {
+        throw new Error('Failed to sign in with credential');
+      }
+
+      const { x, y } = await gianoInjection.getPublicKeyByCredentialId(rawCredential.rawId);
+
+      if (x === toHex(0, { size: 32 })) {
+        throw new Error('Unknown credential ID');
+      }
+      return toWebAuthnAccount({
+        credential: {
+          id: rawCredential.id,
+          publicKey: concatHex([x, y]),
+        },
+      });
+    } catch (error) {
+      if (['NotAllowedError', 'AbortError'].includes((error as Error).name)) {
+        return null;
+      }
+      throw error;
+    }
+  };
+
+  // copied from the provider, to keep the same injection behavior without
+  // using the current provider (which is linked with the other SCW)
+  const submitUserOperation = async (
+    userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
+      account: SmartAccount<GianoSmartAccountImplementation>
+    }
+  ) => {
+    if (gianoInjection.submitUserOperation === undefined) {
+      return await bundlerClient.sendUserOperation(userOpRequest);
+    }
+    // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
+
+    // Prepare the user operation with gas estimates
+    const estimate = await bundlerClient.estimateUserOperationGas(userOpRequest);
+    if (!estimate) {
+      throw new Error('Could not estimate user operation');
+    }
+
+    const prepared = await bundlerClient.prepareUserOperation({
+      ...userOpRequest,
+      ...estimate,
+    });
+
+    // Add default gas pricing if not provided
+    const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
+      ...prepared,
+      maxFeePerGas: userOpRequest.maxFeePerGas || parseGwei('200'),
+      maxPriorityFeePerGas: userOpRequest.maxPriorityFeePerGas || parseGwei('400'),
+    };
+
+    // Sign the user operation
+    const signature = await userOpRequest.account.signUserOperation(preparedWithGas);
+
+    // Create the complete signed user operation
+    const signedUserOp = {
+      ...preparedWithGas,
+      sender: await userOpRequest.account.getAddress(),
+      signature,
+      account: {
+        entryPoint: {
+          address: GianoEntryPointAddress,
+        },
+      },
+    };
+
+    return await gianoInjection.submitUserOperation(signedUserOp);
+  };
+
   // Execute transaction with second passkey
   const executeTransactionWithSecondPasskey = async () => {
     if (!walletClient || !address) return;
@@ -364,32 +471,44 @@ const MultipleOwnersDemo: NextPage = () => {
       // Find the matching owner for the second passkey (usually the last one added)
       const secondPasskeyOwner = ownersList.find((owner) => owner.index > 0) || ownersList[ownersList.length - 1];
 
-      // For demonstration purposes, we're using the same provider
-      // In a real implementation, you'd create a new provider instance with the second passkey
-      // Create a simple transaction - send 0 ETH to self to demonstrate account control
-      const txResult = await walletClient.request({
-        method: 'eth_sendTransaction',
-        params: [
-          {
-            from: address,
-            to: address,
-            value: '0x0', // 0 ETH
-            data: '0x', // Empty data
-          },
-        ],
-      } as any);
+      console.log('🔑 Using hacky second passkey injection...');
+      const { challenge } = await gianoInjection.getCredentialInfo()
+      const credentialId = Buffer.from(secondPasskeyId, 'base64')
 
-      console.log('✅ Transaction executed with second passkey:', txResult);
+      const webAuthnAccount = await getWebAuthnAccount({ credentialId, challenge });
+      if (!webAuthnAccount) {
+        throw new Error('Invalid credential');
+      }
+      const smartAccount = await toGianoSmartAccount({
+        // @ts-expect-error
+        client: gianoClient,
+        owners: [webAuthnAccount],
+        factoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
+      })
+
+      const userOperationHash = await submitUserOperation({
+        account: smartAccount,
+        calls: [{
+          from: address,
+          to: address,
+          // @ts-expect-error
+          value: '0x0', // 0 ETH
+          data: '0x', // Empty data
+        }]
+      })
+
+      console.log('✅ User Operation submitted with second passkey:', { userOperationHash });
 
       // eth_sendTransaction returns a simple hash string
-      const txHash = typeof txResult === 'string' ? txResult : 'Unknown';
+      const userOpReceipt = await bundlerClient.waitForUserOperationReceipt({ hash: userOperationHash })
+      console.log('✅ User Operation receipt:', { userOpReceipt });
 
       const result = {
         passkey: 'Second Passkey',
-        txHash: txHash,
+        txHash: userOpReceipt.receipt.transactionHash,
         success: true,
         fromAddress: address,
-        credentialId: secondPasskeyId ? secondPasskeyId.slice(0, 16) + '...' : 'Unknown',
+        credentialId: secondPasskeyId.slice(0, 16),
         ownerIndex: secondPasskeyOwner?.index,
         ownerBytes: secondPasskeyOwner?.fullBytes,
       };

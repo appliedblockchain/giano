@@ -66,8 +66,10 @@ const rpcs = <const>{
   },
 };
 
+export const bundlerClient = configMap[envConfig.configKey].bundler;
+
 export const { gianoClient, gianoProvider } = createGianoProvider({
-  bundler: configMap[envConfig.configKey].bundler,
+  bundler: bundlerClient,
   chains: rpcs.chains,
   transports: rpcs.transports,
   initialChainId: configMap[envConfig.configKey].chain.id,
