@@ -1,32 +1,32 @@
 import {
   GianoEntryPointAddress,
-  GianoEntryPointVersion,
-  GianoSmartAccountImplementation,
+  type GianoEntryPointVersion,
+  type GianoSmartAccountImplementation,
   toGianoSmartAccount,
-} from '@appliedblockchain/giano-connector'
-import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts'
-import type { NextPage } from 'next'
-import Head from 'next/head'
-import { useCallback, useEffect, useState } from 'react'
+} from '@appliedblockchain/giano-connector';
+import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
+import type { NextPage } from 'next';
+import Head from 'next/head';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  Call,
-  concatHex, decodeAbiParameters, encodeFunctionData, Hex,
+  type Call,
+  concatHex, decodeAbiParameters, encodeFunctionData, type Hex,
   parseGwei,
   toHex
-} from 'viem'
+} from 'viem';
 import {
   createWebAuthnCredential,
-  SendUserOperationParameters,
-  SmartAccount,
+  type SendUserOperationParameters,
+  type SmartAccount,
   toWebAuthnAccount,
-  UserOperation,
-  WebAuthnAccount,
-} from 'viem/account-abstraction'
-import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
-import { config as envConfig } from '../config'
-import { gianoInjection } from '../giano-injection'
-import styles from '../styles/Home.module.css'
-import { bundlerClient, gianoClient, gianoConnector } from '../wagmi'
+  type UserOperation,
+  type WebAuthnAccount,
+} from 'viem/account-abstraction';
+import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi';
+import { config as envConfig } from '../config';
+import { gianoInjection } from '../giano-injection';
+import styles from '../styles/Home.module.css';
+import { bundlerClient, gianoClient, gianoConnector } from '../wagmi';
 
 const MultipleOwnersDemo: NextPage = () => {
   const [mounted, setMounted] = useState(false);
@@ -40,6 +40,11 @@ const MultipleOwnersDemo: NextPage = () => {
   // Multiple owners state
   const [isCreatingSecondPasskey, setIsCreatingSecondPasskey] = useState(false);
   const [secondPasskeyCreated, setSecondPasskeyCreated] = useState(false);
+  const [secondPasskeyPublicKey, setSecondPasskeyPublicKey] = useState<{x: string, y: string} | null>(null);
+  const [publicKeyXInput, setPublicKeyXInput] = useState('');
+  const [publicKeyYInput, setPublicKeyYInput] = useState('');
+  const [isSubmittingPublicKey, setIsSubmittingPublicKey] = useState(false);
+  const [publicKeySubmitted, setPublicKeySubmitted] = useState(false);
   const [ownersList, setOwnersList] = useState<
     {
       index: number;
@@ -48,7 +53,6 @@ const MultipleOwnersDemo: NextPage = () => {
       displayValue: string;
     }[]
   >([]);
-  const [isAddingOwner, setIsAddingOwner] = useState(false);
   const [isWaitingForConfirmation, setIsWaitingForConfirmation] = useState(false);
   const [transactionResults, setTransactionResults] = useState<{
     firstPasskey: {
@@ -105,6 +109,22 @@ const MultipleOwnersDemo: NextPage = () => {
     });
 
     return credential;
+  };
+
+  // Helper function to copy text to clipboard
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
   };
 
   // Helper function to parse owner bytes for display
@@ -224,8 +244,8 @@ const MultipleOwnersDemo: NextPage = () => {
     }
   }, [walletClient, address]);
 
-  // Create and add a second passkey
-  const addSecondPasskey = async () => {
+  // Create a second passkey (without adding to blockchain)
+  const createSecondPasskey = async () => {
     if (!walletClient || !address) return;
 
     try {
@@ -233,23 +253,42 @@ const MultipleOwnersDemo: NextPage = () => {
 
       // Create new WebAuthn credential
       const credential = await createNewPasskey();
-      const webAuthnCredential = await toWebAuthnAccount({ credential })
+      const webAuthnCredential = toWebAuthnAccount({ credential });
       const [ x, y ] = decodeAbiParameters(
         [{ type: 'bytes32' }, { type: 'bytes32' }],
         webAuthnCredential.publicKey
-      )
+      );
 
-      await gianoInjection.onCredentialKey(credential.raw.rawId, { x, y })
+      await gianoInjection.onCredentialKey(credential.raw.rawId, { x, y });
 
       console.log('Created new passkey with ID:', credential.id);
 
-      // Add the new public key as an owner
-      setIsAddingOwner(true);
+      // Store the second passkey info for later use
+      localStorage.setItem('second_passkey_id', Buffer.from(credential.raw.rawId).toString('base64'));
+      localStorage.setItem('second_passkey_public_key', JSON.stringify({ x, y }));
+
+      // Set the public key state to display it
+      setSecondPasskeyPublicKey({ x, y });
+      setSecondPasskeyCreated(true);
+
+    } catch (error) {
+      console.error('Failed to create second passkey:', error);
+    } finally {
+      setIsCreatingSecondPasskey(false);
+    }
+  };
+
+  // Submit public key to blockchain
+  const submitPublicKeyToBlockchain = async () => {
+    if (!walletClient || !address || !publicKeyXInput || !publicKeyYInput) return;
+
+    try {
+      setIsSubmittingPublicKey(true);
 
       const addOwnerCallData = encodeFunctionData({
         abi: gianoSmartWalletAbi,
         functionName: 'addOwnerPublicKey',
-        args: [x, y],
+        args: [publicKeyXInput as `0x${string}`, publicKeyYInput as `0x${string}`],
       });
 
       const txHash = await walletClient.request({
@@ -264,8 +303,7 @@ const MultipleOwnersDemo: NextPage = () => {
 
       console.log('Add owner transaction sent:', txHash as string);
 
-      // Wait for the transaction to be confirmed before marking as ready
-      setIsAddingOwner(false);
+      // Wait for the transaction to be confirmed
       setIsWaitingForConfirmation(true);
       console.log('Waiting for transaction confirmation...');
 
@@ -276,17 +314,12 @@ const MultipleOwnersDemo: NextPage = () => {
 
       console.log('Transaction confirmed:', receipt);
 
-      // Store the second passkey info for later use
-      localStorage.setItem('second_passkey_id', Buffer.from(credential.raw.rawId).toString('base64'));
-      localStorage.setItem('second_passkey_public_key', JSON.stringify({ x, y }));
-
-      setSecondPasskeyCreated(true);
+      setPublicKeySubmitted(true);
       await listOwners();
     } catch (error) {
-      console.error('Failed to add second passkey:', error);
+      console.error('Failed to submit public key to blockchain:', error);
     } finally {
-      setIsCreatingSecondPasskey(false);
-      setIsAddingOwner(false);
+      setIsSubmittingPublicKey(false);
       setIsWaitingForConfirmation(false);
     }
   };
@@ -508,7 +541,7 @@ const MultipleOwnersDemo: NextPage = () => {
         txHash: userOpReceipt.receipt.transactionHash,
         success: true,
         fromAddress: address,
-        credentialId: secondPasskeyId.slice(0, 16),
+        credentialId: secondPasskeyId.slice(0, 16) + '...',
         ownerIndex: secondPasskeyOwner?.index,
         ownerBytes: secondPasskeyOwner?.fullBytes,
       };
@@ -585,8 +618,22 @@ const MultipleOwnersDemo: NextPage = () => {
   // Check if second passkey already exists
   useEffect(() => {
     const secondPasskeyId = localStorage.getItem('second_passkey_id');
-    setSecondPasskeyCreated(!!secondPasskeyId);
-  }, []);
+    const secondPasskeyKey = localStorage.getItem('second_passkey_public_key');
+    
+    if (secondPasskeyId && secondPasskeyKey) {
+      setSecondPasskeyCreated(true);
+      try {
+        const parsedKey = JSON.parse(secondPasskeyKey);
+        setSecondPasskeyPublicKey(parsedKey);
+        // Check if it's already been added to blockchain by checking owners list
+        if (ownersList.length > 1) {
+          setPublicKeySubmitted(true);
+        }
+      } catch (error) {
+        console.error('Failed to parse stored public key:', error);
+      }
+    }
+  }, [ownersList]);
 
   if (!mounted) {
     return (
@@ -730,7 +777,7 @@ const MultipleOwnersDemo: NextPage = () => {
               )}
             </div>
 
-            {/* Step 2: Add second passkey */}
+            {/* Step 2: Create second passkey and show public key */}
             <div style={{
               marginBottom: '40px',
               padding: '20px',
@@ -744,7 +791,7 @@ const MultipleOwnersDemo: NextPage = () => {
                 borderBottom: '2px solid #e9ecef',
                 margin: '0 0 20px 0'
               }}>
-                ➕ Step 2: Add Second Passkey
+                🔑 Step 2: Create Second Passkey
               </h3>
 
               <div style={{
@@ -754,7 +801,7 @@ const MultipleOwnersDemo: NextPage = () => {
                 border: '1px solid #e9ecef'
               }}>
                 <div style={{ marginBottom: '20px', fontSize: '0.95em', color: '#6c757d' }}>
-                  Add a second passkey to your account for better UX and backup security.
+                  Create a second passkey and view its public key before adding it to the blockchain.
                 </div>
 
                 <div style={{
@@ -765,8 +812,8 @@ const MultipleOwnersDemo: NextPage = () => {
                 }}>
                   <button
                     className={styles.sendButton}
-                    disabled={isCreatingSecondPasskey || isAddingOwner || isWaitingForConfirmation || secondPasskeyCreated}
-                    onClick={addSecondPasskey}
+                    disabled={isCreatingSecondPasskey || secondPasskeyCreated}
+                    onClick={createSecondPasskey}
                     style={{
                       padding: '12px 24px',
                       fontSize: '0.95em',
@@ -779,13 +826,9 @@ const MultipleOwnersDemo: NextPage = () => {
                   >
                     {isCreatingSecondPasskey
                       ? '🔄 Creating Passkey...'
-                      : isAddingOwner
-                        ? '📤 Adding to Account...'
-                        : isWaitingForConfirmation
-                          ? '⏳ Waiting for Confirmation...'
-                          : secondPasskeyCreated
-                            ? '✅ Second Passkey Added'
-                            : '🔑 Create & Add Second Passkey'}
+                      : secondPasskeyCreated
+                        ? '✅ Passkey Created'
+                        : '🔑 Create Second Passkey'}
                   </button>
 
                   {secondPasskeyCreated && (
@@ -796,120 +839,346 @@ const MultipleOwnersDemo: NextPage = () => {
                       alignItems: 'center',
                       gap: '8px'
                     }}>
-                      ✅ Ready to use!
+                      ✅ Passkey created successfully!
                     </div>
                   )}
                 </div>
 
-                {secondPasskeyCreated && (
+                {secondPasskeyPublicKey && (
                   <div style={{
                     padding: '15px',
                     backgroundColor: '#d4edda',
                     border: '1px solid #c3e6cb',
                     borderRadius: '6px',
-                    color: '#155724'
+                    color: '#155724',
+                    marginBottom: '20px'
                   }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Success!</div>
-                    <div>You can now use either passkey to sign transactions and messages.</div>
+                    <div style={{ fontWeight: 'bold', marginBottom: '15px' }}>📋 Passkey Public Key:</div>
+                    
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>X Coordinate:</label>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                      }}>
+                        <div style={{
+                          fontFamily: 'monospace',
+                          fontSize: '0.8em',
+                          backgroundColor: '#ffffff',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          border: '1px solid #dee2e6',
+                          wordBreak: 'break-all',
+                          flex: 1
+                        }}>
+                          {secondPasskeyPublicKey.x}
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(secondPasskeyPublicKey.x)}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.8em'
+                          }}
+                        >
+                          📋 Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Y Coordinate:</label>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                      }}>
+                        <div style={{
+                          fontFamily: 'monospace',
+                          fontSize: '0.8em',
+                          backgroundColor: '#ffffff',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          border: '1px solid #dee2e6',
+                          wordBreak: 'break-all',
+                          flex: 1
+                        }}>
+                          {secondPasskeyPublicKey.y}
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(secondPasskeyPublicKey.y)}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.8em'
+                          }}
+                        >
+                          📋 Copy
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Step 3: Test both passkeys */}
-            <div style={{
-              marginBottom: '40px',
-              padding: '20px',
-              border: '1px solid #e9ecef',
-              borderRadius: '8px',
-              backgroundColor: '#ffffff'
-            }}>
-              <h3 style={{
-                marginBottom: '20px',
-                paddingBottom: '10px',
-                borderBottom: '2px solid #e9ecef',
-                margin: '0 0 20px 0'
-              }}>
-                🔐 Step 3: Test Both Passkeys
-              </h3>
-              <div style={{ marginBottom: '20px', color: '#6c757d' }}>
-                Execute transactions using both passkeys to prove they both control the same smart account.
-              </div>
-
-              {/* Buttons */}
+            {/* Step 3: Manual public key entry and blockchain submission */}
+            {secondPasskeyCreated && (
               <div style={{
-                display: 'flex',
-                gap: '12px',
-                marginBottom: '25px',
-                flexWrap: 'wrap'
+                marginBottom: '40px',
+                padding: '20px',
+                border: '1px solid #e9ecef',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff'
               }}>
-                <button
-                  disabled={firstPasskeyUsed}
-                  onClick={executeTransactionWithFirstPasskey}
-                  style={{
-                    flex: '1',
-                    minWidth: '150px',
-                    height: '48px',
-                    padding: '10px 20px',
-                    backgroundColor: firstPasskeyUsed ? '#6c757d' : '#28a745',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: firstPasskeyUsed ? 'not-allowed' : 'pointer',
+                <h3 style={{
+                  marginBottom: '20px',
+                  paddingBottom: '10px',
+                  borderBottom: '2px solid #e9ecef',
+                  margin: '0 0 20px 0'
+                }}>
+                  ➕ Step 3: Add New Owner to Smart Wallet
+                </h3>
+
+                <div style={{
+                  padding: '20px',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <div style={{ marginBottom: '20px', fontSize: '0.95em', color: '#6c757d' }}>
+                    Enter the public key coordinates to register the passkey as a new owner of the smart wallet.
+                    Copy the X and Y coordinates from the passkey above and paste them into the fields below.
+                  </div>
+
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>
+                      X Coordinate:
+                    </label>
+                    <input
+                      type="text"
+                      value={publicKeyXInput}
+                      onChange={(e) => setPublicKeyXInput(e.target.value)}
+                      placeholder="0x..."
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontFamily: 'monospace',
+                        fontSize: '0.9em',
+                        border: '1px solid #dee2e6',
+                        borderRadius: '4px',
+                        backgroundColor: '#ffffff'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '20px' }}>
+                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>
+                      Y Coordinate:
+                    </label>
+                    <input
+                      type="text"
+                      value={publicKeyYInput}
+                      onChange={(e) => setPublicKeyYInput(e.target.value)}
+                      placeholder="0x..."
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontFamily: 'monospace',
+                        fontSize: '0.9em',
+                        border: '1px solid #dee2e6',
+                        borderRadius: '4px',
+                        backgroundColor: '#ffffff'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                  }}
-                >
-                  {firstPasskeyUsed ? '✅ First Passkey Used' : '🔐 Execute with First Passkey'}
-                </button>
-                <button
-                  disabled={!secondPasskeyCreated || secondPasskeyUsed}
-                  onClick={executeTransactionWithSecondPasskey}
-                  style={{
-                    flex: '1',
-                    minWidth: '150px',
-                    height: '48px',
-                    padding: '10px 20px',
-                    backgroundColor: !secondPasskeyCreated || secondPasskeyUsed ? '#6c757d' : '#007bff',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: !secondPasskeyCreated || secondPasskeyUsed ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                  }}
-                >
-                  {secondPasskeyUsed ? '✅ Second Passkey Used' : '🔐 Execute with Second Passkey'}
-                </button>
-                {(transactionResults.firstPasskey !== null || transactionResults.secondPasskey !== null) && (
+                    gap: '15px',
+                    marginBottom: '15px'
+                  }}>
+                    <button
+                      className={styles.sendButton}
+                      disabled={
+                        isSubmittingPublicKey || 
+                        isWaitingForConfirmation || 
+                        publicKeySubmitted || 
+                        !publicKeyXInput || 
+                        !publicKeyYInput
+                      }
+                      onClick={submitPublicKeyToBlockchain}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '0.95em',
+                        backgroundColor: publicKeySubmitted ? '#6c757d' : '#007bff',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: publicKeySubmitted || !publicKeyXInput || !publicKeyYInput ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {isSubmittingPublicKey
+                        ? '📤 Adding Owner...'
+                        : isWaitingForConfirmation
+                          ? '⏳ Waiting for Confirmation...'
+                          : publicKeySubmitted
+                            ? '✅ Owner Added to Wallet'
+                            : '📤 Add Owner to Wallet'}
+                    </button>
+
+                    {publicKeySubmitted && (
+                      <div style={{
+                        color: '#28a745',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        ✅ Successfully added to blockchain!
+                      </div>
+                    )}
+                  </div>
+
+                  {publicKeySubmitted && (
+                    <div style={{
+                      padding: '15px',
+                      backgroundColor: '#d4edda',
+                      border: '1px solid #c3e6cb',
+                      borderRadius: '6px',
+                      color: '#155724'
+                    }}>
+                      <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Success!</div>
+                      <div>The new owner has been successfully added to the smart wallet. You can now use either passkey to sign transactions.</div>
+                    </div>
+                  )}
+
+                  <div style={{
+                    padding: '15px',
+                    backgroundColor: '#e7f3ff',
+                    border: '1px solid #b3d9ff',
+                    borderRadius: '6px',
+                    fontSize: '0.9em',
+                    color: '#004085',
+                    marginTop: '15px'
+                  }}>
+                    💡 <strong>Manual Public Key Addition:</strong> This step demonstrates that you can add any passkey as an owner to the smart wallet as long as you have its public key coordinates. You must manually copy and paste the X and Y coordinates to prove this separation. This enables scenarios where:
+                    <br/><br/>
+                    • Someone else creates a passkey and shares the public key with you
+                    <br/>
+                    • You want to add a backup passkey stored on a different device
+                    <br/>
+                    • You're implementing a more complex ownership management system
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Test both passkeys */}
+            {publicKeySubmitted && (
+              <div style={{
+                marginBottom: '40px',
+                padding: '20px',
+                border: '1px solid #e9ecef',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff'
+              }}>
+                <h3 style={{
+                  marginBottom: '20px',
+                  paddingBottom: '10px',
+                  borderBottom: '2px solid #e9ecef',
+                  margin: '0 0 20px 0'
+                }}>
+                  🔐 Step 4: Test Both Passkeys
+                </h3>
+                <div style={{ marginBottom: '20px', color: '#6c757d' }}>
+                  Execute transactions using both passkeys to prove they both control the same smart account.
+                </div>
+
+                {/* Buttons */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  marginBottom: '25px',
+                  flexWrap: 'wrap'
+                }}>
                   <button
-                    onClick={clearResults}
+                    disabled={firstPasskeyUsed}
+                    onClick={executeTransactionWithFirstPasskey}
                     style={{
-                      minWidth: '120px',
+                      flex: '1',
+                      minWidth: '150px',
                       height: '48px',
                       padding: '10px 20px',
-                      backgroundColor: '#dc3545',
+                      backgroundColor: firstPasskeyUsed ? '#6c757d' : '#28a745',
                       color: 'white',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: 'pointer',
+                      cursor: firstPasskeyUsed ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '14px'
+                      fontSize: '14px',
                     }}
                   >
-                    🗑️ Clear Results
+                    {firstPasskeyUsed ? '✅ First Passkey Used' : '🔐 Execute with First Passkey'}
                   </button>
-                )}
-              </div>
+                  <button
+                    disabled={!secondPasskeyCreated || secondPasskeyUsed}
+                    onClick={executeTransactionWithSecondPasskey}
+                    style={{
+                      flex: '1',
+                      minWidth: '150px',
+                      height: '48px',
+                      padding: '10px 20px',
+                      backgroundColor: !secondPasskeyCreated || secondPasskeyUsed ? '#6c757d' : '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: !secondPasskeyCreated || secondPasskeyUsed ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                    }}
+                  >
+                    {secondPasskeyUsed ? '✅ Second Passkey Used' : '🔐 Execute with Second Passkey'}
+                  </button>
+                  {(transactionResults.firstPasskey !== null || transactionResults.secondPasskey !== null) && (
+                    <button
+                      onClick={clearResults}
+                      style={{
+                        minWidth: '120px',
+                        height: '48px',
+                        padding: '10px 20px',
+                        backgroundColor: '#dc3545',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px'
+                      }}
+                    >
+                      🗑️ Clear Results
+                    </button>
+                  )}
+                </div>
 
-              {/* Always show transaction results */}
-              <div style={{
+                {/* Always show transaction results */}
+                <div style={{
                   padding: '20px',
                   backgroundColor: '#f8f9fa',
                   border: '1px solid #dee2e6',
@@ -1062,7 +1331,7 @@ const MultipleOwnersDemo: NextPage = () => {
                           First Passkey
                         </div>
                         <div>
-                          Click "Execute with First Passkey" to see results here
+                          Click &quot;Execute with First Passkey&quot; to see results here
                         </div>
                       </div>
                     )}
@@ -1204,7 +1473,7 @@ const MultipleOwnersDemo: NextPage = () => {
                           Second Passkey
                         </div>
                         <div>
-                          Click "Execute with Second Passkey" to see results here
+                          Click &quot;Execute with Second Passkey&quot; to see results here
                         </div>
                       </div>
                     )}
@@ -1219,18 +1488,16 @@ const MultipleOwnersDemo: NextPage = () => {
                     color: '#004085'
                   }}>
                     💡 <strong>Multiple Passkey Proof:</strong> The transactions above demonstrate two key facts:
-                    <br/>
-                    <br/>
-                    <strong>1. Same Account Control:</strong> Both transactions show identical "From Address", proving both passkeys control the same smart account.
-                    <br/>
-                    <br/>
-                    <strong>2. Different Passkeys Used:</strong> Each transaction shows different "Credential ID", "Owner Index", and "Owner Bytes", proving distinct passkeys are being used for signing.
-                    <br/>
-                    <br/>
+                    <br/><br/>
+                    <strong>1. Same Account Control:</strong> Both transactions show identical &quot;From Address&quot;, proving both passkeys control the same smart account.
+                    <br/><br/>
+                    <strong>2. Different Passkeys Used:</strong> Each transaction shows different &quot;Credential ID&quot;, &quot;Owner Index&quot;, and &quot;Owner Bytes&quot;, proving distinct passkeys are being used for signing.
+                    <br/><br/>
                     This conclusively demonstrates that multiple passkeys can seamlessly control the same Giano smart account!
                   </div>
                 </div>
-            </div>
+              </div>
+            )}
           </div>
         )}
       </main>
