@@ -137,10 +137,9 @@ const Home: NextPage = () => {
       args: [parseEther(inputMessage.trim())],
     });
 
-    const userOpReceipt = await gianoConnector.waitForUserOperationReceipt(userOperationHash);
     // Without wagmi connector, the provider can be used directly:
     // const userOpReceipt = await gianoProvider.request({
-    //    method: 'getUserOperationReceipt',
+    //    method: 'waitForUserOperationReceipt',
     //    params: [userOperationHash],
     // });
 
