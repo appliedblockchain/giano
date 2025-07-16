@@ -82,6 +82,8 @@ const MultipleOwnersDemo: NextPage = () => {
 
   const [firstPasskeyUsed, setFirstPasskeyUsed] = useState(false);
   const [secondPasskeyUsed, setSecondPasskeyUsed] = useState(false);
+  const [isExecutingFirstPasskey, setIsExecutingFirstPasskey] = useState(false);
+  const [isExecutingSecondPasskey, setIsExecutingSecondPasskey] = useState(false);
 
   // Helper function to create a new WebAuthn credential
   const createNewPasskey = async () => {
@@ -329,6 +331,7 @@ const MultipleOwnersDemo: NextPage = () => {
     if (!walletClient || !address) return;
 
     try {
+      setIsExecutingFirstPasskey(true);
       console.log('🔑 Using first passkey to execute transaction...');
 
       // Get the current credential ID from the correct storage key
@@ -383,6 +386,8 @@ const MultipleOwnersDemo: NextPage = () => {
           error: (error as Error).message,
         },
       }));
+    } finally {
+      setIsExecutingFirstPasskey(false);
     }
   };
 
@@ -491,11 +496,13 @@ const MultipleOwnersDemo: NextPage = () => {
     if (!walletClient || !address) return;
 
     try {
+      setIsExecutingSecondPasskey(true);
       const secondPasskeyId = localStorage.getItem('second_passkey_id');
       const secondPasskeyPublicKey = JSON.parse(localStorage.getItem('second_passkey_public_key') || '{}');
 
       if (!secondPasskeyId || !secondPasskeyPublicKey.x) {
         alert('Second passkey not found. Please create it first.');
+        setIsExecutingSecondPasskey(false);
         return;
       }
 
@@ -564,6 +571,8 @@ const MultipleOwnersDemo: NextPage = () => {
           error: (error as Error).message,
         },
       }));
+    } finally {
+      setIsExecutingSecondPasskey(false);
     }
   };
 
@@ -574,6 +583,8 @@ const MultipleOwnersDemo: NextPage = () => {
     });
     setFirstPasskeyUsed(false);
     setSecondPasskeyUsed(false);
+    setIsExecutingFirstPasskey(false);
+    setIsExecutingSecondPasskey(false);
   };
 
   useEffect(() => {
@@ -628,12 +639,23 @@ const MultipleOwnersDemo: NextPage = () => {
         // Check if it's already been added to blockchain by checking owners list
         if (ownersList.length > 1) {
           setPublicKeySubmitted(true);
+          // Populate input fields with the coordinates when already submitted
+          setPublicKeyXInput(parsedKey.x);
+          setPublicKeyYInput(parsedKey.y);
         }
       } catch (error) {
         console.error('Failed to parse stored public key:', error);
       }
     }
   }, [ownersList]);
+
+  // Update input fields when public key submission status changes
+  useEffect(() => {
+    if (publicKeySubmitted && secondPasskeyPublicKey) {
+      setPublicKeyXInput(secondPasskeyPublicKey.x);
+      setPublicKeyYInput(secondPasskeyPublicKey.y);
+    }
+  }, [publicKeySubmitted, secondPasskeyPublicKey]);
 
   if (!mounted) {
     return (
@@ -969,6 +991,7 @@ const MultipleOwnersDemo: NextPage = () => {
                       value={publicKeyXInput}
                       onChange={(e) => setPublicKeyXInput(e.target.value)}
                       placeholder="0x..."
+                      disabled={publicKeySubmitted}
                       style={{
                         width: '100%',
                         padding: '10px',
@@ -976,7 +999,9 @@ const MultipleOwnersDemo: NextPage = () => {
                         fontSize: '0.9em',
                         border: '1px solid #dee2e6',
                         borderRadius: '4px',
-                        backgroundColor: '#ffffff'
+                        backgroundColor: publicKeySubmitted ? '#f8f9fa' : '#ffffff',
+                        color: publicKeySubmitted ? '#6c757d' : 'inherit',
+                        cursor: publicKeySubmitted ? 'not-allowed' : 'text'
                       }}
                     />
                   </div>
@@ -990,6 +1015,7 @@ const MultipleOwnersDemo: NextPage = () => {
                       value={publicKeyYInput}
                       onChange={(e) => setPublicKeyYInput(e.target.value)}
                       placeholder="0x..."
+                      disabled={publicKeySubmitted}
                       style={{
                         width: '100%',
                         padding: '10px',
@@ -997,7 +1023,9 @@ const MultipleOwnersDemo: NextPage = () => {
                         fontSize: '0.9em',
                         border: '1px solid #dee2e6',
                         borderRadius: '4px',
-                        backgroundColor: '#ffffff'
+                        backgroundColor: publicKeySubmitted ? '#f8f9fa' : '#ffffff',
+                        color: publicKeySubmitted ? '#6c757d' : 'inherit',
+                        cursor: publicKeySubmitted ? 'not-allowed' : 'text'
                       }}
                     />
                   </div>
@@ -1113,46 +1141,54 @@ const MultipleOwnersDemo: NextPage = () => {
                   flexWrap: 'wrap'
                 }}>
                   <button
-                    disabled={firstPasskeyUsed}
+                    disabled={firstPasskeyUsed || isExecutingFirstPasskey}
                     onClick={executeTransactionWithFirstPasskey}
                     style={{
                       flex: '1',
                       minWidth: '150px',
                       height: '48px',
                       padding: '10px 20px',
-                      backgroundColor: firstPasskeyUsed ? '#6c757d' : '#28a745',
+                      backgroundColor: firstPasskeyUsed || isExecutingFirstPasskey ? '#6c757d' : '#28a745',
                       color: 'white',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: firstPasskeyUsed ? 'not-allowed' : 'pointer',
+                      cursor: firstPasskeyUsed || isExecutingFirstPasskey ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
                     }}
                   >
-                    {firstPasskeyUsed ? '✅ First Passkey Used' : '🔐 Execute with First Passkey'}
+                    {isExecutingFirstPasskey
+                      ? '⏳ Executing Transaction...'
+                      : firstPasskeyUsed
+                        ? '✅ First Passkey Used'
+                        : '🔐 Execute with First Passkey'}
                   </button>
                   <button
-                    disabled={!secondPasskeyCreated || secondPasskeyUsed}
+                    disabled={!secondPasskeyCreated || secondPasskeyUsed || isExecutingSecondPasskey}
                     onClick={executeTransactionWithSecondPasskey}
                     style={{
                       flex: '1',
                       minWidth: '150px',
                       height: '48px',
                       padding: '10px 20px',
-                      backgroundColor: !secondPasskeyCreated || secondPasskeyUsed ? '#6c757d' : '#007bff',
+                      backgroundColor: !secondPasskeyCreated || secondPasskeyUsed || isExecutingSecondPasskey ? '#6c757d' : '#007bff',
                       color: 'white',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: !secondPasskeyCreated || secondPasskeyUsed ? 'not-allowed' : 'pointer',
+                      cursor: !secondPasskeyCreated || secondPasskeyUsed || isExecutingSecondPasskey ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '14px',
                     }}
                   >
-                    {secondPasskeyUsed ? '✅ Second Passkey Used' : '🔐 Execute with Second Passkey'}
+                    {isExecutingSecondPasskey
+                      ? '⏳ Executing Transaction...'
+                      : secondPasskeyUsed
+                        ? '✅ Second Passkey Used'
+                        : '🔐 Execute with Second Passkey'}
                   </button>
                   {(transactionResults.firstPasskey !== null || transactionResults.secondPasskey !== null) && (
                     <button
