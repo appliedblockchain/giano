@@ -1529,6 +1529,8 @@ const MultipleOwnersDemo: NextPage = () => {
                     <br/><br/>
                     <strong>2. Different Passkeys Used:</strong> Each transaction shows different &quot;Credential ID&quot;, &quot;Owner Index&quot;, and &quot;Owner Bytes&quot;, proving distinct passkeys are being used for signing.
                     <br/><br/>
+                    <strong>Note:</strong> The second passkey requires two signing prompts (authentication + transaction signing) while the first only needs one (already authenticated through wallet connection).
+                    <br/><br/>
                     This conclusively demonstrates that multiple passkeys can seamlessly control the same Giano smart account!
                   </div>
                 </div>
