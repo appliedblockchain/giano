@@ -5,7 +5,7 @@ import type { BundlerClient, GetPaymasterDataReturnType, GetPaymasterStubDataRet
 import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
-import { baseSepolia, hardhat } from 'wagmi/chains';
+import { base, baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
 import { gianoInjection } from './giano-injection';
 
@@ -50,13 +50,22 @@ const configMap: ConfigMap = {
   },
   baseSepolia: {
     chain: baseSepolia,
-    transport: http('https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c'),
+    transport: http(envConfig.bundlerRpcUrl),
     bundler: createBundlerClient({
       chain: baseSepolia,
       transport: http(envConfig.bundlerRpcUrl),
       paymaster: true,
     }),
   },
+  base: {
+    chain: base,
+    transport: http(envConfig.bundlerRpcUrl),
+    bundler: createBundlerClient({
+      chain: base,
+      transport: http(envConfig.bundlerRpcUrl),
+      paymaster: true,
+    }),
+  }
 };
 
 const rpcs = <const>{
