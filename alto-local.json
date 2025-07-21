@@ -1,9 +1,9 @@
 {
     "entrypoints": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "_executor-private-keys": "0x211899abe67f2ef5fc79849d05fd075a4c0150d0ff517946a0a1c257136153fa",
-    "executor-private-keys": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    "utility-private-key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    "rpc-url": "http://localhost:8545",
+    "_executor-private-keys": "0xbb3014d149e9d7d9abdeed768fa5e4d9cd590a30d0620290a5d432bde0744548",
+    "executor-private-keys": "0xbb3014d149e9d7d9abdeed768fa5e4d9cd590a30d0620290a5d432bde0744548",
+    "utility-private-key": "0x3f24ec9acef9e850490f11b9e8921bd004de4aa03274f1276676c64528cd471d",
+    "rpc-url": "https://testnet.silentdata.com/ebc4c7a9f6e15c22f8cef53747dc07a8",
     "rpc-log-level": "trace",
     "safe-mode": false
 }

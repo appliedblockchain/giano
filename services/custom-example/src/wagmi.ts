@@ -48,6 +48,47 @@ const configMap: ConfigMap = {
       },
     }),
   },
+  sdrTestnet: {
+    chain: {
+      id: 381185,
+      name: 'SDR Testnet',
+      nativeCurrency: {
+        name: 'ETH',
+        symbol: 'ETH',
+        decimals: 18,
+      },
+      rpcUrls: {
+        default: { http: ['https://testnet.silentdata.com/ebc4c7a9f6e15c22f8cef53747dc07a8'] },
+      },
+      blockExplorers: {
+        default: { name: 'SilentData', url: 'https://testnet.silentdata.com' },
+      },
+      testnet: true,
+    },
+    transport: http('https://testnet.silentdata.com/ebc4c7a9f6e15c22f8cef53747dc07a8'),
+    bundler: createBundlerClient({
+      chain: hardhat,
+      transport: http(envConfig.bundlerRpcUrl),
+      paymaster: {
+        //@ts-ignore - the "required" fields are not needed to fulfill a user op
+        getPaymasterData: async (): Promise<GetPaymasterDataReturnType> => ({
+          paymaster: envConfig.paymasterAddress as Address,
+        }),
+        //@ts-ignore - the "required" fields are not needed to fulfill a user op
+        getPaymasterStubData: async (): Promise<GetPaymasterStubDataReturnType> => ({
+          paymaster: envConfig.paymasterAddress as Address,
+        }),
+      },
+      userOperation: {
+        estimateFeesPerGas: async () => {
+          return {
+            maxFeePerGas: parseGwei('200'),
+            maxPriorityFeePerGas: parseGwei('400'),
+          };
+        },
+      },
+    }),
+  },
   baseSepolia: {
     chain: baseSepolia,
     transport: http('https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c'),

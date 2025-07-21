@@ -44,6 +44,12 @@ const config: HardhatUserConfig = {
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 84532,
     },
+    ['sdr-testnet']: {
+      enableRip7212: true,
+      url: 'https://testnet.silentdata.com/ebc4c7a9f6e15c22f8cef53747dc07a8',
+      accounts: ['a18979ce3e8430b52d0de3bc82da1af8832f61eb4174510e0572a714877d55ba'],
+      chainId: 381185,
+    },
   },
   gasReporter: {
     enabled: true,

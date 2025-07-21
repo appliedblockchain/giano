@@ -6,7 +6,7 @@
     "demo:dev": "pnpm -F @appliedblockchain/giano-example dev",
     "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
     "git:init": "git submodule update --init --recursive",
-    "bundler:start": "alto --config ./alto-local.json",
+    "bundler:start": "alto --chain-type op-stack --config ./alto-local.json",
     "bundler:cors": "lcp --proxyUrl http://localhost:3000 --port 4337",
     "bundler:dev": "npm-run-all -p --race bundler:start bundler:cors",
     "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",
