@@ -26,9 +26,14 @@ import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
 import { GianoProviderInjection } from './provider-injection'
+import { withValidation } from './provider-injection/_with-validation'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
+}
+
+export const isChainType = (x: unknown): x is ChainType => {
+  return typeof x === 'number' && Object.values(ChainType).includes(x)
 }
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
@@ -70,7 +75,16 @@ export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
 }
 
-export const createGianoProvider = ({ transports, chains, initialChainId, bundler, injection, gianoSmartWalletFactoryAddress }: CreateGianoProviderParams) => {
+export const createGianoProvider = (options: CreateGianoProviderParams) => {
+  const injection = withValidation(options.injection)
+  const {
+    transports,
+    chains,
+    initialChainId,
+    bundler,
+    gianoSmartWalletFactoryAddress,
+  } = options
+
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
   let transport: Transport | undefined;

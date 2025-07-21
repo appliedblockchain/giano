@@ -2,6 +2,7 @@ import { Hash, Hex } from 'viem'
 import { EntryPointVersion, UserOperation } from 'viem/account-abstraction'
 import { GianoEntryPointVersion } from '../giano-entry-point'
 import { ChainType } from '../provider'
+import { DecodedUserId, XYVector } from './types'
 
 export interface GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEntryPointVersion> {
   getNameForCredential(): string | Promise<string>;
