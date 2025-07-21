@@ -8,6 +8,14 @@ The Giano Provider Injection system is a flexible, extensible architecture that 
 - [Interface Specification](#interface-specification)
 - [Storage Implementations](#storage-implementations)
 - [Usage Examples](#usage-examples)
+  - [Basic Usage with Custom Storage](#basic-usage-with-custom-storage)
+  - [Demo App localStorage Usage](#example-demo-app-localstorage-usage)
+  - [Configuring Backend Submission](#example-configuring-backend-submission)
+  - [Demo App Multi-User Server Storage](#example-demo-app-multi-user-server-storage)
+  - [Accessing the Smart Account Instance](#accessing-the-smart-account-instance)
+  - [Listening to Account Changes](#listening-to-account-changes)
+  - [React Hook Example](#react-hook-example)
+  - [Creating Your Own Storage Implementation](#creating-your-own-storage-implementation)
 - [Custom Implementations](#custom-implementations)
 - [Best Practices](#best-practices)
 - [API Reference](#api-reference)
@@ -343,6 +351,84 @@ function createUserProvider(userId: string, options = {}) {
 // Different users get isolated storage with backend submission
 const aliceProvider = createUserProvider('alice-123', { enableBackendSubmission: true });
 const bobProvider = createUserProvider('bob-456', { enableBackendSubmission: false }); // Direct bundler submission
+```
+
+### Accessing the Smart Account Instance
+
+You can import and access the current smart account instance directly from the connector package:
+
+```typescript
+import { smartAccount } from '@appliedblockchain/giano-connector';
+
+// Check if a smart account is connected
+if (smartAccount) {
+  const address = await smartAccount.getAddress();
+  console.log('Connected smart account address:', address);
+  
+  // Access smart account methods
+  const signature = await smartAccount.signMessage({ 
+    message: 'Hello, Giano!' 
+  });
+  
+  // Sign user operations
+  const userOpSignature = await smartAccount.signUserOperation({
+    sender: address,
+    nonce: 0n,
+    initCode: '0x',
+    callData: '0x',
+    callGasLimit: 0n,
+    verificationGasLimit: 0n,
+    preVerificationGas: 0n,
+    maxFeePerGas: 0n,
+    maxPriorityFeePerGas: 0n,
+    paymasterAndData: '0x',
+    signature: '0x'
+  });
+} else {
+  console.log('No smart account connected');
+}
+```
+
+### Listening to Account Changes
+
+The Giano provider emits standard EIP-1193 events, including `accountsChanged`. You can listen to these events to react to account state changes:
+
+```typescript
+import { createGianoProvider } from '@appliedblockchain/giano-connector';
+
+const { gianoProvider } = createGianoProvider({
+  injection: myCustomInjection,
+  // ... other config
+});
+
+// Listen for account changes
+gianoProvider.on('accountsChanged', (accounts: string[]) => {
+  if (accounts.length === 0) {
+    console.log('User disconnected or no accounts available');
+    // Handle disconnection
+  } else {
+    console.log('Account changed to:', accounts[0]);
+    // Handle new account connection
+  }
+});
+
+// Listen for chain changes
+gianoProvider.on('chainChanged', (chainId: string) => {
+  console.log('Chain changed to:', chainId);
+  // Handle chain change
+});
+
+// Listen for disconnection
+gianoProvider.on('disconnect', (error) => {
+  console.log('Provider disconnected:', error);
+  // Handle disconnection
+});
+
+// Listen for connection
+gianoProvider.on('connect', (connectInfo) => {
+  console.log('Provider connected:', connectInfo);
+  // Handle connection
+});
 ```
 
 ### Creating Your Own Storage Implementation
@@ -715,6 +801,67 @@ function createGianoServerInjection(
 
 // Demo app: Create storage with automatic fallback
 function createGianoStorage(customStorage?: GianoStorage): GianoStorage;
+```
+
+### Smart Account API
+
+The `smartAccount` instance provides access to the current connected smart account and its methods:
+
+```typescript
+import { smartAccount } from '@appliedblockchain/giano-connector';
+
+// Smart Account Methods
+interface SmartAccount<GianoSmartAccountImplementation> {
+  // Get the smart account address
+  getAddress(): Promise<Address>;
+  
+  // Sign a message
+  signMessage(parameters: { message: Hex | string }): Promise<Hex>;
+  
+  // Sign typed data (EIP-712)
+  signTypedData(parameters: TypedDataDefinition): Promise<Hex>;
+  
+  // Sign a user operation
+  signUserOperation(parameters: UserOperation): Promise<Hex>;
+  
+  // Sign static call permission
+  signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
+  
+  // Decode call data
+  decodeCalls(data: Hex): Promise<Call[]>;
+  
+  // Encode calls to smart account format
+  encodeCalls(calls: Call[]): Promise<Hex>;
+  
+  // Get factory arguments for account creation
+  getFactoryArgs(): Promise<{ factory: Address; factoryData: Hex }>;
+  
+  // Get stub signature for gas estimation
+  getStubSignature(): Promise<Hex>;
+}
+```
+
+### Provider Events
+
+The Giano provider implements the standard EIP-1193 event interface:
+
+```typescript
+interface GianoProvider {
+  // Request methods
+  request(args: EIP1193Parameters): Promise<any>;
+  
+  // Event listeners
+  on<E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>): GianoProvider;
+  removeListener<E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>): GianoProvider;
+}
+
+// Available events
+interface EIP1193EventMap {
+  accountsChanged: [accounts: string[]];
+  chainChanged: [chainId: string];
+  connect: [connectInfo: { chainId: string }];
+  disconnect: [error: { code: number; name: string; message: string; details?: string }];
+}
 ```
 
 ### Demo App Example Injections

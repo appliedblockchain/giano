@@ -30,6 +30,8 @@ export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
 }
 
+const USER_VERIFICATION_REQUIREMENT = 'required';
+
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 
 const generateRandomChallenge = () => {
@@ -47,9 +49,28 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
 
 export type GianoProviderInjection = {
   getNameForCredential(): string | Promise<string>;
+  /**
+   * Retrieves credential information for WebAuthn operations.
+   * 
+   * This method is called during both credential creation and sign-in flows to determine:
+   * - Whether an existing credential should be used for sign-in
+   * - What challenge to use for the WebAuthn operation
+   * - Whether to show a list of available credentials for selection
+   * 
+   * For sign-in flows: Returns the stored credential ID and a new challenge
+   * For new credential creation: Returns null credential ID and a new challenge
+   * 
+   * The challenge is used to prevent replay attacks and should be cryptographically secure.
+   * 
+   * @returns Promise resolving to credential information:
+   *  - credentialId: Existing credential ID for sign-in, or null for new credential creation
+   *  - challenge: Cryptographically secure random challenge for the WebAuthn operation
+   *  - showListCredentials: Optional flag that when set to true shows a list of credential IDs to be used instead of forcing one from storage
+   */
   getCredentialInfo(): Promise<{
     credentialId?: BufferSource | null;
     challenge: BufferSource;
+    showListCredentials?: boolean;
   }>;
   /**
    * @param credentialName - The name of the credential
@@ -92,6 +113,8 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined;
   injection: GianoProviderInjection;
   gianoSmartWalletFactoryAddress: Address;
+  userVerification?: 'required' | 'preferred' | 'discouraged';
+  mediation?: 'silent' | 'optional' | 'required';
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -109,8 +132,18 @@ export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
 }
 
-export const createGianoProvider = ({ transports, chains, initialChainId, bundler, injection, gianoSmartWalletFactoryAddress }: CreateGianoProviderParams) => {
-  let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
+export let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null = null;
+
+export const createGianoProvider = ({
+  transports, 
+  chains, 
+  initialChainId, 
+  bundler, 
+  injection, 
+  gianoSmartWalletFactoryAddress,
+  userVerification = USER_VERIFICATION_REQUIREMENT,
+  mediation = 'silent'
+}: CreateGianoProviderParams) => {
   let chain: Chain | undefined;
   let transport: Transport | undefined;
   let client: PublicClient | undefined;
@@ -166,24 +199,11 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
     eventListeners[event]?.forEach((listener) => listener(payload));
   };
 
-  const ensureAccountDeployed = async (): Promise<boolean> => {
-    if (!smartAccount) return false;
-
-    try {
-      const accountAddress = await smartAccount.getAddress();
-      const accountCode = await client!.getCode({ address: accountAddress });
-      return !!(accountCode && accountCode !== '0x');
-    } catch (error) {
-      console.warn('Failed to check account deployment status:', error);
-      return false;
-    }
-  };
-
   const getWebAuthnAccount = async ({
     credentialId,
-    challenge,
+    challenge
   }: {
-    credentialId?: BufferSource;
+    credentialId?: BufferSource | null;
     challenge?: BufferSource;
   } = {}): Promise<WebAuthnAccount | null> => {
     try {
@@ -191,9 +211,9 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
         publicKey: {
           ...(credentialId && { allowCredentials: [{ id: credentialId, type: 'public-key' }] }),
           challenge: challenge || generateRandomChallenge(),
-          userVerification: 'discouraged',
+          userVerification,
         },
-        mediation: 'silent',
+        mediation,
       })) as PublicKeyAssertion | null;
 
       if (!rawCredential) {
@@ -277,7 +297,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
 
       const credentialInfo = await injection.getCredentialInfo();
 
-      if (credentialInfo.credentialId) {
+      if (credentialInfo.credentialId || credentialInfo.showListCredentials) {
         const challenge = credentialInfo.challenge;
         const webAuthnAccount = await getWebAuthnAccount({ credentialId: credentialInfo.credentialId, challenge });
         if (!webAuthnAccount) {
@@ -301,6 +321,11 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
           id: injection.encodeUserId(self.crypto.randomUUID().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
         },
         challenge: newCredentialInfo.challenge,
+        authenticatorSelection: {
+          userVerification,
+          residentKey: 'preferred',
+          requireResidentKey: false
+        },
       });
 
       const handlerCreatedAddress = await injection.onCredentialCreated(credentialName, newCredentialInfo.challenge, credential.raw);
