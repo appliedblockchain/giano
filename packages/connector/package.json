@@ -23,6 +23,7 @@
     "@rainbow-me/rainbowkit": "^2.2.4",
     "abitype": "^1.0.8",
     "ox": "^0.7.1",
+    "uuid": "^11.1.0",
     "viem": "2.31.6",
     "wagmi": "2.15.6"
   },
