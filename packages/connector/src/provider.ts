@@ -295,6 +295,23 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       //     contractMethodsToSign: ['balanceOf'],
       // })
 
+      // for SDR manually (not using the provider)
+
+      // override the _send method to add headers
+      // async _send(payload) {
+
+      // sign the message format
+      // const serialRequest = JSON.stringify(payload);
+      // const xMessage = serialRequest + timestamp;
+      // const signature = await signer.signMessage(xMessage);
+      
+      // set headers
+      // const timestamp = new Date().toISOString();
+      // requestHeaders['x-timestamp'] = timestamp;
+      // if (signature) {
+      //     requestHeaders['x-signature'] = signature;
+      // }
+
     },
     wallet_addEthereumChain: () => {
       //TODO: implement
