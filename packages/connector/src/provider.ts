@@ -114,6 +114,9 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
   let chain: Chain | undefined;
   let transport: Transport | undefined;
   let client: PublicClient | undefined;
+  let staticSignature: Hex | null = null
+  let staticSignatureSignedAt = 0
+  let staticSignatureLifetime = 0n
   const eventListeners: Partial<EventListeners> = {};
 
   const submitUserOperation = async (
@@ -235,6 +238,44 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
     eth_call: async ([call, blockTag]) => {
       console.log('eth_call', { call, blockTag });
       return client!.request({ method: 'eth_call', params: [call, blockTag] });
+    },
+    signed_eth_call: async ([call, blockTag]) => {    
+      // Check if smartAccount is available before proceeding with authenticated calls
+      if (!smartAccount) {
+        console.warn('Smart account not available, falling back to regular call')
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
+      }
+    
+      // Check if the account is deployed before attempting authenticated calls
+      const isDeployed = await ensureAccountDeployed()
+      if (!isDeployed) {
+        console.warn('Smart account not deployed yet, falling back to regular call')
+        return client!.request({ method: 'eth_call', params: [call, blockTag] })
+      }
+    
+      // if the lifetime of the static signature is not known, fetch and cache it
+      if (staticSignatureLifetime === 0n) {
+        staticSignatureLifetime = await client!.readContract({
+          address: await smartAccount.getAddress(),
+          abi: smartAccount.abi,
+          functionName: 'getSignatureLifetime',
+        })
+      }
+      const staticSignatureAge = BigInt(Date.now() - staticSignatureSignedAt * 1000)
+      // no cached signature or it's expired? request a new on
+      if (!staticSignature || staticSignatureAge > staticSignatureLifetime * 1000n) {
+        const { signature, signedAt } = await smartAccount.signStaticCallPermission()
+        staticSignature = signature
+        staticSignatureSignedAt = signedAt
+      }
+      // encode the intended call and forward it to the Giano account contract
+      const result = await client!.readContract({
+        abi: smartAccount.abi,
+        address: smartAccount.address,
+        functionName: 'signedStaticCall',
+        args: [{ target: call.to, data: call.data!, signedAt: BigInt(staticSignatureSignedAt), signature: staticSignature }],
+      })
+      return result    
     },
     wallet_addEthereumChain: () => {
       //TODO: implement
