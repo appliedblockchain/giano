@@ -25,6 +25,7 @@ import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
+import { v4 as uuidv4 } from 'uuid';
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -298,7 +299,7 @@ export const createGianoProvider = ({ transports, chains, initialChainId, bundle
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
-          id: injection.encodeUserId(self.crypto.randomUUID().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
+          id: injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
         },
         challenge: newCredentialInfo.challenge,
       });
