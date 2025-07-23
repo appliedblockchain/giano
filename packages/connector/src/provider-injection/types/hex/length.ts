@@ -8,7 +8,7 @@ type HexLength = {
 export function getHexAssertionLength(
   options: AssertHexOptions
 ): HexLength | undefined {
-  if ('digits' in options && typeof options.digits !== 'undefined') {
+  if ('digits' in options && options.digits !== undefined) {
     if (typeof options.digits !== 'number') {
       throw new Error('`options.digits` must be a number')
     }
@@ -19,7 +19,7 @@ export function getHexAssertionLength(
     }
   }
 
-  if ('bytes' in options && typeof options.bytes !== 'undefined') {
+  if ('bytes' in options && options.bytes !== undefined) {
     if (typeof options.bytes !== 'number') {
       throw new Error('`options.bytes` must be a number')
     }
