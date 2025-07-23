@@ -3,6 +3,7 @@ if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
 }
 
 export const config = {
+  hardhatRpcUrl: process.env.NEXT_PUBLIC_HARDHAT_RPC_URL || 'http://localhost:8545',
   bundlerRpcUrl: process.env.NEXT_PUBLIC_BUNDLER_RPC_URL,
   configKey: process.env.NEXT_PUBLIC_CONFIG_KEY ?? 'hardhat',
   paymasterAddress: process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS,

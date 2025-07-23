@@ -27,6 +27,7 @@ import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
 import { GianoProviderInjection } from './provider-injection'
 import { withValidation } from './provider-injection/_with-validation'
+import { v4 as uuidv4 } from 'uuid';
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -273,7 +274,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
-          id: await injection.encodeUserId(self.crypto.randomUUID().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
+          id: await injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
         },
         challenge: newCredentialInfo.challenge,
       });
