@@ -31,7 +31,7 @@ export const withValidation = <
   )
 
   for (const key of Object.keys(validationHooks)) {
-    if (typeof implementation[key] === undefined) {
+    if (implementation[key] === undefined) {
       injection[key] = undefined
       continue
     }
