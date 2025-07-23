@@ -131,9 +131,8 @@ type GianoProviderCustomMethods = [{
 
 export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
+  getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
 }
-
-export let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null = null;
 
 export const createGianoProvider = ({
   transports, 
@@ -149,6 +148,7 @@ export const createGianoProvider = ({
   let transport: Transport | undefined;
   let client: PublicClient | undefined;
   const eventListeners: Partial<EventListeners> = {};
+  let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null = null;
 
   const submitUserOperation = async (
     userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
@@ -506,6 +506,7 @@ export const createGianoProvider = ({
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }]);
 
   const provider: GianoProvider = {
+    getSmartAccount: () => smartAccount,
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
 
