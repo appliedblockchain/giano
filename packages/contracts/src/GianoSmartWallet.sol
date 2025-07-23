@@ -26,10 +26,10 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     /// @notice A wrapper struct used for signature validation so that callers
     ///         can identify the owner that signed.
     struct SignatureWrapper {
-        /// @dev The index of the owner that signed, see `MultiOwnable.ownerAtIndex`
-        uint256 ownerIndex;
-        /// @dev If `MultiOwnable.ownerAtIndex` is an Ethereum address, this should be `abi.encodePacked(r, s, v)`
-        ///      If `MultiOwnable.ownerAtIndex` is a public key, this should be `abi.encode(WebAuthnAuth)`.
+        /// @dev The owner bytes that signed, should be ABI encoded address (32 bytes) or public key (64 bytes)
+        bytes ownerBytes;
+        /// @dev If `ownerBytes` is an Ethereum address, this should be `abi.encodePacked(r, s, v)`
+        ///      If `ownerBytes` is a public key, this should be `abi.encode(WebAuthnAuth)`.
         bytes signatureData;
     }
 
@@ -287,12 +287,17 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     /// @inheritdoc ERC1271
     ///
     /// @dev Used by both `ERC1271.isValidSignature` AND `IAccount.validateUserOp` signature validation.
-    /// @dev Reverts if owner at `ownerIndex` is not compatible with `signature` format.
+    /// @dev Reverts if `ownerBytes` is not compatible with `signature` format.
     ///
     /// @param signature ABI encoded `SignatureWrapper`.
     function _isValidSignature(bytes32 hash, bytes calldata signature) internal view virtual override returns (bool) {
         SignatureWrapper memory sigWrapper = abi.decode(signature, (SignatureWrapper));
-        bytes memory ownerBytes = ownerAtIndex(sigWrapper.ownerIndex);
+        bytes memory ownerBytes = sigWrapper.ownerBytes;
+
+        // First validate that the provided owner bytes are actually an owner
+        if (!isOwnerBytes(ownerBytes)) {
+            return false;
+        }
 
         if (ownerBytes.length == 32) {
             if (uint256(bytes32(ownerBytes)) > type(uint160).max) {
