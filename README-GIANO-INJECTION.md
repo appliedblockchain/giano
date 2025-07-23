@@ -808,8 +808,6 @@ function createGianoStorage(customStorage?: GianoStorage): GianoStorage;
 The `smartAccount` instance provides access to the current connected smart account and its methods:
 
 ```typescript
-import { smartAccount } from '@appliedblockchain/giano-connector';
-
 // Smart Account Methods
 interface SmartAccount<GianoSmartAccountImplementation> {
   // Get the smart account address
@@ -839,6 +837,33 @@ interface SmartAccount<GianoSmartAccountImplementation> {
   // Get stub signature for gas estimation
   getStubSignature(): Promise<Hex>;
 }
+
+
+provider.on('accountsChanged', () => {
+  const smartAccount = provider.getSmartAccount();
+  if (smartAccount) {
+    const address = await smartAccount.getAddress();
+    console.log('Smart account address:', address);
+  }
+})
+```
+
+#### Creating a useSmartAccount hook (React)
+
+This hook is used to get the smart account instance in a React component.
+
+```typescript
+import { useSyncExternalStore } from 'react';
+
+const subscribe = (callback) => {
+  provider.on('accountChanged', callback);
+  return () => provider.off('accountChanged', callback);
+};
+const getSnapshot = () => provider.getSmartAccount();
+
+export const useSmartAccount = () => {
+  return useSyncExternalStore(subscribe, getSnapshot);
+};
 ```
 
 ### Provider Events

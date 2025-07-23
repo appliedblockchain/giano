@@ -25,6 +25,8 @@ import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
+import { GianoProviderInjection } from './provider-injection'
+import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
 
 export enum ChainType {
@@ -32,6 +34,10 @@ export enum ChainType {
 }
 
 const USER_VERIFICATION_REQUIREMENT = 'required';
+
+export const isChainType = (x: unknown): x is ChainType => {
+  return typeof x === 'number' && Object.values(ChainType).includes(x)
+}
 
 type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
 
@@ -47,65 +53,6 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
   }
   return { x: `0x${key.slice(-128, -64)}`, y: `0x${key.slice(-64)}` };
 }
-
-export type GianoProviderInjection = {
-  getNameForCredential(): string | Promise<string>;
-  /**
-   * Retrieves credential information for WebAuthn operations.
-   * 
-   * This method is called during both credential creation and sign-in flows to determine:
-   * - Whether an existing credential should be used for sign-in
-   * - What challenge to use for the WebAuthn operation
-   * - Whether to show a list of available credentials for selection
-   * 
-   * For sign-in flows: Returns the stored credential ID and a new challenge
-   * For new credential creation: Returns null credential ID and a new challenge
-   * 
-   * The challenge is used to prevent replay attacks and should be cryptographically secure.
-   * 
-   * @returns Promise resolving to credential information:
-   *  - credentialId: Existing credential ID for sign-in, or null for new credential creation
-   *  - challenge: Cryptographically secure random challenge for the WebAuthn operation
-   *  - showListCredentials: Optional flag that when set to true shows a list of credential IDs to be used instead of forcing one from storage
-   */
-  getCredentialInfo(): Promise<{
-    credentialId?: BufferSource | null;
-    challenge: BufferSource;
-    showListCredentials?: boolean;
-  }>;
-  /**
-   * @param credentialName - The name of the credential
-   * @param challenge - The challenge used to create the credential
-   * @param credential - The credential created
-   * @returns Null or a wallet address. Returning a wallet address means
-   *          that Giano does not proceed to create the smart wallet
-   *          (the handler took care of that).
-   */
-  onCredentialCreated(
-    credentialName: string,
-    challenge: BufferSource,
-    credential: Omit<PublicKeyCredential, 'toJSON'>,
-  ): null | Promise<null> | Hex | Promise<Hex>;
-  encodeUserId(id: string, gianoSmartWalletFactoryAddress: string, chainId: string, chainType: ChainType): Uint8Array;
-  decodeUserId(userId: Uint8Array): {
-    userId: string;
-    walletFactoryAddress: string;
-    chainId: number;
-    chainType: ChainType;
-  };
-  onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
-  getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex }>;
-  onCredentialKey(rawId: ArrayBuffer, xyVector: { x: Hex; y: Hex }): Promise<void>;
-  /**
-   * Override for sending user operations manually.
-   * When provided, this function will handle the submission of signed user operations
-   * instead of sending them directly to the bundler.
-   *
-   * @param signedUserOp - The complete signed user operation ready for submission
-   * @returns Promise that resolves to the user operation hash
-   */
-  submitUserOperation?: (signedUserOp: UserOperation<GianoEntryPointVersion>) => Promise<Hash>;
-};
 
 export type CreateGianoProviderParams = {
   initialChainId: number;
@@ -134,21 +81,23 @@ export type GianoProvider = EIP1193Provider & {
   getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
 }
 
-export const createGianoProvider = ({
-  transports, 
-  chains, 
-  initialChainId, 
-  bundler, 
-  injection, 
-  gianoSmartWalletFactoryAddress,
-  userVerification = USER_VERIFICATION_REQUIREMENT,
-  mediation = 'silent'
-}: CreateGianoProviderParams) => {
+export const createGianoProvider = (options: CreateGianoProviderParams) => {
+  const injection = withValidation(options.injection)
+  const {
+    transports,
+    chains,
+    initialChainId,
+    bundler,
+    gianoSmartWalletFactoryAddress,
+    userVerification = USER_VERIFICATION_REQUIREMENT,
+    mediation = 'silent'
+  } = options
+
+  let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
   let transport: Transport | undefined;
   let client: PublicClient | undefined;
   const eventListeners: Partial<EventListeners> = {};
-  let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null = null;
 
   const submitUserOperation = async (
     userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
@@ -319,7 +268,7 @@ export const createGianoProvider = ({
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
-          id: injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
+          id: await injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
         },
         challenge: newCredentialInfo.challenge,
         authenticatorSelection: {

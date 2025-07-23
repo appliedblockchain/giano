@@ -89,9 +89,66 @@ pnpm run test-proxy
 
 
 
-## 🔍 Debugging Android Issues
+## 🔍 Android Passkey Test Results
 
 Use `/android-passkey-test` for checking WebAuthn compatibility on your Android device.
+
+### Test Environment
+- **Device**: Android 14
+- **Autofill Service**: 1Password
+- **Browsers**:
+  - Chrome Version: 138.0.7204.157
+  - Firefox Version: 140.0.4
+
+> **Important Note on Autofill Services**: Android autofill service settings (like 1Password) do **not** affect passkey operations. Even with 1Password set as the autofill service, 1Password will not prompt during passkey creation or retrieval. Passkey authentication is handled separately by platform authenticators (Android screen lock) or browser-specific managers (Google Password Manager), not by autofill services.
+
+### Configuration Test Results
+
+The table below shows which authenticator is invoked based on different `authenticatorSelection` properties:
+
+| Configuration | Chrome Result | Firefox Result | Notes |
+|--------------|---------------|----------------|-------|
+| `authenticatorAttachment: 'platform'`<br/>`residentKey: 'required'`<br/>`userVerification: 'required'` | 🔵 Google Password Manager | 🟡 Screen Lock (Platform) | Chrome prefers Google PM for resident keys |
+| `authenticatorAttachment: 'platform'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+| `authenticatorAttachment: 'platform'`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+| `authenticatorAttachment: 'platform'`<br/>`userVerification: 'discouraged'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+| `authenticatorAttachment: 'platform'`<br/>`residentKey: 'preferred'`<br/>`userVerification: 'preferred'` | 🔵 Google Password Manager | 🟡 Screen Lock (Platform) | Chrome triggered by RK preference |
+| `authenticatorAttachment: 'platform'`<br/>`residentKey: 'discouraged'`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+| `userVerification: 'preferred'`<br/>`residentKey: 'preferred'` | 🔵 Google Password Manager | ❌ Menu but broken | Firefox menu doesn't work |
+| `authenticatorAttachment: 'cross-platform'`<br/>`userVerification: 'required'` | 🔴 External Authenticator Menu | 🔴 External Authenticator Menu | Expected behavior |
+| `authenticatorAttachment: 'platform'`<br/>`requireResidentKey: false`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+| `authenticatorAttachment: 'platform'`<br/>`userVerification: 'discouraged'`<br/>`residentKey: 'discouraged'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+
+### Key Findings
+
+#### 🔍 **Chrome Behavior**
+- **Google Password Manager** is triggered when:
+  - `residentKey: 'required'` OR `requireResidentKey: true`
+  - `residentKey: 'preferred'` (sometimes)
+- **Platform Authenticator** (screen lock) is used for most other configurations
+
+#### 🦊 **Firefox Behavior**
+- **Consistently uses Platform Authenticator** for most configurations
+- **Does not invoke Google Password Manager** like Chrome
+- **"Any Authenticator" configuration is problematic** - shows menu but authentication fails
+
+#### 🎯 **Cross-Browser Compatibility**
+Configurations that showed consistent behavior in both browsers on this test device:
+- `authenticatorAttachment: 'platform'` + `userVerification: 'discouraged'` + `residentKey: 'discouraged'`
+- `authenticatorAttachment: 'platform'` (minimal)
+- `authenticatorAttachment: 'platform'` + `userVerification: 'discouraged'`
+- `authenticatorAttachment: 'platform'` + `residentKey: 'discouraged'`
+- `authenticatorAttachment: 'platform'` + `requireResidentKey: false`
+
+**Note:** These results are specific to this test setup (Android 14+ with 1Password autofill service). Behavior may vary on different Android versions, devices, or configurations.
+
+### Authenticator Types Explained
+
+| Type | Description | When Used |
+|------|-------------|-----------|
+| 🟡 **Screen Lock (Platform)** | Android's built-in passkey storage using device biometric/PIN | Most configurations, consistent cross-browser |
+| 🔵 **Google Password Manager** | Chrome's cloud-based passkey storage | Chrome only, when resident keys are required/preferred |
+| 🔴 **External Authenticator** | Hardware security keys, other devices | When `cross-platform` is specified |
 
 ---
 
