@@ -26,9 +26,8 @@ export function createGianoInjection(options: CreateGianoInjectionOptions = {}):
 
     getCredentialInfo: async () => {
       const { passkeyId, challenge } = await gianoStorage.getCredentialInfo();
-
       return {
-        credentialId: passkeyId ? new Uint8Array(Buffer.from(passkeyId, 'base64')) : null,
+        credentialId: !showListCredentials && passkeyId ? new Uint8Array(Buffer.from(passkeyId, 'base64')) : null,
         challenge,
         showListCredentials,
       };

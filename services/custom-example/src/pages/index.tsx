@@ -6,6 +6,7 @@ import Head from 'next/head';
 import { encodeFunctionData, formatEther, parseEther } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
+import { gianoInjection, gianoShowListCredentialsInjection } from '../giano-injection';
 import { useGiano } from '../wagmi';
 import styles from '../styles/Home.module.css';
 
@@ -13,7 +14,8 @@ const Home: NextPage = () => {
   const [mounted, setMounted] = useState(false);
   const [connectionReady, setConnectionReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const { gianoConnector } = useGiano();
+  const [showCredentialList, setShowCredentialList] = useState(false);
+  const { gianoConnector, gianoProvider } = useGiano();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
   const { address, isConnected, status } = useAccount();
@@ -45,6 +47,25 @@ const Home: NextPage = () => {
   const [isManualMintPending, setIsManualMintPending] = useState(false);
   const [preparedUserOp, setPreparedUserOp] = useState<any>(null);
   const [isUserOpSigned, setIsUserOpSigned] = useState(false);
+
+  // Function to toggle credential list mode
+  const toggleCredentialListMode = async () => {
+    if (isConnected) {
+      // Disconnect first if connected
+      disconnect();
+    }
+
+    // Toggle the mode
+    setShowCredentialList(!showCredentialList);
+
+    if (showCredentialList) {
+      gianoProvider.setInjection(gianoInjection);
+    } else {
+      gianoProvider.setInjection(gianoShowListCredentialsInjection);
+    }
+
+    console.log(`Switched to ${!showCredentialList ? 'credential list' : 'normal'} mode`);
+  };
 
   // Helper function to delete passkey (clear all data including passkey)
   const deletePasskey = async () => {
@@ -279,7 +300,7 @@ const Home: NextPage = () => {
       } as any);
 
       // Step 3: Send
-      const signedUserOp = { ...userOp, signature } as any;
+      const signedUserOp = { ...(userOp as object), signature } as any;
       const receipt = await walletClient.request({
         method: 'eth_sendSignedUserOperation',
         params: [signedUserOp],
@@ -463,6 +484,9 @@ const Home: NextPage = () => {
             <button onClick={deletePasskey} className={styles.deleteButton}>
               Delete Passkey
             </button>
+            <button onClick={toggleCredentialListMode} className={styles.toggleButton}>
+              {showCredentialList ? 'Switch to Normal Mode' : 'Switch to Credential List Mode'}
+            </button>
           </div>
         </div>
       </header>
@@ -479,6 +503,29 @@ const Home: NextPage = () => {
             {!connectionReady && <p className={styles.statusMessage}>Initializing smart account...</p>}
           </div>
         )}
+
+        {/* Credential Mode Status */}
+        <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Credential Mode</h2>
+          <div className={styles.card}>
+            <div className={styles.modeStatus}>
+              <div className={styles.modeIndicator}>
+                <span className={styles.modeLabel}>Current Mode:</span>
+                <span className={`${styles.modeValue} ${showCredentialList ? styles.credentialListMode : styles.normalMode}`}>
+                  {showCredentialList ? 'Credential List Mode' : 'Normal Mode'}
+                </span>
+              </div>
+              <div className={styles.modeDescription}>
+                <p>
+                  <strong>Normal Mode:</strong> Automatically selects credentials from storage
+                </p>
+                <p>
+                  <strong>Credential List Mode:</strong> Shows a list of available credentials for user selection
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Quick Actions */}
         <div className={styles.section}>
