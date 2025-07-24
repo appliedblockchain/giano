@@ -1,5 +1,5 @@
 import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
-import { isHex, type Hex } from 'viem';
+import { type Hex, isHex } from 'viem';
 import { createGianoStorage, type GianoStorage, InMemoryStorage } from './storage-implementations';
 import { bytesToHex, concatBytes, hexToBytes, padBytes, serializeWithBigInt } from './utils';
 
@@ -8,13 +8,15 @@ export type CreateGianoInjectionOptions = {
   storage?: GianoStorage;
   /** Enable backend submission of user operations. When true, includes submitUserOperation hook */
   enableBackendSubmission?: boolean;
+  /** Show credential list instead of using automatic selection from storage */
+  showListCredentials?: boolean;
 };
 
 /**
  * Create a Giano injection with configurable storage and options
  */
 export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection {
-  const { storage, enableBackendSubmission = false } = options;
+  const { storage, enableBackendSubmission = false, showListCredentials = false } = options;
   const gianoStorage = createGianoStorage(storage);
 
   return {
@@ -28,6 +30,7 @@ export function createGianoInjection(options: CreateGianoInjectionOptions = {}):
       return {
         credentialId: passkeyId ? new Uint8Array(Buffer.from(passkeyId, 'base64')) : null,
         challenge,
+        showListCredentials,
       };
     },
 
@@ -124,5 +127,10 @@ export const gianoInjection = createGianoInjection({ enableBackendSubmission: tr
  */
 export const gianoMemoryInjection = createGianoInjection({
   storage: new InMemoryStorage(),
+  enableBackendSubmission: true,
+});
+
+export const gianoShowListCredentialsInjection = createGianoInjection({
+  showListCredentials: true,
   enableBackendSubmission: true,
 });

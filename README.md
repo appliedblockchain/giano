@@ -60,7 +60,6 @@ There is no need to deploy the smart contracts again, as the addresses are alrea
 There is also no need to run the local bundler, as the Coinbase bundler is already running on the Base Sepolia network.
 Moreover, you don't need to run the local blockchain node, as the Coinbase bundler will use the Base Sepolia network.
 
-```sh
 
 ### Important tips
 

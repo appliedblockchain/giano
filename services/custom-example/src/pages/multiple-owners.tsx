@@ -1,3 +1,4 @@
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   GianoEntryPointAddress,
   type GianoEntryPointVersion,
@@ -7,13 +8,7 @@ import {
 import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  type Call,
-  concatHex, decodeAbiParameters, encodeFunctionData, type Hex,
-  parseGwei,
-  toHex
-} from 'viem';
+import { type Call, concatHex, decodeAbiParameters, encodeFunctionData, type Hex, parseGwei, toHex } from 'viem';
 import {
   createWebAuthnCredential,
   type SendUserOperationParameters,
@@ -25,10 +20,11 @@ import {
 import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi';
 import { config as envConfig } from '../config';
 import { gianoInjection } from '../giano-injection';
+import { useGiano } from '../wagmi';
 import styles from '../styles/Home.module.css';
-import { bundlerClient, gianoClient, gianoConnector } from '../wagmi';
 
 const MultipleOwnersDemo: NextPage = () => {
+  const { bundlerClient, gianoClient, gianoConnector } = useGiano();
   const [mounted, setMounted] = useState(false);
   const [connectionReady, setConnectionReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -40,7 +36,7 @@ const MultipleOwnersDemo: NextPage = () => {
   // Multiple owners state
   const [isCreatingSecondPasskey, setIsCreatingSecondPasskey] = useState(false);
   const [secondPasskeyCreated, setSecondPasskeyCreated] = useState(false);
-  const [secondPasskeyPublicKey, setSecondPasskeyPublicKey] = useState<{x: string, y: string} | null>(null);
+  const [secondPasskeyPublicKey, setSecondPasskeyPublicKey] = useState<{ x: string; y: string } | null>(null);
   const [publicKeyXInput, setPublicKeyXInput] = useState('');
   const [publicKeyYInput, setPublicKeyYInput] = useState('');
   const [isSubmittingPublicKey, setIsSubmittingPublicKey] = useState(false);
@@ -256,10 +252,7 @@ const MultipleOwnersDemo: NextPage = () => {
       // Create new WebAuthn credential
       const credential = await createNewPasskey();
       const webAuthnCredential = toWebAuthnAccount({ credential });
-      const [ x, y ] = decodeAbiParameters(
-        [{ type: 'bytes32' }, { type: 'bytes32' }],
-        webAuthnCredential.publicKey
-      );
+      const [x, y] = decodeAbiParameters([{ type: 'bytes32' }, { type: 'bytes32' }], webAuthnCredential.publicKey);
 
       await gianoInjection.onCredentialKey(credential.raw.rawId, { x, y });
 
@@ -272,7 +265,6 @@ const MultipleOwnersDemo: NextPage = () => {
       // Set the public key state to display it
       setSecondPasskeyPublicKey({ x, y });
       setSecondPasskeyCreated(true);
-
     } catch (error) {
       console.error('Failed to create second passkey:', error);
     } finally {
@@ -412,7 +404,7 @@ const MultipleOwnersDemo: NextPage = () => {
           userVerification: 'discouraged',
         },
         mediation: 'silent',
-      })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse } | null;
+      })) as (PublicKeyCredential & { response: AuthenticatorAssertionResponse }) | null;
 
       if (!rawCredential) {
         return null;
@@ -447,8 +439,8 @@ const MultipleOwnersDemo: NextPage = () => {
   // using the current provider (which is linked with the other SCW)
   const submitUserOperation = async (
     userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
-      account: SmartAccount<GianoSmartAccountImplementation>
-    }
+      account: SmartAccount<GianoSmartAccountImplementation>;
+    },
   ) => {
     if (gianoInjection.submitUserOperation === undefined) {
       return await bundlerClient.sendUserOperation(userOpRequest);
@@ -512,8 +504,8 @@ const MultipleOwnersDemo: NextPage = () => {
       const secondPasskeyOwner = ownersList.find((owner) => owner.index > 0) || ownersList[ownersList.length - 1];
 
       console.log('🔑 Using hacky second passkey injection...');
-      const { challenge } = await gianoInjection.getCredentialInfo()
-      const credentialId = Buffer.from(secondPasskeyId, 'base64')
+      const { challenge } = await gianoInjection.getCredentialInfo();
+      const credentialId = Buffer.from(secondPasskeyId, 'base64');
 
       const webAuthnAccount = await getWebAuthnAccount({ credentialId, challenge });
       if (!webAuthnAccount) {
@@ -524,23 +516,25 @@ const MultipleOwnersDemo: NextPage = () => {
         client: gianoClient,
         owners: [webAuthnAccount],
         factoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
-      })
+      });
 
       const userOperationHash = await submitUserOperation({
         account: smartAccount,
-        calls: [{
-          from: address,
-          to: address,
-          // @ts-expect-error
-          value: '0x0', // 0 ETH
-          data: '0x', // Empty data
-        }]
-      })
+        calls: [
+          {
+            from: address,
+            to: address,
+            // @ts-expect-error
+            value: '0x0', // 0 ETH
+            data: '0x', // Empty data
+          },
+        ],
+      });
 
       console.log('✅ User Operation submitted with second passkey:', { userOperationHash });
 
       // eth_sendTransaction returns a simple hash string
-      const userOpReceipt = await bundlerClient.waitForUserOperationReceipt({ hash: userOperationHash })
+      const userOpReceipt = await bundlerClient.waitForUserOperationReceipt({ hash: userOperationHash });
       console.log('✅ User Operation receipt:', { userOpReceipt });
 
       const result = {
@@ -630,7 +624,7 @@ const MultipleOwnersDemo: NextPage = () => {
   useEffect(() => {
     const secondPasskeyId = localStorage.getItem('second_passkey_id');
     const secondPasskeyKey = localStorage.getItem('second_passkey_public_key');
-    
+
     if (secondPasskeyId && secondPasskeyKey) {
       setSecondPasskeyCreated(true);
       try {
@@ -717,28 +711,30 @@ const MultipleOwnersDemo: NextPage = () => {
             }}
           >
             <strong>Smart Account Address:</strong>
-            <div style={{ fontFamily: 'monospace', marginTop: '5px', wordBreak: 'break-all' }}>
-              {address}
-            </div>
+            <div style={{ fontFamily: 'monospace', marginTop: '5px', wordBreak: 'break-all' }}>{address}</div>
           </div>
         )}
 
         {connectionReady && (
           <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto' }}>
             {/* Step 1: List current owners */}
-            <div style={{
-              marginBottom: '40px',
-              padding: '20px',
-              border: '1px solid #e9ecef',
-              borderRadius: '8px',
-              backgroundColor: '#ffffff'
-            }}>
-              <h3 style={{
-                marginBottom: '20px',
-                paddingBottom: '10px',
-                borderBottom: '2px solid #e9ecef',
-                margin: '0 0 20px 0'
-              }}>
+            <div
+              style={{
+                marginBottom: '40px',
+                padding: '20px',
+                border: '1px solid #e9ecef',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+              }}
+            >
+              <h3
+                style={{
+                  marginBottom: '20px',
+                  paddingBottom: '10px',
+                  borderBottom: '2px solid #e9ecef',
+                  margin: '0 0 20px 0',
+                }}
+              >
                 📋 Step 1: Current Owners
               </h3>
               <div style={{ marginBottom: '20px' }}>
@@ -751,22 +747,22 @@ const MultipleOwnersDemo: NextPage = () => {
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
                   }}
                 >
                   Refresh Owners List
                 </button>
               </div>
               {ownersList.length > 0 && (
-                <div style={{
-                  padding: '20px',
-                  backgroundColor: '#f8f9fa',
-                  border: '1px solid #dee2e6',
-                  borderRadius: '6px'
-                }}>
-                  <p style={{ marginBottom: '15px', fontWeight: 'bold' }}>
-                    Current Owners ({ownersList.length}):
-                  </p>
+                <div
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#f8f9fa',
+                    border: '1px solid #dee2e6',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <p style={{ marginBottom: '15px', fontWeight: 'bold' }}>Current Owners ({ownersList.length}):</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     {ownersList.map((owner) => (
                       <div
@@ -775,21 +771,23 @@ const MultipleOwnersDemo: NextPage = () => {
                           padding: '15px',
                           backgroundColor: '#ffffff',
                           border: '1px solid #dee2e6',
-                          borderRadius: '6px'
+                          borderRadius: '6px',
                         }}
                       >
                         <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#495057' }}>
                           Owner #{owner.index} ({owner.isPublicKey ? 'Passkey' : 'Address'})
                         </div>
-                        <div style={{
-                          fontFamily: 'monospace',
-                          wordBreak: 'break-all',
-                          fontSize: '0.85em',
-                          backgroundColor: '#f8f9fa',
-                          padding: '10px',
-                          borderRadius: '4px',
-                          border: '1px solid #e9ecef'
-                        }}>
+                        <div
+                          style={{
+                            fontFamily: 'monospace',
+                            wordBreak: 'break-all',
+                            fontSize: '0.85em',
+                            backgroundColor: '#f8f9fa',
+                            padding: '10px',
+                            borderRadius: '4px',
+                            border: '1px solid #e9ecef',
+                          }}
+                        >
                           {owner.fullBytes}
                         </div>
                       </div>
@@ -800,38 +798,46 @@ const MultipleOwnersDemo: NextPage = () => {
             </div>
 
             {/* Step 2: Create second passkey and show public key */}
-            <div style={{
-              marginBottom: '40px',
-              padding: '20px',
-              border: '1px solid #e9ecef',
-              borderRadius: '8px',
-              backgroundColor: '#ffffff'
-            }}>
-              <h3 style={{
-                marginBottom: '20px',
-                paddingBottom: '10px',
-                borderBottom: '2px solid #e9ecef',
-                margin: '0 0 20px 0'
-              }}>
+            <div
+              style={{
+                marginBottom: '40px',
+                padding: '20px',
+                border: '1px solid #e9ecef',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+              }}
+            >
+              <h3
+                style={{
+                  marginBottom: '20px',
+                  paddingBottom: '10px',
+                  borderBottom: '2px solid #e9ecef',
+                  margin: '0 0 20px 0',
+                }}
+              >
                 🔑 Step 2: Create Second Passkey
               </h3>
 
-              <div style={{
-                padding: '20px',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '8px',
-                border: '1px solid #e9ecef'
-              }}>
+              <div
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef',
+                }}
+              >
                 <div style={{ marginBottom: '20px', fontSize: '0.95em', color: '#6c757d' }}>
                   Create a second passkey and view its public key before adding it to the blockchain.
                 </div>
 
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '15px',
-                  marginBottom: '15px'
-                }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '15px',
+                    marginBottom: '15px',
+                  }}
+                >
                   <button
                     className={styles.sendButton}
                     disabled={isCreatingSecondPasskey || secondPasskeyCreated}
@@ -843,57 +849,61 @@ const MultipleOwnersDemo: NextPage = () => {
                       color: 'white',
                       border: 'none',
                       borderRadius: '4px',
-                      cursor: secondPasskeyCreated ? 'not-allowed' : 'pointer'
+                      cursor: secondPasskeyCreated ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    {isCreatingSecondPasskey
-                      ? '🔄 Creating Passkey...'
-                      : secondPasskeyCreated
-                        ? '✅ Passkey Created'
-                        : '🔑 Create Second Passkey'}
+                    {isCreatingSecondPasskey ? '🔄 Creating Passkey...' : secondPasskeyCreated ? '✅ Passkey Created' : '🔑 Create Second Passkey'}
                   </button>
 
                   {secondPasskeyCreated && (
-                    <div style={{
-                      color: '#28a745',
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
+                    <div
+                      style={{
+                        color: '#28a745',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
                       ✅ Passkey created successfully!
                     </div>
                   )}
                 </div>
 
                 {secondPasskeyPublicKey && (
-                  <div style={{
-                    padding: '15px',
-                    backgroundColor: '#d4edda',
-                    border: '1px solid #c3e6cb',
-                    borderRadius: '6px',
-                    color: '#155724',
-                    marginBottom: '20px'
-                  }}>
+                  <div
+                    style={{
+                      padding: '15px',
+                      backgroundColor: '#d4edda',
+                      border: '1px solid #c3e6cb',
+                      borderRadius: '6px',
+                      color: '#155724',
+                      marginBottom: '20px',
+                    }}
+                  >
                     <div style={{ fontWeight: 'bold', marginBottom: '15px' }}>📋 Passkey Public Key:</div>
-                    
+
                     <div style={{ marginBottom: '10px' }}>
                       <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>X Coordinate:</label>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px'
-                      }}>
-                        <div style={{
-                          fontFamily: 'monospace',
-                          fontSize: '0.8em',
-                          backgroundColor: '#ffffff',
-                          padding: '8px',
-                          borderRadius: '4px',
-                          border: '1px solid #dee2e6',
-                          wordBreak: 'break-all',
-                          flex: 1
-                        }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: 'monospace',
+                            fontSize: '0.8em',
+                            backgroundColor: '#ffffff',
+                            padding: '8px',
+                            borderRadius: '4px',
+                            border: '1px solid #dee2e6',
+                            wordBreak: 'break-all',
+                            flex: 1,
+                          }}
+                        >
                           {secondPasskeyPublicKey.x}
                         </div>
                         <button
@@ -905,7 +915,7 @@ const MultipleOwnersDemo: NextPage = () => {
                             border: 'none',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '0.8em'
+                            fontSize: '0.8em',
                           }}
                         >
                           📋 Copy
@@ -915,21 +925,25 @@ const MultipleOwnersDemo: NextPage = () => {
 
                     <div>
                       <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Y Coordinate:</label>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px'
-                      }}>
-                        <div style={{
-                          fontFamily: 'monospace',
-                          fontSize: '0.8em',
-                          backgroundColor: '#ffffff',
-                          padding: '8px',
-                          borderRadius: '4px',
-                          border: '1px solid #dee2e6',
-                          wordBreak: 'break-all',
-                          flex: 1
-                        }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: 'monospace',
+                            fontSize: '0.8em',
+                            backgroundColor: '#ffffff',
+                            padding: '8px',
+                            borderRadius: '4px',
+                            border: '1px solid #dee2e6',
+                            wordBreak: 'break-all',
+                            flex: 1,
+                          }}
+                        >
                           {secondPasskeyPublicKey.y}
                         </div>
                         <button
@@ -941,7 +955,7 @@ const MultipleOwnersDemo: NextPage = () => {
                             border: 'none',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '0.8em'
+                            fontSize: '0.8em',
                           }}
                         >
                           📋 Copy
@@ -955,37 +969,41 @@ const MultipleOwnersDemo: NextPage = () => {
 
             {/* Step 3: Manual public key entry and blockchain submission */}
             {secondPasskeyCreated && (
-              <div style={{
-                marginBottom: '40px',
-                padding: '20px',
-                border: '1px solid #e9ecef',
-                borderRadius: '8px',
-                backgroundColor: '#ffffff'
-              }}>
-                <h3 style={{
-                  marginBottom: '20px',
-                  paddingBottom: '10px',
-                  borderBottom: '2px solid #e9ecef',
-                  margin: '0 0 20px 0'
-                }}>
+              <div
+                style={{
+                  marginBottom: '40px',
+                  padding: '20px',
+                  border: '1px solid #e9ecef',
+                  borderRadius: '8px',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <h3
+                  style={{
+                    marginBottom: '20px',
+                    paddingBottom: '10px',
+                    borderBottom: '2px solid #e9ecef',
+                    margin: '0 0 20px 0',
+                  }}
+                >
                   ➕ Step 3: Add New Owner to Smart Wallet
                 </h3>
 
-                <div style={{
-                  padding: '20px',
-                  backgroundColor: '#f8f9fa',
-                  borderRadius: '8px',
-                  border: '1px solid #e9ecef'
-                }}>
+                <div
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '8px',
+                    border: '1px solid #e9ecef',
+                  }}
+                >
                   <div style={{ marginBottom: '20px', fontSize: '0.95em', color: '#6c757d' }}>
-                    Enter the public key coordinates to register the passkey as a new owner of the smart wallet.
-                    Copy the X and Y coordinates from the passkey above and paste them into the fields below.
+                    Enter the public key coordinates to register the passkey as a new owner of the smart wallet. Copy the X and Y coordinates from the passkey
+                    above and paste them into the fields below.
                   </div>
 
                   <div style={{ marginBottom: '15px' }}>
-                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>
-                      X Coordinate:
-                    </label>
+                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>X Coordinate:</label>
                     <input
                       type="text"
                       value={publicKeyXInput}
@@ -1001,15 +1019,13 @@ const MultipleOwnersDemo: NextPage = () => {
                         borderRadius: '4px',
                         backgroundColor: publicKeySubmitted ? '#f8f9fa' : '#ffffff',
                         color: publicKeySubmitted ? '#6c757d' : 'inherit',
-                        cursor: publicKeySubmitted ? 'not-allowed' : 'text'
+                        cursor: publicKeySubmitted ? 'not-allowed' : 'text',
                       }}
                     />
                   </div>
 
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>
-                      Y Coordinate:
-                    </label>
+                    <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Y Coordinate:</label>
                     <input
                       type="text"
                       value={publicKeyYInput}
@@ -1025,26 +1041,22 @@ const MultipleOwnersDemo: NextPage = () => {
                         borderRadius: '4px',
                         backgroundColor: publicKeySubmitted ? '#f8f9fa' : '#ffffff',
                         color: publicKeySubmitted ? '#6c757d' : 'inherit',
-                        cursor: publicKeySubmitted ? 'not-allowed' : 'text'
+                        cursor: publicKeySubmitted ? 'not-allowed' : 'text',
                       }}
                     />
                   </div>
 
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '15px',
-                    marginBottom: '15px'
-                  }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '15px',
+                      marginBottom: '15px',
+                    }}
+                  >
                     <button
                       className={styles.sendButton}
-                      disabled={
-                        isSubmittingPublicKey || 
-                        isWaitingForConfirmation || 
-                        publicKeySubmitted || 
-                        !publicKeyXInput || 
-                        !publicKeyYInput
-                      }
+                      disabled={isSubmittingPublicKey || isWaitingForConfirmation || publicKeySubmitted || !publicKeyXInput || !publicKeyYInput}
                       onClick={submitPublicKeyToBlockchain}
                       style={{
                         padding: '12px 24px',
@@ -1053,7 +1065,7 @@ const MultipleOwnersDemo: NextPage = () => {
                         color: 'white',
                         border: 'none',
                         borderRadius: '4px',
-                        cursor: publicKeySubmitted || !publicKeyXInput || !publicKeyYInput ? 'not-allowed' : 'pointer'
+                        cursor: publicKeySubmitted || !publicKeyXInput || !publicKeyYInput ? 'not-allowed' : 'pointer',
                       }}
                     >
                       {isSubmittingPublicKey
@@ -1066,47 +1078,55 @@ const MultipleOwnersDemo: NextPage = () => {
                     </button>
 
                     {publicKeySubmitted && (
-                      <div style={{
-                        color: '#28a745',
-                        fontWeight: 'bold',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}>
+                      <div
+                        style={{
+                          color: '#28a745',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
                         ✅ Successfully added to blockchain!
                       </div>
                     )}
                   </div>
 
                   {publicKeySubmitted && (
-                    <div style={{
-                      padding: '15px',
-                      backgroundColor: '#d4edda',
-                      border: '1px solid #c3e6cb',
-                      borderRadius: '6px',
-                      color: '#155724'
-                    }}>
+                    <div
+                      style={{
+                        padding: '15px',
+                        backgroundColor: '#d4edda',
+                        border: '1px solid #c3e6cb',
+                        borderRadius: '6px',
+                        color: '#155724',
+                      }}
+                    >
                       <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Success!</div>
                       <div>The new owner has been successfully added to the smart wallet. You can now use either passkey to sign transactions.</div>
                     </div>
                   )}
 
-                  <div style={{
-                    padding: '15px',
-                    backgroundColor: '#e7f3ff',
-                    border: '1px solid #b3d9ff',
-                    borderRadius: '6px',
-                    fontSize: '0.9em',
-                    color: '#004085',
-                    marginTop: '15px'
-                  }}>
-                    💡 <strong>Manual Public Key Addition:</strong> This step demonstrates that you can add any passkey as an owner to the smart wallet as long as you have its public key coordinates. You must manually copy and paste the X and Y coordinates to prove this separation. This enables scenarios where:
-                    <br/><br/>
+                  <div
+                    style={{
+                      padding: '15px',
+                      backgroundColor: '#e7f3ff',
+                      border: '1px solid #b3d9ff',
+                      borderRadius: '6px',
+                      fontSize: '0.9em',
+                      color: '#004085',
+                      marginTop: '15px',
+                    }}
+                  >
+                    💡 <strong>Manual Public Key Addition:</strong> This step demonstrates that you can add any passkey as an owner to the smart wallet as long
+                    as you have its public key coordinates. You must manually copy and paste the X and Y coordinates to prove this separation. This enables
+                    scenarios where:
+                    <br />
+                    <br />
                     • Someone else creates a passkey and shares the public key with you
-                    <br/>
+                    <br />
                     • You want to add a backup passkey stored on a different device
-                    <br/>
-                    • You're implementing a more complex ownership management system
+                    <br />• You're implementing a more complex ownership management system
                   </div>
                 </div>
               </div>
@@ -1114,19 +1134,23 @@ const MultipleOwnersDemo: NextPage = () => {
 
             {/* Step 4: Test both passkeys */}
             {publicKeySubmitted && (
-              <div style={{
-                marginBottom: '40px',
-                padding: '20px',
-                border: '1px solid #e9ecef',
-                borderRadius: '8px',
-                backgroundColor: '#ffffff'
-              }}>
-                <h3 style={{
-                  marginBottom: '20px',
-                  paddingBottom: '10px',
-                  borderBottom: '2px solid #e9ecef',
-                  margin: '0 0 20px 0'
-                }}>
+              <div
+                style={{
+                  marginBottom: '40px',
+                  padding: '20px',
+                  border: '1px solid #e9ecef',
+                  borderRadius: '8px',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                <h3
+                  style={{
+                    marginBottom: '20px',
+                    paddingBottom: '10px',
+                    borderBottom: '2px solid #e9ecef',
+                    margin: '0 0 20px 0',
+                  }}
+                >
                   🔐 Step 4: Test Both Passkeys
                 </h3>
                 <div style={{ marginBottom: '20px', color: '#6c757d' }}>
@@ -1134,12 +1158,14 @@ const MultipleOwnersDemo: NextPage = () => {
                 </div>
 
                 {/* Buttons */}
-                <div style={{
-                  display: 'flex',
-                  gap: '12px',
-                  marginBottom: '25px',
-                  flexWrap: 'wrap'
-                }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '12px',
+                    marginBottom: '25px',
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <button
                     disabled={firstPasskeyUsed || isExecutingFirstPasskey}
                     onClick={executeTransactionWithFirstPasskey}
@@ -1159,11 +1185,7 @@ const MultipleOwnersDemo: NextPage = () => {
                       fontSize: '14px',
                     }}
                   >
-                    {isExecutingFirstPasskey
-                      ? '⏳ Executing Transaction...'
-                      : firstPasskeyUsed
-                        ? '✅ First Passkey Used'
-                        : '🔐 Execute with First Passkey'}
+                    {isExecutingFirstPasskey ? '⏳ Executing Transaction...' : firstPasskeyUsed ? '✅ First Passkey Used' : '🔐 Execute with First Passkey'}
                   </button>
                   <button
                     disabled={!secondPasskeyCreated || secondPasskeyUsed || isExecutingSecondPasskey}
@@ -1184,11 +1206,7 @@ const MultipleOwnersDemo: NextPage = () => {
                       fontSize: '14px',
                     }}
                   >
-                    {isExecutingSecondPasskey
-                      ? '⏳ Executing Transaction...'
-                      : secondPasskeyUsed
-                        ? '✅ Second Passkey Used'
-                        : '🔐 Execute with Second Passkey'}
+                    {isExecutingSecondPasskey ? '⏳ Executing Transaction...' : secondPasskeyUsed ? '✅ Second Passkey Used' : '🔐 Execute with Second Passkey'}
                   </button>
                   {(transactionResults.firstPasskey !== null || transactionResults.secondPasskey !== null) && (
                     <button
@@ -1205,7 +1223,7 @@ const MultipleOwnersDemo: NextPage = () => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '14px'
+                        fontSize: '14px',
                       }}
                     >
                       🗑️ Clear Results
@@ -1214,22 +1232,24 @@ const MultipleOwnersDemo: NextPage = () => {
                 </div>
 
                 {/* Always show transaction results */}
-                <div style={{
-                  padding: '20px',
-                  backgroundColor: '#f8f9fa',
-                  border: '1px solid #dee2e6',
-                  borderRadius: '6px'
-                }}>
-                  <p style={{ marginBottom: '15px', fontWeight: 'bold' }}>
-                    Transaction Results:
-                  </p>
+                <div
+                  style={{
+                    padding: '20px',
+                    backgroundColor: '#f8f9fa',
+                    border: '1px solid #dee2e6',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <p style={{ marginBottom: '15px', fontWeight: 'bold' }}>Transaction Results:</p>
 
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '15px',
-                    marginBottom: '20px'
-                  }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '15px',
+                      marginBottom: '20px',
+                    }}
+                  >
                     {/* First Passkey Result or Placeholder */}
                     {transactionResults.firstPasskey ? (
                       <div
@@ -1238,42 +1258,46 @@ const MultipleOwnersDemo: NextPage = () => {
                           backgroundColor: transactionResults.firstPasskey.success ? '#d4edda' : '#f8d7da',
                           border: transactionResults.firstPasskey.success ? '1px solid #c3e6cb' : '1px solid #f5c6cb',
                           borderRadius: '6px',
-                          fontSize: '0.9em'
+                          fontSize: '0.9em',
                         }}
                       >
-                        <div style={{
-                          fontWeight: 'bold',
-                          marginBottom: '10px',
-                          color: transactionResults.firstPasskey.success ? '#155724' : '#721c24'
-                        }}>
+                        <div
+                          style={{
+                            fontWeight: 'bold',
+                            marginBottom: '10px',
+                            color: transactionResults.firstPasskey.success ? '#155724' : '#721c24',
+                          }}
+                        >
                           {transactionResults.firstPasskey.passkey} {transactionResults.firstPasskey.success ? '✅' : '❌'}
                         </div>
 
                         {/* Passkey Details Section */}
-                        <div style={{
-                          marginBottom: '15px',
-                          padding: '10px',
-                          backgroundColor: '#f8f9fa',
-                          borderRadius: '4px',
-                          border: '1px solid #e9ecef'
-                        }}>
-                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '8px', fontSize: '0.9em' }}>
-                            🔑 Passkey Details:
-                          </div>
+                        <div
+                          style={{
+                            marginBottom: '15px',
+                            padding: '10px',
+                            backgroundColor: '#f8f9fa',
+                            borderRadius: '4px',
+                            border: '1px solid #e9ecef',
+                          }}
+                        >
+                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '8px', fontSize: '0.9em' }}>🔑 Passkey Details:</div>
 
                           {transactionResults.firstPasskey.credentialId && (
                             <div style={{ marginBottom: '5px' }}>
                               <span style={{ fontSize: '0.8em', color: '#6c757d' }}>Credential ID:</span>
-                              <div style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.75em',
-                                color: '#495057',
-                                backgroundColor: '#ffffff',
-                                padding: '4px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #dee2e6',
-                                marginTop: '2px'
-                              }}>
+                              <div
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.75em',
+                                  color: '#495057',
+                                  backgroundColor: '#ffffff',
+                                  padding: '4px 6px',
+                                  borderRadius: '3px',
+                                  border: '1px solid #dee2e6',
+                                  marginTop: '2px',
+                                }}
+                              >
                                 {transactionResults.firstPasskey.credentialId}
                               </div>
                             </div>
@@ -1282,16 +1306,18 @@ const MultipleOwnersDemo: NextPage = () => {
                           {transactionResults.firstPasskey.ownerIndex !== undefined && (
                             <div style={{ marginBottom: '5px' }}>
                               <span style={{ fontSize: '0.8em', color: '#6c757d' }}>Owner Index:</span>
-                              <span style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.8em',
-                                color: '#495057',
-                                backgroundColor: '#ffffff',
-                                padding: '2px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #dee2e6',
-                                marginLeft: '8px'
-                              }}>
+                              <span
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.8em',
+                                  color: '#495057',
+                                  backgroundColor: '#ffffff',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  border: '1px solid #dee2e6',
+                                  marginLeft: '8px',
+                                }}
+                              >
                                 #{transactionResults.firstPasskey.ownerIndex}
                               </span>
                             </div>
@@ -1300,17 +1326,19 @@ const MultipleOwnersDemo: NextPage = () => {
                           {transactionResults.firstPasskey.ownerBytes && (
                             <div>
                               <span style={{ fontSize: '0.8em', color: '#6c757d' }}>Owner Bytes:</span>
-                              <div style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.7em',
-                                color: '#495057',
-                                backgroundColor: '#ffffff',
-                                padding: '4px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #dee2e6',
-                                marginTop: '2px',
-                                wordBreak: 'break-all'
-                              }}>
+                              <div
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.7em',
+                                  color: '#495057',
+                                  backgroundColor: '#ffffff',
+                                  padding: '4px 6px',
+                                  borderRadius: '3px',
+                                  border: '1px solid #dee2e6',
+                                  marginTop: '2px',
+                                  wordBreak: 'break-all',
+                                }}
+                              >
                                 {transactionResults.firstPasskey.ownerBytes.slice(0, 32)}...{transactionResults.firstPasskey.ownerBytes.slice(-16)}
                               </div>
                             </div>
@@ -1318,18 +1346,18 @@ const MultipleOwnersDemo: NextPage = () => {
                         </div>
 
                         <div style={{ marginBottom: '10px' }}>
-                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '5px' }}>
-                            From Address:
-                          </div>
-                          <div style={{
-                            fontFamily: 'monospace',
-                            fontSize: '0.8em',
-                            backgroundColor: '#ffffff',
-                            padding: '8px',
-                            borderRadius: '4px',
-                            border: '1px solid #e9ecef',
-                            wordBreak: 'break-all'
-                          }}>
+                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '5px' }}>From Address:</div>
+                          <div
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '0.8em',
+                              backgroundColor: '#ffffff',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              border: '1px solid #e9ecef',
+                              wordBreak: 'break-all',
+                            }}
+                          >
                             {transactionResults.firstPasskey.fromAddress}
                           </div>
                         </div>
@@ -1338,16 +1366,20 @@ const MultipleOwnersDemo: NextPage = () => {
                           <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '5px' }}>
                             {transactionResults.firstPasskey.success ? 'Transaction Hash:' : 'Error:'}
                           </div>
-                          <div style={{
-                            fontFamily: 'monospace',
-                            fontSize: '0.8em',
-                            backgroundColor: transactionResults.firstPasskey.success ? '#ffffff' : '#f8f9fa',
-                            padding: '8px',
-                            borderRadius: '4px',
-                            border: '1px solid #e9ecef',
-                            wordBreak: 'break-all'
-                          }}>
-                            {transactionResults.firstPasskey.success ? transactionResults.firstPasskey.txHash : transactionResults.firstPasskey.error || 'Unknown error'}
+                          <div
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '0.8em',
+                              backgroundColor: transactionResults.firstPasskey.success ? '#ffffff' : '#f8f9fa',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              border: '1px solid #e9ecef',
+                              wordBreak: 'break-all',
+                            }}
+                          >
+                            {transactionResults.firstPasskey.success
+                              ? transactionResults.firstPasskey.txHash
+                              : transactionResults.firstPasskey.error || 'Unknown error'}
                           </div>
                         </div>
                       </div>
@@ -1360,15 +1392,11 @@ const MultipleOwnersDemo: NextPage = () => {
                           borderRadius: '6px',
                           fontSize: '0.9em',
                           textAlign: 'center',
-                          color: '#6c757d'
+                          color: '#6c757d',
                         }}
                       >
-                        <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
-                          First Passkey
-                        </div>
-                        <div>
-                          Click &quot;Execute with First Passkey&quot; to see results here
-                        </div>
+                        <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>First Passkey</div>
+                        <div>Click &quot;Execute with First Passkey&quot; to see results here</div>
                       </div>
                     )}
 
@@ -1380,42 +1408,46 @@ const MultipleOwnersDemo: NextPage = () => {
                           backgroundColor: transactionResults.secondPasskey.success ? '#d4edda' : '#f8d7da',
                           border: transactionResults.secondPasskey.success ? '1px solid #c3e6cb' : '1px solid #f5c6cb',
                           borderRadius: '6px',
-                          fontSize: '0.9em'
+                          fontSize: '0.9em',
                         }}
                       >
-                        <div style={{
-                          fontWeight: 'bold',
-                          marginBottom: '10px',
-                          color: transactionResults.secondPasskey.success ? '#155724' : '#721c24'
-                        }}>
+                        <div
+                          style={{
+                            fontWeight: 'bold',
+                            marginBottom: '10px',
+                            color: transactionResults.secondPasskey.success ? '#155724' : '#721c24',
+                          }}
+                        >
                           {transactionResults.secondPasskey.passkey} {transactionResults.secondPasskey.success ? '✅' : '❌'}
                         </div>
 
                         {/* Passkey Details Section */}
-                        <div style={{
-                          marginBottom: '15px',
-                          padding: '10px',
-                          backgroundColor: '#f8f9fa',
-                          borderRadius: '4px',
-                          border: '1px solid #e9ecef'
-                        }}>
-                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '8px', fontSize: '0.9em' }}>
-                            🔑 Passkey Details:
-                          </div>
+                        <div
+                          style={{
+                            marginBottom: '15px',
+                            padding: '10px',
+                            backgroundColor: '#f8f9fa',
+                            borderRadius: '4px',
+                            border: '1px solid #e9ecef',
+                          }}
+                        >
+                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '8px', fontSize: '0.9em' }}>🔑 Passkey Details:</div>
 
                           {transactionResults.secondPasskey.credentialId && (
                             <div style={{ marginBottom: '5px' }}>
                               <span style={{ fontSize: '0.8em', color: '#6c757d' }}>Credential ID:</span>
-                              <div style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.75em',
-                                color: '#495057',
-                                backgroundColor: '#ffffff',
-                                padding: '4px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #dee2e6',
-                                marginTop: '2px'
-                              }}>
+                              <div
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.75em',
+                                  color: '#495057',
+                                  backgroundColor: '#ffffff',
+                                  padding: '4px 6px',
+                                  borderRadius: '3px',
+                                  border: '1px solid #dee2e6',
+                                  marginTop: '2px',
+                                }}
+                              >
                                 {transactionResults.secondPasskey.credentialId}
                               </div>
                             </div>
@@ -1424,16 +1456,18 @@ const MultipleOwnersDemo: NextPage = () => {
                           {transactionResults.secondPasskey.ownerIndex !== undefined && (
                             <div style={{ marginBottom: '5px' }}>
                               <span style={{ fontSize: '0.8em', color: '#6c757d' }}>Owner Index:</span>
-                              <span style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.8em',
-                                color: '#495057',
-                                backgroundColor: '#ffffff',
-                                padding: '2px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #dee2e6',
-                                marginLeft: '8px'
-                              }}>
+                              <span
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.8em',
+                                  color: '#495057',
+                                  backgroundColor: '#ffffff',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  border: '1px solid #dee2e6',
+                                  marginLeft: '8px',
+                                }}
+                              >
                                 #{transactionResults.secondPasskey.ownerIndex}
                               </span>
                             </div>
@@ -1442,17 +1476,19 @@ const MultipleOwnersDemo: NextPage = () => {
                           {transactionResults.secondPasskey.ownerBytes && (
                             <div>
                               <span style={{ fontSize: '0.8em', color: '#6c757d' }}>Owner Bytes:</span>
-                              <div style={{
-                                fontFamily: 'monospace',
-                                fontSize: '0.7em',
-                                color: '#495057',
-                                backgroundColor: '#ffffff',
-                                padding: '4px 6px',
-                                borderRadius: '3px',
-                                border: '1px solid #dee2e6',
-                                marginTop: '2px',
-                                wordBreak: 'break-all'
-                              }}>
+                              <div
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.7em',
+                                  color: '#495057',
+                                  backgroundColor: '#ffffff',
+                                  padding: '4px 6px',
+                                  borderRadius: '3px',
+                                  border: '1px solid #dee2e6',
+                                  marginTop: '2px',
+                                  wordBreak: 'break-all',
+                                }}
+                              >
                                 {transactionResults.secondPasskey.ownerBytes.slice(0, 32)}...{transactionResults.secondPasskey.ownerBytes.slice(-16)}
                               </div>
                             </div>
@@ -1460,18 +1496,18 @@ const MultipleOwnersDemo: NextPage = () => {
                         </div>
 
                         <div style={{ marginBottom: '10px' }}>
-                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '5px' }}>
-                            From Address:
-                          </div>
-                          <div style={{
-                            fontFamily: 'monospace',
-                            fontSize: '0.8em',
-                            backgroundColor: '#ffffff',
-                            padding: '8px',
-                            borderRadius: '4px',
-                            border: '1px solid #e9ecef',
-                            wordBreak: 'break-all'
-                          }}>
+                          <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '5px' }}>From Address:</div>
+                          <div
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '0.8em',
+                              backgroundColor: '#ffffff',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              border: '1px solid #e9ecef',
+                              wordBreak: 'break-all',
+                            }}
+                          >
                             {transactionResults.secondPasskey.fromAddress}
                           </div>
                         </div>
@@ -1480,16 +1516,20 @@ const MultipleOwnersDemo: NextPage = () => {
                           <div style={{ fontWeight: 'bold', color: '#495057', marginBottom: '5px' }}>
                             {transactionResults.secondPasskey.success ? 'Transaction Hash:' : 'Error:'}
                           </div>
-                          <div style={{
-                            fontFamily: 'monospace',
-                            fontSize: '0.8em',
-                            backgroundColor: transactionResults.secondPasskey.success ? '#ffffff' : '#f8f9fa',
-                            padding: '8px',
-                            borderRadius: '4px',
-                            border: '1px solid #e9ecef',
-                            wordBreak: 'break-all'
-                          }}>
-                            {transactionResults.secondPasskey.success ? transactionResults.secondPasskey.txHash : transactionResults.secondPasskey.error || 'Unknown error'}
+                          <div
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '0.8em',
+                              backgroundColor: transactionResults.secondPasskey.success ? '#ffffff' : '#f8f9fa',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              border: '1px solid #e9ecef',
+                              wordBreak: 'break-all',
+                            }}
+                          >
+                            {transactionResults.secondPasskey.success
+                              ? transactionResults.secondPasskey.txHash
+                              : transactionResults.secondPasskey.error || 'Unknown error'}
                           </div>
                         </div>
                       </div>
@@ -1502,35 +1542,40 @@ const MultipleOwnersDemo: NextPage = () => {
                           borderRadius: '6px',
                           fontSize: '0.9em',
                           textAlign: 'center',
-                          color: '#6c757d'
+                          color: '#6c757d',
                         }}
                       >
-                        <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
-                          Second Passkey
-                        </div>
-                        <div>
-                          Click &quot;Execute with Second Passkey&quot; to see results here
-                        </div>
+                        <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>Second Passkey</div>
+                        <div>Click &quot;Execute with Second Passkey&quot; to see results here</div>
                       </div>
                     )}
                   </div>
 
-                  <div style={{
-                    padding: '15px',
-                    backgroundColor: '#e7f3ff',
-                    border: '1px solid #b3d9ff',
-                    borderRadius: '6px',
-                    fontSize: '0.9em',
-                    color: '#004085'
-                  }}>
+                  <div
+                    style={{
+                      padding: '15px',
+                      backgroundColor: '#e7f3ff',
+                      border: '1px solid #b3d9ff',
+                      borderRadius: '6px',
+                      fontSize: '0.9em',
+                      color: '#004085',
+                    }}
+                  >
                     💡 <strong>Multiple Passkey Proof:</strong> The transactions above demonstrate two key facts:
-                    <br/><br/>
-                    <strong>1. Same Account Control:</strong> Both transactions show identical &quot;From Address&quot;, proving both passkeys control the same smart account.
-                    <br/><br/>
-                    <strong>2. Different Passkeys Used:</strong> Each transaction shows different &quot;Credential ID&quot;, &quot;Owner Index&quot;, and &quot;Owner Bytes&quot;, proving distinct passkeys are being used for signing.
-                    <br/><br/>
-                    <strong>Note:</strong> The second passkey requires two signing prompts (authentication + transaction signing) while the first only needs one (already authenticated through wallet connection).
-                    <br/><br/>
+                    <br />
+                    <br />
+                    <strong>1. Same Account Control:</strong> Both transactions show identical &quot;From Address&quot;, proving both passkeys control the same
+                    smart account.
+                    <br />
+                    <br />
+                    <strong>2. Different Passkeys Used:</strong> Each transaction shows different &quot;Credential ID&quot;, &quot;Owner Index&quot;, and
+                    &quot;Owner Bytes&quot;, proving distinct passkeys are being used for signing.
+                    <br />
+                    <br />
+                    <strong>Note:</strong> The second passkey requires two signing prompts (authentication + transaction signing) while the first only needs one
+                    (already authenticated through wallet connection).
+                    <br />
+                    <br />
                     This conclusively demonstrates that multiple passkeys can seamlessly control the same Giano smart account!
                   </div>
                 </div>

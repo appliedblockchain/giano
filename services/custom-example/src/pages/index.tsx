@@ -3,16 +3,17 @@ import { useEffect, useState } from 'react';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { formatEther, parseEther, encodeFunctionData } from 'viem';
+import { encodeFunctionData, formatEther, parseEther } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
-import { gianoConnector } from '../wagmi';
+import { useGiano } from '../wagmi';
 import styles from '../styles/Home.module.css';
 
 const Home: NextPage = () => {
   const [mounted, setMounted] = useState(false);
   const [connectionReady, setConnectionReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const { gianoConnector } = useGiano();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
   const { address, isConnected, status } = useAccount();
@@ -47,7 +48,11 @@ const Home: NextPage = () => {
 
   // Helper function to delete passkey (clear all data including passkey)
   const deletePasskey = async () => {
-    if (!confirm('⚠️ This will permanently delete your passkey data. You will lose access to your wallet and need to create a new passkey to reconnect. Continue?')) {
+    if (
+      !confirm(
+        '⚠️ This will permanently delete your passkey data. You will lose access to your wallet and need to create a new passkey to reconnect. Continue?',
+      )
+    ) {
       return;
     }
 
@@ -70,7 +75,7 @@ const Home: NextPage = () => {
           keysToRemove.push(key);
         }
       }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
 
       console.log('Passkey deleted successfully');
     } catch (error) {
@@ -153,7 +158,6 @@ const Home: NextPage = () => {
         onError: (error) => console.error('Transaction failed:', error),
       },
     );
-
   };
 
   // New method 1: Prepare user operation manually
@@ -275,7 +279,7 @@ const Home: NextPage = () => {
       } as any);
 
       // Step 3: Send
-      const signedUserOp = { ...userOp, signature };
+      const signedUserOp = { ...userOp, signature } as any;
       const receipt = await walletClient.request({
         method: 'eth_sendSignedUserOperation',
         params: [signedUserOp],
@@ -403,7 +407,10 @@ const Home: NextPage = () => {
           <link href="/favicon.ico" rel="icon" />
         </Head>
         <main className={styles.main}>
-          <div>Loading...</div>
+          <div className={styles.loadingContainer}>
+            <div className={styles.spinner}></div>
+            <p>Loading Giano Demo...</p>
+          </div>
         </main>
       </div>
     );
@@ -419,7 +426,11 @@ const Home: NextPage = () => {
           <link href="/favicon.ico" rel="icon" />
         </Head>
         <main className={styles.main}>
-          <div>Authenticating with passkey... Please complete the authentication prompt.</div>
+          <div className={styles.loadingContainer}>
+            <div className={styles.spinner}></div>
+            <p>Authenticating with passkey...</p>
+            <p className={styles.subtitle}>Please complete the authentication prompt</p>
+          </div>
         </main>
       </div>
     );
@@ -433,146 +444,233 @@ const Home: NextPage = () => {
         <link href="/favicon.ico" rel="icon" />
       </Head>
 
+      <header className={styles.header}>
+        <div className={styles.headerContent}>
+          <div className={styles.logo}>
+            <h1>Giano Demo</h1>
+            <p>Passkey-based Smart Account Wallet</p>
+          </div>
+          <div className={styles.walletControls}>
+            {isConnected ? (
+              <button onClick={() => disconnect()} className={styles.connectButton}>
+                Disconnect Wallet
+              </button>
+            ) : (
+              <button onClick={() => connect({ connector: gianoConnector })} className={styles.connectButton}>
+                Connect Wallet
+              </button>
+            )}
+            <button onClick={deletePasskey} className={styles.deleteButton}>
+              Delete Passkey
+            </button>
+          </div>
+        </div>
+      </header>
+
       <main className={styles.main}>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
-          {isConnected ? (
-            <button onClick={() => disconnect()}>Disconnect</button>
-          ) : (
-            <button onClick={() => connect({ connector: gianoConnector })}>Connect</button>
-          )}
-          
-          <button 
-            onClick={deletePasskey}
-            style={{
-              backgroundColor: '#ef4444',
-              color: 'white',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Delete Passkey
-          </button>
-        </div>
-        
+        {/* Connection Status */}
         {address && (
-          <div style={{ marginBottom: '20px' }}>
-            <strong>Address:</strong> {address}
-          </div>
-        )}
-
-        {/* Original mint method */}
-        <form className={styles.formContainer} onSubmit={sendTx}>
-          <input className={styles.input} type="number" placeholder="Enter amount" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} />
-          <button className={styles.sendButton} disabled={!connectionReady || isWritePending || !inputMessage.trim()}>
-            Mint (Standard)
-          </button>
-        </form>
-
-        <form className={styles.formContainer} onSubmit={sendEmptyTx}>
-          <button className={styles.sendButton} disabled={!connectionReady || isWritePending}>
-            Send empty transaction
-          </button>
-        </form>
-
-        {/* New manual user operation methods */}
-        <div className={styles.formContainer}>
-          <h3>Manual Transaction Building</h3>
-          <input
-            className={styles.input}
-            type="number"
-            placeholder="Amount to mint manually"
-            value={manualMintAmount}
-            onChange={(e) => setManualMintAmount(e.target.value)}
-          />
-
-          {/* Step-by-step approach */}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button className={styles.readButton} disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()} onClick={prepareManualMint}>
-              1. Prepare UserOp
-            </button>
-            <button
-              className={styles.readButton}
-              disabled={!connectionReady || isManualMintPending || !preparedUserOp || isUserOpSigned}
-              onClick={signPreparedUserOp}
-            >
-              2. Sign UserOp
-            </button>
-            <button className={styles.readButton} disabled={!connectionReady || isManualMintPending || !isUserOpSigned} onClick={sendSignedUserOp}>
-              3. Send UserOp
-            </button>
-          </div>
-
-          {/* Full workflow approach */}
-          <button
-            className={styles.sendButton}
-            disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()}
-            onClick={manualMintFullWorkflow}
-            style={{ marginTop: '10px' }}
-          >
-            Mint (Manual Full Workflow)
-          </button>
-
-          {preparedUserOp && (
-            <div className={styles.stateCard}>
-              <p>
-                <strong>UserOp Status:</strong>
-              </p>
-              <p>Prepared: ✅</p>
-              <p>Signed: {isUserOpSigned ? '✅' : '❌'}</p>
-              <p>Signature: {preparedUserOp.signature || 'None'}</p>
-              <p>Nonce: {preparedUserOp.nonce}</p>
+          <div className={styles.statusCard}>
+            <div className={styles.statusHeader}>
+              <div className={styles.statusIndicator}></div>
+              <h3>Wallet Connected</h3>
             </div>
-          )}
-        </div>
-
-        <div className={styles.formContainer}>
-          <button className={styles.readButton} disabled={!address || !mounted || !connectionReady || !isConnected || isReadFetching} onClick={sendCall}>
-            Read balance
-          </button>
-          <button className={styles.readButton} disabled={!address || !mounted || !connectionReady || !isConnected || isPrivateBalanceFetching} onClick={sendPrivateCall}>
-            Read Private Balance (Signed)
-          </button>
-        </div>
-
-        {/* Message Signing Section */}
-        <div className={styles.formContainer}>
-          <input className={styles.input} type="text" placeholder="Message to sign" value={messageToSign} onChange={(e) => setMessageToSign(e.target.value)} />
-          <button className={styles.readButton} disabled={!connectionReady} onClick={signMessage}>
-            Sign Message (Personal)
-          </button>
-          <button className={styles.readButton} disabled={!connectionReady} onClick={signTypedData}>
-            Sign Typed Data (EIP-712)
-          </button>
-        </div>
-
-        {contractState && (
-          <div className={styles.stateCard}>
-            <p>
-              <strong>Public Balance:</strong> {formatEther(contractState)}
-            </p>
+            <p className={styles.address}>{address}</p>
+            {!connectionReady && <p className={styles.statusMessage}>Initializing smart account...</p>}
           </div>
         )}
 
-        {privateContractState && (
-          <div className={styles.stateCard}>
-            <p>
-              <strong>Private Balance:</strong> {formatEther(privateContractState)}
-            </p>
+        {/* Quick Actions */}
+        <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Quick Actions</h2>
+          <div className={styles.cardGrid}>
+            <div className={styles.card}>
+              <h3>Standard Mint</h3>
+              <p>Mint tokens using the standard contract interaction</p>
+              <form onSubmit={sendTx} className={styles.form}>
+                <input
+                  className={styles.input}
+                  type="number"
+                  placeholder="Enter amount"
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                />
+                <button className={styles.primaryButton} disabled={!connectionReady || isWritePending || !inputMessage.trim()}>
+                  {isWritePending ? 'Minting...' : 'Mint Tokens'}
+                </button>
+              </form>
+            </div>
+
+            <div className={styles.card}>
+              <h3>Empty Transaction</h3>
+              <p>Send an empty transaction to test the wallet</p>
+              <form onSubmit={sendEmptyTx} className={styles.form}>
+                <button className={styles.secondaryButton} disabled={!connectionReady || isWritePending}>
+                  Send Empty Tx
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {/* Manual Transaction Building */}
+        <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Advanced: Manual Transaction Building</h2>
+          <div className={styles.card}>
+            <h3>Step-by-Step User Operation</h3>
+            <p>Build and execute transactions manually using the three-step process</p>
+
+            <div className={styles.form}>
+              <input
+                className={styles.input}
+                type="number"
+                placeholder="Amount to mint manually"
+                value={manualMintAmount}
+                onChange={(e) => setManualMintAmount(e.target.value)}
+              />
+            </div>
+
+            <div className={styles.stepButtons}>
+              <button className={styles.stepButton} disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()} onClick={prepareManualMint}>
+                <span className={styles.stepNumber}>1</span>
+                Prepare UserOp
+              </button>
+              <button
+                className={styles.stepButton}
+                disabled={!connectionReady || isManualMintPending || !preparedUserOp || isUserOpSigned}
+                onClick={signPreparedUserOp}
+              >
+                <span className={styles.stepNumber}>2</span>
+                Sign UserOp
+              </button>
+              <button className={styles.stepButton} disabled={!connectionReady || isManualMintPending || !isUserOpSigned} onClick={sendSignedUserOp}>
+                <span className={styles.stepNumber}>3</span>
+                Send UserOp
+              </button>
+            </div>
+
+            <div className={styles.divider}>
+              <span>OR</span>
+            </div>
+
+            <button
+              className={styles.primaryButton}
+              disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()}
+              onClick={manualMintFullWorkflow}
+            >
+              {isManualMintPending ? 'Processing...' : 'Mint (Full Workflow)'}
+            </button>
+
+            {preparedUserOp && (
+              <div className={styles.statusCard}>
+                <h4>User Operation Status</h4>
+                <div className={styles.statusGrid}>
+                  <div className={styles.statusItem}>
+                    <span className={styles.statusLabel}>Prepared:</span>
+                    <span className={styles.statusValue}>✅</span>
+                  </div>
+                  <div className={styles.statusItem}>
+                    <span className={styles.statusLabel}>Signed:</span>
+                    <span className={styles.statusValue}>{isUserOpSigned ? '✅' : '❌'}</span>
+                  </div>
+                  <div className={styles.statusItem}>
+                    <span className={styles.statusLabel}>Nonce:</span>
+                    <span className={styles.statusValue}>{preparedUserOp.nonce}</span>
+                  </div>
+                  {preparedUserOp.signature && (
+                    <div className={styles.statusItem}>
+                      <span className={styles.statusLabel}>Signature:</span>
+                      <span className={styles.statusValue}>{preparedUserOp.signature.slice(0, 20)}...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Balance Reading */}
+        <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Balance & Data Reading</h2>
+          <div className={styles.cardGrid}>
+            <div className={styles.card}>
+              <h3>Public Balance</h3>
+              <p>Read your public token balance</p>
+              <button
+                className={styles.secondaryButton}
+                disabled={!address || !mounted || !connectionReady || !isConnected || isReadFetching}
+                onClick={sendCall}
+              >
+                {isReadFetching ? 'Reading...' : 'Read Balance'}
+              </button>
+              {contractState && (
+                <div className={styles.resultCard}>
+                  <strong>Balance:</strong> {formatEther(contractState)} tokens
+                </div>
+              )}
+            </div>
+
+            <div className={styles.card}>
+              <h3>Private Balance</h3>
+              <p>Read your private balance using signed calls</p>
+              <button
+                className={styles.secondaryButton}
+                disabled={!address || !mounted || !connectionReady || !isConnected || isPrivateBalanceFetching}
+                onClick={sendPrivateCall}
+              >
+                {isPrivateBalanceFetching ? 'Reading...' : 'Read Private Balance'}
+              </button>
+              {privateContractState && (
+                <div className={styles.resultCard}>
+                  <strong>Private Balance:</strong> {formatEther(privateContractState)} tokens
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Message Signing */}
+        <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Message Signing</h2>
+          <div className={styles.card}>
+            <h3>Sign Messages</h3>
+            <p>Test message signing capabilities</p>
+
+            <div className={styles.form}>
+              <input
+                className={styles.input}
+                type="text"
+                placeholder="Message to sign"
+                value={messageToSign}
+                onChange={(e) => setMessageToSign(e.target.value)}
+              />
+            </div>
+
+            <div className={styles.buttonGroup}>
+              <button className={styles.secondaryButton} disabled={!connectionReady} onClick={signMessage}>
+                Sign Message (Personal)
+              </button>
+              <button className={styles.secondaryButton} disabled={!connectionReady} onClick={signTypedData}>
+                Sign Typed Data (EIP-712)
+              </button>
+            </div>
+
+            {signatureResult && (
+              <div className={styles.resultCard}>
+                <h4>Signature Result</h4>
+                <code className={styles.signatureCode}>{signatureResult}</code>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className={styles.errorCard}>
+            <h3>Error</h3>
+            <p>{error.message}</p>
           </div>
         )}
-
-        {signatureResult && (
-          <div className={styles.stateCard}>
-            <p>
-              <strong>Signature:</strong>
-            </p>
-            <p style={{ wordBreak: 'break-all', fontSize: '0.8em' }}>{signatureResult}</p>
-          </div>
-        )}
-
-        {error && <p>Error reading balance: {error.message}</p>}
       </main>
     </div>
   );
