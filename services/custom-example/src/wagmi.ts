@@ -24,10 +24,10 @@ type ConfigMap = Record<
 const configMap: ConfigMap = {
   hardhat: {
     chain: hardhat,
-    transport: http('http://localhost:8545/'),
+    transport: http('/api/proxy/hardhat'),
     bundler: createBundlerClient({
       chain: hardhat,
-      transport: http(envConfig.bundlerRpcUrl),
+      transport: http('/api/proxy/bundler'),
       paymaster: {
         //@ts-ignore - the "required" fields are not needed to fulfill a user op
         getPaymasterData: async (): Promise<GetPaymasterDataReturnType> => ({
@@ -75,8 +75,10 @@ const rpcs = <const>{
   },
 };
 
+export const bundlerClient = configMap[envConfig.configKey].bundler;
+
 export const { gianoClient, gianoProvider } = createGianoProvider({
-  bundler: configMap[envConfig.configKey].bundler,
+  bundler: bundlerClient,
   chains: rpcs.chains,
   transports: rpcs.transports,
   initialChainId: configMap[envConfig.configKey].chain.id,

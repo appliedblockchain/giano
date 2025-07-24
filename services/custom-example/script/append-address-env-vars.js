@@ -12,7 +12,6 @@ async function main() {
     const deployedAddresses = JSON.parse(fs.readFileSync(deployedAddressesPath, 'utf8'));
 
     assert(deployedAddresses['GianoAccountFactory#GianoSmartWalletFactory'], 'GianoAccountFactory#GianoSmartWalletFactory not found');
-    assert(deployedAddresses['CredentialKeyMapper#CredentialKeyMapper'], 'CredentialKeyMapper#CredentialKeyMapper not found');
     assert(deployedAddresses['Testing#PermissivePaymaster'], 'Testing#PermissivePaymaster not found');
     assert(deployedAddresses['Testing#PrivateERC20'], 'Testing#PrivateERC20 not found');
 
@@ -29,7 +28,6 @@ async function main() {
     }
 
     newEnvLines.push('NEXT_PUBLIC_PAYMASTER_ADDRESS=' + deployedAddresses['Testing#PermissivePaymaster']);
-    newEnvLines.push('NEXT_PUBLIC_CREDENTIAL_KEY_MAPPER_ADDRESS=' + deployedAddresses['CredentialKeyMapper#CredentialKeyMapper']);
     newEnvLines.push('NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS=' + deployedAddresses['GianoAccountFactory#GianoSmartWalletFactory']);
     newEnvLines.push('NEXT_PUBLIC_PRIVATE_ERC20_ADDRESS=' + deployedAddresses['Testing#PrivateERC20']);
     newEnvLines.push('');

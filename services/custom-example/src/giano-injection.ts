@@ -60,7 +60,7 @@ export function createGianoInjection(options: CreateGianoInjectionOptions = {}):
           bytesToHex(userIdSlice.slice(8, 10)),
           bytesToHex(userIdSlice.slice(10)),
         ].join('-'),
-        walletFactoryAddress: '0x' + bytesToHex(walletFactoryAddress),
+        walletFactoryAddress: `0x${bytesToHex(walletFactoryAddress)}`,
         chainId: parseInt(bytesToHex(chainId), 16),
         chainType: parseInt(bytesToHex(chainType), 16) as ChainType,
       };
