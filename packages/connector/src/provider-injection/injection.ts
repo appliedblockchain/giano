@@ -1,14 +1,33 @@
-import { Hash, Hex } from 'viem'
-import { EntryPointVersion, UserOperation } from 'viem/account-abstraction'
-import { GianoEntryPointVersion } from '../giano-entry-point'
-import { ChainType } from '../provider'
-import { DecodedUserId, XYVector } from './types'
+import type { Hash, Hex } from 'viem';
+import type { EntryPointVersion, UserOperation } from 'viem/account-abstraction';
+import type { GianoEntryPointVersion } from '../giano-entry-point';
+import type { ChainType } from '../provider';
+import type { DecodedUserId, XYVector } from './types';
 
-export interface GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEntryPointVersion> {
+export type GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEntryPointVersion> = {
   getNameForCredential(): string | Promise<string>;
+  /**
+   * Retrieves credential information for WebAuthn operations.
+   *
+   * This method is called during both credential creation and sign-in flows to determine:
+   * - Whether an existing credential should be used for sign-in
+   * - What challenge to use for the WebAuthn operation
+   * - Whether to show a list of available credentials for selection
+   *
+   * For sign-in flows: Returns the stored credential ID and a new challenge
+   * For new credential creation: Returns null credential ID and a new challenge
+   *
+   * The challenge is used to prevent replay attacks and should be cryptographically secure.
+   *
+   * @returns Promise resolving to credential information:
+   *  - credentialId: Existing credential ID for sign-in, or null for new credential creation
+   *  - challenge: Cryptographically secure random challenge for the WebAuthn operation
+   *  - showListCredentials: Optional flag that when set to true shows a list of credential IDs to be used instead of forcing one from storage
+   */
   getCredentialInfo(): Promise<{
     credentialId?: BufferSource | null;
     challenge: BufferSource;
+    showListCredentials?: boolean;
   }>;
   /**
    * @param credentialName - The name of the credential
@@ -18,17 +37,8 @@ export interface GianoProviderInjection<EPVersion extends EntryPointVersion = Gi
    *          that Giano does not proceed to create the smart wallet
    *          (the handler took care of that).
    */
-  onCredentialCreated(
-    credentialName: string,
-    challenge: BufferSource,
-    credential: Omit<PublicKeyCredential, 'toJSON'>,
-  ): null | Hex | Promise<null | Hex>;
-  encodeUserId(
-    id: string,
-    gianoSmartWalletFactoryAddress: string,
-    chainId: string,
-    chainType: ChainType,
-  ): BufferSource | Promise<BufferSource>;
+  onCredentialCreated(credentialName: string, challenge: BufferSource, credential: Omit<PublicKeyCredential, 'toJSON'>): null | Hex | Promise<null | Hex>;
+  encodeUserId(id: string, gianoSmartWalletFactoryAddress: string, chainId: string, chainType: ChainType): BufferSource | Promise<BufferSource>;
   decodeUserId(userId: BufferSource): DecodedUserId | Promise<DecodedUserId>;
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<XYVector>;
@@ -46,10 +56,10 @@ export interface GianoProviderInjection<EPVersion extends EntryPointVersion = Gi
 
 export const isGianoProviderInjection = (injection: unknown): injection is GianoProviderInjection => {
   if (typeof injection !== 'object' || !injection) {
-    return false
+    return false;
   }
 
-  const typed = injection as GianoProviderInjection
+  const typed = injection as GianoProviderInjection;
 
   return (
     typeof typed.getNameForCredential === 'function' &&
@@ -60,9 +70,6 @@ export const isGianoProviderInjection = (injection: unknown): injection is Giano
     typeof typed.onCredentialSignedIn === 'function' &&
     typeof typed.getPublicKeyByCredentialId === 'function' &&
     typeof typed.onCredentialKey === 'function' &&
-    (
-      typeof typed.submitUserOperation === 'function' ||
-      typeof typed.submitUserOperation === 'undefined'
-    )
-  )
-}
+    (typeof typed.submitUserOperation === 'function' || typeof typed.submitUserOperation === 'undefined')
+  );
+};

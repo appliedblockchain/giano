@@ -33,6 +33,8 @@ export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
 }
 
+const USER_VERIFICATION_REQUIREMENT = 'required';
+
 export const isChainType = (x: unknown): x is ChainType => {
   return typeof x === 'number' && Object.values(ChainType).includes(x)
 }
@@ -59,6 +61,8 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined;
   injection: GianoProviderInjection;
   gianoSmartWalletFactoryAddress: Address;
+  userVerification?: 'required' | 'preferred' | 'discouraged';
+  mediation?: 'silent' | 'optional' | 'required';
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -74,6 +78,7 @@ type GianoProviderCustomMethods = [{
 
 export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
+  getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
 }
 
 export const createGianoProvider = (options: CreateGianoProviderParams) => {
@@ -84,6 +89,8 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     initialChainId,
     bundler,
     gianoSmartWalletFactoryAddress,
+    userVerification = USER_VERIFICATION_REQUIREMENT,
+    mediation = 'silent'
   } = options
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
@@ -142,24 +149,11 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     eventListeners[event]?.forEach((listener) => listener(payload));
   };
 
-  const ensureAccountDeployed = async (): Promise<boolean> => {
-    if (!smartAccount) return false;
-
-    try {
-      const accountAddress = await smartAccount.getAddress();
-      const accountCode = await client!.getCode({ address: accountAddress });
-      return !!(accountCode && accountCode !== '0x');
-    } catch (error) {
-      console.warn('Failed to check account deployment status:', error);
-      return false;
-    }
-  };
-
   const getWebAuthnAccount = async ({
     credentialId,
-    challenge,
+    challenge
   }: {
-    credentialId?: BufferSource;
+    credentialId?: BufferSource | null;
     challenge?: BufferSource;
   } = {}): Promise<WebAuthnAccount | null> => {
     try {
@@ -167,9 +161,9 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         publicKey: {
           ...(credentialId && { allowCredentials: [{ id: credentialId, type: 'public-key' }] }),
           challenge: challenge || generateRandomChallenge(),
-          userVerification: 'discouraged',
+          userVerification,
         },
-        mediation: 'silent',
+        mediation,
       })) as PublicKeyAssertion | null;
 
       if (!rawCredential) {
@@ -253,7 +247,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
       const credentialInfo = await injection.getCredentialInfo();
 
-      if (credentialInfo.credentialId) {
+      if (credentialInfo.credentialId || credentialInfo.showListCredentials) {
         const challenge = credentialInfo.challenge;
         const webAuthnAccount = await getWebAuthnAccount({ credentialId: credentialInfo.credentialId, challenge });
         if (!webAuthnAccount) {
@@ -277,6 +271,11 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
           id: await injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
         },
         challenge: newCredentialInfo.challenge,
+        authenticatorSelection: {
+          userVerification,
+          residentKey: 'preferred',
+          requireResidentKey: false
+        },
       });
 
       const handlerCreatedAddress = await injection.onCredentialCreated(credentialName, newCredentialInfo.challenge, credential.raw);
@@ -456,6 +455,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }]);
 
   const provider: GianoProvider = {
+    getSmartAccount: () => smartAccount,
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
 

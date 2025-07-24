@@ -8,6 +8,15 @@ The Giano Provider Injection system is a flexible, extensible architecture that 
 - [Interface Specification](#interface-specification)
 - [Storage Implementations](#storage-implementations)
 - [Usage Examples](#usage-examples)
+  - [Basic Usage with Custom Storage](#basic-usage-with-custom-storage)
+  - [Demo App localStorage Usage](#example-demo-app-localstorage-usage)
+  - [Configuring Backend Submission](#example-configuring-backend-submission)
+  - [WebAuthn Configuration](#webauthn-configuration)
+  - [Demo App Multi-User Server Storage](#example-demo-app-multi-user-server-storage)
+  - [Accessing the Smart Account Instance](#accessing-the-smart-account-instance)
+  - [Listening to Account Changes](#listening-to-account-changes)
+  - [React Hook Example](#react-hook-example)
+  - [Creating Your Own Storage Implementation](#creating-your-own-storage-implementation)
 - [Custom Implementations](#custom-implementations)
 - [Best Practices](#best-practices)
 - [API Reference](#api-reference)
@@ -95,10 +104,11 @@ Returns the display name for the credential during creation.
 #### `getCredentialInfo()`
 Retrieves existing credential information or generates a new challenge.
 
-**Returns**: `Promise<{ credentialId?: BufferSource | null; challenge: BufferSource }>`
+**Returns**: `Promise<{ credentialId?: BufferSource | null; challenge: BufferSource; showListCredential?: boolean }>`
 
 - `credentialId`: Existing credential ID for sign-in, or `null` for new credential creation
 - `challenge`: Random challenge bytes for the WebAuthn operation
+- `showListCredential`: When `true`, shows a list of available credentials for user selection. When `false` or `undefined`, uses automatic credential selection from storage
 
 #### `onCredentialCreated()`
 Called after a new credential is successfully created.
@@ -325,6 +335,132 @@ const injectionCustomStorage = createGianoInjection({
 });
 ```
 
+### WebAuthn Configuration
+
+The Giano provider supports configurable WebAuthn parameters that ensure consistency between credential creation and retrieval operations. These parameters are applied uniformly across all WebAuthn operations.
+
+#### Configurable Parameters
+
+```typescript
+interface CreateGianoProviderParams {
+  // ... existing params
+  userVerification?: 'required' | 'preferred' | 'discouraged';
+  mediation?: 'silent' | 'optional' | 'required';
+}
+```
+
+#### User Verification Options
+
+The `userVerification` parameter controls the user verification requirement for WebAuthn operations:
+
+- **`'required'`** (default): User verification is mandatory for all operations
+- **`'preferred'`**: User verification is preferred but not mandatory
+- **`'discouraged'`**: User verification is discouraged, allowing faster operations
+
+```typescript
+// High security - require user verification
+const secureProvider = createGianoProvider({
+  injection: myInjection,
+  userVerification: 'required',
+  // ... other config
+});
+
+// Balanced security - prefer user verification
+const balancedProvider = createGianoProvider({
+  injection: myInjection,
+  userVerification: 'preferred',
+  // ... other config
+});
+
+// Fast operations - discourage user verification
+const fastProvider = createGianoProvider({
+  injection: myInjection,
+  userVerification: 'discouraged',
+  // ... other config
+});
+```
+
+#### Mediation Options
+
+The `mediation` parameter controls credential mediation behavior:
+
+- **`'silent'`** (default): Silent credential retrieval without user interaction
+- **`'optional'`**: Optional mediation with user interaction when needed
+- **`'required'`**: Required mediation with explicit user selection
+
+```typescript
+// Silent credential selection (default)
+const silentProvider = createGianoProvider({
+  injection: myInjection,
+  mediation: 'silent',
+  // ... other config
+});
+
+// Optional user interaction
+const optionalProvider = createGianoProvider({
+  injection: myInjection,
+  mediation: 'optional',
+  // ... other config
+});
+
+// Always require user selection
+const requiredProvider = createGianoProvider({
+  injection: myInjection,
+  mediation: 'required',
+  // ... other config
+});
+```
+
+#### Enhanced Credential Selection
+
+The `getCredentialInfo()` method now supports an optional `showListCredential` parameter that allows for enhanced credential selection:
+
+```typescript
+const enhancedInjection: GianoProviderInjection = {
+  getCredentialInfo: async () => {
+    const existingCredential = await getStoredCredential();
+    
+    return {
+      credentialId: existingCredential?.id || null,
+      challenge: generateChallenge(),
+      showListCredential: true // Show credential selection UI
+    };
+  },
+  // ... other methods
+};
+```
+
+**Credential Selection Behavior**:
+- **`showListCredential: true`**: Displays a list of available credentials for user selection
+- **`showListCredential: false` or `undefined`**: Uses automatic credential selection from storage
+
+#### Consistent Parameter Application
+
+All WebAuthn parameters are applied consistently across credential operations:
+
+```typescript
+// These parameters apply to both create and get operations
+const consistentProvider = createGianoProvider({
+  injection: myInjection,
+  userVerification: 'required',
+  mediation: 'silent',
+  // ... other config
+});
+
+// The same userVerification and mediation settings will be used for:
+// 1. navigator.credentials.create() - when creating new credentials
+// 2. navigator.credentials.get() - when retrieving existing credentials
+```
+
+#### Security Considerations
+
+When configuring WebAuthn parameters, consider your application's security requirements:
+
+- **High Security Applications**: Use `userVerification: 'required'` for maximum security
+- **User Experience Focused**: Use `userVerification: 'preferred'` for balanced security and UX
+- **Performance Critical**: Use `userVerification: 'discouraged'` for fastest operations
+- **Multi-Credential Support**: Use `mediation: 'required'` when users have multiple credentials
+
 ### Example: Demo App Multi-User Server Storage
 
 ```typescript
@@ -343,6 +479,136 @@ function createUserProvider(userId: string, options = {}) {
 // Different users get isolated storage with backend submission
 const aliceProvider = createUserProvider('alice-123', { enableBackendSubmission: true });
 const bobProvider = createUserProvider('bob-456', { enableBackendSubmission: false }); // Direct bundler submission
+```
+
+### Accessing the Smart Account Instance
+
+You can access the current smart account instance using the `getSmartAccount()` method on the provider:
+
+```typescript
+import { createGianoProvider } from '@appliedblockchain/giano-connector';
+
+const { gianoProvider } = createGianoProvider({
+  injection: myCustomInjection,
+  // ... other config
+});
+
+// Check if a smart account is connected
+const smartAccount = gianoProvider.getSmartAccount();
+if (smartAccount) {
+  const address = await smartAccount.getAddress();
+  console.log('Connected smart account address:', address);
+  
+  // Access smart account methods
+  const signature = await smartAccount.signMessage({ 
+    message: 'Hello, Giano!' 
+  });
+  
+  // Sign user operations
+  const userOpSignature = await smartAccount.signUserOperation({
+    sender: address,
+    nonce: 0n,
+    initCode: '0x',
+    callData: '0x',
+    callGasLimit: 0n,
+    verificationGasLimit: 0n,
+    preVerificationGas: 0n,
+    maxFeePerGas: 0n,
+    maxPriorityFeePerGas: 0n,
+    paymasterAndData: '0x',
+    signature: '0x'
+  });
+} else {
+  console.log('No smart account connected');
+}
+```
+
+#### Listening to Account Changes
+
+You can listen to the `accountChanged` event to react to smart account connection changes:
+
+```typescript
+// Listen for account changes
+gianoProvider.on('accountChanged', (accounts: string[]) => {
+  const smartAccount = gianoProvider.getSmartAccount();
+  
+  if (accounts.length === 0) {
+    console.log('User disconnected - no smart account available');
+    // Handle disconnection
+  } else {
+    console.log('Account changed to:', accounts[0]);
+    
+    if (smartAccount) {
+      // Smart account is connected and ready to use
+      smartAccount.getAddress().then(address => {
+        console.log('Connected smart account address:', address);
+      });
+    } else {
+      console.log('Smart account not yet available');
+    }
+  }
+});
+
+// Example: Check smart account status in event handlers
+gianoProvider.on('connect', (connectInfo) => {
+  console.log('Provider connected:', connectInfo);
+  
+  const smartAccount = gianoProvider.getSmartAccount();
+  if (smartAccount) {
+    console.log('Smart account is available after connection');
+  }
+});
+
+gianoProvider.on('disconnect', (error) => {
+  console.log('Provider disconnected:', error);
+  
+  const smartAccount = gianoProvider.getSmartAccount();
+  if (!smartAccount) {
+    console.log('Smart account is no longer available');
+  }
+});
+```
+
+### Listening to Account Changes
+
+The Giano provider emits standard EIP-1193 events, including `accountsChanged`. You can listen to these events to react to account state changes. For detailed examples of listening to account changes and accessing the smart account instance, see the [Accessing the Smart Account Instance](#accessing-the-smart-account-instance) section above.
+
+```typescript
+import { createGianoProvider } from '@appliedblockchain/giano-connector';
+
+const { gianoProvider } = createGianoProvider({
+  injection: myCustomInjection,
+  // ... other config
+});
+
+// Listen for account changes
+gianoProvider.on('accountsChanged', (accounts: string[]) => {
+  if (accounts.length === 0) {
+    console.log('User disconnected or no accounts available');
+    // Handle disconnection
+  } else {
+    console.log('Account changed to:', accounts[0]);
+    // Handle new account connection
+  }
+});
+
+// Listen for chain changes
+gianoProvider.on('chainChanged', (chainId: string) => {
+  console.log('Chain changed to:', chainId);
+  // Handle chain change
+});
+
+// Listen for disconnection
+gianoProvider.on('disconnect', (error) => {
+  console.log('Provider disconnected:', error);
+  // Handle disconnection
+});
+
+// Listen for connection
+gianoProvider.on('connect', (connectInfo) => {
+  console.log('Provider connected:', connectInfo);
+  // Handle connection
+});
 ```
 
 ### Creating Your Own Storage Implementation
@@ -679,11 +945,19 @@ interface GianoStorage {
   getCredentialInfo(): Promise<{
     passkeyId: string | null;
     challenge: Uint8Array;
+    showListCredential?: boolean;
   }>;
   setPasskeyId(id: string): Promise<void>;
   getPublicKey(rawId: ArrayBuffer): Promise<{ x: Hex; y: Hex } | null>;
   setPublicKey(rawId: ArrayBuffer, coords: { x: Hex; y: Hex }): Promise<void>;
   isAvailable(): boolean;
+}
+
+// WebAuthn Configuration Types
+interface CreateGianoProviderParams {
+  // ... existing params
+  userVerification?: 'required' | 'preferred' | 'discouraged';
+  mediation?: 'silent' | 'optional' | 'required';
 }
 ```
 
@@ -715,6 +989,92 @@ function createGianoServerInjection(
 
 // Demo app: Create storage with automatic fallback
 function createGianoStorage(customStorage?: GianoStorage): GianoStorage;
+```
+
+### Smart Account API
+
+The `getSmartAccount()` method provides access to the current connected smart account and its methods:
+
+```typescript
+// Smart Account Methods
+interface SmartAccount<GianoSmartAccountImplementation> {
+  // Get the smart account address
+  getAddress(): Promise<Address>;
+  
+  // Sign a message
+  signMessage(parameters: { message: Hex | string }): Promise<Hex>;
+  
+  // Sign typed data (EIP-712)
+  signTypedData(parameters: TypedDataDefinition): Promise<Hex>;
+  
+  // Sign a user operation
+  signUserOperation(parameters: UserOperation): Promise<Hex>;
+  
+  // Sign static call permission
+  signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
+  
+  // Decode call data
+  decodeCalls(data: Hex): Promise<Call[]>;
+  
+  // Encode calls to smart account format
+  encodeCalls(calls: Call[]): Promise<Hex>;
+  
+  // Get factory arguments for account creation
+  getFactoryArgs(): Promise<{ factory: Address; factoryData: Hex }>;
+  
+  // Get stub signature for gas estimation
+  getStubSignature(): Promise<Hex>;
+}
+
+
+provider.on('accountsChanged', () => {
+  const smartAccount = provider.getSmartAccount();
+  if (smartAccount) {
+    const address = await smartAccount.getAddress();
+    console.log('Smart account address:', address);
+  }
+})
+```
+
+#### Creating a useSmartAccount hook (React)
+
+This hook is used to get the smart account instance in a React component.
+
+```typescript
+import { useSyncExternalStore } from 'react';
+
+const subscribe = (callback) => {
+  provider.on('accountChanged', callback);
+  return () => provider.off('accountChanged', callback);
+};
+const getSnapshot = () => provider.getSmartAccount();
+
+export const useSmartAccount = () => {
+  return useSyncExternalStore(subscribe, getSnapshot);
+};
+```
+
+### Provider Events
+
+The Giano provider implements the standard EIP-1193 event interface:
+
+```typescript
+interface GianoProvider {
+  // Request methods
+  request(args: EIP1193Parameters): Promise<any>;
+  
+  // Event listeners
+  on<E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>): GianoProvider;
+  removeListener<E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>): GianoProvider;
+}
+
+// Available events
+interface EIP1193EventMap {
+  accountsChanged: [accounts: string[]];
+  chainChanged: [chainId: string];
+  connect: [connectInfo: { chainId: string }];
+  disconnect: [error: { code: number; name: string; message: string; details?: string }];
+}
 ```
 
 ### Demo App Example Injections

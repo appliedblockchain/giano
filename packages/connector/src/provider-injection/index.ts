@@ -1,2 +1,2 @@
-export * from './injection'
-export * from './types'
+export * from './injection';
+export * from './types';
