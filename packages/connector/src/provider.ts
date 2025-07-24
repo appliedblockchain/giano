@@ -148,6 +148,19 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     return await injection.submitUserOperation(signedUserOp);
   };
 
+  const ensureAccountDeployed = async (): Promise<boolean> => {
+    if (!smartAccount) return false;
+
+    try {
+      const accountAddress = await smartAccount.getAddress();
+      const accountCode = await client!.getCode({ address: accountAddress });
+      return !!(accountCode && accountCode !== '0x');
+    } catch (error) {
+      console.warn('Failed to check account deployment status:', error);
+      return false;
+    }
+  };
+
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
     eventListeners[event]?.forEach((listener) => listener(payload));
   };
