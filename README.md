@@ -70,6 +70,30 @@ Moreover, you don't need to run the local blockchain node, as the Coinbase bundl
 
 Application available at <http://localhost:3000>.
 
+## Troubleshooting
+
+### Heap Out of Memory Error
+
+If you encounter a "heap out of memory" error when running the build command, this is typically due to Node.js running out of memory during the build process. This can happen when building large projects or when the default memory allocation is insufficient.
+
+**Solution:**
+
+Run the build command with increased memory allocation:
+
+```sh
+NODE_OPTIONS='--max-old-space-size=16384' pnpm build
+```
+
+This increases the maximum heap size to 16GB. You can adjust the value (in MB) based on your system's available memory:
+- `8192` for 8GB
+- `16384` for 16GB  
+- `32768` for 32GB
+
+**Alternative solutions:**
+- Close other memory-intensive applications before building
+- Clear Node.js cache: `pnpm store prune`
+- Restart your development environment
+
 ### Test contracts
 
 #### Coinbase tests (Foundry-based)
