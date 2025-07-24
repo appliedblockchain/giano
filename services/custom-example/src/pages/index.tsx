@@ -3,8 +3,7 @@ import { useEffect, useState } from 'react';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { formatEther, parseEther } from 'viem';
-import { encodeFunctionData } from 'viem';
+import { formatEther, parseEther, encodeFunctionData } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
 import { gianoConnector } from '../wagmi';
@@ -25,7 +24,7 @@ const Home: NextPage = () => {
     isFetching: isReadFetching,
     error,
   } = useReadContract({
-    address: config.privateErc20Address,
+    address: config.privateErc20Address as `0x${string}`,
     abi: privateErc20Abi,
     functionName: 'balanceOf',
     args: [address!],
@@ -38,6 +37,8 @@ const Home: NextPage = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [manualMintAmount, setManualMintAmount] = useState('');
   const [contractState, setContractState] = useState<bigint | null>(null);
+  const [privateContractState, setPrivateContractState] = useState<bigint | null>(null);
+  const [isPrivateBalanceFetching, setIsPrivateBalanceFetching] = useState(false);
   const [signatureResult, setSignatureResult] = useState<string>('');
   const [messageToSign, setMessageToSign] = useState('Hello, please sign this message!');
   const [isManualMintPending, setIsManualMintPending] = useState(false);
@@ -131,23 +132,13 @@ const Home: NextPage = () => {
     if (!inputMessage.trim()) return;
 
     const userOperationHash = await writeContractAsync({
-      address: config.privateErc20Address,
+      address: config.privateErc20Address as `0x${string}`,
       abi: privateErc20Abi,
       functionName: 'mint',
       args: [parseEther(inputMessage.trim())],
     });
 
-    // Without wagmi connector, the provider can be used directly:
-    // const userOpReceipt = await gianoProvider.request({
-    //    method: 'waitForUserOperationReceipt',
-    //    params: [userOperationHash],
-    // });
-
-    if (userOpReceipt) {
-      console.log('✅ User operation receipt received:', userOpReceipt);
-      return;
-    }
-    console.log('❌ User operation receipt not found');
+    console.log('Transaction sent with hash:', userOperationHash);
   };
 
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
@@ -155,7 +146,7 @@ const Home: NextPage = () => {
     sendTransaction(
       {
         to: address,
-        value: 0n,
+        value: BigInt(0),
       },
       {
         onSuccess: (...params) => console.log(params),
@@ -185,7 +176,7 @@ const Home: NextPage = () => {
         params: [
           [
             {
-              to: config.privateErc20Address,
+              to: config.privateErc20Address as `0x${string}`,
               data: mintCallData,
             },
           ],
@@ -199,7 +190,6 @@ const Home: NextPage = () => {
 
       setPreparedUserOp(userOp);
       console.log('User operation prepared:', userOp);
-      console.log('UserOp signature:', userOp?.signature);
       setIsUserOpSigned(false); // Reset signed state when preparing new operation
     } catch (error) {
       console.error('Failed to prepare user operation:', error);
@@ -275,7 +265,7 @@ const Home: NextPage = () => {
 
       const userOp = await walletClient.request({
         method: 'eth_prepareUserOperation',
-        params: [[{ to: config.privateErc20Address, data: mintCallData }]],
+        params: [[{ to: config.privateErc20Address as `0x${string}`, data: mintCallData }]],
       } as any);
 
       // Step 2: Sign
@@ -303,6 +293,45 @@ const Home: NextPage = () => {
   const sendCall = async () => {
     const { data } = await readContract();
     if (data) setContractState(data);
+  };
+
+  // New function to read private balance using signed_eth_call
+  const sendPrivateCall = async () => {
+    if (!walletClient || !address) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    try {
+      setIsPrivateBalanceFetching(true);
+
+      const callData = encodeFunctionData({
+        abi: privateErc20Abi,
+        functionName: 'privateBalanceOf',
+        args: [address],
+      });
+
+      console.log('callData', callData);
+
+      const result = await walletClient.request({
+        method: 'signed_eth_call',
+        params: [
+          {
+            to: config.privateErc20Address as `0x${string}`,
+            data: callData,
+          },
+          'latest',
+        ],
+      } as any);
+
+      const decodedResult = BigInt(result as string);
+      setPrivateContractState(decodedResult);
+      console.log('Private balance:', decodedResult);
+    } catch (error) {
+      console.error('Failed to read private balance:', error);
+    } finally {
+      setIsPrivateBalanceFetching(false);
+    }
   };
 
   const signMessage = async () => {
@@ -502,6 +531,9 @@ const Home: NextPage = () => {
           <button className={styles.readButton} disabled={!address || !mounted || !connectionReady || !isConnected || isReadFetching} onClick={sendCall}>
             Read balance
           </button>
+          <button className={styles.readButton} disabled={!address || !mounted || !connectionReady || !isConnected || isPrivateBalanceFetching} onClick={sendPrivateCall}>
+            Read Private Balance (Signed)
+          </button>
         </div>
 
         {/* Message Signing Section */}
@@ -518,7 +550,15 @@ const Home: NextPage = () => {
         {contractState && (
           <div className={styles.stateCard}>
             <p>
-              <strong>Balance:</strong> {formatEther(contractState)}
+              <strong>Public Balance:</strong> {formatEther(contractState)}
+            </p>
+          </div>
+        )}
+
+        {privateContractState && (
+          <div className={styles.stateCard}>
+            <p>
+              <strong>Private Balance:</strong> {formatEther(privateContractState)}
             </p>
           </div>
         )}
