@@ -79,11 +79,10 @@ type GianoProviderCustomMethods = [{
 export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
   getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
-  setInjection: (injection: GianoProviderInjection) => GianoProvider;
 }
 
 export const createGianoProvider = (options: CreateGianoProviderParams) => {
-  let injection = withValidation(options.injection)
+  const injection = withValidation(options.injection)
   const {
     transports,
     chains,
@@ -535,10 +534,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     removeListener: <E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>) => {
       eventListeners[event]?.delete(listener);
       return provider;
-    },
-    setInjection: (newInjection: GianoProviderInjection) => {
-      injection = withValidation(newInjection)
-      return provider
     }
   };
 

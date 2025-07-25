@@ -6,7 +6,7 @@ import Head from 'next/head';
 import { encodeFunctionData, formatEther, parseEther } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
 import { config } from '../config';
-import { gianoInjection, gianoShowListCredentialsInjection } from '../giano-injection';
+import { gianoInjection } from '../giano-injection';
 import { useGiano } from '../wagmi';
 import styles from '../styles/Home.module.css';
 
@@ -15,7 +15,7 @@ const Home: NextPage = () => {
   const [connectionReady, setConnectionReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [showCredentialList, setShowCredentialList] = useState(false);
-  const { gianoConnector, gianoProvider } = useGiano();
+  const { gianoConnector } = useGiano();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
   const { address, isConnected, status } = useAccount();
@@ -57,14 +57,7 @@ const Home: NextPage = () => {
 
     // Toggle the mode
     setShowCredentialList(!showCredentialList);
-
-    if (showCredentialList) {
-      gianoProvider.setInjection(gianoInjection);
-    } else {
-      gianoProvider.setInjection(gianoShowListCredentialsInjection);
-    }
-
-    console.log(`Switched to ${!showCredentialList ? 'credential list' : 'normal'} mode`);
+    gianoInjection.setShowListCredentials(!showCredentialList);
   };
 
   // Helper function to delete passkey (clear all data including passkey)
@@ -119,7 +112,7 @@ const Home: NextPage = () => {
         const connectAsync = async () => {
           try {
             setIsAuthenticating(true);
-            const response = connect({ connector: gianoConnector });
+            connect({ connector: gianoConnector });
           } catch (error) {
             console.warn('Failed to auto-restore session:', error);
             // Clear invalid stored data
@@ -132,7 +125,7 @@ const Home: NextPage = () => {
         void connectAsync();
       }
     }
-  }, [mounted, isConnected, connect, isAuthenticating]);
+  }, [mounted, isConnected, connect, isAuthenticating, gianoConnector]);
 
   // Wait for the connection to be fully established before allowing contract calls
   useEffect(() => {

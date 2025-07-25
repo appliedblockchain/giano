@@ -15,11 +15,18 @@ export type CreateGianoInjectionOptions = {
 /**
  * Create a Giano injection with configurable storage and options
  */
-export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection {
-  const { storage, enableBackendSubmission = false, showListCredentials = false } = options;
+export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection & {
+  setShowListCredentials: (showListCredentials: boolean) => void;
+} {
+  const { storage, enableBackendSubmission = false } = options;
   const gianoStorage = createGianoStorage(storage);
+  let showListCredentials = options.showListCredentials;
 
   return {
+    setShowListCredentials: (showListCredentialsOption: boolean) => {
+      showListCredentials = showListCredentialsOption;
+    },
+
     getNameForCredential: async () => {
       return 'Giano Passkey';
     },
@@ -126,10 +133,5 @@ export const gianoInjection = createGianoInjection({ enableBackendSubmission: tr
  */
 export const gianoMemoryInjection = createGianoInjection({
   storage: new InMemoryStorage(),
-  enableBackendSubmission: true,
-});
-
-export const gianoShowListCredentialsInjection = createGianoInjection({
-  showListCredentials: true,
   enableBackendSubmission: true,
 });
