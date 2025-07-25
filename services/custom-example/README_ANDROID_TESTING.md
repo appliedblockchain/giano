@@ -129,8 +129,10 @@ The table below shows which authenticator is invoked based on different `authent
 
 #### 🦊 **Firefox Behavior**
 - **Consistently uses Platform Authenticator** for most configurations
-- **Does not invoke Google Password Manager** like Chrome
+- **Does not invoke Google Password Manager** like Chrome for passkey creation (`credentials.create()`)
 - **"Any Authenticator" configuration is problematic** - shows menu but authentication fails
+
+> **🔍 Special Note on Firefox Authentication:** While Firefox uses System Screen Lock for passkey creation, it **can** trigger Google Password Manager for authentication (`credentials.get()`) when using `allowCredentials: []` (empty array) and `mediation: 'optional'`. This creates a potential incompatibility where passkeys created in Firefox (stored locally) cannot be accessed via the Google PM authentication flow.
 
 #### 🎯 **Cross-Browser Compatibility**
 Configurations that showed consistent behavior in both browsers on this test device:
