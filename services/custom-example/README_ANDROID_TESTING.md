@@ -114,7 +114,7 @@ The table below shows which authenticator is invoked based on different `authent
 | `authenticatorAttachment: 'platform'`<br/>`userVerification: 'discouraged'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
 | `authenticatorAttachment: 'platform'`<br/>`residentKey: 'preferred'`<br/>`userVerification: 'preferred'` | 🔵 Google Password Manager | 🟡 Screen Lock (Platform) | Chrome triggered by RK preference |
 | `authenticatorAttachment: 'platform'`<br/>`residentKey: 'discouraged'`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
-| `userVerification: 'preferred'`<br/>`residentKey: 'preferred'` | 🔵 Google Password Manager | ❌ Menu but broken | Firefox menu doesn't work |
+| `userVerification: 'preferred'`<br/>`residentKey: 'preferred'` | 🔵 Google Password Manager | ⚠️ Intermittent behavior | Firefox menu works inconsistently |
 | `authenticatorAttachment: 'cross-platform'`<br/>`userVerification: 'required'` | 🔴 External Authenticator Menu | 🔴 External Authenticator Menu | Expected behavior |
 | `authenticatorAttachment: 'platform'`<br/>`requireResidentKey: false`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
 | `authenticatorAttachment: 'platform'`<br/>`userVerification: 'discouraged'`<br/>`residentKey: 'discouraged'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
