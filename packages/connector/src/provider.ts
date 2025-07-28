@@ -8,7 +8,6 @@ import {
   toHex,
   Address,
   Chain,
-  concatHex,
   EIP1193Provider,
   Transport,
 } from 'viem';
@@ -18,14 +17,17 @@ import type {
   SmartAccount,
   UserOperation,
   UserOperationReceipt,
-  WebAuthnAccount,
 } from 'viem/account-abstraction';
 import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
 import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
-import { GianoProviderInjection } from './provider-injection'
+import {
+  DEFAULT_RESIDENT_KEY_REQUIREMENT,
+  DEFAULT_USER_VERIFICATION_REQUIREMENT,
+  GianoProviderInjection,
+} from './provider-injection'
 import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
 import { getWebAuthnAccount } from './account'
@@ -263,22 +265,33 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       }
 
       const credentialName = await injection.getNameForCredential();
-      const newCredentialInfo = await injection.getCredentialInfo();
       const chainId = `0x${chain!.id.toString(16)}`;
+      const residentKey = credentialInfo.residentKey ?? DEFAULT_RESIDENT_KEY_REQUIREMENT
+      const userVerification = credentialInfo.userVerification ?? DEFAULT_USER_VERIFICATION_REQUIREMENT
+
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
-          id: await injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
+          id: await injection.encodeUserId(
+            uuidv4().replace(/-/g, ''),
+            gianoSmartWalletFactoryAddress,
+            chainId,
+            ChainType.HARDHAT,
+          ),
         },
-        challenge: newCredentialInfo.challenge,
+        challenge: credentialInfo.challenge,
         authenticatorSelection: {
           userVerification,
-          residentKey: 'preferred',
-          requireResidentKey: false
+          residentKey,
+          requireResidentKey: residentKey === 'required',
         },
       });
 
-      const handlerCreatedAddress = await injection.onCredentialCreated(credentialName, newCredentialInfo.challenge, credential.raw);
+      const handlerCreatedAddress = await injection.onCredentialCreated(
+        credentialName,
+        credentialInfo.challenge,
+        credential.raw,
+      );
 
       if (handlerCreatedAddress) {
         smartAccount = await toGianoSmartAccount({
