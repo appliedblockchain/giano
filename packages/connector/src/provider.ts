@@ -36,8 +36,6 @@ export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
 }
 
-const USER_VERIFICATION_REQUIREMENT = 'required';
-
 export const isChainType = (x: unknown): x is ChainType => {
   return typeof x === 'number' && Object.values(ChainType).includes(x)
 }
@@ -56,8 +54,6 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined;
   injection: GianoProviderInjection;
   gianoSmartWalletFactoryAddress: Address;
-  userVerification?: 'required' | 'preferred' | 'discouraged';
-  mediation?: 'silent' | 'optional' | 'required';
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -84,8 +80,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     initialChainId,
     bundler,
     gianoSmartWalletFactoryAddress,
-    userVerification = USER_VERIFICATION_REQUIREMENT,
-    mediation = 'silent'
   } = options
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
