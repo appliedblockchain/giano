@@ -59,6 +59,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Missing entryPoint address' });
     }
 
+    // 🔍 VERIFICATION: Log which EntryPoint is being used
+    console.log('🎯 ENTRYPOINT VERIFICATION:');
+    console.log('   EntryPoint Address:', entryPointAddress);
+    if (entryPointAddress === '0x0000000071727De22E5E9d8BAf0edAc6f37da032') {
+      console.log('   ✅ Using EntryPoint v0.7 (Original)');
+    } else if (entryPointAddress === '0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0') {
+      console.log('   🆕 Using EntryPoint v0.8 (Mock Test Instance)');
+    } else {
+      console.log('   ⚠️  Using Unknown EntryPoint Address');
+    }
+    console.log('');
+
     // Step 3: Direct RPC call to bundler
     const sendUserOpId = ++rpcIdCounter;
     const rpcResponse = await fetch(config.bundlerRpcUrl, {

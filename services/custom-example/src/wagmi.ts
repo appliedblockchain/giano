@@ -6,7 +6,7 @@ import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
 import { base, baseSepolia, hardhat } from 'wagmi/chains';
-import { config as envConfig } from './config';
+import { config as envConfig, type SupportedEntryPointVersion } from './config';
 import { gianoInjection } from './giano-injection';
 
 console.log('Using config:', envConfig);
@@ -77,29 +77,65 @@ const rpcs = <const>{
 
 export const bundlerClient = configMap[envConfig.configKey].bundler;
 
-export const { gianoClient, gianoProvider } = createGianoProvider({
-  bundler: bundlerClient,
-  chains: rpcs.chains,
-  transports: rpcs.transports,
-  initialChainId: configMap[envConfig.configKey].chain.id,
-  injection: gianoInjection,
-  gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
-});
+// Create function to generate Giano provider with specific EntryPoint version
+export function createGianoProviderWithVersion(entryPointVersion: SupportedEntryPointVersion = envConfig.defaultEntryPointVersion) {
+  console.log('🔧 Creating Giano Provider with EntryPoint version:', entryPointVersion);
+  
+  return createGianoProvider({
+    bundler: bundlerClient,
+    chains: rpcs.chains,
+    transports: rpcs.transports,
+    initialChainId: configMap[envConfig.configKey].chain.id,
+    injection: gianoInjection,
+    gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
+    entryPointVersion, // 🎯 Pass the EntryPoint version here
+  });
+}
 
-const providerTransport = custom(gianoProvider);
+// Function to create a complete wagmi config with specific EntryPoint version
+export function createWagmiConfigWithEntryPoint(entryPointVersion: SupportedEntryPointVersion) {
+  console.log('🎯 Creating Wagmi Config with EntryPoint version:', entryPointVersion);
+  
+  const { gianoClient, gianoProvider } = createGianoProviderWithVersion(entryPointVersion);
+  const providerTransport = custom(gianoProvider);
+  const createGianoConnectorFn = createGianoConnector({ provider: gianoProvider });
 
-const createGianoConnectorFn = createGianoConnector({ provider: gianoProvider });
+  const wagmiConfig = createConfig({
+    chains: [...rpcs.chains],
+    transports: {
+      ...Object.fromEntries(
+        Object.keys(rpcs.transports).map((k) => {
+          return [k, providerTransport];
+        }),
+      ),
+    },
+    connectors: [createGianoConnectorFn],
+  });
 
-export const config = createConfig({
-  chains: [...rpcs.chains],
-  transports: {
-    ...Object.fromEntries(
-      Object.keys(rpcs.transports).map((k) => {
-        return [k, providerTransport];
-      }),
-    ),
-  },
-  connectors: [createGianoConnectorFn],
-});
+  return {
+    config: wagmiConfig,
+    gianoConnector: wagmiConfig.connectors[0],
+    gianoProvider,
+    gianoClient,
+  };
+}
 
-export const gianoConnector = config.connectors[0];
+// Create default configuration (for backward compatibility)
+export const { config, gianoConnector, gianoProvider, gianoClient } = createWagmiConfigWithEntryPoint(envConfig.defaultEntryPointVersion);
+
+// Legacy exports for backward compatibility
+// export const { gianoClient, gianoProvider } = createGianoProviderWithVersion();
+// const providerTransport = custom(gianoProvider);
+// const createGianoConnectorFn = createGianoConnector({ provider: gianoProvider });
+// export const config = createConfig({
+//   chains: [...rpcs.chains],
+//   transports: {
+//     ...Object.fromEntries(
+//       Object.keys(rpcs.transports).map((k) => {
+//         return [k, providerTransport];
+//       }),
+//     ),
+//   },
+//   connectors: [createGianoConnectorFn],
+// });
+// export const gianoConnector = config.connectors[0];

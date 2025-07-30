@@ -24,6 +24,7 @@ import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnA
 import { entryPoint07Abi } from 'viem/account-abstraction';
 import { entryPoint07Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
+import type { EntryPointConfig } from '../giano-entry-point';
 
 export type ToGianoSmartAccountParameters = {
   address?: Address | undefined;
@@ -31,6 +32,7 @@ export type ToGianoSmartAccountParameters = {
   owners: readonly (Address | OneOf<LocalAccount | WebAuthnAccount>)[];
   nonce?: bigint | undefined;
   factoryAddress: Address;
+  entryPoint?: EntryPointConfig;
 };
 
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;

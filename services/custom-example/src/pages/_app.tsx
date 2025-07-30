@@ -2,23 +2,23 @@ import '../styles/globals.css';
 import '@rainbow-me/rainbowkit/styles.css';
 import type { AppProps } from 'next/app';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WagmiProvider } from 'wagmi';
+// Import our dynamic wagmi provider instead of static components
+import { DynamicWagmiProvider } from '../providers/WagmiProvider';
+// import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+// import { WagmiProvider } from 'wagmi';
 // import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 
-import { config } from '../wagmi';
+// import { config } from '../wagmi';
 
-const client = new QueryClient();
+// const client = new QueryClient();
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={client}>
-        {/* <RainbowKitProvider> */}
-          <Component {...pageProps} />
-        {/* </RainbowKitProvider> */}
-      </QueryClientProvider>
-    </WagmiProvider>
+    <DynamicWagmiProvider>
+      {/* <RainbowKitProvider> */}
+        <Component {...pageProps} />
+      {/* </RainbowKitProvider> */}
+    </DynamicWagmiProvider>
   );
 }
 

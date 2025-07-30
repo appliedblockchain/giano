@@ -6,7 +6,7 @@
   "scripts": {
     "build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
-    "hh:node": "anvil --enable-trace-printing",
+    "hh:node": "anvil --steps-tracing",
     "hh:deploy": "hardhat ignition deploy ignition/modules/GianoAccountFactory.ts --strategy create2",
     "hh:deploy:mapper": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",
     "hh:deploy:testing": "hardhat ignition deploy ignition/modules/Testing.ts --strategy create2",
@@ -23,7 +23,7 @@
   "main": "dist/index",
   "types": "dist/index.d.ts",
   "devDependencies": {
-    "@account-abstraction/contracts": "0.7.0",
+    "@account-abstraction/contracts": "^0.8.0",
     "@appliedblockchain/silentdatarollup-core": "^1.0.1",
     "@appliedblockchain/silentdatarollup-hardhat-plugin": "^1.0.1",
     "@nomicfoundation/ethereumjs-util": "^9.0.4",

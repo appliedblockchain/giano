@@ -24,7 +24,13 @@ import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstra
 import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
-import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
+import { 
+  GianoEntryPointAddress, 
+  GianoEntryPointVersion,
+  SupportedEntryPointVersion,
+  getEntryPointConfig,
+  DEFAULT_ENTRYPOINT_VERSION
+} from './giano-entry-point'
 import { GianoProviderInjection } from './provider-injection'
 import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
@@ -63,6 +69,7 @@ export type CreateGianoProviderParams = {
   gianoSmartWalletFactoryAddress: Address;
   userVerification?: 'required' | 'preferred' | 'discouraged';
   mediation?: 'silent' | 'optional' | 'required';
+  entryPointVersion?: SupportedEntryPointVersion;
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -90,8 +97,12 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     bundler,
     gianoSmartWalletFactoryAddress,
     userVerification = USER_VERIFICATION_REQUIREMENT,
-    mediation = 'silent'
+    mediation = 'silent',
+    entryPointVersion = DEFAULT_ENTRYPOINT_VERSION
   } = options
+
+  // Get the EntryPoint configuration for the specified version
+  const entryPointConfig = getEntryPointConfig(entryPointVersion)
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
@@ -133,16 +144,18 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     // Sign the user operation
     const signature = await userOpRequest.account.signUserOperation(preparedWithGas);
 
+    console.log(entryPointConfig)
+
     // Create the complete signed user operation
     const signedUserOp = {
       ...preparedWithGas,
       sender: await userOpRequest.account.getAddress(),
-      signature,
-      account: {
-        entryPoint: {
-          address: GianoEntryPointAddress,
+              signature,
+        account: {
+          entryPoint: {
+            address: entryPointConfig.address,
+          },
         },
-      },
     };
 
     return await injection.submitUserOperation(signedUserOp);
@@ -307,7 +320,12 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         if (!webAuthnAccount) {
           throw new Error('Invalid credential');
         }
-        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: gianoSmartWalletFactoryAddress })
+        smartAccount = await toGianoSmartAccount({ 
+          client: client!, 
+          owners: [webAuthnAccount], 
+          factoryAddress: gianoSmartWalletFactoryAddress,
+          entryPoint: entryPointConfig 
+        })
         const smartAccountAddress = await smartAccount.getAddress()
 
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
@@ -340,6 +358,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
           owners: [toWebAuthnAccount({ credential })],
           address: handlerCreatedAddress,
           factoryAddress: gianoSmartWalletFactoryAddress,
+          entryPoint: entryPointConfig,
         });
 
         emit('connect', { chainId });
@@ -351,6 +370,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         client: client!,
         owners: [toWebAuthnAccount({ credential })],
         factoryAddress: gianoSmartWalletFactoryAddress,
+        entryPoint: entryPointConfig,
       });
       const smartAccountAddress = await smartAccount.getAddress();
 

@@ -1,3 +1,6 @@
+// Define supported EntryPoint versions
+export type SupportedEntryPointVersion = '0.7' | '0.8';
+
 if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
   throw new Error('NEXT_PUBLIC_BUNDLER_RPC_URL is not set');
 }
@@ -9,4 +12,20 @@ export const config = {
   paymasterAddress: process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS,
   gianoSmartWalletFactoryAddress: process.env.NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS ?? '0x5A1dd8C52Daaa27D9ced48f7F96b2b05dD6dB0B0',
   privateErc20Address: process.env.NEXT_PUBLIC_PRIVATE_ERC20_ADDRESS ?? '0x768F92504EDbACaf0502354ea8F75BD627301519',
+  // Default EntryPoint version - can be overridden via URL parameter or user selection
+  defaultEntryPointVersion: (process.env.NEXT_PUBLIC_DEFAULT_ENTRYPOINT_VERSION as SupportedEntryPointVersion) ?? '0.7' as SupportedEntryPointVersion,
 };
+
+// EntryPoint version configuration for different environments
+export const ENTRYPOINT_VERSION_CONFIGS = {
+  '0.7': {
+    name: 'EntryPoint v0.7',
+    description: 'Stable version with PackedUserOperation support',
+    supported: true,
+  },
+  '0.8': {
+    name: 'EntryPoint v0.8',
+    description: 'Latest version with enhanced features (experimental)',
+    supported: true,
+  },
+} as const;

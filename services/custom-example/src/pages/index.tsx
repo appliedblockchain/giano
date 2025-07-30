@@ -5,15 +5,23 @@ import type { NextPage } from 'next';
 import Head from 'next/head';
 import { formatEther, parseEther, encodeFunctionData } from 'viem';
 import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useWalletClient, useWriteContract } from 'wagmi';
-import { config } from '../config';
-import { gianoConnector } from '../wagmi';
+import { config, type SupportedEntryPointVersion } from '../config';
+// Remove static connector import since we'll use dynamic connectors
+// import { gianoConnector } from '../wagmi';
 import styles from '../styles/Home.module.css';
+import { EntryPointSelector } from '../components/EntryPointSelector';
+import { EntryPointVerification } from '../components/EntryPointVerification';
+import { useDynamicWagmi } from '../providers/WagmiProvider';
 
 const Home: NextPage = () => {
   const [mounted, setMounted] = useState(false);
   const [connectionReady, setConnectionReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const { connect } = useConnect();
+  
+  // Use dynamic wagmi context instead of local state
+  const { selectedEntryPointVersion, setSelectedEntryPointVersion, isReconfiguring } = useDynamicWagmi();
+  
+  const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { address, isConnected, status } = useAccount();
   const { data: walletClient } = useWalletClient();
@@ -93,7 +101,7 @@ const Home: NextPage = () => {
         const connectAsync = async () => {
           try {
             setIsAuthenticating(true);
-            const response = connect({ connector: gianoConnector });
+            const response = connect({ connector: connectors[0] }); // Assuming the first connector is the one to restore
           } catch (error) {
             console.warn('Failed to auto-restore session:', error);
             // Clear invalid stored data
@@ -106,7 +114,7 @@ const Home: NextPage = () => {
         void connectAsync();
       }
     }
-  }, [mounted, isConnected, connect, isAuthenticating]);
+  }, [mounted, isConnected, connect, isAuthenticating, connectors]);
 
   // Wait for the connection to be fully established before allowing contract calls
   useEffect(() => {
@@ -434,11 +442,54 @@ const Home: NextPage = () => {
       </Head>
 
       <main className={styles.main}>
+        {/* EntryPoint Version Selector */}
+        <EntryPointSelector
+          selectedVersion={selectedEntryPointVersion}
+          onVersionChange={async (version) => {
+            console.log('🔧 EntryPoint Version Changed:', version);
+            console.log('   Selected Version:', version);
+            console.log('   Previous Version:', selectedEntryPointVersion);
+            
+            if (isConnected) {
+              console.log('   ⚠️ Disconnecting current wallet...');
+              // Disconnect first if connected since we're changing the underlying provider
+              disconnect();
+            }
+            
+            // Use the dynamic wagmi context to change EntryPoint version
+            // This will automatically reconfigure wagmi with the new EntryPoint
+            await setSelectedEntryPointVersion(version);
+            console.log('   ✅ EntryPoint version updated to:', version);
+          }}
+          disabled={isAuthenticating || isReconfiguring}
+        />
+
+        {isReconfiguring && (
+          <div style={{
+            padding: '1rem',
+            border: '2px solid #fbbf24',
+            borderRadius: '8px',
+            marginBottom: '1rem',
+            backgroundColor: '#fffbeb',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+              🔄 Reconfiguring for EntryPoint v{selectedEntryPointVersion}...
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+              Please wait while we set up the new EntryPoint configuration.
+            </div>
+          </div>
+        )}
+
+        {/* EntryPoint Verification Component */}
+        <EntryPointVerification selectedVersion={selectedEntryPointVersion} />
+
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
           {isConnected ? (
             <button onClick={() => disconnect()}>Disconnect</button>
           ) : (
-            <button onClick={() => connect({ connector: gianoConnector })}>Connect</button>
+            <button onClick={() => connect({ connector: connectors[0] })}>Connect</button>
           )}
           
           <button 
