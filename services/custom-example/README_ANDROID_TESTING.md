@@ -114,10 +114,11 @@ The table below shows which authenticator is invoked based on different `authent
 | `authenticatorAttachment: 'platform'`<br/>`userVerification: 'discouraged'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
 | `authenticatorAttachment: 'platform'`<br/>`residentKey: 'preferred'`<br/>`userVerification: 'preferred'` | 🔵 Google Password Manager | 🟡 Screen Lock (Platform) | Chrome triggered by RK preference |
 | `authenticatorAttachment: 'platform'`<br/>`residentKey: 'discouraged'`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
-| `userVerification: 'preferred'`<br/>`residentKey: 'preferred'` | 🔵 Google Password Manager | ❌ Menu but broken | Firefox menu doesn't work |
+| `userVerification: 'preferred'`<br/>`residentKey: 'preferred'` | 🔵 Google Password Manager | ⚠️ Intermittent behavior | Firefox menu works inconsistently |
 | `authenticatorAttachment: 'cross-platform'`<br/>`userVerification: 'required'` | 🔴 External Authenticator Menu | 🔴 External Authenticator Menu | Expected behavior |
 | `authenticatorAttachment: 'platform'`<br/>`requireResidentKey: false`<br/>`userVerification: 'preferred'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
 | `authenticatorAttachment: 'platform'`<br/>`userVerification: 'discouraged'`<br/>`residentKey: 'discouraged'` | 🟡 Screen Lock (Platform) | 🟡 Screen Lock (Platform) | ✅ Consistent cross-browser |
+| **Firefox GPM Fix:**<br/>`residentKey: 'preferred'`<br/>**+ `extensions: { credProps: true }`** | 🔵 Google Password Manager | 🔵 **Google Password Manager** | ✅ **Both browsers use Google PM** |
 
 ### Key Findings
 
@@ -128,19 +129,93 @@ The table below shows which authenticator is invoked based on different `authent
 - **Platform Authenticator** (screen lock) is used for most other configurations
 
 #### 🦊 **Firefox Behavior**
-- **Consistently uses Platform Authenticator** for most configurations
-- **Does not invoke Google Password Manager** like Chrome
+- **Default behavior:** Uses Platform Authenticator (screen lock) for passkey creation
+- **Google Password Manager can be enabled** by adding `extensions: { credProps: true }` to WebAuthn options
+- **With credProps extension:** Firefox uses Google Password Manager consistently for creation and authentication
 - **"Any Authenticator" configuration is problematic** - shows menu but authentication fails
 
+#### 🎯 **Critical Implementation Detail**
+**To enable Google Password Manager on Firefox for Android passkey creation:**
+```javascript
+const webAuthnOptions = {
+  // ... your standard WebAuthn options
+  extensions: { credProps: true }  // ← This single line enables Firefox Google PM
+};
+```
+
+> **⚠️ Important:** Without `extensions.credProps`, Firefox will default to platform authenticator (screen lock), which may create compatibility issues if your app expects cloud-synced passkeys across devices.
+
 #### 🎯 **Cross-Browser Compatibility**
-Configurations that showed consistent behavior in both browsers on this test device:
+
+**Recommended configuration for Google Password Manager on both browsers:**
+```javascript
+{
+  authenticatorSelection: {
+    residentKey: 'preferred',
+    userVerification: 'preferred',
+    // No authenticatorAttachment specified
+  },
+  extensions: { credProps: true }  // Essential for Firefox
+}
+```
+
+**Alternative configurations for platform authenticator consistency:**
 - `authenticatorAttachment: 'platform'` + `userVerification: 'discouraged'` + `residentKey: 'discouraged'`
 - `authenticatorAttachment: 'platform'` (minimal)
-- `authenticatorAttachment: 'platform'` + `userVerification: 'discouraged'`
-- `authenticatorAttachment: 'platform'` + `residentKey: 'discouraged'`
 - `authenticatorAttachment: 'platform'` + `requireResidentKey: false`
 
 **Note:** These results are specific to this test setup (Android 14+ with 1Password autofill service). Behavior may vary on different Android versions, devices, or configurations.
+
+## 🛠️ Implementation Recommendations
+
+### For Production Applications
+
+**If you want Google Password Manager on both Chrome and Firefox:**
+```javascript
+// Using Viem with custom createFn
+const credential = await createWebAuthnCredential({
+  name: 'your-app',
+  rp: { name: 'Your App', id: 'yourdomain.com' },
+  challenge,
+  timeout: 60000,
+  createFn: async (options) => {
+    const webAuthnOptions = {
+      ...options.publicKey,
+      authenticatorSelection: {
+        residentKey: 'preferred',
+        userVerification: 'preferred',
+      },
+      extensions: { credProps: true }  // Essential for Firefox
+    };
+    
+    return await navigator.credentials.create({
+      publicKey: webAuthnOptions
+    });
+  }
+});
+```
+
+**If you prefer platform authenticator consistency:**
+```javascript
+// Standard approach - uses device screen lock on both browsers
+const credential = await createWebAuthnCredential({
+  name: 'your-app',
+  rp: { name: 'Your App', id: 'yourdomain.com' },
+  challenge,
+  authenticatorSelection: {
+    authenticatorAttachment: 'platform',
+    userVerification: 'preferred',
+  },
+  timeout: 60000,
+});
+```
+
+### Important Considerations
+
+- **Cloud sync:** Google Password Manager passkeys sync across devices; platform authenticator passkeys are device-specific
+- **User experience:** Google Password Manager provides a more consistent UX across devices
+- **Fallback:** Always test both approaches on your target devices
+- **Extensions support:** `extensions.credProps` is widely supported but verify compatibility with your WebAuthn library
 
 ### Authenticator Types Explained
 
@@ -152,4 +227,6 @@ Configurations that showed consistent behavior in both browsers on this test dev
 
 ---
 
-**⚡ Quick Start:** Run `ngrok http 4000`, then open the ngrok HTTPS URL on your Android device using Chrome browser for optimal WebAuthn support!
+**⚡ Quick Start:** Run `ngrok http 4000`, then open the ngrok HTTPS URL on your Android device. Use the "Firefox Google Password Manager Fix" test configuration to enable Google Password Manager on both Chrome and Firefox browsers!
+
+**💡 Key Discovery:** Adding `extensions: { credProps: true }` to WebAuthn options enables Google Password Manager on Firefox for Android passkey creation.
