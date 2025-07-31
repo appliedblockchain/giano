@@ -1,1 +1,2 @@
-export * from './toGianoSmartAccount';
+export * from './get-web-authn-account'
+export * from './toGianoSmartAccount'

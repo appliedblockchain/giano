@@ -8,7 +8,6 @@ import {
   toHex,
   Address,
   Chain,
-  concatHex,
   EIP1193Provider,
   Transport,
 } from 'viem';
@@ -18,34 +17,28 @@ import type {
   SmartAccount,
   UserOperation,
   UserOperationReceipt,
-  WebAuthnAccount,
 } from 'viem/account-abstraction';
 import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
 import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
-import { GianoProviderInjection } from './provider-injection'
+import {
+  DEFAULT_RESIDENT_KEY_REQUIREMENT,
+  DEFAULT_USER_VERIFICATION_REQUIREMENT,
+  GianoProviderInjection,
+} from './provider-injection'
 import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
+import { getWebAuthnAccount } from './account'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
 }
 
-const USER_VERIFICATION_REQUIREMENT = 'required';
-
 export const isChainType = (x: unknown): x is ChainType => {
   return typeof x === 'number' && Object.values(ChainType).includes(x)
 }
-
-type PublicKeyAssertion = PublicKeyCredential & { response: AuthenticatorAssertionResponse };
-
-const generateRandomChallenge = () => {
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
-  return challenge;
-};
 
 function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
   if (key instanceof Uint8Array) {
@@ -61,8 +54,6 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined;
   injection: GianoProviderInjection;
   gianoSmartWalletFactoryAddress: Address;
-  userVerification?: 'required' | 'preferred' | 'discouraged';
-  mediation?: 'silent' | 'optional' | 'required';
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -89,8 +80,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     initialChainId,
     bundler,
     gianoSmartWalletFactoryAddress,
-    userVerification = USER_VERIFICATION_REQUIREMENT,
-    mediation = 'silent'
   } = options
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
@@ -163,52 +152,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
     eventListeners[event]?.forEach((listener) => listener(payload));
-  };
-
-  const getWebAuthnAccount = async ({
-    credentialId,
-    challenge
-  }: {
-    credentialId?: BufferSource | null;
-    challenge?: BufferSource;
-  } = {}): Promise<WebAuthnAccount | null> => {
-    try {
-      const rawCredential = (await navigator.credentials.get({
-        publicKey: {
-          ...(credentialId && { allowCredentials: [{ id: credentialId, type: 'public-key' }] }),
-          challenge: challenge || generateRandomChallenge(),
-          userVerification,
-        },
-        mediation,
-      })) as PublicKeyAssertion | null;
-
-      if (!rawCredential) {
-        return null;
-      }
-
-      // call the method injected and wait for the result true or false to continue or not
-      const isSignedIn = await injection.onCredentialSignedIn(rawCredential);
-      if (!isSignedIn) {
-        throw new Error('Failed to sign in with credential');
-      }
-
-      const { x, y } = await injection.getPublicKeyByCredentialId(rawCredential.rawId);
-
-      if (x === toHex(0, { size: 32 })) {
-        throw new Error('Unknown credential ID');
-      }
-      return toWebAuthnAccount({
-        credential: {
-          id: rawCredential.id,
-          publicKey: concatHex([x, y]),
-        },
-      });
-    } catch (error) {
-      if (['NotAllowedError', 'AbortError'].includes((error as Error).name)) {
-        return null;
-      }
-      throw error;
-    }
   };
 
   const methods: Record<string, (params?: any) => any> = {
@@ -301,9 +244,8 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
       const credentialInfo = await injection.getCredentialInfo();
 
-      if (credentialInfo.credentialId || credentialInfo.showListCredentials) {
-        const challenge = credentialInfo.challenge;
-        const webAuthnAccount = await getWebAuthnAccount({ credentialId: credentialInfo.credentialId, challenge });
+      if (credentialInfo.credentialId !== null) {
+        const webAuthnAccount = await getWebAuthnAccount(credentialInfo, injection);
         if (!webAuthnAccount) {
           throw new Error('Invalid credential');
         }
@@ -317,22 +259,33 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       }
 
       const credentialName = await injection.getNameForCredential();
-      const newCredentialInfo = await injection.getCredentialInfo();
       const chainId = `0x${chain!.id.toString(16)}`;
+      const residentKey = credentialInfo.residentKey ?? DEFAULT_RESIDENT_KEY_REQUIREMENT
+      const userVerification = credentialInfo.userVerification ?? DEFAULT_USER_VERIFICATION_REQUIREMENT
+
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
-          id: await injection.encodeUserId(uuidv4().replace(/-/g, ''), gianoSmartWalletFactoryAddress, chainId, ChainType.HARDHAT),
+          id: await injection.encodeUserId(
+            uuidv4().replace(/-/g, ''),
+            gianoSmartWalletFactoryAddress,
+            chainId,
+            ChainType.HARDHAT,
+          ),
         },
-        challenge: newCredentialInfo.challenge,
+        challenge: credentialInfo.challenge,
         authenticatorSelection: {
           userVerification,
-          residentKey: 'preferred',
-          requireResidentKey: false
+          residentKey,
+          requireResidentKey: residentKey === 'required',
         },
       });
 
-      const handlerCreatedAddress = await injection.onCredentialCreated(credentialName, newCredentialInfo.challenge, credential.raw);
+      const handlerCreatedAddress = await injection.onCredentialCreated(
+        credentialName,
+        credentialInfo.challenge,
+        credential.raw,
+      );
 
       if (handlerCreatedAddress) {
         smartAccount = await toGianoSmartAccount({

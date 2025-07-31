@@ -2,7 +2,7 @@ import type { Hash, Hex } from 'viem';
 import type { EntryPointVersion, UserOperation } from 'viem/account-abstraction';
 import type { GianoEntryPointVersion } from '../giano-entry-point';
 import type { ChainType } from '../provider';
-import type { DecodedUserId, XYVector } from './types';
+import type { CredentialInfo, DecodedUserId, XYVector } from './types';
 
 export type GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEntryPointVersion> = {
   getNameForCredential(): string | Promise<string>;
@@ -20,15 +20,14 @@ export type GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEn
    * The challenge is used to prevent replay attacks and should be cryptographically secure.
    *
    * @returns Promise resolving to credential information:
-   *  - credentialId: Existing credential ID for sign-in, or null for new credential creation
+   *  - credentialId:
+   *    - A `BufferSource` to use a specific credential for sign-in
+   *    - A `BufferSource[]` to choose from for sign-in
+   *    - `null` to create a new credential
+   *    - `'user-pick'` to show a list of credentials to choose from, instead of enforcing one from storage
    *  - challenge: Cryptographically secure random challenge for the WebAuthn operation
-   *  - showListCredentials: Optional flag that when set to true shows a list of credential IDs to be used instead of forcing one from storage
    */
-  getCredentialInfo(): Promise<{
-    credentialId?: BufferSource | null;
-    challenge: BufferSource;
-    showListCredentials?: boolean;
-  }>;
+  getCredentialInfo(): Promise<CredentialInfo>;
   /**
    * @param credentialName - The name of the credential
    * @param challenge - The challenge used to create the credential
