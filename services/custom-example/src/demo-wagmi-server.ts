@@ -14,7 +14,7 @@ import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
 import { baseSepolia, hardhat } from 'wagmi/chains';
-import { config as envConfig } from './config';
+import { config as envConfig, type SupportedEntryPointVersion, getFactoryAddress } from './config';
 import { createUserServerInjection } from './demo-server-injection';
 
 type ConfigMap = Record<
@@ -77,8 +77,12 @@ const rpcs = <const>{
  * ⚠️ This is for demonstration purposes only!
  * In a real app, you'd get userId from your authentication system
  */
-export function createServerConfigForUser(userId: string) {
+export function createServerConfigForUser(userId: string, entryPointVersion: SupportedEntryPointVersion = envConfig.defaultEntryPointVersion) {
   const userInjection = createUserServerInjection(userId);
+  
+  // Get version-specific factory address
+  const factoryAddress = getFactoryAddress(entryPointVersion);
+  console.log('📧 Server config using factory address:', factoryAddress, 'for version:', entryPointVersion);
 
   const { gianoProvider } = createGianoProvider({
     bundler: configMap[envConfig.configKey].bundler,
@@ -86,7 +90,8 @@ export function createServerConfigForUser(userId: string) {
     transports: rpcs.transports,
     initialChainId: configMap[envConfig.configKey].chain.id,
     injection: userInjection,
-    gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
+    gianoSmartWalletFactoryAddress: factoryAddress as Hex,
+    entryPointVersion, // Pass the EntryPoint version
   });
 
   const providerTransport = custom(gianoProvider);

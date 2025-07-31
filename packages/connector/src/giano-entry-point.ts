@@ -1,10 +1,7 @@
 import { entryPoint07Address, entryPoint08Address, EntryPointVersion } from 'viem/account-abstraction'
 
-// EntryPoint v0.8 address - TESTING CONFIGURATION
-// For testing dual EntryPoint support functionality, we use the same EntryPoint as v0.7
-// In production, this would be the actual EntryPoint v0.8 address once deployed
-// This allows us to test UI switching, provider recreation, and verification without deploying new contracts
-export const ENTRYPOINT_V08_ADDRESS = '0x0000000071727De22E5E9d8BAf0edAc6f37da032' as const
+// EntryPoint v0.8 address - PRODUCTION CONFIGURATION
+export const ENTRYPOINT_V08_ADDRESS = entryPoint08Address
 
 export type SupportedEntryPointVersion = '0.7' | '0.8'
 
@@ -19,8 +16,7 @@ export const ENTRYPOINT_V07_CONFIG: EntryPointConfig = {
   address: entryPoint07Address
 }
 
-// Configuration for EntryPoint v0.8 - TESTING CONFIGURATION
-// Uses same address as v0.7 for testing dual support functionality
+// Configuration for EntryPoint v0.8
 export const ENTRYPOINT_V08_CONFIG: EntryPointConfig = {
   version: '0.8',
   address: ENTRYPOINT_V08_ADDRESS

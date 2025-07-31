@@ -1,0 +1,6 @@
+# Hoist ts-node and other CLI tools to avoid binary linking issues
+hoist-pattern[]=*ts-node*
+hoist-pattern[]=*hardhat*
+
+# Enable strict peer dependencies
+strict-peer-dependencies=false

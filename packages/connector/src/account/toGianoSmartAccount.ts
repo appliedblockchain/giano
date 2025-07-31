@@ -21,8 +21,8 @@ import {
   toHex,
 } from 'viem';
 import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
-import { entryPoint07Abi } from 'viem/account-abstraction';
-import { entryPoint07Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
+import { entryPoint07Abi, entryPoint08Abi } from 'viem/account-abstraction';
+import { entryPoint07Address, entryPoint08Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
 import type { EntryPointConfig } from '../giano-entry-point';
 
@@ -35,16 +35,27 @@ export type ToGianoSmartAccountParameters = {
   entryPoint?: EntryPointConfig;
 };
 
+export type GianoSmartAccountImplementation = GianoSmartAccountImplementationV07 | GianoSmartAccountImplementationV08;
+
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
 
-export type GianoSmartAccountImplementation = Assign<
+export type GianoSmartAccountImplementationV07 = Assign<
   SmartAccountImplementation<typeof entryPoint07Abi, '0.7', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
     sign: NonNullable<SmartAccountImplementation['sign']>;
     signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
   }
->;
+  >;
+
+export type GianoSmartAccountImplementationV08 = Assign<
+  SmartAccountImplementation<typeof entryPoint08Abi, '0.8', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
+  {
+    decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
+    sign: NonNullable<SmartAccountImplementation['sign']>;
+    signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
+  }
+  >;
 
 /**
  * @description Create a Giano Smart Account.
@@ -63,11 +74,16 @@ export type GianoSmartAccountImplementation = Assign<
  * })
  */
 export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParameters): Promise<ToGianoSmartAccountReturnType> {
-  const { client, owners, nonce = 0n, factoryAddress } = parameters;
+  const { client, owners, nonce = 0n, factoryAddress, entryPoint: entryPointConfig } = parameters;
 
   let address = parameters.address;
 
-  const entryPoint = {
+  // Use provided EntryPoint configuration or default to v0.7
+  const entryPoint = entryPointConfig ? {
+    abi: entryPointConfig.version === '0.8' ? entryPoint08Abi : entryPoint07Abi,
+    address: entryPointConfig.address,
+    version: entryPointConfig.version,
+  } as const : {
     abi: entryPoint07Abi,
     address: entryPoint07Address,
     version: '0.7',
@@ -267,7 +283,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
     },
 
     extend: { abi, factory, signStaticCallPermission },
-  });
+  }) as unknown as ToGianoSmartAccountReturnType;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////

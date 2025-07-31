@@ -6,7 +6,7 @@ import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
 import { base, baseSepolia, hardhat } from 'wagmi/chains';
-import { config as envConfig, type SupportedEntryPointVersion } from './config';
+import { config as envConfig, type SupportedEntryPointVersion, getFactoryAddress, getPaymasterAddress } from './config';
 import { gianoInjection } from './giano-injection';
 
 console.log('Using config:', envConfig);
@@ -77,17 +77,59 @@ const rpcs = <const>{
 
 export const bundlerClient = configMap[envConfig.configKey].bundler;
 
+// Create version-specific bundler client for hardhat with correct paymaster
+export function createVersionSpecificBundlerClient(entryPointVersion: SupportedEntryPointVersion) {
+  const paymasterAddress = getPaymasterAddress(entryPointVersion);
+  
+  if (envConfig.configKey === 'hardhat') {
+    return createBundlerClient({
+      chain: hardhat,
+      transport: http('/api/proxy/bundler'),
+      paymaster: {
+        //@ts-ignore - the "required" fields are not needed to fulfill a user op
+        getPaymasterData: async (): Promise<GetPaymasterDataReturnType> => ({
+          paymaster: paymasterAddress as Address,
+        }),
+        //@ts-ignore - the "required" fields are not needed to fulfill a user op
+        getPaymasterStubData: async (): Promise<GetPaymasterStubDataReturnType> => ({
+          paymaster: paymasterAddress as Address,
+        }),
+      },
+      userOperation: {
+        estimateFeesPerGas: async () => {
+          return {
+            maxFeePerGas: parseGwei('200'),
+            maxPriorityFeePerGas: parseGwei('400'),
+          };
+        },
+      },
+    });
+  }
+  
+  // For other networks, fall back to the static bundler client
+  return configMap[envConfig.configKey].bundler;
+}
+
 // Create function to generate Giano provider with specific EntryPoint version
 export function createGianoProviderWithVersion(entryPointVersion: SupportedEntryPointVersion = envConfig.defaultEntryPointVersion) {
   console.log('🔧 Creating Giano Provider with EntryPoint version:', entryPointVersion);
   
+  // Get version-specific addresses
+  const factoryAddress = getFactoryAddress(entryPointVersion);
+  const paymasterAddress = getPaymasterAddress(entryPointVersion);
+  console.log('   🏭 Using factory address:', factoryAddress, 'for version:', entryPointVersion);
+  console.log('   💰 Using paymaster address:', paymasterAddress, 'for version:', entryPointVersion);
+  
+  // Get version-specific bundler client
+  const versionSpecificBundler = createVersionSpecificBundlerClient(entryPointVersion);
+  
   return createGianoProvider({
-    bundler: bundlerClient,
+    bundler: versionSpecificBundler,
     chains: rpcs.chains,
     transports: rpcs.transports,
     initialChainId: configMap[envConfig.configKey].chain.id,
     injection: gianoInjection,
-    gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
+    gianoSmartWalletFactoryAddress: factoryAddress as Hex,
     entryPointVersion, // 🎯 Pass the EntryPoint version here
   });
 }

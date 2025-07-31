@@ -86,6 +86,7 @@ type GianoProviderCustomMethods = [{
 export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
   getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
+  getCurrentEntryPoint: () => `0x${string}`;
 }
 
 export const createGianoProvider = (options: CreateGianoProviderParams) => {
@@ -530,6 +531,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
   const provider: GianoProvider = {
     getSmartAccount: () => smartAccount,
+    getCurrentEntryPoint: () => entryPointConfig.address,
     request: async (args: EIP1193Parameters) => {
       const { method, params } = args;
 

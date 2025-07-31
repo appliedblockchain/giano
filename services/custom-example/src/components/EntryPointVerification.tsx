@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAccount, useWalletClient } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { getEntryPointAddress, type SupportedEntryPointVersion } from '@appliedblockchain/giano-connector';
 
 interface EntryPointVerificationProps {
@@ -7,26 +7,44 @@ interface EntryPointVerificationProps {
 }
 
 export const EntryPointVerification: React.FC<EntryPointVerificationProps> = ({ selectedVersion }) => {
-  const { address, isConnected } = useAccount();
-  const { data: walletClient } = useWalletClient();
+  const { isConnected, connector } = useAccount();
   const [currentEntryPoint, setCurrentEntryPoint] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
 
   const checkCurrentEntryPoint = async () => {
-    if (!walletClient || !isConnected) return;
+    if (!connector || !isConnected) return;
     
     setIsChecking(true);
     try {
-      // Get the smart account from the wallet client
-      const smartAccount = (walletClient as any).account;
+      console.log('🔍 Connector:', connector);
+      console.log('🔍 Connector keys:', Object.keys(connector || {}));
       
-      if (smartAccount?.entryPoint?.address) {
-        setCurrentEntryPoint(smartAccount.entryPoint.address);
-        console.log('🔍 Current EntryPoint Address:', smartAccount.entryPoint.address);
-      } else {
-        console.log('⚠️ Could not determine EntryPoint address');
-        setCurrentEntryPoint('Unable to determine');
+      // Try to access EntryPoint through the connector
+      let entryPointAddress: string | null = null;
+      
+      // Check if connector has provider with EntryPoint info
+      if ((connector as any).provider) {
+        const provider = (connector as any).provider;
+        console.log('🔍 Provider:', provider);
+        console.log('🔍 Provider keys:', Object.keys(provider || {}));
+        
+        // Try to get current EntryPoint from provider
+        if (provider.getCurrentEntryPoint) {
+          entryPointAddress = await provider.getCurrentEntryPoint();
+          console.log('🔍 Found EntryPoint via provider.getCurrentEntryPoint():', entryPointAddress);
+        } else if (provider.entryPointConfig?.address) {
+          entryPointAddress = provider.entryPointConfig.address;
+          console.log('🔍 Found EntryPoint via provider.entryPointConfig.address:', entryPointAddress);
+        }
       }
+      
+      // Fallback: use the expected EntryPoint for the selected version
+      if (!entryPointAddress) {
+        entryPointAddress = getEntryPointAddress(selectedVersion);
+        console.log('🔍 Using expected EntryPoint for selected version:', entryPointAddress);
+      }
+      
+      setCurrentEntryPoint(entryPointAddress);
     } catch (error) {
       console.error('Error checking EntryPoint:', error);
       setCurrentEntryPoint('Error checking');

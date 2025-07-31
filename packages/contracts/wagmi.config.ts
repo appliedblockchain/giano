@@ -7,6 +7,11 @@ export default defineConfig({
   plugins: [
     hardhat({
       project: '.',
+      exclude: [
+        // Exclude account-abstraction contracts to avoid naming conflicts
+        '**/account-abstraction-v07/**',
+        '**/account-abstraction-v08/**',
+      ],
     }),
   ],
 });
