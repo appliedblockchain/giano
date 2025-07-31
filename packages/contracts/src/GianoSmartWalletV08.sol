@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {IAccount as IAccountV07} from 'account-abstraction-v07/interfaces/IAccount.sol';
+import {IAccount as IAccountV08} from 'account-abstraction-v08/interfaces/IAccount.sol';
 
-import {PackedUserOperation as PackedUserOperationV07} from 'account-abstraction-v07/interfaces/PackedUserOperation.sol';
-import {UserOperationLib as UserOperationLibV07} from 'account-abstraction-v07/core/UserOperationLib.sol';
+import {PackedUserOperation as PackedUserOperationV08} from 'account-abstraction-v08/interfaces/PackedUserOperation.sol';
+import {UserOperationLib as UserOperationLibV08} from 'account-abstraction-v08/core/UserOperationLib.sol';
 import {Receiver} from 'solady/accounts/Receiver.sol';
 import {SignatureCheckerLib} from 'solady/utils/SignatureCheckerLib.sol';
 import {UUPSUpgradeable} from 'solady/utils/UUPSUpgradeable.sol';
@@ -22,7 +22,7 @@ import {MultiOwnable} from './MultiOwnable.sol';
 /// @author Applied Blockchain (https://github.com/appliedblockchain/giano)
 /// @author Coinbase (https://github.com/coinbase/smart-wallet)
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/accounts/ERC4337.sol)
-contract GianoSmartWallet is ERC1271, IAccountV07, MultiOwnable, UUPSUpgradeable, Receiver, AuthenticatedStaticCaller {
+contract GianoSmartWalletV08 is ERC1271, IAccountV08, MultiOwnable, UUPSUpgradeable, Receiver, AuthenticatedStaticCaller {
     /// @notice A wrapper struct used for signature validation so that callers
     ///         can identify the owner that signed.
     struct SignatureWrapper {
@@ -135,7 +135,7 @@ contract GianoSmartWallet is ERC1271, IAccountV07, MultiOwnable, UUPSUpgradeable
         _initializeOwners(owners);
     }
 
-    /// @inheritdoc IAccountV07
+    /// @inheritdoc IAccountV08
     ///
     /// @notice ERC-4337 `validateUserOp` method. The EntryPoint will
     ///         call `UserOperation.sender.call(UserOperation.callData)` only if this validation call returns
@@ -155,7 +155,7 @@ contract GianoSmartWallet is ERC1271, IAccountV07, MultiOwnable, UUPSUpgradeable
     ///                        `(uint256(validAfter) << (160 + 48)) | (uint256(validUntil) << 160) | (success ? 0 : 1)`
     ///                        where `validUntil` is 0 (indefinite) and `validAfter` is 0.
     function validateUserOp(
-        PackedUserOperationV07 calldata userOp,
+        PackedUserOperationV08 calldata userOp,
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external virtual onlyEntryPoint payPrefund(missingAccountFunds) returns (uint256 validationData) {
@@ -241,11 +241,11 @@ contract GianoSmartWallet is ERC1271, IAccountV07, MultiOwnable, UUPSUpgradeable
         }
     }
 
-    /// @notice Returns the address of the EntryPoint v0.7.
+    /// @notice Returns the address of the EntryPoint v0.8.
     ///
-    /// @return The address of the EntryPoint v0.7
+    /// @return The address of the EntryPoint v0.8
     function entryPoint() public view virtual returns (address) {
-        return 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+        return 0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108;
     }
 
     /// @notice Computes the hash of the `UserOperation` in the same way as EntryPoint v0.6, but
@@ -256,8 +256,8 @@ contract GianoSmartWallet is ERC1271, IAccountV07, MultiOwnable, UUPSUpgradeable
     /// @param userOp The `UserOperation` to compute the hash for.
     ///
     /// @return The `UserOperation` hash, which does not depend on chain ID.
-    function getUserOpHashWithoutChainId(PackedUserOperationV07 calldata userOp) public view virtual returns (bytes32) {
-        return keccak256(abi.encode(UserOperationLibV07.hash(userOp), entryPoint()));
+    function getUserOpHashWithoutChainId(PackedUserOperationV08 calldata userOp) public view virtual returns (bytes32) {
+        return keccak256(abi.encode(UserOperationLibV08.hash(userOp, bytes32(0)), entryPoint()));
     }
 
     /// @notice Returns the implementation of the ERC1967 proxy.
