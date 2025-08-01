@@ -6,7 +6,14 @@ import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
 import { base, baseSepolia, hardhat } from 'wagmi/chains';
-import { config as envConfig, type SupportedEntryPointVersion, getFactoryAddress, getPaymasterAddress } from './config';
+import { 
+  config as envConfig, 
+  type SupportedEntryPointVersion, 
+  getFactoryAddress, 
+  getPaymasterAddress,
+  getProxyFactoryAddress,
+  getEntryPointPaymasterAddress
+} from './config';
 import { gianoInjection } from './giano-injection';
 
 console.log('Using config:', envConfig);
@@ -114,13 +121,16 @@ export function createVersionSpecificBundlerClient(entryPointVersion: SupportedE
 export function createGianoProviderWithVersion(entryPointVersion: SupportedEntryPointVersion = envConfig.defaultEntryPointVersion) {
   console.log('🔧 Creating Giano Provider with EntryPoint version:', entryPointVersion);
   
-  // Get version-specific addresses
-  const factoryAddress = getFactoryAddress(entryPointVersion);
-  const paymasterAddress = getPaymasterAddress(entryPointVersion);
-  console.log('   🏭 Using factory address:', factoryAddress, 'for version:', entryPointVersion);
-  console.log('   💰 Using paymaster address:', paymasterAddress, 'for version:', entryPointVersion);
+  // PROXY UPGRADE PATTERN: Always use the same factory (deploys V07 proxies)
+  // Users upgrade implementations later via upgradeToAndCall()
+  const factoryAddress = getProxyFactoryAddress();
+  const paymasterAddress = getEntryPointPaymasterAddress(entryPointVersion);
   
-  // Get version-specific bundler client
+  console.log('   🏭 Using proxy factory address:', factoryAddress);
+  console.log('   💰 Using paymaster address:', paymasterAddress, 'for EntryPoint version:', entryPointVersion);
+  console.log('   📍 Note: All wallets start with V07 implementation (upgradeable to V08)');
+  
+  // Get version-specific bundler client (this affects which EntryPoint the bundler uses)
   const versionSpecificBundler = createVersionSpecificBundlerClient(entryPointVersion);
   
   return createGianoProvider({
@@ -130,7 +140,7 @@ export function createGianoProviderWithVersion(entryPointVersion: SupportedEntry
     initialChainId: configMap[envConfig.configKey].chain.id,
     injection: gianoInjection,
     gianoSmartWalletFactoryAddress: factoryAddress as Hex,
-    entryPointVersion, // 🎯 Pass the EntryPoint version here
+    entryPointVersion, // 🎯 This now affects bundler configuration, not wallet creation
   });
 }
 

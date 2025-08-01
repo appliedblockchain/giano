@@ -11,6 +11,7 @@ import { config, type SupportedEntryPointVersion } from '../config';
 import styles from '../styles/Home.module.css';
 import { EntryPointSelector } from '../components/EntryPointSelector';
 import { EntryPointVerification } from '../components/EntryPointVerification';
+import { WalletImplementationManager } from '../components/WalletImplementationManager';
 import { useDynamicWagmi } from '../providers/WagmiProvider';
 
 const Home: NextPage = () => {
@@ -20,6 +21,9 @@ const Home: NextPage = () => {
   
   // Use dynamic wagmi context instead of local state
   const { selectedEntryPointVersion, setSelectedEntryPointVersion, isReconfiguring } = useDynamicWagmi();
+  
+  // Track wallet implementation version (separate from bundler EntryPoint version)
+  const [walletImplementationVersion, setWalletImplementationVersion] = useState<SupportedEntryPointVersion>('0.7');
   
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
@@ -443,26 +447,42 @@ const Home: NextPage = () => {
 
       <main className={styles.main}>
         {/* EntryPoint Version Selector */}
-        <EntryPointSelector
-          selectedVersion={selectedEntryPointVersion}
-          onVersionChange={async (version) => {
-            console.log('🔧 EntryPoint Version Changed:', version);
-            console.log('   Selected Version:', version);
-            console.log('   Previous Version:', selectedEntryPointVersion);
-            
-            if (isConnected) {
-              console.log('   ⚠️ Disconnecting current wallet...');
-              // Disconnect first if connected since we're changing the underlying provider
-              disconnect();
-            }
-            
-            // Use the dynamic wagmi context to change EntryPoint version
-            // This will automatically reconfigure wagmi with the new EntryPoint
-            await setSelectedEntryPointVersion(version);
-            console.log('   ✅ EntryPoint version updated to:', version);
-          }}
-          disabled={isAuthenticating || isReconfiguring}
-        />
+        <div style={{
+          padding: '1rem',
+          border: '2px solid #3b82f6',
+          borderRadius: '8px',
+          marginBottom: '1rem',
+          backgroundColor: '#eff6ff',
+        }}>
+          <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 'bold' }}>
+            📡 Bundler EntryPoint Configuration
+          </h3>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: '#6b7280' }}>
+            This controls which EntryPoint your bundler uses to process transactions. 
+            Your wallet will automatically adapt to work with the selected EntryPoint.
+          </p>
+          
+          <EntryPointSelector
+            selectedVersion={selectedEntryPointVersion}
+            onVersionChange={async (version) => {
+              console.log('🔧 Bundler EntryPoint Version Changed:', version);
+              console.log('   Selected Version:', version);
+              console.log('   Previous Version:', selectedEntryPointVersion);
+              
+              if (isConnected) {
+                console.log('   ⚠️ Disconnecting current wallet...');
+                // Disconnect first if connected since we're changing the underlying provider
+                disconnect();
+              }
+              
+              // Use the dynamic wagmi context to change EntryPoint version
+              // This will automatically reconfigure wagmi with the new EntryPoint
+              await setSelectedEntryPointVersion(version);
+              console.log('   ✅ Bundler EntryPoint version updated to:', version);
+            }}
+            disabled={isAuthenticating || isReconfiguring}
+          />
+        </div>
 
         {isReconfiguring && (
           <div style={{
@@ -484,6 +504,13 @@ const Home: NextPage = () => {
 
         {/* EntryPoint Verification Component */}
         <EntryPointVerification selectedVersion={selectedEntryPointVersion} />
+
+        {/* Wallet Implementation Manager - shows current version and upgrade option */}
+        {isConnected && (
+          <WalletImplementationManager 
+            onImplementationChange={setWalletImplementationVersion}
+          />
+        )}
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
           {isConnected ? (
@@ -510,6 +537,19 @@ const Home: NextPage = () => {
         {address && (
           <div style={{ marginBottom: '20px' }}>
             <strong>Address:</strong> {address}
+            <div style={{ 
+              marginTop: '0.5rem', 
+              fontSize: '0.875rem', 
+              color: '#6b7280',
+              border: '1px solid #e5e7eb',
+              borderRadius: '4px',
+              padding: '0.75rem',
+              backgroundColor: '#f9fafb'
+            }}>
+              💡 <strong>New Proxy Upgrade Pattern:</strong> Your wallet always keeps the same address, 
+              but you can upgrade its implementation from v0.7 to v0.8 to access new EntryPoint features.
+              Use the "Wallet Implementation Status" section above to upgrade when ready.
+            </div>
           </div>
         )}
 

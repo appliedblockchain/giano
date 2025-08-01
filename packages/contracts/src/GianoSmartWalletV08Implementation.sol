@@ -14,15 +14,17 @@ import {AuthenticatedStaticCaller} from './AuthenticatedStaticCaller.sol';
 import {ERC1271} from './ERC1271.sol';
 import {MultiOwnable} from './MultiOwnable.sol';
 
-/// @title Giano Smart Wallet
+/// @title Giano Smart Wallet V08 Implementation
 ///
-/// @notice ERC-4337-compatible smart account, based on Solady's ERC4337 account implementation
-///         with inspiration from Alchemy's LightAccount and Daimo's DaimoAccount.
+/// @notice ERC-4337 v0.8 compatible smart account implementation. 
+///         This serves as an upgrade target for V07 implementations via UUPS proxy.
+///         Based on Solady's ERC4337 account implementation with inspiration from 
+///         Alchemy's LightAccount and Daimo's DaimoAccount.
 ///
 /// @author Applied Blockchain (https://github.com/appliedblockchain/giano)
 /// @author Coinbase (https://github.com/coinbase/smart-wallet)
 /// @author Solady (https://github.com/vectorized/solady/blob/main/src/accounts/ERC4337.sol)
-contract GianoSmartWalletV08 is ERC1271, IAccountV08, MultiOwnable, UUPSUpgradeable, Receiver, AuthenticatedStaticCaller {
+contract GianoSmartWalletV08Implementation is ERC1271, IAccountV08, MultiOwnable, UUPSUpgradeable, Receiver, AuthenticatedStaticCaller {
     /// @notice A wrapper struct used for signature validation so that callers
     ///         can identify the owner that signed.
     struct SignatureWrapper {
@@ -52,6 +54,8 @@ contract GianoSmartWalletV08 is ERC1271, IAccountV08, MultiOwnable, UUPSUpgradea
     ///
     /// @dev Helps enforce sequential sequencing of replayable transactions.
     uint256 public constant REPLAYABLE_NONCE_KEY = 8453;
+
+
 
     /// @notice Thrown when `initialize` is called but the account already has had at least one owner.
     error Initialized();
@@ -287,6 +291,8 @@ contract GianoSmartWalletV08 is ERC1271, IAccountV08, MultiOwnable, UUPSUpgradea
         return false;
     }
 
+
+
     /// @notice Executes the given call from this account.
     ///
     /// @dev Reverts if the call reverted.
@@ -356,4 +362,6 @@ contract GianoSmartWalletV08 is ERC1271, IAccountV08, MultiOwnable, UUPSUpgradea
     function _domainNameAndVersion() internal pure override(ERC1271) returns (string memory, string memory) {
         return ('Giano Smart Wallet', '1');
     }
+
+
 }

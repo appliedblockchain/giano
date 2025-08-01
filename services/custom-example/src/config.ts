@@ -12,22 +12,46 @@ export const config = {
   paymasterAddress: process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS,
   // Legacy single factory address - kept for backward compatibility (using v0.7 as default)
   gianoSmartWalletFactoryAddress: process.env.NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS ?? '0x56E97c186603242C616698c684937A891A22f672',
-  privateErc20Address: process.env.NEXT_PUBLIC_PRIVATE_ERC20_ADDRESS ?? '0x2eeD4959fB632694150C67b527e070921EEcb29F',
+  privateErc20Address: process.env.NEXT_PUBLIC_PRIVATE_ERC20_ADDRESS ?? '0x2eeD4959fB632694150C67b527e070921EEcb29F', // PrivateERC20 (matches deployed)
   // Default EntryPoint version - can be overridden via URL parameter or user selection
   defaultEntryPointVersion: (process.env.NEXT_PUBLIC_DEFAULT_ENTRYPOINT_VERSION as SupportedEntryPointVersion) ?? '0.7' as SupportedEntryPointVersion,
 };
 
-// Version-specific contract addresses
+// Proxy upgrade pattern addresses - UPDATED WITH DEPLOYED CONTRACTS
+export const PROXY_UPGRADE_ADDRESSES = {
+  // Single factory that always deploys V07 proxies (users upgrade implementations later)
+  gianoSmartWalletFactoryAddress: '0xa49bA0d38E200524Da7A438705D9F34Ad245eF3a',
+  
+  // Implementation addresses for proxy upgrades
+  implementations: {
+    '0.7': '0x296B00290826aDaC27474d99023FB4Df27914059', // V07 Implementation (GianoSmartWallet)
+    '0.8': '0xA2496b69798997Fb5297d4a8C08f28FF2668645D', // V08 Implementation (GianoSmartWalletV08Implementation)
+  },
+  
+  // EntryPoint-specific configurations 
+  entryPoints: {
+    '0.7': {
+      address: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
+      paymasterAddress: '0x6943Bc5b52b51AfC9718aBB31EAA18A1352D5595', // PermissivePaymasterV07
+    },
+    '0.8': {
+      address: '0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108', 
+      paymasterAddress: '0xEfc107516CD5c0731f8Ce364bCdaD8A235794069', // PermissivePaymasterV08
+    },
+  },
+} as const;
+
+// Legacy - for backward compatibility (remove after migration)
 export const VERSION_SPECIFIC_ADDRESSES = {
   '0.7': {
-    gianoSmartWalletFactoryAddress: '0x56E97c186603242C616698c684937A891A22f672',
-    gianoSmartWalletImplementationAddress: '0xe40e09560701Df4D7D9876946B1eeD6e3b0fd387',
-    paymasterAddress: '0x6943Bc5b52b51AfC9718aBB31EAA18A1352D5595',
+    gianoSmartWalletFactoryAddress: PROXY_UPGRADE_ADDRESSES.gianoSmartWalletFactoryAddress,
+    gianoSmartWalletImplementationAddress: PROXY_UPGRADE_ADDRESSES.implementations['0.7'],
+    paymasterAddress: PROXY_UPGRADE_ADDRESSES.entryPoints['0.7'].paymasterAddress,
   },
   '0.8': {
-    gianoSmartWalletFactoryAddress: '0x91F95265a4D6cCDb56e502cFCd2C9Da80714d16e',
-    gianoSmartWalletImplementationAddress: '0xD21c53250a6De37008Bee5378F2396d8e210d3De',
-    paymasterAddress: '0xEfc107516CD5c0731f8Ce364bCdaD8A235794069',
+    gianoSmartWalletFactoryAddress: PROXY_UPGRADE_ADDRESSES.gianoSmartWalletFactoryAddress, // Same factory!
+    gianoSmartWalletImplementationAddress: PROXY_UPGRADE_ADDRESSES.implementations['0.8'],
+    paymasterAddress: PROXY_UPGRADE_ADDRESSES.entryPoints['0.8'].paymasterAddress,
   },
 } as const;
 
@@ -41,14 +65,26 @@ export function getFactoryAddress(version: SupportedEntryPointVersion): string {
   return VERSION_SPECIFIC_ADDRESSES[version].gianoSmartWalletFactoryAddress;
 }
 
-// Helper function to get implementation address for a specific version
-export function getImplementationAddress(version: SupportedEntryPointVersion): string {
-  return VERSION_SPECIFIC_ADDRESSES[version].gianoSmartWalletImplementationAddress;
-}
-
-// Helper function to get paymaster address for a specific version
+// Helper function to get paymaster address for a specific version (legacy)
 export function getPaymasterAddress(version: SupportedEntryPointVersion): string {
   return VERSION_SPECIFIC_ADDRESSES[version].paymasterAddress;
+}
+
+// NEW: Proxy upgrade pattern helpers
+export function getProxyFactoryAddress(): string {
+  return PROXY_UPGRADE_ADDRESSES.gianoSmartWalletFactoryAddress;
+}
+
+export function getImplementationAddress(version: SupportedEntryPointVersion): string {
+  return PROXY_UPGRADE_ADDRESSES.implementations[version];
+}
+
+export function getEntryPointAddress(version: SupportedEntryPointVersion): string {
+  return PROXY_UPGRADE_ADDRESSES.entryPoints[version].address;
+}
+
+export function getEntryPointPaymasterAddress(version: SupportedEntryPointVersion): string {
+  return PROXY_UPGRADE_ADDRESSES.entryPoints[version].paymasterAddress;
 }
 
 // EntryPoint version configuration for different environments
