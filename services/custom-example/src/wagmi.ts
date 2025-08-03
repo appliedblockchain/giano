@@ -65,7 +65,7 @@ const configMap: ConfigMap = {
       transport: http(envConfig.bundlerRpcUrl),
       paymaster: true,
     }),
-  }
+  },
 };
 
 const rpcs = <const>{
@@ -103,3 +103,7 @@ export const config = createConfig({
 });
 
 export const gianoConnector = config.connectors[0];
+
+export const useGiano = () => {
+  return { gianoConnector, gianoClient, gianoProvider, bundlerClient };
+};

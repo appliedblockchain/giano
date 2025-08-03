@@ -1,5 +1,5 @@
 import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
-import { isHex, type Hex } from 'viem';
+import { type Hex, isHex } from 'viem';
 import { createGianoStorage, type GianoStorage, InMemoryStorage } from './storage-implementations';
 import { bytesToHex, concatBytes, hexToBytes, padBytes, serializeWithBigInt } from './utils';
 
@@ -8,26 +8,35 @@ export type CreateGianoInjectionOptions = {
   storage?: GianoStorage;
   /** Enable backend submission of user operations. When true, includes submitUserOperation hook */
   enableBackendSubmission?: boolean;
+  /** Show credential list instead of using automatic selection from storage */
+  showListCredentials?: boolean;
 };
 
 /**
  * Create a Giano injection with configurable storage and options
  */
-export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection {
+export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection & {
+  setShowListCredentials: (showListCredentials: boolean) => void;
+} {
   const { storage, enableBackendSubmission = false } = options;
   const gianoStorage = createGianoStorage(storage);
+  let showListCredentials = options.showListCredentials;
 
   return {
+    setShowListCredentials: (showListCredentialsOption: boolean) => {
+      showListCredentials = showListCredentialsOption;
+    },
+
     getNameForCredential: async () => {
       return 'Giano Passkey';
     },
 
     getCredentialInfo: async () => {
       const { passkeyId, challenge } = await gianoStorage.getCredentialInfo();
-
       return {
-        credentialId: passkeyId ? new Uint8Array(Buffer.from(passkeyId, 'base64')) : null,
+        credentialId: !showListCredentials && passkeyId ? new Uint8Array(Buffer.from(passkeyId, 'base64')) : null,
         challenge,
+        showListCredentials,
       };
     },
 

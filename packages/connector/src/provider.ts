@@ -487,7 +487,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     removeListener: <E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>) => {
       eventListeners[event]?.delete(listener);
       return provider;
-    },
+    }
   };
 
   return <const>{
