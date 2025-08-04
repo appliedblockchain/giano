@@ -19,6 +19,56 @@ Related Origin Requests (ROR) is a WebAuthn feature that allows passkeys to be r
 3. **Validation**: If the requesting origin is listed in the allowed origins, authentication proceeds
 4. **Seamless experience**: Users can authenticate with the same passkey across all configured domains
 
+## 🔄 ROR Flow Diagram
+
+The following diagram illustrates the complete Related Origin Requests flow using our demo setup with two different domains (ngrok and localtunnel):
+
+```mermaid
+sequenceDiagram
+    participant UserAgent as 🌐 Browser
+    participant DomainA as 📍 Domain A<br/>(xyz.loca.lt)<br/>RP ID Owner
+    participant DomainB as 📍 Domain B<br/>(abc123.ngrok.io)<br/>Cross-Origin Tester
+    participant WellKnown as 📄 .well-known/webauthn<br/>Configuration
+
+    Note over UserAgent,WellKnown: 🔧 Phase 1: Setup Configuration
+
+    UserAgent->>DomainA: 1. Visit Domain A (localtunnel)
+    DomainA->>UserAgent: Serve ROR Demo Page
+    UserAgent->>DomainA: 2. Add Domain B (ngrok) to allowed origins
+    DomainA->>WellKnown: Update .well-known/webauthn<br/>{"origins": ["https://abc123.ngrok.io"]}
+
+    Note over UserAgent,WellKnown: 🔑 Phase 2: Cross-Origin Passkey Creation
+
+    UserAgent->>DomainB: 3. Visit Domain B (ngrok)
+    DomainB->>UserAgent: Serve ROR Demo Page
+    UserAgent->>UserAgent: 4. Configure:<br/>• RP ID = "xyz.loca.lt"<br/>• Passkey Name = "test-ror-demo"
+    UserAgent->>DomainA: 5. Check .well-known/webauthn
+    DomainA->>UserAgent: Return allowed origins list
+    UserAgent->>UserAgent: 6. Verify Domain B is allowed
+    UserAgent->>UserAgent: 7. navigator.credentials.create({<br/>  rp: { id: "xyz.loca.lt" }<br/>})
+    UserAgent->>UserAgent: 8. Create passkey locally<br/>✅ Passkey belongs to Domain A (localtunnel)<br/>✅ Created while on Domain B (ngrok)
+
+    Note over UserAgent,WellKnown: 🔐 Phase 3: Cross-Origin Authentication
+
+    UserAgent->>UserAgent: 9. Test authentication<br/>RP ID = "xyz.loca.lt"
+    UserAgent->>DomainA: 10. Verify .well-known allows Domain B
+    DomainA->>UserAgent: ✅ Domain B is in origins list
+    UserAgent->>UserAgent: 11. navigator.credentials.get({<br/>  rpId: "xyz.loca.lt"<br/>})
+    UserAgent->>UserAgent: 12. Find matching passkey<br/>✅ Authenticate successfully
+    UserAgent->>DomainB: 13. Display success result
+
+    Note over UserAgent,WellKnown: 🎉 Result: Cross-Origin Authentication Success!<br/>Passkey for Domain A (localtunnel) works on Domain B (ngrok)
+```
+
+### Key Flow Points
+
+1. **Configuration Setup**: Domain A (localtunnel - RP ID owner) adds Domain B (ngrok) to its `.well-known/webauthn` file
+2. **Cross-Origin Creation**: User creates a passkey FOR Domain A (localtunnel) WHILE ON Domain B (ngrok)
+3. **Browser Validation**: Browser checks Domain A's `.well-known` file and finds Domain B is allowed
+4. **Success**: Passkey creation and authentication work seamlessly across domains
+
+> **💡 Why localtunnel as RP ID owner?** We use localtunnel as the RP ID owner because ngrok can have issues serving `.well-known/webauthn` to external domains. Localtunnel doesn't have this limitation, making it more reliable for cross-origin testing.
+
 ## 🖥️ Browser Support
 
 According to [web.dev](https://web.dev/articles/webauthn-related-origin-requests#browser_support):
@@ -66,47 +116,47 @@ Our ROR demo provides:
 
    **Start HTTPS proxies for 2 different domains**:
    ```bash
-   # Terminal 1: ngrok (will be the RP ID domain)
+   # Terminal 1: ngrok (will be the cross-origin testing domain)
    ngrok http 4000
-   
-   # Terminal 2: localtunnel (will be the cross-origin testing domain)
+
+   # Terminal 2: localtunnel (will be the RP ID domain)
    lt -p 4000
    ```
 
 3. **Access the demo**:
-   - Navigate to `/related-origin-requests` on both tunnel URLs  
+   - Navigate to `/related-origin-requests` on both tunnel URLs
    - You now have the same app on two different domains, perfect for testing ROR
-   - **Setup**: ngrok domain = RP ID owner, localtunnel domain = cross-origin tester
+   - **Setup**: localtunnel domain = RP ID owner, ngrok domain = cross-origin tester
 
 ### Step-by-Step Testing Guide
 
 #### Phase 1: Setup Configuration
 
 1. **Allow Cross-Origin Access**:
-   - Open Domain A - ngrok (e.g., `https://abc123.ngrok.io/related-origin-requests`)
-   - Go to **Step 2** and click "Add Current Origin" 
+   - Open Domain A - localtunnel (e.g., `https://xyz.loca.lt/related-origin-requests`)
+   - Go to **Step 2** and click "Add Current Origin"
    - This adds the ngrok domain to the allowed list for ROR
 
 #### Phase 2: Cross-Origin Passkey Creation
 
-2. **Create Passkey for ngrok domain**:
-   - On Domain B - localtunnel (e.g., `https://xyz.loca.lt/related-origin-requests`)
+2. **Create Passkey for localtunnel domain**:
+   - On Domain B - ngrok (e.g., `https://abc123.ngrok.io/related-origin-requests`)
    - Go to **Step 4**
    - Set **Passkey Name**: `test-ror-demo`
-   - Set **RP ID**: Domain A's hostname (e.g., `abc123.ngrok.io`)
+   - Set **RP ID**: Domain A's hostname (e.g., `xyz.loca.lt`)
    - Click "Create Cross-Origin Passkey"
-   - ✅ Success: You've created a passkey FOR ngrok domain WHILE ON localtunnel
+   - ✅ Success: You've created a passkey FOR localtunnel domain WHILE ON ngrok
 
 #### Phase 3: Authentication Testing
 
 3. **Test Cross-Origin Authentication**:
-   - Still on Domain B - localtunnel
+   - Still on Domain B - ngrok
    - In **Step 5**, click "Test Cross-Origin Authentication"
    - ✅ Success: Passkey works cross-origin thanks to ROR!
 
-4. **Optional: Test on ngrok domain**:
-   - Go to Domain A - ngrok (e.g., `https://abc123.ngrok.io/related-origin-requests`)
-   - In **Step 4**, set **RP ID** to the ngrok hostname (same as above)
+4. **Optional: Test on localtunnel domain**:
+   - Go to Domain A - localtunnel (e.g., `https://xyz.loca.lt/related-origin-requests`)
+   - In **Step 4**, set **RP ID** to the localtunnel hostname (same as above)
    - In **Step 5**, click "Test Cross-Origin Authentication"
    - ✅ Success: Same passkey also works on its "home" domain
 
@@ -114,12 +164,12 @@ Our ROR demo provides:
 
 When ROR is working correctly:
 
-- ✅ **Cross-origin creation**: Passkey creation succeeds on localtunnel with ngrok RP ID
-- ✅ **Cross-origin auth**: Authentication works on localtunnel with ngrok passkey
-- ✅ **Home domain auth**: Same passkey also works on ngrok domain
+- ✅ **Cross-origin creation**: Passkey creation succeeds on ngrok with localtunnel RP ID
+- ✅ **Cross-origin auth**: Authentication works on ngrok with localtunnel passkey
+- ✅ **Home domain auth**: Same passkey also works on localtunnel domain
 - ✅ **Browser behavior**: No security errors, smooth authentication flow
 
-**Note**: We test primarily on localtunnel because ngrok can have issues serving `.well-known/webauthn` to external domains, while localtunnel doesn't have this limitation.
+**Note**: We use localtunnel as the RP ID owner because ngrok can have issues serving `.well-known/webauthn` to external domains, while localtunnel doesn't have this limitation.
 
 ## 🔧 Technical Implementation
 
@@ -129,7 +179,7 @@ When ROR is working correctly:
 {
   "origins": [
     "https://example.co.uk",
-    "https://example.de", 
+    "https://example.de",
     "https://example-rewards.com"
   ]
 }
@@ -157,7 +207,7 @@ const credential = await navigator.credentials.create({
   },
 });
 
-// Authenticate with cross-origin RP ID  
+// Authenticate with cross-origin RP ID
 const assertion = await navigator.credentials.get({
   publicKey: {
     challenge: challenge,
@@ -200,4 +250,4 @@ const assertion = await navigator.credentials.get({
 
 ---
 
-**Note**: This is a demonstration implementation. For production use, implement proper security measures, error handling, and user experience considerations. 
+**Note**: This is a demonstration implementation. For production use, implement proper security measures, error handling, and user experience considerations.
