@@ -48,6 +48,13 @@ const Home: NextPage = () => {
   const [preparedUserOp, setPreparedUserOp] = useState<any>(null);
   const [isUserOpSigned, setIsUserOpSigned] = useState(false);
 
+  // Message approval state variables
+  const [approvalMessageContent, setApprovalMessageContent] = useState('Hello, please approve this message!');
+  const [approvalMessageTimestamp, setApprovalMessageTimestamp] = useState(Math.floor(Date.now() / 1000));
+  const [approvalSignature, setApprovalSignature] = useState('');
+  const [approvalResult, setApprovalResult] = useState<string>('');
+  const [isApprovalPending, setIsApprovalPending] = useState(false);
+
   // Function to toggle credential list mode
   const toggleCredentialListMode = async () => {
     if (isConnected) {
@@ -411,6 +418,76 @@ const Home: NextPage = () => {
     }
   };
 
+  const signMessageForApproval = async () => {
+    if (!walletClient || !address) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    try {
+      // Create EIP-712 typed data for message approval
+      const typedData = {
+        domain: {
+          name: 'PrivateERC20',
+          version: '1',
+          chainId: 1, // This should match the actual chain ID
+          verifyingContract: config.privateErc20Address,
+        },
+        types: {
+          // EIP-712 type definitions expected by the contract
+          Message: [
+            { name: 'content', type: 'string' },
+            { name: 'timestamp', type: 'uint256' },
+          ],
+        },
+        primaryType: 'Message',
+        message: {
+          content: approvalMessageContent,
+          timestamp: approvalMessageTimestamp,
+        },
+      };
+
+      const signature = await walletClient.request({
+        method: 'eth_signTypedData_v4',
+        params: [address, JSON.stringify(typedData)],
+      } as any);
+
+      setApprovalSignature(signature as string);
+      setApprovalResult('Message signed successfully! Use the signature below to approve the message.');
+      console.log('Message signed for approval:', signature);
+    } catch (error) {
+      console.error('Message signing for approval failed:', error);
+      setApprovalResult('Error: ' + (error as Error).message);
+    }
+  };
+
+  const approveMessage = async () => {
+    if (!address || !approvalSignature) {
+      setApprovalResult('Please sign a message first and ensure wallet is connected');
+      return;
+    }
+
+    try {
+      setIsApprovalPending(true);
+
+      // Call the approveMessage function on the contract
+      const result = await writeContractAsync({
+        address: config.privateErc20Address as `0x${string}`,
+        abi: privateErc20Abi,
+        functionName: 'approveMessage' as any, // Type assertion needed until TypeScript types are updated
+        args: [approvalMessageContent, BigInt(approvalMessageTimestamp), approvalSignature, address],
+      });
+
+      setApprovalResult(`Message approved successfully! Transaction: ${result}`);
+      console.log('Message approved:', result);
+    } catch (error) {
+      console.error('Message approval failed:', error);
+      setApprovalResult('Error: ' + (error as Error).message);
+    } finally {
+      setIsApprovalPending(false);
+    }
+  };
+
   // Don't render wallet-dependent UI until after hydration
   if (!mounted) {
     return (
@@ -699,6 +776,75 @@ const Home: NextPage = () => {
               <div className={styles.resultCard}>
                 <h4>Signature Result</h4>
                 <code className={styles.signatureCode}>{signatureResult}</code>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Message Approval */}
+        <div className={styles.section}>
+          <h2 className={styles.sectionTitle}>Message Approval with EIP-712</h2>
+          <div className={styles.card}>
+            <h3>Approve Messages</h3>
+            <p>Sign and approve messages using EIP-712 signatures</p>
+
+            <div className={styles.form}>
+              <div className={styles.inputGroup}>
+                <label htmlFor="approvalMessage">Message Content:</label>
+                <input
+                  id="approvalMessage"
+                  className={styles.input}
+                  type="text"
+                  placeholder="Message content to approve"
+                  value={approvalMessageContent}
+                  onChange={(e) => setApprovalMessageContent(e.target.value)}
+                />
+              </div>
+
+              <div className={styles.inputGroup}>
+                <label htmlFor="approvalTimestamp">Timestamp:</label>
+                <input
+                  id="approvalTimestamp"
+                  className={styles.input}
+                  type="number"
+                  placeholder="Unix timestamp"
+                  value={approvalMessageTimestamp}
+                  onChange={(e) => setApprovalMessageTimestamp(parseInt(e.target.value) || Math.floor(Date.now() / 1000))}
+                />
+              </div>
+
+              <div className={styles.inputGroup}>
+                <label htmlFor="approvalSignature">Signature:</label>
+                <input
+                  id="approvalSignature"
+                  className={styles.input}
+                  type="text"
+                  placeholder="Signature from signed message"
+                  value={approvalSignature}
+                  onChange={(e) => setApprovalSignature(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className={styles.buttonGroup}>
+              <button className={styles.secondaryButton} disabled={!connectionReady || !approvalMessageContent} onClick={signMessageForApproval}>
+                Sign Message for Approval
+              </button>
+              <button className={styles.primaryButton} disabled={!connectionReady || !approvalSignature || isApprovalPending} onClick={approveMessage}>
+                {isApprovalPending ? 'Processing...' : 'Approve Message'}
+              </button>
+            </div>
+
+            {approvalResult && (
+              <div className={styles.resultCard}>
+                <h4>Approval Result</h4>
+                <p>{approvalResult}</p>
+                {approvalSignature && (
+                  <div className={styles.signatureInfo}>
+                    <strong>Signature:</strong>
+                    <code className={styles.signatureCode}>{approvalSignature}</code>
+                  </div>
+                )}
               </div>
             )}
           </div>
