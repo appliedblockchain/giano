@@ -68,7 +68,7 @@ const config: HardhatUserConfig = {
   ignition: {
     strategyConfig: {
       create2: {
-        salt: '0xABC00000000000000000000000000000000000000000000000000000000000AB',
+        salt: '0xAB000000000000000000000000000000000000000000000000000000000000AB',
       },
     },
   },
