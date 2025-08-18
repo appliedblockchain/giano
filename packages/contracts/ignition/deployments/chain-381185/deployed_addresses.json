@@ -1,5 +1,6 @@
 {
-  "CredentialKeyMapper#CredentialKeyMapper": "0x297406bb0c4cBDB6A722Cf2728c5592eEd774195",
-  "GianoAccountFactory#GianoSmartWallet": "0x20D4f4f71E7E50FE3a1CC51DfFAC2260741adb2D",
-  "GianoAccountFactory#GianoSmartWalletFactory": "0xC932321e8A7DceE09C7F793d0796885aC080DFa5"
+  "GianoAccountFactory#GianoSmartWallet": "0x95DF1A132Dd445DE98A308BC56B814D0b57EBF1C",
+  "GianoAccountFactory#GianoSmartWalletFactory": "0x3451C87749FE28Af2995f644aBc8d5B1c61A6191",
+  "Testing#PermissivePaymaster": "0x10fa47FdaC8115Ef25e824AEAd78b009931FA73B",
+  "Testing#PrivateERC20": "0x42945BBB6a4C3BD022309741aadeb7976526C739"
 }
