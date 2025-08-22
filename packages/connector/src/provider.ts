@@ -293,7 +293,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         owners: [toWebAuthnAccount({ credential })],
         factoryAddress: gianoSmartWalletFactoryAddress,
       });
-      const smartAccountAddress = await smartAccount.getAddress();
 
       const xyVector = extractXYCoords(credential.publicKey);
 
@@ -310,6 +309,8 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
       // Always call the injection callback regardless of deployment status
       await injection.onCredentialKey(credential.raw.rawId, xyVector);
+
+      const smartAccountAddress = await smartAccount.getAddress();
 
       emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
       emit('accountsChanged', [smartAccountAddress]);
