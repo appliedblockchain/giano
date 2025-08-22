@@ -1,7 +1,11 @@
 import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector';
 import type { Address, Hex, Transport } from 'viem';
 import { custom, http, parseGwei } from 'viem';
-import type { BundlerClient, GetPaymasterDataReturnType, GetPaymasterStubDataReturnType, PaymasterActions } from 'viem/account-abstraction';
+import type {
+  BundlerClient,
+  GetPaymasterDataReturnType,
+  GetPaymasterStubDataReturnType,
+} from 'viem/account-abstraction'
 import { createBundlerClient } from 'viem/account-abstraction';
 import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
@@ -19,6 +23,29 @@ type ConfigMap = Record<
     bundler: BundlerClient;
   }
 >;
+
+const sdrTestNet = {
+  id: 381185,
+  name: 'SilentDataRollup Testnet',
+  testnet: true,
+  nativeCurrency: {
+    // this should be same as ethereum
+    name: 'Ether',
+    symbol: 'ETH',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://testnet.silentdata.com/ec7e8b3eb491df99357e4cb7903cbc21'],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: 'SilentDataRollup Explorer',
+      url: 'https://explorer-testnet.rollup.silentdata.com/',
+    },
+  },
+} satisfies Chain;
 
 // TODO this is creating creating instances for all options unnecessarily
 const configMap: ConfigMap = {
@@ -64,6 +91,37 @@ const configMap: ConfigMap = {
       chain: base,
       transport: http(envConfig.bundlerRpcUrl),
       paymaster: true,
+    }),
+  },
+  'sdr-testnet': {
+    chain: sdrTestNet,
+    transport: http(),
+    bundler: createBundlerClient({
+      chain: sdrTestNet,
+      transport: http(envConfig.bundlerRpcUrl),
+      paymaster: {
+        getPaymasterData: async () => ({
+          paymaster: envConfig.paymasterAddress as Address,
+          paymasterData: '0x',
+          paymasterVerificationGasLimit: BigInt(100_000),
+          paymasterPostOpGasLimit: BigInt(80_000),
+        }),
+        getPaymasterStubData: async () => ({
+          paymaster: envConfig.paymasterAddress as Address,
+          paymasterData: '0x',
+          paymasterVerificationGasLimit: BigInt(100_000),
+          paymasterPostOpGasLimit: BigInt(80_000),
+          isFinal: true,
+        }),
+      },
+      userOperation: {
+        estimateFeesPerGas: async () => {
+          return {
+            maxFeePerGas: parseGwei('200'),
+            maxPriorityFeePerGas: parseGwei('400'),
+          };
+        },
+      },
     }),
   },
 };
