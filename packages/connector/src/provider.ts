@@ -31,6 +31,7 @@ import {
 import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
 import { getWebAuthnAccount } from './account'
+import { ensureSmartAccountIsDeployed, isSmartAccountDeployed } from './account/deployment'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
@@ -137,19 +138,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     return await injection.submitUserOperation(signedUserOp);
   };
 
-  const ensureAccountDeployed = async (): Promise<boolean> => {
-    if (!smartAccount) return false;
-
-    try {
-      const accountAddress = await smartAccount.getAddress();
-      const accountCode = await client!.getCode({ address: accountAddress });
-      return !!(accountCode && accountCode !== '0x');
-    } catch (error) {
-      console.warn('Failed to check account deployment status:', error);
-      return false;
-    }
-  };
-
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
     eventListeners[event]?.forEach((listener) => listener(payload));
   };
@@ -171,14 +159,14 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         console.warn('Smart account not available, falling back to regular call')
         return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
-    
+
       // Check if the account is deployed before attempting authenticated calls
-      const isDeployed = await ensureAccountDeployed()
+      const isDeployed = await isSmartAccountDeployed(client!, smartAccount)
       if (!isDeployed) {
         console.warn('Smart account not deployed yet, falling back to regular call')
         return client!.request({ method: 'eth_call', params: [call, blockTag] })
       }
-    
+
       // if the lifetime of the static signature is not known, fetch and cache it
       if (staticSignatureLifetime === 0n) {
         staticSignatureLifetime = await client!.readContract({
@@ -309,36 +297,15 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
       const xyVector = extractXYCoords(credential.publicKey);
 
-      // Check if the smart account is already deployed
-      const accountAddress = await smartAccount.getAddress();
-      const accountCode = await client!.getCode({ address: accountAddress });
-      const isDeployed = accountCode && accountCode !== '0x';
-
-      // NOTE: this is needed to deploy the smart account if we want to use it for read calls right away
-      // if not, the account will be deployed on the first actual transaction
-      if (!isDeployed) {
-        // Deploy the smart account with a minimal transaction
-        // Option 1: Send 0 ETH to self (minimal deployment transaction)
-        const deploymentTx = {
-          to: accountAddress,
-          value: '0x0',
-          data: '0x', // Empty data
-        };
-
-        try {
-          console.log('Deploying smart account...');
-          const deploymentHash = await methods.eth_sendTransaction([deploymentTx]);
-          console.log('Smart account deployment submitted with hash:', deploymentHash);
-
-          // Wait for the deployment transaction to be confirmed
-          const deploymentReceipt = await bundler.waitForUserOperationReceipt({ hash: deploymentHash });
-          console.log('Smart account deployed successfully:', deploymentReceipt);
-        } catch (error) {
-          console.warn('Failed to deploy smart account:', error);
-          // If deployment fails, the account will be deployed on the first actual transaction
-        }
-      } else {
-        console.log('Smart account already deployed');
+      // NOTE: it is needed to deploy the smart account if we want to
+      // use it for read calls or to receive funds right away, if not,
+      // the account will be deployed on the first actual transaction
+      try {
+        await ensureSmartAccountIsDeployed(
+          smartAccount, client!, methods.eth_sendTransaction,
+        )
+      } catch (error) {
+        console.error('Failed to ensure smart account is deployed:', error)
       }
 
       // Always call the injection callback regardless of deployment status
