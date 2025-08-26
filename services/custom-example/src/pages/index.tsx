@@ -1,30 +1,8 @@
 import React, { type FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
-import type { Error } from '@mui/icons-material';
-import { AccountBalanceWallet, CheckCircle, Delete, Refresh, Security, Send, Visibility, VisibilityOff, Warning } from '@mui/icons-material';
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Container,
-  Divider,
-  FormControl,
-  Grid,
-  IconButton,
-  InputLabel,
-  LinearProgress,
-  MenuItem,
-  Paper,
-  Select,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { AccountBalanceWallet, Delete, Refresh, Security, Send, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, Chip, Container, Divider, Grid, LinearProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import type { NextPage } from 'next';
 import Head from 'next/head';
 import { encodeFunctionData, formatEther, parseEther } from 'viem';
@@ -70,6 +48,13 @@ const Home: NextPage = () => {
   const [isManualMintPending, setIsManualMintPending] = useState(false);
   const [preparedUserOp, setPreparedUserOp] = useState<any>(null);
   const [isUserOpSigned, setIsUserOpSigned] = useState(false);
+
+  // Message approval state variables
+  const [approvalMessageContent, setApprovalMessageContent] = useState('Hello, please approve this message!');
+  const [approvalMessageTimestamp, setApprovalMessageTimestamp] = useState(Math.floor(Date.now() / 1000));
+  const [approvalSignature, setApprovalSignature] = useState('');
+  const [approvalResult, setApprovalResult] = useState<string>('');
+  const [isApprovalPending, setIsApprovalPending] = useState(false);
 
   // Function to toggle credential list mode
   const toggleCredentialListMode = async () => {
@@ -169,7 +154,7 @@ const Home: NextPage = () => {
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     try {
-      await sendTransaction({
+      sendTransaction({
         to: address as `0x${string}`,
         value: 0n,
       });
@@ -344,6 +329,76 @@ const Home: NextPage = () => {
     } catch (error) {
       console.error('Typed data signing failed:', error);
       setSignatureResult('Error: ' + (error as Error).message);
+    }
+  };
+
+  const signMessageForApproval = async () => {
+    if (!walletClient || !address) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    try {
+      // Create EIP-712 typed data for message approval
+      const typedData = {
+        domain: {
+          name: 'PrivateERC20',
+          version: '1',
+          chainId: 1, // This should match the actual chain ID
+          verifyingContract: config.privateErc20Address,
+        },
+        types: {
+          // EIP-712 type definitions expected by the contract
+          Message: [
+            { name: 'content', type: 'string' },
+            { name: 'timestamp', type: 'uint256' },
+          ],
+        },
+        primaryType: 'Message',
+        message: {
+          content: approvalMessageContent,
+          timestamp: approvalMessageTimestamp,
+        },
+      };
+
+      const signature = await walletClient.request({
+        method: 'eth_signTypedData_v4',
+        params: [address, JSON.stringify(typedData)],
+      } as any);
+
+      setApprovalSignature(signature as string);
+      setApprovalResult('Message signed successfully! Use the signature below to approve the message.');
+      console.log('Message signed for approval:', signature);
+    } catch (error) {
+      console.error('Message signing for approval failed:', error);
+      setApprovalResult('Error: ' + (error as Error).message);
+    }
+  };
+
+  const approveMessage = async () => {
+    if (!address || !approvalSignature) {
+      setApprovalResult('Please sign a message first and ensure wallet is connected');
+      return;
+    }
+
+    try {
+      setIsApprovalPending(true);
+
+      // Call the approveMessage function on the contract
+      const result = await writeContractAsync({
+        address: config.privateErc20Address as `0x${string}`,
+        abi: privateErc20Abi,
+        functionName: 'approveMessage' as any, // Type assertion needed until TypeScript types are updated
+        args: [approvalMessageContent, BigInt(approvalMessageTimestamp), approvalSignature, address],
+      });
+
+      setApprovalResult(`Message approved successfully! Transaction: ${result}`);
+      console.log('Message approved:', result);
+    } catch (error) {
+      console.error('Message approval failed:', error);
+      setApprovalResult('Error: ' + (error as Error).message);
+    } finally {
+      setIsApprovalPending(false);
     }
   };
 
@@ -765,6 +820,159 @@ const Home: NextPage = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Message Approval */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          Message Approval with EIP-712
+        </Typography>
+        <Card variant="outlined">
+          <CardContent>
+            <Typography variant="h5" gutterBottom>
+              Approve Messages
+            </Typography>
+            <Typography variant="body1" sx={{ mb: 3 }}>
+              Sign and approve messages using EIP-712 signatures
+            </Typography>
+
+            <Stack spacing={3} sx={{ mb: 3 }}>
+              <TextField
+                fullWidth
+                label="Message Content"
+                type="text"
+                placeholder="Message content to approve"
+                value={approvalMessageContent}
+                onChange={(e) => setApprovalMessageContent(e.target.value)}
+              />
+
+              <TextField
+                fullWidth
+                label="Timestamp"
+                type="number"
+                placeholder="Unix timestamp"
+                value={approvalMessageTimestamp}
+                onChange={(e) => setApprovalMessageTimestamp(parseInt(e.target.value) || Math.floor(Date.now() / 1000))}
+              />
+            </Stack>
+
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+              <Grid item xs={12} md={6}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  disabled={!connectionReady || !approvalMessageContent}
+                  onClick={signMessageForApproval}
+                  startIcon={<Typography variant="caption">1</Typography>}
+                >
+                  Sign Message for Approval
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  disabled={!connectionReady || !approvalSignature || isApprovalPending}
+                  onClick={approveMessage}
+                  startIcon={<Typography variant="caption">2</Typography>}
+                >
+                  {isApprovalPending ? 'Processing...' : 'Approve Message'}
+                </Button>
+              </Grid>
+            </Grid>
+
+            <Divider sx={{ my: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                OR
+              </Typography>
+            </Divider>
+
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={!connectionReady || !approvalMessageContent || isApprovalPending}
+              onClick={async () => {
+                await signMessageForApproval();
+                await approveMessage();
+              }}
+              startIcon={<Send />}
+            >
+              {isApprovalPending ? 'Processing...' : 'Sign & Approve (Full Workflow)'}
+            </Button>
+
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              {/* Message Approval Status */}
+              {(approvalMessageContent || approvalSignature) && (
+                <Card variant="outlined" sx={{ mt: 3 }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Message Approval Status
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6}>
+                        <Typography variant="body2">
+                          <strong>Message:</strong> {approvalMessageContent ? '✅' : '❌'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2">
+                          <strong>Signed:</strong> {approvalSignature ? '✅' : '❌'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2">
+                          <strong>Timestamp:</strong> {approvalMessageTimestamp}
+                        </Typography>
+                      </Grid>
+                      {approvalSignature && (
+                        <Grid item xs={12}>
+                          <Typography variant="body2">
+                            <strong>Signature:</strong> {approvalSignature.slice(0, 20)}...
+                          </Typography>
+                        </Grid>
+                      )}
+                    </Grid>
+                  </CardContent>
+                </Card>
+              )}
+
+              {approvalResult && (
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Approval Result
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                      {approvalResult}
+                    </Typography>
+                    {approvalSignature && (
+                      <Box>
+                        <Typography variant="subtitle2" gutterBottom>
+                          Signature:
+                        </Typography>
+                        <TextField
+                          fullWidth
+                          multiline
+                          rows={2}
+                          value={approvalSignature}
+                          InputProps={{
+                            readOnly: true,
+                          }}
+                          sx={{
+                            '& .MuiInputBase-input': {
+                              fontFamily: 'monospace',
+                              fontSize: '0.875rem',
+                            },
+                          }}
+                        />
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+      </Box>
 
       {/* Error Display */}
       {error && (
