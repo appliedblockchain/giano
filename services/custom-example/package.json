@@ -12,6 +12,10 @@
   "dependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",
     "@appliedblockchain/giano-contracts": "workspace:",
+    "@emotion/react": "^11.11.4",
+    "@emotion/styled": "^11.11.0",
+    "@mui/material": "^5.17.10",
+    "@mui/icons-material": "^5.17.10",
     "@peculiar/asn1-ecc": "^2.3.14",
     "@peculiar/asn1-schema": "^2.3.13",
     "@rainbow-me/rainbowkit": "^2.2.4",

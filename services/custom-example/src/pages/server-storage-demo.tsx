@@ -3,6 +3,36 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Hash } from 'viem'
 import { UserOperationReceipt } from 'viem/account-abstraction'
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useSendTransaction } from 'wagmi'
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Container,
+  Typography,
+  Grid,
+  Alert,
+  Chip,
+  Paper,
+  TextField,
+  Divider,
+  Stack,
+  IconButton,
+  Tooltip,
+  LinearProgress,
+} from '@mui/material';
+import {
+  AccountBalanceWallet,
+  Delete,
+  ContentCopy,
+  Refresh,
+  Send,
+  Storage,
+  Person,
+  Warning,
+  CheckCircle,
+  Error,
+} from '@mui/icons-material';
 import { createServerConfigForUser } from '../demo-wagmi-server'
 import { gianoConnector } from '../wagmi'
 
@@ -107,530 +137,258 @@ function ServerStorageDemo() {
 
   // Function to switch user configuration
   const switchUserConfig = () => {
-    // Same as connect - in a real app, you'd redirect or reload
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set('userId', userId);
-    window.location.href = currentUrl.toString();
+    const newUserId = userId === 'demo-user-123' ? 'demo-user-456' : 'demo-user-123';
+    setUserId(newUserId);
+    window.history.replaceState({}, '', `?userId=${newUserId}`);
   };
 
+  // Function to wait for receipt
   const waitForReceipt = async (userOperationHash: Hash) => {
+    setIsWaitingReceiptFor(userOperationHash);
     try {
-      console.log('⏳ Waiting for user operation receipt:', userOperationHash);
-      const receipt = await gianoConnector.waitForUserOperationReceipt(userOperationHash);
-      console.log('✅ User operation receipt received:', receipt);
+      const receipt = await gianoConnector.waitForUserOperationReceipt({ hash: userOperationHash });
       setUserOperationReceipt(receipt);
     } catch (error) {
-      console.error('❌ Failed to get user operation receipt:', error);
+      console.error('Failed to wait for receipt:', error);
     } finally {
       setIsWaitingReceiptFor(null);
     }
   };
 
-  // Send empty transaction function
+  // Function to send empty transaction
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
-    sendTransaction(
-      {
+    if (!address) return;
+
+    try {
+      const result = await sendTransaction({
         to: address,
         value: 0n,
-      },
-      {
-        onSuccess: (userOperationHash, variables, context) => {
-          console.log('✅ User operation submitted successfully!', {
-            userOperationHash, variables, context
-          });
-          setIsWaitingReceiptFor(userOperationHash);
-          waitForReceipt(userOperationHash);
-        },
-        onError: (error) => console.error('❌ User operation submission failed:', error),
-      },
-    );
+      });
+      console.log('Transaction sent:', result);
+    } catch (error) {
+      console.error('Transaction failed:', error);
+    }
   };
 
+  // Load server data on mount and when userId changes
   useEffect(() => {
-    void fetchServerData();
-  }, [userId]);
-
-  // Common button styles
-  const buttonStyle = {
-    padding: '0.5rem 1rem',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontWeight: '500',
-    transition: 'all 0.2s ease',
-    fontSize: '14px',
-  };
-
-  const primaryButtonStyle = {
-    ...buttonStyle,
-    background: '#3b82f6',
-    color: 'white',
-  };
-
-  const secondaryButtonStyle = {
-    ...buttonStyle,
-    background: '#6366f1',
-    color: 'white',
-  };
-
-  const successButtonStyle = {
-    ...buttonStyle,
-    background: '#10b981',
-    color: 'white',
-  };
-
-  const dangerButtonStyle = {
-    ...buttonStyle,
-    background: '#ef4444',
-    color: 'white',
-  };
+    if (isClient) {
+      fetchServerData();
+    }
+  }, [isClient, userId]);
 
   return (
-    <>
-      {/* CSS Animation for spinner */}
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-      
-      {/* Waiting Modal for user operation receipt */}
-      {isWaitingReceiptFor && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '2rem',
-            borderRadius: '8px',
-            textAlign: 'center',
-            maxWidth: '600px',
-            width: '90%',
-          }}>
-            <h2 style={{ marginBottom: '1rem' }}>🔄 Processing User Operation</h2>
-            <p style={{ marginBottom: '1rem', color: '#666' }}>
-              Waiting for user operation transaction receipt...
-            </p>
-            <div style={{
-              display: 'inline-block',
-              width: '40px',
-              height: '40px',
-              border: '4px solid #f3f3f3',
-              borderTop: '4px solid #3b82f6',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-            }} />
-            <p style={{ 
-              marginTop: '1rem', 
-              fontSize: '12px', 
-              color: '#999',
-              fontFamily: 'monospace'
-            }}>
-              Hash: {isWaitingReceiptFor.slice(0, 10)}...{isWaitingReceiptFor.slice(-8)}
-            </p>
-                      </div>
-          </div>
-        )}
+    <Container maxWidth="lg">
+      <Box sx={{ py: 4 }}>
+        <Typography variant="h3" component="h1" align="center" gutterBottom>
+          Server Storage Demo
+        </Typography>
 
-        {/* User Operation Receipt Modal */}
-        {userOperationReceipt && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-          }}>
-            <div style={{
-              backgroundColor: 'white',
-              padding: '2rem',
-              borderRadius: '8px',
-              textAlign: 'center',
-              maxWidth: '600px',
-              width: '90%',
-            }}>
-              <h2 style={{ marginBottom: '1rem', color: '#10b981' }}>✅ Transaction Complete!</h2>
-              <p style={{ marginBottom: '1.5rem', color: '#666' }}>
-                Your user operation has been successfully processed and confirmed on the blockchain.
-              </p>
-              
-              <div style={{
-                backgroundColor: '#f0f9ff',
-                padding: '1rem',
-                borderRadius: '4px',
-                marginBottom: '1.5rem',
-                textAlign: 'left',
-              }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', color: '#1e40af' }}>Receipt Details:</h4>
-                <p style={{ 
-                  margin: '0.25rem 0', 
-                  fontSize: '12px', 
-                  fontFamily: 'monospace',
-                  color: '#374151'
-                }}>
-                  <strong>Hash:</strong> {userOperationReceipt.receipt?.transactionHash || 'N/A'}
-                </p>
-                <p style={{ 
-                  margin: '0.25rem 0', 
-                  fontSize: '12px', 
-                  fontFamily: 'monospace',
-                  color: '#374151'
-                }}>
-                  <strong>Block:</strong> {userOperationReceipt.receipt?.blockNumber || 'N/A'}
-                </p>
-                <p style={{ 
-                  margin: '0.25rem 0', 
-                  fontSize: '12px', 
-                  fontFamily: 'monospace',
-                  color: '#374151'
-                }}>
-                  <strong>Status:</strong> {userOperationReceipt.success ? 'Success' : 'Failed'}
-                </p>
-              </div>
-              
-              <button
-                onClick={() => setUserOperationReceipt(null)}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                }}
+        <Typography variant="h6" align="center" color="text.secondary" sx={{ mb: 4 }}>
+          Test server-side storage for passkey credentials
+        </Typography>
+
+        {/* User Configuration */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              User Configuration
+            </Typography>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Current User ID: {userId}
+            </Typography>
+            
+            <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
+              <Button
+                variant="outlined"
+                startIcon={<Person />}
+                onClick={switchUserConfig}
               >
-                Close
-              </button>
-            </div>
-          </div>
+                Switch User
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={fetchServerData}
+                disabled={loading}
+              >
+                {loading ? 'Loading...' : 'Refresh Data'}
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        {/* Connection Status */}
+        {address && (
+          <Alert severity="success" sx={{ mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Wallet Connected
+            </Typography>
+            <Typography variant="body2" fontFamily="monospace">
+              {address}
+            </Typography>
+          </Alert>
         )}
-        
-        <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-        <h1>🖥️ Server Storage Demo</h1>
 
-      {!isClient && (
-        <div
-          style={{
-            background: '#f3f4f6',
-            border: '1px solid #d1d5db',
-            borderRadius: '4px',
-            padding: '0.5rem 1rem',
-            marginBottom: '1rem',
-            fontSize: '14px',
-            color: '#6b7280',
-          }}
-        >
-          <strong>Loading configuration...</strong>
-        </div>
-      )}
+        {/* Connection Controls */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Connection Controls
+            </Typography>
+            
+            <Stack direction="row" spacing={2} flexWrap="wrap">
+              {isConnected ? (
+                <Button
+                  variant="outlined"
+                  startIcon={<AccountBalanceWallet />}
+                  onClick={handleDisconnect}
+                >
+                  Disconnect Wallet
+                </Button>
+              ) : (
+                <Button
+                  variant="contained"
+                  startIcon={<AccountBalanceWallet />}
+                  onClick={connectWithUserId}
+                  disabled={isConnecting}
+                >
+                  {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+                </Button>
+              )}
+              
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<Delete />}
+                onClick={deletePasskey}
+              >
+                Delete Passkey
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
 
-      {isClient && (
-        <div
-          style={{
-            background: '#e5e7eb',
-            border: '1px solid #9ca3af',
-            borderRadius: '4px',
-            padding: '0.5rem 1rem',
-            marginBottom: '1rem',
-            fontSize: '14px',
-          }}
-        >
-          <strong>Currently configured for user:</strong> <code>{getUserIdFromUrl()}</code>
-        </div>
-      )}
+        {/* Server Data Display */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Server Storage Data
+            </Typography>
+            
+            {loading ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <LinearProgress sx={{ flexGrow: 1 }} />
+                <Typography variant="body2">Loading server data...</Typography>
+              </Box>
+            ) : serverData ? (
+              <Box>
+                <Typography variant="subtitle1" gutterBottom>
+                  Passkeys ({serverData.passkeys?.length || 0})
+                </Typography>
+                {serverData.passkeys?.map((passkey: any, index: number) => (
+                  <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="body2" fontFamily="monospace" sx={{ fontSize: '0.75rem' }}>
+                      {JSON.stringify(passkey, null, 2)}
+                    </Typography>
+                  </Paper>
+                ))}
 
-      <div
-        style={{
-          background: '#f0f9ff',
-          border: '1px solid #0284c7',
-          borderRadius: '8px',
-          padding: '1rem',
-          marginBottom: '2rem',
-        }}
-      >
-        <h3>💡 What This Demonstrates</h3>
-        <p>This demo shows how Giano can store passkey data entirely on your server instead of localStorage:</p>
-        <ul>
-          <li>
-            ✅ <strong>Passkey IDs</strong> stored on server
-          </li>
-          <li>
-            ✅ <strong>Public keys</strong> stored on server
-          </li>
-          <li>
-            ✅ <strong>No localStorage</strong> dependency
-          </li>
-          <li>
-            ✅ <strong>Multi-user support</strong> with user isolation
-          </li>
-        </ul>
-      </div>
-
-      {/* User Configuration */}
-      <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
-        <h3>👤 User Configuration</h3>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
-          <label>
-            User ID:
-            <input type="text" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ marginLeft: '0.5rem', padding: '0.25rem' }} />
-          </label>
-          <button onClick={switchUserConfig} style={primaryButtonStyle}>
-            Load Page for {userId}
-          </button>
-        </div>
-        <p>
-          <small>
-            💡 Each user gets isolated storage on the server. Clicking &quot;Load Page for {userId}&quot; will reload the page with the new user configuration.
-          </small>
-        </p>
-        {isClient && userId !== getUserIdFromUrl() && (
-          <div
-            style={{
-              background: '#fef3c7',
-              border: '1px solid #f59e0b',
-              borderRadius: '4px',
-              padding: '0.5rem',
-              marginTop: '0.5rem',
-              fontSize: '12px',
-            }}
-          >
-            ⚠️ User ID changed. Click &quot;Load Page for {userId}&quot; to apply changes.
-          </div>
-        )}
-      </div>
-
-      {/* Connection Status */}
-      <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
-        <h3>🔗 Connection Status</h3>
-        {isConnected ? (
-          <div>
-            <p>
-              ✅ Connected: <code>{address}</code>
-            </p>
-            {isClient && (
-              <p>
-                <small>
-                  📦 Using server storage for user: <strong>{getUserIdFromUrl()}</strong>
-                </small>
-              </p>
+                <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>
+                  Public Keys ({serverData.publicKeys?.length || 0})
+                </Typography>
+                {serverData.publicKeys?.map((pubKey: any, index: number) => (
+                  <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="body2" fontFamily="monospace" sx={{ fontSize: '0.75rem' }}>
+                      {JSON.stringify(pubKey, null, 2)}
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+            ) : (
+              <Alert severity="info">
+                <Typography variant="body2">
+                  No server data available. Try refreshing or connecting a wallet.
+                </Typography>
+              </Alert>
             )}
-            <button onClick={handleDisconnect} style={dangerButtonStyle}>
-              Disconnect
-            </button>
-          </div>
-        ) : (
-          <div>
-            <p>❌ Not connected</p>
-            {isClient && (
-              <p>
-                <small>
-                  Will connect with server storage for user: <strong>{getUserIdFromUrl()}</strong>
-                </small>
-              </p>
-            )}
-            <button
-              onClick={connectWithUserId}
-              disabled={isConnecting}
-              style={{
-                ...successButtonStyle,
-                opacity: isConnecting ? 0.6 : 1,
-                cursor: isConnecting ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {isClient ? (isConnecting ? 'Connecting...' : `Connect as ${getUserIdFromUrl()}`) : 'Connect with Server Storage'}
-            </button>
-          </div>
-        )}
-      </div>
+          </CardContent>
+        </Card>
 
-      {/* Transaction Operations */}
-      {isConnected && (
-        <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
-          <h3>🔄 Transaction Operations</h3>
-
-          {/* Empty Transaction Section */}
-          <div>
-            <h4>Send Empty Transaction</h4>
-            <form onSubmit={sendEmptyTx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
-              <button
+        {/* Transaction Testing */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Transaction Testing
+            </Typography>
+            
+            <Box component="form" onSubmit={sendEmptyTx}>
+              <Button
                 type="submit"
-                disabled={!isConnected}
-                style={{
-                  ...secondaryButtonStyle,
-                  opacity: !isConnected ? 0.6 : 1,
-                  cursor: !isConnected ? 'not-allowed' : 'pointer',
-                }}
+                variant="contained"
+                startIcon={<Send />}
+                disabled={!isConnected || !address}
+                sx={{ mt: 2 }}
               >
                 Send Empty Transaction
-              </button>
-            </form>
-            <p style={{ fontSize: '12px', color: '#6b7280', margin: '0.5rem 0' }}>
-              💡 Sends a transaction with 0 value to your own address - useful for testing transaction signing
-            </p>
-          </div>
-        </div>
-      )}
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
 
-      {/* Server Data Display */}
-      <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3>🖥️ Server Storage Data</h3>
-          <div>
-            <button
-              onClick={fetchServerData}
-              disabled={loading}
-              style={{
-                ...secondaryButtonStyle,
-                marginRight: '0.5rem',
-                opacity: loading ? 0.6 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {loading ? 'Loading...' : 'Refresh'}
-            </button>
-            <button
-              onClick={deletePasskey}
-              style={dangerButtonStyle}
-              title="Permanently delete passkey data - you will lose access to your wallet and need to create a new passkey"
-            >
-              Delete Passkey
-            </button>
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: '#e5e7eb',
-            border: '1px solid #9ca3af',
-            borderRadius: '4px',
-            padding: '0.5rem 1rem',
-            marginBottom: '1rem',
-            fontSize: '14px',
-          }}
-        >
-          <strong>💡 Storage Info:</strong>
-          <br />• <strong>Passkey data</strong> is stored on the server and persists across sessions
-          <br />• <strong>Delete Passkey</strong> permanently removes passkey data - you&apos;ll lose wallet access
-        </div>
-
-        <div style={{ background: '#1f2937', color: '#f9fafb', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>
-          <pre>{JSON.stringify(serverData, null, 2)}</pre>
-        </div>
-
-        {serverData && (
-          <div style={{ marginTop: '1rem' }}>
-            <p>
-              <strong>Data stored for user:</strong> <code>{userId}</code>
-            </p>
-            <ul>
-              {serverData.passkeys?.passkeyId && <li>✅ Passkey ID: Present</li>}
-              {serverData.publicKeys && <li>✅ Public Keys: {Object.keys(serverData.publicKeys).length} stored</li>}
-            </ul>
-          </div>
+        {/* Receipt Waiting */}
+        {isWaitingReceiptFor && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              Waiting for receipt for hash: {isWaitingReceiptFor}
+            </Typography>
+          </Alert>
         )}
-      </div>
 
-      {/* Instructions */}
-      <div
-        style={{
-          background: '#fef3c7',
-          border: '1px solid #f59e0b',
-          borderRadius: '8px',
-          padding: '1rem',
-        }}
-      >
-        <h3>📋 How to Test</h3>
-        <ol>
-          <li>
-            <strong>Connect</strong> using the &quot;Connect with Server Storage&quot; button
-          </li>
-          <li>
-            <strong>Create a passkey</strong> when prompted
-          </li>
-          <li>
-            <strong>Send empty transaction</strong> - test transaction signing capability
-          </li>
-          <li>
-            <strong>Check server data</strong> using the &quot;Refresh&quot; button to see stored data
-          </li>
-          <li>
-            <strong>Test disconnection</strong> - click &quot;Disconnect&quot;, then try to connect again (should work with same passkey)
-          </li>
-          <li>
-            <strong>Switch users</strong> by changing the User ID and clicking &quot;Load Page for [User]&quot;
-          </li>
-          <li>
-            <strong>Notice</strong> that different users have isolated data
-          </li>
-          <li>
-            <strong>Delete passkey</strong> - click &quot;Delete Passkey&quot; to permanently remove passkey data (will lose wallet access)
-          </li>
-          <li>
-            <strong>Refresh the page</strong> - your session persists because it&apos;s stored on the server!
-          </li>
-        </ol>
-      </div>
+        {/* User Operation Receipt */}
+        {userOperationReceipt && (
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                User Operation Receipt
+              </Typography>
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Typography variant="body2" fontFamily="monospace" sx={{ fontSize: '0.75rem' }}>
+                  {JSON.stringify(userOperationReceipt, null, 2)}
+                </Typography>
+              </Paper>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* API Info */}
-      <div style={{ marginTop: '2rem', padding: '1rem', border: '1px solid #d1d5db', borderRadius: '8px' }}>
-        <h3>🔧 RESTful API Endpoints</h3>
-        <ul>
-          <li>
-            <code>GET /api/storage/users/&#123;userId&#125;/credential-info</code> - Get unified credential info (passkeyId + server-generated challenge)
-          </li>
-          <li>
-            <code>PUT /api/storage/users/&#123;userId&#125;/passkeys</code> - Update passkey data
-          </li>
-          <li>
-            <code>GET /api/storage/users/&#123;userId&#125;/public-keys/&#123;idHash&#125;</code> - Get specific public key
-          </li>
-          <li>
-            <code>PUT /api/storage/users/&#123;userId&#125;/public-keys/&#123;idHash&#125;</code> - Store public key
-          </li>
-          <li>
-            <code>DELETE /api/storage/users/&#123;userId&#125;/passkeys</code> - Delete passkey data
-          </li>
-          <li>
-            <code>DELETE /api/storage/users/&#123;userId&#125;/public-keys</code> - Delete all public keys
-          </li>
-          <li>
-            <code>GET /api/storage/users/&#123;userId&#125;/all</code> - Get all data (demo only)
-          </li>
-        </ul>
-        
-        <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f0f9ff', border: '1px solid #0284c7', borderRadius: '4px' }}>
-          <strong>🔐 Security Enhancement:</strong> The new <code>/credential-info</code> endpoint generates challenges server-side for better security, replacing the previous client-side challenge generation.
-        </div>
-      </div>
-    </div>
-    </>
+        {/* Instructions */}
+        <Alert severity="info">
+          <Typography variant="h6" gutterBottom>
+            How This Works
+          </Typography>
+          <Typography variant="body2">
+            1. <strong>User Configuration:</strong> Switch between different user IDs to test server storage
+            <br />
+            2. <strong>Connection:</strong> Connect with the current user ID to test passkey storage
+            <br />
+            3. <strong>Server Data:</strong> View stored passkey and public key data on the server
+            <br />
+            4. <strong>Transaction Testing:</strong> Send transactions to test the wallet functionality
+          </Typography>
+        </Alert>
+      </Box>
+    </Container>
   );
 }
 
 export default function ServerStorageDemoPage() {
-  // Always start with default config to avoid hydration mismatch
-  const [currentUserId, setCurrentUserId] = useState('demo-user-123');
-  const [configForUser, setConfigForUser] = useState(() => createServerConfigForUser('demo-user-123'));
+  const [mounted, setMounted] = useState(false);
 
-  // Get userId from URL to create the right config
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const getUserIdFromUrl = () => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
@@ -639,20 +397,32 @@ export default function ServerStorageDemoPage() {
     return 'demo-user-123';
   };
 
-  // Update config after hydration
-  useEffect(() => {
-    const urlUserId = getUserIdFromUrl();
-    if (urlUserId !== currentUserId) {
-      setCurrentUserId(urlUserId);
-      setConfigForUser(createServerConfigForUser(urlUserId));
-    }
-  }, [currentUserId]);
+  if (!mounted) {
+    return (
+      <Container maxWidth="lg">
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <LinearProgress sx={{ width: '100%', maxWidth: 400, mb: 2 }} />
+          <Typography variant="h6" color="text.secondary">
+            Loading Server Storage Demo...
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <WagmiProvider config={configForUser} key={currentUserId}>
+    <WagmiProvider config={createServerConfigForUser(getUserIdFromUrl())}>
+      <QueryClientProvider client={queryClient}>
         <ServerStorageDemo />
-      </WagmiProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
