@@ -1,6 +1,8 @@
 import React, { type FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { privateErc20Abi } from '@appliedblockchain/giano-contracts';
+import { AccountBalanceWallet, Delete, Refresh, Security, Send, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, Chip, Container, Divider, Grid, LinearProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import type { NextPage } from 'next';
 import Head from 'next/head';
 import { encodeFunctionData, formatEther, parseEther } from 'viem';
@@ -8,7 +10,6 @@ import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransact
 import { config } from '../config';
 import { gianoInjection } from '../giano-injection';
 import { useGiano } from '../wagmi';
-import styles from '../styles/Home.module.css';
 
 const Home: NextPage = () => {
   const [mounted, setMounted] = useState(false);
@@ -108,114 +109,79 @@ const Home: NextPage = () => {
     setMounted(true);
   }, []);
 
-  // Auto-connect effect for session restoration with authentication
   useEffect(() => {
-    if (mounted && !isConnected && !isAuthenticating) {
-      const storedCredentialId = localStorage.getItem('giano_credential_id');
-      const storedAccountAddress = localStorage.getItem('giano_account_address');
+    if (mounted && isConnected && status === 'connected') {
+      const connectAsync = async () => {
+        try {
+          setIsAuthenticating(true);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          setConnectionReady(true);
+        } catch (error) {
+          console.error('Connection setup failed:', error);
+        } finally {
+          setIsAuthenticating(false);
+        }
+      };
 
-      if (storedCredentialId && storedAccountAddress) {
-        // Attempt to restore session with authentication
-        const connectAsync = async () => {
-          try {
-            setIsAuthenticating(true);
-            connect({ connector: gianoConnector });
-          } catch (error) {
-            console.warn('Failed to auto-restore session:', error);
-            // Clear invalid stored data
-            localStorage.removeItem('giano_credential_id');
-            localStorage.removeItem('giano_account_address');
-          } finally {
-            setIsAuthenticating(false);
-          }
-        };
-        void connectAsync();
-      }
-    }
-  }, [mounted, isConnected, connect, isAuthenticating, gianoConnector]);
-
-  // Wait for the connection to be fully established before allowing contract calls
-  useEffect(() => {
-    if (isConnected && address && status === 'connected' && !isAuthenticating) {
-      // Add a small delay to ensure the smart account is fully initialized
-      const timer = setTimeout(() => {
-        setConnectionReady(true);
-      }, 500);
-      return () => clearTimeout(timer);
+      connectAsync();
     } else {
       setConnectionReady(false);
     }
-  }, [isConnected, address, status, isAuthenticating]);
-
-  useEffect(() => {
-    if (error) {
-      console.error(error);
-    }
-  }, [error]);
+  }, [mounted, isConnected, status]);
 
   const sendTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
-    const userOperationHash = await writeContractAsync({
-      address: config.privateErc20Address as `0x${string}`,
-      abi: privateErc20Abi,
-      functionName: 'mint',
-      args: [parseEther(inputMessage.trim())],
-    });
+    try {
+      const data = encodeFunctionData({
+        abi: privateErc20Abi,
+        functionName: 'mint',
+        args: [parseEther(inputMessage)],
+      });
 
-    console.log('Transaction sent with hash:', userOperationHash);
+      await writeContractAsync({
+        address: config.privateErc20Address as `0x${string}`,
+        abi: privateErc20Abi,
+        functionName: 'mint',
+        args: [parseEther(inputMessage)],
+      });
+    } catch (error) {
+      console.error('Transaction failed:', error);
+    }
   };
 
   const sendEmptyTx = async (e: FormEvent & { currentTarget: HTMLFormElement }) => {
     e.preventDefault();
-    sendTransaction(
-      {
-        to: address,
-        value: BigInt(0),
-      },
-      {
-        onSuccess: (...params) => console.log(params),
-        onError: (error) => console.error('Transaction failed:', error),
-      },
-    );
+    try {
+      sendTransaction({
+        to: address as `0x${string}`,
+        value: 0n,
+      });
+    } catch (error) {
+      console.error('Empty transaction failed:', error);
+    }
   };
 
-  // New method 1: Prepare user operation manually
   const prepareManualMint = async () => {
-    if (!walletClient || !manualMintAmount.trim()) return;
+    if (!manualMintAmount.trim()) return;
 
     try {
       setIsManualMintPending(true);
-
-      // Encode the mint function call
-      const mintCallData = encodeFunctionData({
+      const data = encodeFunctionData({
         abi: privateErc20Abi,
         functionName: 'mint',
-        args: [parseEther(manualMintAmount.trim())],
+        args: [parseEther(manualMintAmount)],
       });
 
-      // Prepare the user operation using the new method
-      const userOp = await walletClient.request({
-        method: 'eth_prepareUserOperation',
-        params: [
-          [
-            {
-              to: config.privateErc20Address as `0x${string}`,
-              data: mintCallData,
-            },
-          ],
-          {
-            // Optional: customize gas settings
-            maxFeePerGas: '0x2E90EDD000', // 200 gwei in hex
-            maxPriorityFeePerGas: '0x5D21DBA000', // 400 gwei in hex
-          },
-        ],
-      } as any);
+      const userOp = await gianoConnector.prepareUserOperation({
+        to: config.privateErc20Address as `0x${string}`,
+        data,
+      });
 
       setPreparedUserOp(userOp);
+      setIsUserOpSigned(false);
       console.log('User operation prepared:', userOp);
-      setIsUserOpSigned(false); // Reset signed state when preparing new operation
     } catch (error) {
       console.error('Failed to prepare user operation:', error);
     } finally {
@@ -223,27 +189,15 @@ const Home: NextPage = () => {
     }
   };
 
-  // New method 2: Sign prepared user operation
   const signPreparedUserOp = async () => {
-    if (!walletClient || !preparedUserOp) return;
+    if (!preparedUserOp) return;
 
     try {
       setIsManualMintPending(true);
-
-      const signature = await walletClient.request({
-        method: 'eth_signUserOperation',
-        params: [preparedUserOp],
-      } as any);
-
-      // Add signature to the user operation
-      const signedUserOp = {
-        ...preparedUserOp,
-        signature,
-      };
-
+      const signedUserOp = await gianoConnector.signUserOperation(preparedUserOp);
       setPreparedUserOp(signedUserOp);
-      console.log('User operation signed:', signature);
-      setIsUserOpSigned(true); // Mark as signed
+      setIsUserOpSigned(true);
+      console.log('User operation signed:', signedUserOp);
     } catch (error) {
       console.error('Failed to sign user operation:', error);
     } finally {
@@ -251,124 +205,84 @@ const Home: NextPage = () => {
     }
   };
 
-  // New method 3: Send signed user operation
   const sendSignedUserOp = async () => {
-    if (!walletClient || !preparedUserOp || !preparedUserOp.signature) return;
+    if (!preparedUserOp || !isUserOpSigned) return;
 
     try {
       setIsManualMintPending(true);
-
-      const receipt = await walletClient.request({
-        method: 'eth_sendSignedUserOperation',
-        params: [preparedUserOp],
-      } as any);
-
-      console.log('Transaction receipt:', receipt);
-      setPreparedUserOp(null); // Reset after successful send
-      setIsUserOpSigned(false); // Reset signed state
-      setManualMintAmount(''); // Clear input
+      const hash = await gianoConnector.sendUserOperation(preparedUserOp);
+      console.log('User operation sent:', hash);
+      setPreparedUserOp(null);
+      setIsUserOpSigned(false);
+      setManualMintAmount('');
     } catch (error) {
-      console.error('Failed to send signed user operation:', error);
+      console.error('Failed to send user operation:', error);
     } finally {
       setIsManualMintPending(false);
     }
   };
 
-  // Full workflow in one function (alternative approach)
   const manualMintFullWorkflow = async () => {
-    if (!walletClient || !manualMintAmount.trim()) return;
+    if (!manualMintAmount.trim()) return;
 
     try {
       setIsManualMintPending(true);
-
-      // Step 1: Prepare
-      const mintCallData = encodeFunctionData({
+      const data = encodeFunctionData({
         abi: privateErc20Abi,
         functionName: 'mint',
-        args: [parseEther(manualMintAmount.trim())],
+        args: [parseEther(manualMintAmount)],
       });
 
-      const userOp = await walletClient.request({
-        method: 'eth_prepareUserOperation',
-        params: [[{ to: config.privateErc20Address as `0x${string}`, data: mintCallData }]],
-      } as any);
+      const userOp = await gianoConnector.prepareUserOperation({
+        to: config.privateErc20Address as `0x${string}`,
+        data,
+      });
 
-      // Step 2: Sign
-      const signature = await walletClient.request({
-        method: 'eth_signUserOperation',
-        params: [userOp],
-      } as any);
+      const signedUserOp = await gianoConnector.signUserOperation(userOp);
+      const hash = await gianoConnector.sendUserOperation(signedUserOp);
 
-      // Step 3: Send
-      const signedUserOp = { ...(userOp as object), signature } as any;
-      const receipt = await walletClient.request({
-        method: 'eth_sendSignedUserOperation',
-        params: [signedUserOp],
-      } as any);
-
-      console.log('Manual mint completed:', receipt);
+      console.log('Full workflow completed:', hash);
       setManualMintAmount('');
     } catch (error) {
-      console.error('Manual mint failed:', error);
+      console.error('Full workflow failed:', error);
     } finally {
       setIsManualMintPending(false);
     }
   };
 
   const sendCall = async () => {
-    const { data } = await readContract();
-    if (data) setContractState(data);
+    try {
+      const result = await readContract();
+      setContractState(result.data);
+    } catch (error) {
+      console.error('Failed to read contract:', error);
+    }
   };
 
-  // New function to read private balance using signed_eth_call
   const sendPrivateCall = async () => {
-    if (!walletClient || !address) {
-      console.error('Wallet not connected');
-      return;
-    }
-
     try {
       setIsPrivateBalanceFetching(true);
-
-      const callData = encodeFunctionData({
+      const result = await gianoConnector.readContract({
+        address: config.privateErc20Address as `0x${string}`,
         abi: privateErc20Abi,
-        functionName: 'privateBalanceOf',
-        args: [address],
+        functionName: 'balanceOf',
+        args: [address!],
       });
-
-      console.log('callData', callData);
-
-      const result = await walletClient.request({
-        method: 'signed_eth_call',
-        params: [
-          {
-            to: config.privateErc20Address as `0x${string}`,
-            data: callData,
-          },
-          'latest',
-        ],
-      } as any);
-
-      const decodedResult = BigInt(result as string);
-      setPrivateContractState(decodedResult);
-      console.log('Private balance:', decodedResult);
+      setPrivateContractState(result as bigint);
     } catch (error) {
-      console.error('Failed to read private balance:', error);
+      console.error('Failed to read private contract:', error);
     } finally {
       setIsPrivateBalanceFetching(false);
     }
   };
 
   const signMessage = async () => {
-    if (!walletClient || !address) {
-      console.error('Wallet not connected');
-      return;
-    }
-
     try {
-      const signature = await walletClient.signMessage({
-        message: messageToSign,
+      const signature = await walletClient.request({
+        method: 'personal_sign',
+        params: [messageToSign, address],
       } as any);
+
       setSignatureResult(signature as string);
       console.log('Message signed successfully:', signature);
     } catch (error) {
@@ -378,30 +292,30 @@ const Home: NextPage = () => {
   };
 
   const signTypedData = async () => {
-    if (!walletClient || !address) {
-      console.error('Wallet not connected');
-      return;
-    }
-
     try {
-      // Example EIP-712 typed data
       const typedData = {
+        types: {
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' },
+          ],
+          Person: [
+            { name: 'name', type: 'string' },
+            { name: 'wallet', type: 'address' },
+          ],
+        },
+        primaryType: 'Person',
         domain: {
-          name: 'Giano Demo',
+          name: 'Ether Mail',
           version: '1',
           chainId: 1,
           verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
         },
-        types: {
-          Message: [
-            { name: 'content', type: 'string' },
-            { name: 'timestamp', type: 'uint256' },
-          ],
-        },
-        primaryType: 'Message',
         message: {
-          content: 'Hello from Giano!',
-          timestamp: Math.floor(Date.now() / 1000),
+          name: 'Bob',
+          wallet: address,
         },
       };
 
@@ -491,374 +405,585 @@ const Home: NextPage = () => {
   // Don't render wallet-dependent UI until after hydration
   if (!mounted) {
     return (
-      <div className={styles.container}>
+      <Container maxWidth="lg">
         <Head>
           <title>Giano Demo</title>
           <meta content="Generated by @rainbow-me/create-rainbowkit" name="description" />
           <link href="/favicon.ico" rel="icon" />
         </Head>
-        <main className={styles.main}>
-          <div className={styles.loadingContainer}>
-            <div className={styles.spinner}></div>
-            <p>Loading Giano Demo...</p>
-          </div>
-        </main>
-      </div>
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <LinearProgress sx={{ width: '100%', maxWidth: 400, mb: 2 }} />
+          <Typography variant="h6" color="text.secondary">
+            Loading Giano Demo...
+          </Typography>
+        </Box>
+      </Container>
     );
   }
 
   // Show authentication loading state
   if (isAuthenticating) {
     return (
-      <div className={styles.container}>
+      <Container maxWidth="lg">
         <Head>
           <title>Giano Demo</title>
           <meta content="Generated by @rainbow-me/create-rainbowkit" name="description" />
           <link href="/favicon.ico" rel="icon" />
         </Head>
-        <main className={styles.main}>
-          <div className={styles.loadingContainer}>
-            <div className={styles.spinner}></div>
-            <p>Authenticating with passkey...</p>
-            <p className={styles.subtitle}>Please complete the authentication prompt</p>
-          </div>
-        </main>
-      </div>
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <LinearProgress sx={{ width: '100%', maxWidth: 400, mb: 2 }} />
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            Authenticating with passkey...
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Please complete the authentication prompt
+          </Typography>
+        </Box>
+      </Container>
     );
   }
 
   return (
-    <div className={styles.container}>
+    <Container maxWidth="lg">
       <Head>
         <title>Giano Demo</title>
         <meta content="Generated by @rainbow-me/create-rainbowkit" name="description" />
         <link href="/favicon.ico" rel="icon" />
       </Head>
 
-      <header className={styles.header}>
-        <div className={styles.headerContent}>
-          <div className={styles.logo}>
-            <h1>Giano Demo</h1>
-            <p>Passkey-based Smart Account Wallet</p>
-          </div>
-          <div className={styles.walletControls}>
-            {isConnected ? (
-              <button onClick={() => disconnect()} className={styles.connectButton}>
-                Disconnect Wallet
-              </button>
-            ) : (
-              <button onClick={() => connect({ connector: gianoConnector })} className={styles.connectButton}>
-                Connect Wallet
-              </button>
-            )}
-            <button onClick={deletePasskey} className={styles.deleteButton}>
-              Delete Passkey
-            </button>
-            <button onClick={toggleCredentialListMode} className={styles.toggleButton}>
-              {showCredentialList ? 'Switch to Normal Mode' : 'Switch to Credential List Mode'}
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* Header */}
+      <Paper elevation={2} sx={{ p: 3, mb: 3, mt: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={4}>
+            <Typography variant="h4" component="h1" gutterBottom>
+              Giano Demo
+            </Typography>
+            <Typography variant="subtitle1" color="text.secondary">
+              Passkey-based Smart Account Wallet
+            </Typography>
+          </Grid>
+          <Grid item xs={12} md={8}>
+            <Stack direction="row" spacing={2} justifyContent="flex-end" flexWrap="wrap">
+              {isConnected ? (
+                <Button variant="outlined" startIcon={<AccountBalanceWallet />} onClick={() => disconnect()}>
+                  Disconnect Wallet
+                </Button>
+              ) : (
+                <Button variant="contained" startIcon={<AccountBalanceWallet />} onClick={() => connect({ connector: gianoConnector })}>
+                  Connect Wallet
+                </Button>
+              )}
+              <Button variant="outlined" color="error" startIcon={<Delete />} onClick={deletePasskey}>
+                Delete Passkey
+              </Button>
+              <Button variant="outlined" startIcon={showCredentialList ? <VisibilityOff /> : <Visibility />} onClick={toggleCredentialListMode}>
+                {showCredentialList ? 'Normal Mode' : 'Credential List Mode'}
+              </Button>
+            </Stack>
+          </Grid>
+        </Grid>
+      </Paper>
 
-      <main className={styles.main}>
-        {/* Connection Status */}
-        {address && (
-          <div className={styles.statusCard}>
-            <div className={styles.statusHeader}>
-              <div className={styles.statusIndicator}></div>
-              <h3>Wallet Connected</h3>
-            </div>
-            <p className={styles.address}>{address}</p>
-            {!connectionReady && <p className={styles.statusMessage}>Initializing smart account...</p>}
-          </div>
-        )}
+      {/* Connection Status */}
+      {address && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Wallet Connected
+          </Typography>
+          <Typography variant="body2" fontFamily="monospace">
+            {address}
+          </Typography>
+          {!connectionReady && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Initializing smart account...
+            </Typography>
+          )}
+        </Alert>
+      )}
 
-        {/* Credential Mode Status */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Credential Mode</h2>
-          <div className={styles.card}>
-            <div className={styles.modeStatus}>
-              <div className={styles.modeIndicator}>
-                <span className={styles.modeLabel}>Current Mode:</span>
-                <span className={`${styles.modeValue} ${showCredentialList ? styles.credentialListMode : styles.normalMode}`}>
-                  {showCredentialList ? 'Credential List Mode' : 'Normal Mode'}
-                </span>
-              </div>
-              <div className={styles.modeDescription}>
-                <p>
-                  <strong>Normal Mode:</strong> Automatically selects credentials from storage
-                </p>
-                <p>
-                  <strong>Credential List Mode:</strong> Shows a list of available credentials for user selection
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Credential Mode Status */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6">Credential Mode</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, mt: 1 }}>
+            <Chip
+              label={showCredentialList ? 'Credential List Mode' : 'Normal Mode'}
+              color={showCredentialList ? 'secondary' : 'primary'}
+              icon={showCredentialList ? <Visibility /> : <Security />}
+            />
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            <strong>Normal Mode:</strong> Automatically selects credentials from storage
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            <strong>Credential List Mode:</strong> Shows a list of available credentials for user selection
+          </Typography>
+        </CardContent>
+      </Card>
 
-        {/* Quick Actions */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Quick Actions</h2>
-          <div className={styles.cardGrid}>
-            <div className={styles.card}>
-              <h3>Standard Mint</h3>
-              <p>Mint tokens using the standard contract interaction</p>
-              <form onSubmit={sendTx} className={styles.form}>
-                <input
-                  className={styles.input}
+      {/* Quick Actions */}
+      <Typography variant="h5" gutterBottom>
+        Quick Actions
+      </Typography>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Standard Mint
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Mint tokens using the standard contract interaction
+              </Typography>
+              <Box component="form" onSubmit={sendTx} sx={{ mt: 2 }}>
+                <TextField
+                  fullWidth
                   type="number"
                   placeholder="Enter amount"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
+                  sx={{ mb: 2 }}
                 />
-                <button className={styles.primaryButton} disabled={!connectionReady || isWritePending || !inputMessage.trim()}>
+                <Button type="submit" variant="contained" fullWidth disabled={!connectionReady || isWritePending || !inputMessage.trim()} startIcon={<Send />}>
                   {isWritePending ? 'Minting...' : 'Mint Tokens'}
-                </button>
-              </form>
-            </div>
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
 
-            <div className={styles.card}>
-              <h3>Empty Transaction</h3>
-              <p>Send an empty transaction to test the wallet</p>
-              <form onSubmit={sendEmptyTx} className={styles.form}>
-                <button className={styles.secondaryButton} disabled={!connectionReady || isWritePending}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Empty Transaction
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Send an empty transaction to test the wallet
+              </Typography>
+              <Box component="form" onSubmit={sendEmptyTx} sx={{ mt: 2 }}>
+                <Button type="submit" variant="outlined" fullWidth disabled={!connectionReady || isWritePending} startIcon={<Send />}>
                   Send Empty Tx
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
-        {/* Manual Transaction Building */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Advanced: Manual Transaction Building</h2>
-          <div className={styles.card}>
-            <h3>Step-by-Step User Operation</h3>
-            <p>Build and execute transactions manually using the three-step process</p>
+      {/* Advanced: Manual Transaction Building */}
+      <Typography variant="h5" gutterBottom>
+        Advanced: Manual Transaction Building
+      </Typography>
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Step-by-Step User Operation
+          </Typography>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Build and execute transactions manually using the three-step process
+          </Typography>
 
-            <div className={styles.form}>
-              <input
-                className={styles.input}
-                type="number"
-                placeholder="Amount to mint manually"
-                value={manualMintAmount}
-                onChange={(e) => setManualMintAmount(e.target.value)}
-              />
-            </div>
+          <TextField
+            fullWidth
+            type="number"
+            placeholder="Amount to mint manually"
+            value={manualMintAmount}
+            onChange={(e) => setManualMintAmount(e.target.value)}
+            sx={{ mb: 3 }}
+          />
 
-            <div className={styles.stepButtons}>
-              <button className={styles.stepButton} disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()} onClick={prepareManualMint}>
-                <span className={styles.stepNumber}>1</span>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={4}>
+              <Button
+                fullWidth
+                variant="outlined"
+                disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()}
+                onClick={prepareManualMint}
+                startIcon={<Typography variant="caption">1</Typography>}
+              >
                 Prepare UserOp
-              </button>
-              <button
-                className={styles.stepButton}
+              </Button>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Button
+                fullWidth
+                variant="outlined"
                 disabled={!connectionReady || isManualMintPending || !preparedUserOp || isUserOpSigned}
                 onClick={signPreparedUserOp}
+                startIcon={<Typography variant="caption">2</Typography>}
               >
-                <span className={styles.stepNumber}>2</span>
                 Sign UserOp
-              </button>
-              <button className={styles.stepButton} disabled={!connectionReady || isManualMintPending || !isUserOpSigned} onClick={sendSignedUserOp}>
-                <span className={styles.stepNumber}>3</span>
+              </Button>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Button
+                fullWidth
+                variant="outlined"
+                disabled={!connectionReady || isManualMintPending || !isUserOpSigned}
+                onClick={sendSignedUserOp}
+                startIcon={<Typography variant="caption">3</Typography>}
+              >
                 Send UserOp
-              </button>
-            </div>
+              </Button>
+            </Grid>
+          </Grid>
 
-            <div className={styles.divider}>
-              <span>OR</span>
-            </div>
+          <Divider sx={{ my: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              OR
+            </Typography>
+          </Divider>
 
-            <button
-              className={styles.primaryButton}
-              disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()}
-              onClick={manualMintFullWorkflow}
-            >
-              {isManualMintPending ? 'Processing...' : 'Mint (Full Workflow)'}
-            </button>
+          <Button
+            variant="contained"
+            fullWidth
+            disabled={!connectionReady || isManualMintPending || !manualMintAmount.trim()}
+            onClick={manualMintFullWorkflow}
+            startIcon={<Send />}
+          >
+            {isManualMintPending ? 'Processing...' : 'Mint (Full Workflow)'}
+          </Button>
 
-            {preparedUserOp && (
-              <div className={styles.statusCard}>
-                <h4>User Operation Status</h4>
-                <div className={styles.statusGrid}>
-                  <div className={styles.statusItem}>
-                    <span className={styles.statusLabel}>Prepared:</span>
-                    <span className={styles.statusValue}>✅</span>
-                  </div>
-                  <div className={styles.statusItem}>
-                    <span className={styles.statusLabel}>Signed:</span>
-                    <span className={styles.statusValue}>{isUserOpSigned ? '✅' : '❌'}</span>
-                  </div>
-                  <div className={styles.statusItem}>
-                    <span className={styles.statusLabel}>Nonce:</span>
-                    <span className={styles.statusValue}>{preparedUserOp.nonce}</span>
-                  </div>
+          {preparedUserOp && (
+            <Card variant="outlined" sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  User Operation Status
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <Typography variant="body2">
+                      <strong>Prepared:</strong> ✅
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2">
+                      <strong>Signed:</strong> {isUserOpSigned ? '✅' : '❌'}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2">
+                      <strong>Nonce:</strong> {preparedUserOp.nonce}
+                    </Typography>
+                  </Grid>
                   {preparedUserOp.signature && (
-                    <div className={styles.statusItem}>
-                      <span className={styles.statusLabel}>Signature:</span>
-                      <span className={styles.statusValue}>{preparedUserOp.signature.slice(0, 20)}...</span>
-                    </div>
+                    <Grid item xs={12}>
+                      <Typography variant="body2">
+                        <strong>Signature:</strong> {preparedUserOp.signature.slice(0, 20)}...
+                      </Typography>
+                    </Grid>
                   )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+                </Grid>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
 
-        {/* Balance Reading */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Balance & Data Reading</h2>
-          <div className={styles.cardGrid}>
-            <div className={styles.card}>
-              <h3>Public Balance</h3>
-              <p>Read your public token balance</p>
-              <button
-                className={styles.secondaryButton}
+      {/* Balance Reading */}
+      <Typography variant="h5" gutterBottom>
+        Balance & Data Reading
+      </Typography>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Public Balance
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Read your public token balance
+              </Typography>
+              <Button
+                variant="outlined"
+                fullWidth
                 disabled={!address || !mounted || !connectionReady || !isConnected || isReadFetching}
                 onClick={sendCall}
+                startIcon={<Refresh />}
+                sx={{ mb: 2 }}
               >
                 {isReadFetching ? 'Reading...' : 'Read Balance'}
-              </button>
+              </Button>
               {contractState && (
-                <div className={styles.resultCard}>
-                  <strong>Balance:</strong> {formatEther(contractState)} tokens
-                </div>
+                <Alert severity="info">
+                  <Typography variant="body2">
+                    <strong>Balance:</strong> {formatEther(contractState)} tokens
+                  </Typography>
+                </Alert>
               )}
-            </div>
+            </CardContent>
+          </Card>
+        </Grid>
 
-            <div className={styles.card}>
-              <h3>Private Balance</h3>
-              <p>Read your private balance using signed calls</p>
-              <button
-                className={styles.secondaryButton}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Private Balance
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Read your private balance using signed calls
+              </Typography>
+              <Button
+                variant="outlined"
+                fullWidth
                 disabled={!address || !mounted || !connectionReady || !isConnected || isPrivateBalanceFetching}
                 onClick={sendPrivateCall}
+                startIcon={<Refresh />}
+                sx={{ mb: 2 }}
               >
                 {isPrivateBalanceFetching ? 'Reading...' : 'Read Private Balance'}
-              </button>
+              </Button>
               {privateContractState && (
-                <div className={styles.resultCard}>
-                  <strong>Private Balance:</strong> {formatEther(privateContractState)} tokens
-                </div>
+                <Alert severity="info">
+                  <Typography variant="body2">
+                    <strong>Private Balance:</strong> {formatEther(privateContractState)} tokens
+                  </Typography>
+                </Alert>
               )}
-            </div>
-          </div>
-        </div>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
-        {/* Message Signing */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Message Signing</h2>
-          <div className={styles.card}>
-            <h3>Sign Messages</h3>
-            <p>Test message signing capabilities</p>
+      {/* Message Signing */}
+      <Typography variant="h5" gutterBottom>
+        Message Signing
+      </Typography>
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Sign Messages
+          </Typography>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Test message signing capabilities
+          </Typography>
 
-            <div className={styles.form}>
-              <input
-                className={styles.input}
+          <TextField
+            fullWidth
+            type="text"
+            placeholder="Message to sign"
+            value={messageToSign}
+            onChange={(e) => setMessageToSign(e.target.value)}
+            sx={{ mb: 3 }}
+          />
+
+          <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+            <Button variant="outlined" disabled={!connectionReady} onClick={signMessage}>
+              Sign Message (Personal)
+            </Button>
+            <Button variant="outlined" disabled={!connectionReady} onClick={signTypedData}>
+              Sign Typed Data (EIP-712)
+            </Button>
+          </Stack>
+
+          {signatureResult && (
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Signature Result
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  value={signatureResult}
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                  sx={{
+                    '& .MuiInputBase-input': {
+                      fontFamily: 'monospace',
+                      fontSize: '0.875rem',
+                    },
+                  }}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Message Approval */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          Message Approval with EIP-712
+        </Typography>
+        <Card variant="outlined">
+          <CardContent>
+            <Typography variant="h5" gutterBottom>
+              Approve Messages
+            </Typography>
+            <Typography variant="body1" sx={{ mb: 3 }}>
+              Sign and approve messages using EIP-712 signatures
+            </Typography>
+
+            <Stack spacing={3} sx={{ mb: 3 }}>
+              <TextField
+                fullWidth
+                label="Message Content"
                 type="text"
-                placeholder="Message to sign"
-                value={messageToSign}
-                onChange={(e) => setMessageToSign(e.target.value)}
+                placeholder="Message content to approve"
+                value={approvalMessageContent}
+                onChange={(e) => setApprovalMessageContent(e.target.value)}
               />
-            </div>
 
-            <div className={styles.buttonGroup}>
-              <button className={styles.secondaryButton} disabled={!connectionReady} onClick={signMessage}>
-                Sign Message (Personal)
-              </button>
-              <button className={styles.secondaryButton} disabled={!connectionReady} onClick={signTypedData}>
-                Sign Typed Data (EIP-712)
-              </button>
-            </div>
+              <TextField
+                fullWidth
+                label="Timestamp"
+                type="number"
+                placeholder="Unix timestamp"
+                value={approvalMessageTimestamp}
+                onChange={(e) => setApprovalMessageTimestamp(parseInt(e.target.value) || Math.floor(Date.now() / 1000))}
+              />
+            </Stack>
 
-            {signatureResult && (
-              <div className={styles.resultCard}>
-                <h4>Signature Result</h4>
-                <code className={styles.signatureCode}>{signatureResult}</code>
-              </div>
-            )}
-          </div>
-        </div>
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+              <Grid item xs={12} md={6}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  disabled={!connectionReady || !approvalMessageContent}
+                  onClick={signMessageForApproval}
+                  startIcon={<Typography variant="caption">1</Typography>}
+                >
+                  Sign Message for Approval
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  disabled={!connectionReady || !approvalSignature || isApprovalPending}
+                  onClick={approveMessage}
+                  startIcon={<Typography variant="caption">2</Typography>}
+                >
+                  {isApprovalPending ? 'Processing...' : 'Approve Message'}
+                </Button>
+              </Grid>
+            </Grid>
 
-        {/* Message Approval */}
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Message Approval with EIP-712</h2>
-          <div className={styles.card}>
-            <h3>Approve Messages</h3>
-            <p>Sign and approve messages using EIP-712 signatures</p>
+            <Divider sx={{ my: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                OR
+              </Typography>
+            </Divider>
 
-            <div className={styles.form}>
-              <div className={styles.inputGroup}>
-                <label htmlFor="approvalMessage">Message Content:</label>
-                <input
-                  id="approvalMessage"
-                  className={styles.input}
-                  type="text"
-                  placeholder="Message content to approve"
-                  value={approvalMessageContent}
-                  onChange={(e) => setApprovalMessageContent(e.target.value)}
-                />
-              </div>
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={!connectionReady || !approvalMessageContent || isApprovalPending}
+              onClick={async () => {
+                await signMessageForApproval();
+                await approveMessage();
+              }}
+              startIcon={<Send />}
+            >
+              {isApprovalPending ? 'Processing...' : 'Sign & Approve (Full Workflow)'}
+            </Button>
 
-              <div className={styles.inputGroup}>
-                <label htmlFor="approvalTimestamp">Timestamp:</label>
-                <input
-                  id="approvalTimestamp"
-                  className={styles.input}
-                  type="number"
-                  placeholder="Unix timestamp"
-                  value={approvalMessageTimestamp}
-                  onChange={(e) => setApprovalMessageTimestamp(parseInt(e.target.value) || Math.floor(Date.now() / 1000))}
-                />
-              </div>
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              {/* Message Approval Status */}
+              {(approvalMessageContent || approvalSignature) && (
+                <Card variant="outlined" sx={{ mt: 3 }}>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Message Approval Status
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6}>
+                        <Typography variant="body2">
+                          <strong>Message:</strong> {approvalMessageContent ? '✅' : '❌'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2">
+                          <strong>Signed:</strong> {approvalSignature ? '✅' : '❌'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2">
+                          <strong>Timestamp:</strong> {approvalMessageTimestamp}
+                        </Typography>
+                      </Grid>
+                      {approvalSignature && (
+                        <Grid item xs={12}>
+                          <Typography variant="body2">
+                            <strong>Signature:</strong> {approvalSignature.slice(0, 20)}...
+                          </Typography>
+                        </Grid>
+                      )}
+                    </Grid>
+                  </CardContent>
+                </Card>
+              )}
 
-              <div className={styles.inputGroup}>
-                <label htmlFor="approvalSignature">Signature:</label>
-                <input
-                  id="approvalSignature"
-                  className={styles.input}
-                  type="text"
-                  placeholder="Signature from signed message"
-                  value={approvalSignature}
-                  onChange={(e) => setApprovalSignature(e.target.value)}
-                />
-              </div>
-            </div>
+              {approvalResult && (
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Approval Result
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                      {approvalResult}
+                    </Typography>
+                    {approvalSignature && (
+                      <Box>
+                        <Typography variant="subtitle2" gutterBottom>
+                          Signature:
+                        </Typography>
+                        <TextField
+                          fullWidth
+                          multiline
+                          rows={2}
+                          value={approvalSignature}
+                          InputProps={{
+                            readOnly: true,
+                          }}
+                          sx={{
+                            '& .MuiInputBase-input': {
+                              fontFamily: 'monospace',
+                              fontSize: '0.875rem',
+                            },
+                          }}
+                        />
+                      </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+      </Box>
 
-            <div className={styles.buttonGroup}>
-              <button className={styles.secondaryButton} disabled={!connectionReady || !approvalMessageContent} onClick={signMessageForApproval}>
-                Sign Message for Approval
-              </button>
-              <button className={styles.primaryButton} disabled={!connectionReady || !approvalSignature || isApprovalPending} onClick={approveMessage}>
-                {isApprovalPending ? 'Processing...' : 'Approve Message'}
-              </button>
-            </div>
-
-            {approvalResult && (
-              <div className={styles.resultCard}>
-                <h4>Approval Result</h4>
-                <p>{approvalResult}</p>
-                {approvalSignature && (
-                  <div className={styles.signatureInfo}>
-                    <strong>Signature:</strong>
-                    <code className={styles.signatureCode}>{approvalSignature}</code>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className={styles.errorCard}>
-            <h3>Error</h3>
-            <p>{error.message}</p>
-          </div>
-        )}
-      </main>
-    </div>
+      {/* Error Display */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Error
+          </Typography>
+          <Typography variant="body2">{error.message}</Typography>
+        </Alert>
+      )}
+    </Container>
   );
 };
 
