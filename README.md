@@ -109,7 +109,6 @@ pnpm hh:test
 
 - `GianoSmartWallet`: the smart wallet itself, which validates the signatures and executes the calls.
 - `GianoSmartWalletFactory`: the contract responsible for deploying the smart wallet contracts
-- `CredentialKeyMapper`: the contract that stores a mapping between WebAuthn credential IDs and the public key of each. Needed because WebAuthn public keys are only returned on creation, not retrieval.
 - `toGianoSmartAccount.ts`: module that instantiates a Viem client for the Giano Smart Wallet
 - `provider.ts`: `EIP-1193`-compatible provider that intercepts EVM RPC requests and repackages transactions as user ops to be passed to the bundler
 - `connector.ts`: WAGMI connector
