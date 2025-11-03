@@ -61,11 +61,11 @@ importers:
         specifier: 0.7.0
         version: 0.7.0
       '@appliedblockchain/silentdatarollup-core':
-        specifier: ^1.0.3
-        version: 1.0.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        specifier: ^1.0.8
+        version: 1.0.8(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@appliedblockchain/silentdatarollup-hardhat-plugin':
-        specifier: ^1.0.3
-        version: 1.0.3(bufferutil@4.0.9)(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
+        specifier: ^1.0.8
+        version: 1.0.8(bufferutil@4.0.9)(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
       '@nomicfoundation/ethereumjs-util':
         specifier: ^9.0.4
         version: 9.0.4
@@ -89,7 +89,7 @@ importers:
         version: 1.0.12(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
-        version: 5.0.0(a5bv3rhc7zwc5e3ixgdc6q4a2i)
+        version: 5.0.0(4921e5d5c79dbe70bbc62cba7578acf9)
       '@nomicfoundation/hardhat-verify':
         specifier: ^2.0.6
         version: 2.0.13(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))
@@ -233,16 +233,16 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@appliedblockchain/silentdatarollup-core@1.0.3':
-    resolution: {integrity: sha512-WM5nc0UML0OXRZD4/KqVwBdye5BXWEtIomb7UPlIp4E692FLtmtwv8YxBBWQVXG14iDNaCZ1SSUonswSwPik1Q==}
+  '@appliedblockchain/silentdatarollup-core@1.0.8':
+    resolution: {integrity: sha512-+F4eZqqj/h7rNuX3AvKzk6apg9HROITybxp+yRXKcwR9t3e0gYgXF947cz8nWiS0xD1PX7u7QfjGdiWlBBpiyA==}
     engines: {node: '>=18.0.0'}
 
-  '@appliedblockchain/silentdatarollup-hardhat-plugin@1.0.3':
-    resolution: {integrity: sha512-J98UcfW/a6gEizwta9cxhmgNlKd/ndHRfXsTxzNqtXmf5ft+J/GfjF/7fu8jpltj/BVrcRnY2+YmD3KUOjvkHQ==}
+  '@appliedblockchain/silentdatarollup-hardhat-plugin@1.0.8':
+    resolution: {integrity: sha512-8PlIqU/5IBp673oDiympzJ0ntySSgQBoNbQkr90BmSDqOPTDYBYxnnSv73LBY1X+aU1VjLIjOP5PLc1GYa5Qhw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      ethers: 6.13.2
-      hardhat: 2.22.10
+      ethers: ^6.0.0
+      hardhat: ^2.0.0
 
   '@babel/code-frame@7.27.1':
     resolution: {integrity: sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg==}
@@ -3913,6 +3913,9 @@ packages:
     resolution: {integrity: sha512-6Tb2myMioCAgv5kfvP5/PkZZ/ntTpVK39fHY7WkWBgvbeE+VHd/tZuZ4mrC+bxh4cfOZeYKVPaJIZtZXV7GNCQ==}
     engines: {node: '>=4.0.0'}
 
+  find-root@1.1.0:
+    resolution: {integrity: sha512-NKfW6bec6GfKc0SGx1e07QZY9PE99u0Bft/0rzSD5k3sO/vwkVUpDUKVm5Gpp5Ue3YfShPFTX2070tDs5kB9Ng==}
+
   find-up@2.1.0:
     resolution: {integrity: sha512-NWzkk0jSJtTt08+FBFMvXoeZnOJD+jTtsRmBYbAIzJdX6l7dLgR7CTubCM5/eDdPUBvLCeVasP1brfVR/9/EZQ==}
     engines: {node: '>=4'}
@@ -6895,7 +6898,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@appliedblockchain/silentdatarollup-core@1.0.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
+  '@appliedblockchain/silentdatarollup-core@1.0.8(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
     dependencies:
       debug: 4.3.7
       ethers: 6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -6904,9 +6907,9 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@appliedblockchain/silentdatarollup-hardhat-plugin@1.0.3(bufferutil@4.0.9)(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)':
+  '@appliedblockchain/silentdatarollup-hardhat-plugin@1.0.8(bufferutil@4.0.9)(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)':
     dependencies:
-      '@appliedblockchain/silentdatarollup-core': 1.0.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@appliedblockchain/silentdatarollup-core': 1.0.8(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@nomicfoundation/hardhat-ethers': 3.0.8(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))
       debug: 4.3.7
       ethers: 6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -8131,7 +8134,7 @@ snapshots:
       ethereumjs-util: 7.1.5
       hardhat: 2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10)
 
-  '@nomicfoundation/hardhat-toolbox@5.0.0(a5bv3rhc7zwc5e3ixgdc6q4a2i)':
+  '@nomicfoundation/hardhat-toolbox@5.0.0(4921e5d5c79dbe70bbc62cba7578acf9)':
     dependencies:
       '@nomicfoundation/hardhat-chai-matchers': 2.0.8(@nomicfoundation/hardhat-ethers@3.0.8(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10)))(chai@4.5.0)(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))
       '@nomicfoundation/hardhat-ethers': 3.0.8(ethers@6.13.2(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.22.10(bufferutil@4.0.9)(ts-node@10.9.2(@swc/core@1.11.24)(@types/node@22.7.5)(typescript@5.5.4))(typescript@5.5.4)(utf-8-validate@5.0.10))
@@ -12048,7 +12051,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.0(@typescript-eslint/parser@8.32.1(eslint@8.57.1)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0)(eslint@8.57.1))(eslint@8.57.1):
+  eslint-module-utils@2.12.0(@typescript-eslint/parser@8.32.1(eslint@8.57.1)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
@@ -12076,7 +12079,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.0(@typescript-eslint/parser@8.32.1(eslint@8.57.1)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.31.0)(eslint@8.57.1))(eslint@8.57.1)
+      eslint-module-utils: 2.12.0(@typescript-eslint/parser@8.32.1(eslint@8.57.1)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -12613,6 +12616,8 @@ snapshots:
   find-replace@3.0.0:
     dependencies:
       array-back: 3.1.0
+
+  find-root@1.1.0: {}
 
   find-up@2.1.0:
     dependencies:

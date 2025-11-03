@@ -24,8 +24,8 @@
   "types": "dist/index.d.ts",
   "devDependencies": {
     "@account-abstraction/contracts": "0.7.0",
-    "@appliedblockchain/silentdatarollup-core": "^1.0.3",
-    "@appliedblockchain/silentdatarollup-hardhat-plugin": "^1.0.3",
+    "@appliedblockchain/silentdatarollup-core": "^1.0.8",
+    "@appliedblockchain/silentdatarollup-hardhat-plugin": "^1.0.8",
     "@nomicfoundation/ethereumjs-util": "^9.0.4",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
