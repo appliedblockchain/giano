@@ -39,12 +39,24 @@ const config: HardhatUserConfig = {
       enableRip7212: true,
       url: 'http://localhost:8545',
     },
-    sdr: {
-      url: process.env.SDR_URL,
-      accounts: [process.env.SDR_PRIVATE_KEY!],
-      silentdata: {
-        authSignatureType: SignatureType.Raw,
-      },
+    ['base-sepolia']: {
+      enableRip7212: true,
+      url: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://base-sepolia.public.blastapi.io',
+      accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
+      chainId: 84532,
+    },
+    base: {
+      enableRip7212: true,
+      url: process.env.BASE_RPC_URL ?? 'https://base-rpc.publicnode.com',
+      accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
+      chainId: 8453,
+    },
+    'sdr-testnet': {
+      enableRip7212: true,
+      url: process.env.SDR_TESTNET_RPC_URL,
+      accounts: process.env.SDR_PRIVATE_KEY ? [process.env.SDR_PRIVATE_KEY] : [],
+      chainId: 381185,
+      silentdata: { authSignatureType: SignatureType.Raw },
     },
   },
   gasReporter: {
@@ -56,7 +68,7 @@ const config: HardhatUserConfig = {
   ignition: {
     strategyConfig: {
       create2: {
-        salt: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        salt: '0xAB000000000000000000000000000000000000000000000000000000000000AB',
       },
     },
   },

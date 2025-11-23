@@ -26,10 +26,10 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     /// @notice A wrapper struct used for signature validation so that callers
     ///         can identify the owner that signed.
     struct SignatureWrapper {
-        /// @dev The index of the owner that signed, see `MultiOwnable.ownerAtIndex`
-        uint256 ownerIndex;
-        /// @dev If `MultiOwnable.ownerAtIndex` is an Ethereum address, this should be `abi.encodePacked(r, s, v)`
-        ///      If `MultiOwnable.ownerAtIndex` is a public key, this should be `abi.encode(WebAuthnAuth)`.
+        /// @dev The owner bytes that signed, should be ABI encoded address (32 bytes) or public key (64 bytes)
+        bytes ownerBytes;
+        /// @dev If `ownerBytes` is an Ethereum address, this should be `abi.encodePacked(r, s, v)`
+        ///      If `ownerBytes` is a public key, this should be `abi.encode(WebAuthnAuth)`.
         bytes signatureData;
     }
 
@@ -69,6 +69,11 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     ///
     /// @param key The invalid `UserOperation.nonce` key.
     error InvalidNonceKey(uint256 key);
+
+    /// @notice Thrown when an upgrade is attempted to an implementation that does not exist.
+    ///
+    /// @param implementation The address of the implementation that has no code.
+    error InvalidImplementation(address implementation);
 
     /// @notice Reverts if the caller is not the EntryPoint.
     modifier onlyEntryPoint() virtual {
@@ -161,6 +166,22 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
             if (key != REPLAYABLE_NONCE_KEY) {
                 revert InvalidNonceKey(key);
             }
+
+            // Check for upgrade calls in the batch and validate implementation has code
+            bytes[] memory calls = abi.decode(userOp.callData[4:], (bytes[]));
+            for (uint256 i; i < calls.length; i++) {
+                bytes memory callData = calls[i];
+                bytes4 selector = bytes4(callData);
+
+                if (selector == UUPSUpgradeable.upgradeToAndCall.selector) {
+                    address newImplementation;
+                    assembly {
+                        // Skip reading the first 32 bytes (length prefix) + 4 bytes (function selector)
+                        newImplementation := mload(add(callData, 36))
+                    }
+                    if (newImplementation.code.length == 0) revert InvalidImplementation(newImplementation);
+                }
+            }
         } else {
             if (key == REPLAYABLE_NONCE_KEY) {
                 revert InvalidNonceKey(key);
@@ -220,11 +241,11 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
         }
     }
 
-    /// @notice Returns the address of the EntryPoint v0.8.
+    /// @notice Returns the address of the EntryPoint v0.7.
     ///
-    /// @return The address of the EntryPoint v0.8
+    /// @return The address of the EntryPoint v0.7
     function entryPoint() public view virtual returns (address) {
-        return 0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108;
+        return 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
     }
 
     /// @notice Computes the hash of the `UserOperation` in the same way as EntryPoint v0.6, but
@@ -236,7 +257,7 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     ///
     /// @return The `UserOperation` hash, which does not depend on chain ID.
     function getUserOpHashWithoutChainId(PackedUserOperation calldata userOp) public view virtual returns (bytes32) {
-        return keccak256(abi.encode(UserOperationLib.hash(userOp, bytes32(0)), entryPoint()));
+        return keccak256(abi.encode(UserOperationLib.hash(userOp), entryPoint()));
     }
 
     /// @notice Returns the implementation of the ERC1967 proxy.
@@ -287,12 +308,17 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
     /// @inheritdoc ERC1271
     ///
     /// @dev Used by both `ERC1271.isValidSignature` AND `IAccount.validateUserOp` signature validation.
-    /// @dev Reverts if owner at `ownerIndex` is not compatible with `signature` format.
+    /// @dev Reverts if `ownerBytes` is not compatible with `signature` format.
     ///
     /// @param signature ABI encoded `SignatureWrapper`.
     function _isValidSignature(bytes32 hash, bytes calldata signature) internal view virtual override returns (bool) {
         SignatureWrapper memory sigWrapper = abi.decode(signature, (SignatureWrapper));
-        bytes memory ownerBytes = ownerAtIndex(sigWrapper.ownerIndex);
+        bytes memory ownerBytes = sigWrapper.ownerBytes;
+
+        // First validate that the provided owner bytes are actually an owner
+        if (!isOwnerBytes(ownerBytes)) {
+            return false;
+        }
 
         if (ownerBytes.length == 32) {
             if (uint256(bytes32(ownerBytes)) > type(uint160).max) {

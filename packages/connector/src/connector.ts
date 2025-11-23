@@ -1,6 +1,8 @@
-import type { WalletDetailsParams } from '@rainbow-me/rainbowkit';
-import type { Chain, EIP1193Provider, TransactionRequest, Transport } from 'viem';
-import { createConnector, type CreateConnectorFn } from 'wagmi';
+import type { Chain, TransactionRequest, Transport } from 'viem'
+import { Hash } from 'viem'
+import { UserOperationReceipt } from 'viem/account-abstraction'
+import { Connector, createConnector } from 'wagmi'
+import { GianoProvider } from './provider'
 
 export type SendTransactionFnParams = {
   chain: Chain;
@@ -8,46 +10,45 @@ export type SendTransactionFnParams = {
   request: TransactionRequest;
 };
 export type CreateGianoConnectorParams = {
-  details: WalletDetailsParams;
-  provider: EIP1193Provider;
+  provider: GianoProvider;
 };
 
-export function gianoConnector({ details, provider }: CreateGianoConnectorParams): CreateConnectorFn {
-  return createConnector(({ chains }) => {
-    const connector = {
+type GianoConnectorProperties = {
+  waitForUserOperationReceipt: (hash: Hash) => Promise<UserOperationReceipt>;
+}
+
+export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
+  return createConnector<
+    GianoProvider,
+    GianoConnectorProperties
+  >(({ chains }) => {
+    const connector = <const>{
       id: 'giano',
       name: 'Giano Connector',
       type: 'custom',
       connect: async () => {
         const accounts = await provider.request({ method: 'eth_requestAccounts' });
         const chainId = await connector.getChainId();
-        console.log({ accounts, chainId });
         return { accounts, chainId };
       },
       disconnect: async () => {
-        console.log('disconnect');
         await provider.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: [] }] });
       },
       getAccounts: async () => {
-        console.log('get accounts');
         return provider.request({ method: 'eth_accounts' });
       },
-      getProvider: async (): Promise<EIP1193Provider> => {
-        console.log('getProvider');
+      getProvider: async () => {
         return provider;
       },
       isAuthorized: async () => {
-        console.log('isAuthorized');
         try {
           const accounts = await connector.getAccounts();
           return accounts.length > 0;
         } catch {
-          console.log('not authorized');
           return false;
         }
       },
       setup: async () => {
-        console.log('setup');
       },
       switchChain: async ({ chainId }: { chainId: number }) => {
         await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${chainId.toString(16)}` }] });
@@ -58,15 +59,17 @@ export function gianoConnector({ details, provider }: CreateGianoConnectorParams
         return parseInt(chainId, 16);
       },
       onAccountsChanged: () => {
-        console.log('onAccountsChanged');
       },
       onChainChanged: () => {
-        console.log('onChainChanged');
       },
       onDisconnect: () => {
-        console.log('onDisconnect');
       },
-      ...details,
+      waitForUserOperationReceipt: async (hash: Hash) => {
+        return provider.request({
+          method: 'waitForUserOperationReceipt',
+          params: [hash],
+        });
+      },
     };
 
     return connector;

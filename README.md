@@ -44,10 +44,22 @@ pnpm hh:initlocal
 ```sh
 pnpm bundler:dev
 ```
-7. Start the demo app:
+8. Build the connector package:
+```sh
+pnpm build:connector
+```
+9. Start the demo app:
 ```sh
 pnpm demo:dev
 ```
+
+# Using the Coinbase bundler on Base Sepolia
+To use the Coinbase bundler, you need to copy the .env.base-sepolia file to .env and set the `NEXT_PUBLIC_BUNDLER_RPC_URL` to the Coinbase bundler URL.
+
+There is no need to deploy the smart contracts again, as the addresses are already set in the `.env` file.
+There is also no need to run the local bundler, as the Coinbase bundler is already running on the Base Sepolia network.
+Moreover, you don't need to run the local blockchain node, as the Coinbase bundler will use the Base Sepolia network.
+
 
 ### Important tips
 
@@ -56,6 +68,30 @@ pnpm demo:dev
 
 
 Application available at <http://localhost:3000>.
+
+## Troubleshooting
+
+### Heap Out of Memory Error
+
+If you encounter a "heap out of memory" error when running the build command, this is typically due to Node.js running out of memory during the build process. This can happen when building large projects or when the default memory allocation is insufficient.
+
+**Solution:**
+
+Run the build command with increased memory allocation:
+
+```sh
+NODE_OPTIONS='--max-old-space-size=16384' pnpm build
+```
+
+This increases the maximum heap size to 16GB. You can adjust the value (in MB) based on your system's available memory:
+- `8192` for 8GB
+- `16384` for 16GB  
+- `32768` for 32GB
+
+**Alternative solutions:**
+- Close other memory-intensive applications before building
+- Clear Node.js cache: `pnpm store prune`
+- Restart your development environment
 
 ### Test contracts
 
@@ -73,7 +109,6 @@ pnpm hh:test
 
 - `GianoSmartWallet`: the smart wallet itself, which validates the signatures and executes the calls.
 - `GianoSmartWalletFactory`: the contract responsible for deploying the smart wallet contracts
-- `CredentialKeyMapper`: the contract that stores a mapping between WebAuthn credential IDs and the public key of each. Needed because WebAuthn public keys are only returned on creation, not retrieval.
 - `toGianoSmartAccount.ts`: module that instantiates a Viem client for the Giano Smart Wallet
 - `provider.ts`: `EIP-1193`-compatible provider that intercepts EVM RPC requests and repackages transactions as user ops to be passed to the bundler
 - `connector.ts`: WAGMI connector

@@ -21,21 +21,30 @@ import {
   toHex,
 } from 'viem';
 import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
-import { entryPoint08Abi, entryPoint08Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
+import { getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
+import {
+  GianoEntryPointAbi,
+  GianoEntryPointAddress,
+  GianoEntryPointVersion,
+} from '../giano-entry-point'
 
 export type ToGianoSmartAccountParameters = {
   address?: Address | undefined;
   client: GianoSmartAccountImplementation['client'];
-  ownerIndex?: number | undefined;
   owners: readonly (Address | OneOf<LocalAccount | WebAuthnAccount>)[];
   nonce?: bigint | undefined;
+  factoryAddress: Address;
 };
 
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
 
 export type GianoSmartAccountImplementation = Assign<
-  SmartAccountImplementation<typeof entryPoint08Abi, '0.8', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
+  SmartAccountImplementation<
+    typeof GianoEntryPointAbi,
+    GianoEntryPointVersion,
+    { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }
+  >,
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
     sign: NonNullable<SmartAccountImplementation['sign']>;
@@ -60,18 +69,18 @@ export type GianoSmartAccountImplementation = Assign<
  * })
  */
 export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParameters): Promise<ToGianoSmartAccountReturnType> {
-  const { client, ownerIndex = 0, owners, nonce = 0n } = parameters;
+  const { client, owners, nonce = 0n, factoryAddress } = parameters;
 
   let address = parameters.address;
 
   const entryPoint = {
-    abi: entryPoint08Abi,
-    address: entryPoint08Address,
-    version: '0.8',
+    abi: GianoEntryPointAbi,
+    address: GianoEntryPointAddress,
+    version: GianoEntryPointVersion,
   } as const;
   const factory = {
     abi: factoryAbi,
-    address: '0xC932321e8A7DceE09C7F793d0796885aC080DFa5',
+    address: factoryAddress,
   } as const;
 
   const owners_bytes = owners.map((owner) => {
@@ -82,10 +91,12 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   });
 
   const owner = (() => {
-    const owner = owners[ownerIndex] ?? owners[0];
+    const owner = owners[0];
     if (typeof owner === 'string') return { address: owner, type: 'address' } as const;
     return owner;
   })();
+
+  const ownerBytes = owners_bytes[0];
 
   async function signStaticCallPermission(this: SmartAccount<GianoSmartAccountImplementation>) {
     const item = getAbiItem({ abi: gianoSmartWalletAbi, name: 'signedStaticCall' });
@@ -161,7 +172,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
       if (owner.type === 'webAuthn')
         return '0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000170000000000000000000000000000000000000000000000000000000000000001949fc7c88032b9fcb5f6efc7a7b8c63668eae9871b765e23123bb473ff57aa831a7c0d9276168ebcc29f2875a0239cffdf2a9cd1c2007c5c77c071db9264df1d000000000000000000000000000000000000000000000000000000000000002549960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d97630500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008a7b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a2273496a396e6164474850596759334b7156384f7a4a666c726275504b474f716d59576f4d57516869467773222c226f726967696e223a2268747470733a2f2f7369676e2e636f696e626173652e636f6d222c2263726f73734f726967696e223a66616c73657d00000000000000000000000000000000000000000000';
       return wrapSignature({
-        ownerIndex,
+        ownerBytes,
         signature: '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c',
       });
     },
@@ -179,7 +190,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
       const signature = await signTypedData({ owner, typedData });
 
       return wrapSignature({
-        ownerIndex,
+        ownerBytes,
         signature,
       });
     },
@@ -198,7 +209,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
       const signature = await signTypedData({ owner, typedData });
 
       return wrapSignature({
-        ownerIndex,
+        ownerBytes,
         signature,
       });
     },
@@ -222,7 +233,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
       const signature = await signTypedData({ owner, typedData });
 
       return wrapSignature({
-        ownerIndex,
+        ownerBytes,
         signature,
       });
     },
@@ -245,7 +256,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
       const signature = await sign({ hash, owner });
 
       return wrapSignature({
-        ownerIndex,
+        ownerBytes,
         signature,
       });
     },
@@ -265,6 +276,8 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   });
 }
 
+export type GianoSmartAccount = Awaited<ReturnType<typeof toGianoSmartAccount>>
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 // Utilities
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -273,9 +286,7 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
 export async function signTypedData({ typedData, owner }: { typedData: TypedDataDefinition; owner: OneOf<LocalAccount | WebAuthnAccount> }) {
   if (owner.type === 'local' && owner.signTypedData) return owner.signTypedData(typedData);
 
-  console.log({ typedData });
   const hash = hashTypedData(typedData);
-  console.log({ hash });
   return sign({ hash, owner });
 }
 
@@ -358,8 +369,8 @@ export function toWebAuthnSignature({ webauthn, signature }: { webauthn: WebAuth
 }
 
 /** @internal */
-export function wrapSignature(parameters: { ownerIndex?: number | undefined; signature: Hex }) {
-  const { ownerIndex = 0 } = parameters;
+export function wrapSignature(parameters: { ownerBytes: Hex; signature: Hex }) {
+  const { ownerBytes } = parameters;
   const signatureData = (() => {
     if (size(parameters.signature) !== 65) return parameters.signature;
     const signature = parseSignature(parameters.signature);
@@ -370,8 +381,8 @@ export function wrapSignature(parameters: { ownerIndex?: number | undefined; sig
       {
         components: [
           {
-            name: 'ownerIndex',
-            type: 'uint8',
+            name: 'ownerBytes',
+            type: 'bytes',
           },
           {
             name: 'signatureData',
@@ -383,7 +394,7 @@ export function wrapSignature(parameters: { ownerIndex?: number | undefined; sig
     ],
     [
       {
-        ownerIndex,
+        ownerBytes,
         signatureData,
       },
     ],
