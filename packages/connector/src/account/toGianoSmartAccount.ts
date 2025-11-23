@@ -21,9 +21,13 @@ import {
   toHex,
 } from 'viem';
 import type { SmartAccount, SmartAccountImplementation, UserOperation, WebAuthnAccount } from 'viem/account-abstraction';
-import { entryPoint07Abi } from 'viem/account-abstraction';
-import { entryPoint07Address, getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
+import { getUserOperationHash, toSmartAccount } from 'viem/account-abstraction';
 import { readContract } from 'viem/actions';
+import {
+  GianoEntryPointAbi,
+  GianoEntryPointAddress,
+  GianoEntryPointVersion,
+} from '../giano-entry-point'
 
 export type ToGianoSmartAccountParameters = {
   address?: Address | undefined;
@@ -36,7 +40,11 @@ export type ToGianoSmartAccountParameters = {
 export type ToGianoSmartAccountReturnType = Prettify<SmartAccount<GianoSmartAccountImplementation>>;
 
 export type GianoSmartAccountImplementation = Assign<
-  SmartAccountImplementation<typeof entryPoint07Abi, '0.7', { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }>,
+  SmartAccountImplementation<
+    typeof GianoEntryPointAbi,
+    GianoEntryPointVersion,
+    { abi: typeof abi; factory: { abi: typeof factoryAbi; address: Address } }
+  >,
   {
     decodeCalls: NonNullable<SmartAccountImplementation['decodeCalls']>;
     sign: NonNullable<SmartAccountImplementation['sign']>;
@@ -66,9 +74,9 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
   let address = parameters.address;
 
   const entryPoint = {
-    abi: entryPoint07Abi,
-    address: entryPoint07Address,
-    version: '0.7',
+    abi: GianoEntryPointAbi,
+    address: GianoEntryPointAddress,
+    version: GianoEntryPointVersion,
   } as const;
   const factory = {
     abi: factoryAbi,
@@ -267,6 +275,8 @@ export async function toGianoSmartAccount(parameters: ToGianoSmartAccountParamet
     extend: { abi, factory, signStaticCallPermission },
   });
 }
+
+export type GianoSmartAccount = Awaited<ReturnType<typeof toGianoSmartAccount>>
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 // Utilities

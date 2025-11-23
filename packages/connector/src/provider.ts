@@ -19,7 +19,7 @@ import type {
   UserOperationReceipt,
 } from 'viem/account-abstraction';
 import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
-import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn } from 'viem/types/eip1193';
+import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn, EIP1474Methods } from 'viem/types/eip1193';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
@@ -31,10 +31,22 @@ import {
 import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
 import { getWebAuthnAccount } from './account'
+import { ensureSmartAccountIsDeployed, isSmartAccountDeployed } from './account/deployment'
+import { GianoError } from './giano-error'
+import { TransactionRequest } from 'viem'
+import { ExactPartial } from 'viem'
+import { RpcTransactionRequest } from 'viem'
 
 export enum ChainType {
   HARDHAT = 0, // NOTE: This is just a placeholder for now
 }
+
+type PrepareUserOperationOptions = Partial<
+  Omit<
+    SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, TransactionRequest[]>,
+    'account' | 'calls' | 'callData'
+  >
+>
 
 export const isChainType = (x: unknown): x is ChainType => {
   return typeof x === 'number' && Object.values(ChainType).includes(x)
@@ -61,11 +73,53 @@ type EventListeners = {
   [E in keyof EIP1193EventMap]: Set<EventHandler<E>>;
 };
 
-type GianoProviderCustomMethods = [{
-  Method: 'waitForUserOperationReceipt';
-  Parameters: [hash: Hash];
-  ReturnType: UserOperationReceipt;
-}]
+type GianoProviderCustomMethods = [
+  {
+    Method: 'waitForUserOperationReceipt'
+    Parameters: [hash: Hash]
+    ReturnType: UserOperationReceipt
+  },
+  {
+    Method: 'signed_eth_call'
+    Parameters: readonly  [call: ExactPartial<RpcTransactionRequest>]
+    ReturnType: Hex
+  },
+  {
+    Method: 'eth_prepareUserOperation'
+    Parameters: [calls: Call[], options?: PrepareUserOperationOptions]
+    ReturnType: UserOperation<GianoEntryPointVersion>
+  },
+  {
+    Method: 'eth_signUserOperation'
+    Parameters: [userOp: UserOperation<GianoEntryPointVersion>]
+    ReturnType: Hex
+  },
+  {
+    Method: 'eth_sendSignedUserOperation'
+    Parameters: [signedUserOp: UserOperation<GianoEntryPointVersion>]
+    ReturnType: Hash
+  },
+]
+
+export type ProviderRequestMethod<
+  T extends EIP1474Methods | GianoProviderCustomMethods,
+  Name extends T[number]['Method']
+> = (
+  params: Extract<
+    T[number],
+    { Method: Name }
+  >['Parameters']
+) => Promise<Extract<T[number], { Method: Name }>['ReturnType']>
+
+/**
+ * EIP1474 methods as optional
+ * Giano custom methods as required
+ **/
+type GianoProviderMethodsMap = Partial<{
+  [T in EIP1474Methods[number] as T['Method']]: ProviderRequestMethod<EIP1474Methods, T['Method']>
+}> & Required<{
+  [T in GianoProviderCustomMethods[number] as T['Method']]: ProviderRequestMethod<GianoProviderCustomMethods, T['Method']>
+}>
 
 export type GianoProvider = EIP1193Provider & {
   request: EIP1193RequestFn<GianoProviderCustomMethods>
@@ -92,7 +146,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
   const eventListeners: Partial<EventListeners> = {};
 
   const submitUserOperation = async (
-    userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, Call[]> & {
+    userOpRequest: SendUserOperationParameters<SmartAccount<GianoSmartAccountImplementation>, undefined, TransactionRequest[]> & {
       account: SmartAccount<GianoSmartAccountImplementation>
     }
   ) => {
@@ -137,48 +191,36 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     return await injection.submitUserOperation(signedUserOp);
   };
 
-  const ensureAccountDeployed = async (): Promise<boolean> => {
-    if (!smartAccount) return false;
-
-    try {
-      const accountAddress = await smartAccount.getAddress();
-      const accountCode = await client!.getCode({ address: accountAddress });
-      return !!(accountCode && accountCode !== '0x');
-    } catch (error) {
-      console.warn('Failed to check account deployment status:', error);
-      return false;
-    }
-  };
-
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
     eventListeners[event]?.forEach((listener) => listener(payload));
   };
 
-  const methods: Record<string, (params?: any) => any> = {
+  const methods = {
     eth_accounts: async () => {
       return smartAccount ? [await smartAccount.getAddress()] : [];
     },
     eth_chainId: async () => {
       return `0x${chain!.id.toString(16)}`;
     },
-    eth_call: async ([call, blockTag]) => {
-      console.log('eth_call', { call, blockTag });
-      return client!.request({ method: 'eth_call', params: [call, blockTag] });
+    eth_call: async (params) => {
+      console.log('eth_call', params)
+
+      return client!.request({ method: 'eth_call', params })
     },
-    signed_eth_call: async ([call, blockTag]) => {    
+    signed_eth_call: async (params) => {
       // Check if smartAccount is available before proceeding with authenticated calls
       if (!smartAccount) {
         console.warn('Smart account not available, falling back to regular call')
-        return client!.request({ method: 'eth_call', params: [call, blockTag] })
+        return client!.request({ method: 'eth_call', params })
       }
-    
+
       // Check if the account is deployed before attempting authenticated calls
-      const isDeployed = await ensureAccountDeployed()
+      const isDeployed = await isSmartAccountDeployed(client!, smartAccount)
       if (!isDeployed) {
         console.warn('Smart account not deployed yet, falling back to regular call')
-        return client!.request({ method: 'eth_call', params: [call, blockTag] })
+        return client!.request({ method: 'eth_call', params })
       }
-    
+
       // if the lifetime of the static signature is not known, fetch and cache it
       if (staticSignatureLifetime === 0n) {
         staticSignatureLifetime = await client!.readContract({
@@ -194,33 +236,52 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         staticSignature = signature
         staticSignatureSignedAt = signedAt
       }
+
+      const [transaction] = params
+
+      if (!transaction.to) {
+        throw new GianoError('signed_eth_call: `transaction.to` is required')
+      }
+      if (!transaction.data) {
+        throw new GianoError('signed_eth_call: `transaction.data` is required')
+      }
+
       // encode the intended call and forward it to the Giano account contract
       const result = await client!.readContract({
         abi: smartAccount.abi,
         address: smartAccount.address,
         functionName: 'signedStaticCall',
-        args: [{ target: call.to, data: call.data!, signedAt: BigInt(staticSignatureSignedAt), signature: staticSignature }],
+        args: [{
+          target: transaction.to,
+          data: transaction.data,
+          signedAt: BigInt(staticSignatureSignedAt),
+          signature: staticSignature,
+        }],
       })
       return result    
     },
-    wallet_addEthereumChain: () => {
+    wallet_addEthereumChain: async ([chain]) => {
       //TODO: implement
+      return null
     },
-    wallet_revokePermissions: () => {
-      smartAccount = null;
+    wallet_revokePermissions: async ([permissions]) => {
+      // ignoring permissions, revoking all
+      // we only support one connected account per provider instance
+      smartAccount = null
       emit('accountsChanged', [])
       emit('disconnect', {
         code: 4900,
         name: 'Disconnected',
         message: 'User disconnected',
         details: 'User disconnected',
-      });
+      })
+
+      return null
     },
-    wallet_switchEthereumChain: (params) => {
-      const [{ chainId: chainIdHex }] = params;
+    wallet_switchEthereumChain: async ([{ chainId: chainIdHex }]) => {
       const chainId = parseInt(chainIdHex, 16);
       if (chainId === chain?.id) {
-        return;
+        return null
       }
       const newChain = chains.find((chain) => chain.id === chainId);
       if (!newChain) {
@@ -235,7 +296,8 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       transport = newTransport;
       client = createPublicClient({ transport, chain });
 
-      emit('chainChanged', `0x${chainId.toString(16)}`);
+      emit('chainChanged', `0x${chainId.toString(16)}`)
+      return null
     },
     eth_requestAccounts: async () => {
       if (smartAccount) {
@@ -305,55 +367,47 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         owners: [toWebAuthnAccount({ credential })],
         factoryAddress: gianoSmartWalletFactoryAddress,
       });
-      const smartAccountAddress = await smartAccount.getAddress();
 
       const xyVector = extractXYCoords(credential.publicKey);
 
-      // Check if the smart account is already deployed
-      const accountAddress = await smartAccount.getAddress();
-      const accountCode = await client!.getCode({ address: accountAddress });
-      const isDeployed = accountCode && accountCode !== '0x';
-
-      // NOTE: this is needed to deploy the smart account if we want to use it for read calls right away
-      // if not, the account will be deployed on the first actual transaction
-      if (!isDeployed) {
-        // Deploy the smart account with a minimal transaction
-        // Option 1: Send 0 ETH to self (minimal deployment transaction)
-        const deploymentTx = {
-          to: accountAddress,
-          value: '0x0',
-          data: '0x', // Empty data
-        };
-
-        try {
-          console.log('Deploying smart account...');
-          const deploymentHash = await methods.eth_sendTransaction([deploymentTx]);
-          console.log('Smart account deployment submitted with hash:', deploymentHash);
-
-          // Wait for the deployment transaction to be confirmed
-          const deploymentReceipt = await bundler.waitForUserOperationReceipt({ hash: deploymentHash });
-          console.log('Smart account deployed successfully:', deploymentReceipt);
-        } catch (error) {
-          console.warn('Failed to deploy smart account:', error);
-          // If deployment fails, the account will be deployed on the first actual transaction
-        }
-      } else {
-        console.log('Smart account already deployed');
+      // NOTE: it is needed to deploy the smart account if we want to
+      // use it for read calls or to receive funds right away, if not,
+      // the account will be deployed on the first actual transaction
+      try {
+        await ensureSmartAccountIsDeployed(
+          smartAccount, client!, methods.eth_sendTransaction,
+        )
+      } catch (error) {
+        console.error('Failed to ensure smart account is deployed:', error)
       }
 
       // Always call the injection callback regardless of deployment status
       await injection.onCredentialKey(credential.raw.rawId, xyVector);
 
+      const smartAccountAddress = await smartAccount.getAddress();
+
       emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
       emit('accountsChanged', [smartAccountAddress]);
       return [smartAccountAddress];
     },
-    eth_sendTransaction: async (calls: Call[]): Promise<Hash> => {
+    eth_sendTransaction: async ([transaction]) => {
       if (!smartAccount) {
-        throw new Error('Giano not connected');
+        throw new GianoError('Giano not connected')
       }
 
-      return await submitUserOperation({ calls, account: smartAccount });
+      if (!transaction.to) {
+        throw new GianoError('eth_sendTransaction: `to` field is required');
+      }
+
+      const calls: Call[] = [{
+        to: transaction.to,
+        value: transaction.value === undefined
+          ? 0n
+          : BigInt(transaction.value),
+        data: transaction.data ?? '0x',
+      }]
+
+      return await submitUserOperation({ calls, account: smartAccount })
     },
     waitForUserOperationReceipt: async ([hash]: [Hash]) => {
       return bundler.waitForUserOperationReceipt({ hash });
@@ -382,18 +436,6 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
       // eth_sign expects raw message hash, not prefixed
       return smartAccount.signMessage({ message });
-    },
-    eth_signTypedData: async ([address, typedData]: [Address, any]) => {
-      console.log('eth_signTypedData', { address, typedData });
-      if (!smartAccount) {
-        throw new Error('Giano not connected');
-      }
-      const accountAddress = await smartAccount.getAddress();
-      if (address.toLowerCase() !== accountAddress.toLowerCase()) {
-        throw new Error('Address mismatch');
-      }
-
-      return smartAccount.signTypedData(typedData);
     },
     eth_signTypedData_v4: async ([address, typedData]: [Address, string]) => {
       console.log('eth_signTypedData_v4', { address, typedData });
@@ -428,7 +470,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         ...signedUserOp
       });
     },
-    eth_prepareUserOperation: async ([calls, options = {}]: [Call[], any]) => {
+    eth_prepareUserOperation: async ([calls, options = {}]) => {
       console.log('eth_prepareUserOperation', { calls, options });
       if (!smartAccount) {
         throw new Error('Giano not connected');
@@ -457,7 +499,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         maxPriorityFeePerGas: options.maxPriorityFeePerGas || parseGwei('400'),
       };
     },
-  };
+  } satisfies GianoProviderMethodsMap
 
   methods.wallet_switchEthereumChain([{ chainId: initialChainId.toString(16) }]);
 

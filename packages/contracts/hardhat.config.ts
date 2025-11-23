@@ -1,3 +1,4 @@
+import { SignatureType } from '@appliedblockchain/silentdatarollup-core';
 import * as dotenv from 'dotenv';
 import { TASK_COMPILE } from 'hardhat/builtin-tasks/task-names';
 import type { HardhatUserConfig } from 'hardhat/config';
@@ -49,7 +50,14 @@ const config: HardhatUserConfig = {
       url: process.env.BASE_RPC_URL ?? 'https://base-rpc.publicnode.com',
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 8453,
-    }
+    },
+    'sdr-testnet': {
+      enableRip7212: true,
+      url: process.env.SDR_TESTNET_RPC_URL,
+      accounts: process.env.SDR_PRIVATE_KEY ? [process.env.SDR_PRIVATE_KEY] : [],
+      chainId: 381185,
+      silentdata: { authSignatureType: SignatureType.Raw },
+    },
   },
   gasReporter: {
     enabled: true,
