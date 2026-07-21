@@ -43,6 +43,16 @@
         "types": "./dist/index-node.d.ts",
         "default": "./dist/index-node.js"
       }
+    },
+    "./embedded": {
+      "import": {
+        "types": "./dist/embedded.d.mts",
+        "default": "./dist/embedded.mjs"
+      },
+      "require": {
+        "types": "./dist/embedded.d.ts",
+        "default": "./dist/embedded.js"
+      }
     }
   },
   "files": [
@@ -70,7 +80,8 @@
     }
   },
   "dependencies": {
-    "@appliedblockchain/giano-wallet-core": "workspace:^"
+    "@appliedblockchain/giano-wallet-core": "workspace:^",
+    "@appliedblockchain/giano-wallet-transport": "workspace:^"
   },
   "devDependencies": {
     "@rainbow-me/rainbowkit": "^2.2.4",

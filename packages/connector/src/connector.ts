@@ -1,16 +1,28 @@
-import type { Chain, TransactionRequest, Transport } from 'viem'
+import type { Address, Chain, TransactionRequest, Transport } from 'viem'
 import { Hash } from 'viem'
 import { UserOperationReceipt } from 'viem/account-abstraction'
-import { Connector, createConnector } from 'wagmi'
-import type { GianoProvider } from '@appliedblockchain/giano-wallet-core'
+import { createConnector } from 'wagmi'
+import type { GianoWalletProvider } from './thin/create-giano-wallet-provider'
 
 export type SendTransactionFnParams = {
   chain: Chain;
   transport: Transport;
   request: TransactionRequest;
 };
+
+/**
+ * Structural provider surface the connector needs — satisfied both by the thin
+ * `createGianoWalletProvider` (default) and by the embedded-mode `GianoProvider`
+ * from @appliedblockchain/giano-wallet-core.
+ */
+export type GianoProviderLike = {
+  request: (args: { method: string; params?: unknown }) => Promise<unknown>;
+  on: (event: never, listener: never) => unknown;
+  removeListener: (event: never, listener: never) => unknown;
+};
+
 export type CreateGianoConnectorParams = {
-  provider: GianoProvider;
+  provider: GianoProviderLike | GianoWalletProvider;
 };
 
 type GianoConnectorProperties = {
@@ -19,26 +31,28 @@ type GianoConnectorProperties = {
 
 export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
   return createConnector<
-    GianoProvider,
+    GianoProviderLike,
     GianoConnectorProperties
   >(({ chains }) => {
+    const request = (method: string, params?: unknown) => (provider as GianoProviderLike).request({ method, params });
+
     const connector = <const>{
       id: 'giano',
       name: 'Giano Connector',
       type: 'custom',
       connect: async () => {
-        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+        const accounts = (await request('eth_requestAccounts')) as readonly Address[];
         const chainId = await connector.getChainId();
         return { accounts, chainId };
       },
       disconnect: async () => {
-        await provider.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: [] }] });
+        await request('wallet_revokePermissions', [{ eth_accounts: [] }]);
       },
       getAccounts: async () => {
-        return provider.request({ method: 'eth_accounts' });
+        return (await request('eth_accounts')) as readonly Address[];
       },
       getProvider: async () => {
-        return provider;
+        return provider as GianoProviderLike;
       },
       isAuthorized: async () => {
         try {
@@ -51,11 +65,11 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
       setup: async () => {
       },
       switchChain: async ({ chainId }: { chainId: number }) => {
-        await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${chainId.toString(16)}` }] });
+        await request('wallet_switchEthereumChain', [{ chainId: `0x${chainId.toString(16)}` }]);
         return chains.find((chain) => chain.id === chainId)!;
       },
       getChainId: async () => {
-        const chainId = await provider.request({ method: 'eth_chainId' });
+        const chainId = (await request('eth_chainId')) as string;
         return parseInt(chainId, 16);
       },
       onAccountsChanged: () => {
@@ -65,10 +79,7 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
       onDisconnect: () => {
       },
       waitForUserOperationReceipt: async (hash: Hash) => {
-        return provider.request({
-          method: 'waitForUserOperationReceipt',
-          params: [hash],
-        });
+        return (await request('waitForUserOperationReceipt', [hash])) as UserOperationReceipt;
       },
     };
 

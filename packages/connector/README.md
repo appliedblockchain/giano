@@ -1,11 +1,13 @@
 # @appliedblockchain/giano-connector
 
-A wagmi connector and RainbowKit wallet for Giano passkey (WebAuthn) smart wallets.
+The thin Giano SDK: connect any dApp to a deployed **Giano wallet origin** (popup) with
+wagmi/RainbowKit integration. From 1.0.0 the default entry point contains **no WebAuthn,
+credential-storage or bundler code** — all wallet trust lives in the Giano-shipped wallet
+origin (`wallet.yourapp.com`) and the wallet-api behind it.
 
 ## Installation
 
-The package is published to **GitHub Packages** under the `@appliedblockchain` scope. In the
-consuming project:
+Published to **GitHub Packages** under the `@appliedblockchain` scope:
 
 ```ini
 # .npmrc
@@ -15,76 +17,91 @@ consuming project:
 
 ```bash
 npm install @appliedblockchain/giano-connector viem
-# for the wagmi/RainbowKit integration also:
+# for wagmi / RainbowKit integration:
 npm install wagmi @rainbow-me/rainbowkit
 ```
 
-`viem` is a required peer dependency. `wagmi` and `@rainbow-me/rainbowkit` are **optional**
-peers — only needed if you use `createGianoConnector` / `giano` (the RainbowKit wallet); the
-`/node` entry point works without them.
+`viem` is a required peer; `wagmi` and `@rainbow-me/rainbowkit` are optional peers.
 
 > **Scope caveat:** routing the whole `@appliedblockchain` scope to GitHub Packages means the
-> same project cannot also fetch the public `@appliedblockchain/silentdatarollup-*` packages from
-> npmjs. Those are internal devDependencies of the Giano repo and are never needed by consumers.
+> project cannot also fetch the public `@appliedblockchain/silentdatarollup-*` packages from
+> npmjs (internal Giano devDependencies only — consumers never need them).
+
+## Quick start
+
+```ts
+import { createGianoWalletProvider, createGianoConnector, giano } from '@appliedblockchain/giano-connector';
+import { createConfig, custom } from 'wagmi';
+import { baseSepolia } from 'wagmi/chains';
+
+const provider = createGianoWalletProvider({
+  walletUrl: 'https://wallet.yourapp.com',   // your deployed Giano wallet origin
+  chain: baseSepolia,
+});
+
+// wagmi
+const config = createConfig({
+  chains: [baseSepolia],
+  transports: { [baseSepolia.id]: custom(provider) },
+  connectors: [createGianoConnector({ provider })],
+});
+
+// or RainbowKit
+const wallet = giano({ provider });
+```
+
+What happens at runtime:
+
+- `eth_call`, `eth_chainId` and other **read paths are answered dApp-side** (no popup).
+- `eth_requestAccounts`, `eth_sendTransaction`, `personal_sign`, `eth_signTypedData_v4`
+  open the wallet popup, where the user approves with a passkey on the wallet origin.
+- The session (`accounts`, `chainId`) is cached in `localStorage`, so `eth_accounts`
+  answers instantly across reloads without a popup.
+- `waitForUserOperationReceipt` polls the wallet-api's public receipt endpoint — dApps
+  never need a bundler URL.
+
+### Popup requirements
+
+- Call `connect()` / `eth_requestAccounts` from a **user gesture** (Safari blocks popups
+  otherwise; the SDK opens `about:blank` synchronously and navigates after).
+- Do **not** send `Cross-Origin-Opener-Policy: same-origin` from the dApp — it severs
+  `window.opener` and the transport times out. Use `same-origin-allow-popups`.
+- Popup blocked → typed `TransportError` with code `POPUP_BLOCKED`; user rejection →
+  `TransportRpcError` with EIP-1193 code `4001`.
+
+## Migrating from 0.x (embedded mode)
+
+In 0.x your application WAS the wallet: your origin owned the passkeys and your bundle
+carried the signing code. That full surface still exists, unchanged, at the deprecated
+subpath:
+
+```ts
+// before (0.x)
+import { createGianoProvider, createGianoConnector } from '@appliedblockchain/giano-connector';
+
+// during migration (1.x, deprecated — at least two minors of support)
+import { createGianoProvider, createGianoConnector } from '@appliedblockchain/giano-connector/embedded';
+```
+
+Then migrate for real:
+
+1. Deploy the Giano containers (`giano-wallet-api`, `giano-wallet-web`) in your stack —
+   see `deploy/docker-compose.reference.yml` in the Giano repo.
+2. Replace `createGianoProvider({ bundler, injection, … })` with
+   `createGianoWalletProvider({ walletUrl, chain })`.
+3. Delete your `GianoProviderInjection` implementation, WebAuthn plumbing and bundler
+   client — the wallet origin owns all of it now.
+
+⚠️ Passkeys are bound to the origin that created them: wallets created in embedded mode
+(RP = your dApp origin) are not automatically usable from the wallet origin. Related
+Origin Requests (`/.well-known/webauthn`) can bridge specific origins — see the Giano
+integration docs.
 
 ## Entry points
 
-| Import | Contents | Needs wagmi/RainbowKit |
+| Import | Contents | Status |
 | --- | --- | --- |
-| `@appliedblockchain/giano-connector` | everything (same as `/web`) | yes |
-| `@appliedblockchain/giano-connector/web` | wagmi connector + RainbowKit wallet + provider | yes |
-| `@appliedblockchain/giano-connector/node` | provider, accounts, injection types — no wagmi/RainbowKit | no |
-
-## Usage
-
-### wagmi / RainbowKit (web)
-
-```ts
-import { createGianoProvider, createGianoConnector, giano } from '@appliedblockchain/giano-connector';
-import { getGianoDeployment } from '@appliedblockchain/giano-contracts';
-
-const { factory } = getGianoDeployment(chain.id);
-
-const { gianoProvider } = createGianoProvider({
-  initialChainId: chain.id,
-  bundler,                                  // viem BundlerClient
-  chains: [chain],
-  transports: { [chain.id]: transport },
-  injection,                                // GianoProviderInjection implementation
-  gianoSmartWalletFactoryAddress: factory,
-});
-
-// plain wagmi:
-const connector = createGianoConnector({ provider: gianoProvider });
-
-// or as a RainbowKit wallet:
-const wallet = giano({ provider: gianoProvider });
-```
-
-### Node.js
-
-```ts
-import { createGianoProvider, toGianoSmartAccount } from '@appliedblockchain/giano-connector/node';
-```
-
-The `/node` entry exposes the provider, `toGianoSmartAccount`, deployment helpers and the
-`GianoProviderInjection` types without pulling in wagmi or RainbowKit.
-
-## Main exports
-
-- `createGianoProvider(options)` — EIP-1193 provider driving the Giano smart account. Accepts an
-  optional `logger` (`GianoLogger`); by default the provider is silent except for errors.
-- `createGianoConnector({ provider })` — wagmi connector (also exposes
-  `waitForUserOperationReceipt`).
-- `giano({ provider })` — RainbowKit wallet factory.
-- `toGianoSmartAccount(...)`, `getWebAuthnAccount(...)` — viem smart-account implementations.
-- `GianoProviderInjection` — the seam a host application implements to supply credential
-  storage/ceremony callbacks and (optionally) server-side user-operation submission.
-- Deployment helpers: `isSmartAccountDeployed`, `ensureSmartAccountIsDeployed`,
-  `waitForSmartAccountDeployment`.
-
-## Building
-
-```bash
-pnpm build   # tsup: ESM + CJS + d.ts for index, index-web, index-node
-```
+| `.` | thin SDK: `createGianoWalletProvider`, `createGianoConnector`, `giano`, transport errors | current |
+| `./embedded` | full 0.x embedded surface (provider, injection seam, smart account) | deprecated |
+| `./web` | alias of `./embedded` | deprecated |
+| `./node` | wallet-core re-export (no wagmi/RainbowKit) for server-side use | current |

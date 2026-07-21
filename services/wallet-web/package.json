@@ -1,0 +1,29 @@
+{
+  "name": "@appliedblockchain/giano-wallet-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Giano wallet origin: passkey ceremonies and consent UI served from a dedicated origin (nginx + static SPA)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-contracts": "workspace:^",
+    "@appliedblockchain/giano-wallet-core": "workspace:^",
+    "@appliedblockchain/giano-wallet-transport": "workspace:^",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "viem": "2.31.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "5.5.4",
+    "vite": "^6.3.5"
+  }
+}

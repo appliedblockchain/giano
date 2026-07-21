@@ -4,7 +4,7 @@ import {
   type GianoEntryPointVersion,
   type GianoSmartAccountImplementation,
   toGianoSmartAccount,
-} from '@appliedblockchain/giano-connector';
+} from '@appliedblockchain/giano-connector/embedded';
 import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
 import { AccountBalanceWallet, Add, CheckCircle, ContentCopy, Delete, Error, Refresh, Security, Send, Warning } from '@mui/icons-material';
 import {

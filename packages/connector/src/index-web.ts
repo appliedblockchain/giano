@@ -1,4 +1,2 @@
-// Web-specific exports for React/wagmi environments
-export * from '@appliedblockchain/giano-wallet-core';
-export * from './connector';
-export * from './gianoWallet';
+// Deprecated embedded-mode web surface — kept for compatibility; see ./embedded
+export * from './embedded';

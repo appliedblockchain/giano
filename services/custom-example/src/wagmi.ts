@@ -1,4 +1,4 @@
-import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector';
+import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector/embedded';
 import type { Address, Hex, Transport } from 'viem';
 import { custom, http, parseGwei } from 'viem';
 import type {
