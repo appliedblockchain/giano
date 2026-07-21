@@ -1,12 +1,14 @@
 /**
- * DEMO: Wagmi configuration with server-side storage
+ * DEMO: wagmi configuration backed by the giano-wallet-api service.
  *
- * ⚠️ This is for demonstration purposes only!
- * In production, you'd implement proper authentication, user management,
- * and likely use a different storage strategy (database, etc.)
+ * The reference `createWalletApiInjection` maps the GianoProviderInjection seam onto
+ * the wallet-api: server-side WebAuthn verification, DB-backed credentials and
+ * sessions, and policied user-operation relay. Run the service with
+ * `docker compose -f deploy/docker-compose.dev.yml up` (or `pnpm dev` in
+ * services/wallet-api) and OPEN_REGISTRATION=true for this demo.
  */
 
-import { createGianoConnector, createGianoProvider } from '@appliedblockchain/giano-connector';
+import { createGianoConnector, createGianoProvider, createWalletApiInjection, type WalletApiInjection } from '@appliedblockchain/giano-connector';
 import type { Address, Hex, Transport } from 'viem';
 import { custom, http, parseGwei } from 'viem';
 import type { BundlerClient } from 'viem/account-abstraction';
@@ -15,7 +17,6 @@ import { createConfig } from 'wagmi';
 import type { Chain } from 'wagmi/chains';
 import { baseSepolia, hardhat } from 'wagmi/chains';
 import { config as envConfig } from './config';
-import { createUserServerInjection } from './demo-server-injection';
 
 type ConfigMap = Record<
   string,
@@ -55,7 +56,7 @@ const configMap: ConfigMap = {
   },
   baseSepolia: {
     chain: baseSepolia,
-    transport: http('https://api.developer.coinbase.com/rpc/v1/base-sepolia/pwFHxQQD4hBHaJUURUMygfdbyAkD4L2c'),
+    transport: http(envConfig.bundlerRpcUrl),
     bundler: createBundlerClient({
       chain: baseSepolia,
       transport: http(envConfig.bundlerRpcUrl),
@@ -71,21 +72,39 @@ const rpcs = <const>{
   },
 };
 
+const injections = new Map<string, WalletApiInjection>();
+
+/** The wallet-api injection for a user (kept so the demo UI can read session state). */
+export function getWalletApiInjection(userId: string): WalletApiInjection {
+  let injection = injections.get(userId);
+  if (!injection) {
+    injection = createWalletApiInjection({
+      apiUrl: envConfig.walletApiUrl,
+      externalUserId: userId,
+      sessionToken: typeof window !== 'undefined' ? window.sessionStorage.getItem(`giano-session:${userId}`) : null,
+      onSessionChanged: (token) => {
+        if (typeof window === 'undefined') return;
+        if (token) window.sessionStorage.setItem(`giano-session:${userId}`, token);
+        else window.sessionStorage.removeItem(`giano-session:${userId}`);
+      },
+    });
+    injections.set(userId, injection);
+  }
+  return injection;
+}
+
 /**
- * DEMO: Create server storage config for a specific user
- *
- * ⚠️ This is for demonstration purposes only!
- * In a real app, you'd get userId from your authentication system
+ * DEMO: wagmi config for a specific user id. In a real app the external user id
+ * comes from your authentication system, and ceremony options are granted by your
+ * backend (see `getRegistrationGrant`) instead of OPEN_REGISTRATION=true.
  */
 export function createServerConfigForUser(userId: string) {
-  const userInjection = createUserServerInjection(userId);
-
   const { gianoProvider } = createGianoProvider({
     bundler: configMap[envConfig.configKey].bundler,
     chains: rpcs.chains,
     transports: rpcs.transports,
     initialChainId: configMap[envConfig.configKey].chain.id,
-    injection: userInjection,
+    injection: getWalletApiInjection(userId),
     gianoSmartWalletFactoryAddress: envConfig.gianoSmartWalletFactoryAddress as Hex,
   });
 
@@ -98,7 +117,7 @@ export function createServerConfigForUser(userId: string) {
       ...Object.fromEntries(Object.keys(rpcs.transports).map((k) => [k, providerTransport])),
     },
     connectors: [connectorFn],
-    // Disable wagmi persistence since we're using server-side storage
+    // wagmi persistence off: session/credential state lives in the wallet-api
     storage: null,
   });
 }

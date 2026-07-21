@@ -4,6 +4,7 @@ The Giano Provider Injection system is a flexible, extensible architecture that 
 
 ## Table of Contents
 
+- [Recommended: the wallet-api reference injection](#recommended-the-wallet-api-reference-injection)
 - [Overview](#overview)
 - [Interface Specification](#interface-specification)
 - [Storage Implementations](#storage-implementations)
@@ -20,6 +21,35 @@ The Giano Provider Injection system is a flexible, extensible architecture that 
 - [Custom Implementations](#custom-implementations)
 - [Best Practices](#best-practices)
 - [API Reference](#api-reference)
+
+## Recommended: the wallet-api reference injection
+
+Since Phase 2 the default way to implement this seam is **`createWalletApiInjection`** from
+`@appliedblockchain/giano-connector` — a complete, production-shaped implementation backed by the
+`giano-wallet-api` service (Fastify + PostgreSQL): server-side WebAuthn verification via
+@simplewebauthn, DB-backed credentials, opaque bearer sessions, and a policied ERC-4337
+user-operation relay. The old demo Next.js storage API (`/api/storage/**`, `/api/submit-userop`)
+has been deleted.
+
+```typescript
+import { createWalletApiInjection } from '@appliedblockchain/giano-connector';
+
+const injection = createWalletApiInjection({
+  apiUrl: 'https://wallet.example.com',       // giano-wallet-api base URL
+  externalUserId: currentUser.id,             // your app's user id
+  // production: your backend mints a grant for ceremony options (admin key server-to-server);
+  // demos can run the wallet-api with OPEN_REGISTRATION=true instead
+  getRegistrationGrant: () => myBackend.getGianoGrant(),
+  onSessionChanged: (token) => token
+    ? sessionStorage.setItem('giano-session', token)
+    : sessionStorage.removeItem('giano-session'),
+  sessionToken: sessionStorage.getItem('giano-session'),
+});
+```
+
+Everything below documents the underlying interface — implement it yourself only if you cannot
+run the wallet-api service. The localStorage injection in the demo app remains as the no-backend
+variant for local experiments.
 
 ## Overview
 

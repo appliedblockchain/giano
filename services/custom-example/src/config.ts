@@ -20,6 +20,7 @@ const deployment = gianoAddresses[chainIdByConfigKey[configKey]];
 export const config = {
   hardhatRpcUrl: process.env.NEXT_PUBLIC_HARDHAT_RPC_URL || 'http://localhost:8545',
   bundlerRpcUrl: process.env.NEXT_PUBLIC_BUNDLER_RPC_URL,
+  walletApiUrl: process.env.NEXT_PUBLIC_WALLET_API_URL || 'http://localhost:8080',
   configKey,
   paymasterAddress: process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS ?? deployment?.paymaster,
   gianoSmartWalletFactoryAddress: process.env.NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS ?? deployment?.factory,

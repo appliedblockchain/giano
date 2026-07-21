@@ -33,7 +33,8 @@ import {
   CheckCircle,
   Error,
 } from '@mui/icons-material';
-import { createServerConfigForUser } from '../demo-wagmi-server'
+import { config as envConfig } from '../config'
+import { createServerConfigForUser, getWalletApiInjection } from '../demo-wagmi-server'
 import { gianoConnector } from '../wagmi'
 
 const queryClient = new QueryClient();
@@ -81,44 +82,49 @@ function ServerStorageDemo() {
     }
   };
 
-  // Function to fetch current server data
+  // Function to fetch current wallet-api state for this user's session
   const fetchServerData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/storage/users/${userId}/all`);
-      const data = await response.json();
-      setServerData(data.data);
+      const token = getWalletApiInjection(userId).getSessionToken();
+      if (!token) {
+        setServerData(null);
+        return;
+      }
+      const headers = { authorization: `Bearer ${token}` };
+      const [meRes, credsRes] = await Promise.all([
+        fetch(`${envConfig.walletApiUrl}/v1/me`, { headers }),
+        fetch(`${envConfig.walletApiUrl}/v1/me/credentials`, { headers }),
+      ]);
+      if (!meRes.ok || !credsRes.ok) {
+        setServerData(null);
+        return;
+      }
+      const me = await meRes.json();
+      const { credentials } = await credsRes.json();
+      setServerData({ me, credentials });
     } catch (error) {
-      console.error('Failed to fetch server data:', error);
+      console.error('Failed to fetch wallet-api data:', error);
       setServerData(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // Function to delete all passkey data
+  // Function to log out: revokes the wallet-api session (credentials stay server-side)
   const deletePasskey = async () => {
-    if (
-      !confirm(
-        '⚠️ This will permanently delete your passkey data. You will lose access to your wallet and need to create a new passkey to reconnect. Continue?',
-      )
-    ) {
+    if (!confirm('Log out of the wallet-api session? Your passkey and credentials stay on the server; sign in again to resume.')) {
       return;
     }
 
     try {
-      // Clear all data including passkey data (full passkey deletion)
-      await fetch(`/api/storage/users/${userId}/passkeys`, { method: 'DELETE' });
-      await fetch(`/api/storage/users/${userId}/public-keys`, { method: 'DELETE' });
-
-      // Also disconnect if currently connected
+      await getWalletApiInjection(userId).logout();
       if (isConnected) {
         disconnect();
       }
-
       await fetchServerData();
     } catch (error) {
-      console.error('Failed to delete passkey:', error);
+      console.error('Failed to log out:', error);
     }
   };
 
@@ -264,7 +270,7 @@ function ServerStorageDemo() {
                 startIcon={<Delete />}
                 onClick={deletePasskey}
               >
-                Delete Passkey
+                Log out session
               </Button>
             </Stack>
           </CardContent>
@@ -285,23 +291,21 @@ function ServerStorageDemo() {
             ) : serverData ? (
               <Box>
                 <Typography variant="subtitle1" gutterBottom>
-                  Passkeys ({serverData.passkeys?.length || 0})
+                  Session ({serverData.me?.externalUserId})
                 </Typography>
-                {serverData.passkeys?.map((passkey: any, index: number) => (
-                  <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
-                    <Typography variant="body2" fontFamily="monospace" sx={{ fontSize: '0.75rem' }}>
-                      {JSON.stringify(passkey, null, 2)}
-                    </Typography>
-                  </Paper>
-                ))}
+                <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                  <Typography variant="body2" fontFamily="monospace" sx={{ fontSize: '0.75rem' }}>
+                    {JSON.stringify(serverData.me, null, 2)}
+                  </Typography>
+                </Paper>
 
                 <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>
-                  Public Keys ({serverData.publicKeys?.length || 0})
+                  Credentials ({serverData.credentials?.length || 0})
                 </Typography>
-                {serverData.publicKeys?.map((pubKey: any, index: number) => (
+                {serverData.credentials?.map((credential: any, index: number) => (
                   <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
                     <Typography variant="body2" fontFamily="monospace" sx={{ fontSize: '0.75rem' }}>
-                      {JSON.stringify(pubKey, null, 2)}
+                      {JSON.stringify(credential, null, 2)}
                     </Typography>
                   </Paper>
                 ))}
@@ -309,7 +313,7 @@ function ServerStorageDemo() {
             ) : (
               <Alert severity="info">
                 <Typography variant="body2">
-                  No server data available. Try refreshing or connecting a wallet.
+                  No wallet-api session. Connect (register or sign in) to create one.
                 </Typography>
               </Alert>
             )}

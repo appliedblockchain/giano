@@ -1,13 +1,11 @@
 import type { ChainType, GianoProviderInjection } from '@appliedblockchain/giano-connector';
 import { type Hex, isHex } from 'viem';
 import { createGianoStorage, type GianoStorage, InMemoryStorage } from './storage-implementations';
-import { bytesToHex, concatBytes, hexToBytes, padBytes, serializeWithBigInt } from './utils';
+import { bytesToHex, concatBytes, hexToBytes, padBytes } from './utils';
 
 export type CreateGianoInjectionOptions = {
   /** Custom storage implementation. If not provided, uses localStorage with fallback to in-memory storage */
   storage?: GianoStorage;
-  /** Enable backend submission of user operations. When true, includes submitUserOperation hook */
-  enableBackendSubmission?: boolean;
   /** Show credential list instead of using automatic selection from storage */
   showListCredentials?: boolean;
 };
@@ -18,7 +16,7 @@ export type CreateGianoInjectionOptions = {
 export function createGianoInjection(options: CreateGianoInjectionOptions = {}): GianoProviderInjection & {
   setShowListCredentials: (showListCredentials: boolean) => void;
 } {
-  const { storage, enableBackendSubmission = false } = options;
+  const { storage } = options;
   const gianoStorage = createGianoStorage(storage);
   let showListCredentials = options.showListCredentials;
 
@@ -94,44 +92,19 @@ export function createGianoInjection(options: CreateGianoInjectionOptions = {}):
       await gianoStorage.setPublicKey(rawId, xyVector);
     },
 
-    ...(enableBackendSubmission && {
-      submitUserOperation: async (signedUserOp) => {
-        try {
-          // Submit to backend for validation and bundler submission
-          const response = await fetch('/api/submit-userop', {
-            method: 'POST',
-            body: serializeWithBigInt(signedUserOp),
-            headers: { 'Content-Type': 'application/json' },
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Backend submission failed: ${errorData.error}`);
-          }
-
-          const result = await response.json();
-          console.log('Backend submission successful:', result);
-
-          // Return the user operation hash - frontend will handle waiting for receipt
-          return result.userOperationHash;
-        } catch (error) {
-          console.error('UserOp submission failed:', error);
-          throw error;
-        }
-      },
-    }),
   };
 }
 
 /**
- * Default injection using localStorage with automatic fallback and backend submission enabled
+ * Default no-backend injection: localStorage with automatic fallback, user operations
+ * go straight to the bundler. For server-side storage/verification/relay use
+ * `createWalletApiInjection` from @appliedblockchain/giano-connector instead.
  */
-export const gianoInjection = createGianoInjection({ enableBackendSubmission: true });
+export const gianoInjection = createGianoInjection();
 
 /**
- * Memory-only injection (no persistence) with backend submission enabled
+ * Memory-only injection (no persistence)
  */
 export const gianoMemoryInjection = createGianoInjection({
   storage: new InMemoryStorage(),
-  enableBackendSubmission: true,
 });
