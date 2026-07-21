@@ -6,10 +6,10 @@ name: giano-e2e
 
 services:
   anvil:
-    image: ghcr.io/foundry-rs/foundry:latest
-    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337', '--load-state', '/devnet/state.hex']
+    image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
+    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337', '--load-state', '/devnet/state.json']
     volumes:
-      - ../e2e/devnet/state.hex:/devnet/state.hex:ro
+      - ../e2e/devnet/state.json:/devnet/state.json:ro
     ports:
       - '8545:8545'
 
@@ -50,9 +50,9 @@ services:
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
-      RP_ID: wallet.localtest.me
+      RP_ID: wallet.localhost
       RP_NAME: Giano E2E
-      EXPECTED_ORIGINS: http://wallet.localtest.me:8081
+      EXPECTED_ORIGINS: http://wallet.localhost:8081
       CHAIN_ID: '31337'
       RPC_URL: http://anvil:8545
       BUNDLER_URL: http://alto:4337
@@ -60,6 +60,8 @@ services:
       FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
       OPEN_REGISTRATION: 'true'
       ADMIN_API_KEYS: e2e-admin-key
+      # the thin SDK polls the public receipt endpoint from the dApp origin (cross-origin)
+      CORS_ORIGINS: http://app.localhost:4400
       LOG_LEVEL: info
 
   wallet-web:
@@ -72,11 +74,15 @@ services:
       - '8081:8080'
     environment:
       GIANO_CHAIN_ID: '31337'
-      # as seen from the BROWSER
-      GIANO_RPC_URL: http://localhost:8545
-      GIANO_BUNDLER_URL: http://localhost:4337
+      # same-origin proxies: the browser hits the wallet origin; nginx forwards to the
+      # containers (alto/anvil have no CORS). Avoids cross-origin ERR_FAILED.
+      GIANO_RPC_URL: http://wallet.localhost:8081/rpc
+      GIANO_BUNDLER_URL: http://wallet.localhost:8081/bundler
+      GIANO_RPC_UPSTREAM: http://anvil:8545
+      GIANO_BUNDLER_UPSTREAM: http://alto:4337
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       GIANO_FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
-      GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localtest.me:4400"]'
-      GIANO_RP_ID: wallet.localtest.me
+      GIANO_PAYMASTER_ADDRESS: '0xCbc040482c1dd07D533800874DC37De7b18c8092'
+      GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost:4400"]'
+      GIANO_RP_ID: wallet.localhost
       GIANO_BRAND_NAME: Giano E2E

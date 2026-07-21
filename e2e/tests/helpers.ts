@@ -1,6 +1,6 @@
 import type { CDPSession, Page } from '@playwright/test';
 
-export const WALLET_URL = process.env.WALLET_URL ?? 'http://wallet.localtest.me:8081';
+export const WALLET_URL = process.env.WALLET_URL ?? 'http://wallet.localhost:8081';
 
 /**
  * Attaches a CDP virtual authenticator (resident-key P-256, user-verified) to the

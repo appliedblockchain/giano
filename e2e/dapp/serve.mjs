@@ -15,7 +15,7 @@ const bundle = await esbuild.build({
   format: 'esm',
   write: false,
   define: {
-    'process.env.WALLET_URL': JSON.stringify(process.env.WALLET_URL ?? 'http://wallet.localtest.me:8081'),
+    'process.env.WALLET_URL': JSON.stringify(process.env.WALLET_URL ?? 'http://wallet.localhost:8081'),
     'process.env.RPC_URL': JSON.stringify(process.env.RPC_URL ?? 'http://localhost:8545'),
     'process.env.CHAIN_ID': JSON.stringify(process.env.CHAIN_ID ?? '31337'),
   },

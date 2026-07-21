@@ -66,6 +66,7 @@ services:
       # --- sessions / challenges / CORS ---
       CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-300}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
+      # dApp origins that poll the public receipt endpoint cross-origin (thin SDK)
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 

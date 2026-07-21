@@ -26,6 +26,18 @@ server {
         proxy_set_header Host $host;
     }
 
+    # Optional same-origin RPC / bundler proxies (avoids CORS when the node/bundler
+    # are not themselves CORS-enabled — set config rpcUrl/bundlerUrl to /rpc and
+    # /bundler). Harmless when unused.
+    location = /rpc {
+        proxy_pass ${GIANO_RPC_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
+    location = /bundler {
+        proxy_pass ${GIANO_BUNDLER_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
+
     location = /config.json {
         add_header Cache-Control "no-store" always;
     }

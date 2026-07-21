@@ -7,6 +7,8 @@ export type WalletConfig = {
   /** Base URL of the wallet-api; '/api' when proxied same-origin by nginx. */
   walletApiUrl: string;
   factoryAddress: `0x${string}`;
+  /** Optional paymaster to sponsor gas (devnet uses the permissive testing paymaster). */
+  paymasterAddress?: `0x${string}`;
   /** dApp origins allowed to connect; empty = any (dev only). */
   allowedDappOrigins: string[];
   rpId: string;
@@ -35,6 +37,7 @@ export async function loadWalletConfig(): Promise<WalletConfig> {
     bundlerUrl: raw.bundlerUrl,
     walletApiUrl: raw.walletApiUrl || '/api',
     factoryAddress,
+    paymasterAddress: (raw.paymasterAddress || registry?.paymaster) as `0x${string}` | undefined,
     allowedDappOrigins: raw.allowedDappOrigins ?? [],
     rpId: raw.rpId || window.location.hostname,
     branding: raw.branding ?? { name: 'Giano Wallet' },

@@ -50,6 +50,16 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
   const bundler = createBundlerClient({
     chain,
     transport: http(config.bundlerUrl),
+    ...(config.paymasterAddress
+      ? {
+          paymaster: {
+            // permissive/testing paymaster: sponsor everything (the "required" fields
+            // are not needed to fulfil a sponsored op)
+            getPaymasterData: async () => ({ paymaster: config.paymasterAddress! }) as never,
+            getPaymasterStubData: async () => ({ paymaster: config.paymasterAddress! }) as never,
+          },
+        }
+      : {}),
   });
 
   const { gianoProvider } = createGianoProvider({
