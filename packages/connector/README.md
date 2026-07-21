@@ -1,91 +1,90 @@
-# Giano Connector
+# @appliedblockchain/giano-connector
 
-A wagmi connector and RainbowKit wallet for Giano, with support for both web and Node.js environments.
+A wagmi connector and RainbowKit wallet for Giano passkey (WebAuthn) smart wallets.
 
 ## Installation
 
-```bash
-npm install @appliedblockchain/giano-connector
+The package is published to **GitHub Packages** under the `@appliedblockchain` scope. In the
+consuming project:
+
+```ini
+# .npmrc
+@appliedblockchain:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
+
+```bash
+npm install @appliedblockchain/giano-connector viem
+# for the wagmi/RainbowKit integration also:
+npm install wagmi @rainbow-me/rainbowkit
+```
+
+`viem` is a required peer dependency. `wagmi` and `@rainbow-me/rainbowkit` are **optional**
+peers — only needed if you use `createGianoConnector` / `giano` (the RainbowKit wallet); the
+`/node` entry point works without them.
+
+> **Scope caveat:** routing the whole `@appliedblockchain` scope to GitHub Packages means the
+> same project cannot also fetch the public `@appliedblockchain/silentdatarollup-*` packages from
+> npmjs. Those are internal devDependencies of the Giano repo and are never needed by consumers.
+
+## Entry points
+
+| Import | Contents | Needs wagmi/RainbowKit |
+| --- | --- | --- |
+| `@appliedblockchain/giano-connector` | everything (same as `/web`) | yes |
+| `@appliedblockchain/giano-connector/web` | wagmi connector + RainbowKit wallet + provider | yes |
+| `@appliedblockchain/giano-connector/node` | provider, accounts, injection types — no wagmi/RainbowKit | no |
 
 ## Usage
 
-### Web/React Environment
+### wagmi / RainbowKit (web)
 
-For web applications using wagmi and RainbowKit:
+```ts
+import { createGianoProvider, createGianoConnector, giano } from '@appliedblockchain/giano-connector';
+import { getGianoDeployment } from '@appliedblockchain/giano-contracts';
 
-```typescript
-import { createGianoConnector } from '@appliedblockchain/giano-connector';
-// or specifically for web
-import { createGianoConnector } from '@appliedblockchain/giano-connector/web';
+const { factory } = getGianoDeployment(chain.id);
 
-const connector = createGianoConnector({
-  provider: gianoProvider
-});
-```
-
-### Node.js Environment
-
-For Node.js applications without wagmi dependencies:
-
-```typescript
-import { GianoNodeConnector } from '@appliedblockchain/giano-connector/node';
-
-const connector = new GianoNodeConnector({
-  provider: gianoProvider
+const { gianoProvider } = createGianoProvider({
+  initialChainId: chain.id,
+  bundler,                                  // viem BundlerClient
+  chains: [chain],
+  transports: { [chain.id]: transport },
+  injection,                                // GianoProviderInjection implementation
+  gianoSmartWalletFactoryAddress: factory,
 });
 
-// Get accounts
-const accounts = await connector.getAccounts();
+// plain wagmi:
+const connector = createGianoConnector({ provider: gianoProvider });
 
-// Get chain ID
-const chainId = await connector.getChainId();
-
-// Wait for user operation receipt
-const receipt = await connector.waitForUserOperationReceipt(hash);
-
-// Get smart account
-const smartAccount = connector.getSmartAccount();
+// or as a RainbowKit wallet:
+const wallet = giano({ provider: gianoProvider });
 ```
 
-## API Reference
+### Node.js
 
-### Web Connector (`createGianoConnector`)
+```ts
+import { createGianoProvider, toGianoSmartAccount } from '@appliedblockchain/giano-connector/node';
+```
 
-Creates a wagmi-compatible connector for web applications.
+The `/node` entry exposes the provider, `toGianoSmartAccount`, deployment helpers and the
+`GianoProviderInjection` types without pulling in wagmi or RainbowKit.
 
-**Parameters:**
-- `provider`: GianoProvider instance
+## Main exports
 
-**Returns:** A wagmi connector with standard wallet methods.
-
-### Node Connector (`GianoNodeConnector`)
-
-A class-based connector for Node.js environments.
-
-**Constructor Parameters:**
-- `config.provider`: GianoProvider instance
-
-**Methods:**
-- `getProvider()`: Returns the underlying provider
-- `getChainId()`: Returns the current chain ID
-- `getAccounts()`: Returns the current accounts
-- `isAuthorized()`: Checks if the connector is authorized
-- `waitForUserOperationReceipt(hash)`: Waits for a user operation receipt
-- `sendTransaction(transaction)`: Sends a transaction
-- `getSmartAccount()`: Returns the smart account instance
-- `submitUserOperation(userOp)`: Submits a user operation (placeholder)
-
-## Environment Compatibility
-
-- **Web**: Full wagmi integration with RainbowKit support (default export)
-- **Node.js**: Lightweight connector without wagmi dependencies (use `/node` export)
-- **Backward Compatibility**: The main export still provides the web connector for existing code
+- `createGianoProvider(options)` — EIP-1193 provider driving the Giano smart account. Accepts an
+  optional `logger` (`GianoLogger`); by default the provider is silent except for errors.
+- `createGianoConnector({ provider })` — wagmi connector (also exposes
+  `waitForUserOperationReceipt`).
+- `giano({ provider })` — RainbowKit wallet factory.
+- `toGianoSmartAccount(...)`, `getWebAuthnAccount(...)` — viem smart-account implementations.
+- `GianoProviderInjection` — the seam a host application implements to supply credential
+  storage/ceremony callbacks and (optionally) server-side user-operation submission.
+- Deployment helpers: `isSmartAccountDeployed`, `ensureSmartAccountIsDeployed`,
+  `waitForSmartAccountDeployment`.
 
 ## Building
 
 ```bash
-npm run build
+pnpm build   # tsup: ESM + CJS + d.ts for index, index-web, index-node
 ```
-
-This will generate both ESM and CommonJS formats with TypeScript declarations. 

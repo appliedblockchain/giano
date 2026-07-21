@@ -32,9 +32,6 @@ importers:
       '@peculiar/asn1-schema':
         specifier: ^2.3.13
         version: 2.3.15
-      '@rainbow-me/rainbowkit':
-        specifier: ^2.2.4
-        version: 2.2.5(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(babel-plugin-macros@3.1.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(viem@2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1))(wagmi@2.15.6(@tanstack/query-core@5.76.0)(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(bufferutil@4.0.9)(immer@10.0.2)(ioredis@5.6.1)(react@19.1.0)(typescript@5.5.4)(utf-8-validate@5.0.10)(viem@2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1))(zod@3.25.1))
       abitype:
         specifier: ^1.0.8
         version: 1.0.8(typescript@5.5.4)(zod@3.25.1)
@@ -44,16 +41,22 @@ importers:
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
+    devDependencies:
+      '@rainbow-me/rainbowkit':
+        specifier: ^2.2.4
+        version: 2.2.5(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(babel-plugin-macros@3.1.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(viem@2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1))(wagmi@2.15.6(@tanstack/query-core@5.76.0)(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(bufferutil@4.0.9)(immer@10.0.2)(ioredis@5.6.1)(react@19.1.0)(typescript@5.5.4)(utf-8-validate@5.0.10)(viem@2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1))(zod@3.25.1))
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.0(@swc/core@1.11.24)(jiti@1.21.7)(postcss@8.5.3)(tsx@4.19.4)(typescript@5.5.4)(yaml@2.8.0)
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
       viem:
         specifier: 2.31.6
         version: 2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1)
       wagmi:
         specifier: 2.15.6
         version: 2.15.6(@tanstack/query-core@5.76.0)(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(bufferutil@4.0.9)(immer@10.0.2)(ioredis@5.6.1)(react@19.1.0)(typescript@5.5.4)(utf-8-validate@5.0.10)(viem@2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1))(zod@3.25.1)
-    devDependencies:
-      typescript:
-        specifier: 5.5.4
-        version: 5.5.4
 
   packages/contracts:
     devDependencies:

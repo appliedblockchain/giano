@@ -1,41 +1,87 @@
 {
   "name": "@appliedblockchain/giano-connector",
   "version": "0.1.0",
-  "description": "wagmi connector and RainbowKit wallet for Giano",
-  "scripts": {
-    "build": "tsup src/"
+  "description": "wagmi connector and RainbowKit wallet for Giano passkey smart wallets",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appliedblockchain/giano.git",
+    "directory": "packages/connector"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "main": "dist/index",
-  "types": "dist/index.d.ts",
+  "author": "Applied Blockchain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "default": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "./web": {
-      "import": "./dist/index-web.mjs",
-      "default": "./dist/index-web.js"
+      "import": {
+        "types": "./dist/index-web.d.mts",
+        "default": "./dist/index-web.mjs"
+      },
+      "require": {
+        "types": "./dist/index-web.d.ts",
+        "default": "./dist/index-web.js"
+      }
     },
     "./node": {
-      "import": "./dist/index-node.mjs",
-      "default": "./dist/index-node.js"
+      "import": {
+        "types": "./dist/index-node.d.mts",
+        "default": "./dist/index-node.mjs"
+      },
+      "require": {
+        "types": "./dist/index-node.d.ts",
+        "default": "./dist/index-node.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.0",
+    "viem": "^2.31.0",
+    "wagmi": "^2.15.0"
+  },
+  "peerDependenciesMeta": {
+    "@rainbow-me/rainbowkit": {
+      "optional": true
+    },
+    "wagmi": {
+      "optional": true
     }
   },
   "dependencies": {
     "@appliedblockchain/giano-contracts": "workspace:^",
     "@peculiar/asn1-ecc": "^2.3.14",
     "@peculiar/asn1-schema": "^2.3.13",
-    "@rainbow-me/rainbowkit": "^2.2.4",
     "abitype": "^1.0.8",
     "ox": "^0.7.1",
-    "uuid": "^11.1.0",
-    "viem": "2.31.6",
-    "wagmi": "2.15.6"
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "typescript": "5.5.4"
+    "@rainbow-me/rainbowkit": "^2.2.4",
+    "tsup": "^8.3.5",
+    "typescript": "5.5.4",
+    "viem": "2.31.6",
+    "wagmi": "2.15.6"
   }
 }

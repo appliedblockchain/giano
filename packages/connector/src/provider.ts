@@ -19,7 +19,7 @@ import type {
   UserOperationReceipt,
 } from 'viem/account-abstraction';
 import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
-import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn, EIP1474Methods } from 'viem/types/eip1193';
+import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn, EIP1474Methods } from 'viem';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
 import { GianoEntryPointAddress, GianoEntryPointVersion } from './giano-entry-point'
@@ -33,6 +33,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { getWebAuthnAccount } from './account'
 import { ensureSmartAccountIsDeployed, isSmartAccountDeployed } from './account/deployment'
 import { GianoError } from './giano-error'
+import type { GianoLogger } from './logger'
+import { defaultGianoLogger } from './logger'
 import { TransactionRequest } from 'viem'
 import { ExactPartial } from 'viem'
 import { RpcTransactionRequest } from 'viem'
@@ -66,6 +68,8 @@ export type CreateGianoProviderParams = {
   transports: Record<number, Transport> | undefined;
   injection: GianoProviderInjection;
   gianoSmartWalletFactoryAddress: Address;
+  /** Optional logger; defaults to silent-except-errors. */
+  logger?: GianoLogger;
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -135,6 +139,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     bundler,
     gianoSmartWalletFactoryAddress,
   } = options
+  const logger = options.logger ?? defaultGianoLogger
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
@@ -203,21 +208,21 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return `0x${chain!.id.toString(16)}`;
     },
     eth_call: async (params) => {
-      console.log('eth_call', params)
+      logger.debug('eth_call', params)
 
       return client!.request({ method: 'eth_call', params })
     },
     signed_eth_call: async (params) => {
       // Check if smartAccount is available before proceeding with authenticated calls
       if (!smartAccount) {
-        console.warn('Smart account not available, falling back to regular call')
+        logger.warn('Smart account not available, falling back to regular call')
         return client!.request({ method: 'eth_call', params })
       }
 
       // Check if the account is deployed before attempting authenticated calls
       const isDeployed = await isSmartAccountDeployed(client!, smartAccount)
       if (!isDeployed) {
-        console.warn('Smart account not deployed yet, falling back to regular call')
+        logger.warn('Smart account not deployed yet, falling back to regular call')
         return client!.request({ method: 'eth_call', params })
       }
 
@@ -378,7 +383,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
           smartAccount, client!, methods.eth_sendTransaction,
         )
       } catch (error) {
-        console.error('Failed to ensure smart account is deployed:', error)
+        logger.error('Failed to ensure smart account is deployed:', error)
       }
 
       // Always call the injection callback regardless of deployment status
@@ -438,7 +443,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return smartAccount.signMessage({ message });
     },
     eth_signTypedData_v4: async ([address, typedData]: [Address, string]) => {
-      console.log('eth_signTypedData_v4', { address, typedData });
+      logger.debug('eth_signTypedData_v4', { address, typedData });
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
@@ -452,7 +457,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return smartAccount.signTypedData(parsedTypedData);
     },
     eth_signUserOperation: async ([userOp]: [any]) => {
-      console.log('eth_signUserOperation', { userOp });
+      logger.debug('eth_signUserOperation', { userOp });
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
@@ -460,7 +465,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return smartAccount.signUserOperation({ ...userOp });
     },
     eth_sendSignedUserOperation: async ([signedUserOp]: [UserOperation<GianoEntryPointVersion>]) => {
-      console.log('eth_sendSignedUserOperation', { signedUserOp });
+      logger.debug('eth_sendSignedUserOperation', { signedUserOp });
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
@@ -471,7 +476,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       });
     },
     eth_prepareUserOperation: async ([calls, options = {}]) => {
-      console.log('eth_prepareUserOperation', { calls, options });
+      logger.debug('eth_prepareUserOperation', { calls, options });
       if (!smartAccount) {
         throw new Error('Giano not connected');
       }
@@ -505,20 +510,21 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
 
   const provider: GianoProvider = {
     getSmartAccount: () => smartAccount,
-    request: async (args: EIP1193Parameters) => {
+    request: (async (args: EIP1193Parameters) => {
       const { method, params } = args;
 
       if (!(method in methods)) {
         return client!.request({ ...args } as any);
       }
       try {
-        const response = await methods[method](params);
+        const handler = (methods as Record<string, (params: unknown) => Promise<unknown>>)[method];
+        const response = await handler(params);
         return response;
       } catch (e) {
-        console.error(e);
+        logger.error('provider request failed', e);
         throw e;
       }
-    },
+    }) as GianoProvider['request'],
     on: <E extends keyof EIP1193EventMap>(event: E, listener: EventHandler<E>) => {
       if (!eventListeners[event]) {
         eventListeners[event] = new Set();
