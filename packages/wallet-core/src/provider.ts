@@ -39,8 +39,16 @@ import { TransactionRequest } from 'viem'
 import { ExactPartial } from 'viem'
 import { RpcTransactionRequest } from 'viem'
 
+/**
+ * Chain family encoded into the WebAuthn user id (1 byte). EVM covers every chain Giano
+ * currently deploys to; the byte exists so a future non-EVM family can be distinguished
+ * without changing the id layout. `HARDHAT` is kept as a deprecated alias of the EVM
+ * value so existing encoded ids keep decoding.
+ */
 export enum ChainType {
-  HARDHAT = 0, // NOTE: This is just a placeholder for now
+  EVM = 0,
+  /** @deprecated use EVM — retained as a 0-valued alias for backward compatibility */
+  HARDHAT = 0,
 }
 
 type PrepareUserOperationOptions = Partial<
@@ -358,7 +366,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
             uuidv4().replace(/-/g, ''),
             gianoSmartWalletFactoryAddress,
             chainId,
-            ChainType.HARDHAT,
+            ChainType.EVM,
           ),
         },
         challenge: credentialInfo.challenge,

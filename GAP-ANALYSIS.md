@@ -12,6 +12,7 @@ Giano is an ERC-4337 smart wallet (fork of Coinbase Smart Wallet) that uses WebA
 - The two libraries (`@appliedblockchain/giano-connector`, `@appliedblockchain/giano-contracts`) are **not publishable to npm** in their current state — they depend on `workspace:` protocol resolution, gitignored generated artifacts, and root-level build tooling.
 - There is **no backend component at all**. The only server-side code is a set of demo API routes inside the Next.js example app, using in-memory `Map` storage, with no database and no authentication.
 - There is **zero deployment infrastructure**: no Dockerfiles, no docker-compose, no CI (`.github/` does not exist), no k8s/IaC manifests.
+- In production, user-op submission has **only ever worked through the Coinbase Developer Platform managed bundler**; the self-hosted Alto setup is dev-only and unproven on public networks, and the cause of the incompatibility is undocumented — a hidden third-party dependency that contradicts the self-hosted distribution model (GAP-9).
 - Most fundamentally, the current integration model makes the **client application the wallet**: the dApp's own origin is the WebAuthn Relying Party, and the dApp must implement credential storage, challenge generation, and user-op submission via the `GianoProviderInjection` interface. Any application integrating Giano therefore inherits the full trust and security requirements of a wallet — exactly the property that must be eliminated.
 
 The target state is Giano as a **self-contained, distributable wallet component**. Giano is *not* a centrally hosted service: every client project integrates it independently, running Giano's containers as services inside its own infrastructure, alongside the npm-installed SDK. The distribution therefore consists of (a) versioned npm packages for the thin client SDK and (b) versioned, published Docker images (wallet backend, wallet frontend/origin, bundler, contracts deployer) that a client project drops into its own compose/k8s stack. The independence requirement is met at the *code and trust-boundary* level: the client application never implements or embeds wallet logic — it talks to the Giano services it deploys through a narrow, standards-based interface (EIP-1193 / wagmi connector) — even though the client project operates those services.
@@ -64,7 +65,7 @@ This is the core architectural gap behind the requirement "a client application 
 
 - The only server-side code lives inside the demo app (`services/custom-example/src/pages/api/`):
   - `submit-userop.ts` — validates and forwards signed user ops to the bundler (hardcoded `callGasLimit` cap of 1,000,000).
-  - `storage/[...path].ts` — passkey/public-key REST storage backed by a **`Map` on `globalThis`** ("In production, you'd use a proper database" comment in source). Data is lost on restart, single-process only.
+  - `storage/[...path].ts` — passkey/public-key REST storage backed by a **`Map` on `globalThis`** ("In production, you'd use a proper database" comment in source). Data is lost on restart, single-proces s only.
   - `well-known/webauthn.ts` — ROR origin list, also in-memory.
   - `proxy/bundler.ts`, `proxy/hardhat.ts` — dev reverse proxies.
 - **No database. No authentication.** `ServerStorage` sends an optional `Bearer` token that the server **never checks**; `userId` is taken from the URL path unverified. No challenge/session tracking, no rate limiting, no signature verification of WebAuthn assertions server-side.
@@ -122,6 +123,16 @@ Exhaustive search confirms:
 - `services/web-outdated`: deactivated manifest (`_package.json`), depends on deleted packages (`giano-client`, `giano-common`), start scripts point to a deleted `src/server`. Should be removed (after harvesting its ideas: it was the last version with a real DB-backed WebAuthn backend).
 - Root `tsconfig.json` carries path aliases to nonexistent services (`webapp`, `api`, `bcm`).
 
+### GAP-9 — Production bundler works only with Coinbase's managed service (vendor lock-in, unvalidated self-hosting) — **High**
+
+Operational experience: in production, **only the Coinbase Developer Platform bundler has ever worked**. The repo corroborates that no alternative path has been validated:
+
+- The only bundler endpoints configured for real networks are Coinbase CDP URLs (`.env-base-sepolia`, `.env-base-mainnet`); the root README explicitly directs real-network usage to the Coinbase bundler ("no need to run the local bundler…", §63–68).
+- The self-hosted Alto setup (`alto-local.json`) is **dev-only by construction**: Anvil dev private key as executor/utility key, `localhost:8545` RPC, `safe-mode: false`, plus a CORS proxy. It has never been parameterized for, or exercised against, a public network from this repo.
+- The one non-Coinbase remote bundler on record (`.env-sdr-testnet`, `http://51.38.208.86:14337/rpc`) is a raw-IP testnet endpoint, not a production data point.
+- **The root cause of non-Coinbase bundler failures is not recorded anywhere in the repo** — no issue log, comment, or doc explains what broke (candidates worth investigating: gas-estimation/fee-field expectations — note the provider's hardcoded 200-gwei `maxFeePerGas` / 400-gwei priority-fee defaults and 800k `verificationGasLimit` floor, GAP-7 — EntryPoint v0.7 support level, validation strictness that `safe-mode: false` masks locally, paymaster handling, or executor funding/operations).
+- **Consequence for the target model:** the self-hosted distribution (§4.4) currently rests on an unproven assumption. R11.3 ships a `giano-bundler` (Alto) image, but if Giano user ops only clear through Coinbase's bundler, every client deployment silently inherits a hard dependency on a third-party managed service — unavailable on chains Coinbase doesn't support (e.g. the SDR chain) and contrary to the "no Giano-hosted or third-party runtime dependency" independence goal.
+
 ---
 
 ## 4. Requirements
@@ -154,14 +165,14 @@ Exhaustive search confirms:
 - **R9. One canonical deployment toolchain.** Pick either Hardhat Ignition or Foundry for production deploys, pin the compiler settings, and document/CI-verify the deterministic CREATE2 addresses per bytecode version.
 - **R10. Decouple the connector build from contracts' gitignored artifacts** — either commit `generated.ts`/ABIs or make the contracts package build-and-publish first-class so the connector consumes a released artifact.
 
-### 4.4 Deployable components & distribution (addresses GAP-3)
+### 4.4 Deployable components & distribution (addresses GAP-3, GAP-9)
 
 Because Giano's containers become **services inside each client project's own stack**, the deliverable is not a hosted platform but a **distribution**: published, versioned images plus the deployment collateral client teams need to embed them.
 
 - **R11. Published Docker images** (e.g. GHCR), each independently configurable via environment variables (12-factor), no secrets baked in:
   1. **`giano-wallet-api`** — the Wallet Service (R5).
   2. **`giano-wallet-web`** — the wallet frontend/origin (R1), serving the passkey UI and `/.well-known/webauthn`; brandable via config.
-  3. **`giano-bundler`** — Alto with a templated config (RPC URL, entrypoint, executor keys from the client's secrets manager — replacing the committed dev key in `alto-local.json`). Optional: projects may point `giano-wallet-api` at a managed bundler (Coinbase/Pimlico) instead of running this container.
+  3. **`giano-bundler`** — Alto with a templated config (RPC URL, entrypoint, executor keys from the client's secrets manager — replacing the committed dev key in `alto-local.json`). Optional: projects may point `giano-wallet-api` at a managed bundler (Coinbase/Pimlico) instead of running this container. **Precondition (GAP-9):** this image is only credible after R18 proves Giano user ops clear a self-hosted bundler on a public network — today only the Coinbase managed bundler is known to work in production.
   4. **`giano-contracts-deployer`** — one-shot job image that deploys/verifies the contract suite to the project's target chain and emits the address registry artifact. Essential in this model, since each client project may deploy to its own chain/network; CREATE2 determinism (R9) keeps addresses consistent across projects that share a chain.
   5. *(dev only)* **`giano-devnet`** — Anvil + EntryPoint + contracts pre-deployed, replacing the current 5-step manual local bootstrap.
 - **R12. Embedding collateral**, not just a demo stack:
@@ -169,6 +180,11 @@ Because Giano's containers become **services inside each client project's own st
   - An **integration guide** covering: reverse-proxy/TLS setup for the wallet subdomain, required env matrix per container, secrets handling, DB provisioning/backup expectations, and health-check endpoints for the client's orchestrator.
   - **Version alignment contract:** container image tags and npm SDK versions released in lockstep (single semver line), with a compatibility table and documented upgrade path (SDK ↔ API ↔ DB migrations), since Giano cannot roll out upgrades centrally — every client project upgrades on its own schedule.
 - **R13. CI/CD** (GitHub Actions): contract tests (forge), package build + typecheck + unit tests, image builds + registry push on tag, npm publish on tag, and a deterministic-address verification job.
+- **R18. Bundler independence & compatibility matrix (addresses GAP-9).**
+  - **Diagnose first:** reproduce and root-cause why non-Coinbase bundlers fail with Giano user ops (fee-field expectations vs. the provider's hardcoded gas defaults, EntryPoint v0.7 conformance, validation rules masked locally by `safe-mode: false`, WebAuthn-signature verification-gas behaviour, paymaster interaction). The fix may land in the connector/wallet-api (R17's gas-default rework) rather than the bundler.
+  - **Validate self-hosting:** run production-configured Alto (real executor keys, `safe-mode: true`, public RPC) against a public testnet and confirm the full create-wallet → sign → submit flow; automate this as a CI/E2E job (extends R13/R16) so bundler compatibility cannot silently regress.
+  - **Publish a compatibility matrix** (Alto self-hosted, Coinbase CDP, Pimlico, others as tested) with required configuration per bundler, as part of the integration guide (R12). Until a second bundler is proven, the docs must state the Coinbase-only limitation explicitly instead of implying bundler choice is free.
+  - **Keep managed-bundler support first-class:** the wallet-api's relay must treat the bundler URL as a pluggable endpoint with per-bundler quirks isolated in one place (fee estimation strategy, error mapping), so client projects can choose managed vs. self-hosted per chain.
 
 ### 4.5 Hardening (addresses GAP-6, GAP-7, GAP-8)
 
@@ -235,7 +251,7 @@ Integration cost for a client project becomes: `npm install @appliedblockchain/g
 | **1. Make packages real** | Installable SDK without the monorepo | R7–R10, R14–R15. Fix connector/contracts packaging, peer deps, address registry, publish pipeline (R13 subset). |
 | **2. Extract the backend** | A real, self-hostable wallet service | R5–R6a. Stand up `giano-wallet-api` + Postgres, port/replace the demo API routes, ship the reference injection. Containerize (R11.1) + reference compose (R12), fully env-driven so any client project can run it. |
 | **3. Independent wallet origin** | Remove wallet trust from client app code | R1–R4. Build `giano-wallet-web` as the per-deployment RP origin (wallet subdomain) with popup/postMessage transport; slim the SDK to a configured-URL relay; ROR for the project's approved origins. This is the largest work item and the one that satisfies the independence requirement. |
-| **4. Full distribution ops** | Any client project can deploy and upgrade Giano | R11.3–R11.5, R12 (Helm/integration guide/version-alignment contract), R13, R9 (canonical deploys), secrets guidance, monitoring hooks, hardening (R16–R17). |
+| **4. Full distribution ops** | Any client project can deploy and upgrade Giano | R11.3–R11.5, R12 (Helm/integration guide/version-alignment contract), R13, R9 (canonical deploys), R18 (bundler root-cause + self-hosted validation + compatibility matrix — start the diagnosis earlier, in phase 2, since it may reshape the wallet-api relay), secrets guidance, monitoring hooks, hardening (R16–R17). |
 
 ---/c
 
@@ -247,7 +263,7 @@ Integration cost for a client project becomes: `npm install @appliedblockchain/g
 | Connector API surface | `packages/connector/src/provider.ts`, `src/connector.ts`, `src/gianoWallet.ts`, `src/account/toGianoSmartAccount.ts`, `src/provider-injection/injection.ts`, `src/giano-entry-point.ts` |
 | Contracts packaging & deploys | `packages/contracts/package.json`, `hardhat.config.ts`, `foundry.toml`, `wagmi.config.ts`, `ignition/modules/*`, `ignition/deployments/chain-{8453,84532,381185}/deployed_addresses.json` |
 | Demo "backend" | `services/custom-example/src/pages/api/{submit-userop.ts,storage/[...path].ts,well-known/webauthn.ts,proxy/*}`, `src/config.ts`, `src/storage-implementations.ts`, `src/demo-server-injection.ts` |
-| Bundler | root `alto-local.json`, root `package.json` scripts `bundler:*` |
+| Bundler | root `alto-local.json`, root `package.json` scripts `bundler:*`; Coinbase-only production endpoints in `services/custom-example/.env-base-{sepolia,mainnet}`, README §63–68 |
 | Env / addresses drift | `services/custom-example/.env-{local,base-sepolia,base-mainnet,sdr-testnet}` |
 | Docs (incl. drifted) | `README.md` (§57, §66–67), `README-GIANO-INJECTION.md`, `README-ROR.md`, `packages/connector/README.md` (`GianoNodeConnector` does not exist) |
 | Dead code | `services/web-outdated/` (`_package.json`, deleted `src/server`) |

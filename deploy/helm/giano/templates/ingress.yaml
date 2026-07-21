@@ -1,0 +1,38 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-wallet
+  labels: {{- include "giano.labels" . | nindent 4 }}
+  annotations: {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ required "ingress.walletHost is required" .Values.ingress.walletHost | quote }}]
+      secretName: {{ .Release.Name }}-wallet-tls
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.walletHost is required" .Values.ingress.walletHost | quote }}
+      http:
+        paths:
+          # /.well-known/webauthn and /api → wallet-api; everything else → wallet-web
+          - path: /.well-known/webauthn
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Release.Name }}-wallet-api
+                port: { number: 8080 }
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-wallet-api
+                port: { number: 8080 }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-wallet-web
+                port: { number: 8080 }
+{{- end }}

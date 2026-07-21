@@ -44,7 +44,6 @@
     "build:ts": "tsup",
     "prepublishOnly": "pnpm build:ts",
     "gen:addresses": "ts-node scripts/generate-addresses.ts",
-    "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "anvil --enable-trace-printing",
     "hh:deploy": "hardhat ignition deploy ignition/modules/GianoAccountFactory.ts --strategy create2",
     "hh:deploy:mapper": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",

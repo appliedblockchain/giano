@@ -185,6 +185,7 @@ export default async function webauthnRoutes(
         throw new ApiError(400, 'verification-failed', (error as Error).message);
       }
       if (!verification.verified || !verification.registrationInfo) {
+        app.metrics.ceremonyFailures.inc({ kind: 'registration' });
         throw new ApiError(400, 'verification-failed', 'registration response could not be verified');
       }
 
@@ -275,6 +276,7 @@ export default async function webauthnRoutes(
         throw new ApiError(400, 'verification-failed', (error as Error).message);
       }
       if (!verification.verified) {
+        app.metrics.ceremonyFailures.inc({ kind: 'authentication' });
         throw new ApiError(400, 'verification-failed', 'authentication response could not be verified');
       }
 

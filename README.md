@@ -102,14 +102,9 @@ This increases the maximum heap size to 16GB. You can adjust the value (in MB) b
 
 ### Test contracts
 
-#### Coinbase tests (Foundry-based)
-```sh (Foundry-based)
-forge test
-```
-
-#### Hardhat tests
+#### Contract tests (Foundry)
 ```sh
-pnpm hh:test
+forge test
 ```
 
 ## Components

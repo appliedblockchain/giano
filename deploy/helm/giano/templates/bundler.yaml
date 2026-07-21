@@ -1,0 +1,45 @@
+{{- if .Values.bundler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-bundler
+  labels: {{- include "giano.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      giano/component: bundler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        giano/component: bundler
+    spec:
+      containers:
+        - name: bundler
+          image: {{ include "giano.image" (dict "root" . "name" .Values.bundler.image) }}
+          ports:
+            - containerPort: 4337
+          env:
+            - name: ALTO_RPC_URL
+              value: {{ .Values.config.rpcUrl | quote }}
+            - name: ALTO_SAFE_MODE
+              value: {{ .Values.bundler.altoSafeMode | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-bundler
+  labels: {{- include "giano.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    giano/component: bundler
+  ports:
+    - port: 4337
+      targetPort: 4337
+{{- end }}

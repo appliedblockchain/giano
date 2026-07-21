@@ -109,6 +109,38 @@
         }
       }
     },
+    "/v1/version": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "chainId": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "chainId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/.well-known/webauthn": {
       "get": {
         "tags": [

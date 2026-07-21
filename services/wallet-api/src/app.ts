@@ -9,6 +9,7 @@ import type { AppConfig } from './config.js';
 import type { Db } from './db/index.js';
 import authPlugin from './plugins/auth.js';
 import errorHandler from './plugins/error-handler.js';
+import metricsPlugin from './plugins/metrics.js';
 import adminRoutes from './routes/admin.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
@@ -43,6 +44,7 @@ export async function buildApp({ config, db, fetchImpl }: BuildAppOptions) {
   const publicClient = createPublicClient({ transport: http(config.RPC_URL) });
 
   await app.register(errorHandler);
+  await app.register(metricsPlugin);
   await app.register(rateLimit, { global: false });
   if (config.CORS_ORIGINS.length > 0) {
     await app.register(cors, { origin: config.CORS_ORIGINS, credentials: true });
@@ -71,7 +73,7 @@ export async function buildApp({ config, db, fetchImpl }: BuildAppOptions) {
 
   await app.register(authPlugin, { sessions, adminApiKeys: config.ADMIN_API_KEYS });
 
-  await app.register(healthRoutes, { db });
+  await app.register(healthRoutes, { db, version: process.env.GIANO_VERSION ?? '0.1.0', chainId: config.CHAIN_ID });
   await app.register(wellKnownRoutes, { db });
   await app.register(adminRoutes, { db });
   await app.register(webauthnRoutes, { db, config, challenges, sessions, publicClient });

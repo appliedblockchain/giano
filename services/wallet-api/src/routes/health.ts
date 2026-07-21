@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { Db } from '../db/index.js';
 
 export default async function healthRoutes(
-  instance: FastifyInstance, opts: { db: Db }) {
+  instance: FastifyInstance, opts: { db: Db; version: string; chainId: number }) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   app.get(
     '/healthz',
@@ -32,5 +32,11 @@ export default async function healthRoutes(
         return reply.code(503).send({ status: 'unavailable' as const, message: (error as Error).message });
       }
     },
+  );
+
+  app.get(
+    '/v1/version',
+    { schema: { tags: ['health'], response: { 200: z.object({ version: z.string(), chainId: z.number() }) } } },
+    async () => ({ version: opts.version, chainId: opts.chainId }),
   );
 }

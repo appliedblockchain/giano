@@ -2,7 +2,14 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@appliedblockchain/giano-contracts",
+      "@appliedblockchain/giano-wallet-core",
+      "@appliedblockchain/giano-wallet-transport",
+      "@appliedblockchain/giano-connector"
+    ]
+  ],
   "linked": [],
   "access": "restricted",
   "baseBranch": "main",

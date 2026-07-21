@@ -88,6 +88,7 @@ export default async function useropRoutes(
       },
     },
     async (request, reply) => {
+      const stopTimer = app.metrics.useropLatency.startTimer();
       const session = request.session!;
       const rpcOp = request.body.userOperation;
       const userOp = toBigIntUserOp(rpcOp);
@@ -141,6 +142,10 @@ export default async function useropRoutes(
 
       if (!decision.allowed) {
         request.log.warn({ useropHash, reason: decision.rejectReason }, 'userop rejected by policy');
+        for (const rule of decision.results.filter((r) => !r.passed)) {
+          app.metrics.policyRejections.inc({ rule: rule.rule });
+        }
+        app.metrics.useropRelayed.inc({ status: 'rejected' });
         return reply.code(403).send({ error: 'policy-rejected', message: decision.rejectReason!, policy: decision.results });
       }
 
@@ -153,6 +158,8 @@ export default async function useropRoutes(
           .update(useropLog)
           .set({ status: 'submitted', bundlerResponse: { bundlerHash } })
           .where(eq(useropLog.id, inserted[0].id));
+        app.metrics.useropRelayed.inc({ status: 'submitted' });
+        stopTimer();
         // the server-computed hash is the canonical id (log key, status endpoint, idempotency)
         return { userOperationHash: useropHash };
       } catch (error) {
@@ -160,6 +167,7 @@ export default async function useropRoutes(
           .update(useropLog)
           .set({ status: 'failed', bundlerResponse: { error: (error as Error).message } })
           .where(eq(useropLog.id, inserted[0].id));
+        app.metrics.useropRelayed.inc({ status: 'failed' });
         throw error;
       }
     },

@@ -21,6 +21,12 @@ jobs:
             dockerfile: services/wallet-api/Dockerfile
           - name: giano-wallet-web
             dockerfile: services/wallet-web/Dockerfile
+          - name: giano-bundler
+            dockerfile: services/bundler/Dockerfile
+          - name: giano-devnet
+            dockerfile: services/devnet/Dockerfile
+          - name: giano-contracts-deployer
+            dockerfile: packages/contracts/Dockerfile.deployer
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
