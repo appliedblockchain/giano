@@ -52,9 +52,10 @@ export class GianoError extends Error {
     // Ensure proper prototype chain for instanceof checks
     Object.setPrototypeOf(this, this.constructor.prototype)
 
-    // Capture stack trace if available (Node.js)
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor as any)
+    // Capture stack trace if available (V8/Node.js only — not in the DOM lib types)
+    const errorCtor = Error as unknown as { captureStackTrace?: (target: object, ctor: unknown) => void }
+    if (errorCtor.captureStackTrace) {
+      errorCtor.captureStackTrace(this, this.constructor)
     }
   }
 }

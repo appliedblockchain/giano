@@ -2,7 +2,7 @@ import type { Chain, TransactionRequest, Transport } from 'viem'
 import { Hash } from 'viem'
 import { UserOperationReceipt } from 'viem/account-abstraction'
 import { Connector, createConnector } from 'wagmi'
-import { GianoProvider } from './provider'
+import type { GianoProvider } from '@appliedblockchain/giano-wallet-core'
 
 export type SendTransactionFnParams = {
   chain: Chain;

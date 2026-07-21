@@ -70,6 +70,12 @@ export type CreateGianoProviderParams = {
   gianoSmartWalletFactoryAddress: Address;
   /** Optional logger; defaults to silent-except-errors. */
   logger?: GianoLogger;
+  /**
+   * Fallback fee estimation used when neither the request nor the bundler's
+   * prepared op carries fees. The old hardcoded defaults were inverted
+   * (priority 400 gwei > max 200 gwei); override this for real deployments.
+   */
+  estimateFeesPerGas?: () => Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }>;
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -130,6 +136,20 @@ export type GianoProvider = EIP1193Provider & {
   getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
 }
 
+export type FeeValues = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+
+/** Fee precedence: explicit request > bundler-prepared > fallback estimation. */
+export function resolveUserOpFees(
+  requested: Partial<FeeValues>,
+  prepared: Partial<FeeValues>,
+  fallback: FeeValues,
+): FeeValues {
+  return {
+    maxFeePerGas: requested.maxFeePerGas || prepared.maxFeePerGas || fallback.maxFeePerGas,
+    maxPriorityFeePerGas: requested.maxPriorityFeePerGas || prepared.maxPriorityFeePerGas || fallback.maxPriorityFeePerGas,
+  };
+}
+
 export const createGianoProvider = (options: CreateGianoProviderParams) => {
   const injection = withValidation(options.injection)
   const {
@@ -140,6 +160,9 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     gianoSmartWalletFactoryAddress,
   } = options
   const logger = options.logger ?? defaultGianoLogger
+  const estimateFeesPerGas =
+    options.estimateFeesPerGas ??
+    (async () => ({ maxFeePerGas: parseGwei('200'), maxPriorityFeePerGas: parseGwei('2') }))
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
@@ -171,11 +194,9 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       ...estimate,
     });
 
-    // Add default gas pricing if not provided
     const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
       ...prepared,
-      maxFeePerGas: userOpRequest.maxFeePerGas || parseGwei('200'),
-      maxPriorityFeePerGas: userOpRequest.maxPriorityFeePerGas || parseGwei('400'),
+      ...resolveUserOpFees(userOpRequest, prepared, await estimateFeesPerGas()),
     };
 
     // Sign the user operation
@@ -500,8 +521,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return {
         ...prepared,
         preVerificationGas: prepared.preVerificationGas,
-        maxFeePerGas: options.maxFeePerGas || parseGwei('200'),
-        maxPriorityFeePerGas: options.maxPriorityFeePerGas || parseGwei('400'),
+        ...resolveUserOpFees(options, prepared, await estimateFeesPerGas()),
       };
     },
   } satisfies GianoProviderMethodsMap

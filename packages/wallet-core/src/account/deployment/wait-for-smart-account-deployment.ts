@@ -86,8 +86,8 @@ export function waitForSmartAccountDeployment(
     timeout = DEFAULT_TIMEOUT_MS,
   } = parameters
 
-  let timeoutId: NodeJS.Timeout | undefined
-  let intervalId: NodeJS.Timeout | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  let intervalId: ReturnType<typeof setInterval> | undefined
 
   const cleanup = () => {
     if (timeoutId) clearTimeout(timeoutId)

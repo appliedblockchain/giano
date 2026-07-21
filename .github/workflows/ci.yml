@@ -24,6 +24,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build contracts TS surface (committed artifacts only)
         run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Build wallet-core
+        run: pnpm --filter @appliedblockchain/giano-wallet-core build
+      - name: wallet-core unit tests
+        run: pnpm --filter @appliedblockchain/giano-wallet-core test
       - name: Build connector
         run: pnpm --filter @appliedblockchain/giano-connector build
       - name: addresses.ts drift check
