@@ -10,3 +10,4 @@ latest.sql
 .yarn/install-state.gz
 .vite/
 .next/
+*.tsbuildinfo

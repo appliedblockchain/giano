@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Build & typecheck packages (no solc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # deliberately NO submodules: proves a fresh clone builds the TS surface
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build contracts TS surface (committed artifacts only)
+        run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Build connector
+        run: pnpm --filter @appliedblockchain/giano-connector build
+      - name: addresses.ts drift check
+        run: |
+          pnpm --filter @appliedblockchain/giano-contracts gen:addresses
+          git diff --exit-code packages/contracts/addresses.ts
+
+  generated-drift:
+    name: generated.ts drift check (solc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Recompile and regenerate ABIs
+        working-directory: packages/contracts
+        run: |
+          pnpm hh:compile
+          pnpm hh:wagmi
+      - name: Fail on drift
+        run: git diff --exit-code packages/contracts/generated.ts
+
+  forge:
+    name: Foundry tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: forge test
+        working-directory: packages/contracts
+        run: forge test -vvv
