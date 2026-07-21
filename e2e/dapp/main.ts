@@ -60,7 +60,7 @@ document.getElementById('sign')!.addEventListener('click', async () => {
       method: 'personal_sign',
       params: [`0x${Array.from(new TextEncoder().encode('giano e2e'), (b) => b.toString(16).padStart(2, '0')).join('')}`, account],
     });
-    log('signature', signature.slice(0, 20));
+    log('signature', `len=${signature.length} ${signature.slice(0, 20)}…`);
   } catch (error) {
     log('sign:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
   }
@@ -76,7 +76,7 @@ document.getElementById('sign-typed')!.addEventListener('click', async () => {
       message: { text: 'hello giano' },
     });
     const signature = await provider.request<string>({ method: 'eth_signTypedData_v4', params: [account, typedData] });
-    log('typedSignature', signature.slice(0, 20));
+    log('typedSignature', `len=${signature.length} ${signature.slice(0, 20)}…`);
   } catch (error) {
     log('signTyped:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
   }
