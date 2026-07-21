@@ -1,0 +1,8 @@
+{
+  "chainId": 31337,
+  "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+  "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+  "implementation": "0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56",
+  "paymaster": "0xCbc040482c1dd07D533800874DC37De7b18c8092",
+  "testErc20": "0x9967bDf929856643e92EF65eefdE1fF8250774D8"
+}

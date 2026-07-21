@@ -69,5 +69,26 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
+  wallet-web:
+    image: ghcr.io/appliedblockchain/giano-wallet-web:${GIANO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      - wallet-api
+    ports:
+      - '8081:8080'
+    environment:
+      # the dedicated wallet origin, e.g. https://wallet.clientapp.com behind your TLS proxy
+      GIANO_CHAIN_ID: ${CHAIN_ID:?}
+      GIANO_RPC_URL: ${RPC_URL:?}
+      GIANO_BUNDLER_URL: ${BUNDLER_URL:?}
+      # nginx proxies /api and /.well-known/webauthn here (same-origin)
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
+      # defaults from the contracts registry when empty and CHAIN_ID is known
+      GIANO_FACTORY_ADDRESS: ${FACTORY_ADDRESS:-}
+      # JSON array of dApp origins allowed to connect, e.g. ["https://app.clientapp.com"]
+      GIANO_ALLOWED_DAPP_ORIGINS: ${ALLOWED_DAPP_ORIGINS:?e.g. ["https://app.clientapp.com"]}
+      GIANO_RP_ID: ${RP_ID:?}
+      GIANO_BRAND_NAME: ${BRAND_NAME:-Giano Wallet}
+
 volumes:
   giano-pgdata:

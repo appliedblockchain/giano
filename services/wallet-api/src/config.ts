@@ -83,6 +83,25 @@ const envSchema = z
         message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
       });
     }
+    // RP ID sanity (P3.5): passkeys bind to RP_ID irreversibly, so verification-time
+    // failures are too late. Every expected origin's host must equal RP_ID or be a
+    // subdomain of it (registrable-domain opt-in).
+    for (const origin of env.EXPECTED_ORIGINS) {
+      let host: string;
+      try {
+        host = new URL(origin).hostname;
+      } catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['EXPECTED_ORIGINS'], message: `not a valid origin: ${origin}` });
+        continue;
+      }
+      if (host !== env.RP_ID && !host.endsWith(`.${env.RP_ID}`)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['RP_ID'],
+          message: `RP_ID "${env.RP_ID}" is not valid for expected origin ${origin} — the origin's host must equal RP_ID or be a subdomain of it`,
+        });
+      }
+    }
     if (!env.OPEN_REGISTRATION && env.ADMIN_API_KEYS.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

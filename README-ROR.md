@@ -251,3 +251,24 @@ const assertion = await navigator.credentials.get({
 ---
 
 **Note**: This is a demonstration implementation. For production use, implement proper security measures, error handling, and user experience considerations.
+## Wallet-origin deployment (Phase 3+)
+
+With the dedicated wallet origin, the ROR document is served by the wallet stack itself:
+
+- `giano-wallet-web`'s nginx proxies `GET /.well-known/webauthn` to the wallet-api, which
+  serves it from the `ror_origins` table.
+- Manage entries with the admin API (bearer key from `ADMIN_API_KEYS`):
+
+```bash
+curl -X POST https://wallet.clientapp.com/api/v1/admin/ror-origins \
+  -H "authorization: Bearer $ADMIN_KEY" -H 'content-type: application/json' \
+  -d '{"origin": "https://app.clientapp.com"}'
+
+curl https://wallet.clientapp.com/.well-known/webauthn
+# {"origins":["https://app.clientapp.com"]}
+```
+
+Use this when a client application must exercise wallet-origin passkeys from additional
+registered origins (e.g. a legacy embedded-mode origin during migration). Browser support
+is Chromium-first — the E2E suite includes a Chromium-only check; treat other engines as
+progressive enhancement.
