@@ -111,6 +111,19 @@ export class TransportClient {
     this.popupManager.close();
   }
 
+  /**
+   * Closes the wallet popup after a completed interaction WITHOUT ending the session.
+   * The teardown is reported as `POPUP_CLOSED`, which callers treat as benign — the
+   * cached session survives and the next request re-opens the popup (and the wallet
+   * silently restores the account). Used for the ephemeral-popup UX where the popup
+   * closes itself once each connect/sign/transaction resolves.
+   */
+  dismissPopup(): void {
+    if (!this.popup) return;
+    this.popupManager.close();
+    this.teardown(new TransportError('POPUP_CLOSED', 'wallet popup dismissed after the request completed'));
+  }
+
   private post(message: TransportMessage): void {
     this.popup?.postMessage(message, this.walletOrigin);
   }

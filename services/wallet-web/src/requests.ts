@@ -66,5 +66,10 @@ export function toRpcError(error: unknown): TransportRpcError {
   if (name === 'NotAllowedError' || name === 'AbortError') {
     return new TransportRpcError(RPC_ERRORS.USER_REJECTED, 'User cancelled the passkey ceremony');
   }
+  // The account couldn't be (re)established — the popup was reopened and the persisted
+  // session is gone/expired. Surface a clean EIP-1193 disconnect so the dApp reconnects.
+  if (/not connected/i.test(message)) {
+    return new TransportRpcError(RPC_ERRORS.DISCONNECTED, 'Wallet session expired — reconnect');
+  }
   return new TransportRpcError(RPC_ERRORS.INTERNAL, message);
 }

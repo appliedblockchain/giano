@@ -1,4 +1,4 @@
-import { TransportClient, TransportError } from '@appliedblockchain/giano-wallet-transport';
+import { RPC_ERRORS, TransportClient, TransportError, TransportRpcError } from '@appliedblockchain/giano-wallet-transport';
 import type { Chain, EIP1193Parameters, Transport } from 'viem';
 import { createPublicClient, http } from 'viem';
 
@@ -86,13 +86,38 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
     emit('accountsChanged', accounts);
   });
   transportClient.on('chainChanged', (chainId) => emit('chainChanged', chainId));
-  transportClient.on('disconnect', (error) => emit('disconnect', error));
+
+  /** Drops the cached session and notifies the dApp that a fresh connect is required. */
+  const clearSession = (error: unknown) => {
+    writeSession(null);
+    emit('accountsChanged', []);
+    emit('disconnect', error);
+  };
+
+  transportClient.on('disconnect', (error) => {
+    // A transient popup close is NOT a session end: the wallet keeps its session and the
+    // next wallet request silently restores the account (see giano_restoreAccount), so we
+    // keep the cached session and stay quiet. Only a genuine end (explicit disconnect or
+    // the wallet closing the session) drops the cache.
+    if (error instanceof TransportError && error.code === 'POPUP_CLOSED') return;
+    clearSession(error);
+  });
 
   const requestViaWallet = async <T>(method: string, requestParams: unknown): Promise<T> => {
     if (!transportClient.isConnected) {
       await transportClient.connect();
     }
-    return transportClient.request<T>(method, requestParams);
+    try {
+      return await transportClient.request<T>(method, requestParams);
+    } catch (error) {
+      // The wallet couldn't restore the account (e.g. the persisted session expired):
+      // our cached session is stale, so drop it and surface a clean disconnect. The dApp
+      // should reconnect via eth_requestAccounts.
+      if (error instanceof TransportRpcError && error.code === RPC_ERRORS.DISCONNECTED) {
+        clearSession(error);
+      }
+      throw error;
+    }
   };
 
   const waitForUserOperationReceipt = async ([hash]: [string]): Promise<unknown> => {
@@ -113,10 +138,14 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
     isConnected: () => readSession() !== null,
 
     disconnect: () => {
-      writeSession(null);
+      // When the transport is live, its teardown fires the 'disconnect' handler above,
+      // which clears the session and emits. Only emit here for the not-connected case so
+      // an explicit disconnect() still notifies the dApp exactly once.
+      const wasConnected = transportClient.isConnected;
       transportClient.disconnect();
-      emit('accountsChanged', []);
-      emit('disconnect', { code: 4900, message: 'disconnected' });
+      if (!wasConnected) {
+        clearSession({ code: RPC_ERRORS.DISCONNECTED, message: 'disconnected' });
+      }
     },
 
     request: async <T>(args: { method: string; params?: unknown }): Promise<T> => {
@@ -130,12 +159,18 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
           return (readSession()?.chainId ?? `0x${chain.id.toString(16)}`) as T;
         }
         case 'eth_requestAccounts': {
-          const accounts = await requestViaWallet<string[]>(method, requestParams);
-          const chainId = await requestViaWallet<string>('eth_chainId', undefined).catch(() => `0x${chain.id.toString(16)}`);
-          writeSession({ accounts, chainId });
-          emit('connect', { chainId });
-          emit('accountsChanged', accounts);
-          return accounts as T;
+          try {
+            const accounts = await requestViaWallet<string[]>(method, requestParams);
+            const chainId = await requestViaWallet<string>('eth_chainId', undefined).catch(() => `0x${chain.id.toString(16)}`);
+            writeSession({ accounts, chainId });
+            emit('connect', { chainId });
+            emit('accountsChanged', accounts);
+            return accounts as T;
+          } finally {
+            // Ephemeral popup: close it once the connect ceremony resolves. Later actions
+            // re-open a fresh popup and the wallet silently restores the account.
+            transportClient.dismissPopup();
+          }
         }
         case 'wallet_revokePermissions': {
           provider.disconnect();
@@ -146,7 +181,12 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
         }
         default: {
           if (WALLET_METHODS.has(method)) {
-            return requestViaWallet<T>(method, requestParams);
+            try {
+              return await requestViaWallet<T>(method, requestParams);
+            } finally {
+              // Ephemeral popup: close it once this signing/transaction request settles.
+              transportClient.dismissPopup();
+            }
           }
           // read path: answered dApp-side without touching the popup
           return publicClient.request({ method, params: requestParams } as never) as Promise<T>;

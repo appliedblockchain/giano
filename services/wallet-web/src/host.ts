@@ -28,6 +28,15 @@ export function createWalletHost(runtime: WalletRuntime, config: WalletConfig, w
     allowedOrigins: config.allowedDappOrigins,
     onRequest: async (method, params, context) => {
       const needsConsent = method === 'eth_requestAccounts' || CONSENT_METHODS.has(method);
+      // A signing/tx request can land on a freshly (re)opened popup whose in-memory
+      // account was lost when the previous popup closed. Silently rebuild it from the
+      // persisted session before asking for consent — no extra passkey prompt; the
+      // single ceremony still happens when the operation is actually signed. If it
+      // can't be restored, the provider will surface "Giano not connected" and the
+      // dApp must reconnect via eth_requestAccounts.
+      if (CONSENT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
+        await runtime.provider.request({ method: 'giano_restoreAccount' } as never).catch(() => undefined);
+      }
       if (needsConsent) {
         await requests.requestConsent({
           kind: method === 'eth_requestAccounts' ? 'connect' : method === 'eth_sendTransaction' ? 'transaction' : 'sign',

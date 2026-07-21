@@ -3,6 +3,7 @@ import {
   Hex,
   PublicClient,
   Hash,
+  concatHex,
   createPublicClient,
   parseGwei,
   toHex,
@@ -31,6 +32,7 @@ import {
 import { withValidation } from './provider-injection/_with-validation'
 import { v4 as uuidv4 } from 'uuid';
 import { getWebAuthnAccount } from './account'
+import { toBase64Url } from './provider-injection/wallet-api/serialization'
 import { ensureSmartAccountIsDeployed, isSmartAccountDeployed } from './account/deployment'
 import { GianoError } from './giano-error'
 import type { GianoLogger } from './logger'
@@ -96,6 +98,17 @@ type GianoProviderCustomMethods = [
     Method: 'waitForUserOperationReceipt'
     Parameters: [hash: Hash]
     ReturnType: UserOperationReceipt
+  },
+  {
+    /**
+     * Silently rebuilds the in-memory smart account from the stored public key and the
+     * persisted wallet-api session — no passkey ceremony. Used to recover a connected
+     * account after the wallet page was reloaded/reopened. Returns the account address,
+     * or an empty array when it cannot be restored without a fresh sign-in.
+     */
+    Method: 'giano_restoreAccount'
+    Parameters: []
+    ReturnType: Address[]
   },
   {
     Method: 'signed_eth_call'
@@ -232,6 +245,53 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
   const methods = {
     eth_accounts: async () => {
       return smartAccount ? [await smartAccount.getAddress()] : [];
+    },
+    giano_restoreAccount: async () => {
+      if (smartAccount) {
+        return [await smartAccount.getAddress()];
+      }
+      try {
+        const credentialInfo = await injection.getCredentialInfo();
+        // Only a single stored credential can be restored silently; anything else
+        // (none registered, an explicit user-pick, or an ambiguous list) needs the
+        // full sign-in ceremony via eth_requestAccounts.
+        const { credentialId } = credentialInfo;
+        const rawId =
+          credentialId instanceof Array
+            ? credentialId[0]
+            : credentialId === null || credentialId === 'user-pick'
+              ? null
+              : credentialId;
+        if (!rawId) {
+          return [];
+        }
+
+        // Rebuild from the stored public key using the persisted wallet-api session.
+        // No `navigator.credentials.get` here — the only passkey prompt happens later,
+        // when a user operation or message is actually signed.
+        const { x, y } = await injection.getPublicKeyByCredentialId(rawId as ArrayBuffer);
+        if (x === toHex(0, { size: 32 })) {
+          // wallet-api has no public key for this credential (or the session is invalid)
+          return [];
+        }
+
+        smartAccount = await toGianoSmartAccount({
+          client: client!,
+          owners: [toWebAuthnAccount({ credential: { id: toBase64Url(rawId as ArrayBuffer), publicKey: concatHex([x, y]) } })],
+          factoryAddress: gianoSmartWalletFactoryAddress,
+        });
+
+        const smartAccountAddress = await smartAccount.getAddress();
+        emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
+        emit('accountsChanged', [smartAccountAddress]);
+        return [smartAccountAddress];
+      } catch (error) {
+        // Best-effort: any failure (expired session, network, unknown credential) just
+        // means "not restorable silently" — the caller should fall back to a sign-in.
+        logger.warn('giano_restoreAccount: silent restore failed', error);
+        smartAccount = null;
+        return [];
+      }
     },
     eth_chainId: async () => {
       return `0x${chain!.id.toString(16)}`;
