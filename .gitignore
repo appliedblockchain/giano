@@ -10,4 +10,3 @@ latest.sql
 .yarn/install-state.gz
 .vite/
 .next/
-packages/contracts/generated.ts

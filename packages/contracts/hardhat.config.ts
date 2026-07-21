@@ -51,13 +51,19 @@ const config: HardhatUserConfig = {
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 8453,
     },
-    'sdr-testnet': {
-      enableRip7212: true,
-      url: process.env.SDR_TESTNET_RPC_URL,
-      accounts: process.env.SDR_PRIVATE_KEY ? [process.env.SDR_PRIVATE_KEY] : [],
-      chainId: 381185,
-      silentdata: { authSignatureType: SignatureType.Raw },
-    },
+    // Only registered when SDR_TESTNET_RPC_URL is set — hardhat rejects an undefined url,
+    // and the config must parse on a fresh clone without a .env.
+    ...(process.env.SDR_TESTNET_RPC_URL
+      ? {
+          'sdr-testnet': {
+            enableRip7212: true,
+            url: process.env.SDR_TESTNET_RPC_URL,
+            accounts: process.env.SDR_PRIVATE_KEY ? [process.env.SDR_PRIVATE_KEY] : [],
+            chainId: 381185,
+            silentdata: { authSignatureType: SignatureType.Raw },
+          },
+        }
+      : {}),
   },
   gasReporter: {
     enabled: true,

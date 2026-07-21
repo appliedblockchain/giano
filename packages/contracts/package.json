@@ -1,10 +1,49 @@
 {
   "name": "@appliedblockchain/giano-contracts",
   "version": "2.1.0",
+  "description": "Giano smart wallet contracts: ABIs, deployed address registry and Solidity sources",
   "license": "MIT",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appliedblockchain/giano.git",
+    "directory": "packages/contracts"
+  },
+  "author": "Applied Blockchain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src/**/*.sol",
+    "index.ts",
+    "generated.ts",
+    "addresses.ts",
+    "address-overrides.json",
+    "remappings.txt"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "scripts": {
-    "build": "pnpm hh:compile && pnpm hh:wagmi && tsup index.ts",
+    "build": "pnpm hh:compile && pnpm hh:wagmi && pnpm gen:addresses && pnpm build:ts",
+    "build:ts": "tsup",
+    "prepublishOnly": "pnpm build:ts",
+    "gen:addresses": "ts-node scripts/generate-addresses.ts",
     "hh:test": "NODE_ENV=test REPORT_GAS=true hardhat test",
     "hh:node": "anvil --enable-trace-printing",
     "hh:deploy": "hardhat ignition deploy ignition/modules/GianoAccountFactory.ts --strategy create2",
@@ -16,12 +55,6 @@
     "hh:clean": "hardhat clean",
     "hh:wagmi": "wagmi generate"
   },
-  "files": [
-    "contracts/**/*.sol",
-    "dist/**/*"
-  ],
-  "main": "dist/index",
-  "types": "dist/index.d.ts",
   "devDependencies": {
     "@account-abstraction/contracts": "0.7.0",
     "@appliedblockchain/silentdatarollup-core": "^1.0.8",
@@ -43,10 +76,10 @@
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.11",
     "@types/mocha": "^10.0.6",
+    "@types/node": "^22.7.5",
     "@wagmi/cli": "^2.2.1",
     "chai": "^4.3.10",
     "dotenv": "^16.5.0",
-    "eslint-config-xs": "^2.6.3",
     "ethers": "6.13.2",
     "hardhat": "2.22.10",
     "hardhat-gas-reporter": "^1.0.9",
@@ -54,6 +87,8 @@
     "mocha": "^10.7.3",
     "solidity-coverage": "^0.8.5",
     "ts-node": "^10.9.1",
-    "typechain": "^8.3.2"
+    "tsup": "^8.3.5",
+    "typechain": "^8.3.2",
+    "typescript": "5.5.4"
   }
 }
