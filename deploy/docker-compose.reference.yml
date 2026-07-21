@@ -1,0 +1,73 @@
+# Reference deployment for client projects: copy this file into your stack and fill in
+# the environment. Giano is never centrally hosted — every client project runs these
+# containers itself. See services/wallet-api/README.md for the full env matrix.
+name: giano
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: giano
+      POSTGRES_USER: giano
+      # supply via secret/env file in real deployments
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - giano-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  wallet-api:
+    image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+    environment:
+      DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
+      # apply pending migrations on boot (or run `node dist/migrate.js` as a one-shot job)
+      RUN_MIGRATIONS: 'true'
+
+      # --- WebAuthn relying party (IRREVERSIBLE per deployment — passkeys bind to RP_ID) ---
+      RP_ID: ${RP_ID:?e.g. wallet.clientapp.com}
+      RP_NAME: ${RP_NAME:-Giano Wallet}
+      # origins accepted during ceremony verification (comma-separated)
+      EXPECTED_ORIGINS: ${EXPECTED_ORIGINS:?e.g. https://wallet.clientapp.com}
+
+      # --- chain ---
+      CHAIN_ID: ${CHAIN_ID:?e.g. 8453}
+      RPC_URL: ${RPC_URL:?JSON-RPC endpoint}
+      BUNDLER_URL: ${BUNDLER_URL:?ERC-4337 bundler endpoint}
+      # ENTRYPOINT_ADDRESS / FACTORY_ADDRESS default from the @appliedblockchain/giano-contracts
+      # registry for CHAIN_ID; set explicitly for chains not in the registry.
+      # ENTRYPOINT_ADDRESS: '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
+      # FACTORY_ADDRESS: ''
+
+      # --- auth model ---
+      # production: keep registration closed; your backend calls /v1/webauthn/options
+      # server-to-server with one of these bearer keys
+      OPEN_REGISTRATION: 'false'
+      ADMIN_API_KEYS: ${ADMIN_API_KEYS:?comma-separated admin bearer keys}
+
+      # --- userop relay policy (integers; fees in wei) ---
+      USEROP_MAX_CALL_GAS: ${USEROP_MAX_CALL_GAS:-5000000}
+      USEROP_MAX_VERIFICATION_GAS: ${USEROP_MAX_VERIFICATION_GAS:-5000000}
+      USEROP_MAX_FEE_PER_GAS: ${USEROP_MAX_FEE_PER_GAS:-500000000000}
+      USEROP_MAX_PRIORITY_FEE_PER_GAS: ${USEROP_MAX_PRIORITY_FEE_PER_GAS:-500000000000}
+      # comma-separated contract addresses; empty = unrestricted
+      USEROP_ALLOWED_TARGETS: ${USEROP_ALLOWED_TARGETS:-}
+      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-}
+
+      # --- sessions / challenges / CORS ---
+      CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-300}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+volumes:
+  giano-pgdata:

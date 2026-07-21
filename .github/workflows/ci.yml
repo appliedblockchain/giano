@@ -31,6 +31,26 @@ jobs:
           pnpm --filter @appliedblockchain/giano-contracts gen:addresses
           git diff --exit-code packages/contracts/addresses.ts
 
+  wallet-api:
+    name: wallet-api tests + OpenAPI drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build contracts TS surface
+        run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Typecheck
+        run: pnpm --filter @appliedblockchain/giano-wallet-api typecheck
+      - name: Vitest (unit + testcontainers integration)
+        run: pnpm --filter @appliedblockchain/giano-wallet-api test
+      - name: OpenAPI drift check
+        run: pnpm --filter @appliedblockchain/giano-wallet-api openapi:check
+
   generated-drift:
     name: generated.ts drift check (solc)
     runs-on: ubuntu-latest

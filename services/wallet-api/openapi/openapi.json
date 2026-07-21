@@ -1,0 +1,1166 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Giano Wallet API",
+    "description": "WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets.",
+    "version": "1.0.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Opaque session token from a ceremony verify endpoint"
+      },
+      "adminKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Admin API key (ADMIN_API_KEYS)"
+      }
+    },
+    "schemas": {}
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ready"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/webauthn": {
+      "get": {
+        "tags": [
+          "well-known"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "origins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "origins"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/ror-origins": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "origins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "origin"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "origins"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "origin": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "origin"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "origin": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "origin"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/ror-origins/{id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "enum": [
+                    "null"
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webauthn/options": {
+      "post": {
+        "tags": [
+          "webauthn"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "externalUserId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "registration",
+                      "authentication"
+                    ],
+                    "default": "auto"
+                  }
+                },
+                "required": [
+                  "externalUserId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "registration",
+                        "authentication"
+                      ]
+                    },
+                    "challenge": {
+                      "type": "string"
+                    },
+                    "rpId": {
+                      "type": "string"
+                    },
+                    "userExists": {
+                      "type": "boolean"
+                    },
+                    "credentialIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "challenge",
+                    "rpId",
+                    "userExists",
+                    "credentialIds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webauthn/registration/verify": {
+      "post": {
+        "tags": [
+          "webauthn"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "externalUserId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "credentialName": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "response": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "rawId": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "public-key"
+                        ]
+                      },
+                      "response": {
+                        "type": "object",
+                        "properties": {
+                          "clientDataJSON": {
+                            "type": "string"
+                          },
+                          "attestationObject": {
+                            "type": "string"
+                          },
+                          "transports": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "clientDataJSON",
+                          "attestationObject"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "clientExtensionResults": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "default": {}
+                      },
+                      "authenticatorAttachment": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "rawId",
+                      "type",
+                      "response"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "externalUserId",
+                  "response"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verified": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "walletAddress": {
+                      "type": "string"
+                    },
+                    "credentialId": {
+                      "type": "string"
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "verified",
+                    "walletAddress",
+                    "credentialId",
+                    "session"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webauthn/authentication/verify": {
+      "post": {
+        "tags": [
+          "webauthn"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "response": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "rawId": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "public-key"
+                        ]
+                      },
+                      "response": {
+                        "type": "object",
+                        "properties": {
+                          "clientDataJSON": {
+                            "type": "string"
+                          },
+                          "authenticatorData": {
+                            "type": "string"
+                          },
+                          "signature": {
+                            "type": "string"
+                          },
+                          "userHandle": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "clientDataJSON",
+                          "authenticatorData",
+                          "signature"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "clientExtensionResults": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "default": {}
+                      },
+                      "authenticatorAttachment": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "rawId",
+                      "type",
+                      "response"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "response"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verified": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "walletAddress": {
+                      "type": "string"
+                    },
+                    "credentialId": {
+                      "type": "string"
+                    },
+                    "externalUserId": {
+                      "type": "string"
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "verified",
+                    "walletAddress",
+                    "credentialId",
+                    "externalUserId",
+                    "session"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "externalUserId": {
+                      "type": "string"
+                    },
+                    "walletAddress": {
+                      "type": "string"
+                    },
+                    "credentialId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "externalUserId",
+                    "walletAddress",
+                    "credentialId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/credentials": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "credentials": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "walletAddress": {
+                            "type": "string"
+                          },
+                          "transports": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "nullable": true
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "walletAddress",
+                          "transports",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "credentials"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/credentials/{credentialId}/public-key": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "credentialId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "string"
+                    },
+                    "y": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/logout": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/userops": {
+      "post": {
+        "tags": [
+          "userops"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userOperation": {
+                    "type": "object",
+                    "properties": {
+                      "sender": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]{40}$"
+                      },
+                      "nonce": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "callData": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]*$"
+                      },
+                      "callGasLimit": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "verificationGasLimit": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "preVerificationGas": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "maxFeePerGas": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "maxPriorityFeePerGas": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "signature": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]*$"
+                      },
+                      "factory": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]{40}$"
+                      },
+                      "factoryData": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]*$"
+                      },
+                      "paymaster": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]{40}$"
+                      },
+                      "paymasterVerificationGasLimit": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "paymasterPostOpGasLimit": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]+$"
+                      },
+                      "paymasterData": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]*$"
+                      }
+                    },
+                    "required": [
+                      "sender",
+                      "nonce",
+                      "callData",
+                      "callGasLimit",
+                      "verificationGasLimit",
+                      "preVerificationGas",
+                      "maxFeePerGas",
+                      "maxPriorityFeePerGas",
+                      "signature"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "userOperation"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "userOperationHash": {
+                      "type": "string"
+                    },
+                    "duplicate": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "userOperationHash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rule": {
+                            "type": "string"
+                          },
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "rule",
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                    "policy"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/userops/{hash}": {
+      "get": {
+        "tags": [
+          "userops"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{64}$"
+            },
+            "in": "path",
+            "name": "hash",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "userOperationHash": {
+                      "type": "string"
+                    },
+                    "sender": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted",
+                        "rejected",
+                        "submitted",
+                        "failed"
+                      ]
+                    },
+                    "policyResults": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rule": {
+                            "type": "string"
+                          },
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "rule",
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rejectReason": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "userOperationHash",
+                    "sender",
+                    "status",
+                    "policyResults",
+                    "rejectReason",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/userops/{hash}/receipt": {
+      "get": {
+        "tags": [
+          "userops"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{64}$"
+            },
+            "in": "path",
+            "name": "hash",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipt": {
+                      "nullable": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

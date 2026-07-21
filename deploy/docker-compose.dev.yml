@@ -1,0 +1,68 @@
+# Local development stack: postgres + wallet-api built from source + anvil devnet +
+# alto bundler. From the repo root:
+#   docker compose -f deploy/docker-compose.dev.yml up --build
+# Uses the well-known anvil accounts — never reuse these keys anywhere real.
+name: giano-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: giano
+      POSTGRES_USER: giano
+      POSTGRES_PASSWORD: giano
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337']
+    ports:
+      - '8545:8545'
+
+  alto:
+    image: node:22-alpine
+    depends_on:
+      - anvil
+    command: >
+      npx -y @pimlico/alto@0.0.18 run
+      --rpc-url http://anvil:8545
+      --entrypoints ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      --executor-private-keys ${ALTO_EXECUTOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
+      --utility-private-key ${ALTO_UTILITY_PRIVATE_KEY:-0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d}
+      --safe-mode false
+      --port 4337
+    ports:
+      - '4337:4337'
+
+  wallet-api:
+    build:
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      RUN_MIGRATIONS: 'true'
+      RP_ID: localhost
+      RP_NAME: Giano Dev
+      EXPECTED_ORIGINS: http://localhost:4000,http://localhost:5173
+      CHAIN_ID: '31337'
+      RPC_URL: http://anvil:8545
+      BUNDLER_URL: http://alto:4337
+      # local chain is not in the committed registry — supply addresses from hh:initlocal
+      ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run hh:initlocal and export FACTORY_ADDRESS}
+      OPEN_REGISTRATION: 'true'
+      ADMIN_API_KEYS: dev-admin-key
+      CORS_ORIGINS: http://localhost:4000,http://localhost:5173
+      LOG_LEVEL: debug
