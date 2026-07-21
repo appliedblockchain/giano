@@ -178,7 +178,29 @@ importers:
         version: 2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1)
       vitest:
         specifier: ^3.1.2
-        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0)
+        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0)
+
+  packages/wallet-transport:
+    dependencies:
+      ulid:
+        specifier: ^3.0.0
+        version: 3.0.2
+      zod:
+        specifier: 3.24.4
+        version: 3.24.4
+    devDependencies:
+      happy-dom:
+        specifier: ^17.4.4
+        version: 17.6.3
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.0(@swc/core@1.11.24)(jiti@1.21.7)(postcss@8.5.21)(tsx@4.19.4)(typescript@5.5.4)(yaml@2.8.0)
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
+      vitest:
+        specifier: ^3.1.2
+        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0)
 
   services/custom-example:
     dependencies:
@@ -312,7 +334,7 @@ importers:
         version: 5.5.4
       vitest:
         specifier: ^3.1.2
-        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0)
+        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0)
 
 packages:
 
@@ -4793,6 +4815,10 @@ packages:
     engines: {node: '>=0.4.7'}
     hasBin: true
 
+  happy-dom@17.6.3:
+    resolution: {integrity: sha512-UVIHeVhxmxedbWPCfgS55Jg2rDfwf2BCKeylcPSqazLz5w3Kri7Q4xdBJubsr/+VUzFLh0VjIvh13RaDA2/Xug==}
+    engines: {node: '>=20.0.0'}
+
   har-schema@2.0.0:
     resolution: {integrity: sha512-Oqluz6zhGX8cyRaTQlFMPw80bSJVG2x/cFb8ZPhUILGgHka9SsokCCOQgpveePerqidZOrT14ipqfJb7ILcW5Q==}
     engines: {node: '>=4'}
@@ -7253,6 +7279,10 @@ packages:
   uint8arrays@3.1.0:
     resolution: {integrity: sha512-ei5rfKtoRO8OyOIor2Rz5fhzjThwIHJZ3uyDPnDHTXbP0aMQ1RN/6AI5B5d9dBxJOU+BvOAk7ZQ1xphsX8Lrog==}
 
+  ulid@3.0.2:
+    resolution: {integrity: sha512-yu26mwteFYzBAot7KVMqFGCVpsF6g8wXfJzQUHvu1no3+rRRSFcSV2nKeYvNPLD2J4b08jYBDhHUjeH0ygIl9w==}
+    hasBin: true
+
   unbox-primitive@1.1.0:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
     engines: {node: '>= 0.4'}
@@ -7564,6 +7594,14 @@ packages:
 
   webidl-conversions@4.0.2:
     resolution: {integrity: sha512-YQ+BmxuTgd6UXZW3+ICGfyqRyHXVlD5GtQr5+qjiNW7bF0cqrzX500HVXPBOvgXb5YnzDd+h0zqyv61KUD7+Sg==}
+
+  webidl-conversions@7.0.0:
+    resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+    engines: {node: '>=12'}
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
@@ -13747,6 +13785,11 @@ snapshots:
     optionalDependencies:
       uglify-js: 3.19.3
 
+  happy-dom@17.6.3:
+    dependencies:
+      webidl-conversions: 7.0.0
+      whatwg-mimetype: 3.0.0
+
   har-schema@2.0.0: {}
 
   har-validator@5.1.5:
@@ -16640,6 +16683,8 @@ snapshots:
     dependencies:
       multiformats: 9.9.0
 
+  ulid@3.0.2: {}
+
   unbox-primitive@1.1.0:
     dependencies:
       call-bound: 1.0.4
@@ -16899,7 +16944,7 @@ snapshots:
       tsx: 4.19.4
       yaml: 2.8.0
 
-  vitest@3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0):
+  vitest@3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(tsx@4.19.4)(yaml@2.8.0):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.7
@@ -16927,6 +16972,7 @@ snapshots:
     optionalDependencies:
       '@types/debug': 4.1.12
       '@types/node': 22.7.5
+      happy-dom: 17.6.3
     transitivePeerDependencies:
       - jiti
       - less
@@ -16995,6 +17041,10 @@ snapshots:
   webidl-conversions@3.0.1: {}
 
   webidl-conversions@4.0.2: {}
+
+  webidl-conversions@7.0.0: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-url@5.0.0:
     dependencies:
