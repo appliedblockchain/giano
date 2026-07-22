@@ -22,11 +22,5 @@
     "npm-run-all": "^4.1.5",
     "tsup": "^8.3.5"
   },
-  "packageManager": "pnpm@10.20.0",
-  "pnpm": {
-    "overrides": {
-      "human-id": "4.1.1",
-      "zod-to-json-schema": "3.24.6"
-    }
-  }
+  "packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
 }
