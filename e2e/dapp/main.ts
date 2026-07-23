@@ -34,7 +34,7 @@ document.getElementById('connect')!.addEventListener('click', async () => {
     const accounts = await provider.request<string[]>({ method: 'eth_requestAccounts' });
     log('accounts', accounts);
   } catch (error) {
-    log('connect:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
+    log('connect:error', error instanceof TransportRpcError ? `rpc:${error.code} ${error.message}` : (error as Error).message);
   }
 });
 
