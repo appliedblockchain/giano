@@ -1,0 +1,103 @@
+# Sepolia (or any EVM chain) e2e demo stack.
+#
+# Unlike docker-compose.e2e.yml (which runs a local anvil devnet with pre-baked contract
+# state), this stack talks to a REAL chain over an external RPC. It defaults to Ethereum
+# Sepolia but is fully env-driven — point it at any EVM chain by editing the .env file.
+#
+# One-time prerequisites (see deploy/sepolia/README.md for the full runbook):
+#   1. cp deploy/sepolia.env.example deploy/.env  and fill in the keys/RPC
+#   2. Deploy the Giano contracts once:  ./deploy/sepolia/deploy-contracts.sh
+#      (writes FACTORY_ADDRESS / PAYMASTER_ADDRESS / TEST_ERC20_ADDRESS back into deploy/.env)
+#   3. Fund the deployer + Alto executor EOAs with testnet ETH (the deploy script prints them)
+#
+# Run:
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml up --build
+#   pnpm --filter @appliedblockchain/giano-e2e dapp    # sample dApp on http://app.localhost:4400
+name: giano-sepolia
+
+services:
+  # Self-hosted ERC-4337 bundler. Its executor EOA signs and pays for every bundle on-chain,
+  # so it must be funded with testnet ETH. With --safe-mode false (below) Alto validates userops
+  # via eth_call simulation, so BUNDLER_NODE_RPC_URL can be a plain public RPC — it defaults to
+  # RPC_URL (publicnode). Only if you flip --safe-mode to true do you need a trace-capable RPC
+  # (Alchemy / QuickNode / your own node) that supports debug_traceCall.
+  alto:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: >
+      npx -y @pimlico/alto@0.0.18 run
+      --rpc-url ${BUNDLER_NODE_RPC_URL:-${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}}
+      --entrypoints ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      --executor-private-keys ${ALTO_EXECUTOR_PRIVATE_KEY:?set ALTO_EXECUTOR_PRIVATE_KEY}
+      --utility-private-key ${ALTO_UTILITY_PRIVATE_KEY:?set ALTO_UTILITY_PRIVATE_KEY}
+      --safe-mode false
+      --port 4337
+    ports:
+      - '4337:4337'
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: giano
+      POSTGRES_USER: giano
+      POSTGRES_PASSWORD: giano
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  wallet-api:
+    build:
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      RUN_MIGRATIONS: 'true'
+      RP_ID: ${RP_ID:-wallet.localhost}
+      RP_NAME: ${RP_NAME:-Giano Sepolia}
+      EXPECTED_ORIGINS: ${EXPECTED_ORIGINS:-http://wallet.localhost:8081}
+      CHAIN_ID: ${CHAIN_ID:-11155111}
+      # server-side reads; can be a plain public RPC (no trace needed here)
+      RPC_URL: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+      BUNDLER_URL: http://alto:4337
+      # chain is not in the committed contracts registry — supply addresses explicitly
+      ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set FACTORY_ADDRESS}
+      OPEN_REGISTRATION: ${OPEN_REGISTRATION:-true}
+      ADMIN_API_KEYS: ${ADMIN_API_KEYS:-sepolia-admin-key}
+      # only sponsor through our own paymaster (empty = any paymaster allowed)
+      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-${PAYMASTER_ADDRESS:-}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://app.localhost:4400,http://localhost:4400,http://127.0.0.1:4400}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  wallet-web:
+    build:
+      context: ..
+      dockerfile: services/wallet-web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - wallet-api
+    ports:
+      - '8081:8080'
+    environment:
+      GIANO_CHAIN_ID: ${CHAIN_ID:-11155111}
+      # The browser reads chain state directly from RPC_URL, so it must be CORS-enabled and
+      # safe to expose (use a keyless public endpoint, or a key you don't mind shipping to the
+      # client). The bundler is proxied same-origin via nginx to avoid CORS on alto.
+      GIANO_RPC_URL: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
+      GIANO_BUNDLER_URL: http://wallet.localhost:8081/bundler
+      GIANO_BUNDLER_UPSTREAM: http://alto:4337
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
+      GIANO_FACTORY_ADDRESS: ${FACTORY_ADDRESS:?set FACTORY_ADDRESS}
+      GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:-}
+      GIANO_ALLOWED_DAPP_ORIGINS: ${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]}
+      GIANO_RP_ID: ${RP_ID:-wallet.localhost}
+      GIANO_BRAND_NAME: ${BRAND_NAME:-Giano Sepolia}
+      # allow the browser to reach the external RPC directly (bundler is same-origin)
+      GIANO_CSP_CONNECT_SRC: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
