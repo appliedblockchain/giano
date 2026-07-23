@@ -1,5 +1,5 @@
 import { createGianoProvider, createWalletApiInjection, type GianoProvider, type WalletApiInjection } from '@appliedblockchain/giano-wallet-core';
-import { defineChain, http } from 'viem';
+import { createPublicClient, defineChain, http } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
 import type { WalletConfig } from './config';
 
@@ -62,6 +62,21 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
       : {}),
   });
 
+  // Real fee estimation from the chain — without this, giano-wallet-core falls back to a
+  // hardcoded 200 gwei maxFeePerGas, which on low-fee chains (e.g. Sepolia ~1 gwei) inflates
+  // the required paymaster prefund ~180× and trips "AA31 paymaster deposit too low".
+  const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) });
+  const estimateFeesPerGas = async () => {
+    try {
+      const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
+      return { maxFeePerGas, maxPriorityFeePerGas };
+    } catch {
+      // non-EIP-1559 chain: fall back to legacy gas price
+      const gasPrice = await publicClient.getGasPrice();
+      return { maxFeePerGas: gasPrice * 2n, maxPriorityFeePerGas: gasPrice };
+    }
+  };
+
   const { gianoProvider } = createGianoProvider({
     initialChainId: config.chainId,
     bundler,
@@ -69,6 +84,7 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
     transports: { [config.chainId]: http(config.rpcUrl) },
     injection,
     gianoSmartWalletFactoryAddress: config.factoryAddress,
+    estimateFeesPerGas,
   });
 
   return { provider: gianoProvider, injection, chainId: config.chainId, externalUserId };
