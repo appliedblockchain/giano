@@ -49,6 +49,20 @@ const config: HardhatUserConfig = {
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 8453,
     },
+    // Ethereum Sepolia testnet. Used by the Sepolia e2e demo (deploy/docker-compose.sepolia.yml).
+    // No RIP-7212 precompile on Sepolia — the wallet verifies P256 via the in-contract FCL fallback.
+    sepolia: {
+      url: process.env.DEPLOY_RPC_URL ?? process.env.SEPOLIA_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      chainId: 11155111,
+    },
+    // Generic env-driven target — deploy to ANY EVM chain with `--network custom`:
+    //   DEPLOY_RPC_URL=... DEPLOY_CHAIN_ID=... DEPLOYER_PRIVATE_KEY=0x... pnpm hh:deploy --network custom
+    custom: {
+      url: process.env.DEPLOY_RPC_URL ?? 'http://localhost:8545',
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      chainId: process.env.DEPLOY_CHAIN_ID ? Number(process.env.DEPLOY_CHAIN_ID) : undefined,
+    },
   },
   gasReporter: {
     enabled: true,
