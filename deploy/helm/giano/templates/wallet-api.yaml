@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-wallet-api
+  labels: {{- include "giano.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.walletApi.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      giano/component: wallet-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        giano/component: wallet-api
+    spec:
+      containers:
+        - name: wallet-api
+          image: {{ include "giano.image" (dict "root" . "name" .Values.walletApi.image) }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GIANO_VERSION
+              value: {{ include "giano.tag" . | quote }}
+            - name: RUN_MIGRATIONS
+              value: {{ not .Values.walletApi.runMigrationsJob | quote }}
+            - name: RP_ID
+              value: {{ .Values.config.rpId | quote }}
+            - name: RP_NAME
+              value: {{ .Values.config.rpName | quote }}
+            - name: EXPECTED_ORIGINS
+              value: {{ include "giano.expectedOrigins" . | quote }}
+            - name: CHAIN_ID
+              value: {{ .Values.config.chainId | quote }}
+            - name: RPC_URL
+              value: {{ .Values.config.rpcUrl | quote }}
+            - name: BUNDLER_URL
+              value: {{ .Values.config.bundlerUrl | default (printf "http://%s-bundler:4337" .Release.Name) | quote }}
+            - name: OPEN_REGISTRATION
+              value: {{ .Values.config.openRegistration | quote }}
+            {{- with .Values.config.entryPointAddress }}
+            - name: ENTRYPOINT_ADDRESS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.factoryAddress }}
+            - name: FACTORY_ADDRESS
+              value: {{ . | quote }}
+            {{- end }}
+            - name: CORS_ORIGINS
+              value: {{ join "," .Values.config.corsOrigins | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          resources: {{- toYaml .Values.walletApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-wallet-api
+  labels: {{- include "giano.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    giano/component: wallet-api
+  ports:
+    - port: 8080
+      targetPort: 8080

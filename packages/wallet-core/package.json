@@ -1,0 +1,56 @@
+{
+  "name": "@appliedblockchain/giano-wallet-core",
+  "version": "0.1.0",
+  "description": "Giano wallet core: EIP-1193 provider, passkey smart account (viem), provider injection seam",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appliedblockchain/giano.git",
+    "directory": "packages/wallet-core"
+  },
+  "author": "Applied Blockchain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "viem": "^2.31.0"
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-contracts": "workspace:^",
+    "ox": "^0.7.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.1.2",
+    "tsup": "^8.3.5",
+    "typescript": "5.5.4",
+    "viem": "2.31.6",
+    "vitest": "^3.1.2"
+  }
+}

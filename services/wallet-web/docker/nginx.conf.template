@@ -1,0 +1,52 @@
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # popup-only v1: the wallet must never be framed (P3.5)
+    add_header X-Frame-Options "DENY" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${GIANO_CSP_CONNECT_SRC}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # same-origin proxy to the wallet-api: no CORS, no third-party cookies
+    location /api/ {
+        proxy_pass ${GIANO_WALLET_API_UPSTREAM}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Related Origin Requests document must live on the wallet origin
+    location = /.well-known/webauthn {
+        proxy_pass ${GIANO_WALLET_API_UPSTREAM}/.well-known/webauthn;
+        proxy_set_header Host $host;
+    }
+
+    # Optional same-origin RPC / bundler proxies (avoids CORS when the node/bundler
+    # are not themselves CORS-enabled — set config rpcUrl/bundlerUrl to /rpc and
+    # /bundler). Harmless when unused.
+    location = /rpc {
+        proxy_pass ${GIANO_RPC_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
+    location = /bundler {
+        proxy_pass ${GIANO_BUNDLER_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
+
+    location = /config.json {
+        add_header Cache-Control "no-store" always;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

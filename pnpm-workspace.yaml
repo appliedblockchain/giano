@@ -1,3 +1,29 @@
 packages:
-  - 'services/*'
-  - 'packages/*'
+  - "services/*"
+  - "packages/*"
+  - "e2e"
+
+overrides:
+  human-id: "4.1.1"
+  zod-to-json-schema: "3.24.6"
+
+# Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - baseline-browser-mapping
+  - postcss
+# Native deps left unbuilt (matches pre-pnpm-11 behavior — none were built before).
+# Flip any to `true` and reinstall if its build scripts are needed.
+allowBuilds:
+  '@swc/core': false
+  bufferutil: false
+  cpu-features: false
+  esbuild: false
+  keccak: false
+  msgpackr-extract: false
+  protobufjs: false
+  secp256k1: false
+  sharp: false
+  ssh2: false
+  unrs-resolver: false
+  utf-8-validate: false

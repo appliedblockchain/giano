@@ -1,4 +1,3 @@
-import { SignatureType } from '@appliedblockchain/silentdatarollup-core';
 import * as dotenv from 'dotenv';
 import { TASK_COMPILE } from 'hardhat/builtin-tasks/task-names';
 import type { HardhatUserConfig } from 'hardhat/config';
@@ -7,7 +6,6 @@ import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import 'hardhat-gas-reporter';
 import 'hardhat-tracer';
-import '@appliedblockchain/silentdatarollup-hardhat-plugin';
 import '@nomicfoundation/hardhat-foundry';
 dotenv.config();
 
@@ -51,12 +49,21 @@ const config: HardhatUserConfig = {
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 8453,
     },
-    'sdr-testnet': {
-      enableRip7212: true,
-      url: process.env.SDR_TESTNET_RPC_URL,
-      accounts: process.env.SDR_PRIVATE_KEY ? [process.env.SDR_PRIVATE_KEY] : [],
-      chainId: 381185,
-      silentdata: { authSignatureType: SignatureType.Raw },
+    // Ethereum Sepolia testnet. Used by the Sepolia e2e demo (deploy/docker-compose.sepolia.yml).
+    // Sepolia provides the RIP-7212 precompile at 0x100 (verify with `pnpm run doctor chain`), so
+    // P256 signatures are verified by the precompile; webauthn-sol falls back to the in-contract
+    // FreshCryptoLib path only on chains without it.
+    sepolia: {
+      url: process.env.DEPLOY_RPC_URL ?? process.env.SEPOLIA_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      chainId: 11155111,
+    },
+    // Generic env-driven target — deploy to ANY EVM chain with `--network custom`:
+    //   DEPLOY_RPC_URL=... DEPLOY_CHAIN_ID=... DEPLOYER_PRIVATE_KEY=0x... pnpm hh:deploy --network custom
+    custom: {
+      url: process.env.DEPLOY_RPC_URL ?? 'http://localhost:8545',
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      chainId: process.env.DEPLOY_CHAIN_ID ? Number(process.env.DEPLOY_CHAIN_ID) : undefined,
     },
   },
   gasReporter: {

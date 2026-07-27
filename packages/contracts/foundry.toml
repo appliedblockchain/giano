@@ -5,9 +5,7 @@ libs = ['node_modules', 'lib']
 test = 'test'
 cache_path  = 'cache_forge'
 
-[profile.deploy]
-optimizer = true
-optimizer_runs = 999999
-via_ir = true
-#evm_version = "prague"
-solc_version = "0.8.23"
+# Foundry is used for TESTS ONLY. The canonical build/deploy toolchain is Hardhat
+# Ignition (solc 0.8.28, optimizer runs 200, viaIR) — see README.md. Deploying with
+# any other settings changes CREATE2 addresses. The old divergent [profile.deploy]
+# (solc 0.8.23, runs 999999) was removed for that reason.

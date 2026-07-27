@@ -6,20 +6,16 @@
     "demo:dev": "pnpm -F @appliedblockchain/giano-example dev",
     "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
     "git:init": "git submodule update --init --recursive",
-    "bundler:start": "alto --config ./alto-local.json",
-    "bundler:cors": "lcp --proxyUrl http://localhost:3000 --port 4337",
-    "bundler:dev": "npm-run-all -p --race bundler:start bundler:cors",
     "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",
     "hh:initlocal": "pnpm --filter @appliedblockchain/giano-contracts hh:initlocal",
     "hh:node": "pnpm --filter @appliedblockchain/giano-contracts hh:node",
     "hh:deploy": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy",
-    "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing"
+    "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing",
+    "doctor": "pnpm --filter @appliedblockchain/giano-contracts run doctor --"
   },
   "devDependencies": {
-    "@pimlico/alto": "^0.0.18",
-    "local-cors-proxy": "^1.1.0",
-    "npm-run-all": "^4.1.5",
+    "@changesets/cli": "^2.31.1",
     "tsup": "^8.3.5"
   },
-  "packageManager": "pnpm@10.20.0"
+  "packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
 }

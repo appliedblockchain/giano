@@ -1,0 +1,13 @@
+{
+  "chainId": ${GIANO_CHAIN_ID},
+  "rpcUrl": "${GIANO_RPC_URL}",
+  "bundlerUrl": "${GIANO_BUNDLER_URL}",
+  "walletApiUrl": "${GIANO_WALLET_API_URL}",
+  "factoryAddress": "${GIANO_FACTORY_ADDRESS}",
+  "paymasterAddress": "${GIANO_PAYMASTER_ADDRESS}",
+  "allowedDappOrigins": ${GIANO_ALLOWED_DAPP_ORIGINS},
+  "rpId": "${GIANO_RP_ID}",
+  "branding": {
+    "name": "${GIANO_BRAND_NAME}"
+  }
+}

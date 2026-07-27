@@ -9,5 +9,6 @@ latest.sql
 .DS_Store
 .yarn/install-state.gz
 .vite/
-.next/
-packages/contracts/generated.ts
+*.tsbuildinfo
+test-results/
+playwright-report/

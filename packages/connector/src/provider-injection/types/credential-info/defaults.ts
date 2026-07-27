@@ -1,3 +1,0 @@
-export const DEFAULT_CREDENTIAL_MEDIATION_REQUIREMENT = 'silent' satisfies CredentialMediationRequirement
-export const DEFAULT_RESIDENT_KEY_REQUIREMENT = 'preferred' satisfies ResidentKeyRequirement
-export const DEFAULT_USER_VERIFICATION_REQUIREMENT = 'required' satisfies UserVerificationRequirement
