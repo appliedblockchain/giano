@@ -36,5 +36,7 @@ Roll back in reverse. Never run a wallet-web/SDK newer than the wallet-api it ta
 - **Contract bytecode** is frozen per major: any change to compiler settings or sources that
   moves the CREATE2 addresses is a **major** release shipping a new address-registry section
   (the `determinism` CI gate fails the build otherwise).
-- **The embedded connector API** (`@appliedblockchain/giano-connector/embedded`) is supported for
-  at least two minors after 1.0.0, then removed.
+- **The embedded connector API** (`@appliedblockchain/giano-connector/embedded`, `./web`, `./node`)
+  has been **removed**. The connector ships only the thin SDK: a dApp bundle can no longer reach
+  WebAuthn, credential-storage or bundler code. Migration notes for 0.x integrations are in
+  [`packages/connector/README.md`](packages/connector/README.md).

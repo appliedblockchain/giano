@@ -72,18 +72,8 @@ What happens at runtime:
 ## Migrating from 0.x (embedded mode)
 
 In 0.x your application WAS the wallet: your origin owned the passkeys and your bundle
-carried the signing code. That full surface still exists, unchanged, at the deprecated
-subpath:
-
-```ts
-// before (0.x)
-import { createGianoProvider, createGianoConnector } from '@appliedblockchain/giano-connector';
-
-// during migration (1.x, deprecated — at least two minors of support)
-import { createGianoProvider, createGianoConnector } from '@appliedblockchain/giano-connector/embedded';
-```
-
-Then migrate for real:
+carried the signing code. That model is **gone** — this package no longer ships it, in any
+subpath. To migrate:
 
 1. Deploy the Giano containers (`giano-wallet-api`, `giano-wallet-web`) in your stack —
    see `deploy/docker-compose.reference.yml` in the Giano repo.
@@ -99,9 +89,6 @@ integration docs.
 
 ## Entry points
 
-| Import | Contents | Status |
-| --- | --- | --- |
-| `.` | thin SDK: `createGianoWalletProvider`, `createGianoConnector`, `giano`, transport errors | current |
-| `./embedded` | full 0.x embedded surface (provider, injection seam, smart account) | deprecated |
-| `./web` | alias of `./embedded` | deprecated |
-| `./node` | wallet-core re-export (no wagmi/RainbowKit) for server-side use | current |
+| Import | Contents |
+| --- | --- |
+| `.` | thin SDK: `createGianoWalletProvider`, `createGianoConnector`, `giano`, transport errors | 

@@ -11,9 +11,8 @@ export type SendTransactionFnParams = {
 };
 
 /**
- * Structural provider surface the connector needs — satisfied both by the thin
- * `createGianoWalletProvider` (default) and by the embedded-mode `GianoProvider`
- * from @appliedblockchain/giano-wallet-core.
+ * Structural provider surface the connector needs — satisfied by the provider returned
+ * from `createGianoWalletProvider`.
  */
 export type GianoProviderLike = {
   request: (args: { method: string; params?: unknown }) => Promise<unknown>;

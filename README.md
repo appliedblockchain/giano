@@ -7,7 +7,10 @@
 
 ## Architecture at a glance
 
-Giano ships as versioned artifacts you deploy into your own stack (it is never centrally hosted):
+Giano ships as versioned artifacts deployed into a stack you control — either self-hosted by the
+integrator, or run by Applied Blockchain as a dedicated per-client deployment. There is no public
+multi-tenant Giano: one deployment serves one client, and `RP_ID` is fixed per deployment. See
+[`docs/PRODUCT-STRATEGY.md`](docs/PRODUCT-STRATEGY.md) for how the two distribution modes relate.
 
 - **Packages** (npm, GitHub Packages): `giano-contracts` (ABIs + address registry), `giano-wallet-core` (provider, passkey smart account, injection seam), `giano-wallet-transport` (popup protocol), `giano-connector` (the thin dApp SDK).
 - **Services** (Docker images, GHCR): `giano-wallet-api` (Fastify + Postgres: WebAuthn ceremonies, sessions, policied userop relay), `giano-wallet-web` (the dedicated wallet origin — passkey ceremonies + consent UI), `giano-bundler`, `giano-devnet`, `giano-contracts-deployer`.
@@ -73,17 +76,20 @@ FACTORY_ADDRESS=0x… docker compose -f deploy/docker-compose.dev.yml up --build
 
 Swagger UI is available at the wallet-api's `/docs` outside production.
 
-### Option C — legacy embedded demo (Next.js)
+### Option C — Chakra sample dApp (thin SDK)
 
-The original `services/custom-example` app (embedded mode: the demo *is* the wallet) still runs
-for reference. It talks to the wallet-api via the reference injection:
+`services/custom-example` (`pnpm demo:dev`) is a Vite + React + Chakra UI demo of the thin
+two-origin integration — the same model as the E2E fixture, but with a real UI: wallet basics
+(connect, send, sign) plus an ERC-20 panel (read balances, transfer, approve, and sign an
+EIP-2612 permit). Bring up the Option A stack, then:
 
 ```sh
-# needs the wallet-api reachable on localhost:8080 — use the Option B stack
-# (Option A's wallet-api is internal-only, behind the wallet-web proxy)
-pnpm build:connector
-NEXT_PUBLIC_WALLET_API_URL=http://localhost:8080 pnpm demo:dev   # http://localhost:4000
+pnpm demo:dev   # http://app.localhost:4400
 ```
+
+It defaults to the Option A stack (wallet origin `http://wallet.localhost:8081`, anvil RPC
+`http://localhost:8545`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
+`VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_TEST_ERC20` for other networks.
 
 ## Running the tests
 
@@ -110,12 +116,17 @@ rejection, ROR well-known, and the popup-blocked path.
 
 ## Security note: committed bundler API keys
 
-The demo `.env-*` files in `services/custom-example` contain Coinbase Developer Platform bundler
-RPC URLs whose path segment is an API key. **These keys are in git history and must be rotated**
-(ops task) — treat them as public. New keys must be supplied via untracked `.env` files, never
-committed.
+Earlier versions of `services/custom-example` committed `.env-*` files containing Coinbase
+Developer Platform bundler RPC URLs whose path segment is an API key. Those files have been
+removed (the thin-SDK demo needs no bundler URL), but **the keys remain in git history and must be
+rotated** (ops task) — treat them as public.
 
 ## Deploying Giano (for client projects)
+
+> **New to Giano? Start with [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md)** — a single
+> self-contained guide covering dApp integration, standing up the stack on any EVM chain, the
+> `giano-doctor` verification CLI, and a production checklist, with explicit software/keys/secrets/
+> infrastructure dependencies.
 
 - `deploy/docker-compose.reference.yml` — the reference stack (postgres + wallet-api + wallet-web)
   with a fully commented env matrix to copy into your own deployment.
@@ -124,6 +135,9 @@ committed.
 - `docs/INTEGRATION.md` — DNS/TLS, proxy rules, the COOP caveat, per-container env, and the
   upgrade runbook. `docs/SECRETS.md` — secrets inventory and monitoring. `COMPATIBILITY.md` —
   versioning and upgrade order.
+- `docs/PRODUCT-STRATEGY.md` — how Giano evolves toward a standalone service: modularity seams, the
+  bring-your-own-UI contract, and the phased roadmap. `docs/COST-MODEL.md` — what it costs to run
+  and the breakeven analysis.
 
 ### Important tips
 
@@ -159,33 +173,24 @@ This increases the maximum heap size to 16GB. You can adjust the value (in MB) b
 - Clear Node.js cache: `pnpm store prune`
 - Restart your development environment
 
-### Test contracts
-
-#### Contract tests (Foundry)
-```sh
-forge test
-```
-
 ## Components
 
-- `GianoSmartWallet`: the smart wallet itself, which validates the signatures and executes the calls.
-- `GianoSmartWalletFactory`: the contract responsible for deploying the smart wallet contracts
-- `toGianoSmartAccount.ts`: module that instantiates a Viem client for the Giano Smart Wallet
-- `provider.ts`: `EIP-1193`-compatible provider that intercepts EVM RPC requests and repackages transactions as user ops to be passed to the bundler
-- `connector.ts`: WAGMI connector
-- `gianoWallet.ts`: RainbowKit integration code
+**Contracts** (`packages/contracts`)
 
-## Setting up Blockscout (block explorer)
+- `GianoSmartWallet` — the smart account: validates passkey/ECDSA signatures and executes calls.
+- `GianoSmartWalletFactory` — CREATE2 factory; `getAddress(owners, nonce)` is the counterfactual address.
+- `MultiOwnable` — owner set, where each owner is a P-256 passkey or an ECDSA address.
 
-If you want, you can use `docker compose` to start up a local Blockscout instance to explore the transactions and
-contracts deployed on the local network. Start the Hardhat node at the default port and then run these commands to clone the
-Blockscout repo and start up a local instance:
+**Wallet origin** (`services/wallet-web` + `packages/wallet-core`)
 
-```sh
-# run these commands OUTSIDE of the project's structure
-git clone https://github.com/blockscout/blockscout/ && \
-cd blockscout/docker-compose && \
-docker compose -f hardhat-network.yml up -d
-```
+- `wallet-core/provider.ts` — the EIP-1193 provider that repackages transactions as ERC-4337
+  user operations. It runs **on the wallet origin**, never in a dApp bundle.
+- `wallet-core/account/toGianoSmartAccount.ts` — viem smart-account instance for the wallet.
+- `wallet-core/provider-injection` — the seam between the provider and its backend;
+  `createWalletApiInjection` binds it to `giano-wallet-api`.
 
-You can then access the Blockscout instance at `http://127.0.0.1/`
+**dApp SDK** (`packages/connector` + `packages/wallet-transport`)
+
+- `thin/create-giano-wallet-provider.ts` — `createGianoWalletProvider`, the only provider a dApp
+  needs; reads are answered locally, wallet actions go over the popup transport.
+- `connector.ts` / `gianoWallet.ts` — wagmi connector and RainbowKit wallet built on top of it.

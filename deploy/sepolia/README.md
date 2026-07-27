@@ -72,6 +72,19 @@ Deploys factory + implementation + `PermissivePaymaster` + test ERC-20, seeds th
 deposit, and writes `FACTORY_ADDRESS` / `PAYMASTER_ADDRESS` / `TEST_ERC20_ADDRESS` back into
 `deploy/.env`. Re-running is idempotent (Ignition resumes the existing deployment).
 
+Verify the deployment on-chain before bringing up the stack (reads `deploy/.env`):
+
+```sh
+set -a; . deploy/.env; set +a
+pnpm run doctor chain --rpc "$RPC_URL" --chain-id "$CHAIN_ID" \
+  --factory "$FACTORY_ADDRESS" --paymaster "$PAYMASTER_ADDRESS"
+```
+
+Confirms the EntryPoint, factory and implementation have code, the paymaster's EntryPoint deposit
+is funded, and — probed live — that P256 signatures verify via Sepolia's RIP-7212 precompile. Exits
+non-zero if any critical check fails. See `docs/DEVELOPER-GUIDE.md` §6 for the full `giano-doctor`
+reference (including `doctor wallet` to inspect a specific passkey wallet).
+
 ### 4. Bring up the stack
 
 ```sh

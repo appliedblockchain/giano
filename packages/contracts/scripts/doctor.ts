@@ -1,0 +1,332 @@
+/**
+ * giano-doctor — verify a chain's Giano deployment and inspect passkey wallets.
+ *
+ * Usage (run from the repo root):
+ *   pnpm --filter @appliedblockchain/giano-contracts doctor -- chain \
+ *     --rpc <url> --chain-id <id> [--factory 0x..] [--paymaster 0x..] [--executor 0x..]
+ *
+ *   pnpm --filter @appliedblockchain/giano-contracts doctor -- wallet \
+ *     --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]
+ *
+ * Flags fall back to env: RPC_URL, CHAIN_ID, FACTORY_ADDRESS, ENTRYPOINT_ADDRESS, PAYMASTER_ADDRESS.
+ * For registry chains (8453 / 84532 / 381185) the addresses default from the contracts registry.
+ *
+ * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
+ *
+ * Uses ethers (already a dependency of this package) — no build step required, mirrors
+ * scripts/p256_deploy.ts and deploy/sepolia/print-funding.sh.
+ */
+import { Contract, JsonRpcProvider, concat, formatEther, getAddress, isAddress, toBeHex } from 'ethers';
+import { ENTRYPOINT_V07_ADDRESS, getGianoDeployment, type GianoDeployment } from '../addresses';
+import { gianoSmartWalletFactoryAbi, iEntryPointAbi, multiOwnableAbi } from '../generated';
+
+// --- well-known addresses (identical on every EVM chain) ---
+const RIP7212_PRECOMPILE = '0x0000000000000000000000000000000000000100';
+/** daimo p256-verifier — the in-contract FCL fallback webauthn-sol uses when RIP-7212 is absent. */
+const P256_VERIFIER = '0xc2b78104907F722DABAc4C69f826a522B2754De4';
+/** Arachnid deterministic-deployment proxy (CREATE2 factory). */
+const CREATE2_FACTORY = '0x4e59b44847b379578588920ca78fbf26c0b4956c';
+
+/** First valid Wycheproof P-256 vector (from lib/p256-verifier/test/P256Verifier.t.sol). */
+const P256_VECTOR = {
+  hash: '0xbb5a52f42f9c9261ed4361f59422a1e30036e7c32b270c8807a419feca605023',
+  r: 19738613187745101558623338726804762177711919211234071563652772152683725073944n,
+  s: 34753961278895633991577816754222591531863837041401341770838584739693604822390n,
+  x: 18614955573315897657680976650685450080931919913269223958732452353593824192568n,
+  y: 90223116347859880166570198725387569567414254547569925327988539833150573990206n,
+};
+
+// --- tiny ✓/⚠/✗ checklist reporter ---
+type Level = 'ok' | 'warn' | 'fail' | 'info';
+const ICON: Record<Level, string> = { ok: '  ✓', warn: '  ⚠', fail: '  ✗', info: '  •' };
+let hadFailure = false;
+
+function report(level: Level, label: string, detail?: string) {
+  if (level === 'fail') hadFailure = true;
+  const line = `${ICON[level]} ${label}${detail ? `: ${detail}` : ''}`;
+  // eslint-disable-next-line no-console
+  console.log(line);
+}
+
+function section(title: string) {
+  // eslint-disable-next-line no-console
+  console.log(`\n${title}`);
+}
+
+// --- minimal arg parser: `doctor <cmd> --flag value ...` ---
+function parseArgs(argv: string[]): { cmd?: string; flags: Record<string, string> } {
+  const [cmd, ...rest] = argv;
+  const flags: Record<string, string> = {};
+  for (let i = 0; i < rest.length; i++) {
+    const token = rest[i];
+    if (token.startsWith('--')) {
+      const key = token.slice(2);
+      const next = rest[i + 1];
+      if (next && !next.startsWith('--')) {
+        flags[key] = next;
+        i++;
+      } else {
+        flags[key] = 'true';
+      }
+    }
+  }
+  return { cmd, flags };
+}
+
+function requireAddress(value: string | undefined, name: string): `0x${string}` {
+  if (!value || !isAddress(value)) {
+    throw new Error(`${name} is required and must be a 0x-prefixed 20-byte address (got: ${value ?? 'unset'})`);
+  }
+  return getAddress(value) as `0x${string}`;
+}
+
+/** Resolve the deployment addresses from flags/env, defaulting to the registry for known chains. */
+function resolveDeployment(chainId: number, flags: Record<string, string>): Partial<GianoDeployment> {
+  let registry: GianoDeployment | undefined;
+  try {
+    registry = getGianoDeployment(chainId);
+  } catch {
+    registry = undefined;
+  }
+  const pick = (flag: string, env: string, fallback?: `0x${string}`) =>
+    (flags[flag] ?? process.env[env] ?? fallback) as `0x${string}` | undefined;
+  return {
+    entryPoint: pick('entrypoint', 'ENTRYPOINT_ADDRESS', registry?.entryPoint ?? ENTRYPOINT_V07_ADDRESS),
+    factory: pick('factory', 'FACTORY_ADDRESS', registry?.factory),
+    implementation: registry?.implementation,
+    paymaster: pick('paymaster', 'PAYMASTER_ADDRESS', registry?.paymaster),
+  };
+}
+
+async function hasCode(provider: JsonRpcProvider, address: string): Promise<boolean> {
+  const code = await provider.getCode(address);
+  return code !== undefined && code !== '0x';
+}
+
+/** Returns 'precompile' | 'verifier' | 'none' — how (if at all) this chain can verify P-256 sigs. */
+async function checkP256(provider: JsonRpcProvider): Promise<'precompile' | 'verifier' | 'none'> {
+  const input = concat([
+    P256_VECTOR.hash,
+    toBeHex(P256_VECTOR.r, 32),
+    toBeHex(P256_VECTOR.s, 32),
+    toBeHex(P256_VECTOR.x, 32),
+    toBeHex(P256_VECTOR.y, 32),
+  ]);
+  const returnsOne = (result: string) => /^0x0{63}1$/.test(result);
+
+  try {
+    const precompileResult = await provider.call({ to: RIP7212_PRECOMPILE, data: input });
+    if (returnsOne(precompileResult)) return 'precompile';
+  } catch {
+    /* precompile absent — fall through */
+  }
+  try {
+    if (await hasCode(provider, P256_VERIFIER)) {
+      const verifierResult = await provider.call({ to: P256_VERIFIER, data: input });
+      if (returnsOne(verifierResult)) return 'verifier';
+    }
+  } catch {
+    /* verifier absent */
+  }
+  return 'none';
+}
+
+async function connect(flags: Record<string, string>): Promise<{ provider: JsonRpcProvider; chainId: number }> {
+  const rpc = flags.rpc ?? process.env.RPC_URL;
+  if (!rpc) throw new Error('--rpc <url> is required (or set RPC_URL)');
+  const expectedChainId = Number(flags['chain-id'] ?? process.env.CHAIN_ID);
+  if (!expectedChainId) throw new Error('--chain-id <id> is required (or set CHAIN_ID)');
+
+  const provider = new JsonRpcProvider(rpc);
+  section(`Giano doctor — ${rpc}`);
+  let onChainId: number;
+  try {
+    onChainId = Number((await provider.getNetwork()).chainId);
+  } catch (error) {
+    report('fail', 'RPC reachable', (error as Error).message);
+    throw new Error('cannot reach the RPC endpoint');
+  }
+  report('ok', 'RPC reachable');
+  if (onChainId === expectedChainId) {
+    report('ok', 'chain id matches', String(onChainId));
+  } else {
+    report('fail', 'chain id mismatch', `RPC reports ${onChainId}, expected ${expectedChainId}`);
+  }
+  return { provider, chainId: expectedChainId };
+}
+
+async function doctorChain(flags: Record<string, string>) {
+  const { provider, chainId } = await connect(flags);
+  const deployment = resolveDeployment(chainId, flags);
+
+  section('Contracts');
+  const entryPoint = requireAddress(deployment.entryPoint, 'entryPoint');
+  report((await hasCode(provider, entryPoint)) ? 'ok' : 'fail', 'EntryPoint v0.7 deployed', entryPoint);
+
+  if (!deployment.factory) {
+    report('fail', 'factory address', 'unknown — pass --factory or set FACTORY_ADDRESS (chain not in the registry)');
+  } else {
+    const factoryAddr = requireAddress(deployment.factory, 'factory');
+    const factoryHasCode = await hasCode(provider, factoryAddr);
+    report(factoryHasCode ? 'ok' : 'fail', 'GianoSmartWalletFactory deployed', factoryAddr);
+
+    if (factoryHasCode) {
+      try {
+        const factory = new Contract(factoryAddr, gianoSmartWalletFactoryAbi, provider);
+        const impl: string = await factory.implementation();
+        const implHasCode = await hasCode(provider, impl);
+        report(implHasCode ? 'ok' : 'fail', 'GianoSmartWallet implementation deployed', impl);
+        if (deployment.implementation && getAddress(impl) !== getAddress(deployment.implementation)) {
+          report('warn', 'implementation differs from registry', `${impl} vs ${deployment.implementation}`);
+        }
+      } catch (error) {
+        report('fail', 'read factory.implementation()', (error as Error).message);
+      }
+    }
+  }
+
+  const paymaster = deployment.paymaster;
+  if (paymaster) {
+    section('Paymaster (gas sponsorship)');
+    const paymasterAddr = requireAddress(paymaster, 'paymaster');
+    const pmHasCode = await hasCode(provider, paymasterAddr);
+    report(pmHasCode ? 'ok' : 'fail', 'paymaster deployed', paymasterAddr);
+    if (pmHasCode) {
+      try {
+        const ep = new Contract(entryPoint, iEntryPointAbi, provider);
+        const deposit: bigint = await ep.balanceOf(paymasterAddr);
+        const eth = formatEther(deposit);
+        report(deposit >= 20_000_000_000_000_000n ? 'ok' : 'warn', 'paymaster EntryPoint deposit', `${eth} ETH`);
+        if (deposit < 20_000_000_000_000_000n) {
+          report('info', 'low deposit', 'top up via EntryPoint.depositTo(paymaster) so sponsored ops keep landing');
+        }
+      } catch (error) {
+        report('warn', 'read paymaster deposit', (error as Error).message);
+      }
+    }
+  }
+
+  const executor = flags.executor ?? process.env.ALTO_EXECUTOR_ADDRESS;
+  if (executor) {
+    section('Bundler executor');
+    const executorAddr = requireAddress(executor, 'executor');
+    const balance = await provider.getBalance(executorAddr);
+    const eth = formatEther(balance);
+    report(balance >= 10_000_000_000_000_000n ? 'ok' : 'warn', 'executor native balance', `${executorAddr} — ${eth} ETH`);
+    if (balance < 10_000_000_000_000_000n) {
+      report('info', 'low executor balance', 'the executor fronts gas for every bundle — keep it funded');
+    }
+  }
+
+  section('Passkey (P-256) verification support');
+  const p256 = await checkP256(provider);
+  if (p256 === 'precompile') {
+    report('ok', 'P-256 via RIP-7212 precompile', 'cheap on-chain verification (0x100)');
+  } else if (p256 === 'verifier') {
+    report('ok', 'P-256 via FreshCryptoLib verifier', `${P256_VERIFIER} (works, higher gas than a precompile)`);
+  } else {
+    report('fail', 'P-256 verification unavailable', 'no RIP-7212 precompile and no deployed verifier');
+    report('info', 'fix', 'deploy the verifier with scripts/p256_deploy.ts before passkey wallets can validate');
+  }
+  report((await hasCode(provider, CREATE2_FACTORY)) ? 'ok' : 'info', 'Arachnid CREATE2 factory', CREATE2_FACTORY);
+}
+
+async function doctorWallet(flags: Record<string, string>) {
+  const { provider, chainId } = await connect(flags);
+  const deployment = resolveDeployment(chainId, flags);
+  const entryPoint = requireAddress(deployment.entryPoint, 'entryPoint');
+
+  section('Wallet');
+  let walletAddress: string;
+  if (flags.address) {
+    walletAddress = requireAddress(flags.address, 'address');
+    report('info', 'target (given address)', walletAddress);
+  } else if (flags.pubkey) {
+    const factoryAddr = requireAddress(deployment.factory, 'factory');
+    const [xRaw, yRaw] = flags.pubkey.split(',').map((v) => v.trim());
+    if (!xRaw || !yRaw) throw new Error('--pubkey must be "<x>,<y>" (each a 32-byte hex or decimal value)');
+    const x = toBeHex(BigInt(xRaw), 32);
+    const y = toBeHex(BigInt(yRaw), 32);
+    const ownerBytes = concat([x, y]); // 64-byte x‖y — the WebAuthn owner encoding
+    const nonce = BigInt(flags.nonce ?? '0');
+    const factory = new Contract(factoryAddr, gianoSmartWalletFactoryAbi, provider);
+    walletAddress = await factory.getFunction('getAddress')([ownerBytes], nonce);
+    report('info', 'counterfactual address (factory.getAddress)', `${walletAddress} (nonce ${nonce})`);
+  } else {
+    throw new Error('pass --address <0x..> or --pubkey <x>,<y>');
+  }
+
+  const deployed = await hasCode(provider, walletAddress);
+  report(deployed ? 'ok' : 'info', deployed ? 'deployed on-chain' : 'not yet deployed (counterfactual)');
+  report('info', 'native balance', `${formatEther(await provider.getBalance(walletAddress))} ETH`);
+
+  try {
+    const ep = new Contract(entryPoint, iEntryPointAbi, provider);
+    const nonce: bigint = await ep.getNonce(walletAddress, 0n);
+    report('info', 'EntryPoint nonce (key 0)', nonce.toString());
+  } catch (error) {
+    report('warn', 'read EntryPoint nonce', (error as Error).message);
+  }
+
+  if (deployed) {
+    section('Owners');
+    try {
+      const wallet = new Contract(walletAddress, multiOwnableAbi, provider);
+      const count: bigint = await wallet.ownerCount();
+      const next: bigint = await wallet.nextOwnerIndex();
+      report('ok', 'owner count', count.toString());
+      for (let i = 0n; i < next; i++) {
+        const owner: string = await wallet.ownerAtIndex(i);
+        const bytes = (owner.length - 2) / 2;
+        if (bytes === 0) continue; // removed slot
+        if (bytes === 32) {
+          report('info', `owner[${i}] address`, getAddress('0x' + owner.slice(-40)));
+        } else if (bytes === 64) {
+          report('info', `owner[${i}] P-256 passkey`, `x=${owner.slice(0, 66)} y=0x${owner.slice(66)}`);
+        } else {
+          report('warn', `owner[${i}] unknown encoding`, `${bytes} bytes`);
+        }
+      }
+    } catch (error) {
+      report('warn', 'read owners', (error as Error).message);
+    }
+  }
+}
+
+async function main() {
+  // Strip standalone `--` separators (pnpm forwards them through the run-script passthrough).
+  const argv = process.argv.slice(2).filter((token) => token !== '--');
+  const { cmd, flags } = parseArgs(argv);
+  if (cmd === 'chain') {
+    await doctorChain(flags);
+  } else if (cmd === 'wallet') {
+    await doctorWallet(flags);
+  } else {
+    // eslint-disable-next-line no-console
+    console.error(
+      [
+        'giano-doctor — verify a Giano deployment or inspect a wallet.',
+        '',
+        'Usage:',
+        '  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--paymaster 0x..] [--executor 0x..]',
+        '  doctor wallet --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]',
+      ].join('\n'),
+    );
+    process.exit(2);
+  }
+  // eslint-disable-next-line no-console
+  console.log('');
+  if (hadFailure) {
+    // eslint-disable-next-line no-console
+    console.error('doctor: one or more critical checks FAILED');
+    process.exit(1);
+  }
+  // eslint-disable-next-line no-console
+  console.log('doctor: all critical checks passed');
+}
+
+void main().catch((error) => {
+  // eslint-disable-next-line no-console
+  console.error(`doctor: ${(error as Error).message}`);
+  process.exit(1);
+});

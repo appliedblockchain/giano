@@ -23,36 +23,6 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       }
-    },
-    "./web": {
-      "import": {
-        "types": "./dist/index-web.d.mts",
-        "default": "./dist/index-web.mjs"
-      },
-      "require": {
-        "types": "./dist/index-web.d.ts",
-        "default": "./dist/index-web.js"
-      }
-    },
-    "./node": {
-      "import": {
-        "types": "./dist/index-node.d.mts",
-        "default": "./dist/index-node.mjs"
-      },
-      "require": {
-        "types": "./dist/index-node.d.ts",
-        "default": "./dist/index-node.js"
-      }
-    },
-    "./embedded": {
-      "import": {
-        "types": "./dist/embedded.d.mts",
-        "default": "./dist/embedded.mjs"
-      },
-      "require": {
-        "types": "./dist/embedded.d.ts",
-        "default": "./dist/embedded.js"
-      }
     }
   },
   "files": [
@@ -80,7 +50,6 @@
     }
   },
   "dependencies": {
-    "@appliedblockchain/giano-wallet-core": "workspace:^",
     "@appliedblockchain/giano-wallet-transport": "workspace:^"
   },
   "devDependencies": {

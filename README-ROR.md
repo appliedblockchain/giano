@@ -233,8 +233,8 @@ const assertion = await navigator.credentials.get({
    - Alternative: Test primarily on localtunnel (recommended approach in our guide)
 
 3. **File not found at .well-known URL**:
-   - Check Next.js rewrites configuration in `next.config.js`
-   - Verify API route exists at `/api/well-known/webauthn.ts`
+   - Check the wallet-web nginx proxy rule for `/.well-known/webauthn` → wallet-api
+   - Verify the wallet-api serves `GET /.well-known/webauthn`
    - Ensure proper CORS headers are set
 
 4. **Passkey not found during authentication**:

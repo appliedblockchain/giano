@@ -50,7 +50,9 @@ const config: HardhatUserConfig = {
       chainId: 8453,
     },
     // Ethereum Sepolia testnet. Used by the Sepolia e2e demo (deploy/docker-compose.sepolia.yml).
-    // No RIP-7212 precompile on Sepolia — the wallet verifies P256 via the in-contract FCL fallback.
+    // Sepolia provides the RIP-7212 precompile at 0x100 (verify with `pnpm run doctor chain`), so
+    // P256 signatures are verified by the precompile; webauthn-sol falls back to the in-contract
+    // FreshCryptoLib path only on chains without it.
     sepolia: {
       url: process.env.DEPLOY_RPC_URL ?? process.env.SEPOLIA_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],

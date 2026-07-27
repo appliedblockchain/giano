@@ -1,5 +1,9 @@
 # Integrating Giano
 
+> This is the concise ops runbook. For a full, self-contained walkthrough (dApp SDK integration,
+> new-chain stand-up, the `giano-doctor` verification CLI, and a production checklist) see
+> [`DEVELOPER-GUIDE.md`](./DEVELOPER-GUIDE.md).
+
 Giano ships as versioned artifacts you deploy into **your own** stack — it is never
 centrally hosted. A complete integration is:
 
