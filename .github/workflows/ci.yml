@@ -28,6 +28,11 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-wallet-core build
       - name: wallet-core unit tests
         run: pnpm --filter @appliedblockchain/giano-wallet-core test
+      - name: Build wallet-transport
+        # connector's dts build resolves this via its dist/ types — must precede it
+        run: pnpm --filter @appliedblockchain/giano-wallet-transport build
+      - name: wallet-transport unit tests
+        run: pnpm --filter @appliedblockchain/giano-wallet-transport test
       - name: Build connector
         run: pnpm --filter @appliedblockchain/giano-connector build
       - name: addresses.ts drift check

@@ -95,7 +95,10 @@ services:
       context: ..
       dockerfile: services/wallet-web/Dockerfile
     depends_on:
-      - wallet-api
+      # service_healthy, not plain start order: nginx serves config.json the instant it
+      # boots, so a start-order-only gate lets /api/* 502 while wallet-api still migrates.
+      wallet-api:
+        condition: service_healthy
     ports:
       - '8081:8080'
     environment:
