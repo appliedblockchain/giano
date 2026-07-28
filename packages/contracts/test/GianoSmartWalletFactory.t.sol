@@ -49,7 +49,7 @@ contract GianoSmartWalletFactoryTest is Test {
     function test_createAccount_emitsAccountCreatedEvent(uint256 nonce) public {
         address expectedAddress = factory.getAddress(owners, nonce);
         vm.expectEmit(true, true, true, true);
-        emit CoinbaseSmartWalletFactory.AccountCreated(expectedAddress, owners, nonce);
+        emit GianoSmartWalletFactory.AccountCreated(expectedAddress, owners, nonce);
         factory.createAccount(owners, nonce);
     }
 
