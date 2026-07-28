@@ -14,8 +14,10 @@ export type TransportHostOptions = {
   walletVersion?: string;
   capabilities?: string[];
   /**
-   * Origins allowed to connect. Empty list = any origin may connect (dev only —
-   * wallet-web populates this from its runtime config `allowedDappOrigins`).
+   * Origins allowed to connect. Empty list (or unset) = NO origin may connect —
+   * the host fails closed. The literal entry '*' allows any origin (dev only; it
+   * must be typed deliberately). wallet-web populates this from its runtime config
+   * `allowedDappOrigins`.
    */
   allowedOrigins?: string[];
   onRequest: RequestHandler;
@@ -81,7 +83,8 @@ export class TransportHost {
 
   private isAllowedOrigin(origin: string): boolean {
     const allowed = this.options.allowedOrigins ?? [];
-    return allowed.length === 0 || allowed.includes(origin);
+    if (allowed.includes('*')) return true; // explicit dev escape hatch — never the default
+    return allowed.includes(origin);
   }
 
   private async handleMessage(event: MessageEvent): Promise<void> {

@@ -66,6 +66,20 @@ describe('handshake', () => {
     expect(host.dappOrigin).toBeNull();
     expect(client.isConnected).toBe(false);
   });
+
+  it('fails closed: an empty allowlist rejects every handshake', async () => {
+    const { client, host, connect } = setup({ allowedOrigins: [] });
+    await expect(connect()).rejects.toMatchObject({ code: 'HANDSHAKE_TIMEOUT' });
+    expect(host.dappOrigin).toBeNull();
+    expect(client.isConnected).toBe(false);
+  });
+
+  it("the explicit '*' entry allows any origin (dev escape hatch)", async () => {
+    const { client, host, connect } = setup({ allowedOrigins: ['*'] });
+    await connect();
+    expect(client.isConnected).toBe(true);
+    expect(host.dappOrigin).toBe(DAPP);
+  });
 });
 
 describe('rpc', () => {
@@ -189,8 +203,8 @@ describe('teardown', () => {
     await connect();
     const request = client.request('eth_sendTransaction', [{}]);
     pair.popupHandle.close();
-    // popup close watcher polls every 400ms
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    // popup close watcher polls every 400ms; attach the rejection handler immediately
+    // (a detached sleep here used to surface as an unhandled rejection)
     await expect(request).rejects.toMatchObject({ code: 'POPUP_CLOSED' });
   });
 });

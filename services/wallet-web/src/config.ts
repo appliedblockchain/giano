@@ -9,7 +9,7 @@ export type WalletConfig = {
   factoryAddress: `0x${string}`;
   /** Optional paymaster to sponsor gas (devnet uses the permissive testing paymaster). */
   paymasterAddress?: `0x${string}`;
-  /** dApp origins allowed to connect; empty = any (dev only). */
+  /** dApp origins allowed to connect; empty = NONE (fail closed). Use ["*"] for local dev only. */
   allowedDappOrigins: string[];
   rpId: string;
   branding: { name: string; logoUrl?: string };
