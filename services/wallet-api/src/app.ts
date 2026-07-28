@@ -10,6 +10,7 @@ import type { Db } from './db/index.js';
 import authPlugin from './plugins/auth.js';
 import errorHandler from './plugins/error-handler.js';
 import metricsPlugin from './plugins/metrics.js';
+import tenantPlugin from './plugins/tenant.js';
 import adminRoutes from './routes/admin.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
@@ -19,6 +20,7 @@ import wellKnownRoutes from './routes/well-known.js';
 import { createBundlerService } from './services/bundler.js';
 import { createChallengeService } from './services/challenges.js';
 import { createSessionService } from './services/sessions.js';
+import { createTenantService } from './services/tenants.js';
 
 export type BuildAppOptions = {
   config: AppConfig;
@@ -27,6 +29,11 @@ export type BuildAppOptions = {
   fetchImpl?: typeof fetch;
 };
 
+/**
+ * Design constraint: buildApp must never READ the tenants table — tenant resolution is
+ * strictly per-request (plugins/tenant.ts), so tenants seeded or edited after boot are
+ * live immediately and openapi/generate.ts can build the app without a database.
+ */
 export async function buildApp({ config, db, fetchImpl }: BuildAppOptions) {
   const app = Fastify({
     logger: {
@@ -42,26 +49,37 @@ export async function buildApp({ config, db, fetchImpl }: BuildAppOptions) {
   const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
   const bundler = createBundlerService(config.BUNDLER_URL, config.ENTRYPOINT_ADDRESS, fetchImpl);
   const publicClient = createPublicClient({ transport: http(config.RPC_URL) });
+  const tenants = createTenantService(db);
 
   await app.register(errorHandler);
-  await app.register(metricsPlugin);
+  await app.register(metricsPlugin, { bearerToken: config.METRICS_BEARER_TOKEN });
   await app.register(rateLimit, { global: false });
-  if (config.CORS_ORIGINS.length > 0) {
-    await app.register(cors, { origin: config.CORS_ORIGINS, credentials: true });
-  }
+  // CORS is per-tenant and fail-closed: only origins listed in some tenant's
+  // cors_origins (or a tenant wallet origin itself) receive ACAO headers. Server-side
+  // authorization never relies on CORS — requireTenant/requireSession do the guarding.
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, false); // non-browser callers need no CORS
+      tenants
+        .isCorsOrigin(origin)
+        .then((allowed) => cb(null, allowed))
+        .catch((error) => cb(error as Error, false));
+    },
+  });
 
   await app.register(swagger, {
     openapi: {
       openapi: '3.1.0',
       info: {
         title: 'Giano Wallet API',
-        description: 'WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets.',
+        description: 'WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets (multi-tenant).',
         version: '1.0.0',
       },
       components: {
         securitySchemes: {
           session: { type: 'http', scheme: 'bearer', description: 'Opaque session token from a ceremony verify endpoint' },
-          adminKey: { type: 'http', scheme: 'bearer', description: 'Admin API key (ADMIN_API_KEYS)' },
+          adminKey: { type: 'http', scheme: 'bearer', description: "Per-tenant admin API key (provisioned via TENANTS_SEED)" },
         },
       },
     },
@@ -71,7 +89,8 @@ export async function buildApp({ config, db, fetchImpl }: BuildAppOptions) {
     await app.register(swaggerUi, { routePrefix: '/docs' });
   }
 
-  await app.register(authPlugin, { sessions, adminApiKeys: config.ADMIN_API_KEYS });
+  await app.register(tenantPlugin, { tenants });
+  await app.register(authPlugin, { sessions, tenants });
 
   await app.register(healthRoutes, { db, version: process.env.GIANO_VERSION ?? '0.1.0', chainId: config.CHAIN_ID });
   await app.register(wellKnownRoutes, { db });
@@ -82,7 +101,8 @@ export async function buildApp({ config, db, fetchImpl }: BuildAppOptions) {
     db,
     config,
     bundler,
-    policy: {
+    // deployment-wide defaults; tenants.policy overrides per field (mergePolicy)
+    defaultPolicy: {
       maxCallGas: config.USEROP_MAX_CALL_GAS,
       maxVerificationGas: config.USEROP_MAX_VERIFICATION_GAS,
       maxFeePerGas: config.USEROP_MAX_FEE_PER_GAS,

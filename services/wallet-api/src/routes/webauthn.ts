@@ -1,8 +1,8 @@
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { cose, decodeClientDataJSON, decodeCredentialPublicKey } from '@simplewebauthn/server/helpers';
-import { eq } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
+import { and, eq } from 'drizzle-orm';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Hex, PublicClient } from 'viem';
 import { z } from 'zod';
@@ -54,6 +54,8 @@ const sessionResponseSchema = z.object({
   expiresAt: z.string(),
 });
 
+const errorResponseSchema = z.object({ error: z.string(), message: z.string() });
+
 function extractChallenge(clientDataJSONb64: string): string {
   try {
     return decodeClientDataJSON(clientDataJSONb64).challenge;
@@ -89,22 +91,31 @@ export default async function webauthnRoutes(
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const { db, config, challenges, sessions } = opts;
 
+  // Every ceremony route resolves its tenant from the Origin header (fail closed) —
+  // WebAuthn corroborates it: clientDataJSON.origin must match the resolved tenant's
+  // expected_origins or verification fails.
   const rateLimit = {
     config: {
-      rateLimit: { max: config.CEREMONY_RATE_LIMIT_PER_MINUTE, timeWindow: '1 minute' },
+      rateLimit: {
+        max: config.CEREMONY_RATE_LIMIT_PER_MINUTE,
+        timeWindow: '1 minute',
+        // per tenant + IP, so one tenant's traffic cannot starve another's ceremonies
+        keyGenerator: (request: FastifyRequest) => `${request.tenant?.id ?? 'none'}:${request.ip}`,
+      },
     },
   };
 
   /**
-   * Issues a ceremony challenge plus the user's known credential ids. Guarded: in
-   * production (OPEN_REGISTRATION=false) this requires an admin API key so the client
-   * project's backend binds registration to its own authentication; identity never
-   * comes from the browser unauthenticated.
+   * Issues a ceremony challenge plus the user's known credential ids. Guarded: when the
+   * tenant has open_registration=false this requires the TENANT'S OWN admin API key, so
+   * the client project's backend binds registration to its own authentication; identity
+   * never comes from the browser unauthenticated.
    */
   app.post(
     '/v1/webauthn/options',
     {
       ...rateLimit,
+      preHandler: app.requireTenant,
       schema: {
         tags: ['webauthn'],
         body: z.object({
@@ -119,23 +130,30 @@ export default async function webauthnRoutes(
             userExists: z.boolean(),
             credentialIds: z.array(z.string()),
           }),
-          401: z.object({ error: z.string(), message: z.string() }),
+          401: errorResponseSchema,
+          403: errorResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      if (!config.OPEN_REGISTRATION && !app.isAdminRequest(request)) {
-        return reply.code(401).send({ error: 'unauthorized', message: 'registration options require an admin API key (OPEN_REGISTRATION=false)' });
+      const tenant = request.tenant!;
+      if (!tenant.openRegistration) {
+        const admin = await app.resolveAdminTenant(request);
+        if (!admin || admin.id !== tenant.id) {
+          return reply
+            .code(401)
+            .send({ error: 'unauthorized', message: "registration options require the tenant's admin API key (open_registration is false)" });
+        }
       }
       const { externalUserId, kind } = request.body;
-      const user = await db.query.users.findFirst({ where: eq(users.externalId, externalUserId) });
+      const user = await db.query.users.findFirst({ where: and(eq(users.tenantId, tenant.id), eq(users.externalId, externalUserId)) });
       const creds = user ? await db.select({ credentialId: credentials.credentialId }).from(credentials).where(eq(credentials.userId, user.id)) : [];
       const resolvedKind = kind === 'auto' ? (creds.length > 0 ? 'authentication' : 'registration') : kind;
-      const challenge = await challenges.issue(resolvedKind, user?.id ?? null);
+      const challenge = await challenges.issue(resolvedKind, user?.id ?? null, tenant.id);
       return {
         kind: resolvedKind,
         challenge,
-        rpId: config.RP_ID,
+        rpId: tenant.rpId,
         userExists: !!user,
         credentialIds: creds.map((c) => c.credentialId),
       };
@@ -146,6 +164,7 @@ export default async function webauthnRoutes(
     '/v1/webauthn/registration/verify',
     {
       ...rateLimit,
+      preHandler: app.requireTenant,
       schema: {
         tags: ['webauthn'],
         body: z.object({
@@ -160,10 +179,12 @@ export default async function webauthnRoutes(
             credentialId: z.string(),
             session: sessionResponseSchema,
           }),
+          403: errorResponseSchema,
         },
       },
     },
     async (request) => {
+      const tenant = request.tenant!;
       const { externalUserId, response } = request.body;
 
       const challenge = extractChallenge(response.response.clientDataJSON);
@@ -171,21 +192,34 @@ export default async function webauthnRoutes(
       if (!consumed) {
         throw new ApiError(400, 'bad-challenge', 'challenge is unknown, expired or already used');
       }
+      // C3: enforce the consumed challenge's bindings instead of trusting the body.
+      // Cross-tenant redemption is indistinguishable from an unknown challenge (no oracle).
+      if (consumed.tenantId !== tenant.id) {
+        request.log.warn({ alert: 'cross-tenant-challenge', challengeTenant: consumed.tenantId }, 'challenge redeemed on a foreign tenant origin');
+        app.metrics.crossTenantRejections.inc({ tenant: tenant.slug, kind: 'challenge' });
+        throw new ApiError(400, 'bad-challenge', 'challenge is unknown, expired or already used');
+      }
+      if (consumed.userId) {
+        const boundUser = await db.query.users.findFirst({ where: eq(users.id, consumed.userId) });
+        if (!boundUser || boundUser.tenantId !== tenant.id || boundUser.externalId !== externalUserId) {
+          throw new ApiError(400, 'challenge-user-mismatch', 'challenge was issued for a different user');
+        }
+      }
 
       let verification;
       try {
         verification = await verifyRegistrationResponse({
           response: response as unknown as RegistrationResponseJSON,
           expectedChallenge: challenge,
-          expectedOrigin: config.EXPECTED_ORIGINS,
-          expectedRPID: config.RP_ID,
+          expectedOrigin: tenant.expectedOrigins,
+          expectedRPID: tenant.rpId,
           requireUserVerification: false,
         });
       } catch (error) {
         throw new ApiError(400, 'verification-failed', (error as Error).message);
       }
       if (!verification.verified || !verification.registrationInfo) {
-        app.metrics.ceremonyFailures.inc({ kind: 'registration' });
+        app.metrics.ceremonyFailures.inc({ kind: 'registration', tenant: tenant.slug });
         throw new ApiError(400, 'verification-failed', 'registration response could not be verified');
       }
 
@@ -194,14 +228,18 @@ export default async function webauthnRoutes(
       const walletAddress = await computeWalletAddress(opts.publicClient, config.FACTORY_ADDRESS, x, y);
 
       const result = await db.transaction(async (tx) => {
+        // C1: get-or-create is scoped by (tenant_id, external_id) — two tenants using
+        // the same external id are two distinct users with two distinct wallets.
         const [user] = await tx
           .insert(users)
-          .values({ externalId: externalUserId })
-          .onConflictDoUpdate({ target: users.externalId, set: { externalId: externalUserId } })
+          .values({ tenantId: tenant.id, externalId: externalUserId })
+          .onConflictDoUpdate({ target: [users.tenantId, users.externalId], set: { externalId: externalUserId } })
           .returning();
         const [credential] = await tx
           .insert(credentials)
           .values({
+            tenantId: tenant.id,
+            rpId: tenant.rpId,
             userId: user.id,
             credentialId: info.credential.id,
             cosePublicKey: Buffer.from(info.credential.publicKey),
@@ -229,6 +267,7 @@ export default async function webauthnRoutes(
     '/v1/webauthn/authentication/verify',
     {
       ...rateLimit,
+      preHandler: app.requireTenant,
       schema: {
         tags: ['webauthn'],
         body: z.object({ response: authenticationResponseSchema }),
@@ -240,10 +279,12 @@ export default async function webauthnRoutes(
             externalUserId: z.string(),
             session: sessionResponseSchema,
           }),
+          403: errorResponseSchema,
         },
       },
     },
     async (request) => {
+      const tenant = request.tenant!;
       const { response } = request.body;
 
       const challenge = extractChallenge(response.response.clientDataJSON);
@@ -251,10 +292,31 @@ export default async function webauthnRoutes(
       if (!consumed) {
         throw new ApiError(400, 'bad-challenge', 'challenge is unknown, expired or already used');
       }
+      if (consumed.tenantId !== tenant.id) {
+        request.log.warn({ alert: 'cross-tenant-challenge', challengeTenant: consumed.tenantId }, 'challenge redeemed on a foreign tenant origin');
+        app.metrics.crossTenantRejections.inc({ tenant: tenant.slug, kind: 'challenge' });
+        throw new ApiError(400, 'bad-challenge', 'challenge is unknown, expired or already used');
+      }
 
-      const credential = await db.query.credentials.findFirst({ where: eq(credentials.credentialId, response.id) });
+      // C2: resolve globally by credential id, then tenant-check explicitly. The global
+      // lookup is deliberate — it makes the rejection ALERTABLE: distinct RP IDs mean
+      // this branch is unreachable through a browser, so if it ever fires, RP resolution
+      // is broken or someone is probing. Externally identical to unknown-credential.
+      let credential = await db.query.credentials.findFirst({ where: eq(credentials.credentialId, response.id) });
+      if (credential && credential.tenantId !== tenant.id) {
+        request.log.error(
+          { alert: 'cross-tenant-credential', credentialTenant: credential.tenantId },
+          'credential replayed across tenants — RP resolution broken or a probe',
+        );
+        app.metrics.crossTenantRejections.inc({ tenant: tenant.slug, kind: 'credential' });
+        credential = undefined;
+      }
       if (!credential) {
         throw new ApiError(400, 'unknown-credential', 'credential is not registered');
+      }
+      // C3: an options call for a known user binds the challenge to that user
+      if (consumed.userId && consumed.userId !== credential.userId) {
+        throw new ApiError(400, 'challenge-user-mismatch', 'challenge was issued for a different user');
       }
 
       let verification;
@@ -262,8 +324,8 @@ export default async function webauthnRoutes(
         verification = await verifyAuthenticationResponse({
           response: response as unknown as AuthenticationResponseJSON,
           expectedChallenge: challenge,
-          expectedOrigin: config.EXPECTED_ORIGINS,
-          expectedRPID: config.RP_ID,
+          expectedOrigin: tenant.expectedOrigins,
+          expectedRPID: tenant.rpId,
           credential: {
             id: credential.credentialId,
             publicKey: new Uint8Array(credential.cosePublicKey),
@@ -276,7 +338,7 @@ export default async function webauthnRoutes(
         throw new ApiError(400, 'verification-failed', (error as Error).message);
       }
       if (!verification.verified) {
-        app.metrics.ceremonyFailures.inc({ kind: 'authentication' });
+        app.metrics.ceremonyFailures.inc({ kind: 'authentication', tenant: tenant.slug });
         throw new ApiError(400, 'verification-failed', 'authentication response could not be verified');
       }
 

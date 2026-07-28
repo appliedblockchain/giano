@@ -1,5 +1,6 @@
 import { gianoAddresses } from '@appliedblockchain/giano-contracts';
 import { z } from 'zod';
+import { tenantsSeedSchema } from './services/tenants.js';
 
 const addressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be a 0x-prefixed 20-byte hex address');
 
@@ -9,6 +10,13 @@ const csv = (value: string) =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+/**
+ * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
+ * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
+ * rows, provisioned via TENANTS_SEED — see src/services/tenants.ts and
+ * docs/MULTI-TENANCY-GAPS.md. The USEROP_* values are defaults a tenant's policy
+ * jsonb may override per field.
+ */
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
@@ -23,11 +31,32 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
-    /** WebAuthn Relying Party ID — the registrable domain the passkeys are bound to. Irreversible per deployment. */
-    RP_ID: z.string().min(1),
-    RP_NAME: z.string().min(1).default('Giano Wallet'),
-    /** Comma-separated web origins accepted in ceremony verification, e.g. https://wallet.example.com */
-    EXPECTED_ORIGINS: z.string().min(1).transform(csv),
+    /**
+     * JSON array of tenants, upserted by slug at boot (after migrations, before listen).
+     * Each entry: { slug, walletOrigin, rpId?, rpName, expectedOrigins?, allowedDappOrigins?,
+     * corsOrigins?, openRegistration?, adminKeys?, policy?, branding? }.
+     */
+    TENANTS_SEED: z
+      .string()
+      .optional()
+      .transform((raw, ctx) => {
+        if (!raw) return [];
+        let json: unknown;
+        try {
+          json = JSON.parse(raw);
+        } catch (error) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `not valid JSON: ${(error as Error).message}` });
+          return z.NEVER;
+        }
+        const parsed = tenantsSeedSchema.safeParse(json);
+        if (!parsed.success) {
+          for (const issue of parsed.error.issues) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${issue.path.join('.') || '(root)'}: ${issue.message}` });
+          }
+          return z.NEVER;
+        }
+        return parsed.data;
+      }),
 
     CHAIN_ID: z.coerce.number().int().positive(),
     RPC_URL: z.string().url(),
@@ -39,7 +68,7 @@ const envSchema = z
     CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
     SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
 
-    /** UserOp policy caps. Gas values are plain integers (wei for fees). */
+    /** UserOp policy caps — deployment defaults, overridable per tenant via policy jsonb. */
     USEROP_MAX_CALL_GAS: z.coerce.bigint().positive().default(5_000_000n),
     USEROP_MAX_VERIFICATION_GAS: z.coerce.bigint().positive().default(5_000_000n),
     USEROP_MAX_FEE_PER_GAS: z.coerce.bigint().positive().default(500_000_000_000n),
@@ -49,23 +78,17 @@ const envSchema = z
     /** Comma-separated addresses; empty/unset = any paymaster allowed. */
     USEROP_ALLOWED_PAYMASTERS: z.string().optional().transform((v) => (v ? csv(v).map((a) => a.toLowerCase()) : [])),
 
-    /**
-     * When false (default), /v1/webauthn/options for unknown users requires an admin key —
-     * production binds registration to the client project's own auth (server-to-server).
-     * True is for demos only.
-     */
-    OPEN_REGISTRATION: z
-      .enum(['true', 'false'])
-      .default('false')
-      .transform((v) => v === 'true'),
-    /** Comma-separated bearer keys accepted on admin endpoints. */
-    ADMIN_API_KEYS: z.string().optional().transform((v) => (v ? csv(v) : [])),
-
-    /** Comma-separated origins allowed by CORS (the wallet-web/demo origins). */
-    CORS_ORIGINS: z.string().optional().transform((v) => (v ? csv(v) : [])),
-
-    /** Rate limit for ceremony endpoints, requests per minute per IP. */
+    /** Rate limit for ceremony endpoints, requests per minute per tenant+IP. */
     CEREMONY_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
+    /** Relay rate limit for POST /v1/userops, per tenant per minute (policy-overridable). */
+    USEROP_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+
+    /** When set (non-empty), GET /metrics requires this bearer token; unset = open (dev only). */
+    METRICS_BEARER_TOKEN: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined))
+      .refine((v) => v === undefined || v.length >= 16, 'must be at least 16 characters'),
   })
   .superRefine((env, ctx) => {
     const deployment = gianoAddresses[env.CHAIN_ID];
@@ -81,32 +104,6 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['FACTORY_ADDRESS'],
         message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
-      });
-    }
-    // RP ID sanity (P3.5): passkeys bind to RP_ID irreversibly, so verification-time
-    // failures are too late. Every expected origin's host must equal RP_ID or be a
-    // subdomain of it (registrable-domain opt-in).
-    for (const origin of env.EXPECTED_ORIGINS) {
-      let host: string;
-      try {
-        host = new URL(origin).hostname;
-      } catch {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['EXPECTED_ORIGINS'], message: `not a valid origin: ${origin}` });
-        continue;
-      }
-      if (host !== env.RP_ID && !host.endsWith(`.${env.RP_ID}`)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['RP_ID'],
-          message: `RP_ID "${env.RP_ID}" is not valid for expected origin ${origin} — the origin's host must equal RP_ID or be a subdomain of it`,
-        });
-      }
-    }
-    if (!env.OPEN_REGISTRATION && env.ADMIN_API_KEYS.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['ADMIN_API_KEYS'],
-        message: 'required unless OPEN_REGISTRATION=true: registration options are admin-gated',
       });
     }
   })
