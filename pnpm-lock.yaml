@@ -24,6 +24,12 @@ importers:
       '@appliedblockchain/giano-connector':
         specifier: workspace:^
         version: link:../packages/connector
+      '@appliedblockchain/giano-wallet-core':
+        specifier: workspace:^
+        version: link:../packages/wallet-core
+      '@appliedblockchain/giano-wallet-transport':
+        specifier: workspace:^
+        version: link:../packages/wallet-transport
       '@playwright/test':
         specifier: ^1.52.0
         version: 1.61.1
