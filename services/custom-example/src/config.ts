@@ -9,6 +9,10 @@ const RPC_URL = import.meta.env.VITE_RPC_URL ?? 'http://localhost:8545';
 const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? '31337');
 const WALLET_URL = import.meta.env.VITE_WALLET_URL ?? 'http://wallet.localhost:8081';
 const DEFAULT_TOKEN = (import.meta.env.VITE_TEST_ERC20 ?? '0x9967bDf929856643e92EF65eefdE1fF8250774D8') as `0x${string}`;
+// Optional free-text tag shown next to the demo's title. Useful when several instances of
+// this dApp run side by side against different wallet origins (e.g. one per tenant in the
+// two-tenant e2e topology) and are otherwise visually identical.
+const APP_LABEL = import.meta.env.VITE_APP_LABEL?.trim() || undefined;
 
 export const chain = defineChain({
   id: CHAIN_ID,
@@ -22,4 +26,5 @@ export const config = {
   rpcUrl: RPC_URL,
   chainId: CHAIN_ID,
   defaultTokenAddress: DEFAULT_TOKEN,
+  appLabel: APP_LABEL,
 };

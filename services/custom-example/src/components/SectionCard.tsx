@@ -2,7 +2,7 @@ import { Card } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 
 type SectionCardProps = {
-  title: string;
+  title: ReactNode;
   description?: string;
   children: ReactNode;
 };
