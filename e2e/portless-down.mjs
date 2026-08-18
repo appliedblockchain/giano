@@ -7,13 +7,19 @@
  * removes the block outright, and `portless clean` removes all portless state.
  */
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { ROUTES } from './origins.mjs';
 
-const require = createRequire(import.meta.url);
-const CLI = path.join(path.dirname(require.resolve('portless/package.json')), 'dist', 'cli.js');
+/**
+ * The workspace's own portless, so the suite does not depend on a global install. Resolved with
+ * the ESM resolver: portless's `exports` map declares only an `import` condition, so a CJS
+ * `require.resolve` — of the package or of its package.json — cannot see it.
+ */
+const CLI = path.join(path.dirname(fileURLToPath(import.meta.resolve('portless'))), 'cli.js');
+if (!fs.existsSync(CLI)) throw new Error(`portless is installed but its CLI is not at ${CLI}`);
 
 /** @param {string[]} args */
 function portless(args) {

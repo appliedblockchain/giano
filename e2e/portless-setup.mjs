@@ -15,14 +15,19 @@
  * one command to run.
  */
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { PROXY_PORT, ROUTES, originOf } from './origins.mjs';
 
-const require = createRequire(import.meta.url);
-/** The workspace's own portless, so the suite does not depend on a global install. */
-const CLI = path.join(path.dirname(require.resolve('portless/package.json')), 'dist', 'cli.js');
+/**
+ * The workspace's own portless, so the suite does not depend on a global install. Resolved with
+ * the ESM resolver: portless's `exports` map declares only an `import` condition, so a CJS
+ * `require.resolve` — of the package or of its package.json — cannot see it.
+ */
+const CLI = path.join(path.dirname(fileURLToPath(import.meta.resolve('portless'))), 'cli.js');
+if (!fs.existsSync(CLI)) throw new Error(`portless is installed but its CLI is not at ${CLI}`);
 
 /**
  * Two spellings of "start the proxy". The short one is for reading; the long one is for
