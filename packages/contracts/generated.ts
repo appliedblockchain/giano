@@ -1036,6 +1036,33 @@ export const gianoPaymasterAbi = [
     ],
     stateMutability: 'view',
   },
+  { type: 'function', inputs: [], name: 'getTenantIds', outputs: [{ name: 'ids', internalType: 'bytes16[]', type: 'bytes16[]' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'getTenants',
+    outputs: [
+      { name: 'ids', internalType: 'bytes16[]', type: 'bytes16[]' },
+      {
+        name: 'records',
+        internalType: 'struct GianoPaymaster.Tenant[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'registered', internalType: 'bool', type: 'bool' },
+          { name: 'enabled', internalType: 'bool', type: 'bool' },
+          { name: 'hasFeeOverride', internalType: 'bool', type: 'bool' },
+          { name: 'withdrawAddress', internalType: 'address', type: 'address' },
+          { name: 'balance', internalType: 'uint128', type: 'uint128' },
+          { name: 'deficit', internalType: 'uint128', type: 'uint128' },
+          { name: 'feeWeiOverride', internalType: 'uint128', type: 'uint128' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -1190,6 +1217,14 @@ export const gianoPaymasterAbi = [
     inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
     name: 'supportsInterface',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  { type: 'function', inputs: [], name: 'tenantCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
+    name: 'tenantIdAt',
+    outputs: [{ name: '', internalType: 'bytes16', type: 'bytes16' }],
     stateMutability: 'view',
   },
   { type: 'function', inputs: [], name: 'treasury', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },

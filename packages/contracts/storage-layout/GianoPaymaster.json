@@ -65,9 +65,22 @@
         }
       ]
     },
+    "t_struct(Bytes32Set)_storage": {
+      "label": "struct EnumerableSet.Bytes32Set",
+      "numberOfBytes": "64",
+      "encoding": "inplace",
+      "members": [
+        {
+          "label": "_inner",
+          "slot": "0",
+          "offset": 0,
+          "type": "t_struct(Set)_storage"
+        }
+      ]
+    },
     "t_struct(PaymasterStorage)_storage": {
       "label": "struct GianoPaymaster.PaymasterStorage",
-      "numberOfBytes": "192",
+      "numberOfBytes": "256",
       "encoding": "inplace",
       "members": [
         {
@@ -111,6 +124,12 @@
           "slot": "4",
           "offset": 0,
           "type": "t_struct(AddressSet)_storage"
+        },
+        {
+          "label": "tenantIds",
+          "slot": "6",
+          "offset": 0,
+          "type": "t_struct(Bytes32Set)_storage"
         }
       ]
     },

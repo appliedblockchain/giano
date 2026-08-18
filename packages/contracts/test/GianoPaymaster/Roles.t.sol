@@ -178,6 +178,60 @@ contract RolesTest is PaymasterTestBase {
         assertTrue(paymaster.isSigner(second));
     }
 
+    /// @dev The counterpart to the signer set: an admin overview must be able to enumerate every
+    ///      tenant straight from the chain, without replaying `TenantRegistered` logs or asking the
+    ///      backend for the id list.
+    function test_theTenantRosterIsEnumerableOnChain() public {
+        // The fixture registered exactly TENANT_A then TENANT_B.
+        assertEq(paymaster.tenantCount(), 2);
+        assertEq(paymaster.tenantIdAt(0), TENANT_A);
+        assertEq(paymaster.tenantIdAt(1), TENANT_B);
+
+        bytes16[] memory ids = paymaster.getTenantIds();
+        assertEq(ids.length, 2);
+        assertEq(ids[0], TENANT_A);
+        assertEq(ids[1], TENANT_B);
+
+        bytes16 tenantC = bytes16(uint128(0xC0FFEE));
+        vm.prank(tenantAdmin);
+        paymaster.registerTenant(tenantC, makeAddr('tenantCWithdraw'), 'tenant-c');
+
+        assertEq(paymaster.tenantCount(), 3);
+        assertEq(paymaster.getTenantIds()[2], tenantC);
+    }
+
+    /// @dev The dashboard call: one read returns each id paired with its full accounting record.
+    function test_getTenantsReturnsIdsPairedWithTheirRecords() public {
+        _fund(TENANT_A, 1 ether);
+
+        (bytes16[] memory ids, GianoPaymaster.Tenant[] memory records) = paymaster.getTenants(0, 10);
+        assertEq(ids.length, 2);
+        assertEq(records.length, 2);
+
+        assertEq(ids[0], TENANT_A);
+        assertEq(records[0].balance, 1 ether);
+        assertEq(records[0].withdrawAddress, tenantAWithdraw);
+        assertTrue(records[0].registered);
+
+        assertEq(ids[1], TENANT_B);
+        assertEq(records[1].balance, 0);
+    }
+
+    /// @dev `count` is clamped to what remains, and a `start` at or past the end is empty rather
+    ///      than a revert — so a client can page without first fetching the exact count.
+    function test_getTenantsPaginationClampsAndToleratesOutOfRange() public view {
+        (bytes16[] memory page, ) = paymaster.getTenants(1, 10);
+        assertEq(page.length, 1);
+        assertEq(page[0], TENANT_B);
+
+        (bytes16[] memory past, GianoPaymaster.Tenant[] memory pastRecords) = paymaster.getTenants(2, 10);
+        assertEq(past.length, 0);
+        assertEq(pastRecords.length, 0);
+
+        (bytes16[] memory none, ) = paymaster.getTenants(0, 0);
+        assertEq(none.length, 0);
+    }
+
     function test_addingAnExistingSignerIsRejectedRatherThanSilentlyIgnored() public {
         vm.expectRevert(abi.encodeWithSelector(GianoPaymaster.AlreadySigner.selector, sponsor));
         vm.prank(signerAdmin);

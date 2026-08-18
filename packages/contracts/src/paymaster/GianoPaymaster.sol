@@ -48,6 +48,7 @@ contract GianoPaymaster is
 {
     using UserOperationLib for PackedUserOperation;
     using EnumerableSet for EnumerableSet.AddressSet;
+    using EnumerableSet for EnumerableSet.Bytes32Set;
 
     // ---------------------------------------------------------------------------------------
     // Roles
@@ -159,6 +160,12 @@ contract GianoPaymaster is
         uint32 postOpGasAllowance;
         uint16 penaltyBps;
         EnumerableSet.AddressSet signers;
+        // The set of every registered tenant id, so the roster is enumerable directly from the
+        // chain rather than only reconstructable from `TenantRegistered` logs. Appended last:
+        // the ERC-7201 namespace makes adding a trailing field upgrade-safe (see storage-layout.mjs).
+        // `bytes16` tenant ids are widened to `bytes32` for storage, since EnumerableSet has no
+        // native `bytes16` set; the widening is left-aligned and round-trips losslessly.
+        EnumerableSet.Bytes32Set tenantIds;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("giano.storage.Paymaster")) - 1)) & ~bytes32(uint256(0xff))
@@ -305,6 +312,51 @@ contract GianoPaymaster is
         return _s().tenants[tenantId];
     }
 
+    /// @notice The number of registered tenants. Pair with {tenantIdAt} or {getTenants} to page the
+    ///         roster when it is too large to return in one call.
+    function tenantCount() external view returns (uint256) {
+        return _s().tenantIds.length();
+    }
+
+    /// @notice The tenant id at `index` in the roster. Order is insertion order until a future
+    ///         removal (none exists today) would swap the last entry into a freed slot.
+    function tenantIdAt(uint256 index) external view returns (bytes16) {
+        return bytes16(_s().tenantIds.at(index));
+    }
+
+    /// @notice Every registered tenant id, for an admin overview read straight from the chain with
+    ///         no `TenantRegistered` log scan and no backend. Cheap: ids only, no per-tenant record.
+    ///         For a very large roster prefer the paginated {getTenants}.
+    function getTenantIds() external view returns (bytes16[] memory ids) {
+        bytes32[] memory raw = _s().tenantIds.values();
+        ids = new bytes16[](raw.length);
+        for (uint256 i = 0; i < raw.length; i++) {
+            ids[i] = bytes16(raw[i]);
+        }
+    }
+
+    /// @notice A page of the roster with each tenant's full accounting record, so a dashboard can
+    ///         read every balance, deficit and setting in a single call. `count` is clamped to what
+    ///         remains after `start`; a `start` at or past the end returns empty arrays. `ids[i]`
+    ///         corresponds to `records[i]`. Sum `records[i].balance` and compare against {treasury}
+    ///         and {getDeposit} to check the solvency invariant from the client.
+    function getTenants(uint256 start, uint256 count) external view returns (bytes16[] memory ids, Tenant[] memory records) {
+        PaymasterStorage storage $ = _s();
+        uint256 total = $.tenantIds.length();
+        if (start >= total) return (new bytes16[](0), new Tenant[](0));
+
+        uint256 available = total - start;
+        if (count > available) count = available;
+
+        ids = new bytes16[](count);
+        records = new Tenant[](count);
+        for (uint256 i = 0; i < count; i++) {
+            bytes16 id = bytes16($.tenantIds.at(start + i));
+            ids[i] = id;
+            records[i] = $.tenants[id];
+        }
+    }
+
     /// @notice The fee in force for a tenant: its override if it has one, otherwise the default.
     function feeFor(bytes16 tenantId) public view returns (uint128) {
         PaymasterStorage storage $ = _s();
@@ -349,6 +401,10 @@ contract GianoPaymaster is
         t.registered = true;
         t.enabled = true;
         t.withdrawAddress = withdrawAddress;
+        // Never removed once added — there is no de-registration — so the set is the permanent,
+        // enumerable roster. The `registered` guard above already rejects duplicates, so the add
+        // always inserts a new id here.
+        _s().tenantIds.add(bytes32(tenantId));
 
         emit TenantRegistered(tenantId, withdrawAddress, slug);
     }
