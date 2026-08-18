@@ -9,7 +9,7 @@
   "sponsorshipSignerKey": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
   "paymasterRoleAdmin": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "testPaymaster": "0xCbc040482c1dd07D533800874DC37De7b18c8092",
-  "testErc20": "0x9967bDf929856643e92EF65eefdE1fF8250774D8",
+  "testErc20": "0xB1B44149690b0cEd02bC6cA3f95F3D554b1ee72F",
   "tenants": [
     {
       "slug": "stock",

@@ -12,7 +12,9 @@ What it shows:
 - **ERC-20 panel** — enter any token address, read its name/symbol/decimals/balance, then
   **transfer** (destination defaults to your own account), sign+submit an **approve** transaction,
   and sign an **EIP-2612 permit** (the signature and its `v`/`r`/`s` are displayed; tokens without
-  permit support are reported cleanly).
+  permit support are reported cleanly). The prefilled devnet token is a trivial faucet
+  (`TestERC20`): **mint** tokens to your account and **burn** them back down, so you have a balance
+  to move without needing one seeded up front.
 - **Gasless sponsorship** — every send goes through **Giano's paymaster**: the wallet origin runs
   an ERC-7677 sponsorship check before it asks for a passkey, so an allow-listed call is **covered**
   and a call nobody sponsors is **refused** up front (no approval, no passkey prompt, nothing
@@ -47,7 +49,7 @@ other networks:
 | `VITE_WALLET_URL` | `http://wallet.localhost` | wallet origin (popup) |
 | `VITE_RPC_URL` | `http://rpc.localhost` | read-path RPC (balances, metadata) |
 | `VITE_CHAIN_ID` | `31337` | chain id |
-| `VITE_TEST_ERC20` | devnet PrivateERC20 | prefilled token in the ERC-20 panel |
+| `VITE_TEST_ERC20` | devnet TestERC20 | prefilled mint/burn faucet token in the ERC-20 panel |
 | `VITE_APP_LABEL` | _(unset)_ | free-text badge next to the title, to tell instances apart |
 
 ## Two tenants side by side

@@ -218,7 +218,7 @@ const addresses = {
   sponsorshipSignerKey: ANVIL.sponsorshipSigner.key,
   paymasterRoleAdmin: ANVIL.deployer.address,
   testPaymaster: deployed['Testing#PermissivePaymaster'],
-  testErc20: deployed['Testing#PrivateERC20'],
+  testErc20: deployed['Testing#TestERC20'],
   tenants: DEMO_TENANTS,
 };
 fs.writeFileSync(path.join(dir, 'addresses.json'), `${JSON.stringify(addresses, null, 2)}\n`);

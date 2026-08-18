@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, HStack, Input, Separator, Stack, Text } from '@chakra-ui/react';
-import { LuBadgeCheck, LuDownload, LuRefreshCw, LuSend, LuSignature } from 'react-icons/lu';
+import { LuBadgeCheck, LuDownload, LuFlame, LuPlus, LuRefreshCw, LuSend, LuSignature } from 'react-icons/lu';
 import { encodeFunctionData, erc20Abi, formatUnits, getAddress, isAddress, parseUnits } from 'viem';
 import { Field } from './ui/field';
 import { provider, publicClient } from '../giano';
@@ -30,6 +30,23 @@ const erc2612Abi = [
   },
 ] as const;
 
+// Mint/burn fragment — the prefilled devnet token (TestERC20) is a trivial faucet that lets anyone
+// mint and burn; the standard erc20Abi has neither. `mint` is unrestricted, `burn` spends the
+// caller's own balance. A revert here just means the loaded token isn't a faucet like this one.
+const faucetAbi = [
+  {
+    type: 'function',
+    name: 'mint',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  { type: 'function', name: 'burn', stateMutability: 'nonpayable', inputs: [{ name: 'value', type: 'uint256' }], outputs: [] },
+] as const;
+
 type TokenMeta = { name: string; symbol: string; decimals: number };
 
 export function Erc20Panel({ account, defaultToken }: { account: Address; defaultToken: Address }) {
@@ -43,7 +60,7 @@ export function Erc20Panel({ account, defaultToken }: { account: Address; defaul
   const [amount, setAmount] = useState<string>('1');
 
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<'transfer' | 'approve' | 'permit-sign' | null>(null);
+  const [busy, setBusy] = useState<'transfer' | 'approve' | 'permit-sign' | 'mint' | 'burn' | null>(null);
   const [txResult, setTxResult] = useState('');
   const [permitSig, setPermitSig] = useState('');
   const [error, setError] = useState('');
@@ -136,6 +153,43 @@ export function Erc20Panel({ account, defaultToken }: { account: Address; defaul
       await refresh();
     } catch (err) {
       setError(notifyError('Transfer failed', err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Mint the amount to your own connected account. Unrestricted on the faucet token, so no
+  // destination is needed — this is how you get a balance to then transfer or burn.
+  const mint = async () => {
+    if (!token) return;
+    setBusy('mint');
+    setError('');
+    try {
+      const data = encodeFunctionData({ abi: faucetAbi, functionName: 'mint', args: [account, amountWei()] }) as Address;
+      const ok = await sendAndWait(token, data, 'Mint');
+      if (ok) notifySuccess('Mint confirmed', `Minted ${amount} ${meta?.symbol ?? ''}`.trim());
+      else setError(notifyError('Mint reverted', new Error('user-operation reverted on-chain — is this token a mintable faucet?')));
+      await refresh();
+    } catch (err) {
+      setError(notifyError('Mint failed', err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Burn the amount from your own connected account's balance (ERC20Burnable `burn`).
+  const burn = async () => {
+    if (!token) return;
+    setBusy('burn');
+    setError('');
+    try {
+      const data = encodeFunctionData({ abi: faucetAbi, functionName: 'burn', args: [amountWei()] }) as Address;
+      const ok = await sendAndWait(token, data, 'Burn');
+      if (ok) notifySuccess('Burn confirmed', `Burned ${amount} ${meta?.symbol ?? ''}`.trim());
+      else setError(notifyError('Burn reverted', new Error('user-operation reverted on-chain — insufficient balance, or not a burnable token?')));
+      await refresh();
+    } catch (err) {
+      setError(notifyError('Burn failed', err));
     } finally {
       setBusy(null);
     }
@@ -255,6 +309,18 @@ export function Erc20Panel({ account, defaultToken }: { account: Address; defaul
               <Field label={`Amount (${meta.symbol})`} width={{ base: 'full', md: '40%' }}>
                 <Input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" min="0" bg="white" />
               </Field>
+            </Stack>
+
+            <Stack direction={{ base: 'column', sm: 'row' }} gap="3" flexWrap="wrap" align={{ base: 'stretch', sm: 'center' }}>
+              <Button colorPalette="brand" variant="subtle" onClick={mint} loading={busy === 'mint'} disabled={busy !== null}>
+                <LuPlus /> Mint
+              </Button>
+              <Button colorPalette="red" variant="subtle" onClick={burn} loading={busy === 'burn'} disabled={busy !== null}>
+                <LuFlame /> Burn
+              </Button>
+              <Text fontSize="xs" color="fg.muted">
+                Faucet token — mints to / burns from your own account using the amount above.
+              </Text>
             </Stack>
 
             <Stack direction={{ base: 'column', sm: 'row' }} gap="3" flexWrap="wrap">

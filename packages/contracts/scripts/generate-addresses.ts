@@ -17,6 +17,9 @@ const FUTURE_TO_FIELD: Record<string, { field: string; optional: boolean }> = {
   'GianoAccountFactory#GianoSmartWalletFactory': { field: 'factory', optional: false },
   'GianoAccountFactory#GianoSmartWallet': { field: 'implementation', optional: false },
   'Testing#PermissivePaymaster': { field: 'testPaymaster', optional: true },
+  'Testing#TestERC20': { field: 'testErc20', optional: true },
+  // Legacy name for the same testing ERC-20 slot: still present in older committed deployments
+  // (e.g. chain 381185). Kept so regenerating does not drop their testErc20 entry.
   'Testing#PrivateERC20': { field: 'testErc20', optional: true },
   'GianoPaymaster#SponsorshipPaymaster': { field: 'sponsorshipPaymaster', optional: true },
   'GianoPaymaster#GianoPaymaster': { field: 'sponsorshipPaymasterImplementation', optional: true },
