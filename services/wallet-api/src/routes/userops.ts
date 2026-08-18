@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Address, Hex } from 'viem';
@@ -6,7 +6,7 @@ import { getUserOperationHash } from 'viem/account-abstraction';
 import { z } from 'zod';
 import type { AppConfig } from '../config.js';
 import type { Db } from '../db/index.js';
-import { useropLog } from '../db/schema.js';
+import { sponsorshipDecisions, useropLog } from '../db/schema.js';
 import { ApiError } from '../plugins/error-handler.js';
 import type { BundlerService } from '../services/bundler.js';
 import { mergePolicy } from '../services/tenants.js';
@@ -76,7 +76,12 @@ export default async function useropRoutes(
   // service is needed here — the merged policy reads straight off the request.
   const { db, config, bundler, defaultPolicy } = opts;
 
-  const tenantPolicy = (request: FastifyRequest) => mergePolicy(defaultPolicy, request.tenant?.policy);
+  const tenantPolicy = (request: FastifyRequest) => ({
+    ...mergePolicy(defaultPolicy, request.tenant?.policy),
+    // The 16-byte id the paymaster bills, so `sponsored-tenant-match` can cross-check a sponsored
+    // operation against the session that submitted it.
+    ...(request.session ? { sponsorshipTenantId: `0x${request.session.tenantId.replace(/-/g, '')}` as `0x${string}` } : {}),
+  });
 
   /**
    * Light per-tenant relay limit (G5.2): a shared bundler and executor balance mean one
@@ -145,6 +150,7 @@ export default async function useropRoutes(
             maxFeePerGas: userOp.maxFeePerGas,
             maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
             paymaster: rpcOp.paymaster,
+            paymasterData: rpcOp.paymasterData,
           },
           session.walletAddress,
           tenantPolicy(request),
@@ -174,6 +180,19 @@ export default async function useropRoutes(
           return reply.code(403).send({ error: 'policy-rejected', message: decision.rejectReason!, policy: decision.results });
         }
 
+        // R-06's linkage: one join from "we relayed this" to "why was it sponsored, and what was
+        // it charged". Matched on the operation hash, which the sponsorship service records against
+        // its own decision at authorisation time.
+        const sponsorshipDecisionId = rpcOp.paymaster
+          ? (
+              await db
+                .select({ id: sponsorshipDecisions.id })
+                .from(sponsorshipDecisions)
+                .where(and(eq(sponsorshipDecisions.useropHash, useropHash), eq(sponsorshipDecisions.tenantId, session.tenantId)))
+                .limit(1)
+            )[0]?.id
+          : undefined;
+
         const inserted = await db
           .insert(useropLog)
           .values({
@@ -185,6 +204,7 @@ export default async function useropRoutes(
             status: 'accepted',
             policyResults: decision.results,
             rejectReason: decision.rejectReason,
+            sponsorshipDecisionId,
           })
           .onConflictDoNothing({ target: useropLog.useropHash })
           .returning({ id: useropLog.id });

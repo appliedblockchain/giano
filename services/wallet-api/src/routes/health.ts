@@ -5,7 +5,15 @@ import { z } from 'zod';
 import type { Db } from '../db/index.js';
 
 export default async function healthRoutes(
-  instance: FastifyInstance, opts: { db: Db; version: string; chainId: number }) {
+  instance: FastifyInstance,
+  opts: {
+    db: Db;
+    version: string;
+    chainId: number;
+    /** Absent when this deployment does not sponsor gas. */
+    sponsorshipHealth?: () => Promise<'ok' | 'unavailable'>;
+  },
+) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   app.get(
     '/healthz',
@@ -19,7 +27,7 @@ export default async function healthRoutes(
       schema: {
         tags: ['health'],
         response: {
-          200: z.object({ status: z.literal('ready') }),
+          200: z.object({ status: z.literal('ready'), sponsorship: z.enum(['ok', 'disabled']).optional() }),
           503: z.object({ status: z.literal('unavailable'), message: z.string() }),
         },
       },
@@ -27,10 +35,22 @@ export default async function healthRoutes(
     async (request, reply) => {
       try {
         await opts.db.execute(sql`SELECT 1`);
-        return { status: 'ready' as const };
       } catch (error) {
         return reply.code(503).send({ status: 'unavailable' as const, message: (error as Error).message });
       }
+
+      // A deployment whose signer is down cannot sponsor, and sponsored tenants cannot transact
+      // at all without it — so it must not report itself ready. This is the difference between an
+      // outage and a misconfiguration being visible in the right place.
+      if (opts.sponsorshipHealth) {
+        const health = await opts.sponsorshipHealth();
+        if (health !== 'ok') {
+          return reply.code(503).send({ status: 'unavailable' as const, message: 'the sponsorship signer is unavailable' });
+        }
+        return { status: 'ready' as const, sponsorship: 'ok' as const };
+      }
+
+      return { status: 'ready' as const, sponsorship: 'disabled' as const };
     },
   );
 

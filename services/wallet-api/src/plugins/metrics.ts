@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
-import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 import { sha256hex } from '../services/tenants.js';
 
 declare module 'fastify' {
@@ -13,6 +13,30 @@ declare module 'fastify' {
       useropLatency: Histogram<'tenant'>;
       /** ALERTABLE: if this ever fires, RP resolution is broken or someone is probing. */
       crossTenantRejections: Counter<'kind' | 'tenant'>;
+
+      // ── Gas sponsorship ──────────────────────────────────────────────────────
+      /** ALERTABLE: a refusal-rate spike for one tenant usually means a rule change went wrong. */
+      sponsorshipDecisions: Counter<'tenant' | 'method' | 'outcome' | 'reason'>;
+      /** ALERTABLE: any signature from an unexpected key_id, and signing stopping entirely. */
+      sponsorshipSignatures: Counter<'tenant' | 'key_id'>;
+      /** ALERTABLE: an outage, as distinct from a rule refusal — the two need different responses. */
+      sponsorshipUnavailable: Counter<'cause'>;
+      tenantBalanceWei: Gauge<'tenant'>;
+      tenantReservedWei: Gauge<'tenant'>;
+      tenantAvailableWei: Gauge<'tenant'>;
+      /** ALERTABLE on non-zero: money the pooled deposit absorbed on one tenant's behalf. */
+      tenantDeficitWei: Gauge<'tenant'>;
+      /** PAGES on 1: claims exceed the deposit, which is an insolvency. */
+      paymasterInvariantBreach: Gauge;
+      /** Expected positive; unexpectedly fast growth means tenants are being overcharged. */
+      paymasterInvariantSlackWei: Gauge;
+      paymasterDepositWei: Gauge;
+      paymasterTreasuryWei: Gauge;
+      paymasterStakeWei: Gauge;
+      paymasterWatcherLagBlocks: Gauge;
+      paymasterWatcherLagSeconds: Gauge;
+      /** ALERTABLE: a drawdown the events do not explain is the signature of a leaked signing key. */
+      paymasterReconciliationDivergenceWei: Gauge;
     };
   }
 }
@@ -59,6 +83,89 @@ export default fp(
         name: 'giano_cross_tenant_rejections_total',
         help: "Requests rejected for crossing a tenant boundary (kind: credential|challenge|session) — alert on any increase",
         labelNames: ['kind', 'tenant'] as const,
+        registers: [registry],
+      }),
+
+      sponsorshipDecisions: new Counter({
+        name: 'giano_sponsorship_decisions_total',
+        help: 'Sponsorship decisions by tenant, method (stub|data), outcome and refusal reason',
+        labelNames: ['tenant', 'method', 'outcome', 'reason'] as const,
+        registers: [registry],
+      }),
+      sponsorshipSignatures: new Counter({
+        name: 'giano_sponsorship_signatures_total',
+        help: 'Sponsorship authorisations signed, by tenant and signing key id — alert on an unexpected key_id',
+        labelNames: ['tenant', 'key_id'] as const,
+        registers: [registry],
+      }),
+      sponsorshipUnavailable: new Counter({
+        name: 'giano_sponsorship_unavailable_total',
+        help: 'Sponsorship failures that are outages rather than refusals (cause: signer|hsm|database|chain)',
+        labelNames: ['cause'] as const,
+        registers: [registry],
+      }),
+      tenantBalanceWei: new Gauge({
+        name: 'giano_tenant_balance_wei',
+        help: "A tenant's on-chain gas balance",
+        labelNames: ['tenant'] as const,
+        registers: [registry],
+      }),
+      tenantReservedWei: new Gauge({
+        name: 'giano_tenant_reserved_wei',
+        help: "A tenant's outstanding sponsorship reservations",
+        labelNames: ['tenant'] as const,
+        registers: [registry],
+      }),
+      tenantAvailableWei: new Gauge({
+        name: 'giano_tenant_available_wei',
+        help: 'balance − reserved: what a new operation may actually draw on — alert below the tenant threshold',
+        labelNames: ['tenant'] as const,
+        registers: [registry],
+      }),
+      tenantDeficitWei: new Gauge({
+        name: 'giano_tenant_deficit_wei',
+        help: "Money the pooled deposit absorbed on a tenant's behalf — alert on any non-zero value",
+        labelNames: ['tenant'] as const,
+        registers: [registry],
+      }),
+      paymasterInvariantBreach: new Gauge({
+        name: 'giano_paymaster_invariant_breach',
+        help: '1 when Σ tenant balances + treasury exceeds the deposit. This is an insolvency — page immediately',
+        registers: [registry],
+      }),
+      paymasterInvariantSlackWei: new Gauge({
+        name: 'giano_paymaster_invariant_slack_wei',
+        help: 'deposit − (Σ balances + treasury). Expected positive; growth faster than the overhead model predicts means tenants are overcharged',
+        registers: [registry],
+      }),
+      paymasterDepositWei: new Gauge({
+        name: 'giano_paymaster_deposit_wei',
+        help: "The paymaster's EntryPoint deposit",
+        registers: [registry],
+      }),
+      paymasterTreasuryWei: new Gauge({
+        name: 'giano_paymaster_treasury_wei',
+        help: 'Accrued platform fees not yet withdrawn',
+        registers: [registry],
+      }),
+      paymasterStakeWei: new Gauge({
+        name: 'giano_paymaster_stake_wei',
+        help: "The paymaster's EntryPoint stake — bundlers reject an unstaked validating paymaster",
+        registers: [registry],
+      }),
+      paymasterWatcherLagBlocks: new Gauge({
+        name: 'giano_paymaster_watcher_lag_blocks',
+        help: 'Blocks between the chain head and the watcher cursor',
+        registers: [registry],
+      }),
+      paymasterWatcherLagSeconds: new Gauge({
+        name: 'giano_paymaster_watcher_lag_seconds',
+        help: 'Seconds since the watcher last completed a pass',
+        registers: [registry],
+      }),
+      paymasterReconciliationDivergenceWei: new Gauge({
+        name: 'giano_paymaster_reconciliation_divergence_wei',
+        help: 'Deposit drawdown the observed events do not account for — the signature of a leaked signing key',
         registers: [registry],
       }),
     };

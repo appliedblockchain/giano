@@ -1,4 +1,4 @@
-import { bigint, boolean, customType, index, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, customType, index, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',
@@ -136,6 +136,9 @@ export const useropLog = pgTable(
     policyResults: jsonb('policy_results').notNull().default([]),
     rejectReason: text('reject_reason'),
     bundlerResponse: jsonb('bundler_response'),
+    /** Links a relayed op to the sponsorship decision that authorised it — one join from
+     *  "we relayed this" to "why was it sponsored and what was it charged". */
+    sponsorshipDecisionId: uuid('sponsorship_decision_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('userop_log_sender_idx').on(t.sender), index('userop_log_tenant_id_created_at_idx').on(t.tenantId, t.createdAt)],
@@ -153,3 +156,156 @@ export const rorOrigins = pgTable(
   },
   (t) => [unique('ror_origins_tenant_id_origin_key').on(t.tenantId, t.origin)],
 );
+
+// ── Sponsorship ────────────────────────────────────────────────────────────────
+//
+// A tenant's sponsorship *rules* are its own to edit through its admin key, and live in their
+// own table so TENANTS_SEED keeps its declarative meaning — a restart must never revert a
+// tenant's edit. A tenant with no row sponsors nothing, which is deny-by-default in the storage
+// layer as well as in the rules engine.
+//
+// A tenant's *balance* is not the service's to own: it is chain state, cached here from paymaster
+// events and reconciled against the deposit. Reservations are the one thing the service owns
+// outright, and they are what makes per-tenant segregation hold when several of a tenant's
+// operations are authorised concurrently.
+
+export const tenantSponsorship = pgTable(
+  'tenant_sponsorship',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    /** Validated by the zod schema in services/sponsorship-config.ts on every write. */
+    config: jsonb('config').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** sha256 of the admin key that wrote it — who changed the rules, without storing the key. */
+    updatedByKeyHash: text('updated_by_key_hash'),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.chainId] })],
+);
+
+export const tenantSponsorshipHistory = pgTable(
+  'tenant_sponsorship_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    config: jsonb('config').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByKeyHash: text('created_by_key_hash'),
+  },
+  (t) => [index('tenant_sponsorship_history_tenant_idx').on(t.tenantId, t.createdAt)],
+);
+
+/** Cache of on-chain per-tenant balances. Rebuilt from events; never the authority. */
+export const paymasterTenants = pgTable(
+  'paymaster_tenants',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    paymasterAddress: text('paymaster_address').notNull(),
+    /** wei, as a numeric string — bigints do not survive JSON or a JS number. */
+    balanceWei: numeric('balance_wei', { precision: 78, scale: 0 }).notNull().default('0'),
+    deficitWei: numeric('deficit_wei', { precision: 78, scale: 0 }).notNull().default('0'),
+    withdrawAddress: text('withdraw_address'),
+    lastSyncedBlock: bigint('last_synced_block', { mode: 'bigint' }),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.chainId] })],
+);
+
+export const sponsorshipReservations = pgTable(
+  'sponsorship_reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    sender: text('sender').notNull(),
+    nonce: numeric('nonce', { precision: 78, scale: 0 }).notNull(),
+    useropHash: text('userop_hash'),
+    maxCostWei: numeric('max_cost_wei', { precision: 78, scale: 0 }).notNull(),
+    feeWei: numeric('fee_wei', { precision: 78, scale: 0 }).notNull(),
+    overheadWei: numeric('overhead_wei', { precision: 78, scale: 0 }).notNull(),
+    totalWei: numeric('total_wei', { precision: 78, scale: 0 }).notNull(),
+    state: text('state', { enum: ['reserved', 'settled', 'expired', 'released'] }).notNull().default('reserved'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('sponsorship_reservations_tenant_state_idx').on(t.tenantId, t.chainId, t.state),
+    index('sponsorship_reservations_expires_at_idx').on(t.expiresAt),
+    index('sponsorship_reservations_userop_hash_idx').on(t.useropHash),
+  ],
+);
+
+/** One row per observed `Sponsored` event — the R-43 breakdown a tenant reconciles against. */
+export const sponsorshipSettlements = pgTable(
+  'sponsorship_settlements',
+  {
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    useropHash: text('userop_hash').notNull(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
+    sender: text('sender').notNull(),
+    gasCostWei: numeric('gas_cost_wei', { precision: 78, scale: 0 }).notNull(),
+    feeWei: numeric('fee_wei', { precision: 78, scale: 0 }).notNull(),
+    overheadWei: numeric('overhead_wei', { precision: 78, scale: 0 }).notNull(),
+    totalWei: numeric('total_wei', { precision: 78, scale: 0 }).notNull(),
+    success: boolean('success').notNull(),
+    blockNumber: bigint('block_number', { mode: 'bigint' }).notNull(),
+    logIndex: bigint('log_index', { mode: 'number' }).notNull(),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chainId, t.useropHash] }),
+    index('sponsorship_settlements_tenant_idx').on(t.tenantId, t.observedAt),
+  ],
+);
+
+/**
+ * Every evaluation, allowed or refused, including the pre-flight ones that never became
+ * transactions. This is what answers "why was this sponsored?", "why was this refused?" and
+ * "what was it charged?", and it is what makes a refusal-rate spike computable.
+ */
+export const sponsorshipDecisions = pgTable(
+  'sponsorship_decisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'set null' }),
+    method: text('method', { enum: ['stub', 'data'] }).notNull(),
+    sender: text('sender').notNull(),
+    useropHash: text('userop_hash'),
+    outcome: text('outcome', { enum: ['allowed', 'refused'] }).notNull(),
+    reason: text('reason'),
+    ruleResults: jsonb('rule_results').notNull().default([]),
+    feeWei: numeric('fee_wei', { precision: 78, scale: 0 }),
+    reservationId: uuid('reservation_id').references(() => sponsorshipReservations.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('sponsorship_decisions_tenant_created_idx').on(t.tenantId, t.createdAt)],
+);
+
+/** Deployment-wide chain state: the right-hand side of the accounting invariant. */
+export const paymasterState = pgTable('paymaster_state', {
+  chainId: bigint('chain_id', { mode: 'number' }).primaryKey(),
+  paymasterAddress: text('paymaster_address').notNull(),
+  treasuryWei: numeric('treasury_wei', { precision: 78, scale: 0 }).notNull().default('0'),
+  depositWei: numeric('deposit_wei', { precision: 78, scale: 0 }).notNull().default('0'),
+  stakeWei: numeric('stake_wei', { precision: 78, scale: 0 }).notNull().default('0'),
+  lastSyncedBlock: bigint('last_synced_block', { mode: 'bigint' }),
+  /** deposit − (Σ balances + treasury). Expected positive; its growth rate is the calibration signal. */
+  invariantSlackWei: numeric('invariant_slack_wei', { precision: 78, scale: 0 }),
+  checkedAt: timestamp('checked_at', { withTimezone: true }),
+});

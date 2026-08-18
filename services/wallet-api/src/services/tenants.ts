@@ -48,6 +48,17 @@ export type TenantPolicy = z.infer<typeof tenantPolicySchema>;
 export const tenantSeedSchema = z
   .object({
     slug: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, 'lowercase slug'),
+    /**
+     * Pins the tenant's UUID instead of letting the database generate one.
+     *
+     * Needed because the tenant id is not purely internal: the paymaster keys per-tenant balances
+     * on its 16 bytes, so a deployment that registers a tenant on chain must be able to make the
+     * database agree. Used by the devnet and e2e stacks, where the paymaster is pre-registered
+     * against fixed ids and a random id would leave every sponsorship refused as "unknown tenant".
+     *
+     * Immutable once set, like `rpId`: changing it would orphan that tenant's on-chain balance.
+     */
+    id: z.string().uuid().optional(),
     walletOrigin: z.string().refine(isBareOrigin, 'must be a bare origin, e.g. https://wallet.example.com'),
     /** Defaults to the host of walletOrigin; if supplied it must equal it (D1). */
     rpId: z.string().min(1).optional(),
@@ -113,6 +124,7 @@ export const tenantsSeedSchema = z
       }
     };
     duplicate(seeds.map((s) => s.slug), 'slug');
+    duplicate(seeds.map((s) => s.id).filter((id): id is string => Boolean(id)), 'id');
     duplicate(seeds.map((s) => s.walletOrigin), 'walletOrigin');
     duplicate(seeds.map((s) => s.rpId), 'rpId');
     // a plaintext key shared by two tenants would make key → tenant resolution ambiguous
@@ -161,13 +173,22 @@ export async function seedTenants(db: Db, seeds: TenantSeed[]): Promise<void> {
               'passkeys bind to it irreversibly; create a new tenant instead',
           );
         }
+        if (seed.id && seed.id !== existing.id) {
+          throw new Error(
+            `tenant "${seed.slug}": id is immutable (stored "${existing.id}", seed "${seed.id}") — ` +
+              'the paymaster keys this tenant\'s gas balance on it, so changing it would orphan those funds',
+          );
+        }
         await tx
           .update(tenants)
           .set({ ...values, updatedAt: sql`now()` })
           .where(eq(tenants.id, existing.id));
         tenantId = existing.id;
       } else {
-        const [inserted] = await tx.insert(tenants).values({ slug: seed.slug, ...values }).returning({ id: tenants.id });
+        const [inserted] = await tx
+          .insert(tenants)
+          .values({ slug: seed.slug, ...(seed.id ? { id: seed.id } : {}), ...values })
+          .returning({ id: tenants.id });
         tenantId = inserted.id;
       }
 

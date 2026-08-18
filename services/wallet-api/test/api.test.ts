@@ -59,7 +59,9 @@ describe('health', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
     const ready = await ctx.app.inject({ method: 'GET', url: '/readyz' });
     expect(ready.statusCode).toBe(200);
-    expect(ready.json()).toEqual({ status: 'ready' });
+    // `sponsorship: 'disabled'` is deliberate rather than absent: a deployment that does not
+    // sponsor should say so, because silence would be indistinguishable from a broken signer.
+    expect(ready.json()).toEqual({ status: 'ready', sponsorship: 'disabled' });
   });
 });
 
