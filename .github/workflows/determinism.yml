@@ -58,34 +58,54 @@ jobs:
       # address does not move. That is the whole promise of §4.2 — nothing operator-specific in the
       # init code — and it is the address tenants send money to, so it has to be checked directly
       # rather than inferred from bytecode equality.
+      #
+      # The second deployment needs a *fresh* chain. The salt is fixed, so re-running the module
+      # against the chain that already carries the first deployment cannot say anything about
+      # operator-independence: CreateX simply reverts with `FailedContractCreation` because the
+      # implementation and the deployer already occupy their addresses. Restarting anvil makes the
+      # comparison what it claims to be — two first deployments that differ only in the initialiser
+      # arguments.
       - name: Paymaster address is independent of operator configuration
         working-directory: packages/contracts
         run: |
-          node --input-type=module -e "
-            import { execFileSync } from 'node:child_process';
-            import fs from 'node:fs';
-            const deployed = JSON.parse(fs.readFileSync('ignition/deployments/chain-31337/deployed_addresses.json','utf8'));
-            const first = deployed['GianoPaymaster#SponsorshipPaymaster'];
-            if (!first) { console.error('no paymaster proxy in the deployment'); process.exit(1); }
-            // A second operator: a different role admin, a different fee, a different overhead
-            // allowance. None of it may move the address.
-            fs.writeFileSync('/tmp/params.json', JSON.stringify({
-              GianoPaymaster: {
-                roleAdmin: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-                defaultFeeWei: '999999999999',
-                postOpGasAllowance: 12345,
-                penaltyBps: 500,
-              },
-            }));
-            const out = execFileSync('npx', ['hardhat','ignition','deploy','ignition/modules/GianoPaymaster.ts','--strategy','create2','--network','localhost','--parameters','/tmp/params.json','--deployment-id','second-operator','--reset'], { encoding: 'utf8' });
-            const match = out.match(/GianoPaymaster#SponsorshipPaymaster - (0x[0-9a-fA-F]{40})/);
-            if (!match) { console.error('could not read the second deployment address from:\n' + out); process.exit(1); }
-            if (match[1].toLowerCase() !== first.toLowerCase()) {
-              console.error('DETERMINISM FAILURE: the paymaster address depends on operator configuration\n  first: ' + first + '\n  second:' + match[1]);
-              process.exit(1);
+          # Keep the first run's address before the chain that produced it goes away; the
+          # deployment directory is on disk, not on the node.
+          FIRST=$(node -e "console.log(require('./ignition/deployments/chain-31337/deployed_addresses.json')['GianoPaymaster#SponsorshipPaymaster'] ?? '')")
+          if [ -z "$FIRST" ]; then echo "no paymaster proxy in the first deployment"; exit 1; fi
+
+          pkill -f 'anvil --host' || true
+          sleep 1
+          anvil --host 127.0.0.1 --chain-id 31337 > /tmp/anvil-second.log 2>&1 &
+          sleep 3
+          node ../../e2e/devnet/setup-entrypoint.mjs
+
+          # A second operator: a different role admin, a different fee, a different overhead
+          # allowance. None of it may move the address.
+          cat > /tmp/params.json <<'JSON'
+          {
+            "GianoPaymaster": {
+              "roleAdmin": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "defaultFeeWei": "999999999999",
+              "postOpGasAllowance": 12345,
+              "penaltyBps": 500
             }
-            console.log('OK paymaster proxy address is operator-independent:', first);
-          "
+          }
+          JSON
+
+          npx hardhat ignition deploy ignition/modules/GianoPaymaster.ts \
+            --strategy create2 --network localhost \
+            --parameters /tmp/params.json --deployment-id second-operator --reset
+
+          SECOND=$(node -e "console.log(require('./ignition/deployments/second-operator/deployed_addresses.json')['GianoPaymaster#SponsorshipPaymaster'] ?? '')")
+          if [ -z "$SECOND" ]; then echo "no paymaster proxy in the second deployment"; exit 1; fi
+
+          if [ "$(echo "$FIRST" | tr 'A-F' 'a-f')" != "$(echo "$SECOND" | tr 'A-F' 'a-f')" ]; then
+            echo "DETERMINISM FAILURE: the paymaster address depends on operator configuration"
+            echo "  first:  $FIRST"
+            echo "  second: $SECOND"
+            exit 1
+          fi
+          echo "OK paymaster proxy address is operator-independent: $FIRST"
 
   storage-layout:
     name: Paymaster storage layout is upgrade-safe
