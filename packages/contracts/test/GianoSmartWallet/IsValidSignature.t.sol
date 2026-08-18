@@ -14,7 +14,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         s = bytes32(Utils.normalizeS(uint256(s)));
         bytes memory sig = abi.encode(
             GianoSmartWallet.SignatureWrapper({
-                ownerIndex: 1,
+                ownerBytes: passkeyOwner,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
                         authenticatorData: webAuthn.authenticatorData,
@@ -46,10 +46,13 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         GianoSmartWallet.SignatureWrapper memory wrapperForOtherAccount =
-            GianoSmartWallet.SignatureWrapper(0, signature);
+            GianoSmartWallet.SignatureWrapper(abi.encode(signer), signature);
 
         bytes memory sig = abi.encode(
-            GianoSmartWallet.SignatureWrapper({ownerIndex: 2, signatureData: abi.encode(wrapperForOtherAccount)})
+            GianoSmartWallet.SignatureWrapper({
+                ownerBytes: abi.encode(address(otherAccount)),
+                signatureData: abi.encode(wrapperForOtherAccount)
+            })
         );
 
         // check a valid signature
@@ -57,7 +60,9 @@ contract TestIsValidSignature is SmartWalletTestBase {
         assertEq(ret, bytes4(0x1626ba7e));
     }
 
-    function testValidateSignatureWithPasskeySignerFailsBadOwnerIndex() public {
+    /// @dev Owners are identified by their bytes rather than by index, so an unregistered
+    ///      public key is rejected up front by `isOwnerBytes` instead of reverting on a lookup.
+    function testValidateSignatureWithPasskeySignerFailsUnregisteredOwner() public {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 challenge = account.replaySafeHash(hash);
         WebAuthnInfo memory webAuthn = Utils.getWebAuthnStruct(challenge);
@@ -65,10 +70,13 @@ contract TestIsValidSignature is SmartWalletTestBase {
         (bytes32 r, bytes32 s) = vm.signP256(passkeyPrivateKey, webAuthn.messageHash);
         s = bytes32(Utils.normalizeS(uint256(s)));
 
-        uint8 badOwnerIndex = 2;
+        // a well-formed passkey signature, but under a public key that was never added as an owner
+        bytes memory unregisteredOwner = abi.encode(uint256(1), uint256(2));
+        assertFalse(account.isOwnerBytes(unregisteredOwner));
+
         bytes memory sig = abi.encode(
             GianoSmartWallet.SignatureWrapper({
-                ownerIndex: badOwnerIndex,
+                ownerBytes: unregisteredOwner,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
                         authenticatorData: webAuthn.authenticatorData,
@@ -82,8 +90,8 @@ contract TestIsValidSignature is SmartWalletTestBase {
             })
         );
 
-        vm.expectRevert(abi.encodeWithSelector(MultiOwnable.InvalidOwnerBytesLength.selector, hex""));
-        account.isValidSignature(hash, sig);
+        bytes4 ret = account.isValidSignature(hash, sig);
+        assertEq(ret, bytes4(0xffffffff));
     }
 
     function testValidateSignatureWithPasskeySignerFailsWithWrongBadSignature() public {
@@ -96,7 +104,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
 
         bytes memory sig = abi.encode(
             GianoSmartWallet.SignatureWrapper({
-                ownerIndex: 1,
+                ownerBytes: passkeyOwner,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
                         authenticatorData: webAuthn.authenticatorData,
@@ -120,7 +128,8 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes32 toSign = account.replaySafeHash(hash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
         bytes memory signature = abi.encodePacked(r, s, v);
-        bytes4 ret = account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(0, signature)));
+        bytes4 ret =
+            account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), signature)));
         assertEq(ret, bytes4(0x1626ba7e));
     }
 
@@ -128,7 +137,8 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xa12ce, hash);
         bytes memory signature = abi.encodePacked(r, s, v);
-        bytes4 ret = account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(0, signature)));
+        bytes4 ret =
+            account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), signature)));
         assertEq(ret, bytes4(0xffffffff));
     }
 
@@ -140,10 +150,9 @@ contract TestIsValidSignature is SmartWalletTestBase {
         (bytes32 r, bytes32 s) = vm.signP256(passkeyPrivateKey, webAuthn.messageHash);
         s = bytes32(Utils.normalizeS(uint256(s)));
 
-        uint8 addressOwnerIndex = 0;
         bytes memory sig = abi.encode(
             GianoSmartWallet.SignatureWrapper({
-                ownerIndex: addressOwnerIndex,
+                ownerBytes: abi.encode(signer),
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
                         authenticatorData: webAuthn.authenticatorData,
@@ -167,7 +176,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
         bytes memory signature = abi.encodePacked(r, s, v);
         vm.expectRevert();
-        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(1, signature)));
+        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(passkeyOwner, signature)));
     }
 
     /// @dev this case should not be possible, but we need to explicitly test the revert case
@@ -176,16 +185,16 @@ contract TestIsValidSignature is SmartWalletTestBase {
         bytes32 toSign = account.replaySafeHash(hash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
         bytes memory signature = abi.encodePacked(r, s, v);
-        bytes32 invalidAddress = bytes32(uint256(type(uint160).max) + 1);
-        bytes32 slot_ownerAtIndex =
-            bytes32(uint256(0x0627f72af0e6f412195b0d8acbe438b28090dd545b7d2331fccf77723561f500) + 2); // MUTLI_OWNABLE_STORAGE_LOCATION
-            // + 2
-        bytes32 slot_ownerAtIndex_zeroIndex =
-            bytes32(uint256(keccak256(abi.encodePacked(keccak256(abi.encode(0, slot_ownerAtIndex))))));
-        vm.store(address(account), slot_ownerAtIndex_zeroIndex, invalidAddress);
-        vm.expectRevert(
-            abi.encodeWithSelector(MultiOwnable.InvalidEthereumAddressOwner.selector, abi.encode(invalidAddress))
-        );
-        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(0, signature)));
+        // 32 owner bytes that do not fit in an `address`. `addOwnerAddress`/`_initializeOwners`
+        // make this unreachable, so force the entry straight into the `isOwner` mapping
+        // (MUTLI_OWNABLE_STORAGE_LOCATION + 3) to reach the defensive revert.
+        bytes memory invalidOwner = abi.encode(bytes32(uint256(type(uint160).max) + 1));
+        bytes32 slot_isOwner =
+            bytes32(uint256(0x0627f72af0e6f412195b0d8acbe438b28090dd545b7d2331fccf77723561f500) + 3);
+        vm.store(address(account), keccak256(abi.encodePacked(invalidOwner, slot_isOwner)), bytes32(uint256(1)));
+        assertTrue(account.isOwnerBytes(invalidOwner));
+
+        vm.expectRevert(abi.encodeWithSelector(MultiOwnable.InvalidEthereumAddressOwner.selector, invalidOwner));
+        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(invalidOwner, signature)));
     }
 }

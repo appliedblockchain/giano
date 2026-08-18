@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Giano Wallet API",
-    "description": "WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets.",
+    "description": "WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets (multi-tenant).",
     "version": "1.0.0"
   },
   "components": {
@@ -15,7 +15,7 @@
       "adminKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Admin API key (ADMIN_API_KEYS)"
+        "description": "Per-tenant admin API key (provisioned via TENANTS_SEED)"
       }
     },
     "schemas": {}
@@ -163,6 +163,29 @@
                   },
                   "required": [
                     "origins"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }
@@ -437,6 +460,29 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
@@ -573,6 +619,29 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
@@ -699,6 +768,29 @@
                     "credentialId",
                     "externalUserId",
                     "session"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }
@@ -1059,6 +1151,29 @@
                     "error",
                     "message",
                     "policy"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }

@@ -7,10 +7,13 @@
   "scripts": {
     "test": "playwright test",
     "test:headed": "playwright test --headed",
-    "dapp": "node dapp/serve.mjs"
+    "dapp": "node dapp/serve.mjs",
+    "wallet-byo": "node wallet-byo/serve.mjs"
   },
   "devDependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",
+    "@appliedblockchain/giano-wallet-core": "workspace:^",
+    "@appliedblockchain/giano-wallet-transport": "workspace:^",
     "@playwright/test": "^1.52.0",
     "esbuild": "^0.25.4",
     "viem": "2.31.6"

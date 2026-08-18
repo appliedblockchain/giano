@@ -1,17 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
-import {
-  addVirtualAuthenticator,
-  expectOutContains,
-  openWalletPopup,
-  seedCredentials,
-  trackResidentCredentials,
-  WALLET_URL,
-  type VirtualCredential,
-} from './helpers';
+import { expect, test } from '@playwright/test';
+import { addVirtualAuthenticator, connectWallet, expectOutContains, openActionPopup, openWalletPopup, TENANTS } from './helpers';
 
 /**
- * Full two-origin flows: the dApp fixture uses ONLY the thin SDK; the popup page on
- * the wallet origin runs the ceremonies against a CDP virtual authenticator.
+ * Full two-origin flows for tenant "stock" (Giano's stock wallet-web UI): the dApp
+ * fixture uses ONLY the thin SDK; the popup page on the wallet origin runs the
+ * ceremonies against a CDP virtual authenticator.
  * Requires the e2e stack (deploy/docker-compose.e2e.yml) to be up.
  *
  * The wallet popup is EPHEMERAL: it closes itself once each connect/sign/transaction
@@ -22,36 +15,19 @@ import {
  * each new popup's authenticator (see helpers).
  */
 
-/** Connects a fresh wallet and returns the resident credential(s) to re-seed later popups. */
-async function connect(page: Page): Promise<VirtualCredential[]> {
-  await page.goto('/');
-  const popup = await openWalletPopup(page, '#connect');
-  const { cdp } = await addVirtualAuthenticator(popup);
-  const credentials = trackResidentCredentials(cdp);
-  await popup.getByRole('button', { name: 'Continue with passkey' }).click();
-  await expectOutContains(page, 'accounts: ["0x');
-  return credentials;
-}
-
-/** Opens a fresh popup for a signing/transaction action, seeding the connect credential. */
-async function openActionPopup(page: Page, trigger: string, credentials: VirtualCredential[]): Promise<Page> {
-  const popup = await openWalletPopup(page, trigger);
-  const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
-  await seedCredentials(cdp, authenticatorId, credentials);
-  return popup;
-}
+const tenant = TENANTS.stock;
 
 test('create wallet + connect through the popup pins the dApp origin', async ({ page }) => {
   await page.goto('/');
   const popup = await openWalletPopup(page, '#connect');
   await addVirtualAuthenticator(popup);
   await expect(popup.getByText(new URL(page.url()).origin)).toBeVisible();
-  await popup.getByRole('button', { name: 'Continue with passkey' }).click();
+  await popup.getByRole('button', { name: tenant.ui.connect }).click();
   await expectOutContains(page, 'accounts: ["0x');
 });
 
 test('session resume answers eth_accounts without a popup', async ({ page }) => {
-  await connect(page);
+  await connectWallet(page, tenant);
 
   await page.reload();
   let popupOpened = false;
@@ -62,37 +38,37 @@ test('session resume answers eth_accounts without a popup', async ({ page }) => 
 });
 
 test('send transaction: fresh popup silently restores, consent approve → receipt', async ({ page }) => {
-  const credentials = await connect(page);
+  const { credentials } = await connectWallet(page, tenant);
 
   const popup = await openActionPopup(page, '#send', credentials);
-  await expect(popup.getByText('Review transaction')).toBeVisible();
+  await expect(popup.getByText(tenant.ui.txHeading)).toBeVisible();
   await expect(popup.getByText(new URL(page.url()).origin)).toBeVisible();
-  await popup.getByRole('button', { name: 'Approve' }).click();
+  await popup.getByRole('button', { name: tenant.ui.approveTx }).click();
 
   await expectOutContains(page, 'userOpHash: 0x');
   await expectOutContains(page, 'receipt:success: true');
 });
 
 test('reject returns EIP-1193 4001', async ({ page }) => {
-  const credentials = await connect(page);
+  const { credentials } = await connectWallet(page, tenant);
 
   const popup = await openActionPopup(page, '#send', credentials);
-  await expect(popup.getByText('Review transaction')).toBeVisible();
-  await popup.getByRole('button', { name: 'Reject' }).click();
+  await expect(popup.getByText(tenant.ui.txHeading)).toBeVisible();
+  await popup.getByRole('button', { name: tenant.ui.rejectTx }).click();
   await expectOutContains(page, 'send:error: rpc:4001');
 });
 
 test('personal_sign and typed data through consent', async ({ page }) => {
-  const credentials = await connect(page);
+  const { credentials } = await connectWallet(page, tenant);
 
   const signPopup = await openActionPopup(page, '#sign', credentials);
   await expect(signPopup.getByText('giano e2e')).toBeVisible();
-  await signPopup.getByRole('button', { name: 'Sign' }).click();
+  await signPopup.getByRole('button', { name: tenant.ui.sign }).click();
   await expectOutContains(page, 'signature: len=');
 
   const typedPopup = await openActionPopup(page, '#sign-typed', credentials);
   await expect(typedPopup.getByText('hello giano')).toBeVisible();
-  await typedPopup.getByRole('button', { name: 'Sign' }).click();
+  await typedPopup.getByRole('button', { name: tenant.ui.sign }).click();
   await expectOutContains(page, 'typedSignature: len=');
 });
 
@@ -107,11 +83,11 @@ test('hostile-origin message injection is ignored by the popup', async ({ page }
   });
 
   // consent still required — nothing auto-approved
-  await expect(popup.getByRole('button', { name: 'Continue with passkey' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: tenant.ui.connect })).toBeVisible();
 });
 
 test('ROR well-known is served on the wallet origin', async ({ request }) => {
-  const response = await request.get(`${WALLET_URL}/.well-known/webauthn`);
+  const response = await request.get(`${tenant.walletUrl}/.well-known/webauthn`);
   expect(response.ok()).toBeTruthy();
   const body = (await response.json()) as { origins: string[] };
   expect(Array.isArray(body.origins)).toBe(true);
@@ -123,7 +99,7 @@ test('popup-blocked path yields a typed error', async ({ browser }) => {
   await page.addInitScript(() => {
     window.open = () => null;
   });
-  await page.goto(process.env.DAPP_URL ?? 'http://app.localhost:4400');
+  await page.goto(tenant.dappUrl);
   await page.click('#connect');
   await expectOutContains(page, 'connect:error:', 15_000);
   await context.close();

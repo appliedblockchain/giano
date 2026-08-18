@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Address, Hex } from 'viem';
 import { getUserOperationHash } from 'viem/account-abstraction';
@@ -9,6 +9,7 @@ import type { Db } from '../db/index.js';
 import { useropLog } from '../db/schema.js';
 import { ApiError } from '../plugins/error-handler.js';
 import type { BundlerService } from '../services/bundler.js';
+import { mergePolicy } from '../services/tenants.js';
 import type { PolicyConfig } from '../services/userop-policy.js';
 import { evaluatePolicy } from '../services/userop-policy.js';
 
@@ -68,15 +69,43 @@ function toBigIntUserOp(op: RpcUserOp) {
 
 export default async function useropRoutes(
   instance: FastifyInstance,
-  opts: { db: Db; config: AppConfig; bundler: BundlerService; policy: PolicyConfig },
+  opts: { db: Db; config: AppConfig; bundler: BundlerService; defaultPolicy: PolicyConfig },
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, config, bundler, policy } = opts;
+  // request.tenant is backfilled from the session by requireSession, so no tenant
+  // service is needed here — the merged policy reads straight off the request.
+  const { db, config, bundler, defaultPolicy } = opts;
+
+  const tenantPolicy = (request: FastifyRequest) => mergePolicy(defaultPolicy, request.tenant?.policy);
+
+  /**
+   * Light per-tenant relay limit (G5.2): a shared bundler and executor balance mean one
+   * tenant must not be able to exhaust them for everyone. Hand-rolled fixed window
+   * (in-memory, single-process — acceptable for this iteration) rather than
+   * @fastify/rate-limit, because it must run AFTER requireSession resolved the tenant.
+   */
+  const relayWindows = new Map<string, { windowStart: number; count: number }>();
+  const relayLimit = async (request: FastifyRequest, reply: FastifyReply) => {
+    const session = request.session;
+    if (!session) return; // requireSession already replied
+    const max = tenantPolicy(request).relayRateLimitPerMinute ?? config.USEROP_RATE_LIMIT_PER_MINUTE;
+    const now = Date.now();
+    const window = relayWindows.get(session.tenantId);
+    if (!window || now - window.windowStart >= 60_000) {
+      relayWindows.set(session.tenantId, { windowStart: now, count: 1 });
+      return;
+    }
+    window.count += 1;
+    if (window.count > max) {
+      app.metrics.useropRelayed.inc({ status: 'rate-limited', tenant: request.tenant?.slug ?? 'unknown' });
+      return reply.code(429).send({ error: 'rate-limited', message: `tenant relay limit of ${max}/minute exceeded` });
+    }
+  };
 
   app.post(
     '/v1/userops',
     {
-      preHandler: app.requireSession,
+      preHandler: [app.requireSession, relayLimit],
       schema: {
         tags: ['userops'],
         security: [{ session: [] }],
@@ -84,91 +113,117 @@ export default async function useropRoutes(
         response: {
           200: z.object({ userOperationHash: z.string(), duplicate: z.boolean().optional() }),
           403: z.object({ error: z.string(), message: z.string(), policy: z.array(z.object({ rule: z.string(), passed: z.boolean(), detail: z.string().optional() })) }),
+          429: z.object({ error: z.string(), message: z.string() }),
         },
       },
     },
     async (request, reply) => {
       const stopTimer = app.metrics.useropLatency.startTimer();
       const session = request.session!;
-      const rpcOp = request.body.userOperation;
-      const userOp = toBigIntUserOp(rpcOp);
-
-      // Hash is computed server-side against the SERVER's EntryPoint and chain — the
-      // request cannot influence where this op is valid.
-      const useropHash = getUserOperationHash({
-        chainId: config.CHAIN_ID,
-        entryPointAddress: bundler.entryPoint,
-        entryPointVersion: '0.7',
-        userOperation: userOp as never,
-      });
-
-      const decision = evaluatePolicy(
-        {
-          sender: rpcOp.sender,
-          callData: rpcOp.callData,
-          callGasLimit: userOp.callGasLimit,
-          verificationGasLimit: userOp.verificationGasLimit,
-          preVerificationGas: userOp.preVerificationGas,
-          maxFeePerGas: userOp.maxFeePerGas,
-          maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
-          paymaster: rpcOp.paymaster,
-        },
-        session.walletAddress,
-        policy,
-      );
-
-      const inserted = await db
-        .insert(useropLog)
-        .values({
-          useropHash,
-          sender: rpcOp.sender,
-          userId: session.userId,
-          sessionId: session.sessionId,
-          status: decision.allowed ? 'accepted' : 'rejected',
-          policyResults: decision.results,
-          rejectReason: decision.rejectReason,
-        })
-        .onConflictDoNothing({ target: useropLog.useropHash })
-        .returning({ id: useropLog.id });
-
-      if (inserted.length === 0) {
-        // duplicate submission — idempotent answer for already-submitted ops
-        const existing = await db.query.useropLog.findFirst({ where: eq(useropLog.useropHash, useropHash) });
-        if (existing && (existing.status === 'submitted' || existing.status === 'accepted')) {
-          return { userOperationHash: useropHash, duplicate: true };
-        }
-        throw new ApiError(409, 'duplicate', 'user operation was already submitted and rejected/failed');
-      }
-
-      if (!decision.allowed) {
-        request.log.warn({ useropHash, reason: decision.rejectReason }, 'userop rejected by policy');
-        for (const rule of decision.results.filter((r) => !r.passed)) {
-          app.metrics.policyRejections.inc({ rule: rule.rule });
-        }
-        app.metrics.useropRelayed.inc({ status: 'rejected' });
-        return reply.code(403).send({ error: 'policy-rejected', message: decision.rejectReason!, policy: decision.results });
-      }
-
+      const tenantSlug = request.tenant?.slug ?? 'unknown';
       try {
-        const bundlerHash = await bundler.sendUserOperation(rpcOp as unknown as Record<string, unknown>);
-        if (bundlerHash.toLowerCase() !== useropHash.toLowerCase()) {
-          request.log.warn({ useropHash, bundlerHash }, 'bundler returned a different userop hash than computed');
+        const rpcOp = request.body.userOperation;
+        const userOp = toBigIntUserOp(rpcOp);
+
+        // Hash is computed server-side against the SERVER's EntryPoint and chain — the
+        // request cannot influence where this op is valid.
+        const useropHash = getUserOperationHash({
+          chainId: config.CHAIN_ID,
+          entryPointAddress: bundler.entryPoint,
+          entryPointVersion: '0.7',
+          userOperation: userOp as never,
+        });
+
+        // Per-tenant policy: tenant jsonb overrides merged over the deployment defaults.
+        const decision = evaluatePolicy(
+          {
+            sender: rpcOp.sender,
+            callData: rpcOp.callData,
+            callGasLimit: userOp.callGasLimit,
+            verificationGasLimit: userOp.verificationGasLimit,
+            preVerificationGas: userOp.preVerificationGas,
+            maxFeePerGas: userOp.maxFeePerGas,
+            maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
+            paymaster: rpcOp.paymaster,
+          },
+          session.walletAddress,
+          tenantPolicy(request),
+        );
+
+        if (!decision.allowed) {
+          // Audit-log the rejection; a conflict here means the hash already has a row
+          // (someone else's or an earlier attempt) — never leak that, just reject.
+          await db
+            .insert(useropLog)
+            .values({
+              useropHash,
+              sender: rpcOp.sender,
+              tenantId: session.tenantId,
+              userId: session.userId,
+              sessionId: session.sessionId,
+              status: 'rejected',
+              policyResults: decision.results,
+              rejectReason: decision.rejectReason,
+            })
+            .onConflictDoNothing({ target: useropLog.useropHash });
+          request.log.warn({ useropHash, reason: decision.rejectReason }, 'userop rejected by policy');
+          for (const rule of decision.results.filter((r) => !r.passed)) {
+            app.metrics.policyRejections.inc({ rule: rule.rule, tenant: tenantSlug });
+          }
+          app.metrics.useropRelayed.inc({ status: 'rejected', tenant: tenantSlug });
+          return reply.code(403).send({ error: 'policy-rejected', message: decision.rejectReason!, policy: decision.results });
         }
-        await db
-          .update(useropLog)
-          .set({ status: 'submitted', bundlerResponse: { bundlerHash } })
-          .where(eq(useropLog.id, inserted[0].id));
-        app.metrics.useropRelayed.inc({ status: 'submitted' });
-        stopTimer();
-        // the server-computed hash is the canonical id (log key, status endpoint, idempotency)
-        return { userOperationHash: useropHash };
-      } catch (error) {
-        await db
-          .update(useropLog)
-          .set({ status: 'failed', bundlerResponse: { error: (error as Error).message } })
-          .where(eq(useropLog.id, inserted[0].id));
-        app.metrics.useropRelayed.inc({ status: 'failed' });
-        throw error;
+
+        const inserted = await db
+          .insert(useropLog)
+          .values({
+            useropHash,
+            sender: rpcOp.sender,
+            tenantId: session.tenantId,
+            userId: session.userId,
+            sessionId: session.sessionId,
+            status: 'accepted',
+            policyResults: decision.results,
+            rejectReason: decision.rejectReason,
+          })
+          .onConflictDoNothing({ target: useropLog.useropHash })
+          .returning({ id: useropLog.id });
+
+        if (inserted.length === 0) {
+          const existing = await db.query.useropLog.findFirst({ where: eq(useropLog.useropHash, useropHash) });
+          // Idempotent `duplicate: true` is confirmation the op was submitted — only the
+          // submitter's own tenant AND user may learn that (V9). Anyone else gets the
+          // generic conflict.
+          const ownDuplicate = existing && existing.tenantId === session.tenantId && existing.userId === session.userId;
+          if (ownDuplicate && (existing.status === 'submitted' || existing.status === 'accepted')) {
+            return { userOperationHash: useropHash, duplicate: true };
+          }
+          throw new ApiError(409, 'duplicate', 'user operation was already submitted');
+        }
+
+        try {
+          const bundlerHash = await bundler.sendUserOperation(rpcOp as unknown as Record<string, unknown>);
+          if (bundlerHash.toLowerCase() !== useropHash.toLowerCase()) {
+            request.log.warn({ useropHash, bundlerHash }, 'bundler returned a different userop hash than computed');
+          }
+          await db
+            .update(useropLog)
+            .set({ status: 'submitted', bundlerResponse: { bundlerHash } })
+            .where(eq(useropLog.id, inserted[0].id));
+          app.metrics.useropRelayed.inc({ status: 'submitted', tenant: tenantSlug });
+          // the server-computed hash is the canonical id (log key, status endpoint, idempotency)
+          return { userOperationHash: useropHash };
+        } catch (error) {
+          await db
+            .update(useropLog)
+            .set({ status: 'failed', bundlerResponse: { error: (error as Error).message } })
+            .where(eq(useropLog.id, inserted[0].id));
+          app.metrics.useropRelayed.inc({ status: 'failed', tenant: tenantSlug });
+          throw error;
+        }
+      } finally {
+        // rejected and failed ops observe the histogram too (was success-path only)
+        stopTimer({ tenant: tenantSlug });
       }
     },
   );
@@ -195,7 +250,7 @@ export default async function useropRoutes(
     },
     async (request) => {
       const row = await db.query.useropLog.findFirst({ where: eq(useropLog.useropHash, request.params.hash) });
-      if (!row || row.userId !== request.session!.userId) {
+      if (!row || row.userId !== request.session!.userId || row.tenantId !== request.session!.tenantId) {
         throw new ApiError(404, 'not-found', 'user operation not found');
       }
       return {
@@ -210,8 +265,9 @@ export default async function useropRoutes(
   );
 
   /**
-   * Public, read-only receipt lookup (on-chain public data). Exists so thin-SDK dApps
-   * can await inclusion without ever needing a bundler URL of their own (P3.4).
+   * Public, read-only receipt lookup (on-chain public data). Deliberately tenant-free
+   * and unauthenticated (D3.7): the receipt is public chain state, and thin-SDK dApps
+   * await inclusion here without ever needing a bundler URL of their own (P3.4).
    */
   app.get(
     '/v1/userops/:hash/receipt',
