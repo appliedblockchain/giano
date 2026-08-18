@@ -1,5 +1,6 @@
 import { hexToString, isHex } from 'viem';
 import type { PendingRequest } from './requests';
+import type { SponsorshipPreflight } from './runtime';
 
 /**
  * Plain-DOM views — what wallet-web renders with React, a BYO UI can render however it
@@ -43,7 +44,36 @@ function describeTransaction(params: unknown): string {
   return [`to:    ${tx?.to ?? '(contract creation)'}`, `value: ${tx?.value ?? '0x0'}`, `data:  ${tx?.data ?? '0x'}`].join('\n');
 }
 
-export function render(root: HTMLElement, pending: PendingRequest | null, busy: boolean): void {
+/**
+ * The pre-approval refusal, in the BYO UI's own idiom.
+ *
+ * Deliberately worded differently from the stock wallet — a tenant writes its own copy — but with
+ * the same two obligations: the machine-readable reason is exposed for the test to assert, and no
+ * confirm button is rendered at all. Offering one and failing afterwards would mean asking for a
+ * passkey ceremony that could never have succeeded.
+ */
+function sponsorshipNotice(preflight: SponsorshipPreflight): HTMLElement | null {
+  if (preflight.state === 'sponsored') {
+    return el('div', { className: 'idle', dataset: { testid: 'byo-sponsorship-covered' } }, 'Fees for this transaction are covered by the app.');
+  }
+  if (preflight.state === 'not-applicable') return null;
+
+  const reason = preflight.state === 'refused' ? preflight.reason : 'temporarily-unavailable';
+  return el(
+    'div',
+    { className: 'payload', dataset: { testid: 'byo-sponsorship-refusal', reason } },
+    preflight.state === 'refused'
+      ? `This app will not cover the fee for this transaction (${preflight.reason}).`
+      : 'Fee coverage is temporarily unavailable — try again shortly.',
+  );
+}
+
+export function render(
+  root: HTMLElement,
+  pending: PendingRequest | null,
+  busy: boolean,
+  preflight: SponsorshipPreflight | null = { state: 'not-applicable' },
+): void {
   root.replaceChildren();
 
   if (!pending) {
@@ -74,8 +104,24 @@ export function render(root: HTMLElement, pending: PendingRequest | null, busy: 
       el('h2', { dataset: { testid: 'byo-tx' } }, 'Confirm transaction'),
       originBadge(pending.dappOrigin),
       el('pre', { className: 'payload' }, describeTransaction(pending.params)),
-      buttons('Confirm', 'byo-confirm'),
     );
+
+    if (preflight === null) {
+      root.append(el('div', { className: 'idle', dataset: { testid: 'byo-sponsorship-checking' } }, 'Checking fee coverage…'));
+      root.append(el('div', { className: 'row' }, el('button', { className: 'secondary', textContent: 'Decline', onclick: () => pending.reject() })));
+      return;
+    }
+
+    const notice = sponsorshipNotice(preflight);
+    if (notice) root.append(notice);
+
+    if (preflight.state === 'refused' || preflight.state === 'unavailable') {
+      // No confirm button, and therefore no passkey prompt.
+      root.append(el('div', { className: 'row' }, el('button', { className: 'secondary', textContent: 'Close', onclick: () => pending.reject() })));
+      return;
+    }
+
+    root.append(buttons('Confirm', 'byo-confirm'));
     return;
   }
 

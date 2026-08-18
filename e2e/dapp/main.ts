@@ -53,6 +53,41 @@ document.getElementById('send')!.addEventListener('click', async () => {
   }
 });
 
+/**
+ * A transfer of the demo ERC-20 — an ordinary allow-listed contract call, which is what the
+ * sponsored path looks like for a real application. `#send` is a self-call, which the sponsorship
+ * rules classify as wallet management, so it cannot stand in for this.
+ */
+document.getElementById('send-erc20')!.addEventListener('click', async () => {
+  try {
+    const [account] = await provider.request<string[]>({ method: 'eth_accounts' });
+    // transfer(address,uint256) — to self, 0 tokens: the call has to be valid, not meaningful.
+    const data = `0xa9059cbb${account.slice(2).padStart(64, '0')}${'0'.repeat(64)}`;
+    const hash = await provider.request<string>({
+      method: 'eth_sendTransaction',
+      params: [{ to: process.env.TEST_ERC20_ADDRESS as string, value: '0x0', data }],
+    });
+    log('userOpHash', hash);
+    const receipt = await provider.request<{ success: boolean }>({ method: 'waitForUserOperationReceipt', params: [hash] });
+    log('receipt:success', receipt.success);
+  } catch (error) {
+    log('send:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
+  }
+});
+
+/** A call to a contract no tenant allow-lists — the sponsorship refusal path. */
+document.getElementById('send-unlisted')!.addEventListener('click', async () => {
+  try {
+    const hash = await provider.request<string>({
+      method: 'eth_sendTransaction',
+      params: [{ to: '0x000000000000000000000000000000000000dEaD', value: '0x0', data: '0xa9059cbb' }],
+    });
+    log('userOpHash', hash);
+  } catch (error) {
+    log('send:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
+  }
+});
+
 document.getElementById('sign')!.addEventListener('click', async () => {
   try {
     const [account] = await provider.request<string[]>({ method: 'eth_accounts' });

@@ -25,7 +25,13 @@ const bundle = await esbuild.build({
   define: {
     'process.env.CHAIN_ID': JSON.stringify(process.env.CHAIN_ID ?? String(addresses.chainId)),
     'process.env.FACTORY_ADDRESS': JSON.stringify(process.env.FACTORY_ADDRESS ?? addresses.factory),
-    'process.env.PAYMASTER_ADDRESS': JSON.stringify(process.env.PAYMASTER_ADDRESS ?? addresses.paymaster),
+    // Defaults to the production paymaster path when the devnet baked one, so what the BYO
+    // reference demonstrates is the path real tenants use — rules enforced, balance debited, fee
+    // charged — rather than a permissive fixture that cannot fail.
+    'process.env.SPONSORSHIP_MODE': JSON.stringify(
+      process.env.SPONSORSHIP_MODE ?? (addresses.sponsorshipPaymaster ? 'service' : addresses.testPaymaster ? 'test-paymaster' : 'off'),
+    ),
+    'process.env.PAYMASTER_ADDRESS': JSON.stringify(process.env.PAYMASTER_ADDRESS ?? addresses.testPaymaster ?? addresses.paymaster ?? ''),
     'process.env.ALLOWED_DAPP_ORIGINS': JSON.stringify(process.env.BYO_ALLOWED_DAPP_ORIGINS ?? '["http://app-byo.localhost:4401"]'),
   },
 });

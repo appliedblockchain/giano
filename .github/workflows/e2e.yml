@@ -28,8 +28,11 @@ jobs:
           pnpm --filter @appliedblockchain/giano-wallet-core build
           pnpm --filter @appliedblockchain/giano-wallet-transport build
           pnpm --filter @appliedblockchain/giano-connector build
+      # `--wait` blocks on the sponsorship provisioner, which installs each demo tenant's rules
+      # through the real admin API and then verifies its own work. A stack that cannot sponsor must
+      # fail to come up rather than come up broken and take the failure out on a Playwright test.
       - name: Start stack
-        run: docker compose -f deploy/docker-compose.e2e.yml up --build -d
+        run: docker compose -f deploy/docker-compose.e2e.yml up --build -d --wait --wait-timeout 300
       - name: Wait for services
         run: |
           # Poll each endpoint on its own. config.json is a static file served the moment
@@ -50,7 +53,12 @@ jobs:
           # (catches Host-normalization breakage before spending Playwright time)
           wait_for 'tenant stock' curl -fsS -H 'Host: wallet.localhost' http://localhost:8080/.well-known/webauthn
           wait_for 'tenant byo' curl -fsS -H 'Host: wallet-byo.localhost' http://localhost:8080/.well-known/webauthn
+          # A deployment whose signer is unreachable cannot sponsor, and sponsored tenants cannot
+          # transact at all without it — so /readyz reporting sponsorship as 'ok' is a precondition
+          # for the suite, not an observation from it.
+          wait_for 'sponsorship ready' bash -c "curl -fsS http://localhost:8080/readyz | grep -q '\"sponsorship\":\"ok\"'"
           curl -fsS http://localhost:8081/config.json
+          curl -fsS http://localhost:8080/readyz
       - name: Install Playwright browsers
         working-directory: e2e
         run: pnpm exec playwright install --with-deps chromium
@@ -67,4 +75,18 @@ jobs:
         if: failure()
         run: |
           docker compose -f deploy/docker-compose.e2e.yml logs wallet-api --tail 200
+          docker compose -f deploy/docker-compose.e2e.yml logs sponsorship-provisioner --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs --tail 200
+      # A sponsorship failure is usually an accounting failure, and the numbers are the diagnosis.
+      # Collecting them here means a CI failure is explicable without reproducing it locally.
+      - name: Sponsorship state on failure
+        if: failure()
+        run: |
+          echo '--- accounting metrics ---'
+          curl -fsS http://localhost:8080/metrics | grep -E '^giano_(sponsorship|paymaster|tenant)' || true
+          for key in e2e-admin-key-stock e2e-admin-key-byo00; do
+            echo "--- $key balance ---"
+            curl -fsS -H "Authorization: Bearer $key" http://localhost:8080/v1/admin/sponsorship/balance || true
+            echo "--- $key recent decisions ---"
+            curl -fsS -H "Authorization: Bearer $key" 'http://localhost:8080/v1/admin/sponsorship/decisions?limit=20' || true
+          done

@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.DAPP_PORT ?? 4400);
 
+const addresses = JSON.parse(fs.readFileSync(path.join(dir, '..', 'devnet', 'addresses.json'), 'utf8'));
+
 const bundle = await esbuild.build({
   entryPoints: [path.join(dir, 'main.ts')],
   bundle: true,
@@ -18,6 +20,7 @@ const bundle = await esbuild.build({
     'process.env.WALLET_URL': JSON.stringify(process.env.WALLET_URL ?? 'http://wallet.localhost:8081'),
     'process.env.RPC_URL': JSON.stringify(process.env.RPC_URL ?? 'http://localhost:8545'),
     'process.env.CHAIN_ID': JSON.stringify(process.env.CHAIN_ID ?? '31337'),
+    'process.env.TEST_ERC20_ADDRESS': JSON.stringify(process.env.TEST_ERC20_ADDRESS ?? addresses.testErc20),
   },
 });
 const js = bundle.outputFiles[0].text;
