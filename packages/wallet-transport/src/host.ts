@@ -96,7 +96,15 @@ export class TransportHost {
       if (this.pinnedOrigin) {
         if (event.origin !== this.pinnedOrigin || event.source !== this.pinnedSource) return;
       } else {
-        if (!event.source || !this.isAllowedOrigin(event.origin)) return;
+        if (!event.source || !this.isAllowedOrigin(event.origin)) {
+          // The drop stays silent on the wire — but not in the wallet's own console. Without
+          // this, a misconfigured allow-list is indistinguishable from a severed opener: both
+          // surface on the dApp as the same 15s HANDSHAKE_TIMEOUT.
+          console.warn(
+            `[giano] handshake refused: origin ${event.origin} is not in allowedDappOrigins (${JSON.stringify(this.options.allowedOrigins ?? [])})`,
+          );
+          return;
+        }
         this.pinnedOrigin = event.origin;
         this.pinnedSource = event.source;
       }
