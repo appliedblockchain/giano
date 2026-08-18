@@ -6,8 +6,10 @@ import * as http from 'node:http';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ORIGINS, portOf } from '../origins.mjs';
+
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.DAPP_PORT ?? 4400);
+const port = Number(process.env.DAPP_PORT ?? portOf('app'));
 
 const addresses = JSON.parse(fs.readFileSync(path.join(dir, '..', 'devnet', 'addresses.json'), 'utf8'));
 
@@ -17,8 +19,9 @@ const bundle = await esbuild.build({
   format: 'esm',
   write: false,
   define: {
-    'process.env.WALLET_URL': JSON.stringify(process.env.WALLET_URL ?? 'http://wallet.localhost:8081'),
-    'process.env.RPC_URL': JSON.stringify(process.env.RPC_URL ?? 'http://localhost:8545'),
+    'process.env.WALLET_URL': JSON.stringify(process.env.WALLET_URL ?? ORIGINS.wallet),
+    // A name, not a port: the browser reaches anvil through portless like everything else.
+    'process.env.RPC_URL': JSON.stringify(process.env.RPC_URL ?? ORIGINS.rpc),
     'process.env.CHAIN_ID': JSON.stringify(process.env.CHAIN_ID ?? '31337'),
     'process.env.TEST_ERC20_ADDRESS': JSON.stringify(process.env.TEST_ERC20_ADDRESS ?? addresses.testErc20),
   },

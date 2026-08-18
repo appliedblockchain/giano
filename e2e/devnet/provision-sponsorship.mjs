@@ -16,14 +16,16 @@
  *
  * Fails loudly: a stack that cannot sponsor must fail to come up rather than come up broken.
  *
- * Usage:  WALLET_API_URL=http://localhost:8080 node e2e/devnet/provision-sponsorship.mjs
+ * Usage:  WALLET_API_URL=http://api.localhost node e2e/devnet/provision-sponsorship.mjs
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const apiUrl = (process.env.WALLET_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
+// Compose sets WALLET_API_URL to the container address; the default is for host-side runs,
+// where the wallet-api answers to the name portless publishes (see e2e/origins.mjs).
+const apiUrl = (process.env.WALLET_API_URL ?? 'http://api.localhost').replace(/\/$/, '');
 const addresses = JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
 
 /** Admin keys as `TENANTS_SEED` provisions them in deploy/docker-compose.e2e.yml. */

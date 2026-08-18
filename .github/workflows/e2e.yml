@@ -19,7 +19,8 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24, not 22: portless (the local proxy that serves the demo's names) requires it.
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build packages
@@ -33,6 +34,18 @@ jobs:
       # fail to come up rather than come up broken and take the failure out on a Playwright test.
       - name: Start stack
         run: docker compose -f deploy/docker-compose.e2e.yml up --build -d --wait --wait-timeout 300
+      # The demo's origins are names on port 80 (http://app.localhost, http://wallet.localhost,
+      # ...), so the suite needs portless's proxy. Port 80 is privileged, hence sudo; and an
+      # absolute interpreter path rather than `sudo node`, because sudo's secure_path does not
+      # include the toolcache node that setup-node put on PATH. Registering the routes is
+      # unprivileged and is done by e2e/portless-setup.mjs (Playwright's globalSetup) — the proxy
+      # watches its routes file, so it picks them up whenever they land.
+      - name: Start portless proxy
+        working-directory: e2e
+        run: |
+          node portless-setup.mjs --routes-only
+          sudo "$(which node)" node_modules/portless/dist/cli.js proxy start --no-tls
+          node node_modules/portless/dist/cli.js doctor
       - name: Wait for services
         run: |
           # Poll each endpoint on its own. config.json is a static file served the moment
@@ -47,18 +60,22 @@ jobs:
             "$@" || true
             return 1
           }
-          wait_for 'wallet-web config.json' curl -fsS http://localhost:8081/config.json
-          wait_for 'wallet-api /api/healthz' curl -fsS http://localhost:8081/api/healthz
+          # Through portless, by name: this is the path the browser takes, so it also proves
+          # the proxy is routing and that /etc/hosts resolution is in place.
+          wait_for 'wallet-web config.json' curl -fsS http://wallet.localhost/config.json
+          wait_for 'wallet-api /api/healthz' curl -fsS http://wallet.localhost/api/healthz
           # tenant resolution sanity: both tenants resolvable by Host on the raw API port
-          # (catches Host-normalization breakage before spending Playwright time)
-          wait_for 'tenant stock' curl -fsS -H 'Host: wallet.localhost' http://localhost:8080/.well-known/webauthn
-          wait_for 'tenant byo' curl -fsS -H 'Host: wallet-byo.localhost' http://localhost:8080/.well-known/webauthn
+          # (catches Host-normalization breakage before spending Playwright time). Deliberately
+          # NOT through portless — portless routes *by* Host, so a spoofed Host is exactly what
+          # it cannot forward. The published container port is the only way to probe this.
+          wait_for 'tenant stock' curl -fsS -H 'Host: wallet.localhost' http://127.0.0.1:8080/.well-known/webauthn
+          wait_for 'tenant byo' curl -fsS -H 'Host: wallet-byo.localhost' http://127.0.0.1:8080/.well-known/webauthn
           # A deployment whose signer is unreachable cannot sponsor, and sponsored tenants cannot
           # transact at all without it — so /readyz reporting sponsorship as 'ok' is a precondition
           # for the suite, not an observation from it.
-          wait_for 'sponsorship ready' bash -c "curl -fsS http://localhost:8080/readyz | grep -q '\"sponsorship\":\"ok\"'"
-          curl -fsS http://localhost:8081/config.json
-          curl -fsS http://localhost:8080/readyz
+          wait_for 'sponsorship ready' bash -c "curl -fsS http://api.localhost/readyz | grep -q '\"sponsorship\":\"ok\"'"
+          curl -fsS http://wallet.localhost/config.json
+          curl -fsS http://api.localhost/readyz
       - name: Install Playwright browsers
         working-directory: e2e
         run: pnpm exec playwright install --with-deps chromium
@@ -71,6 +88,12 @@ jobs:
         with:
           name: playwright-traces
           path: e2e/test-results
+      - name: portless state on failure
+        if: failure()
+        working-directory: e2e
+        run: |
+          node node_modules/portless/dist/cli.js list || true
+          node node_modules/portless/dist/cli.js doctor || true
       - name: Stack logs on failure
         if: failure()
         run: |
@@ -83,10 +106,10 @@ jobs:
         if: failure()
         run: |
           echo '--- accounting metrics ---'
-          curl -fsS http://localhost:8080/metrics | grep -E '^giano_(sponsorship|paymaster|tenant)' || true
+          curl -fsS http://api.localhost/metrics | grep -E '^giano_(sponsorship|paymaster|tenant)' || true
           for key in e2e-admin-key-stock e2e-admin-key-byo00; do
             echo "--- $key balance ---"
-            curl -fsS -H "Authorization: Bearer $key" http://localhost:8080/v1/admin/sponsorship/balance || true
+            curl -fsS -H "Authorization: Bearer $key" http://api.localhost/v1/admin/sponsorship/balance || true
             echo "--- $key recent decisions ---"
-            curl -fsS -H "Authorization: Bearer $key" 'http://localhost:8080/v1/admin/sponsorship/decisions?limit=20' || true
+            curl -fsS -H "Authorization: Bearer $key" 'http://api.localhost/v1/admin/sponsorship/decisions?limit=20' || true
           done

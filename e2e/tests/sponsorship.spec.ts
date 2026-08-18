@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { ORIGINS } from '../origins.mjs';
 import { connectWallet, expectOutContains, openActionPopup, TENANTS, type Tenant, type VirtualCredential } from './helpers';
 
 /**
@@ -23,7 +24,7 @@ const ADDRESSES = JSON.parse(fs.readFileSync(path.join(devnetDir, 'addresses.jso
   tenants: Array<{ slug: string; id: string }>;
 };
 
-const WALLET_API = process.env.WALLET_API_URL ?? 'http://localhost:8080';
+const WALLET_API = process.env.WALLET_API_URL ?? ORIGINS.api;
 
 // ── admin API helpers ─────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ async function readChain(fn: string, args: string[] = []): Promise<string> {
     treasury: '0x61d027b3', // treasury()
     getDeposit: '0xc399ec88', // getDeposit()
   };
-  const response = await fetch(process.env.RPC_URL ?? 'http://localhost:8545', {
+  const response = await fetch(process.env.RPC_URL ?? ORIGINS.rpc, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

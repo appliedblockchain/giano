@@ -169,23 +169,34 @@ wallet-web UI, tenant `byo` serves an independently built ("bring your own") wal
 ```sh
 pnpm install
 docker compose -f deploy/docker-compose.e2e.yml up --build
+
+# publish the stack under its names (once per boot — port 80 needs sudo)
+sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy
+pnpm -F @appliedblockchain/giano-e2e portless:up
 ```
+
+Nothing here is addressed by port. [portless](https://github.com/vercel-labs/portless) runs a
+local proxy on port 80 that maps each name below to the loopback port behind it. The table of
+names lives in `e2e/origins.mjs`, and everything else — the fixtures, the tenant seed in
+`deploy/docker-compose.e2e.yml`, the Playwright suite — reads its origins from there, so there
+is one place to change and nowhere for a stale port to hide. `portless:up` registers the
+routes and refuses to return until they answer; `portless:down` removes them again.
 
 | Service | URL | Notes |
 | --- | --- | --- |
-| devnet (anvil) | http://localhost:8545 | chain 31337, contracts pre-deployed |
-| bundler (alto) | http://localhost:4337 | EntryPoint v0.7 |
-| wallet-web (tenant `stock`) | http://wallet.localhost:8081 | Giano's stock wallet UI (open directly for the Settings view) |
-| wallet-api | http://localhost:8080 | shared multi-tenant backend (also reached via each wallet origin's `/api` proxy) |
+| devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
+| bundler (alto) | http://bundler.localhost | EntryPoint v0.7 |
+| wallet-web (tenant `stock`) | http://wallet.localhost | Giano's stock wallet UI (open directly for the Settings view) |
+| wallet-api | http://api.localhost | shared multi-tenant backend (also reached via each wallet origin's `/api` proxy) |
 
 `*.localhost` resolves to `127.0.0.1` automatically. Run the sample thin-SDK dApp against
 tenant `stock`:
 
 ```sh
-pnpm --filter @appliedblockchain/giano-e2e dapp        # http://app.localhost:4400
+pnpm --filter @appliedblockchain/giano-e2e dapp        # http://app.localhost
 ```
 
-Open **http://app.localhost:4400**, create a passkey wallet, connect, and send a sponsored
+Open **http://app.localhost**, create a passkey wallet, connect, and send a sponsored
 transaction.
 
 To exercise the second tenant — the **BYO wallet UI** (`e2e/wallet-byo/`, a framework-free SPA
@@ -193,20 +204,24 @@ built only on `giano-wallet-core` + `giano-wallet-transport`, and the reference 
 for tenants bringing their own UI):
 
 ```sh
-pnpm --filter @appliedblockchain/giano-e2e wallet-byo                             # http://wallet-byo.localhost:8082
-DAPP_PORT=4401 WALLET_URL=http://wallet-byo.localhost:8082 \
-  pnpm --filter @appliedblockchain/giano-e2e dapp                                 # http://app-byo.localhost:4401
+pnpm --filter @appliedblockchain/giano-e2e wallet-byo                             # http://wallet-byo.localhost
+DAPP_PORT=4401 WALLET_URL=http://wallet-byo.localhost \
+  pnpm --filter @appliedblockchain/giano-e2e dapp                                 # http://app-byo.localhost
 ```
 
-Open **http://app-byo.localhost:4401** and repeat the flow — same backend, different wallet
+`DAPP_PORT` picks which loopback port the fixture listens on, and therefore which name serves
+it: 4401 is the target of `app-byo.localhost` (see `e2e/origins.mjs`).
+
+Open **http://app-byo.localhost** and repeat the flow — same backend, different wallet
 origin, different UI, cryptographically separate passkeys. For a richer dApp on the `stock`
 tenant (wallet basics + an ERC-20 panel), run the Chakra sample instead: `pnpm demo:dev` (also
-`http://app.localhost:4400`). Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`.
+`http://app.localhost`). Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`
+and `pnpm -F @appliedblockchain/giano-e2e portless:down`.
 
 Confirm the deployment on-chain any time:
 
 ```sh
-pnpm run doctor chain --rpc http://localhost:8545 --chain-id 31337 \
+pnpm run doctor chain --rpc http://rpc.localhost --chain-id 31337 \
   --factory 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050 \
   --paymaster 0xCbc040482c1dd07D533800874DC37De7b18c8092
 ```

@@ -8,12 +8,18 @@ import * as http from 'node:http';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const dir = path.dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.BYO_WALLET_PORT ?? 8082);
+import { ORIGINS, loopbackOf, portOf } from '../origins.mjs';
 
-const walletApiUpstream = process.env.WALLET_API_UPSTREAM ?? 'http://127.0.0.1:8080';
-const rpcUpstream = process.env.RPC_UPSTREAM ?? 'http://127.0.0.1:8545';
-const bundlerUpstream = process.env.BUNDLER_UPSTREAM ?? 'http://127.0.0.1:4337';
+const dir = path.dirname(fileURLToPath(import.meta.url));
+const port = Number(process.env.BYO_WALLET_PORT ?? portOf('wallet-byo'));
+
+// Loopback, not the portless names: these are server-to-server hops, and this proxy
+// forwards the browser's Host untouched (see `proxy` below) because wallet-api resolves
+// the tenant from it. Sending that Host back through portless would route the request
+// straight back here — a loop portless would have to reject.
+const walletApiUpstream = process.env.WALLET_API_UPSTREAM ?? loopbackOf('api');
+const rpcUpstream = process.env.RPC_UPSTREAM ?? loopbackOf('rpc');
+const bundlerUpstream = process.env.BUNDLER_UPSTREAM ?? loopbackOf('bundler');
 
 const addresses = JSON.parse(fs.readFileSync(path.join(dir, '..', 'devnet', 'addresses.json'), 'utf8'));
 
@@ -32,7 +38,7 @@ const bundle = await esbuild.build({
       process.env.SPONSORSHIP_MODE ?? (addresses.sponsorshipPaymaster ? 'service' : addresses.testPaymaster ? 'test-paymaster' : 'off'),
     ),
     'process.env.PAYMASTER_ADDRESS': JSON.stringify(process.env.PAYMASTER_ADDRESS ?? addresses.testPaymaster ?? addresses.paymaster ?? ''),
-    'process.env.ALLOWED_DAPP_ORIGINS': JSON.stringify(process.env.BYO_ALLOWED_DAPP_ORIGINS ?? '["http://app-byo.localhost:4401"]'),
+    'process.env.ALLOWED_DAPP_ORIGINS': JSON.stringify(process.env.BYO_ALLOWED_DAPP_ORIGINS ?? JSON.stringify([ORIGINS.dappByo])),
   },
 });
 const js = bundle.outputFiles[0].text;

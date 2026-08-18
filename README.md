@@ -36,28 +36,38 @@ state), so there is nothing to deploy by hand:
 
 ```sh
 docker compose -f deploy/docker-compose.e2e.yml up --build
+
+# publish the stack under its names (once per boot — port 80 needs sudo)
+sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy
+pnpm -F @appliedblockchain/giano-e2e portless:up
 ```
 
-This starts:
+Addresses are names, not ports. [portless](https://github.com/vercel-labs/portless) runs a
+local proxy on port 80 and maps each `*.localhost` name to the loopback port behind it;
+`e2e/origins.mjs` is the name/port table and the single source of truth the fixtures, the
+tenant seed and the tests all read.
 
 | Service | URL | Notes |
 | --- | --- | --- |
-| devnet (anvil) | http://localhost:8545 | chain 31337, contracts pre-deployed |
-| bundler (alto) | http://localhost:4337 | EntryPoint v0.7 |
-| wallet-api | (internal) | reached via the wallet-web `/api` proxy |
-| wallet-web | http://wallet.localhost:8081 | the wallet origin (open it directly for the Settings view) |
+| devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
+| bundler (alto) | http://bundler.localhost | EntryPoint v0.7 |
+| wallet-api | http://api.localhost | also reached via the wallet-web `/api` proxy |
+| wallet-web | http://wallet.localhost | the wallet origin (open it directly for the Settings view) |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at
-`http://wallet.localhost:8081` as the wallet URL; the stack already allow-lists the E2E dApp
-origin (`http://app.localhost:4400`).
+`http://wallet.localhost` as the wallet URL; the stack already allow-lists the E2E dApp
+origin (`http://app.localhost`).
 
-To run the sample dApp against this stack (thin-SDK fixture on `http://app.localhost:4400`):
+To run the sample dApp against this stack (thin-SDK fixture on `http://app.localhost`):
 
 ```sh
 pnpm --filter @appliedblockchain/giano-e2e dapp
 ```
 
-Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`.
+Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`, and drop the names with
+`pnpm -F @appliedblockchain/giano-e2e portless:down`. HTTP rather than portless's default
+HTTPS is deliberate: `http://*.localhost` is already a secure context, so passkeys work without
+minting and trusting a local CA.
 
 ### Option B — iterate on wallet-api against a fresh devnet
 
@@ -83,11 +93,11 @@ two-origin integration — the same model as the E2E fixture, but with a real UI
 EIP-2612 permit). Bring up the Option A stack, then:
 
 ```sh
-pnpm demo:dev   # http://app.localhost:4400
+pnpm demo:dev   # http://app.localhost
 ```
 
-It defaults to the Option A stack (wallet origin `http://wallet.localhost:8081`, anvil RPC
-`http://localhost:8545`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
+It defaults to the Option A stack (wallet origin `http://wallet.localhost`, anvil RPC
+`http://rpc.localhost`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
 `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_TEST_ERC20` for other networks.
 
 ## Running the tests

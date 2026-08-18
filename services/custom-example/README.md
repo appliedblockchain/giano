@@ -23,12 +23,17 @@ devnet), then start the dApp:
 # from the repo root — see the root README "Option A"
 docker compose -f deploy/docker-compose.e2e.yml up --build
 
+# publish the stack under its names (once per boot — port 80 needs sudo)
+sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy
+pnpm -F @appliedblockchain/giano-e2e portless:up
+
 # then, in another terminal
-pnpm demo:dev        # http://app.localhost:4400
+pnpm demo:dev        # http://app.localhost
 ```
 
-Open **http://app.localhost:4400** and connect. That origin is already allow-listed by the E2E
-wallet stack, so no extra configuration is needed.
+Open **http://app.localhost** and connect. That origin is already allow-listed by the E2E
+wallet stack, so no extra configuration is needed. Vite still listens on port 4400 — that is
+simply the loopback target portless publishes as `app.localhost` (see `e2e/origins.mjs`).
 
 ## Configuration
 
@@ -37,8 +42,8 @@ other networks:
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `VITE_WALLET_URL` | `http://wallet.localhost:8081` | wallet origin (popup) |
-| `VITE_RPC_URL` | `http://localhost:8545` | read-path RPC (balances, metadata) |
+| `VITE_WALLET_URL` | `http://wallet.localhost` | wallet origin (popup) |
+| `VITE_RPC_URL` | `http://rpc.localhost` | read-path RPC (balances, metadata) |
 | `VITE_CHAIN_ID` | `31337` | chain id |
 | `VITE_TEST_ERC20` | devnet PrivateERC20 | prefilled token in the ERC-20 panel |
 | `VITE_APP_LABEL` | _(unset)_ | free-text badge next to the title, to tell instances apart |
@@ -50,8 +55,8 @@ dApp can serve both — point a second instance at the other wallet origin. Both
 already allow-listed by `deploy/docker-compose.e2e.yml`:
 
 ```sh
-pnpm demo:stock   # -> http://app.localhost:4400,     wallet http://wallet.localhost:8081
-pnpm demo:byo     # -> http://app-byo.localhost:4401, wallet http://wallet-byo.localhost:8082
+pnpm demo:stock   # -> http://app.localhost,     wallet http://wallet.localhost
+pnpm demo:byo     # -> http://app-byo.localhost, wallet http://wallet-byo.localhost
 ```
 
 Tenant "byo" also needs its wallet origin served: `pnpm -F @appliedblockchain/giano-e2e wallet-byo`.

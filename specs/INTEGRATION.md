@@ -275,7 +275,7 @@ than the wallet-api. Full policy: `COMPATIBILITY.md`.
 
 ```bash
 # pre-baked E2E stack (instant-boot devnet, contracts included) — seeds TWO tenants:
-# "stock" (Giano's wallet-web at wallet.localhost:8081) and "byo" (bring-your-own UI,
+# "stock" (Giano's wallet-web at wallet.localhost) and "byo" (bring-your-own UI,
 # served host-side via `pnpm --filter @appliedblockchain/giano-e2e wallet-byo`)
 docker compose -f deploy/docker-compose.e2e.yml up --build
 # or the from-source dev stack (postgres + anvil + alto + wallet-api; run wallet-web

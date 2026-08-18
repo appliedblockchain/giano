@@ -1,9 +1,12 @@
 # E2E stack: instant-boot devnet (pre-baked state: EntryPoint v0.7 + Giano factory +
 # testing contracts), alto bundler, ONE multi-tenant wallet-api, and tenant A's stock
 # wallet-web. Two tenants are seeded:
-#   - "stock": Giano's stock UI at http://wallet.localhost:8081 (wallet-web container)
-#   - "byo":   a tenant-built UI at http://wallet-byo.localhost:8082 (host-side fixture,
+#   - "stock": Giano's stock UI at http://wallet.localhost (wallet-web container)
+#   - "byo":   a tenant-built UI at http://wallet-byo.localhost (host-side fixture,
 #              e2e/wallet-byo/serve.mjs, proxying /api to the published wallet-api port)
+# No origin here carries a port: the ports published below are loopback targets for portless,
+# which serves every name on port 80. e2e/origins.mjs owns the name/port table and
+# e2e/portless-setup.mjs registers the routes.
 # The dApp fixtures and Playwright run on the host (e2e/). From the repo root:
 #   docker compose -f deploy/docker-compose.e2e.yml up --build
 name: giano-e2e
@@ -52,7 +55,8 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      # published for the host-side BYO wallet proxy (e2e/wallet-byo/serve.mjs).
+      # published for the host-side BYO wallet proxy (e2e/wallet-byo/serve.mjs) and as the
+      # loopback target for portless's http://api.localhost.
       # NOTE: collides with giano-dev's 8080 — the two stacks already collide on 8545/4337.
       - '8080:8080'
     environment:
@@ -100,22 +104,22 @@ services:
         [
           {
             "slug": "stock",
-            "walletOrigin": "http://wallet.localhost:8081",
+            "walletOrigin": "http://wallet.localhost",
             "rpId": "wallet.localhost",
             "rpName": "Giano E2E",
-            "allowedDappOrigins": ["http://app.localhost:4400"],
-            "corsOrigins": ["http://app.localhost:4400"],
+            "allowedDappOrigins": ["http://app.localhost"],
+            "corsOrigins": ["http://app.localhost"],
             "openRegistration": true,
             "adminKeys": ["e2e-admin-key-stock"],
             "id": "11111111-1111-4111-8111-111111111111"
           },
           {
             "slug": "byo",
-            "walletOrigin": "http://wallet-byo.localhost:8082",
+            "walletOrigin": "http://wallet-byo.localhost",
             "rpId": "wallet-byo.localhost",
             "rpName": "BYO Wallet E2E",
-            "allowedDappOrigins": ["http://app-byo.localhost:4401"],
-            "corsOrigins": ["http://app-byo.localhost:4401"],
+            "allowedDappOrigins": ["http://app-byo.localhost"],
+            "corsOrigins": ["http://app-byo.localhost"],
             "openRegistration": true,
             "adminKeys": ["e2e-admin-key-byo00"],
             "id": "22222222-2222-4222-8222-222222222222"
@@ -144,15 +148,15 @@ services:
       GIANO_CHAIN_ID: '31337'
       # same-origin proxies: the browser hits the wallet origin; nginx forwards to the
       # containers (alto/anvil have no CORS). Avoids cross-origin ERR_FAILED.
-      GIANO_RPC_URL: http://wallet.localhost:8081/rpc
-      GIANO_BUNDLER_URL: http://wallet.localhost:8081/bundler
+      GIANO_RPC_URL: http://wallet.localhost/rpc
+      GIANO_BUNDLER_URL: http://wallet.localhost/bundler
       GIANO_RPC_UPSTREAM: http://anvil:8545
       GIANO_BUNDLER_UPSTREAM: http://alto:4337
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       GIANO_FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
       # The production paymaster, through the sponsorship service — not the permissive fixture.
       GIANO_SPONSORSHIP_MODE: service
-      GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost:4400"]'
+      GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost"]'
       GIANO_RP_ID: wallet.localhost
       GIANO_BRAND_NAME: Giano E2E
 
