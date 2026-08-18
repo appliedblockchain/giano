@@ -10,13 +10,23 @@ tenants against one shared backend, over four browser origins:
 | http://app-byo.localhost | `byo` | the same dApp fixture, pointed at the other wallet |
 | http://wallet-byo.localhost | `byo` | tenant-built wallet fixture, `wallet-byo/` |
 
-Plus three service endpoints, useful when poking at the stack by hand:
+Plus four service endpoints, useful when poking at the stack by hand:
 
 | Origin | What |
 | --- | --- |
 | http://api.localhost | `wallet-api` — public + admin |
 | http://rpc.localhost | anvil devnet JSON-RPC (chain 31337) |
 | http://bundler.localhost | alto ERC-4337 bundler |
+| http://paymaster.localhost | paymaster admin console — tenant balances, treasury, roles, health |
+
+The paymaster console is the operator's side of the same sponsorship the dApps are using: open it
+next to http://app.localhost and a sponsored send shows up as a falling tenant balance and a new
+row under **History**. It reads everything straight from the chain, so it needs no login and works
+read-only with no wallet connected.
+
+Every private key, account and fixed address this stack uses is catalogued in
+[`docs/E2E-DEV-KEYS.md`](../docs/E2E-DEV-KEYS.md) — all of them public anvil test values, none of
+them safe on a network that holds value.
 
 None of them carries a port. That is what this document is about.
 

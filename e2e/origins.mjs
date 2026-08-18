@@ -60,6 +60,7 @@ export const ROUTES = [
   { name: 'app-byo', port: 4401, kind: 'fixture', what: "tenant byo's demo dApp (same fixture, other wallet)" },
   { name: 'wallet-byo', port: 8082, kind: 'fixture', what: "tenant byo's wallet origin (BYO UI + /api proxy)" },
   { name: 'wallet', port: 8081, kind: 'compose', what: "tenant stock's wallet-web" },
+  { name: 'paymaster', port: 8083, kind: 'compose', what: 'paymaster admin console (read-only without a wallet)' },
   { name: 'api', port: 8080, kind: 'compose', what: 'wallet-api (public + admin)' },
   { name: 'rpc', port: 8545, kind: 'compose', what: 'anvil devnet JSON-RPC' },
   { name: 'bundler', port: 4337, kind: 'compose', what: 'alto ERC-4337 bundler' },
@@ -100,4 +101,5 @@ export const ORIGINS = {
   api: originOf('api'),
   rpc: originOf('rpc'),
   bundler: originOf('bundler'),
+  paymasterAdmin: originOf('paymaster'),
 };

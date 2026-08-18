@@ -186,6 +186,31 @@ services:
       GIANO_RP_ID: wallet.localhost
       GIANO_BRAND_NAME: Giano E2E
 
+  # The operator's view of the same paymaster the wallet is sponsoring through. Everything it shows
+  # is read straight from the chain, so it needs neither wallet-api nor a database — only anvil and
+  # the paymaster address. It waits for the provisioner all the same, so that opening it during an
+  # e2e run shows a provisioned deployment rather than an empty roster that looks like a bug.
+  paymaster-admin:
+    build:
+      context: ..
+      dockerfile: services/paymaster-admin/Dockerfile
+    depends_on:
+      sponsorship-provisioner:
+        condition: service_completed_successfully
+    ports:
+      - '8083:8080'
+    environment:
+      GIANO_CHAIN_ID: '31337'
+      # Same-origin proxy: anvil sets no CORS headers, so the browser talks to this origin and
+      # nginx forwards to the container.
+      GIANO_RPC_URL: http://paymaster.localhost/rpc
+      GIANO_RPC_UPSTREAM: http://anvil:8545
+      # The devnet has no contracts-registry entry, so the address is passed explicitly. It is the
+      # same deterministic address wallet-api sponsors through, above.
+      GIANO_PAYMASTER_ADDRESS: '0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2'
+      GIANO_ENVIRONMENT_LABEL: e2e devnet
+      GIANO_REFRESH_SECONDS: '5'
+
   # Installs each demo tenant's sponsorship rules through the real admin API, then verifies its own
   # work. A dependency of readiness rather than fire-and-forget: wallet-web will not start until this
   # exits 0 (see its `depends_on`), so a stack that cannot sponsor fails to come up instead of coming
