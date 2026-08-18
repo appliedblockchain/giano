@@ -30,10 +30,18 @@ Key properties visible in the flow:
   *own* EntryPoint and chain id, applies the **tenant's** merged policy and per-tenant
   relay rate limit, writes a tenant-scoped audit row, and only then forwards to the
   shared bundler.
-- **Sponsorship.** The paymaster comes from the *tenant's* `config.json`
-  (`paymasterAddress`; here the permissive testing paymaster) and is attached during
-  gas estimation / preparation. The relay independently checks it against the tenant's
-  `allowedPaymasters`.
+- **Sponsorship.** Chosen by the tenant's `config.json` `sponsorship` mode:
+  - `service` (production) — the wallet asks the **sponsorship service** whether this transaction
+    will be sponsored *before* it offers an approve button, and then again, authoritatively, just
+    before the passkey signature. The service checks the tenant's rules and available balance and
+    signs an authorisation the paymaster verifies on chain. See §"Sponsorship" below.
+  - `test-paymaster` (development) — the permissive paymaster, attached by address alone during gas
+    estimation. Approves everything; refused in a production build.
+  - `off` — no paymaster; the wallet behaves exactly as the unsponsored path.
+
+  In every mode the relay independently checks the attached paymaster against the tenant's
+  `allowedPaymasters`, and additionally cross-checks that a Giano-sponsored operation names the
+  session's own tenant.
 
 Code anchors: `Erc20Panel.tsx` · `create-giano-wallet-provider.ts` (thin SDK) ·
 `wallet-transport` client/host · `wallet-web/src/host.ts` + `wallet.ts` + `config.ts` ·
@@ -242,11 +250,67 @@ cannot legitimately collide).
   directly (viem's account-abstraction client builds, signs and submits in one call). This is
   the embedded/no-backend path: no tenant, no policy, no audit row, no per-tenant rate limit.
 
-The paymaster is attached purely by the bundler client's `getPaymasterStubData` /
-`getPaymasterData` (configured in `wallet.ts` from the tenant's `config.paymasterAddress`).
-The relay re-checks it against the tenant's `allowedPaymasters`, and the on-chain
-sponsorship decision (`validatePaymasterUserOp`) happens at bundler validation / EntryPoint
+The paymaster is attached by the bundler client's `getPaymasterStubData` / `getPaymasterData` hooks
+(chosen in `wallet.ts` from the tenant's `config.sponsorship`). The relay re-checks the paymaster
+against the tenant's `allowedPaymasters` and cross-checks the tenant the operation bills, and the
+on-chain sponsorship decision (`validatePaymasterUserOp`) happens at bundler validation / EntryPoint
 execution time, not in the browser.
+
+## Sponsorship (the `service` mode)
+
+The decision is taken **before** the user is asked to approve, and enforced **on chain** — so a
+client that skips Giano's backend entirely cannot obtain sponsorship, and a user is never asked for
+a fingerprint for a transaction that cannot be paid for.
+
+Two calls, and the difference between them is the design:
+
+| | `pm_getPaymasterStubData` | `pm_getPaymasterData` |
+| --- | --- | --- |
+| When | During gas estimation, possibly repeatedly; and by the review screen as a pre-flight | Once, immediately before the passkey signature |
+| Rules evaluated | Yes — this is what makes a pre-approval refusal possible | Yes, authoritatively (config or balance may have moved) |
+| Reserves balance | **No** — estimation noise must not fill the ledger | **Yes**, atomically |
+| Signs | No — a correctly-sized dummy, so estimation stays accurate | Yes |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Review as wallet-web<br/>ReviewTransaction
+    participant SVC as wallet-api<br/>/v1/paymaster
+    participant Ledger as Reservation ledger
+    participant EP as EntryPoint v0.7
+    participant PM as GianoPaymaster
+
+    User->>Review: transaction arrives
+    Review->>SVC: pm_getPaymasterStubData (session bearer)
+    SVC->>SVC: rules + available balance
+    alt refused
+        SVC-->>Review: typed reason, no signature
+        Review->>User: reason shown and logged, NO approve button
+    else allowed
+        SVC-->>Review: stub paymasterData
+        Review->>User: Approve offered
+        User-->>Review: Approve
+        Review->>SVC: pm_getPaymasterData
+        SVC->>Ledger: RESERVE maxCost + fee + overhead
+        SVC-->>Review: signed authorisation
+        Review->>User: passkey prompt (signs the whole op, including the authorisation)
+        Review->>EP: relay → bundler → handleOps
+        EP->>PM: validatePaymasterUserOp
+        EP->>PM: postOp — debit tenant gas + fee + overhead, credit treasury the fee
+    end
+```
+
+Two signatures are involved, each covering what the other cannot. Giano signs what determines the
+operation's cost and intent — sender, calldata, gas limits, **which tenant pays and what fee
+applies**. The passkey then signs the whole operation *including* that authorisation. Neither can be
+altered afterwards without invalidating the other, and binding the tenant into Giano's signature is
+what stops an end user redirecting the charge to somebody else's balance.
+
+The reservation is what makes per-tenant segregation hold under concurrency. On-chain validation sees
+one operation at a time, against a balance nothing has yet debited — so three individually affordable
+operations could settle together for more than the tenant holds, and the contract could not undo
+that. So the third authorisation is refused before it exists.
 
 Keep a **real `estimateFeesPerGas`** in every tenant's wallet SPA: `wallet-core`'s fallback
 is a hardcoded 200 gwei `maxFeePerGas`, which on a low-fee chain inflates the required
@@ -256,4 +320,7 @@ paymaster prefund and trips `AA31 paymaster deposit too low`.
 
 `e2e/tests/wallet-flow.spec.ts` walks this flow for tenant `stock`;
 `byo-wallet.spec.ts` walks it for tenant `byo` against the same backend;
-`tenant-isolation.spec.ts` exercises the cross-tenant rejection branch of step 6.
+`tenant-isolation.spec.ts` exercises the cross-tenant rejection branch of step 6;
+`sponsorship.spec.ts` walks the sponsored path and every pre-approval refusal for **both** wallet
+interfaces, asserting the accounting from chain events rather than from the service's own books —
+because a sponsored transaction that lands is not evidence that the ledger is right.

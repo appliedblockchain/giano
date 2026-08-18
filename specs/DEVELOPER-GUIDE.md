@@ -427,10 +427,216 @@ CI end-to-end), with the serving contract in its `serve.mjs`.
 
 ### 5.6 Gas sponsorship (paymaster)
 
-Only a **testing** `PermissivePaymaster` ships (sponsors everything unconditionally — testing only).
-For production, deploy and fund a `VerifyingPaymaster` with an off-chain policy signer and/or an
-on-chain target allowlist (samples under `vendor/account-abstraction/contracts/samples/`). Set
-`USEROP_ALLOWED_PAYMASTERS` on wallet-api so it only relays ops sponsored by your paymaster.
+Two paymasters ship, and which one a deployment uses is a deliberate choice rather than a default:
+
+| | `PermissivePaymaster` | `GianoPaymaster` |
+| --- | --- | --- |
+| Purpose | Test fixture — keeps sponsored-path tests simple | Real sponsorship, rule-enforced, billed |
+| Decides anything | No, approves everything | Yes, per tenant, per transaction |
+| Whose money | Whoever funded it | The tenant's own segregated balance |
+| Charges a fee | No | Yes, a fixed fee per operation |
+| Where it runs | Local development, test runs | Every real deployment |
+| Configuration needed | None | Balance, allowlist, cost cap |
+
+The permissive one exists so that a test whose subject is a token transfer does not need a funded
+balance and a configured allowlist. It is refused in production three ways: it compiles from a
+source root the published artifacts exclude, the address registry keeps it in a different field
+(`testPaymaster`, not `sponsorshipPaymaster`) so no consumer can pass one where the other is meant,
+and both `wallet-api` and `wallet-web` refuse to start with it configured under a production build.
+
+#### How production sponsorship works
+
+A tenant funds **its own** gas balance. When a user is about to transact, `wallet-api` checks the
+operation against that tenant's rules and available balance; if both pass it signs an authorisation
+the paymaster contract verifies **on chain**. No signature, no sponsorship — so a client that skips
+Giano's backend entirely still cannot obtain it. Each operation debits the tenant for the gas it
+consumed, plus a fixed platform fee credited to Giano, plus an overhead allowance covering network
+costs the contract cannot observe at settlement.
+
+The full design is in [`PAYMASTER-REQUIREMENTS.md`](./PAYMASTER-REQUIREMENTS.md) and
+[`PAYMASTER-SPECS.md`](./PAYMASTER-SPECS.md). What follows is the runbook.
+
+#### Deploying it
+
+```sh
+# 1. Deploy the implementation, the deployer helper and the proxy (initialised in one transaction).
+#    `roleAdmin` should be the TimelockController, not an operational key — see below.
+cd packages/contracts
+pnpm hh:deploy:paymaster --network <network> \
+  --parameters '{"GianoPaymaster":{"roleAdmin":"0x<timelock>","defaultFeeWei":"100000000000000"}}'
+
+# 2. Grant roles, authorise the signing key, stake, register and fund tenants.
+#    On a real deployment every grant goes through the timelock; this script is for a devnet or a
+#    first-run testnet, where one account legitimately holds ROLE_ADMIN.
+RPC_URL=<url> DEPLOYER_PRIVATE_KEY=0x... pnpm provision:paymaster -- \
+  --signer 0x<sponsorship-signer> \
+  --stake-eth 1 --unstake-delay 86400 \
+  --tenant <tenant-uuid>:<withdraw-address>:<slug>:<fund-eth>
+
+# 3. Verify the whole topology before pointing anything at it.
+pnpm run doctor chain --rpc <url> --chain-id <id> \
+  --sponsorship-paymaster 0x... --tenants <uuid>,<uuid> \
+  --role-admin 0x<timelock> --signers 0x<signer>
+
+# 4. Prove the service and the contract agree about the authorisation format. Worth running after
+#    every deploy, every implementation upgrade and every key rotation — a byte-offset or
+#    field-order mismatch between them is invisible until a tenant has funded a balance.
+RPC_URL=<url> SPONSORSHIP_PAYMASTER_ADDRESS=0x... PAYMASTER_TENANT_ID=<uuid> \
+  SPONSORSHIP_SIGNER_KEY_REF=0x... \
+  pnpm --filter @appliedblockchain/giano-wallet-api verify:authorisation
+```
+
+A deployment is **not complete** until the paymaster is staked and at least one tenant balance is
+funded. An unstaked validating paymaster is rejected by bundlers, which surfaces as something that
+looks like a client bug; `giano-doctor chain` fails the exit code on both conditions rather than
+warning, so it can gate a rollout.
+
+#### `wallet-api` configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `SPONSORSHIP_ENABLED` | Master switch. Off means the sponsorship routes 404 and nothing is signed |
+| `SPONSORSHIP_PAYMASTER_ADDRESS` | The production paymaster; defaults from the registry for known chains |
+| `GIANO_DEPLOYMENT_CLASS` | `development` \| `testnet` \| `production`. **Required, no default** — it is what gates the signer below. Not `NODE_ENV`: a testnet deployment runs as a production build, and testnet is where a local key is allowed |
+| `SPONSORSHIP_SIGNER_KIND` | `hsm` \| `local` — **`local` is refused when `GIANO_DEPLOYMENT_CLASS=production`** |
+| `SPONSORSHIP_SIGNER_KEY_REF` | The HSM key resource name, or (development and testnet only) a 32-byte hex key |
+| `SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI` | Platform cap on one wallet-management operation. Wallet management is sponsored whatever a tenant's allowlist says, so this is the bound on the one spend path a tenant cannot close. Tenants may lower it for themselves, never raise it |
+| `SPONSORSHIP_VALIDITY_SECONDS` | `validUntil` window. Minutes, not hours |
+| `SPONSORSHIP_RESERVATION_TTL_SECONDS` | Must exceed the validity window |
+| `SPONSORSHIP_RATE_LIMIT_PER_MINUTE` | Per tenant; its own budget so pre-flight traffic cannot hammer the signer |
+| `SPONSORSHIP_EMERGENCY_STOP` | Stops issuance immediately, without a restart |
+| `PAYMASTER_WATCHER_ENABLED`, `..._POLL_MS`, `..._CONFIRMATIONS` | Event ingestion and settlement |
+| `PAYMASTER_RECONCILE_INTERVAL_MS` | How often the accounting invariant is checked |
+| `PAYMASTER_LOW_BALANCE_DEFAULT_WEI` | Alert threshold for tenants that set none |
+
+The fee, the overhead allowance, the penalty rate, the signer set, the pause state and tenant
+registration are deliberately **not** here. They are on-chain state, changed through the contract's
+roles — which is what makes them auditable by a tenant rather than something they have to take
+Giano's word for.
+
+`wallet-web` takes `GIANO_SPONSORSHIP_MODE` (`service` | `test-paymaster` | `off`) and
+`GIANO_PAYMASTER_SERVICE_URL`. `GIANO_PAYMASTER_ADDRESS` keeps its old meaning: the permissive
+paymaster, dev path only.
+
+#### Who holds what (and why it is split)
+
+The contract has **no owner and no superuser**. Each privileged action has its own role:
+
+| Role | May do | Notably may **not** |
+| --- | --- | --- |
+| `SIGNER_ADMIN_ROLE` | Add and revoke sponsorship signing keys | Move any funds |
+| `FEE_ADMIN_ROLE` | Set the fee and per-tenant overrides | Collect the fees it sets |
+| `FEE_COLLECTOR_ROLE` | Withdraw accrued treasury, capped at what accrued | Change the rate; touch tenant balances |
+| `STAKE_ADMIN_ROLE` | Add, unlock and withdraw the stake | Touch the deposit or any balance |
+| `TENANT_ADMIN_ROLE` | Register tenants and their withdrawal addresses | Move a registered tenant's funds |
+| `PARAM_ADMIN_ROLE` | Set the overhead allowance and limits | Move funds |
+| `PAUSER_ROLE` | Halt new sponsorships | Move funds; alter configuration |
+| `UPGRADER_ROLE` | Replace the implementation | — (see the custody note below) |
+| `ROLE_ADMIN` | Grant and revoke every role above, including itself | — |
+
+Role separation is only real if whoever administers roles cannot grant themselves the role they are
+separated from. So `ROLE_ADMIN` is held by **one** address — an OpenZeppelin `TimelockController`
+whose proposers are a Safe — and `DEFAULT_ADMIN_ROLE` is never granted at all. Every grant is then
+queued publicly and executable only after the delay.
+
+**Review this on-chain, periodically, not on paper.** `giano-doctor chain --role-admin <timelock>
+--signers <keys>` asserts that `ROLE_ADMIN` and `UPGRADER_ROLE` are held by the timelock and by
+nothing else, that nobody holds `DEFAULT_ADMIN_ROLE`, and that the live signer set is exactly what
+you expect. A role separation that exists in a document and not on chain is worse than none,
+because it is relied upon.
+
+#### Routine operations
+
+**Rotate the signing key** — no downtime, no redeployment. Both keys are valid in the middle:
+
+```sh
+# 1. Add the new key on chain (SIGNER_ADMIN_ROLE, through the timelock).
+# 2. Point the service at the new key: SPONSORSHIP_SIGNER_KEY_REF=<new>, restart or roll.
+# 3. Verify the new key is accepted, then revoke the old one.
+pnpm --filter @appliedblockchain/giano-wallet-api verify:authorisation   # with the new key
+# 4. removeSigner(<old>) — again through the timelock.
+```
+
+**Stop sponsorship immediately.** Two independent levers, and they stop different things:
+
+| Lever | Stops | Does not stop |
+| --- | --- | --- |
+| `SPONSORSHIP_EMERGENCY_STOP=true` | This service issuing new authorisations | An authorisation already issued, or a leaked key |
+| `pause()` on the contract (`PAUSER_ROLE`) | Every sponsorship, including from a leaked key | Tenant withdrawal — deliberately |
+
+Reach for the config switch first (it is instant and needs no signature) and `pause()` when a key
+may be compromised. Neither traps tenant funds: withdrawal stays open through both, because a pause
+is for halting sponsorship and must never become a freeze.
+
+**Change the fee.** `setDefaultFee` for the deployment, `setTenantFee` for one tenant, both
+`FEE_ADMIN_ROLE`. The rate in force is pinned into each authorisation, so a change cannot alter what
+an already-authorised operation charges — in either direction.
+
+**Withdraw the treasury.** `withdrawFees(to, amount)`, `FEE_COLLECTOR_ROLE`, capped at what has
+accrued. That cap is what keeps the withdrawal path away from tenant balances: they share one
+EntryPoint deposit, so without it this function would reach customer money.
+
+**The unstaking delay.** `unlockStake()` starts it and blocks new sponsorship acceptance by bundlers
+once the stake is unlocked; `withdrawStake(to)` only works after the delay elapses. Plan a paymaster
+retirement around it rather than discovering it.
+
+**Clock synchronisation is a deployment requirement.** `validUntil` / `validAfter` are absolute
+seconds compared against block timestamps. A signing host whose clock drifts issues authorisations
+that are already expired or not yet valid, and the symptom is an unexplained `AA32`-shaped failure
+that looks nothing like a clock problem. Run NTP and alert on drift.
+
+#### Monitoring
+
+| Metric | Alert on |
+| --- | --- |
+| `giano_paymaster_invariant_breach` | **1 — page immediately.** Claims exceed the deposit: this is an insolvency |
+| `giano_paymaster_invariant_slack_wei` | Growing faster than the overhead model predicts — tenants are being overcharged |
+| `giano_tenant_deficit_wei` | Any non-zero value: the pooled deposit absorbed a shortfall for one tenant |
+| `giano_tenant_available_wei` | Below the tenant's threshold — tell the tenant *and* the operator |
+| `giano_paymaster_reconciliation_divergence_wei` | Any positive value: an unexplained drawdown, the signature of a leaked signing key |
+| `giano_sponsorship_decisions_total{outcome="refused"}` | A refusal-rate spike for one tenant, which usually means a rule change went wrong |
+| `giano_sponsorship_signatures_total{key_id}` | Any signature from an unexpected `key_id`; signing stopping entirely |
+| `giano_sponsorship_unavailable_total` | Signer, HSM or database failures — an outage, not a misconfiguration |
+| `giano_paymaster_watcher_lag_blocks` | Watcher stalled: settlements queue and balances go stale |
+
+The invariant is the one to understand: `Σ tenant balances + treasury ≤ deposit`. It is "at most"
+deliberately — the overhead allowance over-charges slightly, so the ledger falls a little faster
+than the deposit and the residue is unattributed slack. Slack is safe; a breach is not, because it
+means one tenant's claim is payable only out of another's funds.
+
+#### Custody: what Giano can and cannot do with tenant funds
+
+State this to tenants plainly rather than letting the shorter version stand:
+
+- **No role in the table above can move a tenant's balance** — individually or in combination. Only
+  the tenant's own registered withdrawal address can, and it can do so even while the paymaster is
+  paused.
+- **The upgrade authority can.** An upgrade can replace the logic that enforces everything above,
+  including the withdrawal restriction. This is a trust position, not a technical safeguard.
+- **What constrains it:** `UPGRADER_ROLE` is held by the timelock, whose proposers are a Safe, so
+  every upgrade is queued publicly and executable only after a published delay — long enough for a
+  tenant that objects to withdraw its balance first. There is no bypass, including for changes
+  presented as urgent.
+- **A tenant that loses its withdrawal key strands that balance permanently**, because by design
+  nobody else can move it. Rotation via `setTenantWithdrawAddress` (`TENANT_ADMIN_ROLE`) exists and
+  should be used *before* a key is lost.
+
+"Giano cannot take your funds" is therefore true of Giano's day-to-day operation and conditional on
+the upgrade controls. Anything stronger would be a claim the architecture does not support.
+
+#### Onboarding a tenant
+
+1. Register the tenant in `TENANTS_SEED` with a **pinned `id`** — that UUID is what the paymaster
+   keys the tenant's balance on, so a random one would leave every sponsorship refused as an unknown
+   tenant.
+2. `registerTenant(id, withdrawAddress, slug)` on chain (`TENANT_ADMIN_ROLE`). The withdrawal
+   address is the tenant's, and only it can withdraw.
+3. The tenant funds `depositFor(<id>)` on the paymaster. `GET /v1/admin/sponsorship/balance` returns
+   the address and the exact call.
+4. The tenant writes its rules through `PUT /v1/admin/sponsorship` with its own admin key. Until it
+   does, it sponsors nothing — which is correct, and worth saying in the onboarding email so it does
+   not read as "sponsorship is broken".
+5. Verify: `giano-doctor chain --tenants <id>` and one real sponsored transaction.
 
 ### 5.7 Reference stacks
 
@@ -455,13 +661,24 @@ non-zero on any critical failure, so it works as a pre-flight or CI gate.
 
 ```sh
 pnpm run doctor chain --rpc <url> --chain-id <id> \
-  [--factory 0x..] [--paymaster 0x..] [--executor 0x..]
+  [--factory 0x..] [--sponsorship-paymaster 0x..] [--test-paymaster 0x..] \
+  [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]
 ```
 Checks: RPC reachable and chain id matches; EntryPoint v0.7, factory, and implementation have code;
-paymaster deployed + its EntryPoint deposit balance (warns if low); executor native balance (if
-given); and P-256 support (RIP-7212 precompile → FreshCryptoLib verifier → none). Addresses default
-from flags → env (`FACTORY_ADDRESS`, `PAYMASTER_ADDRESS`, `ENTRYPOINT_ADDRESS`) → the contracts
-registry for known chains. Example output:
+executor native balance (if given); and P-256 support (RIP-7212 precompile → FreshCryptoLib verifier
+→ none).
+
+For the **sponsorship paymaster** it additionally checks — failing the exit code, not warning —
+that the proxy has code and its implementation matches the registry; that it is **staked** and its
+deposit is above the low-water mark; that the accounting invariant holds and at least one listed
+tenant is funded; that nobody holds `DEFAULT_ADMIN_ROLE` and that `ROLE_ADMIN` / `UPGRADER_ROLE` are
+held by the expected timelock and nothing else; and that the live signer set is exactly the expected
+keys. Pass `--tenants`, `--role-admin` and `--signers` to turn those from reports into assertions.
+A permissive test paymaster found on a production chain is a failure.
+
+Addresses default from flags → env (`FACTORY_ADDRESS`, `SPONSORSHIP_PAYMASTER_ADDRESS`,
+`PAYMASTER_ADDRESS`, `ENTRYPOINT_ADDRESS`) → the contracts registry for known chains. Example
+output:
 
 ```
 Contracts
@@ -520,6 +737,29 @@ P-256 passkey).
       send `COOP: same-origin`.
 - [ ] **TLS** on both the wallet host and the dApp host.
 - [ ] **Bundler executor funded and monitored** (alert on low balance); paymaster deposit funded.
+- [ ] **`GIANO_DEPLOYMENT_CLASS=production`** set explicitly. It has no default on purpose: it is what
+      refuses an environment-variable signing key, and a default that happened to be permissive is
+      exactly how such a key reaches production.
+- [ ] **Gas sponsorship** (if enabled): `SPONSORSHIP_SIGNER_KIND=hsm`, backed by an AWS HSM key through
+      [`evm-hsm-signer`](https://github.com/appliedblockchain/evm-hsm-signer) — a local key is refused
+      for a production deployment class, and this key authorises spending against customer funds.
+- [ ] **`SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI` calibrated for this chain.** Wallet management is
+      sponsored whatever a tenant lists, so this cap is what bounds it. Sized for a passkey addition
+      at this chain's fee levels — too tight refuses account recovery, too loose leaves a tenant's one
+      unclosable spend path unbounded.
+- [ ] **`ROLE_ADMIN` and `UPGRADER_ROLE` held by the timelock and nothing else**, `DEFAULT_ADMIN_ROLE`
+      held by nobody, verified on chain with `giano-doctor chain --role-admin`. Not on paper.
+- [ ] **Paymaster staked** and at least one tenant balance funded — a deployment is not complete
+      otherwise, and an unstaked validating paymaster fails in a way that looks like a client bug.
+- [ ] **The overhead allowance calibrated for this chain** (`postOpGasAllowance`, `penaltyBps`),
+      and the invariant slack watched afterwards: slack that grows too fast means tenants are being
+      overcharged, and slack that shrinks means an unexplained drawdown.
+- [ ] **`verify:authorisation` passes** against the deployed paymaster — after deploy, after every
+      implementation upgrade and after every key rotation.
+- [ ] **NTP on the signing hosts**, with drift alerting: a drifted clock issues authorisations that
+      are already expired, and the symptom looks nothing like a clock problem.
+- [ ] **The custody limits documented for tenants** — that no role can take their funds, that the
+      upgrade authority can, and what constrains it. Tenants are trusting the upgrade process.
 - [ ] **Validate the full create → sign → submit flow against your chosen bundler on the target
       chain** — self-hosted bundler compatibility on public networks should be confirmed per chain.
 - [ ] **`giano-doctor chain` passes** against the production RPC.
@@ -541,6 +781,14 @@ P-256 passkey).
 | wallet-api won't boot: `chain … not in the registry` | set `ENTRYPOINT_ADDRESS` and `FACTORY_ADDRESS` explicitly |
 | `giano-doctor` reports P-256 unavailable | deploy the verifier with `scripts/p256_deploy.ts` (chain has no RIP-7212 and no FCL verifier) |
 | Sponsored tx never lands | check `giano-doctor chain` — paymaster deposit or executor balance likely low; check `giano_userop_policy_rejections_total` and `GET /v1/userops/:hash` |
+| Wallet shows "this app does not cover fees for this contract" | the contract is not on that tenant's allowlist — `GET /v1/admin/sponsorship`, then `PUT` an updated `allowlist` |
+| Every sponsorship refused as `sponsorship-disabled` | that tenant has no configuration, which is the correct default — it must `PUT /v1/admin/sponsorship` once |
+| Every sponsorship refused as `insufficient-balance` on a funded tenant | the tenant's `TENANTS_SEED` `id` does not match the id it was registered under on chain, so the service is billing a tenant the contract has never heard of |
+| Sponsorship refused as `tenant-in-deficit` | a settlement exceeded the balance; `depositFor` clears the deficit and unblocks the tenant. Investigate why — the reservation ledger should have prevented it |
+| `AA34 signature error` on a sponsored op | the service and the contract disagree about the authorisation format, or the signing key is not in the on-chain signer set. Run `verify:authorisation` |
+| `AA32 expired or not due` on a sponsored op | clock drift on the signing host, or a reservation TTL shorter than the validity window |
+| Balances stay at zero after bring-up | the watcher is not running (`PAYMASTER_WATCHER_ENABLED`) — balances are reconciled from the contract on each pass |
+| `giano_paymaster_invariant_breach 1` | **stop issuing sponsorships.** Claims exceed the deposit; this is an insolvency, not an accounting nit |
 | `pnpm doctor` prints "Unknown option: recursive" | use `pnpm run doctor` — `doctor` is a pnpm built-in |
 
 ---
@@ -557,6 +805,8 @@ P-256 passkey).
 | [`docs/PRODUCT-STRATEGY.md`](./PRODUCT-STRATEGY.md) | modularity seams, the bring-your-own-UI contract, phased roadmap |
 | [`docs/COST-MODEL.md`](./COST-MODEL.md) | infrastructure + gas costs of running Giano as a service, and breakeven |
 | [`docs/MULTI-TENANCY-GAPS.md`](./MULTI-TENANCY-GAPS.md) | the multi-tenancy design (tenant ≡ origin ≡ RP ID), what has been implemented, and what remains |
+| [`PAYMASTER-REQUIREMENTS.md`](./PAYMASTER-REQUIREMENTS.md) | gas sponsorship: what it must do and why the decisions were made |
+| [`PAYMASTER-SPECS.md`](./PAYMASTER-SPECS.md) | gas sponsorship: the technical design — contract, service, ledger, watcher |
 | [`packages/connector/README.md`](../packages/connector/README.md) | full SDK API + 0.x → 1.x (embedded) migration |
 | [`deploy/sepolia/README.md`](../deploy/sepolia/README.md) | end-to-end real-chain deploy runbook (any EVM chain) |
 | [`README-ROR.md`](../README-ROR.md) | Related Origin Requests (cross-origin passkeys) |
