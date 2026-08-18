@@ -13,6 +13,10 @@ What it shows:
   **transfer** (destination defaults to your own account), sign+submit an **approve** transaction,
   and sign an **EIP-2612 permit** (the signature and its `v`/`r`/`s` are displayed; tokens without
   permit support are reported cleanly).
+- **Gasless sponsorship** — every send goes through **Giano's paymaster**: the wallet origin runs
+  an ERC-7677 sponsorship check before it asks for a passkey, so an allow-listed call is **covered**
+  and a call nobody sponsors is **refused** up front (no approval, no passkey prompt, nothing
+  charged). The panel's **Call an unlisted contract** button exercises that refusal path.
 
 ## Run it
 

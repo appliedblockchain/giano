@@ -98,8 +98,10 @@ Swagger UI is available at the wallet-api's `/docs` outside production.
 
 `services/custom-example` (`pnpm demo:dev`) is a Vite + React + Chakra UI demo of the thin
 two-origin integration — the same model as the E2E fixture, but with a real UI: wallet basics
-(connect, send, sign) plus an ERC-20 panel (read balances, transfer, approve, and sign an
-EIP-2612 permit). Bring up the Option A stack, then:
+(connect, send, sign), an ERC-20 panel (read balances, transfer, approve, and sign an
+EIP-2612 permit), and a gasless-sponsorship panel that surfaces Giano's paymaster — every send is
+sponsored, and a "call an unlisted contract" action exercises the refusal path. Bring up the
+Option A stack, then:
 
 ```sh
 pnpm demo:dev   # http://app.localhost
