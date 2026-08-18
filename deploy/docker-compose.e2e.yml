@@ -20,6 +20,32 @@ services:
     ports:
       - '8545:8545'
 
+  # Lends the demo port 80, so its URLs can omit a port without anything running as root.
+  #
+  # macOS and Linux reserve ports below 1024 for root, so `portless proxy start` would normally
+  # need sudo. Docker does not: it already binds this stack's host ports through its own
+  # privileged helper. So this container holds port 80 and relays every connection, bytes
+  # untouched, to the portless proxy running unprivileged on the host — which is what actually
+  # routes by name. A TCP relay has no opinion about the Host header, so tenant resolution
+  # (wallet-api resolves tenants by Host) is unaffected.
+  #
+  # Behind a profile because it is only wanted when portless holds an unprivileged port: CI
+  # runs the proxy on port 80 directly under sudo, where sudo is free, and starting this too
+  # would just fight it for the port. Bring it up with:
+  #   docker compose --profile portless -f deploy/docker-compose.e2e.yml up -d
+  portless-port80:
+    profiles: ['portless']
+    image: alpine/socat@sha256:3ed1cd38741bd445ebffa3aecb9d80c46a83db45f5b5ef03332976c7ca9814af # latest as of 2026-08
+    ports:
+      - '80:80'
+    # How a container reaches a host-loopback listener: Docker Desktop provides this name
+    # already, Linux needs it mapped explicitly.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    # 1355 is PORTLESS_LISTEN_PORT in e2e/origins.mjs — keep the two in step.
+    command: TCP-LISTEN:80,fork,reuseaddr TCP:host.docker.internal:1355
+    restart: unless-stopped
+
   alto:
     image: node:22-alpine
     depends_on:

@@ -168,19 +168,31 @@ wallet-web UI, tenant `byo` serves an independently built ("bring your own") wal
 
 ```sh
 pnpm install
-docker compose -f deploy/docker-compose.e2e.yml up --build
+# --profile portless adds the container that lends the stack port 80
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 
-# publish the stack under its names (once per boot — port 80 needs sudo)
-sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy
+# register the names, then wait until they answer
 pnpm -F @appliedblockchain/giano-e2e portless:up
 ```
 
-Nothing here is addressed by port. [portless](https://github.com/vercel-labs/portless) runs a
-local proxy on port 80 that maps each name below to the loopback port behind it. The table of
-names lives in `e2e/origins.mjs`, and everything else — the fixtures, the tenant seed in
-`deploy/docker-compose.e2e.yml`, the Playwright suite — reads its origins from there, so there
-is one place to change and nowhere for a stale port to hide. `portless:up` registers the
-routes and refuses to return until they answer; `portless:down` removes them again.
+Nothing here is addressed by port. [portless](https://github.com/vercel-labs/portless) maps each
+name below to the loopback port behind it. The table of names lives in `e2e/origins.mjs`, and
+everything else — the fixtures, the tenant seed in `deploy/docker-compose.e2e.yml`, the
+Playwright suite — reads its origins from there, so there is one place to change and nowhere for
+a stale port to hide. `portless:up` registers the routes, starts the proxy if it is not already
+running, and refuses to return until the names answer; `portless:down` removes them again.
+`pnpm test` does the same thing itself (Playwright `globalSetup`), so the suite needs no
+separate step.
+
+And none of it runs as root. A URL with no port *is* port 80, which macOS and Linux reserve for
+root, so the usual price of a port-free URL is `sudo portless proxy start`. Docker can pay it
+instead: it already binds this stack's host ports through its own privileged helper, so the
+`portless-port80` service holds port 80 and relays it — bytes and Host header untouched, which
+is what keeps tenant-by-Host resolution working — to portless listening unprivileged on 1355.
+`/etc/hosts` is left alone too, since portless only writes it when it can. The sudo route still
+works if you prefer it (`sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy`, then drop
+`--profile portless`); that is what CI does, where sudo is free and one less container is worth
+more than symmetry.
 
 | Service | URL | Notes |
 | --- | --- | --- |
@@ -215,8 +227,9 @@ it: 4401 is the target of `app-byo.localhost` (see `e2e/origins.mjs`).
 Open **http://app-byo.localhost** and repeat the flow — same backend, different wallet
 origin, different UI, cryptographically separate passkeys. For a richer dApp on the `stock`
 tenant (wallet basics + an ERC-20 panel), run the Chakra sample instead: `pnpm demo:dev` (also
-`http://app.localhost`). Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`
-and `pnpm -F @appliedblockchain/giano-e2e portless:down`.
+`http://app.localhost`). Tear down with
+`docker compose --profile portless -f deploy/docker-compose.e2e.yml down` and
+`pnpm -F @appliedblockchain/giano-e2e portless:down`.
 
 Confirm the deployment on-chain any time:
 

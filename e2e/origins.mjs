@@ -3,14 +3,14 @@
  *
  * Every address the demo *speaks* is a name — `http://wallet.localhost`, not
  * `http://wallet.localhost:8081`. The names are served by portless
- * (https://github.com/vercel-labs/portless), a local reverse proxy on port 80 that maps
+ * (https://github.com/vercel-labs/portless), a local reverse proxy that maps
  * `<name>.localhost` to a loopback port. The ports below are plumbing; nothing in the
  * fixtures, the tenant seed, the tests or the docs refers to them.
  *
- * Why HTTP on port 80 rather than portless's default HTTPS on 443: `http://*.localhost`
- * is already a secure context in Chromium, so passkeys keep working exactly as they did
- * on `http://wallet.localhost:8081` — and no local CA has to be minted and trusted on
- * developer machines or in CI. The only thing that changed is that the port is gone.
+ * Why HTTP rather than portless's default HTTPS: `http://*.localhost` is already a secure
+ * context in Chromium, so passkeys keep working exactly as they did on
+ * `http://wallet.localhost:8081` — and no local CA has to be minted and trusted on developer
+ * machines or in CI. The only thing that changed is that the port is gone.
  *
  * Route `kind` records who listens on the loopback port, because it decides who has to be
  * up before a name answers:
@@ -31,11 +31,26 @@
 export const TLD = 'localhost';
 
 /**
- * The port portless listens on. 80 is privileged, which is the whole point — it is what
- * lets the URLs omit a port. Starting the proxy therefore needs sudo once per boot; see
- * portless-setup.mjs for the message a developer gets when it is not running.
+ * The port the names are served on. A URL with no port *is* port 80, so this is not a choice
+ * so much as the definition of the goal.
  */
 export const PROXY_PORT = 80;
+
+/**
+ * The port portless itself listens on — deliberately above 1024, so nothing here needs root.
+ *
+ * macOS and Linux reserve ports below 1024 for root, so a port-free URL normally costs a
+ * `sudo portless proxy start`. It does not have to: Docker already binds host ports for this
+ * stack through its own privileged helper, so the `portless-port80` service in
+ * deploy/docker-compose.e2e.yml holds port 80 and pipes every connection, bytes untouched, to
+ * portless here. The Host header — which is what portless routes on, and what wallet-api
+ * resolves tenants by — survives that hop because a TCP relay has no opinion about it.
+ *
+ * The upshot: the browser talks to port 80, portless does all the routing, and no part of the
+ * local demo runs as root or edits /etc/hosts. CI takes the sudo route instead, because on a
+ * throwaway runner sudo is free and one less moving part is worth more than symmetry.
+ */
+export const PORTLESS_LISTEN_PORT = 1355;
 
 /** @typedef {{ name: string, port: number, kind: 'fixture' | 'compose', what: string }} Route */
 

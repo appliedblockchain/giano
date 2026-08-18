@@ -7,6 +7,7 @@
   "scripts": {
     "test": "playwright test",
     "test:headed": "playwright test --headed",
+    "portless:port80": "docker compose --profile portless -f ../deploy/docker-compose.e2e.yml up -d portless-port80",
     "portless:proxy": "portless proxy start --no-tls",
     "portless:up": "node portless-setup.mjs",
     "portless:routes": "node portless-setup.mjs --routes-only",

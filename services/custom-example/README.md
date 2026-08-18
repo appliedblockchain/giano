@@ -21,10 +21,8 @@ devnet), then start the dApp:
 
 ```sh
 # from the repo root — see the root README "Option A"
-docker compose -f deploy/docker-compose.e2e.yml up --build
-
-# publish the stack under its names (once per boot — port 80 needs sudo)
-sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy
+# --profile portless adds the container that lends the stack port 80, so no sudo is needed
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 pnpm -F @appliedblockchain/giano-e2e portless:up
 
 # then, in another terminal

@@ -35,17 +35,24 @@ instant-boot devnet (EntryPoint v0.7 + Giano factory + testing paymaster baked i
 state), so there is nothing to deploy by hand:
 
 ```sh
-docker compose -f deploy/docker-compose.e2e.yml up --build
+# --profile portless adds the container that lends the stack port 80
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 
-# publish the stack under its names (once per boot — port 80 needs sudo)
-sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy
+# register the names, then wait until they answer
 pnpm -F @appliedblockchain/giano-e2e portless:up
 ```
 
-Addresses are names, not ports. [portless](https://github.com/vercel-labs/portless) runs a
-local proxy on port 80 and maps each `*.localhost` name to the loopback port behind it;
-`e2e/origins.mjs` is the name/port table and the single source of truth the fixtures, the
-tenant seed and the tests all read.
+Addresses are names, not ports. [portless](https://github.com/vercel-labs/portless) maps each
+`*.localhost` name to the loopback port behind it; `e2e/origins.mjs` is the name/port table and
+the single source of truth the fixtures, the tenant seed and the tests all read.
+
+None of it runs as root. A URL with no port *is* port 80, and macOS and Linux reserve ports
+below 1024 for root — so rather than `sudo portless proxy start`, the `portless-port80`
+container holds port 80 (Docker already binds this stack's host ports through its own
+privileged helper) and relays it to portless listening unprivileged on 1355. `/etc/hosts` is
+left alone as well. If you would rather run the proxy on port 80 directly,
+`sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy` does that and the container is then
+unnecessary.
 
 | Service | URL | Notes |
 | --- | --- | --- |
@@ -64,10 +71,10 @@ To run the sample dApp against this stack (thin-SDK fixture on `http://app.local
 pnpm --filter @appliedblockchain/giano-e2e dapp
 ```
 
-Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`, and drop the names with
-`pnpm -F @appliedblockchain/giano-e2e portless:down`. HTTP rather than portless's default
-HTTPS is deliberate: `http://*.localhost` is already a secure context, so passkeys work without
-minting and trusting a local CA.
+Tear down with `docker compose --profile portless -f deploy/docker-compose.e2e.yml down`, and
+drop the names with `pnpm -F @appliedblockchain/giano-e2e portless:down`. HTTP rather than
+portless's default HTTPS is deliberate: `http://*.localhost` is already a secure context, so
+passkeys work without minting and trusting a local CA.
 
 ### Option B — iterate on wallet-api against a fresh devnet
 

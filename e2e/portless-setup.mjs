@@ -10,16 +10,16 @@
  * fixtures and the compose stack come up, and the order Playwright chooses for `webServer`
  * versus `globalSetup` does not matter.
  *
- * What it will not do is start the proxy. Port 80 is privileged, so starting it needs sudo,
- * and silently running sudo on someone's behalf mid-test-run is worse than telling them the
- * one command to run.
+ * It will start the proxy if it is not running, because on PORTLESS_LISTEN_PORT that costs no
+ * privilege. What it will not do is acquire port 80 — that needs either the `portless-port80`
+ * container (see deploy/docker-compose.e2e.yml) or sudo, and both are the developer's call.
  */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PROXY_PORT, ROUTES, originOf } from './origins.mjs';
+import { PORTLESS_LISTEN_PORT, PROXY_PORT, ROUTES, originOf } from './origins.mjs';
 
 /**
  * The workspace's own portless, so the suite does not depend on a global install. Resolved with
@@ -29,14 +29,13 @@ import { PROXY_PORT, ROUTES, originOf } from './origins.mjs';
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.resolve('portless'))), 'cli.js');
 if (!fs.existsSync(CLI)) throw new Error(`portless is installed but its CLI is not at ${CLI}`);
 
-/**
- * Two spellings of "start the proxy". The short one is for reading; the long one is for
- * pasting, because `sudo` may not carry pnpm or node on its PATH and an absolute
- * interpreter plus an absolute script cannot miss.
- */
-const START_COMMANDS = [
-  'pnpm -F @appliedblockchain/giano-e2e portless:proxy',
-  `${process.execPath} ${CLI} proxy start --no-tls`,
+/** Both ways to put something on port 80, in the order a developer should prefer them. */
+const PORT_80_OPTIONS = [
+  ['Let Docker hold the port — no root, and it goes away with the stack:',
+   '  pnpm -F @appliedblockchain/giano-e2e portless:port80'],
+  ['Or run the proxy on port 80 itself, which does need root:',
+   '  sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy',
+   `  sudo ${process.execPath} ${CLI} proxy start --no-tls`],
 ];
 
 /** @param {string[]} args */
@@ -52,14 +51,20 @@ function portless(args) {
  * its 502 for a registered name with nothing behind it. Insisting on that header turns
  * "some other web server owns port 80" into a clear failure rather than a confusing one.
  */
-async function proxyIsUp() {
+async function servedByPortless(url) {
   try {
-    const response = await fetch(originOf('app'), { redirect: 'manual', signal: AbortSignal.timeout(2_000) });
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(2_000) });
     return response.headers.has('x-portless');
   } catch {
     return false;
   }
 }
+
+/** Is anything serving the demo's names on port 80 — the container, or a root-run proxy? */
+const namesAreServed = () => servedByPortless(originOf('app'));
+
+/** Is portless itself listening where it does not need root? */
+const proxyIsListening = () => servedByPortless(`http://127.0.0.1:${PORTLESS_LISTEN_PORT}`);
 
 /** Waits for a name to be served by whoever owns the port behind it (fixture or compose). */
 async function waitFor(url, timeoutMs) {
@@ -110,18 +115,30 @@ function printRoutes() {
 export default async function globalSetup() {
   registerRoutes();
 
-  if (!(await proxyIsUp())) {
-    throw new Error(
-      [
-        `The portless proxy is not answering on port ${PROXY_PORT}, so the demo's names do not resolve.`,
-        '',
-        `Start it once — port ${PROXY_PORT} is privileged, so this needs sudo:`,
-        ...START_COMMANDS.map((command) => `  sudo ${command}`),
-        '',
-        'It then stays up until you stop it (`pnpm -F @appliedblockchain/giano-e2e portless:down`)',
-        'or reboot; `sudo portless service install` makes it survive reboots.',
-      ].join('\n'),
-    );
+  if (!(await namesAreServed())) {
+    // Starting portless on an unprivileged port needs no permission, so just do it rather than
+    // making someone read an error to learn that. Port 80 is the part nobody can take silently.
+    if (!(await proxyIsListening())) {
+      const { status, out } = portless(['proxy', 'start', '--no-tls', '-p', String(PORTLESS_LISTEN_PORT)]);
+      if (status !== 0) throw new Error(`could not start the portless proxy on port ${PORTLESS_LISTEN_PORT}:\n${out}`);
+      console.log(`started the portless proxy on port ${PORTLESS_LISTEN_PORT}`);
+    }
+    // The relay may need a moment to accept, and the proxy a moment to bind.
+    const deadline = Date.now() + 15_000;
+    while (!(await namesAreServed())) {
+      if (Date.now() > deadline) {
+        throw new Error(
+          [
+            `Nothing is serving the demo's names on port ${PROXY_PORT}, so URLs without a port do not resolve.`,
+            `portless is listening on ${PORTLESS_LISTEN_PORT}; something has to hand it port ${PROXY_PORT}.`,
+            '',
+            ...PORT_80_OPTIONS.flatMap((option) => [...option, '']),
+            'Undo either with `pnpm -F @appliedblockchain/giano-e2e portless:down`.',
+          ].join('\n'),
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
 
   // Only the compose-backed HTTP services are waited on, and deliberately so: the fixtures are

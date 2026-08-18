@@ -1,10 +1,14 @@
 /**
  * Undoes portless-setup.mjs: drops the demo's routes and stops the proxy.
  *
- * Worth knowing what this cleans up, because the proxy touches the machine and not just this
- * repo: while it runs it keeps a block of the registered names in /etc/hosts. Removing the
- * routes shrinks that block; stopping the proxy is what empties it. `portless hosts clean`
- * removes the block outright, and `portless clean` removes all portless state.
+ * The port-80 relay is a compose service, so it is not this script's to stop — it goes away
+ * with `docker compose --profile portless -f deploy/docker-compose.e2e.yml down`, along with
+ * the rest of the stack.
+ *
+ * Nothing here needs root, and nothing it undoes touched /etc/hosts: portless only syncs the
+ * hosts file when it can write it, which an unprivileged proxy cannot. (If you took the sudo
+ * route instead, a root proxy *will* have written a block there — `portless hosts clean`
+ * removes it, and `portless clean` removes all portless state.)
  */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -32,8 +36,8 @@ for (const { name } of ROUTES) {
   console.log(`${status === 0 ? 'removed' : 'could not remove'} ${name}.localhost${status === 0 ? '' : `: ${out}`}`);
 }
 
-// The proxy runs as root (port 80), so stopping it needs the same privilege. portless prints
-// what to run when it cannot do it itself, so pass its output straight through.
+// portless prints what to run when it cannot stop the proxy itself (only the case for a proxy
+// someone started with sudo), so pass its output straight through.
 const stopped = portless(['proxy', 'stop']);
 if (stopped.out) console.log(stopped.out);
 process.exit(stopped.status ?? 0);

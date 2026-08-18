@@ -35,11 +35,15 @@ jobs:
       - name: Start stack
         run: docker compose -f deploy/docker-compose.e2e.yml up --build -d --wait --wait-timeout 300
       # The demo's origins are names on port 80 (http://app.localhost, http://wallet.localhost,
-      # ...), so the suite needs portless's proxy. Port 80 is privileged, hence sudo; and an
-      # absolute interpreter path rather than `sudo node`, because sudo's secure_path does not
-      # include the toolcache node that setup-node put on PATH. Registering the routes is
-      # unprivileged and is done by e2e/portless-setup.mjs (Playwright's globalSetup) — the proxy
-      # watches its routes file, so it picks them up whenever they land.
+      # ...), so the suite needs portless's proxy holding that port. Locally that is done without
+      # root, by the `portless-port80` compose service (see deploy/docker-compose.e2e.yml) — but
+      # here sudo is free and a throwaway runner has nothing to protect, so CI takes the simpler
+      # route and runs the proxy on port 80 directly. That is also why the compose step above
+      # does not pass `--profile portless`: the relay would only fight this proxy for the port.
+      #
+      # An absolute interpreter path rather than `sudo node`, because sudo's secure_path does not
+      # include the toolcache node that setup-node put on PATH. Routes are registered first and
+      # unprivileged; the proxy picks them up from its routes file as it starts.
       - name: Start portless proxy
         working-directory: e2e
         run: |
