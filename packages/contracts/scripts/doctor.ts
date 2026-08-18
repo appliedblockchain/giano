@@ -3,12 +3,14 @@
  *
  * Usage (run from the repo root):
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- chain \
- *     --rpc <url> --chain-id <id> [--factory 0x..] [--paymaster 0x..] [--executor 0x..]
+ *     --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..] \
+ *     [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]
  *
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- wallet \
  *     --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]
  *
- * Flags fall back to env: RPC_URL, CHAIN_ID, FACTORY_ADDRESS, ENTRYPOINT_ADDRESS, PAYMASTER_ADDRESS.
+ * Flags fall back to env: RPC_URL, CHAIN_ID, FACTORY_ADDRESS, ENTRYPOINT_ADDRESS,
+ * SPONSORSHIP_PAYMASTER_ADDRESS, PAYMASTER_TENANT_IDS, PAYMASTER_ROLE_ADMIN, SPONSORSHIP_SIGNERS.
  * For registry chains (8453 / 84532 / 381185) the addresses default from the contracts registry.
  *
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
@@ -18,12 +20,19 @@
  */
 import { Contract, JsonRpcProvider, concat, formatEther, getAddress, isAddress, toBeHex } from 'ethers';
 import { ENTRYPOINT_V07_ADDRESS, getGianoDeployment, type GianoDeployment } from '../addresses';
-import { gianoSmartWalletFactoryAbi, iEntryPointAbi, multiOwnableAbi } from '../generated';
+import { gianoPaymasterAbi, gianoSmartWalletFactoryAbi, iEntryPointAbi, multiOwnableAbi } from '../generated';
 
 // --- well-known addresses (identical on every EVM chain) ---
 const RIP7212_PRECOMPILE = '0x0000000000000000000000000000000000000100';
 /** daimo p256-verifier — the in-contract FCL fallback webauthn-sol uses when RIP-7212 is absent. */
 const P256_VERIFIER = '0xc2b78104907F722DABAc4C69f826a522B2754De4';
+/** Chains on which a permissive test paymaster is a deployment failure, not a convenience. */
+const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111];
+/** Below this, sponsored operations start failing in ways that look like client bugs. */
+const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n; // 0.02 ETH
+/** A validating paymaster needs a stake before bundlers will accept its operations at all. */
+const MIN_STAKE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
+
 /** Arachnid deterministic-deployment proxy (CREATE2 factory). */
 const CREATE2_FACTORY = '0x4e59b44847b379578588920ca78fbf26c0b4956c';
 
@@ -94,8 +103,172 @@ function resolveDeployment(chainId: number, flags: Record<string, string>): Part
     entryPoint: pick('entrypoint', 'ENTRYPOINT_ADDRESS', registry?.entryPoint ?? ENTRYPOINT_V07_ADDRESS),
     factory: pick('factory', 'FACTORY_ADDRESS', registry?.factory),
     implementation: registry?.implementation,
-    paymaster: pick('paymaster', 'PAYMASTER_ADDRESS', registry?.paymaster),
+    sponsorshipPaymaster: pick('sponsorship-paymaster', 'SPONSORSHIP_PAYMASTER_ADDRESS', registry?.sponsorshipPaymaster),
+    sponsorshipPaymasterImplementation: registry?.sponsorshipPaymasterImplementation,
+    testPaymaster: pick('test-paymaster', 'PAYMASTER_ADDRESS', registry?.testPaymaster),
   };
+}
+
+/**
+ * The production paymaster's deployment-completeness checks (R-24), accounting invariant (R-34)
+ * and role topology (R-55).
+ *
+ * These fail the exit code rather than warning. "Deployed but not staked" and "deployed but the
+ * upgrade role is still on an operational key" both look fine from the outside and are exactly
+ * the states a pre-flight gate exists to catch.
+ */
+async function checkSponsorshipPaymaster(
+  provider: JsonRpcProvider,
+  address: `0x${string}`,
+  deployment: Partial<GianoDeployment>,
+  entryPoint: string,
+  flags: Record<string, string>,
+): Promise<void> {
+  section('Sponsorship paymaster (production)');
+  const pmHasCode = await hasCode(provider, address);
+  report(pmHasCode ? 'ok' : 'fail', 'sponsorship paymaster proxy deployed', address);
+  if (!pmHasCode) return;
+
+  const paymaster = new Contract(address, gianoPaymasterAbi, provider);
+  const ep = new Contract(entryPoint, iEntryPointAbi, provider);
+
+  // --- implementation matches the registry -------------------------------------------------
+  try {
+    // ERC-1967 implementation slot
+    const slot = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+    const raw = await provider.getStorage(address, slot);
+    const impl = getAddress(`0x${raw.slice(-40)}`);
+    report('info', 'implementation', impl);
+    if (deployment.sponsorshipPaymasterImplementation) {
+      const expected = getAddress(deployment.sponsorshipPaymasterImplementation);
+      report(
+        impl === expected ? 'ok' : 'warn',
+        'implementation matches the registry',
+        impl === expected ? impl : `${impl} vs ${expected} — an unannounced upgrade, or a stale registry`,
+      );
+    }
+  } catch (error) {
+    report('warn', 'read implementation slot', (error as Error).message);
+  }
+
+  // --- stake and deposit (R-24) --------------------------------------------------------------
+  try {
+    const info = await ep.getDepositInfo(address);
+    const stake: bigint = info.stake ?? info[1];
+    const deposit: bigint = info.deposit ?? info[0];
+    const staked: boolean = info.staked ?? info[2];
+
+    report(staked && stake >= MIN_STAKE_WEI ? 'ok' : 'fail', 'paymaster staked', `${formatEther(stake)} ETH`);
+    if (!staked) {
+      report('info', 'why this matters', 'bundlers reject an unstaked validating paymaster, which reads as a client bug');
+    }
+    report(deposit >= LOW_DEPOSIT_WEI ? 'ok' : 'fail', 'EntryPoint deposit', `${formatEther(deposit)} ETH`);
+  } catch (error) {
+    report('fail', 'read stake and deposit', (error as Error).message);
+  }
+
+  // --- the accounting invariant (R-34) -------------------------------------------------------
+  const tenantIds = (flags['tenants'] ?? process.env.PAYMASTER_TENANT_IDS ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  try {
+    const deposit: bigint = await ep.balanceOf(address);
+    const treasury: bigint = await paymaster.treasury();
+
+    let tenantTotal = 0n;
+    let anyFunded = false;
+    for (const id of tenantIds) {
+      const tenant = await paymaster.getTenant(id);
+      const balance: bigint = tenant.balance;
+      tenantTotal += balance;
+      if (balance > 0n) anyFunded = true;
+      if (tenant.deficit > 0n) {
+        report('fail', `tenant ${id} carries a deficit`, `${formatEther(tenant.deficit)} ETH — that tenant cannot transact`);
+      }
+    }
+
+    if (tenantIds.length === 0) {
+      report('info', 'tenant balances', 'pass --tenants <id,id> to check per-tenant balances and the invariant');
+    } else {
+      const claims = tenantTotal + treasury;
+      report(
+        claims <= deposit ? 'ok' : 'fail',
+        'accounting invariant (Σ balances + treasury ≤ deposit)',
+        `${formatEther(claims)} ≤ ${formatEther(deposit)} ETH`,
+      );
+      if (claims > deposit) {
+        report('info', 'this is an insolvency', 'claims exceed the deposit — stop issuing sponsorships and investigate');
+      }
+      report(
+        anyFunded ? 'ok' : 'fail',
+        'at least one tenant balance is funded',
+        anyFunded ? `${formatEther(tenantTotal)} ETH across ${tenantIds.length} tenants` : 'none of the listed tenants holds a balance',
+      );
+      report('info', 'unattributed slack', `${formatEther(deposit - claims)} ETH (expected, and monitored for growth)`);
+    }
+  } catch (error) {
+    report('fail', 'read the accounting invariant', (error as Error).message);
+  }
+
+  // --- roles (R-55) --------------------------------------------------------------------------
+  try {
+    const roleAdminRole: string = await paymaster.ROLE_ADMIN();
+    const upgraderRole: string = await paymaster.UPGRADER_ROLE();
+
+    const defaultAdminCount: bigint = await paymaster.getRoleMemberCount(
+      '0x0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    report(
+      defaultAdminCount === 0n ? 'ok' : 'fail',
+      'no DEFAULT_ADMIN_ROLE holder',
+      defaultAdminCount === 0n ? 'there is no superuser' : `${defaultAdminCount} holder(s) — this is a superuser by another name`,
+    );
+
+    const expectedAuthority = (flags['role-admin'] ?? process.env.PAYMASTER_ROLE_ADMIN) as string | undefined;
+    for (const [label, role] of [
+      ['ROLE_ADMIN', roleAdminRole],
+      ['UPGRADER_ROLE', upgraderRole],
+    ] as const) {
+      const count: bigint = await paymaster.getRoleMemberCount(role);
+      const holders: string[] = [];
+      for (let i = 0n; i < count; i++) holders.push(getAddress(await paymaster.getRoleMember(role, i)));
+
+      if (count !== 1n) {
+        report('fail', `${label} holders`, `${count} holder(s): ${holders.join(', ') || 'none'} — expected exactly one`);
+      } else if (expectedAuthority && holders[0] !== getAddress(expectedAuthority)) {
+        report('fail', `${label} holder`, `${holders[0]} — expected the timelock at ${getAddress(expectedAuthority)}`);
+      } else {
+        report(expectedAuthority ? 'ok' : 'warn', `${label} holder`, holders[0]);
+        if (!expectedAuthority) {
+          report('info', 'unverified', 'pass --role-admin <timelock> so this check asserts rather than reports');
+        }
+      }
+    }
+
+    const signers: string[] = await paymaster.getSigners();
+    const expectedSigners = (flags['signers'] ?? process.env.SPONSORSHIP_SIGNERS ?? '')
+      .split(',')
+      .map((sig) => sig.trim())
+      .filter(Boolean)
+      .map((sig) => getAddress(sig));
+
+    if (signers.length === 0) {
+      report('fail', 'sponsorship signer set', 'empty — nothing can be authorised');
+    } else if (expectedSigners.length === 0) {
+      report('warn', 'sponsorship signer set', `${signers.map(getAddress).join(', ')} (pass --signers to assert)`);
+    } else {
+      const actual = signers.map(getAddress).sort().join(',');
+      const expected = expectedSigners.sort().join(',');
+      report(actual === expected ? 'ok' : 'fail', 'sponsorship signer set', actual === expected ? actual : `${actual} vs expected ${expected}`);
+    }
+
+    const paused: boolean = await paymaster.paused();
+    report(paused ? 'warn' : 'ok', 'accepting new sponsorships', paused ? 'PAUSED — withdrawal still works' : 'not paused');
+  } catch (error) {
+    report('fail', 'read the role topology', (error as Error).message);
+  }
 }
 
 async function hasCode(provider: JsonRpcProvider, address: string): Promise<boolean> {
@@ -185,25 +358,29 @@ async function doctorChain(flags: Record<string, string>) {
     }
   }
 
-  const paymaster = deployment.paymaster;
-  if (paymaster) {
-    section('Paymaster (gas sponsorship)');
-    const paymasterAddr = requireAddress(paymaster, 'paymaster');
-    const pmHasCode = await hasCode(provider, paymasterAddr);
-    report(pmHasCode ? 'ok' : 'fail', 'paymaster deployed', paymasterAddr);
+  const testPaymaster = deployment.testPaymaster;
+  if (testPaymaster) {
+    section('Permissive test paymaster (development only)');
+    const addr = requireAddress(testPaymaster, 'test-paymaster');
+    const pmHasCode = await hasCode(provider, addr);
+    report(pmHasCode ? 'ok' : 'fail', 'test paymaster deployed', addr);
+    if (PRODUCTION_CHAIN_IDS.includes(chainId)) {
+      report('fail', 'test paymaster on a production chain', `chain ${chainId} must never carry a permissive paymaster`);
+    }
     if (pmHasCode) {
       try {
         const ep = new Contract(entryPoint, iEntryPointAbi, provider);
-        const deposit: bigint = await ep.balanceOf(paymasterAddr);
-        const eth = formatEther(deposit);
-        report(deposit >= 20_000_000_000_000_000n ? 'ok' : 'warn', 'paymaster EntryPoint deposit', `${eth} ETH`);
-        if (deposit < 20_000_000_000_000_000n) {
-          report('info', 'low deposit', 'top up via EntryPoint.depositTo(paymaster) so sponsored ops keep landing');
-        }
+        const deposit: bigint = await ep.balanceOf(addr);
+        report(deposit >= LOW_DEPOSIT_WEI ? 'ok' : 'warn', 'test paymaster EntryPoint deposit', `${formatEther(deposit)} ETH`);
       } catch (error) {
-        report('warn', 'read paymaster deposit', (error as Error).message);
+        report('warn', 'read test paymaster deposit', (error as Error).message);
       }
     }
+  }
+
+  const sponsorshipPaymaster = deployment.sponsorshipPaymaster ?? undefined;
+  if (sponsorshipPaymaster) {
+    await checkSponsorshipPaymaster(provider, requireAddress(sponsorshipPaymaster, 'sponsorship-paymaster'), deployment, entryPoint, flags);
   }
 
   const executor = flags.executor ?? process.env.ALTO_EXECUTOR_ADDRESS;
@@ -308,7 +485,8 @@ async function main() {
         'giano-doctor — verify a Giano deployment or inspect a wallet.',
         '',
         'Usage:',
-        '  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--paymaster 0x..] [--executor 0x..]',
+        '  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..]',
+        '                [--tenants <id,id>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]',
         '  doctor wallet --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]',
       ].join('\n'),
     );

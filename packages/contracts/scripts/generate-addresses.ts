@@ -16,9 +16,14 @@ const outPath = path.join(pkgRoot, 'addresses.ts');
 const FUTURE_TO_FIELD: Record<string, { field: string; optional: boolean }> = {
   'GianoAccountFactory#GianoSmartWalletFactory': { field: 'factory', optional: false },
   'GianoAccountFactory#GianoSmartWallet': { field: 'implementation', optional: false },
-  'Testing#PermissivePaymaster': { field: 'paymaster', optional: true },
+  'Testing#PermissivePaymaster': { field: 'testPaymaster', optional: true },
   'Testing#PrivateERC20': { field: 'testErc20', optional: true },
+  'GianoPaymaster#SponsorshipPaymaster': { field: 'sponsorshipPaymaster', optional: true },
+  'GianoPaymaster#GianoPaymaster': { field: 'sponsorshipPaymasterImplementation', optional: true },
 };
+
+/** Chains that must never carry a testing-only artifact (R-29 layer 2). */
+const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111];
 
 type Overrides = Record<string, Record<string, string>>;
 
@@ -68,7 +73,15 @@ function main(): void {
     }
   }
 
-  const fieldOrder = ['entryPoint', 'factory', 'implementation', 'paymaster', 'testErc20'];
+  const fieldOrder = [
+    'entryPoint',
+    'factory',
+    'implementation',
+    'sponsorshipPaymaster',
+    'sponsorshipPaymasterImplementation',
+    'testPaymaster',
+    'testErc20',
+  ];
 
   const chainBlocks = Object.entries(chains)
     .sort(([a], [b]) => Number(a) - Number(b))
@@ -95,8 +108,20 @@ export type GianoDeployment = {
   factory: \`0x\${string}\`;
   /** GianoSmartWallet implementation behind the factory's proxies. */
   implementation: \`0x\${string}\`;
-  /** Testing-only permissive paymaster (not deployed on production chains). */
-  paymaster?: \`0x\${string}\`;
+  /**
+   * Production sponsorship paymaster (the UUPS proxy). This is the address tenants send funding
+   * to, so it must stay stable: changing it means every tenant re-learns where to fund, and any
+   * payment already in flight to the old address is lost.
+   */
+  sponsorshipPaymaster?: \`0x\${string}\`;
+  /** Implementation behind {@link sponsorshipPaymaster}. Changes on every upgrade. */
+  sponsorshipPaymasterImplementation?: \`0x\${string}\`;
+  /**
+   * Testing-only permissive paymaster. Deliberately a different field from
+   * {@link sponsorshipPaymaster} so that no consumer can pass one where the other is meant —
+   * the separation is structural rather than a matter of operator discipline.
+   */
+  testPaymaster?: \`0x\${string}\`;
   /** Testing-only ERC-20 (not deployed on production chains). */
   testErc20?: \`0x\${string}\`;
 };
@@ -115,6 +140,20 @@ export function getGianoDeployment(chainId: number): GianoDeployment {
   return deployment;
 }
 `;
+
+  // R-29 layer 2: a testing artifact on a production chain is a build failure, not a warning.
+  for (const chainId of PRODUCTION_CHAIN_IDS) {
+    const record = chains[chainId];
+    if (!record) continue;
+    for (const field of ['testPaymaster', 'testErc20']) {
+      if (record[field]) {
+        throw new Error(
+          `chain ${chainId} is a production chain but carries ${field}=${record[field]}. ` +
+            'Testing contracts must never be deployed to a production chain.',
+        );
+      }
+    }
+  }
 
   fs.writeFileSync(outPath, output);
   console.log(`Wrote ${path.relative(process.cwd(), outPath)} (${Object.keys(chains).length} chains)`);
