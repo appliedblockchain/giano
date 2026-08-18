@@ -392,8 +392,8 @@ describe('userop relay', () => {
 });
 
 /**
- * Negative matrix from docs/MULTI-TENANCY-GAPS.md §10. Every gap stays open until one
- * of these fails without its fix.
+ * The tenant-isolation negative matrix. Each case pins one way isolation could leak
+ * (specs/DEVELOPER-GUIDE.md §1); none of them may pass without the fix it exists for.
  */
 describe('tenant isolation', () => {
   const scrapeMetrics = async () => {

@@ -11,7 +11,7 @@ Postgres, one bundler, one chain) serves one or many client projects. Every tena
 refuses to surrender one tenant's passkeys to another's origin. A tenant's origin may serve
 Giano's stock wallet-web UI **or a UI the tenant built itself** ("bring your own UI" — same
 architecture, only the SPA's authorship differs; see
-[`MULTI-TENANCY-GAPS.md`](./MULTI-TENANCY-GAPS.md)). Whether you run a single-tenant stack for
+[§5.5b](#55b-bring-your-own-wallet-ui-per-tenant)). Whether you run a single-tenant stack for
 your own project or one instance for many clients, the deployment shape is identical — the
 tenants are just rows seeded from `TENANTS_SEED`. A dApp integrates only the thin
 `@appliedblockchain/giano-connector` SDK plus its tenant's wallet URL; all wallet trust
@@ -124,7 +124,8 @@ Everything you must provide, made explicit. "Required" means the minimal working
 ### 2.2 Keys & secrets
 
 Store all of these in your platform's secret manager. Never commit them; never inline them in
-compose files or `values.yaml`. Full inventory + monitoring: [`docs/SECRETS.md`](./SECRETS.md).
+compose files or `values.yaml`. The table below is the inventory; the metrics that tell you when
+one of them is failing are in §6.
 
 | Secret | Held by | Purpose | Funded? |
 | --- | --- | --- | --- |
@@ -387,7 +388,8 @@ upserts by `slug` and validates the RP/origin invariants before touching the dat
 immutable per tenant (the seeder refuses to change it); everything else (origins, registration
 mode, admin keys, policy) is updated in place. Removing an entry does **not** delete the tenant's
 data. DNS/TLS for the tenant's wallet host is yours to provision (see
-[`MULTI-TENANCY-GAPS.md`](./MULTI-TENANCY-GAPS.md) §4 for the custom-domain considerations).
+[`INTEGRATION.md` §1](./INTEGRATION.md#1-dns--tls) for the DNS, TLS and edge-route requirements —
+one set per tenant, because the wallet host is that tenant's RP ID).
 
 ### 5.5 wallet-web environment
 
@@ -714,7 +716,7 @@ P-256 passkey).
   (kind ∈ `credential|challenge|session`) — **alert on any increase**: it means RP resolution is
   broken or someone is probing across tenant boundaries. Other suggested alerts: policy-rejection
   spikes (probing), ceremony-failure spikes (broken RP config/attack), relay `failed` ratio, low
-  bundler-executor balance. Full table: [`docs/SECRETS.md`](./SECRETS.md#monitoring).
+  bundler-executor balance.
 - **Related Origin Requests (ROR):** share passkeys across multiple app origins under one tenant's
   RP ID via `GET /.well-known/webauthn` (Host-scoped — each wallet origin serves only its own
   tenant's document) and the tenant-scoped admin ROR endpoints — see
@@ -798,13 +800,10 @@ P-256 passkey).
 | Doc | Covers |
 | --- | --- |
 | [`README.md`](../README.md) | project overview, local dev options (A/B/C), running the tests |
-| [`docs/INTEGRATION.md`](./INTEGRATION.md) | concise ops runbook: DNS/TLS, proxy rules, per-container env, upgrade |
-| [`docs/SECRETS.md`](./SECRETS.md) | authoritative secrets inventory + monitoring/metrics |
+| [`INTEGRATION.md`](./INTEGRATION.md) | concise ops runbook: DNS/TLS, proxy rules, per-container env, upgrade |
 | [`COMPATIBILITY.md`](../COMPATIBILITY.md) | single-version policy, upgrade order, compatibility guarantees |
 | [`GIANO-VS-COINBASE.md`](../GIANO-VS-COINBASE.md) | why self-host vs. the Coinbase stack: lock-in, cost, chains |
-| [`docs/PRODUCT-STRATEGY.md`](./PRODUCT-STRATEGY.md) | modularity seams, the bring-your-own-UI contract, phased roadmap |
-| [`docs/COST-MODEL.md`](./COST-MODEL.md) | infrastructure + gas costs of running Giano as a service, and breakeven |
-| [`docs/MULTI-TENANCY-GAPS.md`](./MULTI-TENANCY-GAPS.md) | the multi-tenancy design (tenant ≡ origin ≡ RP ID), what has been implemented, and what remains |
+| [`TRANSACTION-SUBMISSION-FLOW.md`](./TRANSACTION-SUBMISSION-FLOW.md) | one transfer traced end to end through the two-origin, multi-tenant stack |
 | [`PAYMASTER-REQUIREMENTS.md`](./PAYMASTER-REQUIREMENTS.md) | gas sponsorship: what it must do and why the decisions were made |
 | [`PAYMASTER-SPECS.md`](./PAYMASTER-SPECS.md) | gas sponsorship: the technical design — contract, service, ledger, watcher |
 | [`packages/connector/README.md`](../packages/connector/README.md) | full SDK API + 0.x → 1.x (embedded) migration |

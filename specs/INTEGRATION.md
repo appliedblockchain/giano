@@ -30,8 +30,9 @@ tenants, and wallet-api tenant-scopes everything beneath that.
 - The dApp lives on a separate origin (`app.yourapp.com`); the two communicate only via
   the popup postMessage transport.
 - Serving many tenants from one instance means one DNS record + TLS certificate + edge
-  route **per tenant domain** — see `MULTI-TENANCY-GAPS.md` §4 for the custom-domain
-  onboarding costs and limits.
+  route **per tenant domain**, provisioned as part of onboarding that tenant. That cost is
+  linear in tenants and unavoidable: the wallet host *is* the tenant's RP ID, so tenants
+  cannot share one.
 
 ## 2. Proxy rules (handled by the wallet-web image)
 

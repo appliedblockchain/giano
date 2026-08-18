@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mergePolicy, tenantsSeedSchema, validateTenantSeed } from '../src/services/tenants.js';
 
 /**
- * V11 (docs/MULTI-TENANCY-GAPS.md §10): the RP/origin invariant is enforced on the
+ * The RP/origin invariant (specs/DEVELOPER-GUIDE.md §1) is enforced on the
  * tenant WRITE path — a row that violates it must be impossible to create. These are
  * pure validator tests; the seed-upsert immutability half lives in api.test.ts.
  */

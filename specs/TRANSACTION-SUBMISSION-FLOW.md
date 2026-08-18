@@ -4,7 +4,8 @@ This diagram traces a single ERC-20 transfer through the Giano two-origin, ERC-4
 stack: from the button click in the sample dApp (`services/custom-example`) to the
 moment the signed UserOperation is accepted by the bundler, and on to the receipt.
 
-The backend is **multi-tenant** (see `docs/ARCHITECTURE.md`): one `giano-wallet-api`,
+The backend is **multi-tenant** (see
+[`DEVELOPER-GUIDE.md` §1](./DEVELOPER-GUIDE.md#1-how-giano-fits-together)): one `giano-wallet-api`,
 one Postgres, one bundler and one chain serve many tenants, where
 **tenant ≡ wallet origin ≡ WebAuthn RP ID**, one to one. The trace below follows
 tenant `stock` (wallet origin `wallet.a.example`, stock `wallet-web` UI). A

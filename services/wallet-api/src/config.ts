@@ -14,7 +14,7 @@ const csv = (value: string) =>
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
  * rows, provisioned via TENANTS_SEED — see src/services/tenants.ts and
- * docs/MULTI-TENANCY-GAPS.md. The USEROP_* values are defaults a tenant's policy
+ * specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
  * jsonb may override per field.
  */
 const envSchema = z

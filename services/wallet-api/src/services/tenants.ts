@@ -6,7 +6,7 @@ import { tenantAdminKeys, tenants } from '../db/schema.js';
 import type { PolicyConfig } from './userop-policy.js';
 
 /**
- * Tenancy model (docs/MULTI-TENANCY-GAPS.md §5): tenant ≡ wallet origin ≡ RP ID, 1:1.
+ * Tenancy model (specs/DEVELOPER-GUIDE.md §1): tenant ≡ wallet origin ≡ RP ID, 1:1.
  * Tenants are provisioned declaratively at boot via the TENANTS_SEED env var; every
  * write goes through validateTenantSeed so the RP/origin invariant can never be
  * violated in the database.

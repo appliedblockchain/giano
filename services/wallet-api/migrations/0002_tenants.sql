@@ -1,5 +1,5 @@
 -- Multi-tenancy: one wallet-api serves many tenants, where tenant ≡ wallet origin ≡ RP ID
--- (docs/MULTI-TENANCY-GAPS.md). Runs in a single transaction (src/migrate.ts).
+-- (specs/DEVELOPER-GUIDE.md §1). Runs in a single transaction (src/migrate.ts).
 
 -- ── Tenants ────────────────────────────────────────────────────────────────────
 

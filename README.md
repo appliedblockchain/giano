@@ -9,8 +9,7 @@
 
 Giano ships as versioned artifacts deployed into a stack you control — either self-hosted by the
 integrator, or run by Applied Blockchain as a dedicated per-client deployment. There is no public
-multi-tenant Giano: one deployment serves one client, and `RP_ID` is fixed per deployment. See
-[`docs/PRODUCT-STRATEGY.md`](docs/PRODUCT-STRATEGY.md) for how the two distribution modes relate.
+multi-tenant Giano: one deployment serves one client, and `RP_ID` is fixed per deployment.
 
 - **Packages** (npm, GitHub Packages): `giano-contracts` (ABIs + address registry), `giano-wallet-core` (provider, passkey smart account, injection seam), `giano-wallet-transport` (popup protocol), `giano-connector` (the thin dApp SDK).
 - **Services** (Docker images, GHCR): `giano-wallet-api` (Fastify + Postgres: WebAuthn ceremonies, sessions, policied userop relay), `giano-wallet-web` (the dedicated wallet origin — passkey ceremonies + consent UI), `giano-bundler`, `giano-devnet`, `giano-contracts-deployer`.
@@ -123,7 +122,7 @@ rotated** (ops task) — treat them as public.
 
 ## Deploying Giano (for client projects)
 
-> **New to Giano? Start with [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md)** — a single
+> **New to Giano? Start with [`specs/DEVELOPER-GUIDE.md`](specs/DEVELOPER-GUIDE.md)** — a single
 > self-contained guide covering dApp integration, standing up the stack on any EVM chain, the
 > `giano-doctor` verification CLI, and a production checklist, with explicit software/keys/secrets/
 > infrastructure dependencies.
@@ -132,12 +131,11 @@ rotated** (ops task) — treat them as public.
   with a fully commented env matrix to copy into your own deployment.
 - `deploy/helm/giano` — Helm chart (wallet-api + migrations hook, wallet-web, optional bundler,
   contracts-deployer pre-install Job, ingress).
-- `docs/INTEGRATION.md` — DNS/TLS, proxy rules, the COOP caveat, per-container env, and the
-  upgrade runbook. `docs/SECRETS.md` — secrets inventory and monitoring. `COMPATIBILITY.md` —
-  versioning and upgrade order.
-- `docs/PRODUCT-STRATEGY.md` — how Giano evolves toward a standalone service: modularity seams, the
-  bring-your-own-UI contract, and the phased roadmap. `docs/COST-MODEL.md` — what it costs to run
-  and the breakeven analysis.
+- `specs/INTEGRATION.md` — DNS/TLS, proxy rules, the COOP caveat, per-container env, and the
+  upgrade runbook. `COMPATIBILITY.md` — versioning and upgrade order. The secrets inventory and the
+  metrics to watch them by are in `specs/DEVELOPER-GUIDE.md` §2.2 and §6.
+- `specs/PAYMASTER-REQUIREMENTS.md` and `specs/PAYMASTER-SPECS.md` — gas sponsorship: what it must
+  do and why the decisions were made, and the technical design that implements it.
 
 ### Important tips
 

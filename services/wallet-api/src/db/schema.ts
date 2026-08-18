@@ -4,7 +4,7 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',
 });
 
-/** One row per tenant: tenant ≡ wallet origin ≡ RP ID (docs/MULTI-TENANCY-GAPS.md §5). */
+/** One row per tenant: tenant ≡ wallet origin ≡ RP ID (specs/DEVELOPER-GUIDE.md §1). */
 export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: text('slug').notNull().unique(),

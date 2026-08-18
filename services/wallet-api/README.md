@@ -6,7 +6,7 @@ ERC-4337 user-operation relay. Distributed as `ghcr.io/appliedblockchain/giano-w
 
 **Multi-tenant**: one wallet-api instance (one Postgres, one bundler, one chain) serves many
 client projects. Every tenant owns its wallet origin, and that origin's host is the tenant's
-WebAuthn RP ID — 1:1 (`docs/MULTI-TENANCY-GAPS.md`). The origin may serve Giano's stock
+WebAuthn RP ID — 1:1 (`specs/DEVELOPER-GUIDE.md` §1). The origin may serve Giano's stock
 wallet-web UI or a UI the tenant built itself; both are the same architecture. Tenants are
 provisioned declaratively via the `TENANTS_SEED` env var (upserted by slug at boot) — no
 dashboard, onboarding is edit-and-restart.
