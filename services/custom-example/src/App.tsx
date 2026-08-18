@@ -3,6 +3,7 @@ import { LuLogOut, LuWallet } from 'react-icons/lu';
 import { ClipboardIconButton, ClipboardRoot } from './components/ui/clipboard';
 import { Erc20Panel } from './components/Erc20Panel';
 import { SectionCard } from './components/SectionCard';
+import { SponsorshipPanel } from './components/SponsorshipPanel';
 import { WalletPanel } from './components/WalletPanel';
 import { config } from './config';
 import { useWallet } from './hooks/useWallet';
@@ -55,6 +56,7 @@ export function App() {
           <>
             <WalletPanel account={account} />
             <Erc20Panel account={account} defaultToken={config.defaultTokenAddress} />
+            <SponsorshipPanel />
           </>
         ) : (
           <Box color="whiteAlpha.900" textAlign="center" py="6">
