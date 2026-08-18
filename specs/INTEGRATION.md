@@ -276,8 +276,10 @@ than the wallet-api. Full policy: `COMPATIBILITY.md`.
 ```bash
 # pre-baked E2E stack (instant-boot devnet, contracts included) — seeds TWO tenants:
 # "stock" (Giano's wallet-web at wallet.localhost) and "byo" (bring-your-own UI,
-# served host-side via `pnpm --filter @appliedblockchain/giano-e2e wallet-byo`)
-docker compose -f deploy/docker-compose.e2e.yml up --build
+# served host-side via `pnpm --filter @appliedblockchain/giano-e2e wallet-byo`).
+# --profile portless adds the relay that lets those addresses omit a port; the names
+# themselves come from `pnpm -F @appliedblockchain/giano-e2e portless:up` (see e2e/README.md).
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 # or the from-source dev stack (postgres + anvil + alto + wallet-api; run wallet-web
 # separately with `pnpm --filter @appliedblockchain/giano-wallet-web dev`):
 docker compose -f deploy/docker-compose.dev.yml up --build

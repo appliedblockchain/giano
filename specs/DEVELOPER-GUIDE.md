@@ -105,7 +105,8 @@ Everything you must provide, made explicit. "Required" means the minimal working
 | --- | --- | --- |
 | **Node 22** | building/running any package or service | `tsc` needs a large heap on this repo — see [Troubleshooting](#8-troubleshooting). |
 | **pnpm** (`corepack enable`) | the monorepo (workspaces, `-r` builds) | version pinned in root `package.json`. |
-| **Docker** (+ Compose) | the local stacks, wallet-api tests, E2E | not required if you consume only published images + npm packages. |
+| **Docker** (+ Compose) | the local stacks, wallet-api tests, E2E | not required if you consume only published images + npm packages. Also what holds port 80 for the E2E demo's addresses, so that nothing has to run as root. |
+| **Node 24** | *only* the E2E demo/suite | required by [portless](https://github.com/vercel-labs/portless), which serves the demo's `*.localhost` addresses. Installed as a dev dependency of `@appliedblockchain/giano-e2e`; no global install needed. |
 | **Foundry** + git submodules (`pnpm git:init`) | compiling contracts / `forge test` / deploying to a new chain | **not** needed to consume the published `giano-contracts` package. |
 | **viem** `^2.31` | the dApp SDK (required peer) | the connector's only hard peer dependency. |
 | **wagmi** `^2.15`, **@rainbow-me/rainbowkit** `^2.2` | *optional* — only for `createGianoConnector` / `giano()` | omit if you use the raw EIP-1193 provider. |
@@ -193,6 +194,10 @@ is what keeps tenant-by-Host resolution working — to portless listening unpriv
 works if you prefer it (`sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy`, then drop
 `--profile portless`); that is what CI does, where sudo is free and one less container is worth
 more than symmetry.
+
+[`e2e/README.md`](../e2e/README.md) is the full reference for all of this — the four origins, the
+relay-to-proxy chain, the `portless:*` scripts, how to add or rename a name (and why renaming a
+*wallet* name changes an RP ID), and what to do when an address misbehaves.
 
 | Service | URL | Notes |
 | --- | --- | --- |
@@ -804,6 +809,10 @@ P-256 passkey).
 | Symptom | Cause / fix |
 | --- | --- |
 | `heap out of memory` on build | `NODE_OPTIONS='--max-old-space-size=16384' pnpm build` |
+| `http://app.localhost` refuses the connection | nothing holds port 80 — start the relay (`pnpm -F @appliedblockchain/giano-e2e portless:port80`) or run the proxy on 80 under sudo. See [`e2e/README.md`](../e2e/README.md) |
+| A demo address returns a portless **404** | the routes are not registered — `pnpm -F @appliedblockchain/giano-e2e portless:up`; inspect with `portless:list` |
+| A demo address returns **502** | the route is registered but its port is dead — the compose stack or that host fixture is not running |
+| dApp rejected as an unknown origin after a rename | the tenant seed in `deploy/docker-compose.e2e.yml` must match the names in `e2e/origins.mjs` — and renaming a *wallet* name also changes that tenant's RP ID |
 | Popup never opens / `POPUP_BLOCKED` | call wallet methods from a user gesture; remove `COOP: same-origin` from the dApp (use `same-origin-allow-popups`) |
 | Handshake times out | dApp COOP severed `window.opener`; or the wallet origin isn't allow-listing the dApp origin (`GIANO_ALLOWED_DAPP_ORIGINS`) |
 | wallet-api won't boot: `origin … is not valid for rpId` | every tenant `expectedOrigins` host must equal that tenant's rpId or be a subdomain of it (TENANTS_SEED) |
@@ -834,6 +843,7 @@ P-256 passkey).
 | [`TRANSACTION-SUBMISSION-FLOW.md`](./TRANSACTION-SUBMISSION-FLOW.md) | one transfer traced end to end through the two-origin, multi-tenant stack |
 | [`PAYMASTER-REQUIREMENTS.md`](./PAYMASTER-REQUIREMENTS.md) | gas sponsorship: what it must do and why the decisions were made |
 | [`PAYMASTER-SPECS.md`](./PAYMASTER-SPECS.md) | gas sponsorship: the technical design — contract, service, ledger, watcher |
+| [`e2e/README.md`](../e2e/README.md) | the two-tenant demo: its four origins, how portless serves them without root, and how to add or rename one |
 | [`packages/connector/README.md`](../packages/connector/README.md) | full SDK API + 0.x → 1.x (embedded) migration |
 | [`deploy/sepolia/README.md`](../deploy/sepolia/README.md) | end-to-end real-chain deploy runbook (any EVM chain) |
 | [`README-ROR.md`](../README-ROR.md) | Related Origin Requests (cross-origin passkeys) |

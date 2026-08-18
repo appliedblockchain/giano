@@ -19,6 +19,8 @@ A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives 
 ## Prerequisites
 
 - **Node 22** (`tsc` needs a big heap on this repo — see Troubleshooting) and **pnpm** (`corepack enable`).
+  The E2E demo needs **Node 24**, because [portless](https://github.com/vercel-labs/portless) — which
+  serves the demo's `*.localhost` addresses — requires it.
 - **Docker** (Compose) — for the local stacks, wallet-api integration tests, and E2E.
 - **Foundry** (`curl -L https://foundry.paradigm.xyz | bash`) and **git submodules** (`pnpm git:init`) — only needed to compile contracts or run `forge test`; the published-package build path needs neither.
 
@@ -120,11 +122,16 @@ pnpm --filter @appliedblockchain/giano-wallet-api test
 # contract tests (needs Foundry + submodules)
 forge test    # from packages/contracts
 
-# end-to-end (two real origins, Chromium + virtual authenticator)
-docker compose -f deploy/docker-compose.e2e.yml up --build -d
+# end-to-end (four real origins, Chromium + virtual authenticator)
+# --profile portless adds the container that lends the stack port 80, so the demo's
+# addresses are names rather than ports — see e2e/README.md
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build -d --wait
 pnpm --filter @appliedblockchain/giano-e2e exec playwright install chromium
 pnpm --filter @appliedblockchain/giano-e2e test
 ```
+
+`pnpm test` registers the portless routes and starts the dApp/wallet fixtures itself (Playwright
+`globalSetup`), so the compose stack above is the only prerequisite.
 
 The E2E suite drives the full flow — create wallet, connect, session resume, send a sponsored
 transaction through consent to a receipt, reject (4001), sign message / typed data, hostile-origin
@@ -165,6 +172,20 @@ rotated** (ops task) — treat them as public.
   CI `determinism` job fails if the CREATE2 addresses drift.
 
 ## Troubleshooting
+
+### The demo's `*.localhost` addresses do not answer
+
+The E2E demo is addressed by name rather than by port, via a local portless proxy. If
+`http://app.localhost` and friends fail:
+
+- a portless **404** means the routes are not registered — `pnpm -F @appliedblockchain/giano-e2e portless:up`;
+- a **502** means the route is registered but nothing is behind it — the compose stack or a host
+  fixture is down;
+- *connection refused* means nothing holds port 80 — bring up the relay with
+  `docker compose --profile portless -f deploy/docker-compose.e2e.yml up -d portless-port80`.
+
+`pnpm -F @appliedblockchain/giano-e2e portless:list` shows the active routes and `portless doctor`
+checks proxy, routes, DNS and trust in one go. Full reference: [`e2e/README.md`](./e2e/README.md).
 
 ### Heap Out of Memory Error
 
