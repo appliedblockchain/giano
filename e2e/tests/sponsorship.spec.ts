@@ -234,6 +234,7 @@ for (const slug of ['stock', 'byo'] as const) {
 
   test.describe(`pre-approval refusals — ${slug} wallet UI`, () => {
     const refusalLocator = slug === 'stock' ? '[data-testid=sponsorship-refusal]' : '[data-testid=byo-sponsorship-refusal]';
+    const refusalActionLocator = slug === 'stock' ? '[data-testid=sponsorship-refusal-action]' : '[data-testid=byo-sponsorship-refusal-action]';
 
     /**
      * The single most important assertion in this file: no approve button and no passkey prompt
@@ -254,7 +255,7 @@ for (const slug of ['stock', 'byo'] as const) {
       // And it names who can act. The user cannot fund a balance or edit an allowlist, so a
       // refusal that stops at "this cannot be sponsored" leaves them retrying something that will
       // never work.
-      await expect(popup.getByTestId('sponsorship-refusal-action')).not.toBeEmpty();
+      await expect(popup.locator(refusalActionLocator)).not.toBeEmpty();
 
       // And the reason reached the console, not only the screen.
       expect(popupLogs.join('\n')).toContain(reason);
