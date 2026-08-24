@@ -62,21 +62,34 @@ unnecessary.
 | bundler (alto) | http://bundler.localhost | EntryPoint v0.7 |
 | wallet-api | http://api.localhost | also reached via the wallet-web `/api` proxy |
 | wallet-web | http://wallet.localhost | the wallet origin (open it directly for the Settings view) |
+| paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at
-`http://wallet.localhost` as the wallet URL; the stack already allow-lists the E2E dApp
+`http://wallet.localhost` as the wallet URL; the stack already allow-lists the demo dApp
 origin (`http://app.localhost`).
-
-To run the sample dApp against this stack (thin-SDK fixture on `http://app.localhost`):
-
-```sh
-pnpm --filter @appliedblockchain/giano-e2e dapp
-```
 
 Tear down with `docker compose --profile portless -f deploy/docker-compose.e2e.yml down`, and
 drop the names with `pnpm -F @appliedblockchain/giano-e2e portless:down`. HTTP rather than
 portless's default HTTPS is deliberate: `http://*.localhost` is already a secure context, so
 passkeys work without minting and trusting a local CA.
+
+### Which dApp goes in front of it
+
+Two dApps in this repo can sit on `http://app.localhost`, and it is worth knowing which is
+which — they are not interchangeable:
+
+| | What it is | When to use it |
+| --- | --- | --- |
+| **The example app**<br>`services/custom-example` | A real UI — Vite + React + Chakra UI: wallet basics, an ERC-20 panel, a gasless-sponsorship panel. | **This is the one to run.** Whenever you want to *use* Giano, show it to someone, or poke at a change by hand. See [Option C](#option-c--the-example-app). |
+| **The demo fixture**<br>`e2e/dapp` | Deliberately barebones: one static HTML page, no framework, stable element ids and nothing else. | Mostly just a Playwright target. The E2E suite starts it itself, so you rarely run it by hand — only to debug a failing test. |
+
+They share the one origin, so **only one of them can run at a time**: `http://app.localhost` is
+port 4400 behind portless, and 4400/4401 are the only dApp origins the E2E tenants allow-list.
+
+```sh
+pnpm demo:dev                                  # the example app — start here
+pnpm --filter @appliedblockchain/giano-e2e dapp # the barebones test fixture
+```
 
 ### Option B — iterate on wallet-api against a fresh devnet
 
@@ -94,22 +107,45 @@ FACTORY_ADDRESS=0x… docker compose -f deploy/docker-compose.dev.yml up --build
 
 Swagger UI is available at the wallet-api's `/docs` outside production.
 
-### Option C — Chakra sample dApp (thin SDK)
+### Option C — the example app
 
-`services/custom-example` (`pnpm demo:dev`) is a Vite + React + Chakra UI demo of the thin
-two-origin integration — the same model as the E2E fixture, but with a real UI: wallet basics
-(connect, send, sign), an ERC-20 panel (read balances, transfer, approve, and sign an
-EIP-2612 permit), and a gasless-sponsorship panel that surfaces Giano's paymaster — every send is
-sponsored, and a "call an unlisted contract" action exercises the refusal path. Bring up the
-Option A stack, then:
+**`services/custom-example` is the app to run when you want to see Giano working.** It is a
+Vite + React + Chakra UI dApp with a real UI, and it demonstrates the thin two-origin
+integration — the same model as the barebones E2E fixture, but built to be used rather than
+asserted against:
+
+- **wallet basics** — connect / disconnect, send a user-operation, `personal_sign` and
+  `eth_signTypedData_v4`;
+- **an ERC-20 panel** — read a token's metadata and balance, transfer, approve, and sign an
+  EIP-2612 permit (tokens without permit support are reported cleanly);
+- **a gasless-sponsorship panel** — every send goes through Giano's paymaster, and because the
+  wallet origin runs its ERC-7677 sponsorship check *before* asking for a passkey, a
+  "call an unlisted contract" action is refused up front: no consent prompt, no passkey, nothing
+  charged.
+
+Bring up the Option A stack, then:
 
 ```sh
 pnpm demo:dev   # http://app.localhost
 ```
 
+(The root scripts are named `demo:*` for historical reasons — `pnpm demo:dev` runs the example
+app, not the `e2e/dapp` fixture.)
+
 It defaults to the Option A stack (wallet origin `http://wallet.localhost`, anvil RPC
 `http://rpc.localhost`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
 `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_TEST_ERC20` for other networks.
+
+**Two tenants side by side.** The E2E stack seeds two tenants against one backend, each with its
+own wallet origin, and this one app serves both:
+
+```sh
+pnpm demo:stock                                      # http://app.localhost     -> wallet.localhost
+pnpm demo:byo                                        # http://app-byo.localhost -> wallet-byo.localhost
+pnpm -F @appliedblockchain/giano-e2e wallet-byo       # tenant byo's wallet origin (needed for demo:byo)
+```
+
+Stop these dev servers before running the E2E suite — see [Running the tests](#running-the-tests).
 
 ## Running the tests
 
@@ -134,6 +170,13 @@ pnpm --filter @appliedblockchain/giano-e2e test
 
 `pnpm test` registers the portless routes and starts the dApp/wallet fixtures itself (Playwright
 `globalSetup`), so the compose stack above is the only prerequisite.
+
+The dApp the suite drives is the barebones `e2e/dapp` fixture, not the example app — that is what
+the fixture is *for*: one static page with stable element ids and no framework to get in the way.
+
+> **Stop `pnpm demo:*` before running the suite.** The example app and the fixture compete for
+> ports 4400/4401, and Playwright's `reuseExistingServer: true` will silently adopt the example
+> app instead of the fixture — every test then fails on a missing `#connect`.
 
 The E2E suite drives the full flow — create wallet, connect, session resume, send a sponsored
 transaction through consent to a receipt, reject (4001), sign message / typed data, hostile-origin
