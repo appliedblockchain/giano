@@ -12,8 +12,20 @@ export type GianoDeployment = {
   factory: `0x${string}`;
   /** GianoSmartWallet implementation behind the factory's proxies. */
   implementation: `0x${string}`;
-  /** Testing-only permissive paymaster (not deployed on production chains). */
-  paymaster?: `0x${string}`;
+  /**
+   * Production sponsorship paymaster (the UUPS proxy). This is the address tenants send funding
+   * to, so it must stay stable: changing it means every tenant re-learns where to fund, and any
+   * payment already in flight to the old address is lost.
+   */
+  sponsorshipPaymaster?: `0x${string}`;
+  /** Implementation behind {@link sponsorshipPaymaster}. Changes on every upgrade. */
+  sponsorshipPaymasterImplementation?: `0x${string}`;
+  /**
+   * Testing-only permissive paymaster. Deliberately a different field from
+   * {@link sponsorshipPaymaster} so that no consumer can pass one where the other is meant —
+   * the separation is structural rather than a matter of operator discipline.
+   */
+  testPaymaster?: `0x${string}`;
   /** Testing-only ERC-20 (not deployed on production chains). */
   testErc20?: `0x${string}`;
 };
@@ -33,7 +45,7 @@ export const gianoAddresses: Record<number, GianoDeployment> = {
     entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
     factory: '0x3451C87749FE28Af2995f644aBc8d5B1c61A6191',
     implementation: '0x95DF1A132Dd445DE98A308BC56B814D0b57EBF1C',
-    paymaster: '0x10fa47FdaC8115Ef25e824AEAd78b009931FA73B',
+    testPaymaster: '0x10fa47FdaC8115Ef25e824AEAd78b009931FA73B',
     testErc20: '0x42945BBB6a4C3BD022309741aadeb7976526C739',
   },
 };

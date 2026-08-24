@@ -126,6 +126,7 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
 
   const config = loadConfig({
     NODE_ENV: 'test',
+    GIANO_DEPLOYMENT_CLASS: 'development',
     LOG_LEVEL: 'error',
     DATABASE_URL: databaseUrl,
     TENANTS_SEED: tenantSeedJson,
@@ -151,4 +152,139 @@ export async function stopTestStack(ctx: TestContext): Promise<void> {
   await ctx.pool.end();
   await ctx.rpc.close();
   await ctx.container.stop();
+}
+
+// ── Sponsorship fixtures ───────────────────────────────────────────────────────
+
+/**
+ * A deterministic key for the sponsorship signer in tests. `loadConfig` refuses a local key when
+ * `GIANO_DEPLOYMENT_CLASS=production`, so this can only ever be a test key.
+ */
+export const TEST_SPONSORSHIP_SIGNER_KEY = '0x0000000000000000000000000000000000000000000000000000000000005160';
+export const TEST_PAYMASTER_ADDRESS = '0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2';
+
+/** On-chain values the fake reader reports. Mutable, so a test can move the fee or the balance. */
+export type FakePaymasterState = {
+  postOpGasAllowance: bigint;
+  penaltyBps: bigint;
+  defaultFeeWei: bigint;
+  feeOverrides: Map<string, bigint>;
+  tenantBalances: Map<string, bigint>;
+  tenantDeficits: Map<string, bigint>;
+  registered: Set<string>;
+  treasuryWei: bigint;
+  depositWei: bigint;
+  paused: boolean;
+  /** Set to make every read throw, standing in for an unreachable chain. */
+  unreachable: boolean;
+};
+
+export function createFakePaymasterState(): FakePaymasterState {
+  return {
+    postOpGasAllowance: 40_000n,
+    penaltyBps: 1000n,
+    defaultFeeWei: 100_000_000_000_000n,
+    feeOverrides: new Map(),
+    tenantBalances: new Map(),
+    tenantDeficits: new Map(),
+    registered: new Set(),
+    treasuryWei: 0n,
+    depositWei: 0n,
+    paused: false,
+    unreachable: false,
+  };
+}
+
+/**
+ * A `PaymasterReader` backed by a plain object rather than a chain.
+ *
+ * Deliberately not a mock of the *contract* — the contract's own behaviour is covered by the
+ * Foundry suite, and the TypeScript↔Solidity boundary by `scripts/verify-authorisation.ts`. What
+ * this stands in for is the *chain*, so that service and ledger tests can move a balance or a fee
+ * without mining a block.
+ */
+export function createFakePaymasterReader(state: FakePaymasterState) {
+  const guard = () => {
+    if (state.unreachable) throw new Error('chain unreachable');
+  };
+  return {
+    address: TEST_PAYMASTER_ADDRESS as `0x${string}`,
+    async params() {
+      guard();
+      return { postOpGasAllowance: state.postOpGasAllowance, penaltyBps: state.penaltyBps, defaultFeeWei: state.defaultFeeWei };
+    },
+    async feeFor(tenantId: string) {
+      guard();
+      return state.feeOverrides.get(tenantId) ?? state.defaultFeeWei;
+    },
+    async tenant(tenantId: string) {
+      guard();
+      return {
+        registered: state.registered.has(tenantId),
+        enabled: true,
+        withdrawAddress: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' as `0x${string}`,
+        balanceWei: state.tenantBalances.get(tenantId) ?? 0n,
+        deficitWei: state.tenantDeficits.get(tenantId) ?? 0n,
+        feeWei: state.feeOverrides.get(tenantId) ?? state.defaultFeeWei,
+      };
+    },
+    async treasury() {
+      guard();
+      return state.treasuryWei;
+    },
+    async deposit() {
+      guard();
+      return state.depositWei;
+    },
+    async isSigner() {
+      guard();
+      return true;
+    },
+    async paused() {
+      guard();
+      return state.paused;
+    },
+    async blockNumber() {
+      return 100n;
+    },
+  };
+}
+
+export type SponsorshipTestContext = TestContext & { paymasterState: FakePaymasterState };
+
+/** A stack with gas sponsorship enabled and the chain faked out. */
+export async function startSponsorshipStack(envOverrides: Record<string, string> = {}): Promise<SponsorshipTestContext> {
+  const container = await new PostgreSqlContainer('postgres:17-alpine').start();
+  const databaseUrl = container.getConnectionUri();
+  await runMigrations(databaseUrl);
+
+  const rpc = await startMockRpc();
+  const { fetchImpl, calls } = createMockBundlerFetch();
+  const paymasterState = createFakePaymasterState();
+
+  const config = loadConfig({
+    NODE_ENV: 'test',
+    GIANO_DEPLOYMENT_CLASS: 'development',
+    LOG_LEVEL: 'error',
+    DATABASE_URL: databaseUrl,
+    TENANTS_SEED: tenantSeedJson,
+    CHAIN_ID: '31337',
+    RPC_URL: rpc.url,
+    BUNDLER_URL: 'http://bundler.test',
+    ENTRYPOINT_ADDRESS: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
+    FACTORY_ADDRESS: '0x2222222222222222222222222222222222222222',
+    CEREMONY_RATE_LIMIT_PER_MINUTE: '1000',
+    USEROP_RATE_LIMIT_PER_MINUTE: '1000',
+    SPONSORSHIP_ENABLED: 'true',
+    SPONSORSHIP_PAYMASTER_ADDRESS: TEST_PAYMASTER_ADDRESS,
+    SPONSORSHIP_SIGNER_KIND: 'local',
+    SPONSORSHIP_SIGNER_KEY_REF: TEST_SPONSORSHIP_SIGNER_KEY,
+    SPONSORSHIP_RATE_LIMIT_PER_MINUTE: '10000',
+    ...envOverrides,
+  } as NodeJS.ProcessEnv);
+
+  const { db, pool } = createDb(databaseUrl);
+  await seedTenants(db, config.TENANTS_SEED);
+  const app = await buildApp({ config, db, fetchImpl, paymasterReader: createFakePaymasterReader(paymasterState) });
+  return { container, db, pool, rpc, config, app, bundlerCalls: calls, paymasterState };
 }

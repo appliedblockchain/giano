@@ -1,5 +1,7 @@
+import type { SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-core';
 import { hexToString, isHex } from 'viem';
 import type { PendingRequest } from './requests';
+import type { SponsorshipPreflight } from './runtime';
 
 /**
  * Plain-DOM views — what wallet-web renders with React, a BYO UI can render however it
@@ -43,7 +45,60 @@ function describeTransaction(params: unknown): string {
   return [`to:    ${tx?.to ?? '(contract creation)'}`, `value: ${tx?.value ?? '0x0'}`, `data:  ${tx?.data ?? '0x'}`].join('\n');
 }
 
-export function render(root: HTMLElement, pending: PendingRequest | null, busy: boolean): void {
+/**
+ * Who can actually resolve each refusal, in the BYO UI's own words.
+ *
+ * A user meeting any of these cannot fix it themselves — they can neither top up an application's
+ * fee balance nor edit its allowlist — so a refusal that stops at "this cannot be sponsored"
+ * leaves them retrying something that will never work. Keyed by the machine-readable reason for
+ * the same purpose as the stock wallet's copy map, and with a fallback because an unrecognised
+ * reason means the service is ahead of this build.
+ */
+const NEXT_STEP: Record<SponsorshipRefusalReason, string> = {
+  'sponsorship-disabled': 'Nothing you can change will affect this — tell the app’s team if you expected it to be free.',
+  'no-sponsorship-config': 'The app’s developers have not set fee coverage up yet.',
+  'contract-not-allowed': 'The app’s developers need to allow this contract before its fees can be covered.',
+  'function-not-allowed': 'The app’s developers need to allow this action before its fees can be covered.',
+  'wallet-management-not-sponsored': 'Only the app’s team can turn this back on — tell them you could not change your wallet.',
+  'cost-exceeds-cap': 'Fees move around, so this may work later — raising the limit is the app team’s to do.',
+  'insufficient-balance': 'The app’s operators need to top up its fee balance. Nothing is wrong with your wallet.',
+  'tenant-in-deficit': 'The app’s operators need to settle and top up its fee balance.',
+  'not-your-wallet': 'Reconnect the app and try again.',
+  'chain-or-entrypoint-mismatch': 'The app is pointed at a different network; its developers need to correct that.',
+  'temporarily-unavailable': 'This is usually brief — try again in a moment.',
+};
+
+/**
+ * The pre-approval refusal, in the BYO UI's own idiom.
+ *
+ * Deliberately worded differently from the stock wallet — a tenant writes its own copy — but with
+ * the same three obligations: the machine-readable reason is exposed for the test to assert, the
+ * refusal names who can act on it, and no confirm button is rendered at all. Offering one and
+ * failing afterwards would mean asking for a passkey ceremony that could never have succeeded.
+ */
+function sponsorshipNotice(preflight: SponsorshipPreflight): HTMLElement | null {
+  if (preflight.state === 'sponsored') {
+    return el('div', { className: 'idle', dataset: { testid: 'byo-sponsorship-covered' } }, 'Fees for this transaction are covered by the app.');
+  }
+  if (preflight.state === 'not-applicable') return null;
+
+  const reason = preflight.state === 'refused' ? preflight.reason : 'temporarily-unavailable';
+  return el(
+    'div',
+    { className: 'payload', dataset: { testid: 'byo-sponsorship-refusal', reason } },
+    preflight.state === 'refused'
+      ? `This app will not cover the fee for this transaction (${preflight.reason}).`
+      : 'Fee coverage is temporarily unavailable — try again shortly.',
+    el('p', { dataset: { testid: 'byo-sponsorship-refusal-action' } }, NEXT_STEP[reason] ?? NEXT_STEP['temporarily-unavailable']),
+  );
+}
+
+export function render(
+  root: HTMLElement,
+  pending: PendingRequest | null,
+  busy: boolean,
+  preflight: SponsorshipPreflight | null = { state: 'not-applicable' },
+): void {
   root.replaceChildren();
 
   if (!pending) {
@@ -74,8 +129,24 @@ export function render(root: HTMLElement, pending: PendingRequest | null, busy: 
       el('h2', { dataset: { testid: 'byo-tx' } }, 'Confirm transaction'),
       originBadge(pending.dappOrigin),
       el('pre', { className: 'payload' }, describeTransaction(pending.params)),
-      buttons('Confirm', 'byo-confirm'),
     );
+
+    if (preflight === null) {
+      root.append(el('div', { className: 'idle', dataset: { testid: 'byo-sponsorship-checking' } }, 'Checking fee coverage…'));
+      root.append(el('div', { className: 'row' }, el('button', { className: 'secondary', textContent: 'Decline', onclick: () => pending.reject() })));
+      return;
+    }
+
+    const notice = sponsorshipNotice(preflight);
+    if (notice) root.append(notice);
+
+    if (preflight.state === 'refused' || preflight.state === 'unavailable') {
+      // No confirm button, and therefore no passkey prompt.
+      root.append(el('div', { className: 'row' }, el('button', { className: 'secondary', textContent: 'Close', onclick: () => pending.reject() })));
+      return;
+    }
+
+    root.append(buttons('Confirm', 'byo-confirm'));
     return;
   }
 

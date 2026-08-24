@@ -35,6 +35,13 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-wallet-transport test
       - name: Build connector
         run: pnpm --filter @appliedblockchain/giano-connector build
+      - name: Build paymaster-sdk
+        # paymaster-admin's typecheck resolves this via its dist/ types — must precede it
+        run: pnpm --filter @appliedblockchain/giano-paymaster-sdk build
+      - name: paymaster-sdk unit tests
+        run: pnpm --filter @appliedblockchain/giano-paymaster-sdk test
+      - name: Build paymaster-admin
+        run: pnpm --filter @appliedblockchain/giano-paymaster-admin build
       - name: addresses.ts drift check
         run: |
           pnpm --filter @appliedblockchain/giano-contracts gen:addresses

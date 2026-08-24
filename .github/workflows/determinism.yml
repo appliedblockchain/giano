@@ -37,6 +37,7 @@ jobs:
           rm -rf ignition/deployments/chain-31337
           pnpm hh:deploy --network localhost
           pnpm hh:deploy:testing --network localhost
+          pnpm hh:deploy:paymaster --network localhost
           # the redeployed local addresses must match the committed Base registry
           # (salt 0xAB…AB, identical bytecode ⇒ identical CREATE2 address on every chain)
           node --input-type=module -e "
@@ -51,3 +52,79 @@ jobs:
               console.log('OK', key, local[key]);
             }
           "
+
+      # The paymaster proxy has no committed Base deployment yet, so it is checked the other way:
+      # deploy it twice with different operator-specific initialiser arguments and assert the
+      # address does not move. That is the whole promise of §4.2 — nothing operator-specific in the
+      # init code — and it is the address tenants send money to, so it has to be checked directly
+      # rather than inferred from bytecode equality.
+      #
+      # The second deployment needs a *fresh* chain. The salt is fixed, so re-running the module
+      # against the chain that already carries the first deployment cannot say anything about
+      # operator-independence: CreateX simply reverts with `FailedContractCreation` because the
+      # implementation and the deployer already occupy their addresses. Restarting anvil makes the
+      # comparison what it claims to be — two first deployments that differ only in the initialiser
+      # arguments.
+      - name: Paymaster address is independent of operator configuration
+        working-directory: packages/contracts
+        run: |
+          # Keep the first run's address before the chain that produced it goes away; the
+          # deployment directory is on disk, not on the node.
+          FIRST=$(node -e "console.log(require('./ignition/deployments/chain-31337/deployed_addresses.json')['GianoPaymaster#SponsorshipPaymaster'] ?? '')")
+          if [ -z "$FIRST" ]; then echo "no paymaster proxy in the first deployment"; exit 1; fi
+
+          pkill -f 'anvil --host' || true
+          sleep 1
+          anvil --host 127.0.0.1 --chain-id 31337 > /tmp/anvil-second.log 2>&1 &
+          sleep 3
+          node ../../e2e/devnet/setup-entrypoint.mjs
+
+          # A second operator: a different role admin, a different fee, a different overhead
+          # allowance. None of it may move the address.
+          cat > /tmp/params.json <<'JSON'
+          {
+            "GianoPaymaster": {
+              "roleAdmin": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "defaultFeeWei": "999999999999",
+              "postOpGasAllowance": 12345,
+              "penaltyBps": 500
+            }
+          }
+          JSON
+
+          npx hardhat ignition deploy ignition/modules/GianoPaymaster.ts \
+            --strategy create2 --network localhost \
+            --parameters /tmp/params.json --deployment-id second-operator --reset
+
+          SECOND=$(node -e "console.log(require('./ignition/deployments/second-operator/deployed_addresses.json')['GianoPaymaster#SponsorshipPaymaster'] ?? '')")
+          if [ -z "$SECOND" ]; then echo "no paymaster proxy in the second deployment"; exit 1; fi
+
+          if [ "$(echo "$FIRST" | tr 'A-F' 'a-f')" != "$(echo "$SECOND" | tr 'A-F' 'a-f')" ]; then
+            echo "DETERMINISM FAILURE: the paymaster address depends on operator configuration"
+            echo "  first:  $FIRST"
+            echo "  second: $SECOND"
+            exit 1
+          fi
+          echo "OK paymaster proxy address is operator-independent: $FIRST"
+
+  storage-layout:
+    name: Paymaster storage layout is upgrade-safe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The paymaster holds customer funds, so a mis-ordered storage slot silently re-attributes
+      # real money. The committed snapshot is a human-readable second opinion on top of ERC-7201
+      # namespacing: reviewing a layout change by eye is explicitly not enough, but a diff that
+      # has to be acknowledged in a pull request is.
+      - name: Storage layout matches the committed snapshot
+        working-directory: packages/contracts
+        run: pnpm storage:check

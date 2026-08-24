@@ -33,7 +33,7 @@ export function SignMessage({ request }: { request: PendingRequest }) {
       </div>
       <div className="card">
         <h2>{title}</h2>
-        <div className="data-box">{body}</div>
+        <div className="data-box" data-testid="sign-payload">{body}</div>
         <p>Only sign if you trust this application. Signatures are replay-safe: they bind to your wallet and chain.</p>
       </div>
       <div className="actions">

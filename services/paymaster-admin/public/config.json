@@ -1,0 +1,11 @@
+{
+  "deployments": [
+    {
+      "label": "local devnet",
+      "chainId": 31337,
+      "rpcUrl": "http://localhost:8545",
+      "paymasterAddress": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
+      "refreshSeconds": 10
+    }
+  ]
+}

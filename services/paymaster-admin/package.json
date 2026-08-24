@@ -1,0 +1,31 @@
+{
+  "name": "@appliedblockchain/giano-paymaster-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Giano paymaster admin console: an operator view of tenants, treasury, roles and health, read straight from the chain",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --host --port 4402",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4402",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-paymaster-sdk": "workspace:^",
+    "@chakra-ui/react": "^3.2.0",
+    "@emotion/react": "^11.11.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.7.0",
+    "viem": "2.31.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.8",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "5.5.4",
+    "vite": "^6.3.5"
+  }
+}

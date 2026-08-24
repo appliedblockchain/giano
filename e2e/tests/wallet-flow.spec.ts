@@ -62,12 +62,15 @@ test('personal_sign and typed data through consent', async ({ page }) => {
   const { credentials } = await connectWallet(page, tenant);
 
   const signPopup = await openActionPopup(page, '#sign', credentials);
-  await expect(signPopup.getByText('giano e2e')).toBeVisible();
+  // Scoped to the payload box rather than the whole page: the wallet's brand header carries the
+  // tenant's name ("Giano E2E"), so a bare text match would also hit the chrome and prove nothing
+  // about what is being signed.
+  await expect(signPopup.getByTestId('sign-payload')).toHaveText('giano e2e');
   await signPopup.getByRole('button', { name: tenant.ui.sign }).click();
   await expectOutContains(page, 'signature: len=');
 
   const typedPopup = await openActionPopup(page, '#sign-typed', credentials);
-  await expect(typedPopup.getByText('hello giano')).toBeVisible();
+  await expect(typedPopup.getByTestId('sign-payload')).toContainText('hello giano');
   await typedPopup.getByRole('button', { name: tenant.ui.sign }).click();
   await expectOutContains(page, 'typedSignature: len=');
 });

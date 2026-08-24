@@ -32,6 +32,10 @@ services:
       DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
       # apply pending migrations on boot (or run `node dist/migrate.js` as a one-shot job)
       RUN_MIGRATIONS: 'true'
+      # What this deployment IS, as distinct from how the image was built. Required, with no
+      # default: it is what refuses an environment-variable sponsorship signing key, and a default
+      # that happened to be permissive is exactly how such a key reaches production.
+      GIANO_DEPLOYMENT_CLASS: ${GIANO_DEPLOYMENT_CLASS:-production}
 
       # --- chain ---
       CHAIN_ID: ${CHAIN_ID:?e.g. 8453}

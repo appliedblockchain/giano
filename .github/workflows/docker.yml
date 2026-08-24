@@ -21,6 +21,8 @@ jobs:
             dockerfile: services/wallet-api/Dockerfile
           - name: giano-wallet-web
             dockerfile: services/wallet-web/Dockerfile
+          - name: giano-paymaster-admin
+            dockerfile: services/paymaster-admin/Dockerfile
           - name: giano-bundler
             dockerfile: services/bundler/Dockerfile
           - name: giano-devnet
