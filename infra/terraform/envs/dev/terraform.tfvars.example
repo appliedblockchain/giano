@@ -1,0 +1,36 @@
+# Copy to terraform.tfvars and fill in. NON-SECRET VALUES ONLY — private keys, admin keys and
+# the RPC URL live in SSM and are written out of band (spec §9.1).
+
+# The zone the NS delegation goes into. Yields wallet.dev.<parent>, api.dev.<parent>, etc.
+parent_domain = "giano.example.com"
+subdomain     = "dev"
+
+region      = "eu-west-2"
+environment = "dev"
+
+# Base Sepolia. In the giano-contracts registry, so EntryPoint and factory default correctly.
+chain_id   = 84532
+chain_name = "Base Sepolia"
+
+# The GianoPaymaster proxy. There is NO registry entry on 84532 — deploy it first:
+#   pnpm --filter @appliedblockchain/giano-contracts hh:deploy:paymaster --network base-sepolia
+# Leave empty and set sponsorship_enabled = false to bring the stack up without sponsorship.
+paymaster_address   = ""
+sponsorship_enabled = false
+
+# Seeds the first task-definition revision only; CI owns later ones.
+image_tag = "bootstrap"
+
+brand_name        = "Giano Dev"
+open_registration = true
+
+# Out-of-hours scale-to-zero. ~$77/mo with, ~$139/mo without.
+enable_schedule    = true
+schedule_up_cron   = "0 7 ? * MON-FRI *"
+schedule_down_cron = "0 19 ? * MON-FRI *"
+
+github_repository   = "appliedblockchain/giano"
+github_allowed_refs = ["refs/heads/experimental_infrastructure"]
+
+# Set false if the AWS account already has the GitHub OIDC provider.
+create_github_oidc_provider = true

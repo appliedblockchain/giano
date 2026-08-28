@@ -1,8 +1,9 @@
 # Giano dev environment — infrastructure specification
 
 This document specifies the AWS infrastructure for a **shared development deployment** of Giano,
-and the Terraform that provisions it. It is the **what and how** for the `infra/terraform` tree
-that does not yet exist in this repository.
+and the Terraform that provisions it. It is the **what and how** for the
+[`infra/terraform`](../infra/terraform/) tree, whose operator-facing short form is
+[`infra/terraform/README.md`](../infra/terraform/README.md).
 
 The target is a permanently-available, internet-reachable Giano stack on **Base Sepolia**, with
 real hostnames, real passkeys and real gas sponsorship — the thing a developer, a designer or a
@@ -386,16 +387,19 @@ changes. Recorded in [§17](#17-risks-and-open-items).
 
 Blocked on [§15.1](#151-a-dockerfile-and-runtime-config-for-custom-example): the demo reads its
 configuration from `import.meta.env.VITE_*` at **build** time, which would bake dev hostnames into
-the image. Once it gains a runtime `/config.json` like `wallet-web` has, its variables are:
+the image. Once it gains a runtime `/config.json` like `wallet-web` has, its variables are — named
+`GIANO_*` to match the two nginx images that already do this, with the `VITE_*` names kept as
+build-time fallbacks for `pnpm dev`:
 
-| Variable | Value |
-|---|---|
-| `VITE_CHAIN_ID` → runtime `chainId` | `84532` |
-| `VITE_CHAIN_NAME` → `chainName` | `Base Sepolia` |
-| `VITE_RPC_URL` → `rpcUrl` | Base Sepolia endpoint |
-| `VITE_CHAIN_B_ID` → `chainBId` | `0` — single-chain (the config explicitly supports this) |
-| `VITE_WALLET_URL` → `walletUrl` | `https://wallet.dev.giano.<domain>` |
-| `VITE_TEST_ERC20` → `testErc20` | unset; the devnet default address is meaningless on 84532 |
+| Variable | `config.json` field | Value |
+|---|---|---|
+| `GIANO_CHAIN_ID` | `chainId` | `84532` |
+| `GIANO_CHAIN_NAME` | `chainName` | `Base Sepolia` |
+| `GIANO_RPC_URL` | `rpcUrl` | Base Sepolia endpoint |
+| `GIANO_CHAIN_B_ID` | `chainBId` | `0` — single-chain (the config explicitly supports this) |
+| `GIANO_WALLET_URL` | `walletUrl` | `https://wallet.dev.giano.<domain>` |
+| `GIANO_APP_LABEL` | `appLabel` | the brand name |
+| `GIANO_TEST_ERC20` | `testErc20` | unset; the devnet default address is meaningless on 84532 |
 
 ### 7.5 `paymaster-admin`
 
@@ -567,28 +571,36 @@ starts before migrations finish gives you a task pool where half the containers 
 infra/terraform/
   modules/
     network/          VPC, subnets, IGW, routes, S3 endpoint, security groups
-    alb/              ALB, listeners, ACM cert + validation, target groups, listener rules
-    ecs-cluster/      cluster, Cloud Map namespace, shared log config
-    ecs-service/      one Fargate service: task def, service, target group wiring, log group
+    dns/              Route 53 child zone, ACM certificate + DNS validation
+    alb/              ALB, HTTPS listener, HTTP→HTTPS redirect, 404 default action
+    ecs-cluster/      cluster, Cloud Map namespace, shared task execution role
+    ecs-service/      one Fargate service: task def, service, target group, listener rule, log group
     ecr/              repository + lifecycle policy
     rds/              subnet group, parameter group, instance, generated password → SSM
-    scheduler/        EventBridge rules + IAM for scale-to-zero
+    scheduler/        EventBridge schedules + IAM for scale-to-zero
     github-oidc/      OIDC provider + deploy role
   envs/
     dev/
       backend.tf      S3 backend, use_lockfile = true
       providers.tf    aws provider, region, default_tags
       main.tf         module composition
+      secrets.tf      SSM parameters — generated, placeholder, and the tenant seed
+      tasks.tf        the one-shot migrate and sponsorship-provisioning task definitions
       variables.tf
-      terraform.tfvars   non-secret values only
-      outputs.tf      hostnames, ALB DNS, ECR URLs, zone name servers
+      terraform.tfvars.example   non-secret values only
+      outputs.tf      hostnames, ALB DNS, ECR URLs, zone name servers, run-task network config
   bootstrap/
       main.tf         the state bucket itself — applied once, with a local backend
 ```
 
 `modules/ecs-service` is the one that earns its keep: five near-identical services differing only in
-image, size, environment, secrets and whether they get an ALB target. Everything else is a module
-because a staging root module will want it, not because dev needs the indirection today.
+image, size, environment, secrets and whether they get an ALB target. It owns the whole path from
+hostname to container, so target groups and listener rules live there rather than in `alb`.
+Everything else is a module because a staging root module will want it, not because dev needs the
+indirection today.
+
+`dns` is separate from `alb` because of the runbook ordering: it is applied on its own so its name
+servers can be delegated by hand before ACM validation blocks on them.
 
 ### 11.2 Backend
 
