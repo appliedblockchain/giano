@@ -19,6 +19,13 @@ jobs:
         with:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned to the same Foundry release the repo pins everywhere else (the anvil
+          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifted past it and broke
+          # two things at once: `forge remappings` began emitting context remappings that
+          # hardhat-foundry rejects, and gas metering moved test_gas_validation past its
+          # budget. Bump deliberately, in step with the anvil pin.
+          version: v1.7.1
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -139,6 +146,13 @@ jobs:
         with:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned to the same Foundry release the repo pins everywhere else (the anvil
+          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifted past it and broke
+          # two things at once: `forge remappings` began emitting context remappings that
+          # hardhat-foundry rejects, and gas metering moved test_gas_validation past its
+          # budget. Bump deliberately, in step with the anvil pin.
+          version: v1.7.1
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
