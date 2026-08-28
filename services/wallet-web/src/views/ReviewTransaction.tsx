@@ -80,6 +80,11 @@ export function ReviewTransaction({ request, runtime }: { request: PendingReques
       </div>
       <div className="card">
         <h2>Review transaction</h2>
+        {/* Which chain this lands on is material to the decision (MC-80, D10). */}
+        <div className="kv">
+          <span className="k">Network</span>
+          <span className="v" data-testid="consent-chain">{request.chainName}</span>
+        </div>
         <div className="kv">
           <span className="k">To</span>
           <span className="v">{tx.to ?? '—'}</span>

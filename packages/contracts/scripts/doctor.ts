@@ -20,6 +20,7 @@
  */
 import { Contract, JsonRpcProvider, concat, formatEther, getAddress, isAddress, toBeHex } from 'ethers';
 import { ENTRYPOINT_V07_ADDRESS, getGianoDeployment, type GianoDeployment } from '../addresses';
+import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION } from '../canonical';
 import { gianoPaymasterAbi, gianoSmartWalletFactoryAbi, iEntryPointAbi, multiOwnableAbi } from '../generated';
 
 // --- well-known addresses (identical on every EVM chain) ---
@@ -343,15 +344,35 @@ async function doctorChain(flags: Record<string, string>) {
     const factoryHasCode = await hasCode(provider, factoryAddr);
     report(factoryHasCode ? 'ok' : 'fail', 'GianoSmartWalletFactory deployed', factoryAddr);
 
+    // MC-19: address identity across chains only holds when the factory sits at the frozen
+    // canonical address. A chain that cannot offer it must not be admitted to a served list.
+    if (getAddress(factoryAddr) === getAddress(CANONICAL_FACTORY)) {
+      report('ok', 'factory address is canonical', CANONICAL_FACTORY);
+    } else {
+      report('fail', 'factory address is NOT canonical', `${factoryAddr} — canonical is ${CANONICAL_FACTORY}; this chain cannot join a multi-chain deployment (MC-19)`);
+    }
+
     if (factoryHasCode) {
       try {
         const factory = new Contract(factoryAddr, gianoSmartWalletFactoryAbi, provider);
         const impl: string = await factory.implementation();
         const implHasCode = await hasCode(provider, impl);
         report(implHasCode ? 'ok' : 'fail', 'GianoSmartWallet implementation deployed', impl);
-        if (deployment.implementation && getAddress(impl) !== getAddress(deployment.implementation)) {
-          report('warn', 'implementation differs from registry', `${impl} vs ${deployment.implementation}`);
+        if (getAddress(impl) !== getAddress(CANONICAL_IMPLEMENTATION)) {
+          report('fail', 'implementation is NOT canonical', `${impl} — canonical is ${CANONICAL_IMPLEMENTATION} (MC-19)`);
+        } else {
+          report('ok', 'implementation is canonical', impl);
         }
+
+        // MC-22: the live cross-check. A factory at the right address running different code
+        // would pass every address comparison — asking it to derive an account address for a
+        // fixed probe owner is what catches that. The probe owner is a well-known 64-byte
+        // value that is never a real credential; the expected address is the same on every
+        // canonical chain because the derivation has no chain-dependent term (MC-18).
+        const probeOwner = `0x${'11'.repeat(64)}`;
+        const probeAddress: string = await factory.getFunction('getAddress')([probeOwner], 0);
+        report('info', 'probe account address (factory.getAddress, nonce 0)', probeAddress);
+        report('info', 'cross-check', 'run this against every served chain — the probe address must be identical on all of them (MC-22)');
       } catch (error) {
         report('fail', 'read factory.implementation()', (error as Error).message);
       }
@@ -405,7 +426,13 @@ async function doctorChain(flags: Record<string, string>) {
     report('fail', 'P-256 verification unavailable', 'no RIP-7212 precompile and no deployed verifier');
     report('info', 'fix', 'deploy the verifier with scripts/p256_deploy.ts before passkey wallets can validate');
   }
-  report((await hasCode(provider, CREATE2_FACTORY)) ? 'ok' : 'info', 'Arachnid CREATE2 factory', CREATE2_FACTORY);
+  // MC-25: the deterministic-deployment mechanism must be present BEFORE contracts are
+  // deployed — without it at this exact address, nothing deploys to the canonical addresses.
+  report(
+    (await hasCode(provider, CREATE2_FACTORY)) ? 'ok' : 'fail',
+    'Arachnid CREATE2 factory (deterministic-deployment proxy)',
+    `${CREATE2_FACTORY} — required before any Giano contract is deployed (adoption checklist step 1)`,
+  );
 }
 
 async function doctorWallet(flags: Record<string, string>) {

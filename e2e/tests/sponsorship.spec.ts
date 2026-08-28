@@ -25,13 +25,17 @@ const ADDRESSES = JSON.parse(fs.readFileSync(path.join(devnetDir, 'addresses.jso
 };
 
 const WALLET_API = process.env.WALLET_API_URL ?? ORIGINS.api;
+// The chain these scenarios run on, named explicitly on every admin call: rules, balances
+// and history are per (tenant, chain) (MC-66), and with two chains served the API refuses
+// to guess (MC-53). No helper hardcodes a bare id inline (MC-130).
+const CHAIN_A = Number(process.env.CHAIN_ID ?? 31337);
 
 // ── admin API helpers ─────────────────────────────────────────────────────────
 
 type Position = { balanceWei: string; reservedWei: string; availableWei: string; deficitWei: string; feeWei: string };
 
 async function getPosition(tenant: Tenant): Promise<Position> {
-  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/balance`, {
+  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/balance?chainId=${CHAIN_A}`, {
     headers: { authorization: `Bearer ${tenant.adminKey}` },
   });
   expect(response.ok, `balance read failed: ${response.status}`).toBe(true);
@@ -39,7 +43,7 @@ async function getPosition(tenant: Tenant): Promise<Position> {
 }
 
 async function getSpend(tenant: Tenant) {
-  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/spend`, {
+  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/spend?chainId=${CHAIN_A}`, {
     headers: { authorization: `Bearer ${tenant.adminKey}` },
   });
   expect(response.ok).toBe(true);
@@ -50,12 +54,12 @@ async function getSpend(tenant: Tenant) {
 }
 
 async function getConfig(tenant: Tenant): Promise<Record<string, unknown>> {
-  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship`, { headers: { authorization: `Bearer ${tenant.adminKey}` } });
+  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship?chainId=${CHAIN_A}`, { headers: { authorization: `Bearer ${tenant.adminKey}` } });
   return ((await response.json()) as { config: Record<string, unknown> }).config;
 }
 
 async function putConfig(tenant: Tenant, config: unknown): Promise<void> {
-  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship`, {
+  const response = await fetch(`${WALLET_API}/v1/admin/sponsorship?chainId=${CHAIN_A}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${tenant.adminKey}` },
     body: JSON.stringify(config),
@@ -116,7 +120,7 @@ async function expectInvariantIntact(): Promise<void> {
 async function allPositions(): Promise<Position[]> {
   const positions: Position[] = [];
   for (const tenant of Object.values(TENANTS)) {
-    const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/balance`, {
+    const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/balance?chainId=${CHAIN_A}`, {
       headers: { authorization: `Bearer ${tenant.adminKey}` },
     });
     if (response.ok) positions.push((await response.json()) as Position);
@@ -364,7 +368,7 @@ test.describe('accounting', () => {
     // property under test — that refusals are recorded rule-by-rule — is not tenant-specific.
     const all: Array<{ reason: string | null; ruleResults: Array<{ rule: string; passed: boolean }> }> = [];
     for (const tenant of Object.values(TENANTS)) {
-      const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/decisions?outcome=refused`, {
+      const response = await fetch(`${WALLET_API}/v1/admin/sponsorship/decisions?outcome=refused&chainId=${CHAIN_A}`, {
         headers: { authorization: `Bearer ${tenant.adminKey}` },
       });
       if (!response.ok) continue;
@@ -423,7 +427,9 @@ test.describe('service availability', () => {
     ]) {
       expect(body, `${metric} is not exported`).toContain(metric);
     }
-    // A breach is an insolvency and pages: it must be zero here.
-    expect(body).toMatch(/giano_paymaster_invariant_breach 0/);
+    // A breach is an insolvency and pages: it must be zero here — on EVERY chain, since
+    // each chain has its own deposit and therefore its own invariant series (MC-102).
+    expect(body).toMatch(/giano_paymaster_invariant_breach\{chain="31337"\} 0/);
+    expect(body).not.toMatch(/giano_paymaster_invariant_breach\{chain="\d+"\} 1/);
   });
 });

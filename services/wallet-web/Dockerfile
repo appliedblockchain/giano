@@ -25,6 +25,7 @@ RUN apk add --no-cache curl
 COPY --from=build /repo/services/wallet-web/dist /usr/share/nginx/html
 COPY services/wallet-web/docker/nginx.conf.template /etc/giano/nginx.conf.template
 COPY services/wallet-web/docker/config.json.template /etc/giano/config.json.template
+COPY services/wallet-web/docker/config.multichain.json.template /etc/giano/config.multichain.json.template
 COPY services/wallet-web/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && rm /etc/nginx/conf.d/default.conf \
  && touch /etc/nginx/conf.d/default.conf \

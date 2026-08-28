@@ -32,6 +32,8 @@
     "index.ts",
     "generated.ts",
     "addresses.ts",
+    "canonical.ts",
+    "chains.ts",
     "address-overrides.json",
     "remappings.txt"
   ],
@@ -58,6 +60,9 @@
     "hh:compile": "hardhat compile",
     "hh:clean": "hardhat clean",
     "hh:wagmi": "wagmi generate"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@account-abstraction/contracts": "0.7.0",

@@ -12,6 +12,9 @@
 name: giano-e2e
 
 services:
+  # Chain A. The stack runs TWO chains by default (MC-116–MC-118): same canonical contracts
+  # at the same addresses on both, from the same state generator run twice, so multi-chain
+  # behaviour is exercised rather than reasoned about.
   anvil:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
     entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337', '--load-state', '/devnet/state.json']
@@ -19,6 +22,20 @@ services:
       - ../e2e/devnet/state.json:/devnet/state.json:ro
     ports:
       - '8545:8545'
+
+  # Chain B: a distinct chain id that cannot be confused with A (S10), started by default —
+  # the two-chain stack is what contributors and CI run, and the single-chain suite passes
+  # against it unmodified (MC-128).
+  anvil-b:
+    image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
+    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31338', '--load-state', '/devnet/state.json']
+    volumes:
+      # Chain B loads the SAME baked state file as chain A: `anvil_dumpState` output carries
+      # accounts, code and storage but not the chain id, which anvil takes from --chain-id.
+      # One committed artefact, two chains, and address identity holds by construction.
+      - ../e2e/devnet/state.json:/devnet/state.json:ro
+    ports:
+      - '8546:8545'
 
   # Lends the demo port 80, so its URLs can omit a port without anything running as root.
   #
@@ -61,6 +78,23 @@ services:
     ports:
       - '4337:4337'
 
+  # Chain B's own submission infrastructure: submission endpoints are never shared between
+  # chains (MC-43), and each chain's executor is its own funded account (MC-98).
+  alto-b:
+    image: node:22-alpine
+    depends_on:
+      - anvil-b
+    command: >
+      npx -y @pimlico/alto@0.0.18 run
+      --rpc-url http://anvil-b:8545
+      --entrypoints 0x0000000071727De22E5E9d8BAf0edAc6f37da032
+      --executor-private-keys 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      --utility-private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+      --safe-mode false
+      --port 4337
+    ports:
+      - '4338:4337'
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -96,11 +130,29 @@ services:
       # key authorises spending against customer funds.
       GIANO_DEPLOYMENT_CLASS: development
       RUN_MIGRATIONS: 'true'
-      CHAIN_ID: '31337'
-      RPC_URL: http://anvil:8545
-      BUNDLER_URL: http://alto:4337
-      ENTRYPOINT_ADDRESS: '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
-      FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
+      # The closed list of chains this backend serves (MC-46), one descriptor per chain.
+      # Identical canonical contracts on both — verified at boot, not assumed (MC-48).
+      # allowedPaymasters is per chain by design (MC-61): only ops sponsored by our own
+      # paymaster reach the bundler through the relay.
+      GIANO_CHAINS: |
+        [
+          {
+            "chainId": 31337, "name": "Devnet A",
+            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
+            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorshipPaymaster": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
+            "policy": { "allowedPaymasters": ["0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2"] }
+          },
+          {
+            "chainId": 31338, "name": "Devnet B",
+            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
+            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorshipPaymaster": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
+            "policy": { "allowedPaymasters": ["0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2"] }
+          }
+        ]
       LOG_LEVEL: info
       # ── Gas sponsorship ──────────────────────────────────────────────────────
       # The demo transacts through the PRODUCTION paymaster, so what is demonstrated is the path
@@ -108,7 +160,6 @@ services:
       # fixture that cannot fail. All of it is pre-baked into the devnet state
       # (e2e/devnet/generate-state.mjs); the rules go in at bring-up through the real admin API.
       SPONSORSHIP_ENABLED: 'true'
-      SPONSORSHIP_PAYMASTER_ADDRESS: '0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2'
       # `local` is refused when GIANO_DEPLOYMENT_CLASS=production. This stack is a devnet, and the
       # key is anvil's — deterministic, worthless, and committed on purpose.
       SPONSORSHIP_SIGNER_KIND: local
@@ -122,8 +173,6 @@ services:
       PAYMASTER_WATCHER_POLL_MS: '1000'
       PAYMASTER_WATCHER_CONFIRMATIONS: '0'
       PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
-      # Only ops sponsored by our own paymaster reach the bundler through the relay.
-      USEROP_ALLOWED_PAYMASTERS: '0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2'
       # Two tenants, one backend. corsOrigins carries each tenant's dApp origin — the
       # thin SDK polls the public receipt endpoint from the dApp origin (cross-origin).
       TENANTS_SEED: |
@@ -171,17 +220,29 @@ services:
     ports:
       - '8081:8080'
     environment:
-      GIANO_CHAIN_ID: '31337'
-      # same-origin proxies: the browser hits the wallet origin; nginx forwards to the
-      # containers (alto/anvil have no CORS). Avoids cross-origin ERR_FAILED.
-      GIANO_RPC_URL: http://wallet.localhost/rpc
-      GIANO_BUNDLER_URL: http://wallet.localhost/bundler
+      # Both chains, one wallet origin (MC-39). Endpoints are same-origin proxies: the
+      # browser hits the wallet origin; nginx forwards to the containers (alto/anvil have
+      # no CORS). The production paymaster through the sponsorship service on both chains.
+      GIANO_CHAINS: |
+        [
+          {
+            "chainId": 31337, "name": "Devnet A",
+            "rpcUrl": "http://wallet.localhost/rpc", "bundlerUrl": "http://wallet.localhost/bundler",
+            "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorship": "service"
+          },
+          {
+            "chainId": 31338, "name": "Devnet B",
+            "rpcUrl": "http://wallet.localhost/rpc-b", "bundlerUrl": "http://wallet.localhost/bundler-b",
+            "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorship": "service"
+          }
+        ]
       GIANO_RPC_UPSTREAM: http://anvil:8545
       GIANO_BUNDLER_UPSTREAM: http://alto:4337
+      GIANO_RPC_B_UPSTREAM: http://anvil-b:8545
+      GIANO_BUNDLER_B_UPSTREAM: http://alto-b:4337
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
-      GIANO_FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
-      # The production paymaster, through the sponsorship service — not the permissive fixture.
-      GIANO_SPONSORSHIP_MODE: service
       GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost"]'
       GIANO_RP_ID: wallet.localhost
       GIANO_BRAND_NAME: Giano E2E

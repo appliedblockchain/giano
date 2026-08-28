@@ -38,18 +38,42 @@ jobs:
           pnpm hh:deploy --network localhost
           pnpm hh:deploy:testing --network localhost
           pnpm hh:deploy:paymaster --network localhost
-          # the redeployed local addresses must match the committed Base registry
-          # (salt 0xAB…AB, identical bytecode ⇒ identical CREATE2 address on every chain)
+          # The redeployed local addresses must match the frozen CANONICAL constants and every
+          # committed registry chain — not just one reference chain, which could itself be wrong
+          # (salt 0xAB…AB, identical bytecode ⇒ identical CREATE2 address on every chain, MC-27).
+          # Chains recorded as nonCanonical in address-overrides.json are excluded, each with a
+          # reason — exclusion is a decision, not an omission (MC-28).
           node --input-type=module -e "
             import fs from 'node:fs';
+            const KEYS = { 'GianoAccountFactory#GianoSmartWalletFactory': 'CANONICAL_FACTORY', 'GianoAccountFactory#GianoSmartWallet': 'CANONICAL_IMPLEMENTATION' };
+            const canonicalSrc = fs.readFileSync('canonical.ts', 'utf8');
+            const canonical = Object.fromEntries(Object.values(KEYS).map((name) => {
+              const match = canonicalSrc.match(new RegExp(name + String.raw\` = '(0x[0-9a-fA-F]{40})'\`));
+              if (!match) { console.error('cannot find', name, 'in canonical.ts'); process.exit(1); }
+              return [name, match[1].toLowerCase()];
+            }));
+            const overrides = JSON.parse(fs.readFileSync('address-overrides.json', 'utf8'));
+            const nonCanonical = overrides.nonCanonical ?? {};
             const local = JSON.parse(fs.readFileSync('ignition/deployments/chain-31337/deployed_addresses.json','utf8'));
-            const base = JSON.parse(fs.readFileSync('ignition/deployments/chain-8453/deployed_addresses.json','utf8'));
-            for (const key of ['GianoAccountFactory#GianoSmartWallet','GianoAccountFactory#GianoSmartWalletFactory']) {
-              if (local[key].toLowerCase() !== base[key].toLowerCase()) {
-                console.error('DETERMINISM FAILURE for', key, '\n  local:', local[key], '\n  base: ', base[key]);
+            for (const [key, name] of Object.entries(KEYS)) {
+              if (local[key].toLowerCase() !== canonical[name]) {
+                console.error('DETERMINISM FAILURE:', key, 'fresh deployment', local[key], 'differs from', name, canonical[name]);
                 process.exit(1);
               }
-              console.log('OK', key, local[key]);
+              console.log('OK fresh deployment matches', name, local[key]);
+            }
+            for (const dir of fs.readdirSync('ignition/deployments').sort()) {
+              const match = /^chain-(\d+)\$/.exec(dir);
+              if (!match || match[1] === '31337') continue;
+              if (nonCanonical[match[1]]) { console.log('SKIP chain', match[1], '(non-canonical):', nonCanonical[match[1]].slice(0, 80) + '…'); continue; }
+              const committed = JSON.parse(fs.readFileSync('ignition/deployments/' + dir + '/deployed_addresses.json','utf8'));
+              for (const [key, name] of Object.entries(KEYS)) {
+                if (committed[key].toLowerCase() !== canonical[name]) {
+                  console.error('DETERMINISM FAILURE for chain', match[1] + ':', key, committed[key], 'differs from', name, canonical[name]);
+                  process.exit(1);
+                }
+                console.log('OK chain', match[1], key, committed[key]);
+              }
             }
           "
 

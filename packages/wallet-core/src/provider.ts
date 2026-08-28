@@ -73,19 +73,30 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
 
 export type CreateGianoProviderParams = {
   initialChainId: number;
-  bundler: BundlerClient;
+  /**
+   * One bundler per chain. A map even when one chain is configured: submission is a
+   * chain-bound resource, and no operation for one chain may ever be submitted through
+   * another chain's endpoint (MC-43, MC-58).
+   */
+  bundlers: Record<number, BundlerClient>;
   chains: readonly Chain[];
   transports: Record<number, Transport> | undefined;
   injection: GianoProviderInjection;
-  gianoSmartWalletFactoryAddress: Address;
+  /**
+   * One factory address per chain. Deliberately a map even though address identity (MC-19)
+   * guarantees the values are equal on a canonical deployment: passing one address would
+   * encode the invariant in the type where nothing checks it, and a deployment that is NOT
+   * address-identical must still be expressible.
+   */
+  factoryAddresses: Record<number, Address>;
   /** Optional logger; defaults to silent-except-errors. */
   logger?: GianoLogger;
   /**
    * Fallback fee estimation used when neither the request nor the bundler's
-   * prepared op carries fees. The old hardcoded defaults were inverted
-   * (priority 400 gwei > max 200 gwei); override this for real deployments.
+   * prepared op carries fees, resolved per chain — fee levels differ between chains
+   * by orders of magnitude, so one figure cannot serve them all.
    */
-  estimateFeesPerGas?: () => Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }>;
+  estimateFeesPerGas?: (chainId: number) => Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }>;
 };
 
 type EventHandler<E extends keyof EIP1193EventMap> = (payload: Parameters<EIP1193EventMap[E]>[0]) => void;
@@ -177,18 +188,23 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     transports,
     chains,
     initialChainId,
-    bundler,
-    gianoSmartWalletFactoryAddress,
+    bundlers,
+    factoryAddresses,
   } = options
   const logger = options.logger ?? defaultGianoLogger
   const estimateFeesPerGas =
     options.estimateFeesPerGas ??
-    (async () => ({ maxFeePerGas: parseGwei('200'), maxPriorityFeePerGas: parseGwei('2') }))
+    (async (_chainId: number) => ({ maxFeePerGas: parseGwei('200'), maxPriorityFeePerGas: parseGwei('2') }))
 
   let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
   let chain: Chain | undefined;
   let transport: Transport | undefined;
   let client: PublicClient | undefined;
+  // Chain-bound state, swapped as one unit by wallet_switchEthereumChain. Leaving any of it
+  // behind on a chain change is the latent defect this fixes: with two chains configured it
+  // would silently submit user operations to the PREVIOUS chain's bundler.
+  let bundler: BundlerClient | undefined;
+  let factoryAddress: Address | undefined;
   let staticSignature: Hex | null = null
   let staticSignatureSignedAt = 0
   let staticSignatureLifetime = 0n
@@ -200,7 +216,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     }
   ) => {
     if (injection.submitUserOperation === undefined) {
-      return await bundler.sendUserOperation(userOpRequest);
+      return await bundler!.sendUserOperation(userOpRequest);
     }
     // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
 
@@ -216,7 +232,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
      * Doing it first is also simply more correct for the unsponsored path: the gas estimate is
      * computed against the fees the operation will actually carry.
      */
-    const fees = resolveUserOpFees(userOpRequest, {}, await estimateFeesPerGas());
+    const fees = resolveUserOpFees(userOpRequest, {}, await estimateFeesPerGas(chain!.id));
     const requestWithFees = { ...userOpRequest, ...fees };
 
     /*
@@ -229,7 +245,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
      * ever submitted. The unused one holds the tenant's funds until its TTL expires, so a tenant's
      * effective available balance is silently halved.
      */
-    const prepared = await bundler.prepareUserOperation(requestWithFees);
+    const prepared = await bundler!.prepareUserOperation(requestWithFees);
     if (!prepared) {
       throw new Error('Could not prepare user operation');
     }
@@ -256,7 +272,9 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       },
     };
 
-    return await injection.submitUserOperation(signedUserOp);
+    // The chain the operation was hashed and signed for travels with the submission: the
+    // injection is chain-agnostic, and the backend refuses to guess (MC-53).
+    return await injection.submitUserOperation(signedUserOp, chain!.id);
   };
 
   const emit = <E extends keyof EIP1193EventMap>(event: E, payload: Parameters<EIP1193EventMap[E]>[0]) => {
@@ -299,7 +317,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         smartAccount = await toGianoSmartAccount({
           client: client!,
           owners: [toWebAuthnAccount({ credential: { id: toBase64Url(rawId as ArrayBuffer), publicKey: concatHex([x, y]) } })],
-          factoryAddress: gianoSmartWalletFactoryAddress,
+          factoryAddress: factoryAddress!,
         });
 
         const smartAccountAddress = await smartAccount.getAddress();
@@ -375,9 +393,11 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       })
       return result    
     },
-    wallet_addEthereumChain: async ([chain]) => {
-      //TODO: implement
-      return null
+    wallet_addEthereumChain: async () => {
+      // MC-14: an explicit, typed refusal — never a silent no-op that appears to succeed.
+      // A chain is a member of the deployment's closed configured list (D8), never a value
+      // a caller adds at runtime.
+      throw new GianoError('wallet_addEthereumChain is not supported: Giano serves a closed, configured list of chains')
     },
     wallet_revokePermissions: async ([permissions]) => {
       // ignoring permissions, revoking all
@@ -406,10 +426,31 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       if (!newTransport) {
         throw new Error('No transport for chain');
       }
+      // Throwing rather than falling back is deliberate: a chain configured for reads but
+      // not for submission is a misconfiguration, and silently keeping the previous chain's
+      // bundler is exactly the defect this closes (MC-113) — a "switched" provider would
+      // keep submitting user operations to the OLD chain's bundler and deriving addresses
+      // from the OLD chain's factory.
+      const newBundler = bundlers[newChain.id];
+      if (!newBundler) {
+        throw new Error(`No bundler for chain ${chainId}`);
+      }
+      const newFactory = factoryAddresses[newChain.id];
+      if (!newFactory) {
+        throw new Error(`No factory address for chain ${chainId}`);
+      }
       smartAccount = null;
+      // The cached authenticated-read signature was produced against a specific account on a
+      // specific chain, with a lifetime read from that account. Carrying it across a chain
+      // change would present a signature from one chain to a contract on another.
+      staticSignature = null;
+      staticSignatureSignedAt = 0;
+      staticSignatureLifetime = 0n;
       chain = newChain;
       transport = newTransport;
       client = createPublicClient({ transport, chain });
+      bundler = newBundler;
+      factoryAddress = newFactory;
 
       emit('chainChanged', `0x${chainId.toString(16)}`)
       return null
@@ -426,7 +467,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         if (!webAuthnAccount) {
           throw new Error('Invalid credential');
         }
-        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: gianoSmartWalletFactoryAddress })
+        smartAccount = await toGianoSmartAccount({ client: client!, owners: [webAuthnAccount], factoryAddress: factoryAddress! })
         const smartAccountAddress = await smartAccount.getAddress()
 
         emit('connect', { chainId: `0x${chain!.id.toString(16)}` });
@@ -443,10 +484,11 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       const credential = await createWebAuthnCredential({
         user: {
           name: credentialName,
+          // The handle deliberately carries NO chain id (MC-78): the credential it names is
+          // valid on every chain the deployment serves, and the handle can never be rewritten.
           id: await injection.encodeUserId(
             uuidv4().replace(/-/g, ''),
-            gianoSmartWalletFactoryAddress,
-            chainId,
+            factoryAddress!,
             ChainType.EVM,
           ),
         },
@@ -469,7 +511,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
           client: client!,
           owners: [toWebAuthnAccount({ credential })],
           address: handlerCreatedAddress,
-          factoryAddress: gianoSmartWalletFactoryAddress,
+          factoryAddress: factoryAddress!,
         });
 
         emit('connect', { chainId });
@@ -480,7 +522,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       smartAccount = await toGianoSmartAccount({
         client: client!,
         owners: [toWebAuthnAccount({ credential })],
-        factoryAddress: gianoSmartWalletFactoryAddress,
+        factoryAddress: factoryAddress!,
       });
 
       const xyVector = extractXYCoords(credential.publicKey);
@@ -525,7 +567,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return await submitUserOperation({ calls, account: smartAccount })
     },
     waitForUserOperationReceipt: async ([hash]: [Hash]) => {
-      return bundler.waitForUserOperationReceipt({ hash });
+      return bundler!.waitForUserOperationReceipt({ hash });
     },
     personal_sign: async ([message, address]: [string, Address]) => {
       if (!smartAccount) {
@@ -596,12 +638,12 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         ...options,
       };
 
-      const estimate = await bundler.estimateUserOperationGas({ account: smartAccount, ...op });
+      const estimate = await bundler!.estimateUserOperationGas({ account: smartAccount, ...op });
       if (!estimate) {
         throw new Error('Could not estimate user operation');
       }
 
-      const prepared = await bundler.prepareUserOperation({
+      const prepared = await bundler!.prepareUserOperation({
         account: smartAccount,
         ...op,
         ...estimate,
@@ -610,7 +652,7 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
       return {
         ...prepared,
         preVerificationGas: prepared.preVerificationGas,
-        ...resolveUserOpFees(options, prepared, await estimateFeesPerGas()),
+        ...resolveUserOpFees(options, prepared, await estimateFeesPerGas(chain!.id)),
       };
     },
   } satisfies GianoProviderMethodsMap

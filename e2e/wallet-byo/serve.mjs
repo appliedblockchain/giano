@@ -20,6 +20,9 @@ const port = Number(process.env.BYO_WALLET_PORT ?? portOf('wallet-byo'));
 const walletApiUpstream = process.env.WALLET_API_UPSTREAM ?? loopbackOf('api');
 const rpcUpstream = process.env.RPC_UPSTREAM ?? loopbackOf('rpc');
 const bundlerUpstream = process.env.BUNDLER_UPSTREAM ?? loopbackOf('bundler');
+// chain B (MC-129): the BYO reference serves both chains, like the stock wallet
+const rpcBUpstream = process.env.RPC_B_UPSTREAM ?? loopbackOf('rpc-b');
+const bundlerBUpstream = process.env.BUNDLER_B_UPSTREAM ?? loopbackOf('bundler-b');
 
 const addresses = JSON.parse(fs.readFileSync(path.join(dir, '..', 'devnet', 'addresses.json'), 'utf8'));
 
@@ -30,6 +33,7 @@ const bundle = await esbuild.build({
   write: false,
   define: {
     'process.env.CHAIN_ID': JSON.stringify(process.env.CHAIN_ID ?? String(addresses.chainId)),
+    'process.env.CHAIN_B_ID': JSON.stringify(process.env.CHAIN_B_ID ?? '31338'),
     'process.env.FACTORY_ADDRESS': JSON.stringify(process.env.FACTORY_ADDRESS ?? addresses.factory),
     // Defaults to the production paymaster path when the devnet baked one, so what the BYO
     // reference demonstrates is the path real tenants use — rules enforced, balance debited, fee
@@ -99,6 +103,12 @@ http
     }
     if (url === '/bundler') {
       return proxy(req, res, bundlerUpstream, '/');
+    }
+    if (url === '/rpc-b') {
+      return proxy(req, res, rpcBUpstream, '/');
+    }
+    if (url === '/bundler-b') {
+      return proxy(req, res, bundlerBUpstream, '/');
     }
     if (url === '/main.js') {
       res.setHeader('content-type', 'text/javascript');

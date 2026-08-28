@@ -19,6 +19,8 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 }
 
 const originBadge = (dappOrigin: string) => el('div', { className: 'origin', dataset: { testid: 'dapp-origin' } }, dappOrigin);
+/** Every consent screen names the chain — by name, never a bare id (MC-80, MC-81). */
+const chainBadge = (chainName: string) => el('div', { className: 'origin', dataset: { testid: 'consent-chain' } }, `Network: ${chainName}`);
 
 function describeSignPayload(method: string, params: unknown): string {
   const list = Array.isArray(params) ? params : [];
@@ -118,6 +120,7 @@ export function render(
     root.append(
       el('h2', {}, 'Connection request'),
       originBadge(pending.dappOrigin),
+      chainBadge(pending.chainName),
       el('div', { className: 'idle' }, 'Unlock your BYO wallet (or create one) with a passkey.'),
       buttons('Unlock with passkey', 'byo-connect'),
     );
@@ -128,6 +131,7 @@ export function render(
     root.append(
       el('h2', { dataset: { testid: 'byo-tx' } }, 'Confirm transaction'),
       originBadge(pending.dappOrigin),
+      chainBadge(pending.chainName),
       el('pre', { className: 'payload' }, describeTransaction(pending.params)),
     );
 
@@ -153,6 +157,7 @@ export function render(
   root.append(
     el('h2', {}, 'Signature requested'),
     originBadge(pending.dappOrigin),
+    chainBadge(pending.chainName),
     el('pre', { className: 'payload' }, describeSignPayload(pending.method, pending.params)),
     buttons('Sign it', 'byo-sign'),
   );

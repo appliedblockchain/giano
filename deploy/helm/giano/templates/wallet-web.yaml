@@ -21,16 +21,17 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            {{- if .Values.walletWeb.chains }}
+            # multi-chain: one wallet descriptor per served chain, passed verbatim (MC-94)
+            - name: GIANO_CHAINS
+              value: {{ toJson .Values.walletWeb.chains | quote }}
+            {{- else }}
             - name: GIANO_CHAIN_ID
               value: {{ .Values.config.chainId | quote }}
             - name: GIANO_RPC_URL
               value: {{ .Values.config.rpcUrl | quote }}
             - name: GIANO_BUNDLER_URL
               value: {{ .Values.config.bundlerUrl | default (printf "http://%s-bundler:4337" .Release.Name) | quote }}
-            - name: GIANO_WALLET_API_UPSTREAM
-              value: {{ printf "http://%s-wallet-api:8080" .Release.Name | quote }}
-            - name: GIANO_RP_ID
-              value: {{ .Values.config.rpId | quote }}
             {{- with .Values.config.factoryAddress }}
             - name: GIANO_FACTORY_ADDRESS
               value: {{ . | quote }}
@@ -39,6 +40,11 @@ spec:
             - name: GIANO_PAYMASTER_ADDRESS
               value: {{ . | quote }}
             {{- end }}
+            {{- end }}
+            - name: GIANO_WALLET_API_UPSTREAM
+              value: {{ printf "http://%s-wallet-api:8080" .Release.Name | quote }}
+            - name: GIANO_RP_ID
+              value: {{ .Values.config.rpId | quote }}
             - name: GIANO_ALLOWED_DAPP_ORIGINS
               value: {{ toJson .Values.config.allowedDappOrigins | quote }}
             - name: GIANO_BRAND_NAME

@@ -11,6 +11,7 @@ import {
   tenantSponsorshipHistory,
 } from '../db/schema.js';
 import { sha256hex } from '../services/tenants.js';
+import type { ChainRegistry } from '../services/chains.js';
 import { tenantIdToBytes16, type PaymasterReader } from '../services/paymaster-contract.js';
 import { checkWalletManagementCap, formatConfigIssues, sponsorshipConfigSchema } from '../services/sponsorship-config.js';
 import type { LedgerService } from '../services/sponsorship-ledger.js';
@@ -29,17 +30,23 @@ import type { LedgerService } from '../services/sponsorship-ledger.js';
  */
 export default async function adminSponsorshipRoutes(
   instance: FastifyInstance,
-  opts: { db: Db; config: AppConfig; ledger: LedgerService; paymaster?: PaymasterReader },
+  opts: { db: Db; config: AppConfig; ledger: LedgerService; registry: ChainRegistry },
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
+  // requireChain runs after requireAdmin: with one chain configured the parameter is
+  // supplied automatically, so an on-premises tenant never encounters the dimension (MC-53);
+  // with several it is required, because a tenant's rules, balance and history are all
+  // per chain (MC-66) and guessing which one was meant is exactly what MC-53 forbids.
   app.addHook('preHandler', app.requireAdmin);
+  app.addHook('preHandler', app.requireChain);
 
-  const { db, config, ledger, paymaster } = opts;
-  const chainId = config.CHAIN_ID;
+  const { db, config, ledger } = opts;
   const walletManagementCapWei = config.SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI;
 
   const wei = z.string();
   const errorBody = z.object({ error: z.string(), message: z.string() });
+  /** Selects the chain when several are served; supplied automatically when one is (MC-53). */
+  const chainQuery = z.object({ chainId: z.coerce.number().int().positive().optional() });
 
   const keyHashOf = (request: { headers: { authorization?: string } }) => {
     const header = request.headers.authorization;
@@ -48,7 +55,7 @@ export default async function adminSponsorshipRoutes(
   };
 
   /** Writes the new configuration and appends the previous one to the history in one transaction. */
-  async function writeConfig(tenantId: string, nextConfig: unknown, keyHash: string | null) {
+  async function writeConfig(tenantId: string, chainId: number, nextConfig: unknown, keyHash: string | null) {
     await db.transaction(async (tx) => {
       await tx.insert(tenantSponsorshipHistory).values({ tenantId, chainId, config: nextConfig, createdByKeyHash: keyHash });
       await tx
@@ -70,6 +77,7 @@ export default async function adminSponsorshipRoutes(
         tags: ['admin'],
         summary: 'Read this tenant\'s sponsorship rules',
         security: [{ adminKey: [] }],
+        querystring: chainQuery,
         response: {
           200: z.object({
             configured: z.boolean(),
@@ -84,6 +92,7 @@ export default async function adminSponsorshipRoutes(
     },
     async (request) => {
       const tenant = request.adminTenant!;
+      const chainId = request.chain!.chainId;
       const [row] = await db
         .select({ config: tenantSponsorship.config, updatedAt: tenantSponsorship.updatedAt })
         .from(tenantSponsorship)
@@ -109,11 +118,13 @@ export default async function adminSponsorshipRoutes(
     {
       schema: {
         tags: ['admin'],
-        summary: 'Replace this tenant\'s sponsorship rules',
+        summary: 'Replace this tenant\'s sponsorship rules (for one chain)',
         description:
           'Full replace, validated on write. Rejected with per-path messages on any violation, so an invalid ' +
-          'rule set is never stored and therefore never interpreted permissively.',
+          'rule set is never stored and therefore never interpreted permissively. Rules are per chain and never ' +
+          'inherited from another chain (MC-67): enabling a new chain is an explicit act.',
         security: [{ adminKey: [] }],
+        querystring: chainQuery,
         body: z.unknown(),
         response: {
           200: z.object({ config: z.unknown(), updatedAt: z.string() }),
@@ -148,16 +159,20 @@ export default async function adminSponsorshipRoutes(
         });
       }
 
-      await writeConfig(tenant.id, parsed.data, keyHashOf(request));
+      const chain = request.chain!;
+      await writeConfig(tenant.id, chain.chainId, parsed.data, keyHashOf(request));
 
       // The reservation statement joins against this row, so a tenant that has just enabled
       // sponsorship must have one — otherwise its first operation is refused for a reason that
       // looks nothing like "you have not funded a balance yet".
-      if (paymaster) {
-        await ledger.ensureTenantRow({ tenantId: tenant.id, chainId, paymasterAddress: paymaster.address });
+      if (chain.paymaster) {
+        await ledger.ensureTenantRow({ tenantId: tenant.id, chainId: chain.chainId, paymasterAddress: chain.paymaster.address });
       }
 
-      request.log.info({ sponsorship: 'config-replaced', enabled: parsed.data.enabled }, 'sponsorship configuration updated');
+      request.log.info(
+        { sponsorship: 'config-replaced', enabled: parsed.data.enabled, chainId: chain.chainId },
+        'sponsorship configuration updated',
+      );
       return { config: parsed.data, updatedAt: new Date().toISOString() };
     },
   );
@@ -167,11 +182,12 @@ export default async function adminSponsorshipRoutes(
     {
       schema: {
         tags: ['admin'],
-        summary: 'Update fields of this tenant\'s sponsorship rules',
+        summary: 'Update fields of this tenant\'s sponsorship rules (for one chain)',
         description:
           'Shallow field-level merge over the stored configuration, then validated as a whole — so a partial ' +
           'update cannot leave the rule set in a state a full replace would have rejected.',
         security: [{ adminKey: [] }],
+        querystring: chainQuery,
         body: z.record(z.unknown()),
         response: {
           200: z.object({ config: z.unknown(), updatedAt: z.string() }),
@@ -185,6 +201,8 @@ export default async function adminSponsorshipRoutes(
     },
     async (request, reply) => {
       const tenant = request.adminTenant!;
+      const chain = request.chain!;
+      const chainId = chain.chainId;
       const [row] = await db
         .select({ config: tenantSponsorship.config })
         .from(tenantSponsorship)
@@ -209,9 +227,9 @@ export default async function adminSponsorshipRoutes(
         });
       }
 
-      await writeConfig(tenant.id, parsed.data, keyHashOf(request));
-      if (paymaster) {
-        await ledger.ensureTenantRow({ tenantId: tenant.id, chainId, paymasterAddress: paymaster.address });
+      await writeConfig(tenant.id, chainId, parsed.data, keyHashOf(request));
+      if (chain.paymaster) {
+        await ledger.ensureTenantRow({ tenantId: tenant.id, chainId, paymasterAddress: chain.paymaster.address });
       }
       return { config: parsed.data, updatedAt: new Date().toISOString() };
     },
@@ -224,7 +242,7 @@ export default async function adminSponsorshipRoutes(
         tags: ['admin'],
         summary: 'Who changed the sponsorship rules, and when',
         security: [{ adminKey: [] }],
-        querystring: z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }),
+        querystring: chainQuery.extend({ limit: z.coerce.number().int().min(1).max(200).default(50) }),
         response: {
           200: z.object({
             revisions: z.array(
@@ -242,6 +260,7 @@ export default async function adminSponsorshipRoutes(
     },
     async (request) => {
       const tenant = request.adminTenant!;
+      const chainId = request.chain!.chainId;
       const rows = await db
         .select()
         .from(tenantSponsorshipHistory)
@@ -272,6 +291,7 @@ export default async function adminSponsorshipRoutes(
           'Read live from the paymaster contract, with the block it was read at, so the figures can be ' +
           'reproduced from the chain rather than taken on trust.',
         security: [{ adminKey: [] }],
+        querystring: chainQuery,
         response: {
           200: z.object({
             paymasterAddress: z.string(),
@@ -294,8 +314,11 @@ export default async function adminSponsorshipRoutes(
     },
     async (request, reply) => {
       const tenant = request.adminTenant!;
+      const chain = request.chain!;
+      const chainId = chain.chainId;
+      const paymaster = chain.paymaster;
       if (!paymaster) {
-        return reply.code(503).send({ error: 'sponsorship-disabled', message: 'gas sponsorship is not enabled on this deployment' });
+        return reply.code(503).send({ error: 'sponsorship-disabled', message: `gas sponsorship is not enabled on chain ${chainId}` });
       }
 
       const tenantId = tenantIdToBytes16(tenant.id);
@@ -344,7 +367,7 @@ export default async function adminSponsorshipRoutes(
           'One row per settled operation, with gas, Giano\'s fee and the overhead allowance kept separate — ' +
           'each row traceable to a `Sponsored` event on chain.',
         security: [{ adminKey: [] }],
-        querystring: z.object({
+        querystring: chainQuery.extend({
           limit: z.coerce.number().int().min(1).max(500).default(100),
           before: z.string().datetime().optional(),
         }),
@@ -370,6 +393,7 @@ export default async function adminSponsorshipRoutes(
     },
     async (request) => {
       const tenant = request.adminTenant!;
+      const chainId = request.chain!.chainId;
       const conditions = [eq(sponsorshipSettlements.tenantId, tenant.id), eq(sponsorshipSettlements.chainId, chainId)];
       if (request.query.before) {
         conditions.push(sql`${sponsorshipSettlements.observedAt} < ${new Date(request.query.before)}`);
@@ -422,7 +446,7 @@ export default async function adminSponsorshipRoutes(
           'Includes the pre-approval checks that never became transactions — those are exactly the decisions a ' +
           'user was shown, so they are what answers "why did my user see a refusal?".',
         security: [{ adminKey: [] }],
-        querystring: z.object({
+        querystring: chainQuery.extend({
           limit: z.coerce.number().int().min(1).max(500).default(100),
           outcome: z.enum(['allowed', 'refused']).optional(),
         }),
@@ -446,6 +470,7 @@ export default async function adminSponsorshipRoutes(
     },
     async (request) => {
       const tenant = request.adminTenant!;
+      const chainId = request.chain!.chainId;
       const conditions = [eq(sponsorshipDecisions.tenantId, tenant.id), eq(sponsorshipDecisions.chainId, chainId)];
       if (request.query.outcome) conditions.push(eq(sponsorshipDecisions.outcome, request.query.outcome));
 

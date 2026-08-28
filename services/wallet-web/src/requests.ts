@@ -1,4 +1,5 @@
 import { TransportRpcError, RPC_ERRORS } from '@appliedblockchain/giano-wallet-transport';
+import type { WalletRuntime } from './wallet';
 
 /** A dApp request awaiting user consent in the popup UI. */
 export type PendingRequest = {
@@ -6,6 +7,11 @@ export type PendingRequest = {
   method: string;
   params: unknown;
   dappOrigin: string;
+  /** The chain this session negotiated — named on every consent screen (MC-80, MC-81). */
+  chainId: number;
+  chainName: string;
+  /** The per-chain runtime serving this session (sponsorship pre-flight and all). */
+  runtime: WalletRuntime;
   approve: () => void;
   reject: () => void;
 };

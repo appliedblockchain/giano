@@ -3,7 +3,8 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Address, Hex } from 'viem';
 import { z } from 'zod';
 import type { AppConfig } from '../config.js';
-import { packUints, type SponsorshipMethod, type SponsorshipService } from '../services/sponsorship-service.js';
+import type { ChainRegistry } from '../services/chains.js';
+import { packUints, type SponsorshipMethod } from '../services/sponsorship-service.js';
 import type { SponsorshipRefusalReason, SponsorshipRuleResult } from '../services/sponsorship-rules.js';
 
 /**
@@ -99,10 +100,10 @@ const ESTIMATION_DEFAULTS = {
 
 export default async function paymasterRoutes(
   instance: FastifyInstance,
-  opts: { config: AppConfig; sponsorship: SponsorshipService },
+  opts: { config: AppConfig; registry: ChainRegistry },
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { config, sponsorship } = opts;
+  const { config, registry } = opts;
 
   /**
    * Per-tenant limit with its own budget, separate from the relay's: pre-flight traffic is
@@ -188,20 +189,36 @@ export default async function paymasterRoutes(
         },
       });
 
-      // R-14. The chain and the EntryPoint are validated against server configuration, never
-      // trusted from the request — the same convention the relay path already follows.
-      if (entryPoint.toLowerCase() !== config.ENTRYPOINT_ADDRESS.toLowerCase()) {
+      // R-14, §10.1. ERC-7677 already puts the chain on the wire (params[2]); the service now
+      // ROUTES on it instead of rejecting all but one. The chain and the EntryPoint are still
+      // validated against server configuration, never trusted from the request — this only
+      // widens what "server configuration" contains (MC-70).
+      const chain = registry.tryGet(Number(BigInt(chainIdHex)));
+      if (!chain) {
         return rpcError(
           REASON_CODES['chain-or-entrypoint-mismatch'],
-          `this service sponsors operations for EntryPoint ${config.ENTRYPOINT_ADDRESS}`,
+          `this service does not sponsor operations on chain ${Number(BigInt(chainIdHex))}`,
           'chain-or-entrypoint-mismatch',
         );
       }
-      if (BigInt(chainIdHex) !== BigInt(config.CHAIN_ID)) {
+      if (chain.status !== 'ready') {
+        // Retryable, and distinct from the permanent refusal above (MC-55).
+        return rpcError(REASON_CODES['temporarily-unavailable'], `chain ${chain.chainId} is temporarily unavailable`, 'temporarily-unavailable');
+      }
+      if (entryPoint.toLowerCase() !== chain.entryPoint.toLowerCase()) {
         return rpcError(
           REASON_CODES['chain-or-entrypoint-mismatch'],
-          `this service sponsors operations on chain ${config.CHAIN_ID}`,
+          `this service sponsors operations for EntryPoint ${chain.entryPoint} on chain ${chain.chainId}`,
           'chain-or-entrypoint-mismatch',
+        );
+      }
+      // Sponsorship may be enabled per chain (MC-65): a chain with no paymaster sponsors nothing.
+      const sponsorship = chain.sponsorship;
+      if (!sponsorship) {
+        return rpcError(
+          REASON_CODES['sponsorship-disabled'],
+          `gas sponsorship is not enabled on chain ${chain.chainId}`,
+          'sponsorship-disabled',
         );
       }
 

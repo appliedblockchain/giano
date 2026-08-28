@@ -222,6 +222,23 @@ Load-bearing consequence for a bring-your-own-UI tenant: its edge must forward `
 (`e2e/wallet-byo/serve.mjs` documents this, and preserves the browser `Host` for the ROR
 document.)
 
+## Where the chain is decided, validated and recorded
+
+With several chains served (specs/MULTICHAIN_SPECS.md), the chain travels with this transfer at
+every stage. The asymmetry is the point: a caller may *name* a chain at every stage; only
+configuration ever *admits* one, and the hash the chain will actually verify is computed from the
+admitted value (MC-57).
+
+| Stage | Who decides | What validates it | Where it is recorded |
+| --- | --- | --- | --- |
+| dApp intent | the dApp, at SDK construction (`chain`) | nothing yet — it is a request (MC-01) | the SDK's session cache key (`giano:sdk:session:{origin}:{chainId}`) |
+| Session grant | the wallet origin, from its served list | membership of the configured list (MC-03); refusal = `handshake:nack` 4902 | the transport session |
+| Grant confirmation | the SDK | granted must equal requested (MC-06) | the SDK's cached session (`eth_chainId`) |
+| Per request | the caller names it (`body.chainId`) | the chain registry: served, structurally verified at boot (`plugins/chain.ts`, MC-51/52) | the request context (`request.chain`) |
+| Operation hash | the backend, from the RESOLVED chain | never from the request body (MC-57) | `userop_log.chain_id` (MC-59) |
+| Sponsorship | the ERC-7677 `params[2]` | registry membership + per-chain EntryPoint (MC-70) | `sponsorship_decisions.chain_id` |
+| On chain | the EntryPoint | the operation hash commits to the chain id | the chain itself |
+
 ## What is per-tenant vs shared in this one transfer
 
 **Per tenant:** the wallet origin and its edge/proxy, the RP ID and therefore the passkey

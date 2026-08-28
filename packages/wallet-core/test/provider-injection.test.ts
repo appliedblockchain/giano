@@ -30,7 +30,7 @@ import {
   toBase64Url,
 } from '../src/provider-injection/wallet-api/serialization';
 import { MockAuthenticator, installWebAuthnMock, type InstalledWebAuthnMock } from './webauthn-mock';
-import { createMockInjection, FACTORY_ADDRESS, TEST_CHAIN_ID } from './helpers';
+import { createMockInjection, FACTORY_ADDRESS } from './helpers';
 
 const HEX32 = `0x${'ab'.repeat(32)}` as const;
 const ADDR = '0x000000000000000000000000000000000000abcd' as const;
@@ -105,7 +105,8 @@ describe('assertXYVector', () => {
 });
 
 describe('assertDecodedUserId', () => {
-  const valid = { userId: 'abc', walletFactoryAddress: ADDR, chainId: 1, chainType: 0 };
+  // No chainId field: the handle is chain-independent by design (MC-78).
+  const valid = { userId: 'abc', walletFactoryAddress: ADDR, chainType: 0 };
   it('accepts a well-formed decoded id', () => {
     expect(() => assertDecodedUserId(valid)).not.toThrow();
   });
@@ -113,7 +114,6 @@ describe('assertDecodedUserId', () => {
     expect(() => assertDecodedUserId(null)).toThrow(/must be an object/);
     expect(() => assertDecodedUserId({ ...valid, userId: '' })).toThrow(/userId/);
     expect(() => assertDecodedUserId({ ...valid, walletFactoryAddress: '0x00' })).toThrow(/walletFactoryAddress/);
-    expect(() => assertDecodedUserId({ ...valid, chainId: '1' })).toThrow(/chainId.*number/);
     expect(() => assertDecodedUserId({ ...valid, chainType: 99 })).toThrow(/chainType/);
   });
 });
@@ -361,13 +361,15 @@ describe('createWalletApiInjection', () => {
     await injection.onCredentialKey(created.rawId, { x, y }); // no-op, server already stored the key
   });
 
-  it('round-trips encodeUserId / decodeUserId', async () => {
+  it('round-trips encodeUserId / decodeUserId — the handle carries no chain id (MC-78)', async () => {
     const injection = createWalletApiInjection({ apiUrl: 'https://wallet.test/api', externalUserId: 'u' });
-    const encoded = await injection.encodeUserId('11223344556677889900aabbccddeeff', FACTORY_ADDRESS, `0x${TEST_CHAIN_ID.toString(16)}`, 0);
+    const encoded = await injection.encodeUserId('11223344556677889900aabbccddeeff', FACTORY_ADDRESS, 0);
+    // id(16) + factory(20) + chainType(1): every field is chain-independent by design
+    expect((encoded as Uint8Array).byteLength).toBe(37);
     const decoded = await injection.decodeUserId(encoded);
     expect(decoded.walletFactoryAddress.toLowerCase()).toBe(FACTORY_ADDRESS.toLowerCase());
-    expect(decoded.chainId).toBe(TEST_CHAIN_ID);
     expect(decoded.chainType).toBe(0);
+    expect('chainId' in decoded).toBe(false);
   });
 
   it('throws a helpful error when the API responds non-ok', async () => {
