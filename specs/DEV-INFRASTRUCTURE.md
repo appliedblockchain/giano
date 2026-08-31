@@ -118,13 +118,13 @@ flowchart TB
 
 subgraph TENANTS["Tenant-owned — each tenant has ONE wallet hostname, and it is its RP ID"]
   direction LR
-  subgraph TEXAMPLE["tenant &quot;example&quot; — Giano's own demo"]
+  subgraph TEXAMPLE["tenant 'example' — Giano's own demo"]
     direction TB
     D1["dApp<br/>app.dev.giano.example.com"]
     W1["wallet-example.dev.giano.example.com<br/>RP ID · passkeys bind HERE"]
     D1 -->|"popup, origin-pinned postMessage"| W1
   end
-  subgraph TACME["tenant &quot;acme&quot; — a client"]
+  subgraph TACME["tenant 'acme' — a client"]
     direction TB
     D2["dApp<br/>app.acme.com<br/>Acme-hosted, outside this account"]
     W2["wallet.acme.com<br/>RP ID · passkeys bind HERE"]
@@ -140,7 +140,7 @@ W2 -->|"CNAME — Acme's zone, tenant-owned"| GIANO
 
 subgraph ALBX["ALB giano-dev-alb — HTTPS :443, SNI-selected cert · HTTP :80 → 301"]
   direction TB
-  CERTS["ACM certificates on this listener<br/>wildcard *.dev.giano.example.com — covers wallet.* , api.* , app.* , paymaster.* , wallet-example.*<br/>+ one SNI cert per out-of-zone tenant host: wallet.acme.com<br/>validated in Acme's zone; ACM renews only while that record resolves"]
+  CERTS["ACM certificates on this listener<br/>wildcard *.dev.giano.example.com — covers wallet.* , api.* , app.* , paymaster.* , wallet-example.*<br/>+ one SNI cert per out-of-zone tenant host: wallet.acme.com<br/>validated in Acme's zone — ACM renews only while that record resolves"]
   R40["rule 40 — hosts wallet.* AND wallet-example.* AND wallet.acme.com<br/>from var.tenant_wallet_hosts"]
   R10["rule 10 — api.*"]
   R20["rule 20 — app.*"]
@@ -180,7 +180,7 @@ flowchart TB
 INGRESS["ALB target groups — see the routing diagram<br/>wallet-web · wallet-api · custom-example · paymaster-admin"]
 
 subgraph VPCX["VPC 10.40.0.0/16 — eu-west-2 · Internet Gateway, NO NAT Gateway (D8)"]
-  subgraph PUBSUB["public subnets 10.40.0.0/20 + 10.40.16.0/20, two AZ — assign_public_ip = true; SG tasks accepts only the ALB"]
+  subgraph PUBSUB["public subnets 10.40.0.0/20 + 10.40.16.0/20, two AZ — assign_public_ip = true · SG tasks accepts only the ALB"]
     SWEB["wallet-web · nginx :8080<br/>0.25 vCPU / 512 MB<br/>GIANO_RP_ID unset — one task serves every tenant host"]
     SEX["custom-example · nginx :8080<br/>0.25 / 512 — the demo dApp"]
     SPM["paymaster-admin · nginx :8080<br/>0.25 / 512 — operator console"]
