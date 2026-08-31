@@ -153,7 +153,7 @@ a request.
 | --- | --- | --- | --- |
 | **Postgres 17** | `postgres:17-alpine` or managed | 5432 | **yes** — wallet-api state (users, credentials, sessions, challenges, userop log, ROR origins) |
 | **wallet-api** | `ghcr.io/appliedblockchain/giano-wallet-api` (Fastify) | 8080 | **yes** — multi-tenant: WebAuthn ceremonies, sessions, policied userop relay for every tenant |
-| **wallet-web** | `ghcr.io/appliedblockchain/giano-wallet-web` (nginx + React) | 8080 | one **per tenant on the stock UI** — the passkey popup origin; each needs its own TLS host (= that tenant's irreversible RP ID). Tenants bringing their own UI deploy their own SPA instead (reference: `e2e/wallet-byo/`) |
+| **wallet-web** | `ghcr.io/appliedblockchain/giano-wallet-web` (nginx + React) | 8080 | the passkey popup origin. Every tenant needs its own TLS host (= that tenant's irreversible RP ID), but **not** its own container: one per tenant, or one shared instance every tenant `CNAME`s to — see [§5.5a](#55a-two-topologies-per-tenant-container-or-shared-ui). Tenants bringing their own UI deploy their own SPA instead (reference: `e2e/wallet-byo/`) |
 | **ERC-4337 bundler** | `ghcr.io/appliedblockchain/giano-bundler` (Pimlico Alto) | 4337 | **yes** — needs a funded executor EOA; any ERC-4337 bundler works |
 | **EVM RPC** | public or your own node | — | **yes** — a keyless public endpoint works with Alto `--safe-mode false` |
 | **Deployed contracts** | factory + implementation (+ paymaster/test-ERC20 for demos) | — | **yes** — pre-deployed on chains 8453 / 84532 / 381185; deploy per-chain elsewhere |
@@ -436,9 +436,35 @@ CORS). Env: `GIANO_CHAIN_ID`, `GIANO_RPC_URL`, `GIANO_BUNDLER_URL`, `GIANO_WALLE
   the tenant's `walletOrigin` in `TENANTS_SEED`. WebAuthn requires a secure context.
 - The browser reads chain state directly from `GIANO_RPC_URL`, so it must be CORS-enabled and safe to
   expose (keyless public endpoint, or the bundler proxied same-origin).
-- **One wallet-web container per tenant** on the stock UI: `envsubst` renders each container's
-  `/config.json`, CSP and dApp allowlist at boot, so per-tenant isolation needs no code — just
-  per-tenant env.
+- **How many wallet-web containers you run is a topology choice**, not a fixed rule — one per
+  tenant, or one shared. See §5.5a immediately below.
+
+### 5.5a Two topologies: per-tenant container, or shared UI
+
+Every tenant must have its own TLS host, because that host is its RP ID. Whether each host is its
+own container is a separate question, and both answers are supported.
+
+| | **Per-tenant container** | **Shared UI + tenant `CNAME`** |
+| --- | --- | --- |
+| Shape | one wallet-web per tenant, each on that tenant's host | one wallet-web; each tenant `CNAME`s their wallet host to it |
+| `GIANO_RP_ID` | set to that tenant's host | **left unset** — the SPA derives it from `window.location.hostname` |
+| Per-tenant `/config.json` | yes — allowlist, brand, CSP rendered per container | no — one rendered config serves every host |
+| Cost per tenant | container + TLS host + ingress route + tenant row | TLS certificate + DNS record + tenant row |
+| dApp allowlist | per tenant, fail-closed, from env | **union across tenants** until wallet-api serves it per host |
+| Best for | a handful of tenants; strong per-tenant isolation; self-hosting one tenant | many tenants; onboarding that scales without a deploy |
+
+Both rely on the same server-side tenancy: wallet-api resolves each request's tenant from `Origin`
+(ceremonies) or `Host` (`/.well-known/webauthn`), so nothing about tenant isolation in the database,
+policy, quotas or credentials differs between them.
+
+The shared topology has one caveat that matters, and it is the reason to choose deliberately rather
+than by default: `allowedDappOrigins` and `branding` reach the SPA from `/config.json`, which is
+rendered per **container**. Shared, they become the union of every tenant's values — so tenant A's
+dApp can complete the popup handshake against tenant B's wallet host, and every tenant shows one
+brand. wallet-api stores `allowed_dapp_origins` per tenant but does not currently serve it to the
+SPA or enforce it server-side. **Until it does, run the shared topology only where one tenant is
+live** (as `specs/DEV-INFRASTRUCTURE.md` §15.4 and R9 record for the dev environment), or run a
+container per tenant.
 
 ### 5.5b Bring-your-own wallet UI (per tenant)
 
