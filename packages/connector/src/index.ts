@@ -6,6 +6,12 @@ export {
   type CreateGianoWalletProviderParams,
   type GianoWalletProvider,
 } from './thin/create-giano-wallet-provider';
-export { createGianoConnector, type CreateGianoConnectorParams, type GianoProviderLike, type SendTransactionFnParams } from './connector';
+export { createGianoConnector, UnsupportedChainSwitchError, type CreateGianoConnectorParams, type GianoProviderLike, type SendTransactionFnParams } from './connector';
 export { giano } from './gianoWallet';
-export { TransportError, TransportRpcError, RPC_ERRORS } from '@appliedblockchain/giano-wallet-transport';
+export {
+  HandshakeRefusedError,
+  RPC_ERRORS,
+  TransportError,
+  TransportRpcError,
+  UnsupportedChainError,
+} from '@appliedblockchain/giano-wallet-transport';

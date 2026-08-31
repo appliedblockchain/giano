@@ -1,6 +1,7 @@
 import { Badge, Box, Button, Container, Heading, HStack, Stack, Text } from '@chakra-ui/react';
 import { LuLogOut, LuWallet } from 'react-icons/lu';
 import { ClipboardIconButton, ClipboardRoot } from './components/ui/clipboard';
+import { CrossChainPanel } from './components/CrossChainPanel';
 import { Erc20Panel } from './components/Erc20Panel';
 import { SectionCard } from './components/SectionCard';
 import { SponsorshipPanel } from './components/SponsorshipPanel';
@@ -55,6 +56,7 @@ export function App() {
         {account ? (
           <>
             <WalletPanel account={account} />
+            <CrossChainPanel account={account} />
             <Erc20Panel account={account} defaultToken={config.defaultTokenAddress} />
             <SponsorshipPanel />
           </>

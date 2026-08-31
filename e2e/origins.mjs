@@ -62,8 +62,10 @@ export const ROUTES = [
   { name: 'wallet', port: 8081, kind: 'compose', what: "tenant stock's wallet-web" },
   { name: 'paymaster', port: 8083, kind: 'compose', what: 'paymaster admin console (read-only without a wallet)' },
   { name: 'api', port: 8080, kind: 'compose', what: 'wallet-api (public + admin)' },
-  { name: 'rpc', port: 8545, kind: 'compose', what: 'anvil devnet JSON-RPC' },
-  { name: 'bundler', port: 4337, kind: 'compose', what: 'alto ERC-4337 bundler' },
+  { name: 'rpc', port: 8545, kind: 'compose', what: 'anvil devnet JSON-RPC (chain A, 31337)' },
+  { name: 'bundler', port: 4337, kind: 'compose', what: 'alto ERC-4337 bundler (chain A)' },
+  { name: 'rpc-b', port: 8546, kind: 'compose', what: 'anvil devnet JSON-RPC (chain B, 31338)' },
+  { name: 'bundler-b', port: 4338, kind: 'compose', what: 'alto ERC-4337 bundler (chain B)' },
 ];
 
 const byName = new Map(ROUTES.map((route) => [route.name, route]));
@@ -101,5 +103,13 @@ export const ORIGINS = {
   api: originOf('api'),
   rpc: originOf('rpc'),
   bundler: originOf('bundler'),
+  rpcB: originOf('rpc-b'),
+  bundlerB: originOf('bundler-b'),
   paymasterAdmin: originOf('paymaster'),
+};
+
+/** The two chains the e2e stack runs (S10): distinct ids that cannot be confused. */
+export const CHAINS = {
+  a: { chainId: 31337, name: 'Devnet A', rpc: originOf('rpc') },
+  b: { chainId: 31338, name: 'Devnet B', rpc: originOf('rpc-b') },
 };

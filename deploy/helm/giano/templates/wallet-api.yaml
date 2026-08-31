@@ -31,14 +31,17 @@ spec:
               value: {{ .Values.config.rpName | quote }}
             - name: EXPECTED_ORIGINS
               value: {{ include "giano.expectedOrigins" . | quote }}
+            {{- if .Values.config.chains }}
+            # multi-chain: the closed list of served chains, one JSON document (MC-94)
+            - name: GIANO_CHAINS
+              value: {{ toJson .Values.config.chains | quote }}
+            {{- else }}
             - name: CHAIN_ID
               value: {{ .Values.config.chainId | quote }}
             - name: RPC_URL
               value: {{ .Values.config.rpcUrl | quote }}
             - name: BUNDLER_URL
               value: {{ .Values.config.bundlerUrl | default (printf "http://%s-bundler:4337" .Release.Name) | quote }}
-            - name: OPEN_REGISTRATION
-              value: {{ .Values.config.openRegistration | quote }}
             {{- with .Values.config.entryPointAddress }}
             - name: ENTRYPOINT_ADDRESS
               value: {{ . | quote }}
@@ -47,6 +50,9 @@ spec:
             - name: FACTORY_ADDRESS
               value: {{ . | quote }}
             {{- end }}
+            {{- end }}
+            - name: OPEN_REGISTRATION
+              value: {{ .Values.config.openRegistration | quote }}
             - name: CORS_ORIGINS
               value: {{ join "," .Values.config.corsOrigins | quote }}
           envFrom:

@@ -37,7 +37,13 @@ export type GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEn
    *          (the handler took care of that).
    */
   onCredentialCreated(credentialName: string, challenge: BufferSource, credential: Omit<PublicKeyCredential, 'toJSON'>): null | Hex | Promise<null | Hex>;
-  encodeUserId(id: string, gianoSmartWalletFactoryAddress: string, chainId: string, chainType: ChainType): BufferSource | Promise<BufferSource>;
+  /**
+   * Packs the WebAuthn user handle. Deliberately carries NO chain id (MC-78): the
+   * credential is valid on every chain the deployment serves, so every field must be
+   * chain-independent — the factory address is identical everywhere (MC-19) and
+   * `chainType` names the chain family, not a chain.
+   */
+  encodeUserId(id: string, gianoSmartWalletFactoryAddress: string, chainType: ChainType): BufferSource | Promise<BufferSource>;
   decodeUserId(userId: BufferSource): DecodedUserId | Promise<DecodedUserId>;
   onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
   getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<XYVector>;
@@ -48,9 +54,13 @@ export type GianoProviderInjection<EPVersion extends EntryPointVersion = GianoEn
    * instead of sending them directly to the bundler.
    *
    * @param signedUserOp - The complete signed user operation ready for submission
+   * @param chainId - The chain the operation was built and signed FOR. The injection is
+   *                  chain-agnostic (it holds the wallet-api session, MC-76), so the chain
+   *                  must travel with each submission — the backend resolves it against its
+   *                  configured registry before any work happens (MC-51).
    * @returns Promise that resolves to the user operation hash
    */
-  submitUserOperation?: (signedUserOp: UserOperation<EPVersion>) => Promise<Hash>;
+  submitUserOperation?: (signedUserOp: UserOperation<EPVersion>, chainId: number) => Promise<Hash>;
 };
 
 export const isGianoProviderInjection = (injection: unknown): injection is GianoProviderInjection => {

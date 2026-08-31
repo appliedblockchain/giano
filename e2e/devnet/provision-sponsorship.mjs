@@ -28,6 +28,14 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const apiUrl = (process.env.WALLET_API_URL ?? 'http://api.localhost').replace(/\/$/, '');
 const addresses = JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
 
+/**
+ * Every chain the stack sponsors on, provisioned identically (MC-117) so a sponsored
+ * transaction can be exercised on either without per-test setup. Sponsorship rules are per
+ * (tenant, chain) and never inherited (MC-67), so each chain gets its own explicit PUT —
+ * which is also exactly what enabling a chain looks like for a real tenant.
+ */
+const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? '31337,31338').split(',').map((id) => Number(id.trim()));
+
 /** Admin keys as `TENANTS_SEED` provisions them in deploy/docker-compose.e2e.yml. */
 const TENANT_ADMIN_KEYS = {
   stock: process.env.STOCK_ADMIN_KEY ?? 'e2e-admin-key-stock',
@@ -88,6 +96,7 @@ if (ready.sponsorship !== 'ok') {
 
 let failures = 0;
 
+for (const chainId of CHAIN_IDS) {
 for (const tenant of addresses.tenants) {
   const adminKey = TENANT_ADMIN_KEYS[tenant.slug];
   if (!adminKey) {
@@ -97,48 +106,49 @@ for (const tenant of addresses.tenants) {
   }
 
   const config = demoConfig();
-  const write = await fetch(`${apiUrl}/v1/admin/sponsorship`, {
+  const write = await fetch(`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${adminKey}` },
     body: JSON.stringify(config),
   });
 
   if (!write.ok) {
-    console.error(`  ✗ ${tenant.slug}: PUT /v1/admin/sponsorship returned ${write.status} ${await write.text()}`);
+    console.error(`  ✗ ${tenant.slug}@${chainId}: PUT /v1/admin/sponsorship returned ${write.status} ${await write.text()}`);
     failures += 1;
     continue;
   }
-  console.log(`  ✓ ${tenant.slug}: sponsorship rules installed`);
+  console.log(`  ✓ ${tenant.slug}@${chainId}: sponsorship rules installed`);
 
   // Read back rather than trusting the write: the stored value is re-validated on read, and a row
   // that no longer parses means no sponsorship — which is exactly the silent failure this whole
   // step exists to prevent.
-  const readBack = await fetch(`${apiUrl}/v1/admin/sponsorship`, { headers: { authorization: `Bearer ${adminKey}` } });
+  const readBack = await fetch(`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`, { headers: { authorization: `Bearer ${adminKey}` } });
   const stored = await readBack.json();
   if (!stored.configured || !stored.valid || stored.config.enabled !== true) {
-    console.error(`  ✗ ${tenant.slug}: read-back says configured=${stored.configured} valid=${stored.valid}`);
+    console.error(`  ✗ ${tenant.slug}@${chainId}: read-back says configured=${stored.configured} valid=${stored.valid}`);
     failures += 1;
     continue;
   }
 
-  const balance = await fetch(`${apiUrl}/v1/admin/sponsorship/balance`, { headers: { authorization: `Bearer ${adminKey}` } });
+  const balance = await fetch(`${apiUrl}/v1/admin/sponsorship/balance?chainId=${chainId}`, { headers: { authorization: `Bearer ${adminKey}` } });
   if (!balance.ok) {
-    console.error(`  ✗ ${tenant.slug}: GET /v1/admin/sponsorship/balance returned ${balance.status}`);
+    console.error(`  ✗ ${tenant.slug}@${chainId}: GET /v1/admin/sponsorship/balance returned ${balance.status}`);
     failures += 1;
     continue;
   }
   const position = await balance.json();
   if (!position.registered) {
-    console.error(`  ✗ ${tenant.slug}: not registered on the paymaster at ${position.paymasterAddress}`);
+    console.error(`  ✗ ${tenant.slug}@${chainId}: not registered on the paymaster at ${position.paymasterAddress}`);
     failures += 1;
     continue;
   }
   if (BigInt(position.availableWei) === 0n) {
-    console.error(`  ✗ ${tenant.slug}: registered but holds no available balance — nothing can be sponsored`);
+    console.error(`  ✗ ${tenant.slug}@${chainId}: registered but holds no available balance — nothing can be sponsored`);
     failures += 1;
     continue;
   }
   console.log(`    balance ${position.balanceWei} wei, available ${position.availableWei} wei, fee ${position.feeWei} wei`);
+}
 }
 
 if (failures > 0) {
@@ -146,4 +156,4 @@ if (failures > 0) {
   process.exit(1);
 }
 
-console.log('\nSponsorship provisioned for every demo tenant.');
+console.log(`\nSponsorship provisioned for every demo tenant on chains ${CHAIN_IDS.join(', ')}.`);

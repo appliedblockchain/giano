@@ -75,22 +75,45 @@ describe('mergePolicy', () => {
   };
 
   it('overrides only the fields present in the tenant policy', () => {
-    const merged = mergePolicy(defaults, { maxCallGas: '1000000', allowedPaymasters: ['0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'] });
+    const merged = mergePolicy(defaults, { maxCallGas: '1000000' }, 31337);
     expect(merged.maxCallGas).toBe(1_000_000n);
     expect(merged.maxVerificationGas).toBe(5_000_000n);
-    expect(merged.allowedPaymasters).toEqual(['0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']); // lowercased
     expect(merged.allowedTargets).toEqual([]);
   });
 
-  it('falls back to the defaults for an empty or unparseable stored policy', () => {
-    expect(mergePolicy(defaults, {})).toMatchObject({ maxCallGas: 5_000_000n });
-    expect(mergePolicy(defaults, { maxCallGas: 12345 })).toMatchObject({ maxCallGas: 5_000_000n }); // wrong type → fail safe
-    expect(mergePolicy(defaults, null)).toMatchObject({ maxCallGas: 5_000_000n });
+  it('address-valued policy resolves from perChain[chainId] only — never across chains (MC-61)', () => {
+    const policy = {
+      perChain: {
+        '31337': { allowedPaymasters: ['0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'], maxCallGas: '777' },
+        '31338': { allowedTargets: ['0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'] },
+      },
+    };
+    const onA = mergePolicy(defaults, policy, 31337);
+    expect(onA.allowedPaymasters).toEqual(['0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']); // lowercased
+    expect(onA.allowedTargets).toEqual([]); // 31338's targets do NOT leak to 31337
+    expect(onA.maxCallGas).toBe(777n);
+    const onB = mergePolicy(defaults, policy, 31338);
+    expect(onB.allowedTargets).toEqual(['0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']);
+    expect(onB.allowedPaymasters).toEqual([]); // 31337's paymasters do NOT leak to 31338
+    expect(onB.maxCallGas).toBe(5_000_000n); // numeric caps fall back per chain
   });
 
-  it('surfaces the per-tenant relay rate limit override', () => {
-    expect(mergePolicy(defaults, { relayRateLimitPerMinute: 7 }).relayRateLimitPerMinute).toBe(7);
-    expect(mergePolicy(defaults, {}).relayRateLimitPerMinute).toBeUndefined();
+  it('the schema cannot express a chain-agnostic address allowlist (S6)', () => {
+    // allowedTargets at the tenant BASE level is rejected outright — the violation is
+    // unrepresentable rather than prevented by a resolution rule.
+    const merged = mergePolicy(defaults, { allowedTargets: ['0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'] }, 31337);
+    expect(merged.allowedTargets).toEqual([]); // unparseable → fail safe to defaults
+  });
+
+  it('falls back to the defaults for an empty or unparseable stored policy', () => {
+    expect(mergePolicy(defaults, {}, 31337)).toMatchObject({ maxCallGas: 5_000_000n });
+    expect(mergePolicy(defaults, { maxCallGas: 12345 }, 31337)).toMatchObject({ maxCallGas: 5_000_000n }); // wrong type → fail safe
+    expect(mergePolicy(defaults, null, 31337)).toMatchObject({ maxCallGas: 5_000_000n });
+  });
+
+  it('surfaces the per-tenant relay rate limit override — shared across chains (MC-63)', () => {
+    expect(mergePolicy(defaults, { relayRateLimitPerMinute: 7 }, 31337).relayRateLimitPerMinute).toBe(7);
+    expect(mergePolicy(defaults, {}, 31337).relayRateLimitPerMinute).toBeUndefined();
   });
 });
 

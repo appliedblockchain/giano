@@ -10,7 +10,7 @@ import {
 } from '@appliedblockchain/giano-wallet-core';
 import { createPublicClient, defineChain, http } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
-import type { WalletConfig } from './config';
+import type { WalletChainConfig, WalletConfig } from './config';
 
 const USER_ID_KEY = 'giano:external-user-id';
 const SESSION_KEY = 'giano:session-token';
@@ -29,21 +29,22 @@ function getOrCreateExternalUserId(): string {
 }
 
 /**
- * Chooses how gas is paid for.
+ * Chooses how gas is paid for ON ONE CHAIN — sponsorship is configured per chain (MC-65)
+ * and a pre-flight answer is never reused across chains (MC-71).
  *
  * `off` returns nothing at all, so the wallet behaves exactly as the unsponsored path does today
  * rather than erroring (R-09). `test-paymaster` is the permissive shim, which needs no service
  * because it approves everything — development and tests only. `service` speaks ERC-7677 to the
  * sponsorship service, which decides per transaction and bills the tenant.
  */
-function paymasterHooks(config: WalletConfig) {
-  if (config.sponsorship === 'off') return {};
+function paymasterHooks(chain: WalletChainConfig) {
+  if (chain.sponsorship === 'off') return {};
 
-  if (config.sponsorship === 'test-paymaster') {
-    if (!config.testPaymasterAddress) {
-      throw new Error("sponsorship is 'test-paymaster' but no testPaymasterAddress is configured");
+  if (chain.sponsorship === 'test-paymaster') {
+    if (!chain.testPaymasterAddress) {
+      throw new Error(`chain ${chain.chainId}: sponsorship is 'test-paymaster' but no testPaymasterAddress is configured`);
     }
-    const paymaster = config.testPaymasterAddress;
+    const paymaster = chain.testPaymasterAddress;
     // The permissive paymaster sponsors everything, so the remaining fields are not needed.
     return {
       paymaster: {
@@ -54,8 +55,8 @@ function paymasterHooks(config: WalletConfig) {
   }
 
   const client = createErc7677PaymasterClient({
-    url: config.paymasterServiceUrl,
-    chainId: config.chainId,
+    url: chain.paymasterServiceUrl,
+    chainId: chain.chainId,
     getSessionToken: () => localStorage.getItem(SESSION_KEY),
   });
   return {
@@ -85,26 +86,34 @@ export type WalletRuntime = {
   provider: GianoProvider;
   injection: WalletApiInjection;
   chainId: number;
+  /** Human-readable — what consent screens show (MC-81). */
+  chainName: string;
   externalUserId: string;
+  /** True when the smart account has code on THIS chain (deployment is lazy and per chain, MC-29/MC-30). */
+  isAccountDeployed: (address: `0x${string}`) => Promise<boolean>;
   /**
    * Asks the rules engine whether this transaction would be sponsored — *before* the user is
-   * offered an approve button, and therefore before any passkey prompt.
-   *
-   * Today the consent gate shows "Approve" first and builds the operation afterwards, so a
-   * refusal discovered while building would arrive after the user had already approved. Asking
-   * here is what makes a refusal reach them in time.
+   * offered an approve button, and therefore before any passkey prompt. Evaluated for THIS
+   * chain, by this chain's runtime; the answer is never reused across chains (MC-71).
    */
   checkSponsorship: (tx: TransactionRequest) => Promise<SponsorshipPreflight>;
 };
 
-export function createWalletRuntime(config: WalletConfig): WalletRuntime {
-  const chain = defineChain({
-    id: config.chainId,
-    name: `chain-${config.chainId}`,
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: { default: { http: [config.rpcUrl] } },
-  });
+export type WalletRuntimes = {
+  /** Built on first use, then memoised (MC-44): a session that uses one chain costs one chain. */
+  runtimeFor: (chainId: number) => WalletRuntime;
+  servedChainIds: readonly number[];
+  descriptorFor: (chainId: number) => WalletChainConfig;
+};
 
+/**
+ * One runtime per served chain (MC-43): its own viem chain, public client, bundler client,
+ * paymaster hooks, fee estimator, GianoProvider and sponsorship pre-flight. Nothing is
+ * shared between chains except the injection — which is chain-agnostic, holds the
+ * wallet-api session (MC-76), and must NOT be duplicated: duplicating it would duplicate
+ * the session.
+ */
+export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
   const externalUserId = getOrCreateExternalUserId();
 
   const injection = createWalletApiInjection({
@@ -118,10 +127,40 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
     },
   });
 
+  const byId = new Map(config.chains.map((chain) => [chain.chainId, chain]));
+  const runtimes = new Map<number, WalletRuntime>();
+
+  const descriptorFor = (chainId: number): WalletChainConfig => {
+    const descriptor = byId.get(chainId);
+    if (!descriptor) {
+      throw new Error(`this wallet does not serve chain ${chainId} (served: ${[...byId.keys()].join(', ')})`);
+    }
+    return descriptor;
+  };
+
+  const runtimeFor = (chainId: number): WalletRuntime => {
+    const existing = runtimes.get(chainId);
+    if (existing) return existing;
+    const runtime = buildRuntime(descriptorFor(chainId), injection, externalUserId);
+    runtimes.set(chainId, runtime);
+    return runtime;
+  };
+
+  return { runtimeFor, servedChainIds: config.chains.map((chain) => chain.chainId), descriptorFor };
+}
+
+function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInjection, externalUserId: string): WalletRuntime {
+  const chain = defineChain({
+    id: chainConfig.chainId,
+    name: chainConfig.name,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [chainConfig.rpcUrl] } },
+  });
+
   // Real fee estimation from the chain — without this, giano-wallet-core falls back to a
   // hardcoded 200 gwei maxFeePerGas, which on low-fee chains (e.g. Sepolia ~1 gwei) inflates
   // the required paymaster prefund ~180× and trips "AA31 paymaster deposit too low".
-  const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) });
+  const publicClient = createPublicClient({ chain, transport: http(chainConfig.rpcUrl) });
   const estimateFeesPerGas = async () => {
     try {
       const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
@@ -135,7 +174,7 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
 
   const bundler = createBundlerClient({
     chain,
-    transport: http(config.bundlerUrl),
+    transport: http(chainConfig.bundlerUrl),
     /*
      * Fees must be resolved *before* the paymaster hooks run, not after.
      *
@@ -146,25 +185,24 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
      * paymaster for anything.
      */
     userOperation: { estimateFeesPerGas: async () => estimateFeesPerGas() },
-    ...paymasterHooks(config),
+    ...paymasterHooks(chainConfig),
   });
 
-
   const { gianoProvider } = createGianoProvider({
-    initialChainId: config.chainId,
-    bundler,
+    initialChainId: chainConfig.chainId,
+    bundlers: { [chainConfig.chainId]: bundler },
     chains: [chain],
-    transports: { [config.chainId]: http(config.rpcUrl) },
+    transports: { [chainConfig.chainId]: http(chainConfig.rpcUrl) },
     injection,
-    gianoSmartWalletFactoryAddress: config.factoryAddress,
+    factoryAddresses: { [chainConfig.chainId]: chainConfig.factoryAddress },
     estimateFeesPerGas,
   });
 
   const sponsorshipClient =
-    config.sponsorship === 'service'
+    chainConfig.sponsorship === 'service'
       ? createErc7677PaymasterClient({
-          url: config.paymasterServiceUrl,
-          chainId: config.chainId,
+          url: chainConfig.paymasterServiceUrl,
+          chainId: chainConfig.chainId,
           getSessionToken: () => localStorage.getItem(SESSION_KEY),
         })
       : undefined;
@@ -206,7 +244,20 @@ export function createWalletRuntime(config: WalletConfig): WalletRuntime {
     }
   };
 
-  return { provider: gianoProvider, injection, chainId: config.chainId, externalUserId, checkSponsorship };
+  const isAccountDeployed = async (address: `0x${string}`): Promise<boolean> => {
+    const code = await publicClient.getCode({ address }).catch(() => undefined);
+    return !!code && code !== '0x';
+  };
+
+  return {
+    provider: gianoProvider,
+    injection,
+    chainId: chainConfig.chainId,
+    chainName: chainConfig.name,
+    externalUserId,
+    isAccountDeployed,
+    checkSponsorship,
+  };
 }
 
 function toPreflight(check: SponsorshipCheck): SponsorshipPreflight {

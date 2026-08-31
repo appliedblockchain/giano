@@ -1,4 +1,10 @@
-import { gianoAddresses } from '@appliedblockchain/giano-contracts';
+import {
+  backendChainDescriptorSchema,
+  defaultChainName,
+  gianoAddresses,
+  validateChainList,
+  type BackendChainDescriptor,
+} from '@appliedblockchain/giano-contracts';
 import { z } from 'zod';
 import { tenantsSeedSchema } from './services/tenants.js';
 
@@ -9,6 +15,36 @@ const csv = (value: string) =>
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+
+/**
+ * A chain the deployment serves, with every address resolved. This is what the chain
+ * registry is built from: one entry per chain, and NOTHING chain-bound lives outside it.
+ */
+export type ResolvedChain = {
+  chainId: number;
+  /** Human-readable — consent screens and operators never see a bare id (MC-81). */
+  name: string;
+  rpcUrl: string;
+  bundlerUrl: string;
+  entryPoint: `0x${string}`;
+  factory: `0x${string}`;
+  sponsorshipPaymaster?: `0x${string}`;
+  /**
+   * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
+   * address denotes different contracts on different chains, so a chain-agnostic address
+   * allowlist is not expressible (MC-61).
+   */
+  policy: {
+    maxCallGas?: bigint;
+    maxVerificationGas?: bigint;
+    maxFeePerGas?: bigint;
+    maxPriorityFeePerGas?: bigint;
+    /** lowercase; empty = no restriction */
+    allowedTargets: string[];
+    /** lowercase; empty = no restriction */
+    allowedPaymasters: string[];
+  };
+};
 
 /**
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
@@ -68,10 +104,44 @@ const envSchema = z
         return parsed.data;
       }),
 
-    CHAIN_ID: z.coerce.number().int().positive(),
-    RPC_URL: z.string().url(),
-    BUNDLER_URL: z.string().url(),
-    /** Defaulted from the contracts address registry for CHAIN_ID when unset. */
+    /**
+     * The chains this deployment serves, as a JSON array of chain descriptors (MC-46):
+     * `[{ "chainId": 8453, "name": "Base", "rpcUrl": "…", "bundlerUrl": "…" }, …]`.
+     * Mutually exclusive with the single-chain scalar shorthand below: supplying both is a
+     * configuration ERROR, not a merge — silent precedence between two ways of saying the
+     * same thing is how a deployment ends up on a chain nobody chose (§3.4).
+     */
+    GIANO_CHAINS: z
+      .string()
+      .optional()
+      .transform((raw, ctx) => {
+        if (!raw) return undefined;
+        let json: unknown;
+        try {
+          json = JSON.parse(raw);
+        } catch (error) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `not valid JSON: ${(error as Error).message}` });
+          return z.NEVER;
+        }
+        const parsed = z.array(backendChainDescriptorSchema).safeParse(json);
+        if (!parsed.success) {
+          for (const issue of parsed.error.issues) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${issue.path.join('.') || '(root)'}: ${issue.message}` });
+          }
+          return z.NEVER;
+        }
+        return parsed.data;
+      }),
+
+    /**
+     * Single-chain shorthand (MC-47, MC-88): the complete configuration for the on-premises
+     * profile, normalised internally into a one-entry chain list. An operator serving one
+     * chain never needs to know the multi-chain shape exists.
+     */
+    CHAIN_ID: z.coerce.number().int().positive().optional(),
+    RPC_URL: z.string().url().optional(),
+    BUNDLER_URL: z.string().url().optional(),
+    /** Single-chain shorthand only; defaulted from the contracts address registry for CHAIN_ID. */
     ENTRYPOINT_ADDRESS: addressSchema.optional(),
     FACTORY_ADDRESS: addressSchema.optional(),
 
@@ -164,14 +234,102 @@ const envSchema = z
       .refine((v) => v === undefined || v.length >= 16, 'must be at least 16 characters'),
   })
   .superRefine((env, ctx) => {
-    const deployment = gianoAddresses[env.CHAIN_ID];
+    const scalarsPresent = env.CHAIN_ID !== undefined || env.RPC_URL !== undefined || env.BUNDLER_URL !== undefined;
+
+    if (env.GIANO_CHAINS && scalarsPresent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GIANO_CHAINS'],
+        message:
+          'GIANO_CHAINS and the CHAIN_ID/RPC_URL/BUNDLER_URL shorthand are mutually exclusive — supply one, not both. ' +
+          'Silent precedence between two ways of saying the same thing is how a deployment ends up on a chain nobody chose.',
+      });
+      return;
+    }
+    if (!env.GIANO_CHAINS && !scalarsPresent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GIANO_CHAINS'],
+        message: 'either GIANO_CHAINS (a JSON list of chains) or CHAIN_ID + RPC_URL + BUNDLER_URL must be set',
+      });
+      return;
+    }
+
+    if (env.GIANO_CHAINS) {
+      // Address-valued scalars cannot be chain-agnostic (MC-61): in multi-chain mode they
+      // belong inside each descriptor, never as deployment-wide environment variables.
+      for (const [key, present] of [
+        ['ENTRYPOINT_ADDRESS', env.ENTRYPOINT_ADDRESS !== undefined],
+        ['FACTORY_ADDRESS', env.FACTORY_ADDRESS !== undefined],
+        ['SPONSORSHIP_PAYMASTER_ADDRESS', env.SPONSORSHIP_PAYMASTER_ADDRESS !== undefined],
+        ['USEROP_ALLOWED_TARGETS', env.USEROP_ALLOWED_TARGETS.length > 0],
+        ['USEROP_ALLOWED_PAYMASTERS', env.USEROP_ALLOWED_PAYMASTERS.length > 0],
+      ] as const) {
+        if (present) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is single-chain shorthand — with GIANO_CHAINS, set the equivalent field inside each chain descriptor`,
+          });
+        }
+      }
+
+      const { errors } = validateChainList(env.GIANO_CHAINS);
+      for (const message of errors) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['GIANO_CHAINS'], message });
+      }
+      for (const descriptor of env.GIANO_CHAINS) {
+        const registry = gianoAddresses[descriptor.chainId];
+        if (!descriptor.entryPoint && !registry) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['GIANO_CHAINS'],
+            message: `chain ${descriptor.chainId}: entryPoint required — the chain is not in the giano-contracts address registry`,
+          });
+        }
+        if (!descriptor.factory && !registry) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['GIANO_CHAINS'],
+            message: `chain ${descriptor.chainId}: factory required — the chain is not in the giano-contracts address registry`,
+          });
+        }
+      }
+    } else {
+      if (env.CHAIN_ID === undefined || !env.RPC_URL || !env.BUNDLER_URL) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CHAIN_ID'],
+          message: 'the single-chain shorthand needs all of CHAIN_ID, RPC_URL and BUNDLER_URL',
+        });
+        return;
+      }
+      const deployment = gianoAddresses[env.CHAIN_ID];
+      if (!env.ENTRYPOINT_ADDRESS && !deployment) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['ENTRYPOINT_ADDRESS'],
+          message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
+        });
+      }
+      if (!env.FACTORY_ADDRESS && !deployment) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['FACTORY_ADDRESS'],
+          message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
+        });
+      }
+    }
 
     if (env.SPONSORSHIP_ENABLED) {
-      if (!env.SPONSORSHIP_PAYMASTER_ADDRESS && !deployment?.sponsorshipPaymaster) {
+      const anyPaymaster = env.GIANO_CHAINS
+        ? env.GIANO_CHAINS.some((d) => d.sponsorshipPaymaster ?? gianoAddresses[d.chainId]?.sponsorshipPaymaster)
+        : Boolean(env.SPONSORSHIP_PAYMASTER_ADDRESS ?? (env.CHAIN_ID !== undefined && gianoAddresses[env.CHAIN_ID]?.sponsorshipPaymaster));
+      if (!anyPaymaster) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['SPONSORSHIP_PAYMASTER_ADDRESS'],
-          message: `required: chain ${env.CHAIN_ID} has no sponsorship paymaster in the contracts registry`,
+          message: 'SPONSORSHIP_ENABLED=true but no configured chain resolves a sponsorship paymaster (descriptor field or contracts registry)',
         });
       }
       if (!env.SPONSORSHIP_SIGNER_KEY_REF) {
@@ -214,31 +372,50 @@ const envSchema = z
         });
       }
     }
-    if (!env.ENTRYPOINT_ADDRESS && !deployment) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['ENTRYPOINT_ADDRESS'],
-        message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
-      });
-    }
-    if (!env.FACTORY_ADDRESS && !deployment) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['FACTORY_ADDRESS'],
-        message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
-      });
-    }
   })
   .transform((env) => {
-    const deployment = gianoAddresses[env.CHAIN_ID];
-    return {
-      ...env,
-      ENTRYPOINT_ADDRESS: (env.ENTRYPOINT_ADDRESS ?? deployment!.entryPoint) as `0x${string}`,
-      FACTORY_ADDRESS: (env.FACTORY_ADDRESS ?? deployment!.factory) as `0x${string}`,
-      SPONSORSHIP_PAYMASTER_ADDRESS: (env.SPONSORSHIP_PAYMASTER_ADDRESS ?? deployment?.sponsorshipPaymaster) as
-        | `0x${string}`
-        | undefined,
+    const toResolved = (descriptor: BackendChainDescriptor): ResolvedChain => {
+      const registry = gianoAddresses[descriptor.chainId];
+      return {
+        chainId: descriptor.chainId,
+        name: descriptor.name,
+        rpcUrl: descriptor.rpcUrl,
+        bundlerUrl: descriptor.bundlerUrl,
+        entryPoint: (descriptor.entryPoint ?? registry!.entryPoint) as `0x${string}`,
+        factory: (descriptor.factory ?? registry!.factory) as `0x${string}`,
+        sponsorshipPaymaster: (descriptor.sponsorshipPaymaster ?? registry?.sponsorshipPaymaster) as `0x${string}` | undefined,
+        policy: {
+          maxCallGas: descriptor.policy?.maxCallGas ? BigInt(descriptor.policy.maxCallGas) : undefined,
+          maxVerificationGas: descriptor.policy?.maxVerificationGas ? BigInt(descriptor.policy.maxVerificationGas) : undefined,
+          maxFeePerGas: descriptor.policy?.maxFeePerGas ? BigInt(descriptor.policy.maxFeePerGas) : undefined,
+          maxPriorityFeePerGas: descriptor.policy?.maxPriorityFeePerGas ? BigInt(descriptor.policy.maxPriorityFeePerGas) : undefined,
+          allowedTargets: (descriptor.policy?.allowedTargets ?? []).map((a) => a.toLowerCase()),
+          allowedPaymasters: (descriptor.policy?.allowedPaymasters ?? []).map((a) => a.toLowerCase()),
+        },
+      };
     };
+
+    // Single-chain scalars normalise into a one-entry list (MC-132): single-chain is the
+    // degenerate case of N, not a separate mode.
+    const CHAINS: ResolvedChain[] = env.GIANO_CHAINS
+      ? env.GIANO_CHAINS.map(toResolved)
+      : [
+          toResolved({
+            chainId: env.CHAIN_ID!,
+            name: defaultChainName(env.CHAIN_ID!),
+            rpcUrl: env.RPC_URL!,
+            bundlerUrl: env.BUNDLER_URL!,
+            entryPoint: env.ENTRYPOINT_ADDRESS as `0x${string}` | undefined,
+            factory: env.FACTORY_ADDRESS as `0x${string}` | undefined,
+            sponsorshipPaymaster: env.SPONSORSHIP_PAYMASTER_ADDRESS as `0x${string}` | undefined,
+            policy: {
+              allowedTargets: env.USEROP_ALLOWED_TARGETS as `0x${string}`[],
+              allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS as `0x${string}`[],
+            },
+          }),
+        ];
+
+    return { ...env, CHAINS };
   });
 
 export type AppConfig = z.infer<typeof envSchema>;

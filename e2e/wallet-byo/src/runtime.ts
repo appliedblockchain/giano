@@ -10,7 +10,7 @@ import {
 } from '@appliedblockchain/giano-wallet-core';
 import { createPublicClient, defineChain, http } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
-import { CONFIG } from './config';
+import { CONFIG, type ByoChainConfig } from './config';
 
 // Same keys as the stock wallet-web — localStorage is origin-partitioned anyway, and
 // keeping the names lets the tenant-isolation suite force a cross-tenant external-id
@@ -38,6 +38,8 @@ export type TransactionRequest = { to?: `0x${string}`; value?: `0x${string}` | b
 export type WalletRuntime = {
   provider: GianoProvider;
   injection: WalletApiInjection;
+  chainId: number;
+  chainName: string;
   /**
    * Deliberately duplicated from the stock wallet rather than shared: the pre-approval refusal is
    * wallet-side behaviour, and a BYO tenant has to get it right in its own UI. Having the
@@ -47,16 +49,17 @@ export type WalletRuntime = {
   checkSponsorship: (tx: TransactionRequest) => Promise<SponsorshipPreflight>;
 };
 
-const sponsorshipClient =
-  CONFIG.sponsorship === 'service'
+function sponsorshipClientFor(chainConfig: ByoChainConfig) {
+  return CONFIG.sponsorship === 'service'
     ? createErc7677PaymasterClient({
         url: CONFIG.paymasterServiceUrl,
-        chainId: CONFIG.chainId,
+        chainId: chainConfig.chainId,
         getSessionToken: () => localStorage.getItem(SESSION_KEY),
       })
     : undefined;
+}
 
-function paymasterHooks() {
+function paymasterHooks(sponsorshipClient: ReturnType<typeof sponsorshipClientFor>) {
   if (CONFIG.sponsorship === 'off') return {};
   if (CONFIG.sponsorship === 'test-paymaster') {
     const paymaster = CONFIG.testPaymasterAddress!;
@@ -75,15 +78,12 @@ function paymasterHooks() {
   };
 }
 
-/** Vanilla-TS port of services/wallet-web/src/wallet.ts — the whole SDK surface a BYO UI needs. */
-export function createWalletRuntime(): WalletRuntime {
-  const chain = defineChain({
-    id: CONFIG.chainId,
-    name: `chain-${CONFIG.chainId}`,
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: { default: { http: [CONFIG.rpcUrl] } },
-  });
-
+/**
+ * One runtime per served chain, resolved lazily by the negotiated chain — same shape as
+ * the stock wallet's `runtimeFor` (MC-43, MC-45). The injection is shared: it holds the
+ * chain-agnostic wallet-api session (MC-76) and must not be duplicated.
+ */
+export function createWalletRuntimes(): { runtimeFor: (chainId: number) => WalletRuntime; servedChainIds: number[] } {
   const injection = createWalletApiInjection({
     apiUrl: CONFIG.walletApiUrl,
     externalUserId: getOrCreateExternalUserId(),
@@ -94,12 +94,38 @@ export function createWalletRuntime(): WalletRuntime {
       else localStorage.removeItem(SESSION_KEY);
     },
   });
+  const runtimes = new Map<number, WalletRuntime>();
+  return {
+    servedChainIds: CONFIG.chains.map((chain) => chain.chainId),
+    runtimeFor(chainId: number) {
+      const existing = runtimes.get(chainId);
+      if (existing) return existing;
+      const chainConfig = CONFIG.chains.find((chain) => chain.chainId === chainId);
+      if (!chainConfig) throw new Error(`this wallet does not serve chain ${chainId}`);
+      const runtime = createWalletRuntime(chainConfig, injection);
+      runtimes.set(chainId, runtime);
+      return runtime;
+    },
+  };
+}
+
+/** Vanilla-TS port of services/wallet-web/src/wallet.ts — the whole SDK surface a BYO UI needs. */
+export function createWalletRuntime(chainConfig: ByoChainConfig, injection: WalletApiInjection): WalletRuntime {
+  const rpcUrl = `${window.location.origin}${chainConfig.rpcPath}`;
+  const bundlerUrl = `${window.location.origin}${chainConfig.bundlerPath}`;
+  const sponsorshipClient = sponsorshipClientFor(chainConfig);
+  const chain = defineChain({
+    id: chainConfig.chainId,
+    name: chainConfig.name,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] } },
+  });
 
   // Real fee estimation from the chain — without this, giano-wallet-core falls back to a
   // hardcoded 200 gwei maxFeePerGas, which on low-fee chains inflates the required
   // paymaster prefund ~180× and trips "AA31 paymaster deposit too low". The easiest
   // thing for a BYO UI to lose, and the most important to keep.
-  const publicClient = createPublicClient({ chain, transport: http(CONFIG.rpcUrl) });
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
   const estimateFeesPerGas = async () => {
     try {
       const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
@@ -112,7 +138,7 @@ export function createWalletRuntime(): WalletRuntime {
 
   const bundler = createBundlerClient({
     chain,
-    transport: http(CONFIG.bundlerUrl),
+    transport: http(bundlerUrl),
     /*
      * Fees must be resolved *before* the paymaster hooks run, not after.
      *
@@ -123,17 +149,17 @@ export function createWalletRuntime(): WalletRuntime {
      * paymaster for anything.
      */
     userOperation: { estimateFeesPerGas: async () => estimateFeesPerGas() },
-    ...paymasterHooks(),
+    ...paymasterHooks(sponsorshipClient),
   });
 
 
   const { gianoProvider } = createGianoProvider({
-    initialChainId: CONFIG.chainId,
-    bundler,
+    initialChainId: chainConfig.chainId,
+    bundlers: { [chainConfig.chainId]: bundler },
     chains: [chain],
-    transports: { [CONFIG.chainId]: http(CONFIG.rpcUrl) },
+    transports: { [chainConfig.chainId]: http(rpcUrl) },
     injection,
-    gianoSmartWalletFactoryAddress: CONFIG.factoryAddress,
+    factoryAddresses: { [chainConfig.chainId]: CONFIG.factoryAddress },
     estimateFeesPerGas,
   });
 
@@ -163,7 +189,7 @@ export function createWalletRuntime(): WalletRuntime {
     }
   };
 
-  return { provider: gianoProvider, injection, checkSponsorship };
+  return { provider: gianoProvider, injection, chainId: chainConfig.chainId, chainName: chainConfig.name, checkSponsorship };
 }
 
 function toPreflight(check: SponsorshipCheck): SponsorshipPreflight {
