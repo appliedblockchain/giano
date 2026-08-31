@@ -47,27 +47,36 @@ One AWS account region hosting one Giano deployment, serving **five public hostn
 load balancer**, backed by **five Fargate services** and **one RDS instance**, provisioned entirely
 by Terraform from a root module in this repository.
 
+The hostnames divide by **owner**, and that division is the architecture:
+
 ```
-wallet.dev.giano.<domain>          Giano's wallet UI — the CNAME target. NOT an RP ID.
-wallet-example.dev.giano.<domain>  the example tenant's wallet origin — passkeys live here (RP ID).
-                                   CNAME → wallet.dev.giano.<domain>
-api.dev.giano.<domain>             wallet-api, shared by every tenant (also proxied same-origin
-                                   under each wallet host's /api)
-app.dev.giano.<domain>             the demo dApp — services/custom-example
+# Giano's own infrastructure — shared by every tenant, and never a relying party
+wallet.dev.giano.<domain>          the shared wallet UI. The CNAME target. NOT an RP ID.
+api.dev.giano.<domain>             wallet-api (also proxied same-origin under each
+                                   wallet host's /api)
 paymaster.dev.giano.<domain>       the paymaster operator console
+
+# Tenant "example" — our own demo, and a first-class tenant in every other respect
+example.dev.giano.<domain>         the app itself — services/custom-example
+wallet.example.dev.giano.<domain>  its wallet origin — passkeys live here (RP ID)
+                                   CNAME → wallet.dev.giano.<domain>
 ```
 
-The first two hostnames are the shape this environment exists to rehearse. **Giano serves one
-wallet UI; each tenant points its own hostname at it with a `CNAME`.** That tenant hostname — not
-Giano's — is the tenant's WebAuthn RP ID, because the browser binds passkeys to the host in the
-address bar. `wallet.dev.giano.<domain>` is therefore infrastructure that no end user ever visits:
-it terminates the shared UI and never becomes a relying party. `wallet-example.dev.giano.<domain>`
-is a first-class tenant hostname that happens to belong to our own demo, and it is onboarded by
-exactly the steps a client's hostname would be ([§5.5](#55-onboarding-a-tenant-hostname)).
+**Giano serves one wallet UI; each tenant points its own hostname at it with a `CNAME`.** That
+tenant hostname — not Giano's — is the tenant's WebAuthn RP ID, because the browser binds passkeys
+to the host in the address bar. `wallet.dev.giano.<domain>` is therefore infrastructure that no end
+user ever visits: it terminates the shared UI and never becomes a relying party.
 
-One wallet-web task therefore serves every tenant, and adding a tenant costs a DNS record, a
-certificate and a database row — not another container. What makes that safe rather than merely
-functional is [§15.4](#154-a-host-resolved-tenant-config-endpoint), which is a prerequisite.
+The example tenant is shaped as **its own domain with a wallet subdomain underneath it**, because
+that is what a real client looks like — `example.dev.giano.<domain>` and
+`wallet.example.dev.giano.<domain>` stand in for `acme.com` and `wallet.acme.com`. Naming it flat as
+`wallet-example.dev.giano.<domain>` would have let it ride the existing wildcard certificate, and
+dev would then never exercise the one onboarding step that costs a client anything
+([§5.2](#52-certificate)). Two labels deep is deliberate.
+
+One wallet-web task serves every tenant, so adding a tenant costs a DNS record, a certificate and a
+database row — not another container. What makes that safe rather than merely functional is
+[§15.4](#154-a-host-resolved-tenant-config-endpoint), which is a prerequisite.
 
 ### 1.2 What this is not
 
@@ -104,12 +113,13 @@ D14 rests on. They use `giano.example.com` as a concrete parent domain in place 
 placeholder used elsewhere in this document.
 
 **Two tenants are drawn, and only one of them exists in dev.** `example` is Giano's own demo tenant,
-whose wallet hostname sits inside our Route 53 zone; `acme` stands for a client whose hostname sits
-in theirs. The difference between them is exactly two things — who owns the DNS record and where the
-certificate comes from — and that is the whole point of drawing both. Dev provisions `example` alone
-and must stay single-tenant until [§15.4](#154-a-host-resolved-tenant-config-endpoint) lands
-([R9](#17-risks-and-open-items)); `acme` is the shape onboarding takes, not a service that is
-running.
+whose hostnames sit inside our Route 53 zone; `acme` stands for a client whose hostnames sit in
+theirs. Both get their own wallet certificate and both reach the same wallet-web task through the
+same `CNAME`; the *only* difference between them is who creates the DNS records — Terraform for
+`example`, Acme for `acme`. Drawing both is what makes that the only difference visible. Dev
+provisions `example` alone and must stay single-tenant until
+[§15.4](#154-a-host-resolved-tenant-config-endpoint) lands ([R9](#17-risks-and-open-items)); `acme`
+is the shape onboarding takes, not a service that is running.
 
 ### 2.1 Hostnames, TLS and routing
 
@@ -120,8 +130,8 @@ subgraph TENANTS["Tenant-owned — each tenant has ONE wallet hostname, and it i
   direction LR
   subgraph TEXAMPLE["tenant 'example' — Giano's own demo"]
     direction TB
-    D1["dApp<br/>app.dev.giano.example.com"]
-    W1["wallet-example.dev.giano.example.com<br/>RP ID · passkeys bind HERE"]
+    D1["dApp<br/>example.dev.giano.example.com"]
+    W1["wallet.example.dev.giano.example.com<br/>RP ID · passkeys bind HERE"]
     D1 -->|"popup, origin-pinned postMessage"| W1
   end
   subgraph TACME["tenant 'acme' — a client"]
@@ -133,17 +143,17 @@ subgraph TENANTS["Tenant-owned — each tenant has ONE wallet hostname, and it i
 end
 
 GIANO["wallet.dev.giano.example.com<br/>Giano's wallet UI — the CNAME target<br/>NOT an RP ID · no end user ever visits it"]
-OTHER["A aliases to the same ALB<br/>api.* · app.* · paymaster.*"]
+OTHER["A aliases to the same ALB<br/>api.* · paymaster.* · example.* (the demo app)"]
 
 W1 -->|"CNAME — our zone, Terraform-owned"| GIANO
 W2 -->|"CNAME — Acme's zone, tenant-owned"| GIANO
 
 subgraph ALBX["ALB giano-dev-alb — HTTPS :443, SNI-selected cert · HTTP :80 → 301"]
   direction TB
-  CERTS["ACM certificates on this listener<br/>wildcard *.dev.giano.example.com — covers wallet.* , api.* , app.* , paymaster.* , wallet-example.*<br/>+ one SNI cert per out-of-zone tenant host: wallet.acme.com<br/>validated in Acme's zone — ACM renews only while that record resolves"]
-  R40["rule 40 — hosts wallet.* AND wallet-example.* AND wallet.acme.com<br/>from var.tenant_wallet_hosts"]
+  CERTS["ACM certificates on this listener<br/>wildcard *.dev.giano.example.com — covers wallet.* , api.* , paymaster.* , example.* — ONE label only<br/>own cert per tenant wallet host, attached by SNI:<br/>wallet.example.dev.giano.example.com — two labels, our zone, Terraform validates<br/>wallet.acme.com — Acme's zone, Acme adds the validation record and must leave it"]
+  R40["rule 40 — hosts wallet.* AND wallet.example.* AND wallet.acme.com<br/>from var.tenant_wallet_hosts"]
   R10["rule 10 — api.*"]
-  R20["rule 20 — app.*"]
+  R20["rule 20 — example.*"]
   R30["rule 30 — paymaster.*"]
   RDEF["default — fixed 404"]
 end
@@ -228,14 +238,14 @@ every tenant-specific decision is made from a request header rather than from co
 ```mermaid
 flowchart TB
 
-B1["Browser on wallet-example.dev.giano.example.com<br/>Host: wallet-example.dev.giano.example.com<br/>Origin: https://wallet-example.dev.giano.example.com"]
+B1["Browser on wallet.example.dev.giano.example.com<br/>Host: wallet.example.dev.giano.example.com<br/>Origin: https://wallet.example.dev.giano.example.com"]
 B2["Browser on wallet.acme.com<br/>Host: wallet.acme.com<br/>Origin: https://wallet.acme.com"]
 
 NG["wallet-web — ONE nginx task, ONE image, ONE /config.json<br/>GIANO_RP_ID unset, so the SPA takes rpId from window.location.hostname<br/>proxy_set_header Host $host — Host and Origin reach wallet-api untouched"]
 
 API["wallet-api — ONE Fastify task<br/>resolves the tenant per request, never per container"]
 
-T1["tenants row · slug = example<br/>rp_id = wallet-example.dev.giano.example.com<br/>allowed_dapp_origins = app.dev.giano.example.com"]
+T1["tenants row · slug = example<br/>rp_id = wallet.example.dev.giano.example.com<br/>allowed_dapp_origins = example.dev.giano.example.com"]
 T2["tenants row · slug = acme<br/>rp_id = wallet.acme.com<br/>allowed_dapp_origins = app.acme.com"]
 
 B1 --> NG
@@ -270,7 +280,7 @@ wallet UI but is not a relying party: no passkey is ever created against it. `GI
 deliberately left **unset** so wallet-web derives its RP ID from the host the browser used —
 `services/wallet-web/src/config.ts` resolves `rpId: raw.rpId || window.location.hostname`, which is
 the mechanism the whole CNAME model rests on. Passkeys bind to
-`wallet-example.dev.giano.<domain>`, the tenant's own hostname. Per-tenant `rpId` is irreversible —
+`wallet.example.dev.giano.<domain>`, the tenant's own hostname. Per-tenant `rpId` is irreversible —
 changing it later orphans every passkey created against it. This is the single choice in the whole
 document that cannot be undone by `terraform apply`.
 
@@ -361,29 +371,34 @@ their hostname, in their zone. So each tenant host needs its own certificate, at
 HTTPS listener as an additional SNI certificate (`aws_lb_listener_certificate`). ACM picks the
 certificate per connection from SNI; the wildcard remains the default.
 
-The example tenant is the exception that proves the rule: `wallet-example.dev.giano.<domain>` is a
-single label under `dev.giano.<domain>`, so the existing wildcard already covers it and dev needs no
-second certificate. **That is a naming constraint, not a coincidence** — the wildcard matches one
-label only, so `wallet.example.dev.giano.<domain>` would *not* be covered. Tenant hostnames inside
-this zone must stay flat (`wallet-<tenant>.dev.giano.<domain>`); real tenant hostnames live in the
-tenant's own zone and always need their own certificate.
+**The example tenant is deliberately not exempt.** `wallet.example.dev.giano.<domain>` sits *two*
+labels under the zone apex and a wildcard matches one, so it is not covered:
+`modules/tenant-host` ([§11.1](#111-layout)) issues it a certificate of its own and attaches it by
+SNI, exactly as a client's would be. Had it been named flat — `wallet-example.dev.giano.<domain>` —
+it would have ridden the wildcard for free, the listener would carry a single certificate, and
+step 2 of [§5.5](#55-onboarding-a-tenant-hostname) would stay untested until the first client
+arrived. Paying that cost once, in dev, is how the step gets exercised.
 
-So `modules/tenant-host` ([§11.1](#111-layout)) requests a certificate only for hostnames the
-wildcard does not already cover. In dev that is none of them — the listener carries one certificate
-and the example tenant rides the wildcard — which is convenient and also the reason step 2 of §5.5
-is easy to forget when the first real tenant arrives.
+Two independent things can put a tenant's wallet host outside the wildcard, and either alone is
+enough: **depth** (the example tenant, in our zone) or a **foreign zone** (every real client). The
+only difference between them is who creates the ACM validation record — Terraform for a host in our
+zone, the tenant for one in theirs ([R10](#17-risks-and-open-items)).
+
+A tenant's *dApp* hostname needs nothing special: `example.dev.giano.<domain>` is one label deep and
+rides the wildcard. Only wallet hosts are CNAME targets, and only wallet hosts are RP IDs.
 
 ### 5.3 Listener rules
 
-One ALB, one HTTPS listener on 443 with the wildcard certificate, one HTTP listener on 80 doing a
-permanent redirect to HTTPS. Host-header rules, in priority order:
+One ALB, one HTTPS listener on 443 carrying the wildcard plus each tenant wallet host's own
+certificate ([§5.2](#52-certificate)), one HTTP listener on 80 doing a permanent redirect to HTTPS.
+Host-header rules, in priority order:
 
 | Priority | Host | Target group | Health check |
 |---|---|---|---|
 | 10 | `api.dev.giano.<domain>` | `wallet-api` :8080 | `GET /healthz` |
-| 20 | `app.dev.giano.<domain>` | `custom-example` :8080 | `GET /` |
+| 20 | `example.dev.giano.<domain>` | `custom-example` :8080 | `GET /` |
 | 30 | `paymaster.dev.giano.<domain>` | `paymaster-admin` :8080 | `GET /` |
-| 40 | `wallet.dev.giano.<domain>` **plus every tenant host** | `wallet-web` :8080 | `GET /` |
+| 40 | `wallet.dev.giano.<domain>` **plus every tenant wallet host** — `wallet.example.dev.giano.<domain>`, then one per client | `wallet-web` :8080 | `GET /` |
 | — | default | fixed 404 response | — |
 
 The wallet rule is the one that grows, and it is placed **last** of the four. With the explicit
@@ -408,8 +423,9 @@ provisioning job and for `curl`.
 
 ### 5.4 A records
 
-Four `A` alias records to the ALB — `wallet.*`, `api.*`, `app.*`, `paymaster.*` — plus one `CNAME`,
-`wallet-example.*` → `wallet.dev.giano.<domain>`. `dev.giano.<domain>` apex is left unset.
+Four `A` alias records to the ALB — Giano's `wallet.*`, `api.*` and `paymaster.*`, plus the example
+tenant's `example.*` — and one `CNAME`, `wallet.example.*` → `wallet.dev.giano.<domain>`.
+`dev.giano.<domain>` apex is left unset.
 
 The example tenant's record is a `CNAME` rather than a fifth alias even though Terraform owns both
 names and an alias would work identically. The point is that the record is *the same record a
@@ -555,11 +571,11 @@ The tenant seed:
 ```json
 [{
   "slug": "example",
-  "walletOrigin": "https://wallet-example.dev.giano.<domain>",
-  "rpId": "wallet-example.dev.giano.<domain>",
+  "walletOrigin": "https://wallet.example.dev.giano.<domain>",
+  "rpId": "wallet.example.dev.giano.<domain>",
   "rpName": "Giano Example",
-  "allowedDappOrigins": ["https://app.dev.giano.<domain>"],
-  "corsOrigins": ["https://app.dev.giano.<domain>"],
+  "allowedDappOrigins": ["https://example.dev.giano.<domain>"],
+  "corsOrigins": ["https://example.dev.giano.<domain>"],
   "openRegistration": true,
   "adminKeys": ["<generated>"]
 }]
@@ -592,7 +608,7 @@ operations through `wallet-api`, which is what keeps the bundler private.
 | `GIANO_BUNDLER_URL` | `https://api.dev.giano.<domain>/v1/userops` — see note |
 | `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
 | `GIANO_RP_ID` | **unset** — derived per request from the host the browser used |
-| `GIANO_ALLOWED_DAPP_ORIGINS` | `["https://app.dev.giano.<domain>"]` — the union across tenants, until [§15.4](#154-a-host-resolved-tenant-config-endpoint) |
+| `GIANO_ALLOWED_DAPP_ORIGINS` | `["https://example.dev.giano.<domain>"]` — the union across tenants, until [§15.4](#154-a-host-resolved-tenant-config-endpoint) |
 | `GIANO_SPONSORSHIP_MODE` | `service` (the default when no `GIANO_PAYMASTER_ADDRESS` is set) |
 | `GIANO_BRAND_NAME` | `Giano Example` — likewise shared until §15.4 |
 | `GIANO_CSP_CONNECT_SRC` | the RPC origin |
@@ -625,7 +641,7 @@ build-time fallbacks for `pnpm dev`:
 | `GIANO_CHAIN_NAME` | `chainName` | `Base Sepolia` |
 | `GIANO_RPC_URL` | `rpcUrl` | Base Sepolia endpoint |
 | `GIANO_CHAIN_B_ID` | `chainBId` | `0` — single-chain (the config explicitly supports this) |
-| `GIANO_WALLET_URL` | `walletUrl` | `https://wallet-example.dev.giano.<domain>` — the **tenant** hostname. Pointing this at `wallet.dev.giano.<domain>` is the one-character mistake that binds passkeys to infrastructure (§16 step 11) |
+| `GIANO_WALLET_URL` | `walletUrl` | `https://wallet.example.dev.giano.<domain>` — the **tenant** hostname. Pointing this at `wallet.dev.giano.<domain>` is the one-character mistake that binds passkeys to infrastructure (§16 step 11) |
 | `GIANO_APP_LABEL` | `appLabel` | the brand name |
 | `GIANO_TEST_ERC20` | `testErc20` | unset; the devnet default address is meaningless on 84532 |
 
@@ -834,9 +850,11 @@ servers can be delegated by hand before ACM validation blocks on them.
 
 `modules/tenant-host` is instantiated once per entry in `var.tenant_wallet_hosts` and is the whole
 of D14's per-tenant surface — a certificate, an SNI attachment and a hostname on one listener rule.
-It is deliberately *not* part of `ecs-service`: a tenant hostname adds no service. For a hostname in
-a zone Terraform does not own, the module emits the validation record the tenant must create as an
-output rather than creating it, and `apply` blocks on validation until they do ([§5.5](#55-onboarding-a-tenant-hostname)).
+It is deliberately *not* part of `ecs-service`: a tenant hostname adds no service. Whether it can
+finish an `apply` unattended depends only on the zone. For a host in ours — the example tenant —
+Terraform creates the ACM validation record itself and `apply` completes. For a host in the
+tenant's, it emits the validation record as an *output* for them to create, and `apply` blocks on
+validation until they do ([§5.5](#55-onboarding-a-tenant-hostname)).
 
 ### 11.2 Backend
 
@@ -871,7 +889,7 @@ a provider minor changed a default is a bad afternoon.
 | `region` | `eu-west-2` | |
 | `chain_id` | `84532` | |
 | `paymaster_address` | `0x…` | from §6.1 |
-| `tenant_wallet_hosts` | `["wallet-example.dev.giano.example.com"]` | tenant wallet hostnames; drives the §5.3 wallet listener rule and the §5.2 SNI certificates. Giano's own `wallet.*` is not in this list — it is not a tenant |
+| `tenant_wallet_hosts` | `["wallet.example.dev.giano.example.com"]` | tenant wallet hostnames; drives the §5.3 wallet listener rule and the §5.2 SNI certificates. Giano's own `wallet.*` is not in this list — it is not a tenant |
 | `image_tag` | `abc1234` | commit SHA; CI overrides |
 | `enable_schedule` | `true` | §13 |
 | `schedule_up_cron` / `schedule_down_cron` | `0 7 ? * MON-FRI *` / `0 19 ? * MON-FRI *` | UTC |
@@ -1046,7 +1064,9 @@ Ordered, because several steps are prerequisites of the next `apply` rather than
    take the four name servers from the output and add the `NS` record in the parent zone. ACM
    validation blocks until this resolves.
    *Settle the example tenant's wallet hostname now* (`tenant_wallet_hosts`, §11.4): passkeys bind
-   to it irreversibly from step 10 onward, and it must be flat to stay inside the wildcard (§5.2).
+   to it irreversibly from step 10 onward. It sits two labels deep on purpose, so it gets an ACM
+   certificate of its own rather than riding the wildcard (§5.2) — which is what makes §5.5 step 2
+   a tested path rather than a paragraph.
 3. **Deploy the paymaster** on Base Sepolia (§6.1) and record the proxy address. Fund its EntryPoint
    deposit and the Alto executor account (§6.2).
 4. **Populate secrets.** `aws ssm put-parameter` for the five human-written parameters in §9.1.
@@ -1059,10 +1079,10 @@ Ordered, because several steps are prerequisites of the next `apply` rather than
    and `GET /v1/version`.
 9. **Provision sponsorship** (§15.3). Verify through the paymaster console that the example tenant
    appears with a balance.
-10. **End-to-end check.** On `app.dev.giano.<domain>`: create a passkey, connect, send a sponsored
+10. **End-to-end check.** On `example.dev.giano.<domain>`: create a passkey, connect, send a sponsored
     transaction, confirm the receipt and confirm the tenant balance moved.
 11. **Verify the CNAME model held.** The popup's address bar must read
-    `wallet-example.dev.giano.<domain>`, never `wallet.dev.giano.<domain>`; the created credential's
+    `wallet.example.dev.giano.<domain>`, never `wallet.dev.giano.<domain>`; the created credential's
     RP ID must be the tenant host; and `curl https://wallet.dev.giano.<domain>/.well-known/webauthn`
     must 404 while the same path on the tenant host returns its origins. A passkey bound to Giano's
     own serving hostname is the failure this step exists to catch, and it is unrecoverable once a
@@ -1078,7 +1098,7 @@ D14, and it is cheap to run now and impossible to undo later.
 
 | # | Item | Impact | Disposition |
 |---|---|---|---|
-| R1 | **`rpId` is irreversible.** Every passkey binds to `wallet-example.dev.giano.<domain>` — the *tenant's* host, not Giano's. Renaming it orphans them all. | Total loss of dev accounts | Settle `tenant_wallet_hosts` (§11.4) at runbook step 2. Cheap now, impossible later. Runbook step 11 verifies no passkey bound to Giano's serving hostname instead. |
+| R1 | **`rpId` is irreversible.** Every passkey binds to `wallet.example.dev.giano.<domain>` — the *tenant's* host, not Giano's. Renaming it orphans them all. | Total loss of dev accounts | Settle `tenant_wallet_hosts` (§11.4) at runbook step 2. Cheap now, impossible later. Runbook step 11 verifies no passkey bound to Giano's serving hostname instead. |
 | R2 | **Funded accounts drain silently.** An empty executor or paymaster deposit presents as "transactions stopped working". | Environment appears broken, cause non-obvious | Recommend overriding D12 for exactly one alarm: a scheduled Lambda checking both balances against a floor. ~$0/mo. Open decision. |
 | R3 | **`GIANO_BUNDLER_URL` on `wallet-web`.** Required by the entrypoint even in `service` sponsorship mode; unverified whether the browser ever dials it. | Bundler may need public exposure | Verify in §7.3 during implementation. If it does, add an ALB rule and accept that the bundler becomes internet-reachable. |
 | R4 | **`openRegistration: true`.** Anyone reaching the hostname can create a wallet. | Unbounded rows, no funds at risk | Accepted for dev. First thing to disable if the hostname circulates. |
