@@ -43,8 +43,8 @@ questions that remain.
 
 ### 1.1 What is being built
 
-One AWS account region hosting one Giano deployment, serving **five public hostnames** from **one
-load balancer**, backed by **five Fargate services** and **one RDS instance**, provisioned entirely
+One AWS account region hosting one Giano deployment, serving **seven public hostnames** from **one
+load balancer**, backed by **seven Fargate services** and **one RDS instance**, provisioned entirely
 by Terraform from a root module in this repository.
 
 The hostnames divide by **owner**, and that division is the architecture:
@@ -56,10 +56,15 @@ api.dev.giano.<domain>             wallet-api (also proxied same-origin under ea
                                    wallet host's /api)
 paymaster.dev.giano.<domain>       the paymaster operator console
 
-# Tenant "example" — our own demo, and a first-class tenant in every other respect
-example.dev.giano.<domain>         the app itself — services/custom-example
+# Tenant "example" — stock wallet UI, reached by CNAME
+example.dev.giano.<domain>         its dApp — services/custom-example
 wallet.example.dev.giano.<domain>  its wallet origin — passkeys live here (RP ID)
                                    CNAME → wallet.dev.giano.<domain>
+
+# Tenant "byoui" — brings its OWN wallet UI, so it CNAMEs to nothing
+byoui.dev.giano.<domain>           its dApp — a second custom-example task
+wallet.byoui.dev.giano.<domain>    its wallet origin — passkeys live here (RP ID)
+                                   A alias → the ALB → its OWN service (e2e/wallet-byo)
 ```
 
 **Giano serves one wallet UI; each tenant points its own hostname at it with a `CNAME`.** That
@@ -74,9 +79,20 @@ that is what a real client looks like — `example.dev.giano.<domain>` and
 dev would then never exercise the one onboarding step that costs a client anything
 ([§5.2](#52-certificate)). Two labels deep is deliberate.
 
-One wallet-web task serves every tenant, so adding a tenant costs a DNS record, a certificate and a
-database row — not another container. What makes that safe rather than merely functional is
-[§15.4](#154-a-host-resolved-tenant-config-endpoint), which is a prerequisite.
+**Two tenants, because there are two ways to be one.** `example` takes Giano's stock UI and reaches
+it by `CNAME`; `byoui` serves a wallet SPA it wrote itself
+(`e2e/wallet-byo/`, `DEVELOPER-GUIDE.md` §5.5b) at its own wallet origin, so it points at Giano's
+wallet hostname not at all. Both are ordinary rows in `TENANTS_SEED`, both resolve against the same
+wallet-api, Postgres and bundler, and each has its own irreversible RP ID. A dev environment that
+serves only one of the two shapes cannot show that the other works — and cross-tenant isolation is
+not observable at all with a single tenant.
+
+For the stock-UI shape, one wallet-web task serves every tenant, so adding such a tenant costs a DNS
+record, a certificate and a database row — not another container. What makes *that* safe rather than
+merely functional is [§15.4](#154-a-host-resolved-tenant-config-endpoint), which is a prerequisite of
+the second stock-UI tenant. `byoui` is deliberately not one: it brings its own SPA and therefore its
+own dApp allowlist, so it does not share wallet-web's `/config.json` and does not trip
+[R9](#17-risks-and-open-items). It is the one second tenant this environment can carry today.
 
 ### 1.2 What this is not
 
@@ -102,6 +118,7 @@ but nothing here should be mistaken for a production posture.
 | D11 | Terraform | **`infra/terraform` in this repo, S3 backend with native locking** | Separate repo; flat root module | Infra versioned with the code it deploys; `use_lockfile = true` removes the DynamoDB table entirely (Terraform ≥ 1.10). |
 | D12 | Observability | **CloudWatch Logs, 7-day retention** | Container Insights + Prometheus | `/metrics` is exposed but nothing scrapes it in dev. ~$2/mo. |
 | D13 | Sponsorship signer | **`local` key in SSM, `GIANO_DEPLOYMENT_CLASS=testnet`** | `hsm` | The `hsm` path requires an `HsmSignerAdapter` passed to `buildApp`, which the published image does not wire ([§9.3](#93-the-sponsorship-signer-constraint)). `testnet` is the honest deployment class and it is what makes `local` legal. |
+| D15 | Tenant roster | **Two: `example` on the stock UI, `byoui` bringing its own** | One tenant; two stock-UI tenants | The two supported wallet-UI topologies (`DEVELOPER-GUIDE.md` §5.5a) are the thing most likely to be got wrong by an integrator, and only a deployment that runs both proves both. A second *stock-UI* tenant is blocked by [R9](#17-risks-and-open-items) until [§15.4](#154-a-host-resolved-tenant-config-endpoint); a BYO tenant is not, because it serves its own SPA and its own allowlist. It also makes cross-tenant isolation observable, which one tenant cannot. |
 | D14 | Tenant wallet hostnames | **One shared wallet-web; tenants `CNAME` to it, one SNI certificate per tenant host** | One wallet-web container per tenant (`DEVELOPER-GUIDE.md` §5.5) | Onboarding a tenant should cost a DNS record and a certificate, not a container, a task definition, a target group and a listener rule. wallet-web already derives its RP ID from `window.location.hostname` when `GIANO_RP_ID` is unset, and wallet-api resolves tenants per request from `Origin`/`Host` — so the shared path needs no new tenancy concept. It does need [§15.4](#154-a-host-resolved-tenant-config-endpoint) before it is safe: today the dApp allowlist is per *container*, which across tenants would become a union ([R9](#17-risks-and-open-items)). |
 
 ---
@@ -112,14 +129,12 @@ Three views: the hostname-to-container path, the inside of the VPC, and the tena
 D14 rests on. They use `giano.example.com` as a concrete parent domain in place of the `<domain>`
 placeholder used elsewhere in this document.
 
-**Two tenants are drawn, and only one of them exists in dev.** `example` is Giano's own demo tenant,
-whose hostnames sit inside our Route 53 zone; `acme` stands for a client whose hostnames sit in
-theirs. Both get their own wallet certificate and both reach the same wallet-web task through the
-same `CNAME`; the *only* difference between them is who creates the DNS records — Terraform for
-`example`, Acme for `acme`. Drawing both is what makes that the only difference visible. Dev
-provisions `example` alone and must stay single-tenant until
-[§15.4](#154-a-host-resolved-tenant-config-endpoint) lands ([R9](#17-risks-and-open-items)); `acme`
-is the shape onboarding takes, not a service that is running.
+**Three tenants are drawn; two of them are real.** `example` and `byoui` are both provisioned here
+(D15) and are the two ways to be a tenant: `example` takes Giano's stock wallet UI and reaches it by
+`CNAME`, `byoui` serves a wallet SPA it wrote itself at its own origin and points at Giano's wallet
+hostname not at all. `acme` is illustrative — a client whose hostnames live in *their* zone, which
+changes only who creates the DNS and validation records. Everything else about `acme` is identical to
+`example`, and that is why it is worth drawing.
 
 ### 2.1 Hostnames, TLS and routing
 
@@ -134,7 +149,13 @@ subgraph TENANTS["Tenant-owned — each tenant has ONE wallet hostname, and it i
     W1["wallet.example.dev.giano.example.com<br/>RP ID · passkeys bind HERE"]
     D1 -->|"popup, origin-pinned postMessage"| W1
   end
-  subgraph TACME["tenant 'acme' — a client"]
+  subgraph TBYOUI["tenant 'byoui' — brings its OWN wallet UI"]
+    direction TB
+    D3["dApp<br/>byoui.dev.giano.example.com"]
+    W3["wallet.byoui.dev.giano.example.com<br/>RP ID · passkeys bind HERE"]
+    D3 -->|"popup, origin-pinned postMessage"| W3
+  end
+  subgraph TACME["tenant 'acme' — a client, illustrative only"]
     direction TB
     D2["dApp<br/>app.acme.com<br/>Acme-hosted, outside this account"]
     W2["wallet.acme.com<br/>RP ID · passkeys bind HERE"]
@@ -143,41 +164,49 @@ subgraph TENANTS["Tenant-owned — each tenant has ONE wallet hostname, and it i
 end
 
 GIANO["wallet.dev.giano.example.com<br/>Giano's wallet UI — the CNAME target<br/>NOT an RP ID · no end user ever visits it"]
-OTHER["A aliases to the same ALB<br/>api.* · paymaster.* · example.* (the demo app)"]
+OTHER["A aliases to the same ALB<br/>api.* · paymaster.* · example.* · byoui.*"]
 
 W1 -->|"CNAME — our zone, Terraform-owned"| GIANO
 W2 -->|"CNAME — Acme's zone, tenant-owned"| GIANO
 
 subgraph ALBX["ALB giano-dev-alb — HTTPS :443, SNI-selected cert · HTTP :80 → 301"]
   direction TB
-  CERTS["ACM certificates on this listener<br/>wildcard *.dev.giano.example.com — covers wallet.* , api.* , paymaster.* , example.* — ONE label only<br/>own cert per tenant wallet host, attached by SNI:<br/>wallet.example.dev.giano.example.com — two labels, our zone, Terraform validates<br/>wallet.acme.com — Acme's zone, Acme adds the validation record and must leave it"]
-  R40["rule 40 — hosts wallet.* AND wallet.example.* AND wallet.acme.com<br/>from var.tenant_wallet_hosts"]
+  CERTS["ACM certificates on this listener<br/>wildcard *.dev.giano.example.com — covers wallet.* , api.* , paymaster.* , example.* , byoui.* — ONE label only<br/>own cert per tenant WALLET host, attached by SNI:<br/>wallet.example.dev.giano.example.com and wallet.byoui.dev.giano.example.com — two labels, our zone, Terraform validates<br/>wallet.acme.com — Acme's zone, Acme adds the validation record and must leave it"]
+  R40["rule 40 — hosts wallet.* AND wallet.example.* AND wallet.acme.com<br/>the STOCK-UI hosts, from var.tenant_wallet_hosts"]
+  R35["rule 35 — wallet.byoui.*<br/>a tenant wallet host that is NOT wallet-web"]
   R10["rule 10 — api.*"]
   R20["rule 20 — example.*"]
+  R25["rule 25 — byoui.*"]
   R30["rule 30 — paymaster.*"]
   RDEF["default — fixed 404"]
 end
 
 GIANO --> ALBX
 OTHER --> ALBX
+W3 -->|"A alias — NO CNAME: a BYO tenant<br/>points at nothing of Giano's"| ALBX
 
-TGW["TG wallet-web :8080<br/>ONE task serves every tenant hostname"]
-TGA["TG wallet-api :8080"]
+TGW["TG wallet-web :8080<br/>ONE task serves every STOCK-UI tenant hostname"]
+TGBYO["TG wallet-byo :8080<br/>the tenant-authored SPA, e2e/wallet-byo"]
+TGA["TG wallet-api :8080<br/>shared by every tenant"]
 TGE["TG custom-example :8080"]
+TGE2["TG custom-example-byoui :8080<br/>same image, GIANO_WALLET_URL differs"]
 TGP["TG paymaster-admin :8080"]
 
 R40 --> TGW
+R35 --> TGBYO
 R10 --> TGA
 R20 --> TGE
+R25 --> TGE2
 R30 --> TGP
 
-NOTE["Adding a tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 TENANTS_SEED row.<br/>No new container, task definition, target group or load balancer."]
+NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 TENANTS_SEED row.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the TENANTS_SEED row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
 TGW -.- NOTE
+TGBYO -.- NOTE
 
 classDef tenant fill:#eef7ff,stroke:#3b7cb8
 classDef giano fill:#fff6e6,stroke:#c78b2a
 classDef warn fill:#fdf0f0,stroke:#c0504d
-class W1,W2,D1,D2 tenant
+class W1,W2,W3,D1,D2,D3 tenant
 class GIANO,OTHER giano
 class NOTE warn
 ```
@@ -187,12 +216,14 @@ class NOTE warn
 ```mermaid
 flowchart TB
 
-INGRESS["ALB target groups — see the routing diagram<br/>wallet-web · wallet-api · custom-example · paymaster-admin"]
+INGRESS["ALB target groups — see the routing diagram<br/>wallet-web · wallet-byo · wallet-api<br/>custom-example · custom-example-byoui · paymaster-admin"]
 
 subgraph VPCX["VPC 10.40.0.0/16 — eu-west-2 · Internet Gateway, NO NAT Gateway (D8)"]
   subgraph PUBSUB["public subnets 10.40.0.0/20 + 10.40.16.0/20, two AZ — assign_public_ip = true · SG tasks accepts only the ALB"]
-    SWEB["wallet-web · nginx :8080<br/>0.25 vCPU / 512 MB<br/>GIANO_RP_ID unset — one task serves every tenant host"]
-    SEX["custom-example · nginx :8080<br/>0.25 / 512 — the demo dApp"]
+    SWEB["wallet-web · nginx :8080<br/>0.25 vCPU / 512 MB<br/>GIANO_RP_ID unset — one task serves every STOCK-UI tenant host"]
+    SBYO["wallet-byo · node :8080 · 0.25 / 512<br/>tenant byoui's OWN SPA (e2e/wallet-byo)<br/>esbuilds at container start · proxies /api<br/>/bundler MUST be disabled — R11"]
+    SEX["custom-example · nginx :8080<br/>0.25 / 512 — tenant example's dApp"]
+    SEX2["custom-example-byoui · nginx :8080<br/>0.25 / 512 — tenant byoui's dApp<br/>same image, GIANO_WALLET_URL differs"]
     SPM["paymaster-admin · nginx :8080<br/>0.25 / 512 — operator console"]
     SAPI["wallet-api · Fastify :8080<br/>0.5 vCPU / 1024 MB<br/>multi-tenant · testnet class · RUN_MIGRATIONS=false"]
     SBD["bundler · Alto :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only"]
@@ -204,14 +235,17 @@ subgraph VPCX["VPC 10.40.0.0/16 — eu-west-2 · Internet Gateway, NO NAT Gatewa
 end
 
 CHAINSTACK["Base Sepolia — chain 84532<br/>RPC via Alchemy, key in SSM<br/>EntryPoint v0.7 · GianoSmartWalletFactory · GianoPaymaster proxy"]
-PLATFORM["ECR, 5 repos tagged by commit SHA · SSM Parameter Store /giano/dev/*<br/>CloudWatch Logs /ecs/giano-dev/*, 7 days · EventBridge Scheduler, desiredCount 0 or 1<br/>all reached over the task's public IP — the reason D8 needs no NAT"]
+PLATFORM["ECR, 6 repos tagged by commit SHA · SSM Parameter Store /giano/dev/*<br/>CloudWatch Logs /ecs/giano-dev/*, 7 days · EventBridge Scheduler, desiredCount 0 or 1<br/>all reached over the task's public IP — the reason D8 needs no NAT"]
 
 INGRESS --> SWEB
+INGRESS --> SBYO
 INGRESS --> SEX
+INGRESS --> SEX2
 INGRESS --> SPM
 INGRESS --> SAPI
 
 SWEB -->|"same-origin /api and /.well-known/webauthn<br/>wallet-api.giano-dev.local:8080<br/>Host and Origin forwarded untouched"| SAPI
+SBYO -->|"the SAME serving contract, reimplemented<br/>by the tenant in serve.mjs"| SAPI
 SAPI -->|"userop relay after the policy check<br/>bundler.giano-dev.local:4337"| SBD
 SAPI -->|"5432 — the only service with database access"| RDSX
 ONESHOT -->|"node dist/migrate.js"| RDSX
@@ -225,7 +259,7 @@ PUBSUB -.-> PLATFORM
 classDef svc fill:#eef7ff,stroke:#3b7cb8
 classDef data fill:#f0f7ee,stroke:#5a8f4e
 classDef ext fill:#fff6e6,stroke:#c78b2a
-class SWEB,SEX,SPM,SAPI,SBD svc
+class SWEB,SBYO,SEX,SEX2,SPM,SAPI,SBD svc
 class RDSX,ONESHOT data
 class CHAINSTACK,PLATFORM,INGRESS ext
 ```
@@ -242,33 +276,41 @@ B1["Browser on wallet.example.dev.giano.example.com<br/>Host: wallet.example.dev
 B2["Browser on wallet.acme.com<br/>Host: wallet.acme.com<br/>Origin: https://wallet.acme.com"]
 
 NG["wallet-web — ONE nginx task, ONE image, ONE /config.json<br/>GIANO_RP_ID unset, so the SPA takes rpId from window.location.hostname<br/>proxy_set_header Host $host — Host and Origin reach wallet-api untouched"]
+BYO["wallet-byo — tenant byoui's OWN server and SPA<br/>same serving contract, written by the tenant<br/>its allowlist ships WITH it, so R9 cannot reach it"]
 
 API["wallet-api — ONE Fastify task<br/>resolves the tenant per request, never per container"]
 
 T1["tenants row · slug = example<br/>rp_id = wallet.example.dev.giano.example.com<br/>allowed_dapp_origins = example.dev.giano.example.com"]
 T2["tenants row · slug = acme<br/>rp_id = wallet.acme.com<br/>allowed_dapp_origins = app.acme.com"]
+T3["tenants row · slug = byoui<br/>rp_id = wallet.byoui.dev.giano.example.com<br/>allowed_dapp_origins = byoui.dev.giano.example.com"]
+
+B3["Browser on wallet.byoui.dev.giano.example.com<br/>Host: wallet.byoui.dev.giano.example.com<br/>Origin: https://wallet.byoui.dev.giano.example.com"]
 
 B1 --> NG
 B2 --> NG
+B3 --> BYO
 NG --> API
+BYO --> API
 
 API -->|"getByOrigin(Origin) for ceremonies, sessions and the userop relay<br/>getByHost(Host) for /.well-known/webauthn"| T1
 API -->|"the same two lookups, the other hostname"| T2
+API -->|"and again — wallet-api cannot tell who wrote the SPA"| T3
 
 ISO["Isolated for free by the browser: passkeys (distinct RP IDs), cookies,<br/>localStorage and sessions are per origin. Isolated by wallet-api: users, credentials,<br/>challenges, policy, quotas and the paymaster gas balance are keyed on tenant id."]
 T1 -.- ISO
 T2 -.- ISO
+T3 -.- ISO
 
-GAP["R9 — the one thing NOT per tenant, until §15.4 lands<br/>allowedDappOrigins and the brand name come from /config.json, which is per CONTAINER.<br/>Shared, the SPA enforces the UNION of both allowlists on BOTH hostnames, so Acme's dApp<br/>can complete the popup handshake against the example tenant's wallet host.<br/>wallet-api stores allowed_dapp_origins per tenant but reads it nowhere — there is no server-side backstop.<br/>Fix: a Host-resolved tenant-config endpoint beside /.well-known/webauthn."]
+GAP["R9 — applies to the STOCK-UI task only, until §15.4 lands<br/>allowedDappOrigins and the brand name come from /config.json, which is per CONTAINER.<br/>A SECOND stock-UI tenant here would make the SPA enforce the UNION of both allowlists on BOTH<br/>hostnames, so Acme's dApp could complete the popup handshake against example's wallet host.<br/>wallet-api stores allowed_dapp_origins per tenant but reads it nowhere — no server-side backstop.<br/>byoui is unaffected: its allowlist ships with its own SPA, which is why it can be tenant two today.<br/>Fix: a Host-resolved tenant-config endpoint beside /.well-known/webauthn."]
 NG -.-> GAP
 
 classDef browser fill:#eef7ff,stroke:#3b7cb8
 classDef svc fill:#f4f0fb,stroke:#7a5ea8
 classDef row fill:#f0f7ee,stroke:#5a8f4e
 classDef warn fill:#fdf0f0,stroke:#c0504d
-class B1,B2 browser
-class NG,API svc
-class T1,T2 row
+class B1,B2,B3 browser
+class NG,BYO,API svc
+class T1,T2,T3 row
 class GAP warn
 class ISO row
 ```
@@ -379,13 +421,17 @@ it would have ridden the wildcard for free, the listener would carry a single ce
 step 2 of [§5.5](#55-onboarding-a-tenant-hostname) would stay untested until the first client
 arrived. Paying that cost once, in dev, is how the step gets exercised.
 
+`wallet.byoui.dev.giano.<domain>` is two labels deep for the same reason and gets its own
+certificate too, even though a BYO tenant's wallet host is never a `CNAME` target. Certificates
+follow the *hostname*, not the topology.
+
 Two independent things can put a tenant's wallet host outside the wildcard, and either alone is
-enough: **depth** (the example tenant, in our zone) or a **foreign zone** (every real client). The
+enough: **depth** (both dev tenants, in our zone) or a **foreign zone** (every real client). The
 only difference between them is who creates the ACM validation record — Terraform for a host in our
 zone, the tenant for one in theirs ([R10](#17-risks-and-open-items)).
 
-A tenant's *dApp* hostname needs nothing special: `example.dev.giano.<domain>` is one label deep and
-rides the wildcard. Only wallet hosts are CNAME targets, and only wallet hosts are RP IDs.
+Tenants' *dApp* hostnames need nothing special: `example.dev.giano.<domain>` and
+`byoui.dev.giano.<domain>` are one label deep and ride the wildcard. Only wallet hosts are RP IDs.
 
 ### 5.3 Listener rules
 
@@ -397,17 +443,26 @@ Host-header rules, in priority order:
 |---|---|---|---|
 | 10 | `api.dev.giano.<domain>` | `wallet-api` :8080 | `GET /healthz` |
 | 20 | `example.dev.giano.<domain>` | `custom-example` :8080 | `GET /` |
+| 25 | `byoui.dev.giano.<domain>` | `custom-example-byoui` :8080 | `GET /` |
 | 30 | `paymaster.dev.giano.<domain>` | `paymaster-admin` :8080 | `GET /` |
-| 40 | `wallet.dev.giano.<domain>` **plus every tenant wallet host** — `wallet.example.dev.giano.<domain>`, then one per client | `wallet-web` :8080 | `GET /` |
+| 35 | `wallet.byoui.dev.giano.<domain>` | `wallet-byo` :8080 | `GET /` |
+| 40 | `wallet.dev.giano.<domain>` **plus every stock-UI tenant host** — `wallet.example.dev.giano.<domain>`, then one per client | `wallet-web` :8080 | `GET /` |
 | — | default | fixed 404 response | — |
+
+Rule 35 is the one that shows the BYO shape in the routing table: a tenant wallet hostname that
+resolves to something other than `wallet-web`. It must sit *above* rule 40 in the ordering for
+exactly the defensive reason given below — a broadened wallet condition would otherwise capture it
+and serve `byoui` the stock UI, which would fail closed at the popup handshake and look like a
+tenancy bug rather than a routing one.
 
 The wallet rule is the one that grows, and it is placed **last** of the four. With the explicit
 host list below, priority is not load-bearing — no two conditions overlap — so this is purely
 defensive: it is the ordering that stays correct if anyone later broadens the wallet condition.
-Its condition carries an explicit list of hostnames — Giano's own plus each onboarded tenant's — from
-`var.tenant_wallet_hosts` ([§11.4](#114-key-variables)). An ALB host condition accepts up to five
-values, so past four tenants Terraform emits additional rules at descending priority against the
-same target group.
+Its condition carries an explicit list of hostnames — Giano's own plus each onboarded **stock-UI**
+tenant's — from `var.tenant_wallet_hosts` ([§11.4](#114-key-variables)). A BYO tenant's wallet host
+is never in that list: it has its own rule and its own target group. An ALB host condition accepts
+up to five values, so past four stock-UI tenants Terraform emits additional rules at descending
+priority against the same target group.
 
 A wildcard condition (`*.dev.giano.<domain>`) would collapse this to one static rule, and is
 rejected: it would silently swallow any future hostname in the zone, and it cannot express a tenant
@@ -423,9 +478,13 @@ provisioning job and for `curl`.
 
 ### 5.4 A records
 
-Four `A` alias records to the ALB — Giano's `wallet.*`, `api.*` and `paymaster.*`, plus the example
-tenant's `example.*` — and one `CNAME`, `wallet.example.*` → `wallet.dev.giano.<domain>`.
-`dev.giano.<domain>` apex is left unset.
+Six `A` alias records to the ALB — Giano's `wallet.*`, `api.*` and `paymaster.*`, the two dApps
+`example.*` and `byoui.*`, and `wallet.byoui.*` — plus one `CNAME`, `wallet.example.*` →
+`wallet.dev.giano.<domain>`. `dev.giano.<domain>` apex is left unset.
+
+That `wallet.byoui.*` is an `A` alias and `wallet.example.*` a `CNAME` is the entire DNS-level
+difference between the two topologies. A BYO tenant has nothing to point at: its wallet origin is
+its own deployment, and here that deployment happens to sit behind the same load balancer.
 
 The example tenant's record is a `CNAME` rather than a fifth alias even though Terraform owns both
 names and an alias would work identically. The point is that the record is *the same record a
@@ -452,6 +511,13 @@ No new container, task definition, target group or load balancer. That is the wh
 and it is why [§15.4](#154-a-host-resolved-tenant-config-endpoint) has to land first: with the
 per-container dApp allowlist that ships today, step 5 would also mean editing every tenant's
 allowlist into one shared list.
+
+**A BYO tenant skips steps 1 to 4 entirely.** It serves its own SPA on its own infrastructure, so
+Giano provisions no DNS record, no certificate and no listener rule for it — only step 5, the
+`TENANTS_SEED` row. All it must do is reproduce the serving contract (`DEVELOPER-GUIDE.md` §5.5b):
+same-origin `/api` and `/.well-known/webauthn` proxies that forward `Origin` untouched and preserve
+the browser's `Host`. Tenant `byoui` is the exception that makes it testable — Giano hosts its UI
+here ([§7.5](#75-wallet-byo)), so in dev those four steps do apply to it.
 
 ---
 
@@ -517,19 +583,28 @@ the better posture anyway.
 
 ## 7. The services
 
-Five ECS services on one cluster, all Fargate, all `ARM64` (`runtime_platform`) — cheaper per vCPU-
+Seven ECS services on one cluster, all Fargate, all `ARM64` (`runtime_platform`) — cheaper per vCPU-
 hour and every image in the repo already builds multi-arch in `docker.yml`.
 
-| Service | Image | vCPU / MB | Port | Public | Desired |
+| Service | Image | vCPU / MB | Port | Serves | Desired |
 |---|---|---|---|---|---|
-| `wallet-api` | `giano-wallet-api` | 0.5 / 1024 | 8080 | via ALB | 1 |
-| `wallet-web` | `giano-wallet-web` | 0.25 / 512 | 8080 | via ALB | 1 |
-| `custom-example` | `giano-example` *(new image)* | 0.25 / 512 | 8080 | via ALB | 1 |
-| `paymaster-admin` | `giano-paymaster-admin` | 0.25 / 512 | 8080 | via ALB | 1 |
-| `bundler` | `giano-bundler` | 0.5 / 1024 | 4337 | no | 1 |
+| `wallet-api` | `giano-wallet-api` | 0.5 / 1024 | 8080 | `api.*` | 1 |
+| `wallet-web` | `giano-wallet-web` | 0.25 / 512 | 8080 | `wallet.*` + every stock-UI tenant host | 1 |
+| `custom-example` | `giano-example` *(new image)* | 0.25 / 512 | 8080 | `example.*` | 1 |
+| `custom-example-byoui` | `giano-example` — **same image, different env** | 0.25 / 512 | 8080 | `byoui.*` | 1 |
+| `wallet-byo` | `giano-wallet-byo` *(new image)* | 0.25 / 512 | 8080 | `wallet.byoui.*` | 1 |
+| `paymaster-admin` | `giano-paymaster-admin` | 0.25 / 512 | 8080 | `paymaster.*` | 1 |
+| `bundler` | `giano-bundler` | 0.5 / 1024 | 4337 | nothing — no ALB target | 1 |
 
 `wallet-api` gets 1 GB because Fastify plus the viem clients plus the per-chain paymaster watcher is
 not comfortable in 512 MB. The nginx images are comfortable in 512 MB with room to spare.
+
+Two of the seven exist only to give tenant `byoui` a complete shape. `custom-example-byoui` is not a
+new image or a new `ecs-service` variant — it is a second instance of the same module with
+`GIANO_WALLET_URL` pointing at `byoui`'s wallet origin instead of `example`'s, which is the entire
+difference between the two dApps. `wallet-byo` is the tenant-authored SPA, and it is the only
+service in this table that Giano would not run in a real deployment: a BYO tenant hosts it
+themselves. Dev hosts it so the BYO serving contract is exercised rather than described.
 
 One task per service. Zero redundancy is deliberate: this is a dev environment, and a second task
 doubles the largest line in the cost table.
@@ -559,7 +634,7 @@ mutually exclusive by design.
 | `SPONSORSHIP_SIGNER_KEY_REF` | 32-byte hex key | SSM SecureString |
 | `SPONSORSHIP_PAYMASTER_ADDRESS` | the §6.1 proxy | tfvar |
 | `PAYMASTER_WATCHER_ENABLED` | `true` | literal |
-| `TENANTS_SEED` | one tenant, below | SSM SecureString (carries `adminKeys`) |
+| `TENANTS_SEED` | two tenants, below | SSM SecureString (carries `adminKeys`) |
 | `METRICS_BEARER_TOKEN` | random | SSM SecureString |
 | `LOG_LEVEL` | `info` | literal |
 
@@ -569,25 +644,46 @@ they default correctly from it. Setting them by hand is how they drift.
 The tenant seed:
 
 ```json
-[{
-  "slug": "example",
-  "walletOrigin": "https://wallet.example.dev.giano.<domain>",
-  "rpId": "wallet.example.dev.giano.<domain>",
-  "rpName": "Giano Example",
-  "allowedDappOrigins": ["https://example.dev.giano.<domain>"],
-  "corsOrigins": ["https://example.dev.giano.<domain>"],
-  "openRegistration": true,
-  "adminKeys": ["<generated>"]
-}]
+[
+  {
+    "slug": "example",
+    "walletOrigin": "https://wallet.example.dev.giano.<domain>",
+    "rpId": "wallet.example.dev.giano.<domain>",
+    "rpName": "Giano Example",
+    "allowedDappOrigins": ["https://example.dev.giano.<domain>"],
+    "corsOrigins": ["https://example.dev.giano.<domain>"],
+    "openRegistration": true,
+    "adminKeys": ["<generated>"]
+  },
+  {
+    "slug": "byoui",
+    "walletOrigin": "https://wallet.byoui.dev.giano.<domain>",
+    "rpId": "wallet.byoui.dev.giano.<domain>",
+    "rpName": "Giano BYO UI",
+    "allowedDappOrigins": ["https://byoui.dev.giano.<domain>"],
+    "corsOrigins": ["https://byoui.dev.giano.<domain>"],
+    "openRegistration": true,
+    "adminKeys": ["<generated>"]
+  }
+]
 ```
 
-The tenant is the **example app**, not the environment: its `walletOrigin` is the CNAMEd tenant
-hostname, and `rpId` equals that host because `validateTenantSeed` requires it to
-(`services/wallet-api/src/services/tenants.ts` — decision D1 there). Note that the CNAME model is
-fully compatible with that strict rule: the RP ID is still the wallet origin's own host, just the
-tenant's rather than Giano's. Nothing in `wallet.dev.giano.<domain>` appears in this seed, and
-nothing should — a tenant row for Giano's own serving hostname is how a passkey ends up bound to
-infrastructure.
+Both rows are tenants of the **app**, never of the environment: each `walletOrigin` is that tenant's
+own hostname and `rpId` equals its host, because `validateTenantSeed` requires it to
+(`services/wallet-api/src/services/tenants.ts` — decision D1 there). The CNAME model is fully
+compatible with that strict rule: the RP ID is still the wallet origin's own host, just the tenant's
+rather than Giano's. Nothing in `wallet.dev.giano.<domain>` appears in this seed, and nothing should
+— a tenant row for Giano's own serving hostname is how a passkey ends up bound to infrastructure.
+
+The two rows are indistinguishable to wallet-api, which is the point: it has no notion of who wrote
+the SPA behind a wallet origin. `byoui` differs only in what answers on its hostname
+([§7.5](#75-wallet-byo)) — and, because its allowlist travels with its own SPA rather than with
+wallet-web's `/config.json`, in being a second tenant that [R9](#17-risks-and-open-items) does not
+block.
+
+Each tenant needs its own sponsorship rules, so [§7.8](#78-one-shot-tasks)'s
+`provision-sponsorship` runs once per tenant. A tenant with no rules is refused every
+transaction.
 
 `openRegistration: true` is defensible here and only here: anyone who can reach the environment is
 meant to be able to create a wallet on it. It is the field to turn off first if the hostname ever
@@ -608,19 +704,21 @@ operations through `wallet-api`, which is what keeps the bundler private.
 | `GIANO_BUNDLER_URL` | `https://api.dev.giano.<domain>/v1/userops` — see note |
 | `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
 | `GIANO_RP_ID` | **unset** — derived per request from the host the browser used |
-| `GIANO_ALLOWED_DAPP_ORIGINS` | `["https://example.dev.giano.<domain>"]` — the union across tenants, until [§15.4](#154-a-host-resolved-tenant-config-endpoint) |
+| `GIANO_ALLOWED_DAPP_ORIGINS` | `["https://example.dev.giano.<domain>"]` — only `example` is served here, so this is a set of one, not a union ([R9](#17-risks-and-open-items)) |
 | `GIANO_SPONSORSHIP_MODE` | `service` (the default when no `GIANO_PAYMASTER_ADDRESS` is set) |
-| `GIANO_BRAND_NAME` | `Giano Example` — likewise shared until §15.4 |
+| `GIANO_BRAND_NAME` | `Giano Example` — likewise, one stock-UI tenant means no conflict yet |
 | `GIANO_CSP_CONNECT_SRC` | the RPC origin |
 
 `GIANO_RP_ID` being unset is load-bearing, not an omission: it is what lets this one task serve
 every tenant hostname (§2). Setting it would pin every tenant to one RP ID and break the model.
 
 The two rows flagged for §15.4 are the honest statement of what ships before that endpoint lands:
-`allowedDappOrigins` and the brand name come from `/config.json`, which is per *container*, so with
-more than one tenant they become a shared union rather than per-tenant values. With a single tenant
-in dev the union is a set of one and the distinction is invisible — which is exactly why it needs
-writing down before a second tenant makes it real. See [R9](#17-risks-and-open-items).
+`allowedDappOrigins` and the brand name come from `/config.json`, which is per *container*, so two
+tenants sharing this task would get the union of their values rather than their own. Dev has two
+tenants and still avoids that, because only `example` is served here — `byoui` brings its own SPA and
+its own allowlist. The constraint is therefore "one **stock-UI** tenant per wallet-web task", not
+"one tenant per deployment", and it binds the moment a second stock-UI tenant is added. See
+[R9](#17-risks-and-open-items).
 
 `GIANO_BUNDLER_URL` is required by the entrypoint's shorthand branch even when the relay path is
 used. Confirm during implementation whether the wallet origin ever dials it directly in `service`
@@ -645,7 +743,54 @@ build-time fallbacks for `pnpm dev`:
 | `GIANO_APP_LABEL` | `appLabel` | the brand name |
 | `GIANO_TEST_ERC20` | `testErc20` | unset; the devnet default address is meaningless on 84532 |
 
-### 7.5 `paymaster-admin`
+This image runs **twice**, as `custom-example` and `custom-example-byoui`. Only two values differ,
+and they are the whole reason a second instance exists rather than a wallet picker in the UI:
+
+| | `custom-example` | `custom-example-byoui` |
+|---|---|---|
+| `GIANO_WALLET_URL` | `https://wallet.example.dev.giano.<domain>` | `https://wallet.byoui.dev.giano.<domain>` |
+| `GIANO_APP_LABEL` | `Giano Example` | `Giano Example (BYO UI)` |
+
+Each dApp is pinned to exactly one wallet origin, which is what the connector contract expects and
+what makes the popup's origin check meaningful. A single dApp offering a choice of wallet origins
+would be a code change in `services/custom-example` and would blur precisely the boundary this
+environment exists to demonstrate.
+
+### 7.5 `wallet-byo`
+
+Tenant `byoui`'s wallet origin: the framework-free SPA in `e2e/wallet-byo/`, the reference a real
+BYO tenant copies (`DEVELOPER-GUIDE.md` §5.5b). It is a Node server that bundles its own SPA with
+esbuild at **container start** and reverse-proxies the same paths wallet-web's nginx does, forwarding
+`Host` and `Origin` untouched — which is the whole serving contract a BYO tenant must reproduce.
+
+Blocked on [§15.5](#155-a-deployable-byo-wallet-reference).
+
+| Variable | Value |
+|---|---|
+| `BYO_WALLET_PORT` | `8080` |
+| `WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
+| `RPC_UPSTREAM` | Base Sepolia endpoint (SSM) — proxied same-origin, so the API key stays server-side |
+| `BUNDLER_UPSTREAM` | **must be disabled** — see below ([R11](#17-risks-and-open-items)) |
+| `CHAIN_ID` | `84532` |
+| `CHAIN_B_ID` | unset — single-chain here, and the fixture currently always emits two chains (§15.5) |
+| `FACTORY_ADDRESS` | unset; defaults from the contracts registry for 84532 |
+| `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
+| `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
+| `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.<domain>"]` — this tenant's own allowlist, which is why R9 does not reach it |
+
+Because the SPA is bundled at container start from these variables, the image is already
+environment-independent in the way [§15.1](#151-a-dockerfile-and-runtime-config-for-custom-example)
+has to *make* `custom-example` be. That is a happy accident of it being an e2e fixture, not a
+designed property, and §15.5 should keep it.
+
+**Its `/bundler` proxy must not be reachable.** `serve.mjs` proxies `/bundler` unconditionally to
+`BUNDLER_UPSTREAM`, and this task sits in the `tasks` security group, which the `bundler` group
+accepts on 4337. Deployed as-is, `https://wallet.byoui.dev.giano.<domain>/bundler` would be a public,
+unauthenticated bundler relay that bypasses wallet-api's policy check entirely and drains the Alto
+executor. Sponsorship mode `service` means the SPA never needs it. Disabling that location is part of
+§15.5 and is the single most important line in it.
+
+### 7.6 `paymaster-admin`
 
 | Variable | Value |
 |---|---|
@@ -659,7 +804,7 @@ It reads the chain directly and needs neither the database nor `wallet-api`. Not
 *writes* through an injected browser wallet, so whoever holds the role-admin key from §6.1 is the
 only person who can change anything through it.
 
-### 7.6 `bundler`
+### 7.7 `bundler`
 
 | Variable | Value |
 |---|---|
@@ -670,7 +815,7 @@ only person who can change anything through it.
 | `ALTO_SAFE_MODE` | `true` — this is a real chain |
 | `GIANO_DEV_MODE` | unset; the entrypoint's Anvil-key guard stays armed |
 
-### 7.7 One-shot tasks
+### 7.8 One-shot tasks
 
 Two task definitions with no service attached, run by `aws ecs run-task`.
 
@@ -708,7 +853,7 @@ dev database and must both flip for staging. The master password is generated by
 that is the shape `wallet-api` consumes.
 
 Schema is owned by the migrations in `services/wallet-api/migrations/` and applied by the one-shot
-task in [§7.7](#77-one-shot-tasks). Terraform creates the instance and never the schema.
+task in [§7.8](#78-one-shot-tasks). Terraform creates the instance and never the schema.
 
 ---
 
@@ -742,7 +887,7 @@ metrics token are in it. The state bucket is encrypted, versioned and blocks pub
 
 Three IAM roles, each least-privileged:
 
-- **Task execution role** — pull from the five ECR repositories, write to the task's log group, read
+- **Task execution role** — pull from the six ECR repositories, write to the task's log group, read
   only the SSM parameters under `/giano/dev/*`.
 - **Task role** — per service, and mostly empty. `wallet-api` gets nothing beyond the execution
   role's grants; SSM Session Manager permissions are added only if `enable_execute_command` is
@@ -772,15 +917,18 @@ that is a code change and it is out of scope here.
 
 ### 10.1 ECR
 
-Five repositories, one per deployed image, plus the existing GHCR push left untouched — GHCR remains
+Six repositories, one per deployed image, plus the existing GHCR push left untouched — GHCR remains
 how Giano is *distributed* to client projects ([`README.md`](../README.md)); ECR is only how this
 deployment is *fed*. `docker.yml`'s other two images, `giano-devnet` and `giano-contracts-deployer`,
 are not deployed here and stay GHCR-only.
 
 ```
 giano-wallet-api  ·  giano-wallet-web  ·  giano-paymaster-admin
-giano-example  ·  giano-bundler
+giano-example  ·  giano-wallet-byo  ·  giano-bundler
 ```
+
+Six repositories for seven services: `custom-example` and `custom-example-byoui` share
+`giano-example`, differing only in environment ([§7.4](#74-custom-example)).
 
 Each with `image_tag_mutability = "IMMUTABLE"`, `scan_on_push = true`, and a lifecycle policy
 keeping the last 10 images.
@@ -798,7 +946,7 @@ Extend `.github/workflows/docker.yml`, or add a sibling `deploy-dev.yml` trigger
 assume the OIDC role (no static credentials)
 build + push each image to ECR, tagged <sha>
 aws ecs run-task            → migrate, wait for exit 0
-aws ecs update-service      → each of the five services, new task definition revision
+aws ecs update-service      → each of the seven services, new task definition revision
 aws ecs wait services-stable
 ```
 
@@ -818,7 +966,8 @@ infra/terraform/
     dns/              Route 53 child zone, ACM certificate + DNS validation
     alb/              ALB, HTTPS listener, HTTP→HTTPS redirect, 404 default action
     tenant-host/      one tenant wallet hostname: ACM certificate + validation, SNI attachment
-                      to the HTTPS listener, and its host value on the wallet listener rule
+                      to the HTTPS listener, and — for a stock-UI tenant only — its host value
+                      on the wallet listener rule
     ecs-cluster/      cluster, Cloud Map namespace, shared task execution role
     ecs-service/      one Fargate service: task def, service, target group, listener rule, log group
     ecr/              repository + lifecycle policy
@@ -848,8 +997,11 @@ indirection today.
 `dns` is separate from `alb` because of the runbook ordering: it is applied on its own so its name
 servers can be delegated by hand before ACM validation blocks on them.
 
-`modules/tenant-host` is instantiated once per entry in `var.tenant_wallet_hosts` and is the whole
-of D14's per-tenant surface — a certificate, an SNI attachment and a hostname on one listener rule.
+`modules/tenant-host` is instantiated once per tenant wallet hostname and is the whole of D14's
+per-tenant surface — a certificate, an SNI attachment and, for a stock-UI tenant, a hostname on
+rule 40. A BYO host (`wallet.byoui.*`) takes the certificate and the attachment but not the rule:
+its routing comes from its own `ecs-service` instance, so the module's rule membership is a flag
+rather than an assumption.
 It is deliberately *not* part of `ecs-service`: a tenant hostname adds no service. Whether it can
 finish an `apply` unattended depends only on the zone. For a host in ours — the example tenant —
 Terraform creates the ACM validation record itself and `apply` completes. For a host in the
@@ -889,7 +1041,7 @@ a provider minor changed a default is a bad afternoon.
 | `region` | `eu-west-2` | |
 | `chain_id` | `84532` | |
 | `paymaster_address` | `0x…` | from §6.1 |
-| `tenant_wallet_hosts` | `["wallet.example.dev.giano.example.com"]` | tenant wallet hostnames; drives the §5.3 wallet listener rule and the §5.2 SNI certificates. Giano's own `wallet.*` is not in this list — it is not a tenant |
+| `tenant_wallet_hosts` | `["wallet.example.dev.giano.example.com"]` | **stock-UI** tenant wallet hostnames; drives the §5.3 rule-40 host list and their §5.2 SNI certificates. Giano's own `wallet.*` is not in it — it is not a tenant. Nor is a BYO host: `wallet.byoui.*` gets its certificate from a `tenant-host` instance but its listener rule from its own `ecs-service` |
 | `image_tag` | `abc1234` | commit SHA; CI overrides |
 | `enable_schedule` | `true` | §13 |
 | `schedule_up_cron` / `schedule_down_cron` | `0 7 ? * MON-FRI *` / `0 19 ? * MON-FRI *` | UTC |
@@ -918,14 +1070,14 @@ substantially.
 | Line | Always on | With schedule (§13) |
 |---|---|---|
 | ALB (hourly + ~1 LCU) | $20 | $20 |
-| Fargate — 5 tasks, 1.75 vCPU / 3.5 GB total | $73 | $26 |
+| Fargate — 7 tasks, 2.25 vCPU / 4.5 GB total | $94 | $33 |
 | RDS `db.t4g.micro` + 20 GB gp3 | $16 | $10 |
-| Public IPv4 — 5 tasks + 2 ALB | $25 | $16 |
+| Public IPv4 — 7 tasks + 2 ALB | $32 | $21 |
 | ECR storage | $1 | $1 |
 | Route 53 zone + queries | $1 | $1 |
 | CloudWatch Logs (7-day) | $2 | $2 |
 | Data transfer out | $1–3 | $1–3 |
-| **Total** | **≈ $139/mo** | **≈ $77/mo** |
+| **Total** | **≈ $167/mo** | **≈ $89/mo** |
 
 Notes on the two lines that surprise people:
 
@@ -938,10 +1090,16 @@ $35 the decision is usually sold on. If the count of services grows past about e
 records' target. Consolidating a future staging environment onto the same ALB with more host rules
 is the obvious next saving.
 
-**A tenant costs nothing in this table.** Under D14 an onboarded tenant adds a Route 53 record, an
-ACM certificate and an SNI attachment — all free or fractions of a cent — and one database row. The
-per-tenant-container alternative would have added a sixth Fargate task (~$5/mo scheduled), a public
-IPv4 (~$3.65/mo) and a target group per tenant.
+**A stock-UI tenant costs nothing in this table.** Under D14 it adds a Route 53 record, an ACM
+certificate and an SNI attachment — all free or fractions of a cent — and one database row. The
+per-tenant-container alternative would have added a Fargate task (~$5/mo scheduled), a public IPv4
+(~$3.65/mo) and a target group for each one.
+
+**Tenant `byoui` is what a tenant costs when it is *not* on the stock UI**, and it is the
+~$12/mo difference between this table and the five-task one: two extra tasks (`wallet-byo` and
+`custom-example-byoui`) and two extra public IPv4 addresses. That is the price of D15 — of dev
+demonstrating both wallet-UI topologies rather than describing one. It is also a price no real
+deployment pays, because a real BYO tenant hosts its own UI ([§7.5](#75-wallet-byo)).
 
 Not included: Base Sepolia gas, which is free from faucets but requires attention (§6.2).
 
@@ -953,8 +1111,8 @@ Two EventBridge Scheduler schedules invoking `ecs:UpdateService` through a small
 
 | Schedule | Cron (UTC) | Effect |
 |---|---|---|
-| down | `0 19 ? * MON-FRI *` | `desiredCount = 0` on all five services |
-| up | `0 7 ? * MON-FRI *` | `desiredCount = 1` on all five services |
+| down | `0 19 ? * MON-FRI *` | `desiredCount = 0` on all seven services |
+| up | `0 7 ? * MON-FRI *` | `desiredCount = 1` on all seven services |
 
 Weekends stay down: Friday's `down` fires and nothing brings it back until Monday. Gated by
 `var.enable_schedule` so it can be disabled for a demo week without editing the schedules.
@@ -987,9 +1145,10 @@ No alarms, no dashboards, no Container Insights (D12). One thing is worth adding
 
 ## 15. Repository changes this requires
 
-Four changes to this repository that are code, not infrastructure. None is large. The first three
-block bring-up; the fourth blocks the *second* tenant, which is a different and more dangerous kind
-of deadline — it is the one that looks fine in dev and is a cross-tenant hole in staging.
+Five changes to this repository that are code, not infrastructure. None is large. Three block
+bring-up (§15.1–§15.3); §15.5 blocks tenant `byoui` specifically; and §15.4 blocks the second
+*stock-UI* tenant, which is a different and more dangerous kind of deadline — it is the one that
+looks fine in dev and is a cross-tenant hole in staging.
 
 ### 15.1 A Dockerfile and runtime config for `custom-example`
 
@@ -1053,6 +1212,32 @@ Worth doing at the same time, but a separate change: have wallet-api enforce the
 origin to reach wallet-api on ceremony routes, which today it does not — the `Origin` header there
 is the *wallet* origin. Defence in depth, not a substitute for the above.
 
+### 15.5 A deployable BYO wallet reference
+
+`e2e/wallet-byo/` is an e2e fixture, and three of its assumptions are about the devnet rather than
+about being a wallet. Tenant `byoui` ([§7.5](#75-wallet-byo)) needs them lifted. None is deep, and
+the first is not optional:
+
+- **Make the `/bundler` proxy disableable, and disable it here.** `serve.mjs` proxies `/bundler`
+  unconditionally to `BUNDLER_UPSTREAM`, and the task can reach the private bundler on 4337. Left
+  as-is, this tenant's wallet origin becomes a public unauthenticated bundler relay that bypasses
+  wallet-api's policy check and drains the Alto executor ([R11](#17-risks-and-open-items)). The same
+  applies to `/bundler-b`. `service` sponsorship never needs either.
+- **Stop requiring `e2e/devnet/addresses.json`.** It is read unconditionally at start-up for
+  defaults that every deployment overrides by environment (`CHAIN_ID`, `FACTORY_ADDRESS`,
+  `SPONSORSHIP_MODE`, `PAYMASTER_ADDRESS`), so the container simply crashes without a devnet file
+  that has no business in the image. The same goes for the `../origins.mjs` import.
+- **Make the second chain optional.** `src/config.ts` always emits two chain entries, named
+  `Devnet A` and `Devnet B`. On a single-chain deployment the second is a fiction pointing at
+  `/rpc-b`. It should fall away when `CHAIN_B_ID` is unset, and the names should come from
+  environment.
+- **Add a `Dockerfile`.** Node, the SPA sources and esbuild; no build step, because the bundle is
+  produced at container start.
+
+What should *not* change is that start-up bundling. It is why this fixture is already
+environment-independent in the way §15.1 has to make `custom-example` be, and it is the cheapest
+correct answer for a small SPA.
+
 ---
 
 ## 16. Bring-up runbook
@@ -1077,20 +1262,32 @@ Ordered, because several steps are prerequisites of the next `apply` rather than
 7. **Migrate.** `aws ecs run-task` the migrate task definition; confirm exit 0.
 8. **Scale up and verify.** Services reach steady state; `curl https://api.dev.giano.<domain>/healthz`
    and `GET /v1/version`.
-9. **Provision sponsorship** (§15.3). Verify through the paymaster console that the example tenant
-   appears with a balance.
-10. **End-to-end check.** On `example.dev.giano.<domain>`: create a passkey, connect, send a sponsored
-    transaction, confirm the receipt and confirm the tenant balance moved.
+9. **Provision sponsorship** (§15.3), **once per tenant**. Verify through the paymaster console that
+   `example` and `byoui` each appear with a balance. A tenant with no rules is refused every
+   transaction, which looks exactly like a broken environment.
+10. **End-to-end check, stock UI.** On `example.dev.giano.<domain>`: create a passkey, connect, send a
+    sponsored transaction, confirm the receipt and confirm the tenant balance moved.
 11. **Verify the CNAME model held.** The popup's address bar must read
     `wallet.example.dev.giano.<domain>`, never `wallet.dev.giano.<domain>`; the created credential's
     RP ID must be the tenant host; and `curl https://wallet.dev.giano.<domain>/.well-known/webauthn`
     must 404 while the same path on the tenant host returns its origins. A passkey bound to Giano's
     own serving hostname is the failure this step exists to catch, and it is unrecoverable once a
     user has one.
+12. **End-to-end check, BYO UI.** Repeat step 10 on `byoui.dev.giano.<domain>`. The popup must be
+    `wallet.byoui.dev.giano.<domain>` and must be serving the BYO SPA, not the stock one — if it
+    looks like `example`'s wallet, rule 35 is being shadowed by rule 40 (§5.3).
+13. **Verify tenant isolation.** With a passkey on each tenant, confirm the two are separate
+    relying parties: `byoui`'s credential must not be offered on `example`'s wallet origin or the
+    reverse, and each tenant's sponsorship balance must move only for its own transactions. This is
+    what the second tenant is *for*; with one tenant it is unobservable.
+14. **Confirm the BYO bundler proxy is shut.**
+    `curl -X POST https://wallet.byoui.dev.giano.<domain>/bundler` must not reach a bundler
+    ([R11](#17-risks-and-open-items), §15.5). An open relay here bypasses every policy check
+    wallet-api makes.
 
 Step 10 is the acceptance test for the whole document. Anything short of a sponsored transaction
-settling is an environment that will waste someone's morning. Step 11 is the acceptance test for
-D14, and it is cheap to run now and impossible to undo later.
+settling is an environment that will waste someone's morning. Steps 11 and 14 are the two that
+cannot be deferred: one is unrecoverable after a single user, the other is a live exposure.
 
 ---
 
@@ -1106,8 +1303,9 @@ D14, and it is cheap to run now and impossible to undo later.
 | R6 | **Terraform state holds generated credentials.** | Credential exposure if the bucket leaks | Bucket is private, versioned and encrypted; no *human*-written key is ever in state (§9.1). |
 | R7 | **The `hsm` signer path is unreachable from the published image.** | Blocks a `production` deployment class, not this one | Out of scope; flagged so it is not discovered during a production build (§9.3). |
 | R8 | **Public IPv4 charges scale with task count.** $3.65/mo each. | Erodes the no-NAT saving as services grow | Revisit D8 past ~8 services. |
-| R9 | **The dApp allowlist is per container, so across tenants it is a union.** One shared wallet-web enforces every tenant's `allowedDappOrigins` for all of them, and wallet-api never enforces the column at all. | Cross-tenant dApp handshake; invisible with one tenant | [§15.4](#154-a-host-resolved-tenant-config-endpoint) is the fix and is a **prerequisite of the second tenant**, not of bring-up. Until it lands, dev must stay single-tenant — which it is. |
-| R10 | **Tenant certificate renewal depends on the tenant.** ACM renews only while the validation `CNAME` still resolves in the tenant's zone. | A tenant's wallet host goes dark at renewal, ~13 months in | §5.5 tells tenants to leave the record in place. A certificate-expiry alarm is the second candidate for overriding D12, after R2. |
+| R9 | **The dApp allowlist is per container, so across tenants it is a union.** One shared wallet-web enforces every tenant's `allowedDappOrigins` for all of them, and wallet-api never enforces the column at all. | Cross-tenant dApp handshake | [§15.4](#154-a-host-resolved-tenant-config-endpoint) is the fix and is a **prerequisite of the second stock-UI tenant**, not of bring-up. Dev has two tenants and still avoids it: only `example` is served by wallet-web, and `byoui` brings its own SPA and allowlist (D15). The rule to hold is one stock-UI tenant per wallet-web task. |
+| R10 | **Tenant certificate renewal depends on the tenant.** ACM renews only while the validation `CNAME` still resolves in the tenant's zone. | A tenant's wallet host goes dark at renewal, ~13 months in | §5.5 tells tenants to leave the record in place. A certificate-expiry alarm is the second candidate for overriding D12, after R2. Does not apply to either dev tenant — both hostnames are in our zone. |
+| R11 | **The BYO fixture proxies `/bundler` unconditionally.** `e2e/wallet-byo/serve.mjs` relays `/bundler` and `/bundler-b` to `BUNDLER_UPSTREAM`, and its task can reach the private bundler on 4337. | A public unauthenticated bundler relay on a wallet origin, bypassing every wallet-api policy check and draining the Alto executor | **Blocks deploying `wallet-byo` at all.** First bullet of [§15.5](#155-a-deployable-byo-wallet-reference); verified by runbook step 14. `service` sponsorship never needs the location. |
 
 ---
 
@@ -1125,7 +1323,9 @@ nothing else:
 - `GIANO_DEPLOYMENT_CLASS = "production"` — which requires §9.3 resolved first
 - `openRegistration: false` and server-to-server registration through tenant admin keys
 - its own hosted zone, its own tenant hostnames, its own passkeys
-- **§15.4 resolved** — staging is where a second tenant becomes real, and R9 with it
+- **§15.4 resolved** — staging is where a second *stock-UI* tenant becomes real, and R9 with it
+- no `wallet-byo` service: a real BYO tenant hosts its own UI, so staging carries the tenant row
+  and nothing else. Dev hosting it (D15) is a demonstration, not a pattern to copy
 - alarms and a dashboard worth the name
 
 The one thing that does not carry across is passkeys: a separate `rpId` means separate credentials,
