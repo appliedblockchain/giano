@@ -1,5 +1,6 @@
-import { TransportHost } from '@appliedblockchain/giano-wallet-transport';
+import { RPC_ERRORS, TransportHost, TransportRpcError } from '@appliedblockchain/giano-wallet-transport';
 import { CONFIG } from './config';
+import { renderManage } from './manage';
 import { createRequestStore, toRpcError } from './requests';
 import { createWalletRuntimes, type WalletRuntime } from './runtime';
 import { render } from './views';
@@ -52,6 +53,18 @@ const transport = new TransportHost({
   // the closed list the handshake negotiates against (MC-03)
   servedChainIds: runtimes.servedChainIds,
   onRequest: async (method, params, context) => {
+    // WM-54/WM-60: the BYO wallet handles the management method itself, against the same
+    // API as the stock UI. No parameters in (WM-39), nothing out (WM-40).
+    if (method === 'giano_openWalletManagement') {
+      const params_ = params as unknown[] | undefined;
+      if (params_ !== undefined && params_ !== null && !(Array.isArray(params_) && params_.length === 0)) {
+        throw new TransportRpcError(RPC_ERRORS.UNSUPPORTED_METHOD, 'the management interface accepts no parameters from the application');
+      }
+      await new Promise<void>((resolve) => renderManage(root, { runtimes, onClose: resolve }));
+      rerender();
+      return null;
+    }
+
     // the session's negotiated chain picks the runtime — same shape as the stock wallet (MC-43)
     const runtime = runtimes.runtimeFor(context.chainId);
     if (!wiredChains.has(context.chainId)) {
@@ -96,6 +109,12 @@ const transport = new TransportHost({
 });
 
 requests.subscribe(() => rerender());
-rerender();
+if (window.opener) {
+  rerender();
+} else {
+  // Opened directly (WM-56): the standalone entry is the management view, with the same
+  // capabilities the popup path offers.
+  renderManage(root, { runtimes });
+}
 transport.start();
 window.addEventListener('beforeunload', () => transport.stop());

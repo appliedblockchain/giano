@@ -184,6 +184,21 @@ document.getElementById('sign-typed')!.addEventListener('click', async () => {
   }
 });
 
+/**
+ * The management interface (WM-63): opened through the SDK function of WM-54 and nothing
+ * else — the dApp implements no credential handling, no ceremony, no owner-set
+ * construction (WM-65). The outcome written here is only that the view closed: the wallet
+ * returns no owner data to the application (WM-40).
+ */
+document.getElementById('manage')!.addEventListener('click', async () => {
+  try {
+    const result = (await provider.openWalletManagement()) as unknown;
+    log('manage:closed', result == null ? '(no data returned)' : `UNEXPECTED DATA RETURNED: ${JSON.stringify(result)}`);
+  } catch (error) {
+    log('manage:error', error instanceof TransportRpcError ? `rpc:${error.code} ${error.message}` : (error as Error).message);
+  }
+});
+
 document.getElementById('disconnect')!.addEventListener('click', () => {
   provider.disconnect();
   log('disconnected', '');

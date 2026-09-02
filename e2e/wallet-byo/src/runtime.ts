@@ -8,7 +8,7 @@ import {
   type SponsorshipRuleResult,
   type WalletApiInjection,
 } from '@appliedblockchain/giano-wallet-core';
-import { createPublicClient, defineChain, http } from 'viem';
+import { createPublicClient, defineChain, http, type PublicClient } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
 import { CONFIG, type ByoChainConfig } from './config';
 
@@ -40,6 +40,9 @@ export type WalletRuntime = {
   injection: WalletApiInjection;
   chainId: number;
   chainName: string;
+  /** Read client for this chain — what the management view enumerates the owner set with (WM-01). */
+  publicClient: PublicClient;
+  factoryAddress: `0x${string}`;
   /**
    * Deliberately duplicated from the stock wallet rather than shared: the pre-approval refusal is
    * wallet-side behaviour, and a BYO tenant has to get it right in its own UI. Having the
@@ -189,7 +192,15 @@ export function createWalletRuntime(chainConfig: ByoChainConfig, injection: Wall
     }
   };
 
-  return { provider: gianoProvider, injection, chainId: chainConfig.chainId, chainName: chainConfig.name, checkSponsorship };
+  return {
+    provider: gianoProvider,
+    injection,
+    chainId: chainConfig.chainId,
+    chainName: chainConfig.name,
+    publicClient: publicClient as PublicClient,
+    factoryAddress: CONFIG.factoryAddress,
+    checkSponsorship,
+  };
 }
 
 function toPreflight(check: SponsorshipCheck): SponsorshipPreflight {
