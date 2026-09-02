@@ -71,6 +71,14 @@ export const credentials = pgTable(
     counter: bigint('counter', { mode: 'bigint' }).notNull().default(0n),
     transports: text('transports').array(),
     walletAddress: text('wallet_address').notNull(),
+    /** User-set label (WM-07). Never an input to authorisation or matching (WM-11). */
+    name: text('name'),
+    /**
+     * Set once the owner key was verified removed on-chain (WM-31). The row is kept so the
+     * interface can show the credential honestly as "no longer an owner" (WM-04); a removed
+     * credential can no longer authenticate or hold sessions.
+     */
+    removedAt: timestamp('removed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -111,13 +119,81 @@ export const sessions = pgTable(
     credentialId: uuid('credential_id')
       .notNull()
       .references(() => credentials.id, { onDelete: 'cascade' }),
+    /**
+     * The wallet this session is scoped to (WM-33/D3), captured at issue time from the
+     * authenticating credential. The relay's sender-binding rule reads THIS, so any owner
+     * credential of a wallet opens a session that can act for it — no relay exception (WM-34).
+     */
+    walletAddress: text('wallet_address').notNull(),
     // stays globally unique: bearer-token anti-collision IS the property we want
     tokenHash: text('token_hash').notNull().unique(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  (t) => [index('sessions_user_id_idx').on(t.userId), index('sessions_expires_at_idx').on(t.expiresAt)],
+  (t) => [
+    index('sessions_user_id_idx').on(t.userId),
+    index('sessions_expires_at_idx').on(t.expiresAt),
+    index('sessions_credential_id_idx').on(t.credentialId),
+  ],
+);
+
+/**
+ * A pending addition (D8): the slot a second device deposits a newly created public key
+ * into. Opened by the AUTHORISING device — tenant, user and target wallet come from its
+ * authenticated session (WM-19) — routed to by a short single-use claim code, and inert
+ * until an existing credential signs the on-chain addition. Chain writes first; the
+ * registry binds only at consumption (WM-15), so the registry never claims an owner the
+ * chain does not have.
+ */
+export const pendingAdditions = pgTable(
+  'pending_additions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    walletAddress: text('wallet_address').notNull(),
+    claimCode: text('claim_code').notNull().unique(),
+    status: text('status', { enum: ['open', 'filled', 'consumed', 'declined', 'expired'] })
+      .notNull()
+      .default('open'),
+    credentialId: text('credential_id'),
+    cosePublicKey: bytea('cose_public_key'),
+    publicKeyX: text('public_key_x'),
+    publicKeyY: text('public_key_y'),
+    transports: text('transports').array(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    filledAt: timestamp('filled_at', { withTimezone: true }),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  },
+  (t) => [index('pending_additions_user_id_idx').on(t.userId), index('pending_additions_expires_at_idx').on(t.expiresAt)],
+);
+
+/** Durable audit of every attempted owner-set change and pending-addition transition (WM-50, WM-51). */
+export const walletManagementLog = pgTable(
+  'wallet_management_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'set null' }),
+    walletAddress: text('wallet_address').notNull(),
+    action: text('action').notNull(),
+    outcome: text('outcome', { enum: ['ok', 'refused'] }).notNull(),
+    detail: jsonb('detail').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('wallet_management_log_wallet_idx').on(t.walletAddress, t.createdAt),
+    index('wallet_management_log_tenant_idx').on(t.tenantId, t.createdAt),
+  ],
 );
 
 export const useropLog = pgTable(

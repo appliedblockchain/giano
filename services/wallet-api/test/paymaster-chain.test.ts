@@ -274,6 +274,7 @@ describe.skipIf(!hasState)('sponsorship against a real chain', () => {
       .values({
         userId: user.id,
         credentialId: credential.id,
+        walletAddress,
         tokenHash: 'chain-test-token-hash',
         expiresAt: new Date(Date.now() + 3_600_000),
       })
