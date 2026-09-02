@@ -294,6 +294,50 @@ nothing (MC-11, MC-12).
   another (MC-65, MC-67, MC-69). See `specs/CHAIN-ADOPTION.md` for what serving a new chain
   involves.
 
+### Wallet management (opening it from your app)
+
+Your application's entire involvement in wallet management is **opening the interface** — it
+implements no credential handling, no ceremony, and no owner-set construction of its own
+(WM-54, WM-65). The SDK exposes one function for it:
+
+```ts
+// From a user gesture (it opens the wallet popup). Takes NO arguments and resolves with
+// NOTHING: the app cannot pre-fill the form, preselect a credential, or learn the owner set —
+// its whole power is showing the user their own wallet's management screen (WM-39, WM-40).
+await provider.openWalletManagement();
+```
+
+It follows the `giano_`-namespaced transport convention, so no standard EIP-1193 method changes
+shape (WM-55). A blocked popup surfaces the same way every other popup-blocked path does (WM-59).
+From there the user sees every credential that can act on their wallet — read from the chain, not
+from a registry cache — can name them, add a passkey on the current device or a second one, add an
+externally-owned account, and remove one they no longer trust. Every change is a consented,
+sponsored, audited on-chain operation authorised only by a credential the wallet already
+recognises; the backend never gains an authority over any wallet (BR-02, BR-03).
+
+**The API a bring-your-own wallet drives.** A tenant serving its own wallet interface reaches the
+same capabilities against the same endpoints — there is no Giano-specific privilege (WM-60). The
+surface, all under an authenticated session except the two claim endpoints (which a second device
+with no session uses, and which authorise nothing):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/me/credentials` | The registry rows — names, public keys, transports, `removedAt` — to join against the on-chain owner set by owner bytes (WM-02, WM-04) |
+| `PATCH /v1/me/credentials/:id` | Set or change a credential's name (WM-07) |
+| `POST /v1/me/credentials/:id/removed` | Mark a credential no longer an owner *after* the chain confirms it — verified server-side; revokes its sessions (WM-31) |
+| `POST /v1/wallet/pending-additions` | Open a cross-device handoff slot; returns a single-use, short-lived claim code (WM-19) |
+| `GET /v1/wallet/pending-additions/:id` | Poll the slot for the deposited public key (to display and compare its fingerprint, WM-20) |
+| `POST /v1/wallet/pending-additions/:id/complete` | Bind the deposited credential to the wallet, *after* the owner change confirmed on-chain (WM-15) |
+| `POST /v1/wallet/pending-additions/:id/decline` | Abandon the slot; a declined fingerprint is counted and alertable (WM-52) |
+| `POST /v1/wallet/pending-additions/claim` (no session) | Resolve a claim code to a registration challenge for the new device |
+| `POST /v1/wallet/pending-additions/claim/fill` (no session) | Deposit the new device's credential into the slot — inert until signed for |
+| `POST /v1/wallet/owner-events` | Audit an owner change the registry has no row for (an externally-owned account) |
+
+The full request/response shapes are in the OpenAPI document (`/docs`), and
+`packages/wallet-core`'s `management` module (`readOwnerSet`, `ownerFingerprint`, the
+`addOwner*`/`removeOwnerAtIndex` encoders, `createWalletManagementApi`) is the reference client the
+stock UI and the bring-your-own reference (`e2e/wallet-byo`) both use.
+
 ## 10. Upgrade runbook
 
 All artifacts share one version (Changesets fixed mode). Upgrade order: **wallet-api
