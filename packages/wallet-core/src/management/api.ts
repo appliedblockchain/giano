@@ -56,7 +56,12 @@ export function createWalletManagementApi(options: CreateWalletManagementApiOpti
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
 
   async function api<T>(path: string, init: RequestInit & { auth?: boolean } = {}): Promise<T> {
-    const headers: Record<string, string> = { 'content-type': 'application/json', ...(init.headers as Record<string, string> | undefined) };
+    // Only set the JSON content-type when there IS a body: Fastify rejects an empty body
+    // that declares application/json, and several of these endpoints are bodyless POSTs.
+    const headers: Record<string, string> = {
+      ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers as Record<string, string> | undefined),
+    };
     if (init.auth) {
       const token = options.getSessionToken?.();
       if (!token) throw new WalletManagementApiError('no-session', `${path} requires a session — sign in first`, 401);

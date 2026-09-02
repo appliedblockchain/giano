@@ -1,8 +1,13 @@
 import type { CDPSession, Page } from '@playwright/test';
 import { createPublicClient, http, size, slice, type Address, type Hex } from 'viem';
-import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
 
 import { CHAINS, ORIGINS } from '../origins.mjs';
+
+/** The two MultiOwnable views this suite reads — inlined to avoid a build-order dependency. */
+const OWNER_SET_ABI = [
+  { type: 'function', name: 'nextOwnerIndex', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'ownerAtIndex', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'bytes' }] },
+] as const;
 
 /**
  * Tenant descriptors for the two-tenant e2e topology. UI labels differ per tenant on
@@ -144,14 +149,14 @@ export async function readOnChainOwners(
   if (!code || code === '0x') return { deployed: false, owners: [] };
   const nextOwnerIndex = await client.readContract({
     address: walletAddress as Address,
-    abi: gianoSmartWalletAbi,
+    abi: OWNER_SET_ABI,
     functionName: 'nextOwnerIndex',
   });
   const owners: { index: number; ownerBytes: Hex; kind: 'passkey' | 'address' }[] = [];
   for (let index = 0; index < Number(nextOwnerIndex); index++) {
     const ownerBytes = (await client.readContract({
       address: walletAddress as Address,
-      abi: gianoSmartWalletAbi,
+      abi: OWNER_SET_ABI,
       functionName: 'ownerAtIndex',
       args: [BigInt(index)],
     })) as Hex;

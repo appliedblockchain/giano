@@ -46,16 +46,18 @@ test('view: one credential on-chain, current session marked (WM-01, WM-10)', asy
 });
 
 test('rename a credential; the name persists (WM-07)', async ({ page }) => {
-  const { popup } = await openManagement(page);
+  const { credentials, popup } = await openManagement(page);
   await popup.getByTestId('manage-rename').click();
   await popup.getByTestId('manage-rename-input').fill('My security key');
   await popup.getByTestId('manage-rename-save').click();
   await expect(popup.getByTestId('manage-owner-name')).toHaveText('My security key');
 
-  // reopen the view: the name is still there (it lives in the registry, WM-08)
-  await popup.getByTestId('manage-close').click();
-  const reopened = await openManagePopup(page, (await connectWallet(page, tenant)).credentials);
-  await expect(reopened.getByTestId('manage-owner-name')).toHaveText('My security key');
+  // Close this popup (it shares the 'giano-wallet' window name, so a second must not
+  // overlap it) and reopen the view — the session persists, so no reconnect is needed.
+  // The name is still there because it lives in the registry (WM-08).
+  await Promise.all([popup.waitForEvent('close'), popup.getByTestId('manage-close').click()]);
+  const reopened = await openManagePopup(page, credentials);
+  await expect(reopened.getByTestId('manage-owner-name')).toHaveText('My security key', { timeout: 30_000 });
 });
 
 test('add a passkey in the current session: two owners on-chain, address unchanged (WM-12, WM-14)', async ({ page }) => {
@@ -76,8 +78,6 @@ test('add a passkey in the current session: two owners on-chain, address unchang
   // WM-12: the wallet's address did not change.
   const me = await page.evaluate(() => window.giano.provider.request<string[]>({ method: 'eth_accounts' }));
   expect((me as string[])[0].toLowerCase()).toBe(address.toLowerCase());
-
-  await popup.getByTestId?.('manage-flow-done');
 });
 
 test('add an externally-owned account: full address shown, then present on-chain (WM-24, WM-25, WM-26)', async ({ page }) => {
