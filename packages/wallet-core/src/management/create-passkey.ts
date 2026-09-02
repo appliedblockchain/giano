@@ -44,6 +44,10 @@ export async function depositPasskeyIntoPendingAddition(parameters: DepositPassk
     authenticatorSelection: {
       userVerification: DEFAULT_USER_VERIFICATION_REQUIREMENT,
       residentKey: DEFAULT_RESIDENT_KEY_REQUIREMENT,
+      // Passing a custom authenticatorSelection replaces ox's default wholesale, so set the
+      // deprecated-but-still-honoured requireResidentKey explicitly for older CTAP
+      // authenticators — matching how the connect flow (provider.ts) builds it.
+      requireResidentKey: DEFAULT_RESIDENT_KEY_REQUIREMENT === 'required',
     },
   });
   const filled = await api.fillPendingAddition(claimCode, credential.raw);
