@@ -34,23 +34,63 @@ export const TEST_RP_ID = TENANT_A.rpId;
 export const ADMIN_KEY = TENANT_A.adminKey;
 
 /**
+ * Mutable owner-set state for the mock chain, standing in for what the account contract
+ * would report. Wallet-management endpoints refuse to update the registry unless the chain
+ * confirms the change (WM-15, WM-31) — tests move this state to play the chain's part.
+ */
+export type MockChainState = {
+  /** lowercased addresses that have code (the account deploys lazily). */
+  contracts: Set<string>;
+  /** lowercased `${x}:${y}` 32-byte-hex pairs currently in the owner set. */
+  ownerKeys: Set<string>;
+  /** lowercased Ethereum-address owners. */
+  ownerAddresses: Set<string>;
+};
+
+export function createMockChainState(): MockChainState {
+  return { contracts: new Set(), ownerKeys: new Set(), ownerAddresses: new Set() };
+}
+
+export const ownerKeyOf = (x: string, y: string) => `${x.toLowerCase()}:${y.toLowerCase()}`;
+
+const BOOL_TRUE = `0x${'0'.repeat(63)}1`;
+const BOOL_FALSE = `0x${'0'.repeat(64)}`;
+// keccak-derived 4-byte selectors for the MultiOwnable views the backend reads
+const SEL_IS_OWNER_PUBLIC_KEY = '0x066a1eb7'; // isOwnerPublicKey(bytes32,bytes32)
+const SEL_IS_OWNER_ADDRESS = '0xa2e1a8d8'; // isOwnerAddress(address)
+
+/**
  * Tiny JSON-RPC stub standing in for the chain RPC. factory.getAddress → an address
  * DERIVED from the call data (which encodes the owner public key), so distinct
  * credentials get distinct wallet addresses — and the same credential registered on
  * two tenants gets the SAME address, mirroring the real tenant-agnostic derivation.
+ * With a `MockChainState` it also answers the owner-set reads (isOwnerPublicKey,
+ * isOwnerAddress, eth_getCode) the wallet-management endpoints verify against.
  */
-export function startMockRpc(): Promise<{ url: string; close: () => Promise<void> }> {
+export function startMockRpc(chainState?: MockChainState): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => (body += chunk));
     req.on('end', () => {
-      const { id, method, params } = JSON.parse(body) as { id: number; method: string; params?: [{ data?: string }] };
-      let result = '0x0';
+      const { id, method, params } = JSON.parse(body) as { id: number; method: string; params?: [{ data?: string; to?: string }, ...unknown[]] };
+      let result: string = '0x0';
       if (method === 'eth_call') {
-        const digest = createHash('sha256')
-          .update(params?.[0]?.data ?? '0x')
-          .digest('hex');
-        result = `0x${'0'.repeat(24)}${digest.slice(0, 40)}`; // abi-encoded address
+        const data = params?.[0]?.data ?? '0x';
+        const selector = data.slice(0, 10).toLowerCase();
+        if (chainState && selector === SEL_IS_OWNER_PUBLIC_KEY) {
+          const x = `0x${data.slice(10, 74)}`;
+          const y = `0x${data.slice(74, 138)}`;
+          result = chainState.ownerKeys.has(ownerKeyOf(x, y)) ? BOOL_TRUE : BOOL_FALSE;
+        } else if (chainState && selector === SEL_IS_OWNER_ADDRESS) {
+          const owner = `0x${data.slice(34, 74)}`.toLowerCase();
+          result = chainState.ownerAddresses.has(owner) ? BOOL_TRUE : BOOL_FALSE;
+        } else {
+          const digest = createHash('sha256').update(data).digest('hex');
+          result = `0x${'0'.repeat(24)}${digest.slice(0, 40)}`; // abi-encoded address
+        }
+      } else if (method === 'eth_getCode') {
+        const address = String((params as unknown as [string])?.[0] ?? '').toLowerCase();
+        result = chainState?.contracts.has(address) ? '0x6080' : '0x';
       } else if (method === 'eth_chainId') {
         result = '0x7a69';
       }
@@ -95,6 +135,8 @@ export type TestContext = {
   config: AppConfig;
   app: Awaited<ReturnType<typeof buildApp>>;
   bundlerCalls: BundlerCall[];
+  /** The mock chain's owner-set state — what wallet-management verification reads. */
+  chainState: MockChainState;
 };
 
 const tenantSeedJson = JSON.stringify([
@@ -122,7 +164,8 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   const databaseUrl = container.getConnectionUri();
   await runMigrations(databaseUrl);
 
-  const rpc = await startMockRpc();
+  const chainState = createMockChainState();
+  const rpc = await startMockRpc(chainState);
   const { fetchImpl, calls } = createMockBundlerFetch();
 
   const baseEnv: Record<string, string> = {
@@ -150,7 +193,7 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   // the production write path — tenant seeds run the same validation as a real boot
   await seedTenants(db, config.TENANTS_SEED);
   const app = await buildApp({ config, db, fetchImpl });
-  return { container, db, pool, rpc, config, app, bundlerCalls: calls };
+  return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState };
 }
 
 export async function stopTestStack(ctx: TestContext): Promise<void> {
@@ -264,7 +307,8 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
   const databaseUrl = container.getConnectionUri();
   await runMigrations(databaseUrl);
 
-  const rpc = await startMockRpc();
+  const chainState = createMockChainState();
+  const rpc = await startMockRpc(chainState);
   const { fetchImpl, calls } = createMockBundlerFetch();
   const paymasterState = createFakePaymasterState();
 
@@ -292,5 +336,5 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
   const { db, pool } = createDb(databaseUrl);
   await seedTenants(db, config.TENANTS_SEED);
   const app = await buildApp({ config, db, fetchImpl, paymasterReader: createFakePaymasterReader(paymasterState) });
-  return { container, db, pool, rpc, config, app, bundlerCalls: calls, paymasterState };
+  return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState, paymasterState };
 }

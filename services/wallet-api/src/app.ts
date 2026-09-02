@@ -17,6 +17,7 @@ import paymasterRoutes from './routes/paymaster.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
 import useropRoutes from './routes/userops.js';
+import walletManagementRoutes from './routes/wallet-management.js';
 import webauthnRoutes from './routes/webauthn.js';
 import wellKnownRoutes from './routes/well-known.js';
 import { buildChainRegistry, type ChainRegistry } from './services/chains.js';
@@ -169,7 +170,8 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
     await app.register(paymasterRoutes, { config, registry });
   }
   await app.register(webauthnRoutes, { db, config, challenges, sessions, registry });
-  await app.register(credentialRoutes, { db, sessions });
+  await app.register(credentialRoutes, { db, sessions, registry });
+  await app.register(walletManagementRoutes, { db, config, challenges, registry });
   await app.register(useropRoutes, {
     db,
     config,
