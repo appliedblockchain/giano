@@ -1,7 +1,5 @@
-import type { SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-core';
+import type { PendingRequest, SponsorshipPreflight, SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-kit';
 import { hexToString, isHex } from 'viem';
-import type { PendingRequest } from './requests';
-import type { SponsorshipPreflight } from './runtime';
 
 /**
  * Plain-DOM views — what wallet-web renders with React, a BYO UI can render however it

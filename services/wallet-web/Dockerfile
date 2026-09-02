@@ -9,15 +9,18 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/wallet-core/package.json packages/wallet-core/package.json
 COPY packages/wallet-transport/package.json packages/wallet-transport/package.json
+COPY packages/wallet-kit/package.json packages/wallet-kit/package.json
 COPY services/wallet-web/package.json services/wallet-web/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-wallet-web...
 COPY packages/contracts packages/contracts
 COPY packages/wallet-core packages/wallet-core
 COPY packages/wallet-transport packages/wallet-transport
+COPY packages/wallet-kit packages/wallet-kit
 COPY services/wallet-web services/wallet-web
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-wallet-core build \
  && pnpm --filter @appliedblockchain/giano-wallet-transport build \
+ && pnpm --filter @appliedblockchain/giano-wallet-kit build \
  && pnpm --filter @appliedblockchain/giano-wallet-web build
 
 FROM nginx:1.27-alpine

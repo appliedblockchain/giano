@@ -27,6 +27,9 @@ importers:
       '@appliedblockchain/giano-wallet-core':
         specifier: workspace:^
         version: link:../packages/wallet-core
+      '@appliedblockchain/giano-wallet-kit':
+        specifier: workspace:^
+        version: link:../packages/wallet-kit
       '@appliedblockchain/giano-wallet-transport':
         specifier: workspace:^
         version: link:../packages/wallet-transport
@@ -211,6 +214,40 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.1.2
         version: 3.2.7(supports-color@8.1.1)(vitest@3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(supports-color@8.1.1)(tsx@4.19.4)(yaml@2.8.0))
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.0(@swc/core@1.11.24)(jiti@1.21.7)(postcss@8.5.21)(supports-color@8.1.1)(tsx@4.19.4)(typescript@5.5.4)(yaml@2.8.0)
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
+      viem:
+        specifier: 2.31.6
+        version: 2.31.6(bufferutil@4.0.9)(typescript@5.5.4)(utf-8-validate@5.0.10)(zod@3.25.1)
+      vitest:
+        specifier: ^3.1.2
+        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(supports-color@8.1.1)(tsx@4.19.4)(yaml@2.8.0)
+
+  packages/wallet-kit:
+    dependencies:
+      '@appliedblockchain/giano-contracts':
+        specifier: workspace:^
+        version: link:../contracts
+      '@appliedblockchain/giano-wallet-core':
+        specifier: workspace:^
+        version: link:../wallet-core
+      '@appliedblockchain/giano-wallet-transport':
+        specifier: workspace:^
+        version: link:../wallet-transport
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.6
+        version: 19.1.4
+      happy-dom:
+        specifier: ^17.4.4
+        version: 17.6.3
+      react:
+        specifier: ^19.0.0
+        version: 19.1.0
       tsup:
         specifier: ^8.3.5
         version: 8.5.0(@swc/core@1.11.24)(jiti@1.21.7)(postcss@8.5.21)(supports-color@8.1.1)(tsx@4.19.4)(typescript@5.5.4)(yaml@2.8.0)
@@ -416,12 +453,9 @@ importers:
       '@appliedblockchain/giano-contracts':
         specifier: workspace:^
         version: link:../../packages/contracts
-      '@appliedblockchain/giano-wallet-core':
+      '@appliedblockchain/giano-wallet-kit':
         specifier: workspace:^
-        version: link:../../packages/wallet-core
-      '@appliedblockchain/giano-wallet-transport':
-        specifier: workspace:^
-        version: link:../../packages/wallet-transport
+        version: link:../../packages/wallet-kit
       react:
         specifier: ^19.0.0
         version: 19.1.0

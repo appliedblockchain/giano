@@ -1,5 +1,5 @@
 import { hexToString, isHex } from 'viem';
-import type { PendingRequest } from '../requests';
+import type { PendingRequest } from '@appliedblockchain/giano-wallet-kit';
 
 function renderPayload(request: PendingRequest): { title: string; body: string; domainChainId?: number } {
   const params = (request.params as unknown[]) ?? [];

@@ -1,5 +1,5 @@
-import { TransportRpcError, RPC_ERRORS } from '@appliedblockchain/giano-wallet-transport';
-import type { WalletRuntime } from './wallet';
+import { RPC_ERRORS, TransportRpcError } from '@appliedblockchain/giano-wallet-transport';
+import type { WalletRuntime } from './runtimes';
 
 /** A dApp request awaiting user consent in the popup UI. */
 export type PendingRequest = {
@@ -20,8 +20,9 @@ export type PendingRequest = {
 type Listener = (pending: PendingRequest | null) => void;
 
 /**
- * Single-slot consent queue: the popup shows one request at a time; approval runs the
- * request through the Giano provider, rejection answers 4001 without touching it.
+ * Single-slot consent queue (WK-10): the popup shows one request at a time; approval runs the
+ * request through the Giano provider, rejection answers 4001 without touching it. A second
+ * request while one is pending is refused rather than queued silently.
  */
 export function createRequestStore() {
   let current: PendingRequest | null = null;
@@ -54,6 +55,7 @@ export function createRequestStore() {
           reject: () => {
             current = null;
             notify();
+            // A refusal is EIP-1193 4001, always (WK-09).
             reject(new TransportRpcError(RPC_ERRORS.USER_REJECTED, 'User rejected the request'));
           },
         };

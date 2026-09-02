@@ -28,6 +28,7 @@ jobs:
           pnpm --filter @appliedblockchain/giano-contracts build:ts
           pnpm --filter @appliedblockchain/giano-wallet-core build
           pnpm --filter @appliedblockchain/giano-wallet-transport build
+          pnpm --filter @appliedblockchain/giano-wallet-kit build
           pnpm --filter @appliedblockchain/giano-connector build
       # `--wait` blocks on the sponsorship provisioner, which installs each demo tenant's rules
       # through the real admin API and then verifies its own work. A stack that cannot sponsor must

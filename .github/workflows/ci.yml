@@ -35,6 +35,11 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-wallet-transport test
       - name: Build connector
         run: pnpm --filter @appliedblockchain/giano-connector build
+      - name: Build wallet-kit
+        # wallet-web and the BYO reference both build on it (WK-30/WK-31)
+        run: pnpm --filter @appliedblockchain/giano-wallet-kit build
+      - name: wallet-kit unit tests (the load-bearing invariants, WK-27/WK-28)
+        run: pnpm --filter @appliedblockchain/giano-wallet-kit test
       - name: Build paymaster-sdk
         # paymaster-admin's typecheck resolves this via its dist/ types — must precede it
         run: pnpm --filter @appliedblockchain/giano-paymaster-sdk build
