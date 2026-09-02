@@ -4,8 +4,8 @@ import { createWalletHost } from './host';
 import type { PendingRequest } from './requests';
 import { createWalletRuntimes } from './wallet';
 import { Connect } from './views/Connect';
+import { Manage } from './views/Manage';
 import { ReviewTransaction } from './views/ReviewTransaction';
-import { Settings } from './views/Settings';
 import { SignMessage } from './views/SignMessage';
 
 const WALLET_VERSION = import.meta.env.VITE_WALLET_VERSION ?? '0.1.0';
@@ -47,6 +47,10 @@ export function App({ config }: { config: WalletConfig }) {
       {pending?.kind === 'connect' ? <Connect request={withProcessing(pending)} /> : null}
       {pending?.kind === 'transaction' ? <ReviewTransaction request={withProcessing(pending)} runtime={pending.runtime} /> : null}
       {pending?.kind === 'sign' ? <SignMessage request={withProcessing(pending)} /> : null}
+      {/* The management interface, opened by the application (WM-54). Closing it resolves
+          the transport request with nothing (WM-40); the same view serves the standalone
+          entry below, so the two entry points share one set of capabilities (WM-56). */}
+      {pending?.kind === 'manage' ? <Manage runtimes={runtimes} config={config} onClose={pending.approve} /> : null}
 
       {!pending && processing ? (
         <div className="status">
@@ -58,7 +62,7 @@ export function App({ config }: { config: WalletConfig }) {
         <div className="status">Waiting for a request from {host.getDappOrigin() ?? 'the application'}…</div>
       ) : null}
 
-      {!pending && !processing && !isPopup ? <Settings runtimes={runtimes} config={config} /> : null}
+      {!pending && !processing && !isPopup ? <Manage runtimes={runtimes} config={config} /> : null}
     </div>
   );
 }

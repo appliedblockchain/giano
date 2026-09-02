@@ -3,7 +3,8 @@ import type { WalletRuntime } from './wallet';
 
 /** A dApp request awaiting user consent in the popup UI. */
 export type PendingRequest = {
-  kind: 'connect' | 'transaction' | 'sign';
+  /** 'manage' opens the wallet-management view (WM-54); it resolves when the user closes it. */
+  kind: 'connect' | 'transaction' | 'sign' | 'manage';
   method: string;
   params: unknown;
   dappOrigin: string;

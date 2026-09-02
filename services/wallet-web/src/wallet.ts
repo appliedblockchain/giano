@@ -8,7 +8,7 @@ import {
   type SponsorshipRuleResult,
   type WalletApiInjection,
 } from '@appliedblockchain/giano-wallet-core';
-import { createPublicClient, defineChain, http } from 'viem';
+import { createPublicClient, defineChain, http, type PublicClient } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
 import type { WalletChainConfig, WalletConfig } from './config';
 
@@ -89,6 +89,9 @@ export type WalletRuntime = {
   /** Human-readable — what consent screens show (MC-81). */
   chainName: string;
   externalUserId: string;
+  /** Read client for THIS chain — what the management view enumerates the owner set with (WM-01). */
+  publicClient: PublicClient;
+  factoryAddress: `0x${string}`;
   /** True when the smart account has code on THIS chain (deployment is lazy and per chain, MC-29/MC-30). */
   isAccountDeployed: (address: `0x${string}`) => Promise<boolean>;
   /**
@@ -125,6 +128,10 @@ export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
       if (token) localStorage.setItem(SESSION_KEY, token);
       else localStorage.removeItem(SESSION_KEY);
     },
+    // A discoverable sign-in can reveal the credential's canonical external user id (its
+    // passkey was added through a cross-device handoff) — persist it so later ceremonies
+    // and silent restores on this device list the credential.
+    onExternalUserIdChanged: (id) => localStorage.setItem(USER_ID_KEY, id),
   });
 
   const byId = new Map(config.chains.map((chain) => [chain.chainId, chain]));
@@ -255,6 +262,8 @@ function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInject
     chainId: chainConfig.chainId,
     chainName: chainConfig.name,
     externalUserId,
+    publicClient: publicClient as PublicClient,
+    factoryAddress: chainConfig.factoryAddress,
     isAccountDeployed,
     checkSponsorship,
   };
