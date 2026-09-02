@@ -1,6 +1,8 @@
 import type { CDPSession, Page } from '@playwright/test';
+import { createPublicClient, http, size, slice, type Address, type Hex } from 'viem';
+import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
 
-import { ORIGINS } from '../origins.mjs';
+import { CHAINS, ORIGINS } from '../origins.mjs';
 
 /**
  * Tenant descriptors for the two-tenant e2e topology. UI labels differ per tenant on
@@ -123,6 +125,50 @@ export async function connectWallet(page: Page, tenant: Tenant): Promise<{ crede
 /** Opens a fresh popup for a signing/transaction action, seeding the connect credential. */
 export async function openActionPopup(page: Page, trigger: string, credentials: VirtualCredential[]): Promise<Page> {
   const popup = await openWalletPopup(page, trigger);
+  const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
+  await seedCredentials(cdp, authenticatorId, credentials);
+  return popup;
+}
+
+/**
+ * The on-chain owner set — the authority the wallet-management tests assert against
+ * (WM-67 asks for the on-chain set after each change, not just a succeeding transaction).
+ * Reads directly from the account contract, exactly as the interface does.
+ */
+export async function readOnChainOwners(
+  walletAddress: string,
+  chain: { chainId: number; rpc: string } = CHAINS.a,
+): Promise<{ deployed: boolean; owners: { index: number; ownerBytes: Hex; kind: 'passkey' | 'address' }[] }> {
+  const client = createPublicClient({ transport: http(chain.rpc) });
+  const code = await client.getCode({ address: walletAddress as Address });
+  if (!code || code === '0x') return { deployed: false, owners: [] };
+  const nextOwnerIndex = await client.readContract({
+    address: walletAddress as Address,
+    abi: gianoSmartWalletAbi,
+    functionName: 'nextOwnerIndex',
+  });
+  const owners: { index: number; ownerBytes: Hex; kind: 'passkey' | 'address' }[] = [];
+  for (let index = 0; index < Number(nextOwnerIndex); index++) {
+    const ownerBytes = (await client.readContract({
+      address: walletAddress as Address,
+      abi: gianoSmartWalletAbi,
+      functionName: 'ownerAtIndex',
+      args: [BigInt(index)],
+    })) as Hex;
+    if (!ownerBytes || ownerBytes === '0x') continue;
+    owners.push({ index, ownerBytes, kind: size(ownerBytes) === 64 ? 'passkey' : 'address' });
+  }
+  return { deployed: true, owners };
+}
+
+/** Extracts an Ethereum-address owner (32-byte encoding) as a checksummed hex slice. */
+export function ownerAddress(ownerBytes: Hex): string {
+  return slice(ownerBytes, 12, 32);
+}
+
+/** Opens the management interface via the dApp's SDK button and returns the popup page. */
+export async function openManagePopup(page: Page, credentials: VirtualCredential[]): Promise<Page> {
+  const popup = await openWalletPopup(page, '#manage');
   const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
   await seedCredentials(cdp, authenticatorId, credentials);
   return popup;
