@@ -335,8 +335,60 @@ with no session uses, and which authorise nothing):
 
 The full request/response shapes are in the OpenAPI document (`/docs`), and
 `packages/wallet-core`'s `management` module (`readOwnerSet`, `ownerFingerprint`, the
-`addOwner*`/`removeOwnerAtIndex` encoders, `createWalletManagementApi`) is the reference client the
-stock UI and the bring-your-own reference (`e2e/wallet-byo`) both use.
+`addOwner*`/`removeOwnerAtIndex` encoders, `createWalletManagementApi`) is the reference client.
+In practice you rarely drive these endpoints by hand: the wallet SDK below packages the whole
+management flow as a headless controller, and both Giano wallet UIs are built on it.
+
+### Building your own wallet interface: the wallet SDK
+
+`@appliedblockchain/giano-wallet-kit` is the package a **wallet origin** is built from — Giano's
+stock `wallet-web` and the bring-your-own reference (`e2e/wallet-byo`) are both consumers, so a
+tenant's wallet and Giano's are the same logic behind different pixels (WK-30…WK-33). The kit is
+**headless**: it owns the orchestration and emits state and actions; every pixel, every string of
+copy and the framework choice stay yours. The full API contract with usage examples is
+[`specs/WALLET-SDK-SPECS.md`](./WALLET-SDK-SPECS.md); this is the shape of it:
+
+| Surface | What it gives you |
+|---|---|
+| `loadWalletConfig()` / `resolveWalletConfig({ raw })` | Validated `WalletConfig` — fatal, field-named errors; the single-chain shorthand and the `chains` list both accepted; the permissive test paymaster refused in production builds unless opted in (WK-05, WK-06) |
+| `createWalletRuntimes(config)` | Per-chain runtimes (read client, bundler, fee estimation, paymaster hooks, provider, `checkSponsorship` pre-flight), built lazily, memoised, over **one** shared wallet-api session (WK-01…WK-05) |
+| `createWalletHost({ runtimes, config, walletVersion })` | The popup transport wired with origin pinning, chain negotiation and the consent gate; the pending request is subscribable state with `approve()`/`reject()` — a rejection becomes EIP-1193 `4001` (WK-08…WK-12) |
+| `createManagementController({ runtimes, config })` | The whole of wallet management as a headless state machine: the owner set read from the chain, rename, add (this device / second device / EOA), remove, claim — every ordering invariant held inside (WK-16…WK-21) |
+| `@appliedblockchain/giano-wallet-kit/react` | `WalletHostProvider`, `usePendingRequest()`, `useManagement()` — the same core as hooks; optional, the core is framework-free (WK-22, WK-23) |
+
+A complete framework-free wallet origin is the config, the runtimes, the host, and a render
+function per request kind:
+
+```ts
+import { loadWalletConfig, createWalletRuntimes, createWalletHost } from '@appliedblockchain/giano-wallet-kit';
+
+const config   = await loadWalletConfig();                 // or resolveWalletConfig({ raw: yourShape })
+const runtimes = createWalletRuntimes(config);
+const host     = createWalletHost({ runtimes, config, walletVersion: '1.0.0' });
+
+host.requests.subscribe((pending) => {
+  if (!pending)                       return renderIdle();
+  if (pending.kind === 'connect')     return renderConnect(pending);      // → pending.approve() / .reject()
+  if (pending.kind === 'transaction') return renderReview(pending);       // gate approval on pending.runtime.checkSponsorship(tx)
+  if (pending.kind === 'sign')        return renderSign(pending);
+  if (pending.kind === 'manage')      return renderManagement(pending);   // mount createManagementController(...)
+});
+
+host.start();
+```
+
+What the kit holds **by construction**, so you cannot get it subtly wrong: fees are resolved
+before the paymaster hooks run (`AA34` otherwise); the sponsorship pre-flight precedes consent and
+therefore the passkey prompt; one chain per session, negotiated in the handshake; one shared
+wallet-api injection; in management, the chain is written before the registry binds, the removal
+index is re-read per chain immediately before use, the cross-device fingerprint is recomputed from
+the key as received, and the last owner cannot be removed. The kit ships **no user-facing copy**:
+refusals and flow errors carry machine-readable reasons (`SponsorshipRefusalReason`,
+`AddressInputError`, claim error codes) that your UI keys its own wording off.
+
+The kit adds no privileged path: it is a thin layer over `giano-wallet-core`,
+`giano-wallet-transport` and the documented endpoints above, which remain directly drivable
+(WM-60) and directly exercised by the wallet-api's own integration suite (WK-29).
 
 ## 10. Upgrade runbook
 

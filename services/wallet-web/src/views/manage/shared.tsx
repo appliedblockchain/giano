@@ -1,53 +1,18 @@
-import { encodeAddOwnerPublicKey } from '@appliedblockchain/giano-wallet-core';
+import type { ChainProgress, ManagementChainStatus, SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-kit';
 import type { ReactNode } from 'react';
-import { pad } from 'viem';
-import type { WalletConfig } from '../../config';
-import type { SponsorshipPreflight, WalletRuntime, WalletRuntimes } from '../../wallet';
 import { refusalCopy } from '../sponsorship-copy';
-import type { ChainProgress } from './ops';
-import type { Me } from '../Manage';
-import type { WalletManagementApi } from '@appliedblockchain/giano-wallet-core';
-
-/** What every management flow receives. */
-export type FlowProps = {
-  api: WalletManagementApi;
-  runtimes: WalletRuntimes;
-  config: WalletConfig;
-  me: Me;
-  onDone: (refresh: boolean) => void | Promise<void>;
-};
-
-export const manageLog = (label: string, data?: unknown) => console.log(`[giano-wallet:manage] ${label}`, data ?? '');
-
-/**
- * Asks the rules engine whether a wallet-management operation would be sponsored, BEFORE
- * any ceremony is started (WM-68): a user must never be walked through a passkey prompt
- * for an operation that was already refused. The calldata is a representative
- * addOwnerPublicKey self-call — the rule is structural (a call from the wallet to
- * itself), so any management operation answers the same.
- */
-export async function preflightManagement(runtime: WalletRuntime, walletAddress: `0x${string}`): Promise<SponsorshipPreflight> {
-  if (!runtime.provider.getSmartAccount()) {
-    await runtime.provider.request({ method: 'giano_restoreAccount', params: [] }).catch(() => undefined);
-  }
-  if (!runtime.provider.getSmartAccount()) {
-    return { state: 'unavailable', message: 'the wallet is not connected yet' };
-  }
-  const zero = pad('0x00', { size: 32 });
-  return runtime.checkSponsorship({ to: walletAddress, data: encodeAddOwnerPublicKey(zero, zero) });
-}
 
 /** The WM-48/WM-49 copy: who can act on the refusal, keyed off the machine-readable reason. */
-export function RefusalNotice({ refusal }: { refusal: Extract<SponsorshipPreflight, { state: 'refused' }> }) {
-  const copy = refusalCopy(refusal.reason);
+export function RefusalNotice({ reason, message }: { reason: SponsorshipRefusalReason; message: string }) {
+  const copy = refusalCopy(reason);
   return (
-    <div className="card" data-testid="manage-sponsorship-refusal" data-reason={refusal.reason}>
+    <div className="card" data-testid="manage-sponsorship-refusal" data-reason={reason}>
       <h2>{copy.title}</h2>
       <p>{copy.body}</p>
       <p>
         <b>{copy.action}</b>
       </p>
-      <p style={{ fontSize: 12 }}>{refusal.message}</p>
+      <p style={{ fontSize: 12 }}>{message}</p>
     </div>
   );
 }
@@ -87,8 +52,8 @@ export function ChainProgressList({ progress }: { progress: ChainProgress[] }) {
 }
 
 /** Names every served chain the change will be attempted on (WM-43). */
-export function ChainsNotice({ runtimes }: { runtimes: WalletRuntimes }) {
-  const names = runtimes.servedChainIds.map((chainId) => `${runtimes.descriptorFor(chainId).name} (${chainId})`);
+export function ChainsNotice({ chains }: { chains: ManagementChainStatus[] }) {
+  const names = chains.map((chain) => `${chain.chainName} (${chain.chainId})`);
   return (
     <p data-testid="manage-chains-notice">
       This change applies on every network this wallet serves: <b>{names.join(', ')}</b>. A network where the wallet is
@@ -105,3 +70,13 @@ export function FlowShell({ title, children }: { title: string; children: ReactN
     </div>
   );
 }
+
+export const inputStyle = {
+  width: '100%',
+  marginTop: 4,
+  borderRadius: 8,
+  border: '1px solid var(--border)',
+  padding: '8px',
+  background: 'var(--bg)',
+  color: 'var(--fg)',
+} as const;

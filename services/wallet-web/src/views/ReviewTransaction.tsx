@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { decodeFunctionData, erc20Abi, formatEther, type Hex } from 'viem';
 import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
-import type { PendingRequest } from '../requests';
+import type { PendingRequest } from '@appliedblockchain/giano-wallet-kit';
 import { refusalCopy } from './sponsorship-copy';
-import type { SponsorshipPreflight, WalletRuntime } from '../wallet';
+import type { SponsorshipPreflight, WalletRuntime } from '@appliedblockchain/giano-wallet-kit';
 
 type TxRequest = { to?: Hex; value?: Hex | bigint; data?: Hex };
 

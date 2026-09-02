@@ -1,4 +1,4 @@
-import type { PendingRequest } from '../requests';
+import type { PendingRequest } from '@appliedblockchain/giano-wallet-kit';
 
 export function Connect({ request }: { request: PendingRequest }) {
   return (

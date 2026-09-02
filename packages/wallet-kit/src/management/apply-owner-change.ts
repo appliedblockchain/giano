@@ -1,17 +1,21 @@
 import type { Hex } from 'viem';
-import type { SponsorshipPreflight, WalletRuntime, WalletRuntimes } from '../../wallet';
+import type { SponsorshipPreflight, WalletRuntime, WalletRuntimes } from '../runtimes';
 
 /**
  * Applies one owner change to every served chain, as ordinary consented UserOperations
- * (D4): a self-call, sponsored under the platform wallet-management rule, relayed and
+ * (WM D4): a self-call, sponsored under the platform wallet-management rule, relayed and
  * audited like any other transaction.
  *
  * Chain-bound, one operation per chain (WM-42). The chain-independent single-signature
  * path (WM-41) is NOT used: the deployment's sponsorship authorisations are EIP-712
  * chain-bound and the relay only admits decodable execute/executeBatch calls, so a
  * replayable `executeWithoutChainIdValidation` operation could neither be sponsored nor
- * relayed today — see the implementation report. Each chain therefore takes its own
- * passkey signature, sequentially, with per-chain progress (WM-44).
+ * relayed today — see the wallet-management implementation report. Each chain therefore
+ * takes its own passkey signature, sequentially, with per-chain progress (WM-44).
+ *
+ * This function is the ONE point the path is chosen at (WK-21): when the paymaster can
+ * sponsor a chain-independent operation, the switch happens here — in the kit, once — and
+ * in no tenant.
  *
  * A chain where the account is not yet deployed is SKIPPED with a statement (WM-46, Q2):
  * deploying every served chain to add a backup credential is real gas for chains the user
@@ -41,7 +45,7 @@ export type OwnerChangeOutcome = {
 export type ApplyOwnerChangeOptions = {
   runtimes: WalletRuntimes;
   walletAddress: Hex;
-  /** For the console record (D10). */
+  /** For the console record (WM D10). */
   label: string;
   /**
    * Builds the self-call data for ONE chain, immediately before submission — removal
@@ -52,10 +56,10 @@ export type ApplyOwnerChangeOptions = {
   onProgress: (progress: ChainProgress[]) => void;
 };
 
-const log = (label: string, data: unknown) => console.log(`[giano-wallet:manage] ${label}`, data);
+const log = (label: string, data: unknown) => console.log(`[giano-wallet-kit:manage] ${label}`, data);
 
 /** Restores the in-memory account from the persisted session — no passkey prompt. */
-async function ensureAccount(runtime: WalletRuntime): Promise<boolean> {
+export async function ensureAccount(runtime: WalletRuntime): Promise<boolean> {
   if (runtime.provider.getSmartAccount()) return true;
   await runtime.provider.request({ method: 'giano_restoreAccount', params: [] }).catch(() => undefined);
   return !!runtime.provider.getSmartAccount();
@@ -72,7 +76,7 @@ export async function applyOwnerChange(options: ApplyOwnerChangeOptions): Promis
   const update = (chainId: number, patch: Partial<ChainProgress>) => {
     const row = progress.find((entry) => entry.chainId === chainId)!;
     Object.assign(row, patch);
-    onProgress([...progress]);
+    onProgress([...progress.map((entry) => ({ ...entry }))]);
   };
 
   let refusal: OwnerChangeOutcome['refusal'];
@@ -108,8 +112,8 @@ export async function applyOwnerChange(options: ApplyOwnerChangeOptions): Promis
         continue;
       }
 
-      // Pre-flight BEFORE the passkey prompt (WM-68): a refused operation must never cost
-      // the user a ceremony that could not have succeeded.
+      // Pre-flight BEFORE the passkey prompt (WM-68, WK-13): a refused operation must never
+      // cost the user a ceremony that could not have succeeded.
       const preflight = await runtime.checkSponsorship({ to: walletAddress, data });
       if (preflight.state === 'refused') {
         refusal = preflight;
@@ -151,8 +155,8 @@ export async function applyOwnerChange(options: ApplyOwnerChangeOptions): Promis
 
   const ok = !refusal && progress.every((row) => row.state === 'confirmed' || row.state === 'skipped') && appliedChainIds.length > 0;
   const outcome = { ok, refusal, progress, appliedChainIds };
-  // D10: outcomes are written to the console as well as shown — an integrator debugging a
-  // deployment is not dependent on a transient banner.
+  // WM D10: outcomes are written to the console as well as emitted as state — an integrator
+  // debugging a deployment is not dependent on a transient banner.
   log(`${label}: outcome`, {
     ok,
     appliedChainIds,

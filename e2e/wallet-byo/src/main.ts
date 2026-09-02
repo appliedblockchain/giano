@@ -1,27 +1,50 @@
-import { RPC_ERRORS, TransportHost, TransportRpcError } from '@appliedblockchain/giano-wallet-transport';
-import { CONFIG } from './config';
+import {
+  createWalletHost,
+  createWalletRuntimes,
+  type PendingRequest,
+  type SponsorshipPreflight,
+  type TransactionRequest,
+} from '@appliedblockchain/giano-wallet-kit';
+import { walletConfig } from './config';
 import { renderManage } from './manage';
-import { createRequestStore, toRpcError } from './requests';
-import { createWalletRuntimes, type WalletRuntime } from './runtime';
 import { render } from './views';
 
 /**
- * A tenant-built ("bring your own") wallet UI: framework-free reference implementation
- * of everything a wallet origin must do — the same consent semantics as the stock
- * wallet-web, a visibly different everything else.
+ * A tenant-built ("bring your own") wallet UI: framework-free reference implementation of
+ * a wallet origin ON THE KIT'S CORE (WK-31) — the same consent semantics as the stock
+ * wallet-web, a visibly different everything else. Everything below the pixels — config
+ * validation, per-chain runtimes, the transport host, the consent queue, the management
+ * state machine — is `@appliedblockchain/giano-wallet-kit`; this file only renders.
  */
 
-const CONSENT_METHODS = new Set(['eth_sendTransaction', 'personal_sign', 'eth_sign', 'eth_signTypedData_v4']);
-
-const runtimes = createWalletRuntimes();
-const requests = createRequestStore();
+const config = walletConfig();
+const runtimes = createWalletRuntimes(config);
+const host = createWalletHost({ runtimes, config, walletVersion: '0.1.0-byo' });
 const root = document.getElementById('view')!;
-const wiredChains = new Set<number>();
 
-let inflight = 0;
+let busy = false;
+let managing = false;
 /** null while the sponsorship pre-flight is still in the air; nothing is approvable until then. */
-let preflight: import('./runtime').SponsorshipPreflight | null = { state: 'not-applicable' };
-const rerender = () => render(root, requests.current, inflight > 0, preflight);
+let preflight: SponsorshipPreflight | null = { state: 'not-applicable' };
+
+const rerender = () => {
+  if (managing) return; // the management view owns the root while it is open
+  const pending = host.requests.current;
+  render(root, pending && withBusy(pending), busy, preflight);
+};
+
+/** Marks the popup busy after approval, while the provider runs the ceremony. */
+function withBusy(pending: PendingRequest): PendingRequest {
+  return {
+    ...pending,
+    approve: () => {
+      busy = true;
+      preflight = { state: 'not-applicable' };
+      pending.approve();
+      rerender();
+    },
+  };
+}
 
 /**
  * Runs the pre-flight when a transaction request arrives, before anything approvable is rendered.
@@ -29,12 +52,13 @@ const rerender = () => render(root, requests.current, inflight > 0, preflight);
  * time anyone investigates — and the reason is what separates "this app is misconfigured" from
  * "this app is out of credit".
  */
-async function runSponsorshipPreflight(runtime: WalletRuntime, params: unknown): Promise<void> {
-  const tx = (Array.isArray(params) ? params[0] : params) as import('./runtime').TransactionRequest | undefined;
+async function runSponsorshipPreflight(pending: PendingRequest): Promise<void> {
+  const tx = (Array.isArray(pending.params) ? pending.params[0] : pending.params) as TransactionRequest | undefined;
   preflight = null;
   rerender();
 
-  const result = await runtime.checkSponsorship(tx ?? {});
+  const result = await pending.runtime.checkSponsorship(tx ?? {});
+  if (host.requests.current !== pending) return; // the request resolved while we were checking
   preflight = result;
   if (result.state === 'refused') {
     console.error('[giano-byo] sponsorship refused', { reason: result.reason, message: result.message, ruleResults: result.ruleResults });
@@ -46,75 +70,42 @@ async function runSponsorshipPreflight(runtime: WalletRuntime, params: unknown):
   rerender();
 }
 
-const transport = new TransportHost({
-  walletVersion: '0.1.0-byo',
-  // fail closed: only the tenant's own dApp origins may drive this wallet
-  allowedOrigins: CONFIG.allowedDappOrigins,
-  // the closed list the handshake negotiates against (MC-03)
-  servedChainIds: runtimes.servedChainIds,
-  onRequest: async (method, params, context) => {
-    // WM-54/WM-60: the BYO wallet handles the management method itself, against the same
-    // API as the stock UI. No parameters in (WM-39), nothing out (WM-40).
-    if (method === 'giano_openWalletManagement') {
-      const params_ = params as unknown[] | undefined;
-      if (params_ !== undefined && params_ !== null && !(Array.isArray(params_) && params_.length === 0)) {
-        throw new TransportRpcError(RPC_ERRORS.UNSUPPORTED_METHOD, 'the management interface accepts no parameters from the application');
-      }
-      await new Promise<void>((resolve) => renderManage(root, { runtimes, onClose: resolve }));
-      rerender();
-      return null;
-    }
+function openManage(onClose?: () => void) {
+  managing = true;
+  renderManage(root, {
+    runtimes,
+    config,
+    onClose: onClose
+      ? () => {
+          managing = false;
+          onClose();
+          rerender();
+        }
+      : undefined,
+  });
+}
 
-    // the session's negotiated chain picks the runtime — same shape as the stock wallet (MC-43)
-    const runtime = runtimes.runtimeFor(context.chainId);
-    if (!wiredChains.has(context.chainId)) {
-      wiredChains.add(context.chainId);
-      // relay provider events (accountsChanged, chainChanged, disconnect) to the dApp
-      for (const event of ['accountsChanged', 'chainChanged', 'disconnect'] as const) {
-        runtime.provider.on(event, (data: unknown) => transport.sendEvent(event, data));
-      }
-    }
-    const needsConsent = method === 'eth_requestAccounts' || CONSENT_METHODS.has(method);
-    // A signing/tx request can land on a freshly (re)opened popup whose in-memory
-    // account was lost when the previous popup closed — silently rebuild it from the
-    // persisted session before asking for consent (no extra passkey prompt).
-    if (CONSENT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
-      await runtime.provider.request({ method: 'giano_restoreAccount' } as never).catch(() => undefined);
-    }
-    if (needsConsent) {
-      const consent = requests.requestConsent({
-        kind: method === 'eth_requestAccounts' ? 'connect' : method === 'eth_sendTransaction' ? 'transaction' : 'sign',
-        method,
-        params,
-        dappOrigin: context.dappOrigin,
-        chainName: runtime.chainName,
-      });
-      // Started alongside the consent prompt rather than before it, so the request is on screen
-      // while the check runs — but the confirm button does not appear until it has answered.
-      if (method === 'eth_sendTransaction') void runSponsorshipPreflight(runtime, params);
-      await consent;
-      preflight = { state: 'not-applicable' };
-    }
-    inflight += 1;
-    rerender();
-    try {
-      return await runtime.provider.request({ method, params } as never);
-    } catch (error) {
-      throw toRpcError(error);
-    } finally {
-      inflight -= 1;
-      rerender();
-    }
-  },
+host.requests.subscribe((pending) => {
+  // busy survives the approve-triggered null notification: the ceremony is still running.
+  if (pending) busy = false;
+  // WM-54/WM-60: the BYO wallet mounts its own management view for the manage request,
+  // against the same kit (and therefore the same API) as the stock UI. Approving the
+  // request when the view closes returns nothing to the dApp (WM-40).
+  if (pending?.kind === 'manage') {
+    openManage(pending.approve);
+    return;
+  }
+  preflight = { state: 'not-applicable' };
+  if (pending?.kind === 'transaction') void runSponsorshipPreflight(pending);
+  rerender();
 });
 
-requests.subscribe(() => rerender());
 if (window.opener) {
   rerender();
 } else {
   // Opened directly (WM-56): the standalone entry is the management view, with the same
   // capabilities the popup path offers.
-  renderManage(root, { runtimes });
+  openManage();
 }
-transport.start();
-window.addEventListener('beforeunload', () => transport.stop());
+host.start();
+window.addEventListener('beforeunload', () => host.stop());
