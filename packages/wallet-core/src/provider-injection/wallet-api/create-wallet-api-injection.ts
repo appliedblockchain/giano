@@ -25,6 +25,14 @@ export type CreateWalletApiInjectionOptions = {
   getRegistrationGrant?: () => Promise<Record<string, string>> | Record<string, string>;
   /** Called whenever a session token is issued or cleared — persist it if you want session resume. */
   onSessionChanged?: (token: string | null) => void;
+  /**
+   * Called when authentication reveals the credential belongs to a DIFFERENT external user
+   * id than the one this injection was constructed with — which is what happens when a
+   * device signs in with a passkey created through a cross-device addition (WM-18): the
+   * device's own random id has never seen the credential, but the server knows whose it is.
+   * Persist the adopted id so later ceremonies and silent restores list the credential.
+   */
+  onExternalUserIdChanged?: (externalUserId: string) => void;
   /** Initial session token (e.g. restored from storage). */
   sessionToken?: string | null;
   fetch?: typeof fetch;
@@ -33,7 +41,18 @@ export type CreateWalletApiInjectionOptions = {
 export type WalletApiInjection = GianoProviderInjection & {
   /** Current wallet-api session bearer token (null when signed out). */
   getSessionToken(): string | null;
+  /** The external user id currently in force (may have been adopted at sign-in). */
+  getExternalUserId(): string;
   logout(): Promise<void>;
+  /**
+   * Signs in with a DISCOVERABLE passkey — no allowCredentials, so the authenticator
+   * offers whatever resident credentials it holds for this RP. This is how a device that
+   * has never seen this wallet before (its credential was added through a cross-device
+   * pending addition) opens a session for it (WM-33): the server resolves the credential,
+   * scopes the session to its wallet, and this injection adopts the canonical external
+   * user id so ordinary flows work from then on.
+   */
+  signInWithExistingPasskey(): Promise<{ walletAddress: Hex; externalUserId: string; credentialId: string }>;
 };
 
 /**
@@ -48,19 +67,29 @@ export type WalletApiInjection = GianoProviderInjection & {
 export function createWalletApiInjection(options: CreateWalletApiInjectionOptions): WalletApiInjection {
   const {
     apiUrl,
-    externalUserId,
     credentialName = 'Giano Passkey',
     getRegistrationGrant,
     onSessionChanged,
+    onExternalUserIdChanged,
     fetch: fetchImpl = globalThis.fetch.bind(globalThis),
   } = options;
   const base = apiUrl.replace(/\/$/, '');
 
   let sessionToken: string | null = options.sessionToken ?? null;
+  // Mutable: authentication may reveal the credential's canonical external user id (a
+  // credential bound to this wallet on another device), which this injection then adopts.
+  let externalUserId = options.externalUserId;
 
   const setSession = (token: string | null) => {
     sessionToken = token;
     onSessionChanged?.(token);
+  };
+
+  const adoptExternalUserId = (id: string | undefined) => {
+    if (id && id !== externalUserId) {
+      externalUserId = id;
+      onExternalUserIdChanged?.(id);
+    }
   };
 
   async function api<T>(path: string, init: RequestInit & { auth?: boolean } = {}): Promise<T> {
@@ -88,6 +117,30 @@ export function createWalletApiInjection(options: CreateWalletApiInjectionOption
 
   return {
     getSessionToken: () => sessionToken,
+    getExternalUserId: () => externalUserId,
+
+    signInWithExistingPasskey: async () => {
+      const grantHeaders = getRegistrationGrant ? await getRegistrationGrant() : {};
+      const options_ = await api<{ challenge: string }>('/v1/webauthn/options', {
+        method: 'POST',
+        headers: grantHeaders,
+        body: JSON.stringify({ externalUserId, kind: 'authentication' }),
+      });
+      // No allowCredentials: the authenticator surfaces its resident credentials for this
+      // RP, which is the only way a device can use a credential the local storage has
+      // never heard of. The single passkey prompt IS the ceremony.
+      const credential = (await navigator.credentials.get({
+        publicKey: { challenge: fromBase64Url(options_.challenge) as BufferSource, userVerification: 'required' },
+      })) as PublicKeyCredential | null;
+      if (!credential) throw new Error('no passkey was selected');
+      const result = await api<{ walletAddress: Hex; externalUserId: string; credentialId: string; session: { token: string } }>(
+        '/v1/webauthn/authentication/verify',
+        { method: 'POST', body: JSON.stringify({ response: serializeAuthenticationCredential(credential) }) },
+      );
+      setSession(result.session.token);
+      adoptExternalUserId(result.externalUserId);
+      return { walletAddress: result.walletAddress, externalUserId: result.externalUserId, credentialId: result.credentialId };
+    },
 
     logout: async () => {
       if (sessionToken) {
@@ -128,11 +181,12 @@ export function createWalletApiInjection(options: CreateWalletApiInjectionOption
     },
 
     onCredentialSignedIn: async (credential) => {
-      const result = await api<{ verified: boolean; session: { token: string } }>('/v1/webauthn/authentication/verify', {
+      const result = await api<{ verified: boolean; externalUserId?: string; session: { token: string } }>('/v1/webauthn/authentication/verify', {
         method: 'POST',
         body: JSON.stringify({ response: serializeAuthenticationCredential(credential) }),
       });
       setSession(result.session.token);
+      adoptExternalUserId(result.externalUserId);
       return result.verified;
     },
 

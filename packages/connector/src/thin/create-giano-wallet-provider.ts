@@ -23,6 +23,14 @@ export type GianoWalletProvider = {
   isConnected: () => boolean;
   disconnect: () => void;
   /**
+   * Opens the wallet-management interface in the wallet popup (WM-54). Call from a user
+   * gesture. Takes NO parameters and resolves with NO data by design (WM-39, WM-40): the
+   * application cannot pre-fill anything, preselect a credential, or learn the owner set —
+   * its entire power is showing the user their own wallet's management screen. Resolves
+   * when the user closes the view; rejects with 4001 if they dismiss it.
+   */
+  openWalletManagement: () => Promise<void>;
+  /**
    * The chain this provider is bound to, fixed for its life (MC-01). Once connected, this
    * is also the chain the wallet origin GRANTED — the SDK asserts the two are equal and
    * fails loudly on any disagreement (MC-06).
@@ -43,6 +51,9 @@ const WALLET_METHODS = new Set([
   'eth_signUserOperation',
   'eth_sendSignedUserOperation',
   'signed_eth_call',
+  // Opens the management view on the wallet origin (WM-54). Follows the giano_ namespace
+  // convention (WM-55): no standard EIP-1193 method changes shape.
+  'giano_openWalletManagement',
 ]);
 
 /** Pre-namespacing cache key — migrated to the per-wallet key on first read. */
@@ -164,6 +175,15 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
       return transportClient.supportedChainIds;
     },
     isConnected: () => readSession() !== null,
+
+    openWalletManagement: async () => {
+      try {
+        // Deliberately parameterless (WM-39) and result-discarding (WM-40).
+        await requestViaWallet<void>('giano_openWalletManagement', undefined);
+      } finally {
+        transportClient.dismissPopup();
+      }
+    },
 
     disconnect: () => {
       // When the transport is live, its teardown fires the 'disconnect' handler above,
