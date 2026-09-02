@@ -60,6 +60,27 @@ export function createWalletHost(runtimes: WalletRuntimes, config: WalletConfig,
       }
 
       const runtime = runtimeForSession(context.chainId);
+
+      // WM-54/WM-55: the application's ONE management affordance — open the view. It
+      // accepts no parameters (WM-39: nothing pre-filled, nothing preselected) and
+      // returns nothing (WM-40: no owner set, no names, no outcome go back to the dApp).
+      if (method === 'giano_openWalletManagement') {
+        const params_ = params as unknown[] | undefined;
+        if (params_ !== undefined && params_ !== null && !(Array.isArray(params_) && params_.length === 0)) {
+          throw new TransportRpcError(RPC_ERRORS.UNSUPPORTED_METHOD, 'the management interface accepts no parameters from the application');
+        }
+        await requests.requestConsent({
+          kind: 'manage',
+          method,
+          params: undefined,
+          dappOrigin: context.dappOrigin,
+          chainId: runtime.chainId,
+          chainName: runtime.chainName,
+          runtime,
+        });
+        return null;
+      }
+
       const needsConsent = method === 'eth_requestAccounts' || CONSENT_METHODS.has(method);
       // A signing/tx request can land on a freshly (re)opened popup whose in-memory
       // account was lost when the previous popup closed. Silently rebuild it from the
