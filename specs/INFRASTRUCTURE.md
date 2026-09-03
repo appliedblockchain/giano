@@ -550,6 +550,10 @@ locals {
     env          = terraform.workspace
     tfstate      = "s3:${var.s3_tfstate_name}"
   }
+
+  # 1Password coordinates for this environment's secrets — §12.2
+  op_vault = "${title(var.project_name)} ${var.op_vault_suffix[terraform.workspace]}"
+  op_item  = "secrets-${terraform.workspace}"
 }
 ```
 
@@ -561,7 +565,12 @@ So in the `dev` workspace: `giano-dev-vpc`, `giano-dev-alb`, `giano-dev-natgw-a`
 `giano-dev-wallet-api`, `giano-dev-app-db`, `giano-dev-asm-kms`. Where a resource is per-AZ it takes
 an `-a`/`-b` suffix; where it is per-service it takes the service name.
 
-Tags come from the provider's `default_tags`, so no resource can be created without them:
+### 4.3.1 Tagging
+
+**Every taggable resource carries `default_tags` merged with its own `Name`. No exceptions, and no
+resource is written without a `Name`.**
+
+The common tags come from the provider, so they cannot be forgotten:
 
 ```hcl
 provider "aws" {
@@ -572,8 +581,63 @@ provider "aws" {
 }
 ```
 
-A resource adds only `Name` (and, inside a module, `module`) on top of that. Anything else in a
-`tags` block is a signal that it belongs in `default_tags`.
+and every resource adds `Name` on top:
+
+```hcl
+resource "aws_nat_gateway" "natgw-a" {
+  subnet_id     = aws_subnet.subnet-a-pub.id
+  allocation_id = aws_eip.nat-gw-a-eip.id
+
+  tags = { Name = "${local.name_prefix}-natgw-a" }
+}
+```
+
+**Do not hand-merge `local.default_tags` into a resource's `tags`.** The AWS provider merges
+`default_tags` with resource-level `tags` itself, so `tags = { Name = … }` already produces the full
+set. Writing `merge(local.default_tags, { Name = … })` restates every common tag at the resource
+level, which is redundant, and duplicating a key that `default_tags` already sets is a known source
+of inconsistent-plan errors. One place defines the common tags; resources contribute only what is
+theirs.
+
+`Name` is the tag that makes a console listing readable, so it is worth being strict about: it is
+always `${local.name_prefix}-<component>`, matching the resource's own name
+([§4.3](#43-naming)) rather than describing it. `giano-dev-natgw-a`, not `NAT gateway (AZ a)`.
+
+**Inside a module**, `_locals.tf` carries the `module` tag and any `additional_tags` the caller
+passed, and each resource merges its `Name` over that:
+
+```hcl
+# modules/aws/asm/_locals.tf
+locals {
+  tags = merge(var.additional_tags, { module = "aws/asm" })
+}
+
+# modules/aws/asm/asm.tf
+resource "aws_secretsmanager_secret" "secret" {
+  for_each = var.secrets
+  # ...
+  tags = merge(local.tags, { Name = "${var.name_prefix}-${each.key}" })
+}
+```
+
+Provider `default_tags` still apply inside modules — they are a property of the provider, not of the
+root module — so this merge adds to them rather than replacing them.
+
+**Two categories are exempt, and only two:**
+
+- **Resources AWS gives no `tags` argument.** In this tree that is `aws_kms_alias`,
+  `aws_secretsmanager_secret_version`, `aws_acm_certificate_validation`, `aws_ecr_lifecycle_policy`,
+  `aws_ecr_repository_policy`, `aws_lb_listener_certificate`, `aws_route_table_association`,
+  `aws_iam_role_policy`, `aws_iam_role_policy_attachment`, `aws_ecs_cluster_capacity_providers` and
+  `aws_scheduler_schedule`. Each is a child of something that *is* tagged, so nothing becomes
+  unattributable.
+- **Non-AWS providers**, which have no `default_tags` at all. `dnsimple_zone_record` has no tag
+  concept; `datadog_monitor` has its own, which is why `modules/datadog/monitor` takes
+  `additional_tags` and is passed `local.default_tags` explicitly
+  ([§17.3.5](#1735-monitors)) — the one place hand-merging the default tags is correct, because
+  nothing else applies them.
+
+Anything else appearing in a resource's `tags` block is a signal that it belongs in `default_tags`.
 
 ### 4.4 No JSON templating
 
@@ -670,7 +734,7 @@ terraform init
 
 The bucket itself is the usual chicken-and-egg: `modules/aws/s3/backend` creates it, applied once in
 the `default` workspace against a local backend, after which the state is migrated in
-([§18](#18-bring-up-runbook) step 2). It is versioned, encrypted with SSE-KMS, and blocks public
+([§18](#18-bring-up-runbook) step 4). It is versioned, encrypted with SSE-KMS, and blocks public
 access.
 
 Commit `.terraform.lock.hcl`. An environment that drifts because a provider minor changed a default
@@ -702,8 +766,10 @@ one normally would have is:
 | Generating the secret inventory | `data "external"` reading the 1Password note at plan time ([§12.4](#124-the-secret-inventory)) |
 | Exporting provider credentials | `ephemeral "onepassword_item"` feeding the provider blocks directly ([§4.6.1](#461-provider-credentials)) |
 
-The only thing that must be true of the operator's shell is that **`OP_ACCOUNT` is set and `op` is
-signed in** — one variable, one session, for every credential in the deployment.
+**The operator's shell needs nothing set.** Not a variable, not a profile, not a credential. The
+only prerequisite outside Terraform is a signed-in `op` session, and even the account it signs in to
+is a Terraform variable ([§4.6.1](#461-provider-credentials)) rather than something the shell has to
+carry.
 
 #### 4.6.1 Provider credentials
 
@@ -717,17 +783,27 @@ the wrapper unnecessary: the credential exists only for the duration of the oper
 written anywhere.
 
 ```hcl
-# _init.tf — the only provider authenticated from the environment
-provider "onepassword" {}     # OP_ACCOUNT, or OP_SERVICE_ACCOUNT_TOKEN in CI (§12.2)
+# _init.vars.tf
+variable "op_account" {
+  description = "1Password account for the desktop-app SDK integration"
+  type        = string
+  default     = "appliedblockchain.1password.com"
+}
+
+# _init.tf — the root of every credential in this deployment
+provider "onepassword" {
+  account = var.op_account      # CI overrides with OP_SERVICE_ACCOUNT_TOKEN instead (§12.2)
+}
 
 ephemeral "onepassword_item" "dnsimple" {
-  vault = var.op_vault
-  title = var.op_dnsimple_item
+  vault = var.op_devops_vault      # "DevOps"
+  title = "dnsimple-terraform"
 }
 
 provider "dnsimple" {
-  token   = ephemeral.onepassword_item.dnsimple.credential
-  account = ephemeral.onepassword_item.dnsimple.username
+  # the note is a shell fragment; §6.2 parses the two values out of it
+  token   = local.dnsimple_token
+  account = local.dnsimple_account
 }
 ```
 
@@ -789,11 +865,41 @@ output "RUN_TASK_NETWORK" {
     assign_public_ip = "DISABLED"
   }
 }
+
+# Flat string outputs, so a runbook command can read one inline with
+# `terraform output -raw <name>` — see §18.
+output "name_prefix"    { value = local.name_prefix }
+output "cluster_name"   { value = aws_ecs_cluster.ecs.name }
+output "aws_profile"    { value = var.profile[terraform.workspace] }
+output "aws_region"     { value = var.aws_region[terraform.workspace] }
+output "op_vault"       { value = local.op_vault }
+output "op_item"        { value = local.op_item }
+
+output "wallet_host"    { value = local.hosts.wallet }
+output "api_host"       { value = local.hosts.api }
+output "paymaster_host" { value = local.hosts.paymaster }
+
+# { example = { dapp = "example.dev.giano…", wallet = "wallet.example.dev.giano…" }, byoui = {…} }
+output "tenant_hosts" {
+  description = "per-tenant dApp and wallet hostnames, keyed by tenant slug"
+  value       = local.tenant_hosts
+}
 ```
 
 There is no output that returns a secret value. `RUN_TASK_NETWORK` exists because the one-shot task
 in [§9.7](#97-one-shot-tasks) is run by hand, and hand-copying subnet ids is how the wrong subnet
 gets used.
+
+The flat outputs exist for the same reason, generalised. Every value a runbook command needs — the
+cluster name, the vault, each hostname — is already a variable or a resource attribute here, so the
+command reads it with `terraform output -raw` at the point of use rather than from something typed
+into a shell earlier. There is no setup block to go stale, and no way to run a command against the
+wrong environment while believing otherwise: the value comes from the workspace that is actually
+selected.
+
+They are deliberately **flat strings** rather than one structured blob, because `terraform output
+-raw` only unwraps a string, and `-raw` is what makes `"https://$(terraform output -raw
+api_host)/healthz"` read as an ordinary URL instead of a `jq` incantation.
 
 ---
 
@@ -1280,6 +1386,8 @@ resource "aws_kms_key" "asm-kms-key" {
   enable_key_rotation      = true
   customer_master_key_spec = "SYMMETRIC_DEFAULT"
   deletion_window_in_days  = 30
+
+  tags = { Name = "${local.name_prefix}-asm-kms" }
 }
 
 resource "aws_kms_alias" "asm-kms-key-alias" {
@@ -1358,7 +1466,7 @@ resource "aws_secretsmanager_secret" "secret" {
   kms_key_id              = var.kms_key_id
   recovery_window_in_days = var.recovery_window_in_days
 
-  tags = local.tags
+  tags = merge(local.tags, { Name = "${var.name_prefix}-${each.key}" })
 }
 
 resource "aws_secretsmanager_secret_version" "secret" {
@@ -1452,6 +1560,8 @@ resource "aws_secretsmanager_secret" "database-url" {
   name                    = "${local.name_prefix}-database-url"
   kms_key_id              = aws_kms_key.asm-kms-key.key_id
   recovery_window_in_days = var.asm_recovery_window_in_days[terraform.workspace]
+
+  tags = { Name = "${local.name_prefix}-database-url" }
 }
 
 resource "aws_secretsmanager_secret_version" "database-url" {
@@ -1487,6 +1597,8 @@ resource "aws_secretsmanager_secret" "datadog-api-key" {
   name                    = "${local.name_prefix}-datadog-api-key"
   kms_key_id              = aws_kms_key.asm-kms-key.key_id
   recovery_window_in_days = var.asm_recovery_window_in_days[terraform.workspace]
+
+  tags = { Name = "${local.name_prefix}-datadog-api-key" }
 }
 
 resource "aws_secretsmanager_secret_version" "datadog-api-key" {
@@ -1605,6 +1717,11 @@ ca_cert_identifier                  = "rds-ca-rsa4096-g1"
 maintenance_window                  = "tue:02:00-tue:02:30"
 ```
 
+Every resource the module creates — the instance, the subnet group, the parameter group and the
+security group — carries `merge(local.tags, { Name = "${var.name_prefix}-${var.component}-<kind>" })`
+([§4.3.1](#431-tagging)). `copy_tags_to_snapshot = true` above is what carries that set onto every
+automated backup, so a snapshot found months later is still attributable to its environment.
+
 `deletion_protection` and `skip_final_snapshot` are the two inputs that make this a dev database.
 Both flip for `stg` and `prd`, and they are keyed by workspace precisely so that flipping them is a
 map edit rather than a code edit.
@@ -1625,6 +1742,8 @@ resource "aws_kms_key" "rds-kms-key" {
   enable_key_rotation      = true
   customer_master_key_spec = "SYMMETRIC_DEFAULT"
   deletion_window_in_days  = 30
+
+  tags = { Name = "${local.name_prefix}-rds-kms" }
 }
 
 resource "aws_kms_alias" "rds-kms-key-alias" {
@@ -1655,6 +1774,7 @@ resource "aws_db_instance" "db" {
   password_wo         = var.db_password_wo
   password_wo_version = var.db_password_wo_version
   # ...
+  tags = merge(local.tags, { Name = "${var.name_prefix}-${var.component}-db" })
 }
 ```
 
@@ -1710,6 +1830,8 @@ resource "aws_ecs_cluster" "ecs" {
     name  = "containerInsights"
     value = var.ecs_container_insights[terraform.workspace]   # "disabled" everywhere — see below
   }
+
+  tags = { Name = "${local.name_prefix}-ecs" }
 }
 
 resource "aws_ecs_cluster_capacity_providers" "ecs" {
@@ -1911,6 +2033,8 @@ existing `GIANO_WALLET_API_UPSTREAM` contract stay unchanged.
 resource "aws_service_discovery_private_dns_namespace" "ns" {
   name = "${local.name_prefix}.local"
   vpc  = aws_vpc.vpc.id
+
+  tags = { Name = "${local.name_prefix}-cloudmap" }
 }
 ```
 
@@ -2279,13 +2403,61 @@ An empty provider block, authenticated by environment variables, so local and a 
 same code:
 
 ```hcl
-provider "onepassword" {}
+provider "onepassword" {
+  account = var.op_account      # default "appliedblockchain.1password.com"
+}
 ```
 
-| Context | Variable | Notes |
+| Context | How | Notes |
 |---|---|---|
-| Local | `OP_ACCOUNT` | Uses the 1Password **desktop app SDK integration**, not the CLI. Requires *Settings → Developer → Integrate with 1Password SDKs* to be enabled |
-| CI (later) | `OP_SERVICE_ACCOUNT_TOKEN` | |
+| Local | `var.op_account` | Uses the 1Password **desktop app SDK integration**, not the CLI. Requires *Settings → Developer → Integrate with 1Password SDKs* to be enabled. A variable rather than `OP_ACCOUNT` in the environment, so nothing has to be exported |
+| CI (later) | `OP_SERVICE_ACCOUNT_TOKEN` | the one case where an environment variable is unavoidable — a service-account token is not a value to put in a `.tf` file |
+
+#### Which vault
+
+Three vaults, and the split is deliberate:
+
+| Vault | Holds | Used by |
+|---|---|---|
+| `DevOps` | `dnsimple-terraform`, `datadog-terraform` | provider credentials, shared with every other project ([§4.6.1](#461-provider-credentials)) |
+| `Giano dev/stg` | `secrets-dev`, `secrets-stg` | the `dev` and `stg` workspaces |
+| `Giano prd` | `secrets-prd` | the `prd` workspace, **and nothing else** |
+
+**Production secrets live in a vault of their own.** That is the point of the split: access to
+`Giano prd` is granted separately from access to the environments people develop against, so the set
+of humans who can read a production credential is a decision someone makes once, in 1Password, rather
+than a consequence of being on the project.
+
+The coordinates are derived, never typed:
+
+```hcl
+# asm.vars.tf
+variable "op_vault_suffix" {
+  description = "1Password vault suffix per environment — prd is deliberately isolated"
+  type        = map(string)
+  default = {
+    dev = "dev/stg"
+    stg = "dev/stg"
+    prd = "prd"
+  }
+}
+
+variable "op_devops_vault" {
+  description = "shared vault holding provider credentials"
+  type        = string
+  default     = "DevOps"
+}
+```
+
+which compose in `_locals.tf` ([§4.3](#43-naming)) into `Giano dev/stg` + `secrets-dev` for the
+`dev` workspace. Selecting a workspace therefore selects the vault, and there is no way to point a
+`dev` apply at production's secrets short of editing the map.
+
+**The vault name contains a `/`, and that rules out `op read`.** 1Password secret references
+(`op://vault/item/field`) are parsed on `/`, so `op://Giano dev/stg/secrets-dev/notesPlain` resolves
+the vault as `Giano dev` and fails. Everything that reads these items uses `op item get` with an
+explicit `--vault` flag instead ([§12.4](#124-the-secret-inventory)). The `DevOps` items have no
+slash and can use either form.
 
 **Never set both.** The provider picks one and the failure mode when both are present is a confusing
 auth error rather than a clear one.
@@ -2341,7 +2513,9 @@ numbers and **no values at all**:
 data "external" "secret_inventory" {
   program = ["bash", "-c", <<-EOT
     set -euo pipefail
-    op read "op://${var.op_vault}/${var.op_secrets_item}/notesPlain" \
+    op item get "${local.op_item}" --vault "${local.op_vault}" \
+      --account "${var.op_account}" --format json \
+      | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
       | jq -c 'map_values(.version | tostring)'
   EOT
   ]
@@ -2356,6 +2530,10 @@ locals {
 }
 ```
 
+`op item get --vault` rather than `op read "op://…"`: the vault is named `Giano dev/stg`, and a
+secret reference is parsed on `/`, so the URI form resolves the vault as `Giano dev` and fails
+([§12.2](#122-provider-authentication)). The flag takes the name verbatim.
+
 The `tostring` / `tonumber` round-trip is not decoration. The `external` provider's contract is a
 **flat `map(string)`** on stdout — nested objects and non-string values are a protocol error, which
 is why the jq expression flattens `{value, version}` down to just the version as a string.
@@ -2365,7 +2543,7 @@ Returning the note verbatim would put every secret value into the state file and
 this section; returning `{name → version}` puts in exactly what is already public — the names of the
 secrets, which are visible as ASM resource names anyway, and their rotation counters.
 
-`set -euo pipefail` matters more than it looks: without it, a failed `op read` sends an empty string
+`set -euo pipefail` matters more than it looks: without it, a failed `op item get` sends an empty string
 to `jq`, `jq` emits `null`, and Terraform sees an inventory of zero secrets — which plans as
 *destroy every secret in the environment*. With it, the data source fails and the plan stops.
 
@@ -2386,8 +2564,8 @@ accident:
 ```hcl
 # asm.tf
 ephemeral "onepassword_item" "secrets" {
-  vault = var.op_vault
-  title = var.op_secrets_item
+  vault = local.op_vault      # "Giano dev/stg"
+  title = local.op_item       # "secrets-dev"
 }
 
 locals {
@@ -2409,7 +2587,7 @@ Then the ASM module ([§7.2](#72-the-module)) creates the secrets with `secret_s
 | `ephemeral "onepassword_item"` has **no** `section` / `section_map` | This is why the bundle is a JSON note and not custom fields |
 | `data "onepassword_item"` and `data "onepassword_environment"` are **banned** | They put every value into state |
 | `lifecycle { ignore_changes = [...] }` does **not** keep values out of state | Refresh still writes them. Write-only arguments are the only mechanism that works |
-| Terraform CLI has **no** native state encryption (OpenTofu does) | Protection is KMS + IAM + not putting secrets in state. The third is the one that actually holds |
+| Terraform has **no** native state encryption | Protection is KMS + IAM + not putting secrets in state. The third is the one that actually holds |
 | A module variable receiving an ephemeral value **must** declare `ephemeral = true` | Otherwise the apply fails — correctly — rather than silently persisting the value |
 
 ### 12.6 Known weak points
@@ -3266,59 +3444,26 @@ Sixteen steps in four phases. The order matters: several steps are prerequisites
 `apply` rather than of the first.
 
 Every step is marked with how it is performed — 🖥️ shell, 🌐 browser, ✍️ an edit to this repo or to
-1Password — and every shell step is a block you can copy whole. They all assume the environment set
-in [§18.0](#180-shell-setup), so set that once and the rest paste as-is.
+1Password — and every shell step is a block you can copy whole.
+
+**Nothing is exported.** There is no setup block and no environment to prepare: every value a
+command needs is either literal or read inline with `terraform output -raw`
+([§4.7](#47-outputs)), so a command always runs against the workspace that is actually selected.
+Where a block needs a value more than once it assigns a plain shell variable at the top of that
+block — local to the paste, not to the session.
 
 | Phase | Steps | Ends when |
 |---|---|---|
-| [18.1 Prerequisites](#181-prerequisites) | 0–4 | Terraform can run and the chain is ready |
-| [18.2 Build](#182-build) | 5–7 | every service is healthy and reporting to Datadog |
+| [18.1 Prerequisites](#181-prerequisites) | 0–3 | 1Password, DNS and the chain are ready |
+| [18.2 Provision](#182-provision) | 4–7 | every service is healthy and reporting to Datadog |
 | [18.3 Acceptance](#183-acceptance) | 8–12 | a sponsored transaction has settled on both tenants |
 | [18.4 Invariants](#184-invariants) | 13–15 | the three things that must never be true, aren't |
-
-### 18.0 Shell setup
-
-Run this once per shell. Everything below derives from it — no snippet contains a hostname, an
-account id or a cluster name of its own.
-
-```bash
-cd infra/iac
-
-# AWS
-export AWS_PROFILE=giano-dev
-export AWS_REGION=eu-west-2
-
-# environment — dev | stg | prd
-export ENV=dev
-export PREFIX="giano-${ENV}"
-export CLUSTER="${PREFIX}-ecs"
-
-# 1Password
-export OP_ACCOUNT="appliedblockchain.1password.com"
-export OP_VAULT="Giano"                 # Giano's own secrets bundle
-export OP_ITEM="giano-secrets"
-export OP_DEVOPS_VAULT="DevOps"         # shared provider credentials
-
-# DNS — var.dns_zone[dev], the ONE value that changes per environment
-export DNS_ZONE="appliedblockchain.dev"
-export DNS_PREFIX="${ENV}.giano"                      # var.dns_prefix[dev]
-export BASE="${DNS_PREFIX}.${DNS_ZONE}"               # dev.giano.appliedblockchain.dev
-
-# Giano's own hostnames
-export WALLET_HOST="wallet.${BASE}"
-export API_HOST="api.${BASE}"
-export PAYMASTER_HOST="paymaster.${BASE}"
-
-# tenant hostnames — these are RP IDs, and they are irreversible (step 3)
-export EXAMPLE_HOST="example.${BASE}"
-export EXAMPLE_WALLET_HOST="wallet.example.${BASE}"
-export BYOUI_HOST="byoui.${BASE}"
-export BYOUI_WALLET_HOST="wallet.byoui.${BASE}"
-```
 
 ---
 
 ### 18.1 Prerequisites
+
+Nothing here touches AWS. All of it happens before there is any Terraform state.
 
 #### Step 0 — Install the tooling and sign in 🖥️
 
@@ -3327,24 +3472,28 @@ export BYOUI_WALLET_HOST="wallet.byoui.${BASE}"
 ([§12.4](#124-the-secret-inventory), [R20](#19-risks-and-open-items)).
 
 ```bash
+cd infra/iac
 terraform version | head -1     # must be >= v1.11
 op --version
 jq --version
 aws --version
 ```
 
-One `op` session is every credential the apply needs ([§4.6](#46-running-terraform)):
+One `op` session is every credential the apply needs. The account is `var.op_account`, so it is
+named here and nowhere else in your shell:
 
 ```bash
-eval "$(op signin)"
+op signin --account appliedblockchain.1password.com
 op whoami
 aws sts get-caller-identity
 ```
 
 #### Step 1 — Fill the 1Password note, and confirm the zone ✍️🖥️
 
-Create the Secure Note ([§12.3](#123-the-bundle)) in the **`Giano`** vault with every key from
-[§7.3](#73-the-secrets), each `{ "value": …, "version": 1 }`.
+Create the Secure Note ([§12.3](#123-the-bundle)) named **`secrets-dev`** in the
+**`Giano dev/stg`** vault, with every key from [§7.3](#73-the-secrets), each
+`{ "value": …, "version": 1 }`. Production's note is `secrets-prd` in the separate **`Giano prd`**
+vault ([§12.2](#122-provider-authentication)).
 
 The provider credentials are **not** yours to create — `dnsimple-terraform` and `datadog-terraform`
 already exist in the shared **`DevOps`** vault. Confirm you can read both, and that each note still
@@ -3353,7 +3502,7 @@ exports what Terraform's regex expects ([§6.2](#62-provider-authentication)):
 ```bash
 for ITEM in dnsimple-terraform datadog-terraform; do
   echo "== ${ITEM}"
-  op read "op://${OP_DEVOPS_VAULT}/${ITEM}/notesPlain" \
+  op read "op://DevOps/${ITEM}/notesPlain" \
     | grep -oE '(DNSIMPLE_TOKEN|DNSIMPLE_ACCOUNT|DD_API_KEY|DD_APP_KEY)' \
     | sort -u | sed 's/^/  found: /'
 done
@@ -3363,19 +3512,20 @@ done
 itself ([§6.1](#61-provider-and-zone)):
 
 ```bash
-eval "$(op read "op://${OP_DEVOPS_VAULT}/dnsimple-terraform/notesPlain")"
-curl -fsS -H "Authorization: Bearer ${DNSIMPLE_TOKEN}" \
-  "https://api.dnsimple.com/v2/${DNSIMPLE_ACCOUNT}/zones/${DNS_ZONE}" \
-  | jq -r '"zone: \(.data.name)  reverse=\(.data.reverse)"'
+( eval "$(op read 'op://DevOps/dnsimple-terraform/notesPlain')"
+  curl -fsS -H "Authorization: Bearer ${DNSIMPLE_TOKEN}" \
+    "https://api.dnsimple.com/v2/${DNSIMPLE_ACCOUNT}/zones/appliedblockchain.dev" \
+    | jq -r '"zone: \(.data.name)"' )
 ```
 
-Then the bundle itself.
+The subshell keeps the token out of the rest of the session.
 
-Validate before moving on — invalid JSON breaks every secret at once, and a key missing its
-`version` breaks rotation silently:
+Then the bundle itself. Note `op item get --vault`, not `op read` — the vault name contains a `/`,
+which a secret reference would split on ([§12.2](#122-provider-authentication)):
 
 ```bash
-op read "op://${OP_VAULT}/${OP_ITEM}/notesPlain" \
+op item get secrets-dev --vault "Giano dev/stg" --format json \
+  | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
   | jq -e 'to_entries | all(.value | has("value") and has("version"))' > /dev/null \
   && echo "OK — valid JSON, every key has value + version" \
   || echo "FAIL — fix the note before going further"
@@ -3385,34 +3535,12 @@ Confirm the inventory is what you expect. This is the exact list Terraform will 
 Manager:
 
 ```bash
-op read "op://${OP_VAULT}/${OP_ITEM}/notesPlain" \
+op item get secrets-dev --vault "Giano dev/stg" --format json \
+  | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
   | jq -r 'to_entries[] | "\(.key)  v\(.value.version)"'
 ```
 
-#### Step 2 — Bootstrap state and workspaces 🖥️
-
-The state bucket cannot live in the state it stores, so it is created once against a local backend
-and the state is then migrated into it.
-
-```bash
-terraform init -backend=false
-terraform apply -target=module.s3-backend -auto-approve
-```
-
-```bash
-terraform init -migrate-state -force-copy
-rm -f terraform.tfstate terraform.tfstate.backup
-```
-
-```bash
-for W in dev stg prd; do terraform workspace new "$W" 2>/dev/null || true; done
-terraform workspace list
-```
-
-From here on `terraform init` alone is enough — the backend block is fully specified
-([§4.5](#45-backend-and-versions)).
-
-#### Step 3 — Settle the tenant wallet hostnames ✍️
+#### Step 2 — Settle the tenant wallet hostnames ✍️
 
 **Do this now.** Passkeys bind to these hostnames irreversibly from step 9 onward, and renaming one
 later orphans every credential created against it ([R1](#19-risks-and-open-items)).
@@ -3434,7 +3562,7 @@ Both dev tenants sit two labels deep on purpose, so each gets an ACM certificate
 than riding the wildcard ([§6.3](#63-certificates)) — which is what makes §6.6 step 2 a tested path
 rather than a paragraph.
 
-#### Step 4 — Deploy the paymaster and fund the accounts 🖥️
+#### Step 3 — Deploy the paymaster and fund the accounts 🖥️
 
 A chain operation, not an infrastructure one ([§13.1](#131-the-paymaster-must-be-deployed)):
 
@@ -3449,13 +3577,47 @@ Sepolia faucet ([§13.2](#132-funded-accounts)). Both drain with use, and an emp
 
 ---
 
-### 18.2 Build
+### 18.2 Provision
 
-#### Step 5 — First apply 🖥️
+#### Step 4 — Bootstrap the state bucket and workspaces 🖥️
+
+**Once per project, in the `default` workspace.** The state bucket cannot live in the state it
+stores, so it is created against a local backend and the state is then migrated into it.
 
 ```bash
-terraform workspace select "${ENV}"
-terraform plan -out="${ENV}.tfplan"
+terraform workspace show          # must print: default
+terraform init -backend=false
+terraform apply -target=module.s3-backend -auto-approve
+```
+
+```bash
+terraform init -migrate-state -force-copy
+rm -f terraform.tfstate terraform.tfstate.backup
+```
+
+Then create the three environment workspaces. `default` is never used again:
+
+```bash
+for W in dev stg prd; do terraform workspace new "$W" 2>/dev/null || true; done
+terraform workspace list
+```
+
+From here on `terraform init` alone is enough — the backend block is fully specified
+([§4.5](#45-backend-and-versions)), and the workspace supplies the state key.
+
+#### Step 5 — Select the workspace and apply 🖥️
+
+**Select the environment. Everything after this is the workspace you are in** — the region, the
+profile, the CIDRs, the hostnames and the 1Password vault all follow from it
+([§4.1](#41-one-root-module-environments-as-workspaces)).
+
+```bash
+terraform workspace select dev        # or stg, or prd
+terraform workspace show
+```
+
+```bash
+terraform plan -out=tfplan
 ```
 
 **Read the plan before applying.** The secret list comes from the 1Password note, so a key deleted
@@ -3463,7 +3625,7 @@ or mistyped there arrives here as a `destroy` on a real secret
 ([R8](#19-risks-and-open-items)). This surfaces exactly those:
 
 ```bash
-terraform show -json "${ENV}.tfplan" \
+terraform show -json tfplan \
   | jq -r '.resource_changes[]
            | select(.change.actions | index("delete"))
            | "DELETE  \(.address)"'
@@ -3472,7 +3634,7 @@ terraform show -json "${ENV}.tfplan" \
 Nothing should be listed on a first apply. If something is, stop and check the note.
 
 ```bash
-terraform apply "${ENV}.tfplan"
+terraform apply tfplan
 ```
 
 This builds the VPC, NATs, ALB, ACM (validated through DNSimple), DNS records, KMS keys, Secrets
@@ -3495,6 +3657,7 @@ Confirm every repository received the current commit's image:
 
 ```bash
 SHA=$(git rev-parse --short HEAD)
+PREFIX=$(terraform output -raw name_prefix)
 for R in wallet-api wallet-web paymaster-admin example wallet-byo bundler; do
   aws ecr describe-images \
     --repository-name "${PREFIX}/${R}" \
@@ -3510,6 +3673,8 @@ done
 instance. The init container's exit code is on the stopped task:
 
 ```bash
+CLUSTER=$(terraform output -raw cluster_name)
+PREFIX=$(terraform output -raw name_prefix)
 aws ecs list-tasks --cluster "${CLUSTER}" \
     --family "${PREFIX}-wallet-api" --desired-status STOPPED \
     --query 'taskArns[]' --output text \
@@ -3526,11 +3691,13 @@ the evidence.
 #### Step 7 — Verify health and observability 🖥️
 
 ```bash
+CLUSTER=$(terraform output -raw cluster_name)
 aws ecs list-services --cluster "${CLUSTER}" --query 'serviceArns[]' --output text \
   | xargs aws ecs wait services-stable --cluster "${CLUSTER}" --services
 ```
 
 ```bash
+API_HOST=$(terraform output -raw api_host)
 curl -fsS "https://${API_HOST}/healthz" && echo
 curl -fsS "https://${API_HOST}/v1/version" | jq
 ```
@@ -3539,6 +3706,7 @@ curl -fsS "https://${API_HOST}/v1/version" | jq
 application, `datadog-agent` and `log_router` ([§17.3](#173-observability)):
 
 ```bash
+CLUSTER=$(terraform output -raw cluster_name)
 aws ecs list-tasks --cluster "${CLUSTER}" --query 'taskArns[]' --output text \
   | xargs aws ecs describe-tasks --cluster "${CLUSTER}" --tasks \
   | jq -r '.tasks[] | "\(.group)\t\([.containers[].name] | sort | join(","))"'
@@ -3562,6 +3730,8 @@ A tenant with no rules is refused **every** transaction, which looks exactly lik
 environment ([§16.3](#163-a-deployable-sponsorship-provisioner)).
 
 ```bash
+CLUSTER=$(terraform output -raw cluster_name)
+PREFIX=$(terraform output -raw name_prefix)
 NET=$(terraform output -json RUN_TASK_NETWORK)
 SUBNETS=$(jq -r '.subnets | join(",")'       <<<"$NET")
 SGS=$(jq   -r '.security_groups | join(",")' <<<"$NET")
@@ -3581,7 +3751,7 @@ done
 🌐 Confirm through the paymaster console that `example` and `byoui` each appear with a balance:
 
 ```bash
-open "https://${PAYMASTER_HOST}"
+open "https://$(terraform output -raw paymaster_host)"
 ```
 
 #### Step 9 — End-to-end check, stock UI 🌐
@@ -3589,7 +3759,7 @@ open "https://${PAYMASTER_HOST}"
 **This is the acceptance test for the whole document.**
 
 ```bash
-open "https://${EXAMPLE_HOST}"
+open "https://$(terraform output -json tenant_hosts | jq -r .example.dapp)"
 ```
 
 Create a passkey, connect, send a sponsored transaction, confirm the receipt, and confirm the
@@ -3607,18 +3777,21 @@ check, and neither can wait.
 🖥️ And Giano's serving hostname must not be a relying party at all:
 
 ```bash
+WALLET_HOST=$(terraform output -raw wallet_host)
+TENANT_WALLET=$(terraform output -json tenant_hosts | jq -r .example.wallet)
+
 # MUST be 404 — wallet.* serves the UI but is not an RP
-curl -s -o /dev/null -w 'wallet host: %{http_code}\n' \
+curl -s -o /dev/null -w 'giano wallet host: %{http_code}\n' \
   "https://${WALLET_HOST}/.well-known/webauthn"
 
 # MUST be 200, listing the tenant's own origins
-curl -fsS "https://${EXAMPLE_WALLET_HOST}/.well-known/webauthn" | jq
+curl -fsS "https://${TENANT_WALLET}/.well-known/webauthn" | jq
 ```
 
 #### Step 11 — End-to-end check, BYO UI 🌐
 
 ```bash
-open "https://${BYOUI_HOST}"
+open "https://$(terraform output -json tenant_hosts | jq -r .byoui.dapp)"
 ```
 
 Repeat step 9. The popup must be `wallet.byoui.dev.giano.appliedblockchain.dev` and must be serving the **BYO
@@ -3648,7 +3821,7 @@ An open relay here bypasses every policy check wallet-api makes and drains the A
 curl -s -o /dev/null -w 'byo /bundler: %{http_code}\n' -X POST \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' \
-  "https://${BYOUI_WALLET_HOST}/bundler"
+  "https://$(terraform output -json tenant_hosts | jq -r .byoui.wallet)/bundler"
 ```
 
 Anything but a `2xx` is a pass. A `200` carrying a chain id means the proxy is live — stop and fix
@@ -3659,6 +3832,7 @@ Anything but a `2xx` is a pass. A `200` carrying a chain id means the proxy is l
 The invariant D8 exists to hold. Every ENI must report `None`:
 
 ```bash
+CLUSTER=$(terraform output -raw cluster_name)
 aws ecs list-tasks --cluster "${CLUSTER}" --query 'taskArns[]' --output text \
   | xargs aws ecs describe-tasks --cluster "${CLUSTER}" --tasks \
   | jq -r '.tasks[].attachments[].details[]
@@ -3675,7 +3849,9 @@ than as arguments — putting them in the process table to prove they are not in
 be a poor trade.
 
 ```bash
-op read "op://${OP_VAULT}/${OP_ITEM}/notesPlain" | jq -r '.[].value' \
+op item get "$(terraform output -raw op_item)" \
+     --vault "$(terraform output -raw op_vault)" --format json \
+  | jq -r '.fields[] | select(.id == "notesPlain") | .value' | jq -r '.[].value' \
   | grep -qFf - <(terraform show -json | jq -r '.. | strings') \
   && echo "FAIL — a secret value appears in state" \
   || echo "PASS — no secret value found in state"
@@ -3700,7 +3876,7 @@ third is the guarantee everything else in §12 rests on.
 
 | # | Item | Impact | Disposition |
 |---|---|---|---|
-| R1 | **`rpId` is irreversible.** Every passkey binds to the *tenant's* host, not Giano's. Renaming it orphans them all. | Total loss of dev accounts | Settle `tenant_wallet_hosts` at runbook step 3. Cheap now, impossible later. Step 10 verifies no passkey bound to Giano's serving hostname instead. |
+| R1 | **`rpId` is irreversible.** Every passkey binds to the *tenant's* host, not Giano's. Renaming it orphans them all. | Total loss of dev accounts | Settle `tenant_wallet_hosts` at runbook step 2. Cheap now, impossible later. Step 10 verifies no passkey bound to Giano's serving hostname instead. |
 | R2 | **Funded accounts drain silently.** An empty executor or paymaster deposit presents as "transactions stopped working". | Environment appears broken, cause non-obvious | **Half-closed.** The Datadog monitor exists ([§17.3.5](#1735-monitors)), but nothing emits `giano.chain.balance` yet — a small scheduled task must submit it over DogStatsD. That is a repository change, listed as the cheapest item in §16. Until it lands, the monitor is declared and never fires. |
 | R3 | **`GIANO_BUNDLER_URL` on `wallet-web`.** Required by the entrypoint even in `service` sponsorship mode; unverified whether the browser ever dials it. | Bundler may need public exposure | Verify in §14.3 during implementation. If it does, add an ALB rule and accept that the bundler becomes internet-reachable. |
 | R4 | **`openRegistration: true`.** Anyone reaching the hostname can create a wallet. | Unbounded rows, no funds at risk | Accepted for dev. First thing to disable if the hostname circulates. |
