@@ -1,20 +1,31 @@
 name: Docker images
 
+# Every image builds on every PR; only main and tags push. A PR build is the only thing that
+# exercises giano-bundler, giano-devnet and giano-contracts-deployer at all — the e2e compose
+# stack builds just wallet-api, wallet-web and paymaster-admin, and uses upstream images for
+# the rest — so without this a broken Dockerfile first surfaces in the job that publishes it.
 on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: docker-${{ github.ref }}
+  # superseded PR builds are cancelled; a push that may be mid-publish is never cancelled
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   images:
-    name: Build & push ${{ matrix.image.name }}
+    name: Build ${{ matrix.image.name }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         image:
           - name: giano-wallet-api
@@ -31,8 +42,12 @@ jobs:
             dockerfile: packages/contracts/Dockerfile.deployer
     steps:
       - uses: actions/checkout@v4
+        # no submodules: every Solidity import resolves through npm (@openzeppelin,
+        # @account-abstraction, solady); packages/contracts/lib/* is forge-test-only
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
+        # no registry credentials on PRs — nothing is pushed, and a fork PR has none
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -49,9 +64,13 @@ jobs:
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
-          push: true
-          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          # amd64 only — every deployment target is x86_64, and the arm64 leg would be
+          # QEMU-emulated on the runner for nothing
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # PRs read main's cache but never write: branch cache entries are invisible to main
+          # and would only evict it from the repo's shared 10GB budget
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
