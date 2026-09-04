@@ -1,0 +1,74 @@
+{
+  "name": "@appliedblockchain/giano-wallet-kit",
+  "version": "0.1.0",
+  "description": "Giano wallet SDK: the framework-agnostic orchestration a Giano wallet origin is built from — runtimes, transport host with consent, and the wallet-management controller",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appliedblockchain/giano.git",
+    "directory": "packages/wallet-kit"
+  },
+  "author": "Applied Blockchain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.mts",
+        "default": "./dist/react.mjs"
+      },
+      "require": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "viem": "^2.31.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-contracts": "workspace:^",
+    "@appliedblockchain/giano-wallet-core": "workspace:^",
+    "@appliedblockchain/giano-wallet-transport": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.6",
+    "happy-dom": "^17.4.4",
+    "react": "^19.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "5.5.4",
+    "viem": "2.31.6",
+    "vitest": "^3.1.2"
+  }
+}

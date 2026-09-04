@@ -148,6 +148,15 @@ const envSchema = z
     CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
     SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
 
+    /**
+     * Lifetime of a pending addition (WM-19): the cross-device handoff slot expires in
+     * minutes, capped at 30 — both devices must be present and awake at the same time by
+     * design (D8), so a long-lived slot buys nothing and widens the window.
+     */
+    PENDING_ADDITION_TTL_SECONDS: z.coerce.number().int().positive().max(1800).default(300),
+    /** Open slots one user may hold at once — the per-user rate limit WM-19 requires. */
+    PENDING_ADDITION_MAX_OPEN_PER_USER: z.coerce.number().int().positive().default(3),
+
     /** UserOp policy caps — deployment defaults, overridable per tenant via policy jsonb. */
     USEROP_MAX_CALL_GAS: z.coerce.bigint().positive().default(5_000_000n),
     USEROP_MAX_VERIFICATION_GAS: z.coerce.bigint().positive().default(5_000_000n),

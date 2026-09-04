@@ -1,18 +1,18 @@
-import { TransportRpcError, RPC_ERRORS } from '@appliedblockchain/giano-wallet-transport';
-
-/**
- * Verbatim copy of services/wallet-web/src/requests.ts — the consent store is already
- * framework-free, so a BYO UI reuses it as-is.
- */
+import { RPC_ERRORS, TransportRpcError } from '@appliedblockchain/giano-wallet-transport';
+import type { WalletRuntime } from './runtimes';
 
 /** A dApp request awaiting user consent in the popup UI. */
 export type PendingRequest = {
-  kind: 'connect' | 'transaction' | 'sign';
+  /** 'manage' opens the wallet-management view (WM-54); it resolves when the user closes it. */
+  kind: 'connect' | 'transaction' | 'sign' | 'manage';
   method: string;
   params: unknown;
   dappOrigin: string;
-  /** The session's negotiated chain, named on every consent screen (MC-80, MC-81). */
+  /** The chain this session negotiated — named on every consent screen (MC-80, MC-81). */
+  chainId: number;
   chainName: string;
+  /** The per-chain runtime serving this session (sponsorship pre-flight and all). */
+  runtime: WalletRuntime;
   approve: () => void;
   reject: () => void;
 };
@@ -20,8 +20,9 @@ export type PendingRequest = {
 type Listener = (pending: PendingRequest | null) => void;
 
 /**
- * Single-slot consent queue: the popup shows one request at a time; approval runs the
- * request through the Giano provider, rejection answers 4001 without touching it.
+ * Single-slot consent queue (WK-10): the popup shows one request at a time; approval runs the
+ * request through the Giano provider, rejection answers 4001 without touching it. A second
+ * request while one is pending is refused rather than queued silently.
  */
 export function createRequestStore() {
   let current: PendingRequest | null = null;
@@ -54,6 +55,7 @@ export function createRequestStore() {
           reject: () => {
             current = null;
             notify();
+            // A refusal is EIP-1193 4001, always (WK-09).
             reject(new TransportRpcError(RPC_ERRORS.USER_REJECTED, 'User rejected the request'));
           },
         };
@@ -73,6 +75,8 @@ export function toRpcError(error: unknown): TransportRpcError {
   if (name === 'NotAllowedError' || name === 'AbortError') {
     return new TransportRpcError(RPC_ERRORS.USER_REJECTED, 'User cancelled the passkey ceremony');
   }
+  // The account couldn't be (re)established — the popup was reopened and the persisted
+  // session is gone/expired. Surface a clean EIP-1193 disconnect so the dApp reconnects.
   if (/not connected/i.test(message)) {
     return new TransportRpcError(RPC_ERRORS.DISCONNECTED, 'Wallet session expired — reconnect');
   }

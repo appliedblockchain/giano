@@ -1,7 +1,7 @@
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { cose, decodeClientDataJSON, decodeCredentialPublicKey } from '@simplewebauthn/server/helpers';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Hex } from 'viem';
@@ -65,7 +65,7 @@ function extractChallenge(clientDataJSONb64: string): string {
   }
 }
 
-function coseToXY(cosePublicKey: Uint8Array): { x: Hex; y: Hex } {
+export function coseToXY(cosePublicKey: Uint8Array): { x: Hex; y: Hex } {
   const decoded = decodeCredentialPublicKey(cosePublicKey);
   if (!cose.isCOSEPublicKeyEC2(decoded)) {
     throw new ApiError(400, 'unsupported-key', 'only EC2 (P-256) credentials are supported');
@@ -148,7 +148,14 @@ export default async function webauthnRoutes(
       }
       const { externalUserId, kind } = request.body;
       const user = await db.query.users.findFirst({ where: and(eq(users.tenantId, tenant.id), eq(users.externalId, externalUserId)) });
-      const creds = user ? await db.select({ credentialId: credentials.credentialId }).from(credentials).where(eq(credentials.userId, user.id)) : [];
+      // Removed credentials are excluded: offering one for sign-in would raise a passkey
+      // prompt that can only end in a WM-31 refusal.
+      const creds = user
+        ? await db
+            .select({ credentialId: credentials.credentialId })
+            .from(credentials)
+            .where(and(eq(credentials.userId, user.id), isNull(credentials.removedAt)))
+        : [];
       const resolvedKind = kind === 'auto' ? (creds.length > 0 ? 'authentication' : 'registration') : kind;
       const challenge = await challenges.issue(resolvedKind, user?.id ?? null, tenant.id);
       return {
@@ -186,7 +193,7 @@ export default async function webauthnRoutes(
     },
     async (request) => {
       const tenant = request.tenant!;
-      const { externalUserId, response } = request.body;
+      const { externalUserId, credentialName, response } = request.body;
 
       const challenge = extractChallenge(response.response.clientDataJSON);
       const consumed = await challenges.consume(challenge, 'registration');
@@ -255,6 +262,9 @@ export default async function webauthnRoutes(
             counter: BigInt(info.credential.counter),
             transports: info.credential.transports ?? response.response.transports ?? [],
             walletAddress,
+            // WM-08: persisted as the credential's initial name rather than dropped. A name is
+            // a local label only — never an input to any decision (WM-11).
+            name: credentialName ?? null,
           })
           .returning();
         return { user, credential };
@@ -320,6 +330,13 @@ export default async function webauthnRoutes(
       }
       if (!credential) {
         throw new ApiError(400, 'unknown-credential', 'credential is not registered');
+      }
+      // WM-31: a removed owner still exists on the user's device — it can only be refused,
+      // and it must be refused with a reason that says WHY, distinguishable from a generic
+      // failure. The refusal happens BEFORE issuing anything, not at on-chain signature
+      // verification, which is the least legible place for it to fail.
+      if (credential.removedAt) {
+        throw new ApiError(403, 'credential-removed', 'this passkey is no longer an owner of the wallet — sign in with a different passkey');
       }
       // C3: an options call for a known user binds the challenge to that user
       if (consumed.userId && consumed.userId !== credential.userId) {

@@ -294,6 +294,102 @@ nothing (MC-11, MC-12).
   another (MC-65, MC-67, MC-69). See `specs/CHAIN-ADOPTION.md` for what serving a new chain
   involves.
 
+### Wallet management (opening it from your app)
+
+Your application's entire involvement in wallet management is **opening the interface** — it
+implements no credential handling, no ceremony, and no owner-set construction of its own
+(WM-54, WM-65). The SDK exposes one function for it:
+
+```ts
+// From a user gesture (it opens the wallet popup). Takes NO arguments and resolves with
+// NOTHING: the app cannot pre-fill the form, preselect a credential, or learn the owner set —
+// its whole power is showing the user their own wallet's management screen (WM-39, WM-40).
+await provider.openWalletManagement();
+```
+
+It follows the `giano_`-namespaced transport convention, so no standard EIP-1193 method changes
+shape (WM-55). A blocked popup surfaces the same way every other popup-blocked path does (WM-59).
+From there the user sees every credential that can act on their wallet — read from the chain, not
+from a registry cache — can name them, add a passkey on the current device or a second one, add an
+externally-owned account, and remove one they no longer trust. Every change is a consented,
+sponsored, audited on-chain operation authorised only by a credential the wallet already
+recognises; the backend never gains an authority over any wallet (BR-02, BR-03).
+
+**The API a bring-your-own wallet drives.** A tenant serving its own wallet interface reaches the
+same capabilities against the same endpoints — there is no Giano-specific privilege (WM-60). The
+surface, all under an authenticated session except the two claim endpoints (which a second device
+with no session uses, and which authorise nothing):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/me/credentials` | The registry rows — names, public keys, transports, `removedAt` — to join against the on-chain owner set by owner bytes (WM-02, WM-04) |
+| `PATCH /v1/me/credentials/:id` | Set or change a credential's name (WM-07) |
+| `POST /v1/me/credentials/:id/removed` | Mark a credential no longer an owner *after* the chain confirms it — verified server-side; revokes its sessions (WM-31) |
+| `POST /v1/wallet/pending-additions` | Open a cross-device handoff slot; returns a single-use, short-lived claim code (WM-19) |
+| `GET /v1/wallet/pending-additions/:id` | Poll the slot for the deposited public key (to display and compare its fingerprint, WM-20) |
+| `POST /v1/wallet/pending-additions/:id/complete` | Bind the deposited credential to the wallet, *after* the owner change confirmed on-chain (WM-15) |
+| `POST /v1/wallet/pending-additions/:id/decline` | Abandon the slot; a declined fingerprint is counted and alertable (WM-52) |
+| `POST /v1/wallet/pending-additions/claim` (no session) | Resolve a claim code to a registration challenge for the new device |
+| `POST /v1/wallet/pending-additions/claim/fill` (no session) | Deposit the new device's credential into the slot — inert until signed for |
+| `POST /v1/wallet/owner-events` | Audit an owner change the registry has no row for (an externally-owned account) |
+
+The full request/response shapes are in the OpenAPI document (`/docs`), and
+`packages/wallet-core`'s `management` module (`readOwnerSet`, `ownerFingerprint`, the
+`addOwner*`/`removeOwnerAtIndex` encoders, `createWalletManagementApi`) is the reference client.
+In practice you rarely drive these endpoints by hand: the wallet SDK below packages the whole
+management flow as a headless controller, and both Giano wallet UIs are built on it.
+
+### Building your own wallet interface: the wallet SDK
+
+`@appliedblockchain/giano-wallet-kit` is the package a **wallet origin** is built from — Giano's
+stock `wallet-web` and the bring-your-own reference (`e2e/wallet-byo`) are both consumers, so a
+tenant's wallet and Giano's are the same logic behind different pixels (WK-30…WK-33). The kit is
+**headless**: it owns the orchestration and emits state and actions; every pixel, every string of
+copy and the framework choice stay yours. The full API contract with usage examples is
+[`specs/WALLET-SDK-SPECS.md`](./WALLET-SDK-SPECS.md); this is the shape of it:
+
+| Surface | What it gives you |
+|---|---|
+| `loadWalletConfig()` / `resolveWalletConfig({ raw })` | Validated `WalletConfig` — fatal, field-named errors; the single-chain shorthand and the `chains` list both accepted; the permissive test paymaster refused in production builds unless opted in (WK-05, WK-06) |
+| `createWalletRuntimes(config)` | Per-chain runtimes (read client, bundler, fee estimation, paymaster hooks, provider, `checkSponsorship` pre-flight), built lazily, memoised, over **one** shared wallet-api session (WK-01…WK-05) |
+| `createWalletHost({ runtimes, config, walletVersion })` | The popup transport wired with origin pinning, chain negotiation and the consent gate; the pending request is subscribable state with `approve()`/`reject()` — a rejection becomes EIP-1193 `4001` (WK-08…WK-12) |
+| `createManagementController({ runtimes, config })` | The whole of wallet management as a headless state machine: the owner set read from the chain, rename, add (this device / second device / EOA), remove, claim — every ordering invariant held inside (WK-16…WK-21) |
+| `@appliedblockchain/giano-wallet-kit/react` | `WalletHostProvider`, `usePendingRequest()`, `useManagement()` — the same core as hooks; optional, the core is framework-free (WK-22, WK-23) |
+
+A complete framework-free wallet origin is the config, the runtimes, the host, and a render
+function per request kind:
+
+```ts
+import { loadWalletConfig, createWalletRuntimes, createWalletHost } from '@appliedblockchain/giano-wallet-kit';
+
+const config   = await loadWalletConfig();                 // or resolveWalletConfig({ raw: yourShape })
+const runtimes = createWalletRuntimes(config);
+const host     = createWalletHost({ runtimes, config, walletVersion: '1.0.0' });
+
+host.requests.subscribe((pending) => {
+  if (!pending)                       return renderIdle();
+  if (pending.kind === 'connect')     return renderConnect(pending);      // → pending.approve() / .reject()
+  if (pending.kind === 'transaction') return renderReview(pending);       // gate approval on pending.runtime.checkSponsorship(tx)
+  if (pending.kind === 'sign')        return renderSign(pending);
+  if (pending.kind === 'manage')      return renderManagement(pending);   // mount createManagementController(...)
+});
+
+host.start();
+```
+
+What the kit holds **by construction**, so you cannot get it subtly wrong: fees are resolved
+before the paymaster hooks run (`AA34` otherwise); the sponsorship pre-flight precedes consent and
+therefore the passkey prompt; one chain per session, negotiated in the handshake; one shared
+wallet-api injection; in management, the chain is written before the registry binds, the removal
+index is re-read per chain immediately before use, the cross-device fingerprint is recomputed from
+the key as received, and the last owner cannot be removed. The kit ships **no user-facing copy**:
+refusals and flow errors carry machine-readable reasons (`SponsorshipRefusalReason`,
+`AddressInputError`, claim error codes) that your UI keys its own wording off.
+
+The kit adds no privileged path: it is a thin layer over `giano-wallet-core`,
+`giano-wallet-transport` and the documented endpoints above, which remain directly drivable
+(WM-60) and directly exercised by the wallet-api's own integration suite (WK-29).
+
 ## 10. Upgrade runbook
 
 All artifacts share one version (Changesets fixed mode). Upgrade order: **wallet-api

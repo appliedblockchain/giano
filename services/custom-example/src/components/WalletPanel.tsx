@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Input, Stack, Text } from '@chakra-ui/react';
-import { LuPenLine, LuSend } from 'react-icons/lu';
+import { LuKeyRound, LuPenLine, LuSend } from 'react-icons/lu';
 import { toBytes, toHex } from 'viem';
 import { Field } from './ui/field';
 import { chain } from '../config';
@@ -15,9 +15,31 @@ export function WalletPanel({ account }: { account: Address }) {
   const [message, setMessage] = useState('Hello from the Giano demo!');
   const [sending, setSending] = useState(false);
   const [signing, setSigning] = useState<'message' | 'typed' | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [manageResult, setManageResult] = useState('');
   const [txResult, setTxResult] = useState('');
   const [signature, setSignature] = useState('');
   const [error, setError] = useState('');
+
+  /**
+   * The management interface (WM-64): opened through the SDK function and nothing else —
+   * this app implements no credential handling, no ceremony, no owner-set construction
+   * (WM-65), and learns nothing beyond "the view was closed" (WM-40).
+   */
+  const manageWallet = async () => {
+    setManaging(true);
+    setError('');
+    setManageResult('');
+    try {
+      await provider.openWalletManagement();
+      setManageResult('management view closed — the app receives no owner data (by design)');
+      notifySuccess('Wallet management closed', 'Changes, if any, live on the wallet origin — the app is told nothing.');
+    } catch (err) {
+      setError(notifyError('Wallet management failed', err));
+    } finally {
+      setManaging(false);
+    }
+  };
 
   const sendZeroEth = async () => {
     setSending(true);
@@ -87,6 +109,27 @@ export function WalletPanel({ account }: { account: Address }) {
             <LuSend /> Send 0 ETH to self
           </Button>
           {txResult && <ResultBox label="Transaction" value={txResult} />}
+        </Stack>
+
+        <Stack gap="1">
+          <Text fontWeight="medium">Manage wallet</Text>
+          <Text fontSize="sm" color="fg.muted">
+            See and control the passkeys and accounts that can act on your wallet — add a backup passkey, add another
+            device, or remove one. Everything happens on the wallet origin; this app only opens the view.
+          </Text>
+          <Button
+            mt="2"
+            variant="outline"
+            colorPalette="brand"
+            onClick={manageWallet}
+            loading={managing}
+            loadingText="Managing…"
+            alignSelf="flex-start"
+            data-testid="manage-wallet"
+          >
+            <LuKeyRound /> Manage wallet
+          </Button>
+          {manageResult && <ResultBox label="Management" value={manageResult} />}
         </Stack>
 
         <Stack gap="2">

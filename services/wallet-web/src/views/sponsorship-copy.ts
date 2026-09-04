@@ -1,4 +1,4 @@
-import type { SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-core';
+import type { SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-kit';
 
 /**
  * What a refusal says to the person in front of the screen.
