@@ -1,7 +1,11 @@
 variable "datadog_site" {
   description = "[REQUIRED] Datadog site, matching the org's existing account. A variable and not a literal because it appears in the provider's api_url, the Agent's DD_SITE and the FireLens Host, and a mismatch between them is a silent half-outage — metrics arrive, logs do not (R16)"
   type        = string
-  default     = "datadoghq.eu"
+
+  # §17.3.2 says datadoghq.eu; the account's own keys say otherwise. Verified
+  # against the DevOps item: api/v1/validate returns 200 on datadoghq.com and
+  # 403 on datadoghq.eu, which is exactly the 403 the provider reported.
+  default = "datadoghq.com"
 }
 
 variable "datadog_enabled" {

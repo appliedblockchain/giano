@@ -23,6 +23,15 @@ data "external" "secret_inventory" {
   # environment. With it, the data source fails and the plan stops.
   program = ["bash", "-c", <<-EOT
     set -euo pipefail
+
+    # No `op signin` here, deliberately. The 1Password app only grants CLI
+    # authorisation to a call it can attribute to an authorised terminal app;
+    # a Terraform-parented `op` never gets one, so a signin at this point is
+    # auto-dismissed rather than prompting. The grant has to be acquired in
+    # the shell first — `op signin --account … && terraform plan` — after
+    # which this call reuses it and never prompts. In CI,
+    # OP_SERVICE_ACCOUNT_TOKEN removes the app from the path entirely
+    # (§12.2, R20).
     op item get "${local.op_item}" --vault "${local.op_vault}" \
       --account "${var.op_account}" --format json \
       | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
@@ -31,9 +40,15 @@ data "external" "secret_inventory" {
   ]
 }
 
+# The vault UUID, not its name — see the note in _init.tf. The `op item get`
+# call above takes the name instead, because the CLI resolves either.
+data "onepassword_vault" "secrets" {
+  name = local.op_vault # "Giano dev/stg"
+}
+
 ephemeral "onepassword_item" "secrets" {
-  vault = local.op_vault # "Giano dev/stg"
-  title = local.op_item  # "secrets-dev"
+  vault = data.onepassword_vault.secrets.uuid # UUID, not name — §4.6.1
+  title = local.op_item                       # "secrets-dev"
 }
 
 locals {

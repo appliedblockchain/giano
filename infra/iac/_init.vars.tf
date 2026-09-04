@@ -13,24 +13,22 @@ variable "project_name" {
 }
 
 variable "aws_region" {
-  description = "[REQUIRED] AWS region, per environment. `default` is the bootstrap workspace (§18 step 2)"
+  description = "[REQUIRED] AWS region, per environment. No `default` key: that workspace is never used, so an apply there fails on a missing key rather than building something unnamed (§4.1)"
   type        = map(string)
   default = {
-    default = "eu-west-2"
-    dev     = "eu-west-2"
-    stg     = "eu-west-2"
-    prd     = "eu-west-2"
+    dev = "eu-west-2"
+    stg = "eu-west-2"
+    prd = "eu-west-2"
   }
 }
 
 variable "profile" {
-  description = "[REQUIRED] AWS CLI profile, per environment. `default` is the bootstrap workspace"
+  description = "[REQUIRED] AWS CLI profile, per environment"
   type        = map(string)
   default = {
-    default = "giano-dev"
-    dev     = "giano-dev"
-    stg     = "giano-stg"
-    prd     = "giano-prd"
+    dev = "default"
+    stg = "default"
+    prd = "default"
   }
 }
 
@@ -43,5 +41,5 @@ variable "s3_tfstate_name" {
 variable "op_account" {
   description = "[REQUIRED] 1Password account for the desktop-app SDK integration. A variable rather than OP_ACCOUNT in the environment, so nothing has to be exported (§4.6.1)"
   type        = string
-  default     = "appliedblockchain.1password.com"
+  default     = "applied.1password.com"
 }

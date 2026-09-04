@@ -12,10 +12,10 @@ resource "aws_lb_target_group" "svc" {
   # `ip` is required, not preferred. §3.1
   target_type = "ip"
 
-  # No `-tg` suffix: target-group names are capped at 32 characters and
-  # `giano-dev-custom-example-byoui` is already 30. The Name tag carries the
-  # readable form.
-  name     = local.name
+  # Truncated with a hash tail where the full name does not fit in 32
+  # characters (§5.7). No `-tg` suffix: the resource type already says what it
+  # is, and three characters is a third of the headroom.
+  name     = local.tg_name
   port     = var.container_port
   protocol = "HTTP"
   vpc_id   = var.vpc_id
@@ -32,7 +32,9 @@ resource "aws_lb_target_group" "svc" {
     unhealthy_threshold = 3
   }
 
-  tags = merge(local.tags, { Name = "${local.name}-tg" })
+  # The full, readable name survives here even when the resource name is
+  # truncated, so a console listing is still legible.
+  tags = merge(local.tags, { Name = local.name })
 
   lifecycle { create_before_destroy = true }
 }

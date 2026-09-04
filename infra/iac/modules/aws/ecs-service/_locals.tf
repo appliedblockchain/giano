@@ -103,6 +103,21 @@ locals {
 
   # --- ALB ----------------------------------------------------------------
 
+  # Target group names are capped at 32 characters by AWS, and
+  # <project>-<env>-<service> does not fit for every combination:
+  # giano-dev-custom-example-byoui is 30 and passes, but a project name three
+  # characters longer is 33 and fails the apply with `"name" cannot be longer
+  # than 32 characters`. This is the ONE resource in the tree where §4.3's
+  # naming rule does not apply unmodified.
+  #
+  # Deterministic, and independent of how long var.project_name happens to be.
+  # Truncating alone risks two services colliding on the first 32 characters,
+  # so the tail becomes a hash of the full name. The readable name survives on
+  # the Name tag. §5.7
+  tg_name = length(local.name) <= 32 ? local.name : format(
+    "%s-%s", substr(local.name, 0, 23), substr(sha256(local.name), 0, 8)
+  )
+
   # An ALB host condition accepts at most five values. Past that, additional
   # rules at descending priority against the same target group. §5.7
   alb_host_chunks = var.alb_enabled ? { for i, hosts in chunklist(var.alb_host_headers, 5) : i => hosts } : {}

@@ -16,7 +16,7 @@ terraform {
   # per-environment key is derived from workspace_key_prefix and the selected
   # workspace: env/dev/terraform.tfstate, env/stg/…, env/prd/…
   backend "s3" {
-    bucket               = "giano-tfstate"
+    bucket               = "gianotest-tfstate"
     key                  = "terraform.tfstate"
     workspace_key_prefix = "env"
     region               = "eu-west-2"
@@ -52,33 +52,64 @@ provider "onepassword" {
 # beforehand. Neither is Giano's secrets bundle (§12.3).
 # ---------------------------------------------------------------------------
 
+# `ephemeral "onepassword_item"` takes the vault's UUID, not its name — the
+# provider's schema says so, and passing a name does not fail cleanly: the
+# provider resolves it, returns the UUID, and Terraform rejects the result
+# because an ephemeral resource's returned attributes must match its
+# configuration exactly:
+#
+#   Error: Provider produced invalid ephemeral resource instance
+#     .vault: planned value cty.StringVal("nb3zfvjlzk3yijqkdgvzruft54")
+#             does not match config value cty.StringVal("DevOps")
+#
+# So a vault data source turns the human-readable name into a UUID. Vault
+# names stay in the variables, where a person can read them; UUIDs never
+# appear in the configuration.
+#
+# This is NOT the banned `data "onepassword_item"` (§12.5): a vault data
+# source returns a name, a UUID and a description, and no secret can reach it.
+data "onepassword_vault" "devops" {
+  name = var.op_devops_vault # "DevOps"
+}
+
 ephemeral "onepassword_item" "dnsimple" {
-  vault = var.op_devops_vault # "DevOps"
+  vault = data.onepassword_vault.devops.uuid # UUID, not name
   title = "dnsimple-terraform"
 }
 
 ephemeral "onepassword_item" "datadog" {
-  vault = var.op_devops_vault # "DevOps"
+  vault = data.onepassword_vault.devops.uuid # UUID, not name
   title = "datadog-terraform"
 }
 
 locals {
   # Implicitly ephemeral — derived from an ephemeral resource. The regexes
-  # tolerate `export FOO="bar"`, `export FOO=bar` and `FOO='bar'`. R23.
-  _dnsimple_note = ephemeral.onepassword_item.dnsimple.note_value
-  _datadog_note  = ephemeral.onepassword_item.datadog.note_value
+  # tolerate `export FOO="bar"`, `export FOO=bar` and `FOO='bar'`.
+  #
+  # \\s* on BOTH sides of the delimiter: the DNSimple note has been seen
+  # written as `export DNSIMPLE_TOKEN ="…"`, and a space before `=` must not
+  # break the plan. R23 — it has already happened once.
+  dnsimple_token = regex(
+    "DNSIMPLE_TOKEN\\s*[=:]\\s*['\"]?([^'\"\\s]+)",
+    ephemeral.onepassword_item.dnsimple.note_value,
+  )[0]
 
-  dnsimple_token   = regex("DNSIMPLE_TOKEN[=:]\\s*['\"]?([^'\"\\s]+)", local._dnsimple_note)[0]
-  dnsimple_account = regex("DNSIMPLE_ACCOUNT[=:]\\s*['\"]?([^'\"\\s]+)", local._dnsimple_note)[0]
+  # Only the TOKEN comes from the note. The account id is not a secret and is
+  # var.dnsimple_account — see the provider block below.
 
-  datadog_api_key = regex("DD_API_KEY[=:]\\s*['\"]?([^'\"\\s]+)", local._datadog_note)[0]
-  datadog_app_key = regex("DD_APP_KEY[=:]\\s*['\"]?([^'\"\\s]+)", local._datadog_note)[0]
+  _datadog_note   = ephemeral.onepassword_item.datadog.note_value
+  datadog_api_key = regex("DD_API_KEY\\s*[=:]\\s*['\"]?([^'\"\\s]+)", local._datadog_note)[0]
+  datadog_app_key = regex("DD_APP_KEY\\s*[=:]\\s*['\"]?([^'\"\\s]+)", local._datadog_note)[0]
 }
 
 provider "dnsimple" {
-  # the note is a shell fragment; the two values are parsed out of it above
+  # The note is a shell fragment; §6.2 parses the token out of it. The account
+  # id is a plain variable (§6.1) and NOT from the note: the note's
+  # DNSIMPLE_ACCOUNT is not the numeric id the API path requires, and using it
+  # produces a 401 that reads as an authentication failure rather than an
+  # addressing one. R25
   token   = local.dnsimple_token
-  account = local.dnsimple_account
+  account = var.dnsimple_account
 }
 
 provider "datadog" {
@@ -87,9 +118,8 @@ provider "datadog" {
   api_url = "https://api.${var.datadog_site}"
 
   # Gated so a workspace with Datadog switched off does not fail `plan` on a
-  # credential it is not going to use. `lookup` because the `default`
-  # bootstrap workspace (§4.1) is not a key in the map.
-  validate = lookup(var.datadog_enabled, terraform.workspace, false)
+  # credential it is not going to use.
+  validate = var.datadog_enabled[terraform.workspace]
 }
 
 # ---------------------------------------------------------------------------

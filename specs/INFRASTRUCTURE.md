@@ -286,7 +286,7 @@ end
 
 CHAINSTACK["Base Sepolia — chain 84532<br/>RPC via Alchemy, key in ASM<br/>EntryPoint v0.7 · GianoSmartWalletFactory · GianoPaymaster proxy"]
 PLATFORM["ECR, 6 repos tagged by commit SHA · Secrets Manager giano-dev-* (KMS CMK)<br/>EventBridge Scheduler, desiredCount 0 or 1"]
-DDOG["Datadog · datadoghq.eu<br/>every task runs 3 containers: app + datadog-agent + log_router<br/>metrics and traces from the Agent · logs via FireLens straight to the intake<br/>CloudWatch keeps only the log routers' own stdout"]
+DDOG["Datadog · datadoghq.com<br/>every task runs 3 containers: app + datadog-agent + log_router<br/>metrics and traces from the Agent · logs via FireLens straight to the intake<br/>CloudWatch keeps only the log routers' own stdout"]
 
 INTERNET -->|"inbound, TLS on 443"| IGW
 IGW --> ALB
@@ -417,7 +417,7 @@ workspace**, and there are exactly three, plus `default`:
 
 | Workspace | Meaning |
 |---|---|
-| `default` | bootstrap only — creates the S3 backend bucket, then is never used again |
+| `default` | never used — it exists because Terraform always creates it |
 | `dev` | the environment this document is written against |
 | `stg` | staging |
 | `prd` | production |
@@ -502,11 +502,15 @@ infra/iac/
       ecs-service/   task definition, service, target group, listener rule, log group, IAM roles
       ecr/           repository, lifecycle policy, scanning configuration
       iam/role/      a role with an assume-role policy and attachments
-      s3/backend/    the state bucket — applied once in the `default` workspace
+      s3/backend/    the state bucket — consumed by bootstrap/, not by the root
     dnsimple/
       record-set/    a set of records for one hostname (optional; see §6.5)
     datadog/
       monitor/       one Datadog monitor, with thresholds and notifiers (§17.3.5)
+
+  bootstrap/         a SEPARATE root module, applied once, with LOCAL state
+    main.tf          aws provider + module "s3-backend" — deliberately no backend block
+    variables.tf
 ```
 
 **This tree is pure Terraform.** There is no wrapper, no build file and no shell entrypoint —
@@ -732,10 +736,32 @@ So initialising is just:
 terraform init
 ```
 
-The bucket itself is the usual chicken-and-egg: `modules/aws/s3/backend` creates it, applied once in
-the `default` workspace against a local backend, after which the state is migrated in
-([§18](#18-bring-up-runbook) step 4). It is versioned, encrypted with SSE-KMS, and blocks public
-access.
+The bucket itself is the usual chicken-and-egg, and it is solved with a **separate root module**
+rather than a flag:
+
+```
+infra/iac/bootstrap/     # no backend block at all -> local state
+  main.tf                # provider "aws" + module "s3-backend"
+```
+
+`bootstrap/` is applied once, on its own, before the main root module is ever initialised
+([§18](#18-bring-up-runbook) step 4). It creates the bucket — versioned, encrypted with SSE-KMS,
+public access blocked — and nothing else.
+
+**It has to be a separate directory, not `-backend=false` in this one.** `-backend=false` tells
+Terraform to reuse whatever backend is already initialised; on a fresh clone that is nothing, so the
+declared `backend "s3"` stays uninitialised and the very next command fails with *"Backend
+initialization required"*. There is no ordering of flags that gets around it, because the
+configuration declares a backend pointing at a bucket that does not exist yet. A root module with no
+backend block has no such problem.
+
+Keeping it separate also keeps it *small*: `bootstrap/` needs only the AWS provider. Creating the
+bucket from the main root module — even with `-target` — drags in the 1Password, DNSimple and Datadog
+providers and the secret-inventory data source, none of which have anything to do with an S3 bucket.
+
+`bootstrap/`'s own state is local and stays that way. It describes one bucket and holds nothing
+sensitive, so losing it costs a `terraform import` and nothing else. Do not migrate it into the
+bucket it manages.
 
 Commit `.terraform.lock.hcl`. An environment that drifts because a provider minor changed a default
 is a bad afternoon.
@@ -787,7 +813,7 @@ written anywhere.
 variable "op_account" {
   description = "1Password account for the desktop-app SDK integration"
   type        = string
-  default     = "appliedblockchain.1password.com"
+  default     = "applied.1password.com"
 }
 
 # _init.tf — the root of every credential in this deployment
@@ -795,20 +821,46 @@ provider "onepassword" {
   account = var.op_account      # CI overrides with OP_SERVICE_ACCOUNT_TOKEN instead (§12.2)
 }
 
+# ephemeral.vault takes the vault UUID, NOT its name — see below.
+data "onepassword_vault" "devops" {
+  name = var.op_devops_vault      # "DevOps"
+}
+
 ephemeral "onepassword_item" "dnsimple" {
-  vault = var.op_devops_vault      # "DevOps"
+  vault = data.onepassword_vault.devops.uuid
   title = "dnsimple-terraform"
 }
 
 provider "dnsimple" {
-  # the note is a shell fragment; §6.2 parses the two values out of it
+  # the note is a shell fragment; §6.2 parses the token out of it.
+  # the account id is not a secret and is a plain variable — §6.1.
   token   = local.dnsimple_token
-  account = local.dnsimple_account
+  account = var.dnsimple_account
 }
 ```
 
-Datadog is configured the same way, from the bundle rather than its own item
+Datadog is configured the same way, from its own `DevOps` item
 ([§17.3.2](#1732-credentials)). AWS uses the ambient profile or role, as it always does.
+
+**`ephemeral "onepassword_item"` takes the vault's UUID, not its name.** The provider's schema is
+explicit — *"The UUID of the vault the item is in"* — and passing a name does not fail cleanly: the
+provider resolves it, returns the UUID, and Terraform rejects the result because an ephemeral
+resource's returned attributes must match its configuration exactly:
+
+```
+Error: Provider produced invalid ephemeral resource instance
+  .vault: planned value cty.StringVal("nb3zfvjlzk3yijqkdgvzruft54")
+          does not match config value cty.StringVal("DevOps")
+```
+
+So every `ephemeral "onepassword_item"` in this document is fed by a `data "onepassword_vault"`
+that turns a human-readable name into a UUID. Vault names stay in the variables, where a person can
+read them; UUIDs never appear in the configuration.
+
+`data "onepassword_vault"` is **not** covered by the ban on `data "onepassword_item"`
+([§12.5](#125-reading-the-values)). The ban exists because an item data source writes every field
+value into state; a vault data source returns a name, a UUID and a description, and no secret can
+reach it.
 
 Secrets therefore reach Terraform by exactly two routes, and the rule that decides which is worth
 stating once because three sections depend on it:
@@ -1063,6 +1115,38 @@ a browser treats one of those as cross-origin, the whole session and passkey sto
 preflight and a `SameSite` problem. Host-based routing plus wallet-web's same-origin `/api` proxy
 means the browser only ever sees one origin per tenant.
 
+**Target group names are capped at 32 characters by AWS**, and `<project>-<env>-<service>` does not
+fit for every combination. `giano-dev-custom-example-byoui` is 30 and passes; a project name three
+characters longer is 33 and fails the apply with `"name" cannot be longer than 32 characters`. The
+naming rule in [§4.3](#43-naming) therefore does **not** apply unmodified to target groups, and this
+is the one resource in the tree where it does not:
+
+```hcl
+locals {
+  # Deterministic, and independent of how long var.project_name happens to be.
+  # Truncating alone risks two services colliding on the first 32 characters,
+  # so the tail becomes a hash of the full name.
+  tg_name = length(local.name) <= 32 ? local.name : format(
+    "%s-%s", substr(local.name, 0, 23), substr(sha256(local.name), 0, 8)
+  )
+}
+
+resource "aws_lb_target_group" "svc" {
+  name = local.tg_name
+  # ...
+  tags = merge(local.tags, { Name = local.name })   # the readable name survives here
+
+  lifecycle { create_before_destroy = true }
+}
+```
+
+The `Name` tag keeps the full, readable name even when the resource name is truncated, so a console
+listing is still legible. `create_before_destroy` is not optional: a change to a target group's name
+forces replacement, and the listener rule still references the old one while the new one is created.
+
+No `-tg` suffix — the resource type already says what it is, and three characters is a third of the
+headroom.
+
 **Target groups are all `target_type = "ip"`.** Fargate's `awsvpc` mode gives each task an ENI and
 no instance to register; `ip` is required, not preferred. `deregistration_delay = 30` — the default
 300 makes every deploy feel broken.
@@ -1140,7 +1224,24 @@ variable "dns_prefix" {
     prd = "giano"
   }
 }
+
+variable "dnsimple_account" {
+  description = "DNSimple NUMERIC account id — appears in every API path. Not a secret."
+  type        = string
+  default     = "54212"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.dnsimple_account))
+    error_message = "DNSimple account must be the numeric account id (see GET /v2/whoami), not a UUID or an email."
+  }
+}
 ```
+
+**The account id is a variable, not a secret.** It appears in the path of every DNSimple API call
+and identifies nothing on its own, so it belongs in version control beside the zone rather than in a
+shared credential note. The `validation` block is not decoration: DNSimple answers **401**, not 404,
+when the value in the path is not an account the token can act on, so a non-numeric value fails
+looking exactly like a bad token and costs an hour ([R23](#19-risks-and-open-items)).
 
 The two compose into the apex every hostname hangs off:
 
@@ -1178,8 +1279,10 @@ from it.
 
 ### 6.2 Provider authentication
 
-The provider needs an API token and an account id. Both live in the **`DevOps` vault**, in the
-`dnsimple-terraform` item, whose note is a shell fragment that exports them:
+The provider needs an API token and an account id. Only the **token** is a secret, and only the
+token is read from 1Password — the account id is `var.dnsimple_account`
+([§6.1](#61-provider-and-zone)). The token lives in the **`DevOps` vault**, in the
+`dnsimple-terraform` item, whose note is a shell fragment:
 
 ```
 export DNSIMPLE_TOKEN="…"
@@ -1192,25 +1295,34 @@ projects use it. **Terraform reads it, rather than requiring it to be sourced fi
 
 ```hcl
 # _init.tf
+data "onepassword_vault" "devops" {
+  name = var.op_devops_vault      # "DevOps"
+}
+
 ephemeral "onepassword_item" "dnsimple" {
-  vault = var.op_devops_vault      # "DevOps"
+  vault = data.onepassword_vault.devops.uuid   # UUID, not name — §4.6.1
   title = "dnsimple-terraform"
 }
 
 locals {
   # implicitly ephemeral — derived from an ephemeral resource.
-  # tolerant of `export FOO="bar"`, `export FOO=bar` and `FOO='bar'`.
-  _dnsimple_note = ephemeral.onepassword_item.dnsimple.note_value
-
-  dnsimple_token   = regex("DNSIMPLE_TOKEN[=:]\\s*['\"]?([^'\"\\s]+)",   local._dnsimple_note)[0]
-  dnsimple_account = regex("DNSIMPLE_ACCOUNT[=:]\\s*['\"]?([^'\"\\s]+)", local._dnsimple_note)[0]
+  # \\s* on BOTH sides of the delimiter: the note has been seen written as
+  # `export DNSIMPLE_TOKEN ="..."`, and a space before `=` must not break the plan.
+  dnsimple_token = regex(
+    "DNSIMPLE_TOKEN\\s*[=:]\\s*['\"]?([^'\"\\s]+)",
+    ephemeral.onepassword_item.dnsimple.note_value,
+  )[0]
 }
 
 provider "dnsimple" {
   token   = local.dnsimple_token
-  account = local.dnsimple_account
+  account = var.dnsimple_account      # numeric, from §6.1 — NOT from the note
 }
 ```
+
+**Do not take the account id from the note.** The `DNSIMPLE_ACCOUNT` it exports is not the numeric
+account id the API path requires, and using it produces a 401 that reads as an authentication
+failure rather than an addressing one. The note is the token's home and nothing else's.
 
 Parsing the note rather than sourcing it keeps the property [§4.6](#46-running-terraform) is built
 on: `terraform plan` works with nothing run beforehand, and the credential lives for one operation
@@ -1995,7 +2107,7 @@ module "svc-wallet-api" {
 
   # observability — §17.3. The same three values go to every service.
   datadog_enabled         = var.datadog_enabled[terraform.workspace]
-  datadog_site            = var.datadog_site                          # datadoghq.eu
+  datadog_site            = var.datadog_site                          # datadoghq.com
   datadog_api_key_arn     = aws_secretsmanager_secret.datadog-api-key.arn
   datadog_source          = "nodejs"                                  # per service; "nginx" for the SPAs
 }
@@ -2404,7 +2516,7 @@ same code:
 
 ```hcl
 provider "onepassword" {
-  account = var.op_account      # default "appliedblockchain.1password.com"
+  account = var.op_account      # default "applied.1password.com"
 }
 ```
 
@@ -2563,9 +2675,13 @@ accident:
 
 ```hcl
 # asm.tf
+data "onepassword_vault" "secrets" {
+  name = local.op_vault       # "Giano dev/stg"
+}
+
 ephemeral "onepassword_item" "secrets" {
-  vault = local.op_vault      # "Giano dev/stg"
-  title = local.op_item       # "secrets-dev"
+  vault = data.onepassword_vault.secrets.uuid   # UUID, not name — §4.6.1
+  title = local.op_item                          # "secrets-dev"
 }
 
 locals {
@@ -2585,7 +2701,7 @@ Then the ASM module ([§7.2](#72-the-module)) creates the secrets with `secret_s
 | `for_each` **must** iterate `local.secret_inventory` (static, from `data.external`), never `local.secret_values` | `for_each` keys must be known at plan time; ephemeral values never are. The error is about unknown keys and does not say "wrong map" |
 | The note is read **twice** — once by `data.external` for names, once by the ephemeral resource for values | They are different mechanisms with different state behaviour, and only one of them is safe to put a value through. Collapsing them is the mistake that puts every secret in state |
 | `ephemeral "onepassword_item"` has **no** `section` / `section_map` | This is why the bundle is a JSON note and not custom fields |
-| `data "onepassword_item"` and `data "onepassword_environment"` are **banned** | They put every value into state |
+| `data "onepassword_item"` and `data "onepassword_environment"` are **banned** | They put every value into state. `data "onepassword_vault"` is fine and required — it returns a name, a UUID and a description, never an item's contents ([§4.6.1](#461-provider-credentials)) |
 | `lifecycle { ignore_changes = [...] }` does **not** keep values out of state | Refresh still writes them. Write-only arguments are the only mechanism that works |
 | Terraform has **no** native state encryption | Protection is KMS + IAM + not putting secrets in state. The third is the one that actually holds |
 | A module variable receiving an ephemeral value **must** declare `ephemeral = true` | Otherwise the apply fails — correctly — rather than silently persisting the value |
@@ -3174,7 +3290,7 @@ into Giano's secrets bundle. Terraform reads the note and parses it — same mec
 ```hcl
 # _init.tf
 ephemeral "onepassword_item" "datadog" {
-  vault = var.op_devops_vault      # "DevOps"
+  vault = data.onepassword_vault.devops.uuid   # UUID, not name — §4.6.1
   title = "datadog-terraform"
 }
 
@@ -3212,7 +3328,7 @@ eval "$(op read 'op://DevOps/datadog-terraform/notesPlain')"
 `validate` is gated on `datadog_enabled` so a workspace with Datadog switched off does not fail
 `terraform plan` on a credential it is not going to use.
 
-**`datadoghq.eu`** is the default site, matching the org's existing account. It is
+**`datadoghq.com`** is the default site, matching the org's existing account. It is
 `var.datadog_site`, not a literal, because it appears in three places — the provider's `api_url`,
 the Agent's `DD_SITE`, and the FireLens `Host` — and they must agree. A mismatch between them is a
 silent half-outage: metrics arrive, logs do not.
@@ -3330,7 +3446,7 @@ logConfiguration = {
 | Option | Value | Note |
 |---|---|---|
 | `Name` | `datadog` | selects Datadog's Fluent Bit output plugin |
-| `Host` | `http-intake.logs.datadoghq.eu` | derived from `var.datadog_site`; **must** match the Agent's `DD_SITE` |
+| `Host` | `http-intake.logs.datadoghq.com` | derived from `var.datadog_site`; **must** match the Agent's `DD_SITE` |
 | `TLS` | `on` | |
 | `provider` | `ecs` | tells the plugin to attach ECS metadata |
 | `dd_service` | the service name | what ties a log line to a Datadog service, and to the Agent's `DD_SERVICE` |
@@ -3483,7 +3599,7 @@ One `op` session is every credential the apply needs. The account is `var.op_acc
 named here and nowhere else in your shell:
 
 ```bash
-op signin --account appliedblockchain.1password.com
+op signin --account applied.1password.com
 op whoami
 aws sts get-caller-identity
 ```
@@ -3509,26 +3625,97 @@ done
 ```
 
 **The DNS zone must already exist in DNSimple** — Terraform creates records in it, never the zone
-itself ([§6.1](#61-provider-and-zone)):
+itself ([§6.1](#61-provider-and-zone)). This resolves the account from `/whoami` rather than
+trusting the note, and checks it against `var.dnsimple_account`:
 
 ```bash
-( eval "$(op read 'op://DevOps/dnsimple-terraform/notesPlain')"
-  curl -fsS -H "Authorization: Bearer ${DNSIMPLE_TOKEN}" \
-    "https://api.dnsimple.com/v2/${DNSIMPLE_ACCOUNT}/zones/appliedblockchain.dev" \
-    | jq -r '"zone: \(.data.name)"' )
+(
+  TOKEN=$(op read 'op://DevOps/dnsimple-terraform/notesPlain' \
+    | sed -nE 's/.*DNSIMPLE_TOKEN[[:space:]]*=[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p')
+
+  ACCOUNT=$(curl -fsS -H "Authorization: Bearer ${TOKEN}" \
+    https://api.dnsimple.com/v2/whoami | jq -r '.data.account.id')
+  echo "account id: ${ACCOUNT}   # must equal var.dnsimple_account"
+
+  curl -fsS -H "Authorization: Bearer ${TOKEN}" \
+    "https://api.dnsimple.com/v2/${ACCOUNT}/zones/appliedblockchain.dev" \
+    | jq -r '"zone: \(.data.name)  id=\(.data.id)"'
+)
 ```
 
-The subshell keeps the token out of the rest of the session.
+Three deliberate choices, each of which cost an hour to learn:
+
+- **`sed`, not `eval`.** The note is a shell fragment, and a stray space — `export DNSIMPLE_TOKEN
+  ="…"` — makes zsh perform `=` filename expansion and try to *run* the token as a command, leaving
+  the variable empty. Parsing the value never executes the note.
+- **`/whoami`, not `DNSIMPLE_ACCOUNT`.** The note's value is not the numeric account id
+  ([§6.2](#62-provider-authentication)); `/whoami` returns the one the API path needs.
+- **The subshell** keeps the token out of the rest of the session.
+
+**A 401 here is ambiguous and that is DNSimple's fault, not yours.** It means either the token is
+bad *or* the account in the path is not one the token can act on. Separate them with
+`curl -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN"
+https://api.dnsimple.com/v2/whoami` — that path carries no account, so a 200 there and a 401 on the
+zone is an account-id problem every time.
 
 Then the bundle itself. Note `op item get --vault`, not `op read` — the vault name contains a `/`,
-which a secret reference would split on ([§12.2](#122-provider-authentication)):
+which a secret reference would split on ([§12.2](#122-provider-authentication)).
+
+Malformed JSON breaks **every** secret at once, not just the edited key
+([R7](#19-risks-and-open-items)), so this reports *which line* rather than leaving you to count —
+with values masked, so the output is safe to paste into a ticket:
 
 ```bash
-op item get secrets-dev --vault "Giano dev/stg" --format json \
-  | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
-  | jq -e 'to_entries | all(.value | has("value") and has("version"))' > /dev/null \
-  && echo "OK — valid JSON, every key has value + version" \
-  || echo "FAIL — fix the note before going further"
+NOTE=$(op item get secrets-dev --vault "Giano dev/stg" --format json \
+  | jq -r '.fields[] | select(.id == "notesPlain") | .value')
+
+if ERR=$(jq empty <<<"$NOTE" 2>&1); then
+  if jq -e 'to_entries | all(.value | has("value") and has("version"))' >/dev/null <<<"$NOTE"; then
+    echo "OK — valid JSON, every key has value + version"
+  else
+    echo "FAIL — valid JSON, but a key is missing value or version:"
+    jq -r 'to_entries[]
+           | select((.value|has("value")|not) or (.value|has("version")|not))
+           | "  \(.key)"' <<<"$NOTE"
+  fi
+else
+  LINE=$(sed -nE 's/.*at line ([0-9]+).*/\1/p' <<<"$ERR")
+  echo "FAIL — the note is not valid JSON"
+  echo "  ${ERR}"
+  if [ -n "$LINE" ]; then
+    RAW=$(sed -n "${LINE}p" <<<"$NOTE")
+    echo "  key:  $(sed -nE 's/^[[:space:]]*"([^"]+)".*/\1/p' <<<"$RAW")"
+    echo "  line: $(sed -E 's/[A-Za-z0-9+/=_.:-]{6,}/<masked>/g' <<<"$RAW")"
+  fi
+fi
+```
+
+**The masking preserves every delimiter and hides only the value.** That is the whole point: a JSON
+syntax error *is* a punctuation error, so a mask that assumes well-formed punctuation will describe
+the wrong defect. Masking by `"value": "…"` — matching up to the next quote — reads straight past a
+missing closing quote and reports a missing comma instead, sending you to fix the wrong character.
+Masking runs of value-ish characters leaves the structure intact and lets you compare a broken line
+against a good one directly. The key name is printed separately, from the first quoted token on the
+line, which is never a secret.
+
+The two failure shapes:
+
+```
+FAIL — the note is not valid JSON
+  jq: parse error: Invalid numeric literal at line 4, column 82
+  key:  sponsorship-signer-key
+  line:   "<masked>": { "value": "<masked>,   "<masked>": 1 },
+                                           ^ no closing quote — the string runs on and
+                                             swallows the quote of "version"
+
+FAIL — valid JSON, but a key is missing value or version:
+  alto-utility-key
+```
+
+A healthy line for comparison — note the `",` that the broken one is missing:
+
+```
+  line:   "<masked>":      { "value": "<masked>",   "<masked>": 1 },
 ```
 
 Confirm the inventory is what you expect. This is the exact list Terraform will create in Secrets
@@ -3581,29 +3768,42 @@ Sepolia faucet ([§13.2](#132-funded-accounts)). Both drain with use, and an emp
 
 #### Step 4 — Bootstrap the state bucket and workspaces 🖥️
 
-**Once per project, in the `default` workspace.** The state bucket cannot live in the state it
-stores, so it is created against a local backend and the state is then migrated into it.
+**Once per project.** The state bucket cannot live in the state it stores, so it is created by a
+separate root module with local state ([§4.5](#45-backend-and-versions)) — not by this one.
 
 ```bash
-terraform workspace show          # must print: default
-terraform init -backend=false
-terraform apply -target=module.s3-backend -auto-approve
+terraform -chdir=bootstrap init
+terraform -chdir=bootstrap apply
 ```
+
+That leaves `bootstrap/terraform.tfstate` on disk. Keep it; it describes one bucket, holds nothing
+sensitive, and is only needed if the bucket is ever changed. Do not migrate it into the bucket it
+manages.
+
+Now the main root module can initialise, because its backend finally points at something that
+exists:
 
 ```bash
-terraform init -migrate-state -force-copy
-rm -f terraform.tfstate terraform.tfstate.backup
+terraform init
 ```
 
-Then create the three environment workspaces. `default` is never used again:
+Then create the three environment workspaces:
 
 ```bash
 for W in dev stg prd; do terraform workspace new "$W" 2>/dev/null || true; done
 terraform workspace list
 ```
 
-From here on `terraform init` alone is enough — the backend block is fully specified
-([§4.5](#45-backend-and-versions)), and the workspace supplies the state key.
+`default` is created by Terraform and never used — the environment maps have no entry for it
+([§4.1](#41-one-root-module-environments-as-workspaces)), so an apply there fails on a missing key
+rather than building something unnamed.
+
+From here on `terraform init` alone is enough, and the selected workspace supplies the state key.
+
+> **Do not reach for `terraform init -backend=false` here.** It means "reuse the backend already
+> initialised", which on a fresh clone is none — `init` then succeeds and the next command fails with
+> *"Backend initialization required"*. The separate `bootstrap/` directory exists precisely so that
+> no flag is needed.
 
 #### Step 5 — Select the workspace and apply 🖥️
 
@@ -3898,8 +4098,9 @@ third is the guarantee everything else in §12 rests on.
 | R20 | **`terraform plan` shells out to `op` and `jq`.** The secret inventory is a `data "external"` ([§12.4](#124-the-secret-inventory)), so a machine without those binaries, or with an expired `op` session, cannot plan at all. | No plan, anywhere, until the tooling is fixed | Accepted as the cost of having no wrapper and no second list to drift. `set -euo pipefail` in the program makes a failed read an error rather than an empty inventory — which would otherwise plan as *destroy every secret*. Runbook step 0 makes the dependency explicit. It is also the one thing standing between this design and a fully hermetic CI run: a pipeline needs `op` installed and `OP_SERVICE_ACCOUNT_TOKEN` set. |
 | R21 | **A failed migration presents as a failed deployment, not as a failed job.** The init container exits non-zero, `wallet-api` never starts, the service does not stabilise and the circuit breaker rolls back — destroying the task that holds the evidence. | Slower diagnosis at the moment it is most needed | The migrate container depends on `log_router` starting, so its output is in Datadog under `service:wallet-api` and outlives the task ([§9.6](#96-migrations--the-init-container)). Runbook step 6 says to suspect the migration first and gives the `describe-tasks` query for the exit code. |
 | R22 | **Application start-up is now coupled to database reachability, permanently.** Every task start runs the init container — deploys, health-check replacements, and the 07:00 scale-up. | An unreachable database becomes a start-up failure rather than a degraded service | Accepted: it is the point of the pattern, and `wallet-api` is useless without the database anyway. Migrations are tracked, so a re-run is one query. At `desired_count = 2` replicas serialise on the advisory lock, so `health_check_grace_period_seconds` (120s) must outlast the slowest migration — revisit before any migration that rebuilds an index. |
-| R23 | **Provider credentials are parsed out of shared `DevOps` notes with a regex.** `dnsimple-terraform` and `datadog-terraform` belong to no project in particular; anyone may reformat them. | A plan that fails with a Terraform regex error rather than a useful one — or, worse, matches the wrong token | The regex tolerates `export FOO="bar"`, `FOO=bar` and single quotes ([§6.2](#62-provider-authentication)). Runbook step 1 greps both notes for the expected variable names before the first apply. The `eval`-and-export path is the documented fallback and needs no code change, since both providers still read their environment variables. |
+| R23 | **Provider credentials are parsed out of shared `DevOps` notes with a regex.** `dnsimple-terraform` and `datadog-terraform` belong to no project in particular; anyone may reformat them. **This has already happened once**: the DNSimple note was written `export DNSIMPLE_TOKEN ="…"`, and the space before `=` makes a shell `eval` run the token as a command instead of assigning it. | A plan that fails with a regex error rather than a useful one — or an empty credential and a misleading 401 | The regex allows whitespace on **both** sides of the delimiter ([§6.2](#62-provider-authentication)), which is why that note parses correctly now. Runbook step 1 greps both notes for the expected variable names, and parses with `sed` rather than `eval` so a malformed note can never be executed. Only the token is taken from the note — the account id is a validated variable, which removes the other half of the exposure. |
 | R24 | **The Datadog API key has no rotation trigger of its own.** It lives in a shared note with nowhere to carry a version, so its ASM mirror is versioned by `var.datadog_api_key_version` ([§7.4](#74-the-derived-secrets)). | Rotating the key in 1Password without bumping the variable leaves every task shipping to Datadog with a dead key — and the failure is silent | The variable sits next to the mirror resource with a comment saying so. The "no metrics from service X" monitor ([§17.3.5](#1735-monitors)) fires within 15 minutes if it happens, which is the closest thing to a backstop this has. |
+| R25 | **DNSimple answers `401` when the *account* in the path is wrong, not `404`.** The account id is not a credential, but getting it wrong is indistinguishable from a bad token at the point of failure. | Time lost debugging authentication when the problem is addressing | `var.dnsimple_account` carries a `validation` block rejecting anything non-numeric ([§6.1](#61-provider-and-zone)), and runbook step 1 resolves the id from `/whoami` and prints it for comparison. `GET /v2/whoami` carries no account in its path, so it is the test that separates the two cases. |
 
 ---
 
