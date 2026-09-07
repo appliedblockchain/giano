@@ -1,0 +1,34 @@
+{
+  "name": "@appliedblockchain/giano-example",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Giano sample dApp: a thin-SDK (two-origin) demo built with Vite + React + Chakra UI",
+  "scripts": {
+    "dev": "vite --host --port 4400",
+    "dev:stock": "env VITE_WALLET_URL=http://wallet.localhost VITE_APP_LABEL='tenant: stock' vite --host --port 4400 --strictPort",
+    "dev:byo": "env VITE_WALLET_URL=http://wallet-byo.localhost VITE_APP_LABEL='tenant: byo' vite --host --port 4401 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4400",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-connector": "workspace:^",
+    "@appliedblockchain/giano-contracts": "workspace:",
+    "@chakra-ui/react": "^3.2.0",
+    "@emotion/react": "^11.11.4",
+    "next-themes": "^0.4.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.7.0",
+    "viem": "2.31.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.8",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "5.5.4",
+    "vite": "^6.3.5"
+  }
+}

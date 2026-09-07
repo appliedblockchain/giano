@@ -1,0 +1,138 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "webauthn-sol/../test/Utils.sol";
+
+import {MockEntryPoint} from "../mocks/MockEntryPoint.sol";
+import "./SmartWalletTestBase.sol";
+
+contract TestValidateUserOp is SmartWalletTestBase {
+    struct _TestTemps {
+        bytes32 userOpHash;
+        address signer;
+        uint256 privateKey;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+        uint256 missingAccountFunds;
+    }
+
+    // test adapted from Solady
+    function test_succeedsWithEOASigner() public {
+        _TestTemps memory t;
+        t.userOpHash = keccak256("123");
+        t.signer = signer;
+        t.privateKey = signerPrivateKey;
+        (t.v, t.r, t.s) = vm.sign(t.privateKey, t.userOpHash);
+        t.missingAccountFunds = 456;
+        vm.deal(address(account), 1 ether);
+        assertEq(address(account).balance, 1 ether);
+
+        vm.etch(account.entryPoint(), address(new MockEntryPoint()).code);
+        MockEntryPoint ep = MockEntryPoint(payable(account.entryPoint()));
+
+        PackedUserOperation memory userOp;
+        // Success returns 0.
+        userOp.signature = abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(t.signer), abi.encodePacked(t.r, t.s, t.v)));
+        assertEq(ep.validateUserOp(address(account), userOp, t.userOpHash, t.missingAccountFunds), 0);
+        assertEq(address(ep).balance, t.missingAccountFunds);
+        // Failure returns 1.
+        userOp.signature =
+            abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(t.signer), abi.encodePacked(t.r, bytes32(uint256(t.s) ^ 1), t.v)));
+        assertEq(ep.validateUserOp(address(account), userOp, t.userOpHash, t.missingAccountFunds), 1);
+        assertEq(address(ep).balance, t.missingAccountFunds * 2);
+        // Not entry point reverts.
+        vm.expectRevert(MultiOwnable.Unauthorized.selector);
+        account.validateUserOp(userOp, t.userOpHash, t.missingAccountFunds);
+    }
+
+    function test_succeedsWithPasskeySigner() public {
+        _TestTemps memory t;
+        t.userOpHash = keccak256("123");
+        WebAuthnInfo memory webAuthn = Utils.getWebAuthnStruct(t.userOpHash);
+
+        (bytes32 r, bytes32 s) = vm.signP256(passkeyPrivateKey, webAuthn.messageHash);
+        s = bytes32(Utils.normalizeS(uint256(s)));
+        bytes memory sig = abi.encode(
+            GianoSmartWallet.SignatureWrapper({
+                ownerBytes: passkeyOwner,
+                signatureData: abi.encode(
+                    WebAuthn.WebAuthnAuth({
+                        authenticatorData: webAuthn.authenticatorData,
+                        clientDataJSON: webAuthn.clientDataJSON,
+                        typeIndex: 1,
+                        challengeIndex: 23,
+                        r: uint256(r),
+                        s: uint256(s)
+                    })
+                )
+            })
+        );
+
+        vm.etch(account.entryPoint(), address(new MockEntryPoint()).code);
+        MockEntryPoint ep = MockEntryPoint(payable(account.entryPoint()));
+
+        PackedUserOperation memory userOp;
+        // Success returns 0.
+        userOp.signature = sig;
+        assertEq(ep.validateUserOp(address(account), userOp, t.userOpHash, t.missingAccountFunds), 0);
+    }
+
+    function test_reverts_whenSelectorInvalidForReplayableNonceKey() public {
+        PackedUserOperation memory userOp;
+        userOp.nonce = 0;
+        userOp.callData = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, "");
+        vm.startPrank(account.entryPoint());
+        vm.expectRevert(abi.encodeWithSelector(GianoSmartWallet.InvalidNonceKey.selector, 0));
+        account.validateUserOp(userOp, "", 0);
+    }
+
+    function test_reverts_whenReplayableNonceKeyInvalidForSelector() public {
+        PackedUserOperation memory userOp;
+        userOp.nonce = account.REPLAYABLE_NONCE_KEY() << 64;
+        userOp.callData = abi.encodeWithSelector(GianoSmartWallet.execute.selector, "");
+        vm.startPrank(account.entryPoint());
+        vm.expectRevert(
+            abi.encodeWithSelector(GianoSmartWallet.InvalidNonceKey.selector, account.REPLAYABLE_NONCE_KEY())
+        );
+        account.validateUserOp(userOp, "", 0);
+    }
+
+    function test_reverts_whenUpgradeToImplementationWithNoCode(address emptyImplementation) public {
+        vm.assume(emptyImplementation.code.length == 0);
+
+        // Create a UserOperation that calls executeWithoutChainIdValidation with an upgrade call
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, emptyImplementation, "");
+
+        PackedUserOperation memory userOp;
+        userOp.nonce = account.REPLAYABLE_NONCE_KEY() << 64;
+        userOp.callData = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, calls);
+        userOp.signature =
+            abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), abi.encodePacked(bytes32(0), bytes32(0), uint8(27))));
+
+        vm.startPrank(account.entryPoint());
+        vm.expectRevert(abi.encodeWithSelector(GianoSmartWallet.InvalidImplementation.selector, emptyImplementation));
+        account.validateUserOp(userOp, "", 0);
+    }
+
+    function test_succeeds_whenUpgradeToImplementationWithCode() public {
+        // Deploy a mock implementation that has code
+        MockGianoSmartWallet mockImpl = new MockGianoSmartWallet();
+        address validImplementation = address(mockImpl);
+
+        // Create a UserOperation that calls executeWithoutChainIdValidation with an upgrade call
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, validImplementation, "");
+
+        PackedUserOperation memory userOp;
+        userOp.nonce = account.REPLAYABLE_NONCE_KEY() << 64;
+        userOp.callData = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, calls);
+        userOp.signature =
+            abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), abi.encodePacked(bytes32(0), bytes32(0), uint8(27))));
+
+        vm.startPrank(account.entryPoint());
+        // Should revert with signature error (1) rather than InvalidImplementation
+        assertEq(account.validateUserOp(userOp, "", 0), 1);
+    }
+}

@@ -1,0 +1,62 @@
+{
+  "name": "@appliedblockchain/giano-connector",
+  "version": "0.1.0",
+  "description": "wagmi connector and RainbowKit wallet for Giano passkey smart wallets",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appliedblockchain/giano.git",
+    "directory": "packages/connector"
+  },
+  "author": "Applied Blockchain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.0",
+    "viem": "^2.31.0",
+    "wagmi": "^2.15.0"
+  },
+  "peerDependenciesMeta": {
+    "@rainbow-me/rainbowkit": {
+      "optional": true
+    },
+    "wagmi": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@appliedblockchain/giano-wallet-transport": "workspace:^"
+  },
+  "devDependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.4",
+    "tsup": "^8.3.5",
+    "typescript": "5.5.4",
+    "viem": "2.31.6",
+    "wagmi": "2.15.6"
+  }
+}

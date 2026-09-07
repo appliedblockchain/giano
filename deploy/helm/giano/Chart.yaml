@@ -1,0 +1,7 @@
+apiVersion: v2
+name: giano
+description: Giano passkey smart wallet — wallet-api, wallet-web, optional bundler, and a one-shot contracts deployer.
+type: application
+version: 0.1.0
+# tracks the Giano release (fixed-mode); image tags default to this.
+appVersion: "0.1.0"

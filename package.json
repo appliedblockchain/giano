@@ -1,8 +1,26 @@
 {
   "name": "@appliedblockchain/giano",
   "private": true,
-  "packageManager": "pnpm@8.15.6",
+  "scripts": {
+    "build": "pnpm -r build",
+    "demo:dev": "pnpm -F @appliedblockchain/giano-example dev",
+    "demo:stock": "pnpm -F @appliedblockchain/giano-example dev:stock",
+    "demo:byo": "pnpm -F @appliedblockchain/giano-example dev:byo",
+    "demo:admin": "pnpm -F @appliedblockchain/giano-paymaster-admin dev",
+    "paymaster": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run cli --",
+    "paymaster:demo": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run demo --",
+    "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
+    "git:init": "git submodule update --init --recursive",
+    "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",
+    "hh:initlocal": "pnpm --filter @appliedblockchain/giano-contracts hh:initlocal",
+    "hh:node": "pnpm --filter @appliedblockchain/giano-contracts hh:node",
+    "hh:deploy": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy",
+    "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing",
+    "doctor": "pnpm --filter @appliedblockchain/giano-contracts run doctor --"
+  },
   "devDependencies": {
+    "@changesets/cli": "^2.31.1",
     "tsup": "^8.3.5"
-  }
+  },
+  "packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
 }

@@ -1,10 +1,8 @@
 import { buildModule } from '@nomicfoundation/hardhat-ignition/modules';
-import GianoModule from './Giano';
-import TestingModule from './Testing';
+import GianoAccountFactoryModule from './GianoAccountFactory';
 
 export default buildModule('All', (m) => {
-  const giano = m.useModule(GianoModule);
-  const testing = m.useModule(TestingModule);
+  const gianoAccountFactory = m.useModule(GianoAccountFactoryModule);
 
-  return { ...giano, ...testing };
+  return { ...gianoAccountFactory };
 });

@@ -1,0 +1,225 @@
+{
+  "storage": [
+    {
+      "label": "paymasterStorage",
+      "slot": "0",
+      "offset": 0,
+      "type": "t_struct(PaymasterStorage)_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "label": "address",
+      "numberOfBytes": "20",
+      "encoding": "inplace"
+    },
+    "t_array(t_bytes32)dyn_storage": {
+      "label": "bytes32[]",
+      "numberOfBytes": "32",
+      "encoding": "dynamic_array"
+    },
+    "t_bool": {
+      "label": "bool",
+      "numberOfBytes": "1",
+      "encoding": "inplace"
+    },
+    "t_bytes16": {
+      "label": "bytes16",
+      "numberOfBytes": "16",
+      "encoding": "inplace"
+    },
+    "t_bytes32": {
+      "label": "bytes32",
+      "numberOfBytes": "32",
+      "encoding": "inplace"
+    },
+    "t_contract(IEntryPoint)": {
+      "label": "contract IEntryPoint",
+      "numberOfBytes": "20",
+      "encoding": "inplace"
+    },
+    "t_mapping(t_bytes16,t_struct(Tenant)_storage)": {
+      "label": "mapping(bytes16 => struct GianoPaymaster.Tenant)",
+      "numberOfBytes": "32",
+      "encoding": "mapping",
+      "key": "t_bytes16",
+      "value": "t_struct(Tenant)_storage"
+    },
+    "t_mapping(t_bytes32,t_uint256)": {
+      "label": "mapping(bytes32 => uint256)",
+      "numberOfBytes": "32",
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "value": "t_uint256"
+    },
+    "t_struct(AddressSet)_storage": {
+      "label": "struct EnumerableSet.AddressSet",
+      "numberOfBytes": "64",
+      "encoding": "inplace",
+      "members": [
+        {
+          "label": "_inner",
+          "slot": "0",
+          "offset": 0,
+          "type": "t_struct(Set)_storage"
+        }
+      ]
+    },
+    "t_struct(Bytes32Set)_storage": {
+      "label": "struct EnumerableSet.Bytes32Set",
+      "numberOfBytes": "64",
+      "encoding": "inplace",
+      "members": [
+        {
+          "label": "_inner",
+          "slot": "0",
+          "offset": 0,
+          "type": "t_struct(Set)_storage"
+        }
+      ]
+    },
+    "t_struct(PaymasterStorage)_storage": {
+      "label": "struct GianoPaymaster.PaymasterStorage",
+      "numberOfBytes": "256",
+      "encoding": "inplace",
+      "members": [
+        {
+          "label": "entryPoint",
+          "slot": "0",
+          "offset": 0,
+          "type": "t_contract(IEntryPoint)"
+        },
+        {
+          "label": "tenants",
+          "slot": "1",
+          "offset": 0,
+          "type": "t_mapping(t_bytes16,t_struct(Tenant)_storage)"
+        },
+        {
+          "label": "treasury",
+          "slot": "2",
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "defaultFeeWei",
+          "slot": "3",
+          "offset": 0,
+          "type": "t_uint128"
+        },
+        {
+          "label": "postOpGasAllowance",
+          "slot": "3",
+          "offset": 16,
+          "type": "t_uint32"
+        },
+        {
+          "label": "penaltyBps",
+          "slot": "3",
+          "offset": 20,
+          "type": "t_uint16"
+        },
+        {
+          "label": "signers",
+          "slot": "4",
+          "offset": 0,
+          "type": "t_struct(AddressSet)_storage"
+        },
+        {
+          "label": "tenantIds",
+          "slot": "6",
+          "offset": 0,
+          "type": "t_struct(Bytes32Set)_storage"
+        }
+      ]
+    },
+    "t_struct(Set)_storage": {
+      "label": "struct EnumerableSet.Set",
+      "numberOfBytes": "64",
+      "encoding": "inplace",
+      "members": [
+        {
+          "label": "_values",
+          "slot": "0",
+          "offset": 0,
+          "type": "t_array(t_bytes32)dyn_storage"
+        },
+        {
+          "label": "_positions",
+          "slot": "1",
+          "offset": 0,
+          "type": "t_mapping(t_bytes32,t_uint256)"
+        }
+      ]
+    },
+    "t_struct(Tenant)_storage": {
+      "label": "struct GianoPaymaster.Tenant",
+      "numberOfBytes": "96",
+      "encoding": "inplace",
+      "members": [
+        {
+          "label": "registered",
+          "slot": "0",
+          "offset": 0,
+          "type": "t_bool"
+        },
+        {
+          "label": "enabled",
+          "slot": "0",
+          "offset": 1,
+          "type": "t_bool"
+        },
+        {
+          "label": "hasFeeOverride",
+          "slot": "0",
+          "offset": 2,
+          "type": "t_bool"
+        },
+        {
+          "label": "withdrawAddress",
+          "slot": "0",
+          "offset": 3,
+          "type": "t_address"
+        },
+        {
+          "label": "balance",
+          "slot": "1",
+          "offset": 0,
+          "type": "t_uint128"
+        },
+        {
+          "label": "deficit",
+          "slot": "1",
+          "offset": 16,
+          "type": "t_uint128"
+        },
+        {
+          "label": "feeWeiOverride",
+          "slot": "2",
+          "offset": 0,
+          "type": "t_uint128"
+        }
+      ]
+    },
+    "t_uint128": {
+      "label": "uint128",
+      "numberOfBytes": "16",
+      "encoding": "inplace"
+    },
+    "t_uint16": {
+      "label": "uint16",
+      "numberOfBytes": "2",
+      "encoding": "inplace"
+    },
+    "t_uint256": {
+      "label": "uint256",
+      "numberOfBytes": "32",
+      "encoding": "inplace"
+    },
+    "t_uint32": {
+      "label": "uint32",
+      "numberOfBytes": "4",
+      "encoding": "inplace"
+    }
+  }
+}

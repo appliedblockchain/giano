@@ -1,5 +1,5 @@
-**/.env*
-!**/.env.sample
+.cursorrules
+**/.env
 dist/
 node_modules/
 .pnpm-store/
@@ -9,3 +9,19 @@ latest.sql
 .DS_Store
 .yarn/install-state.gz
 .vite/
+*.tsbuildinfo
+test-results/
+playwright-report/
+
+# terraform — .terraform.lock.hcl is deliberately NOT ignored: it is committed so every
+# operator and CI resolve the same provider builds.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# real values; terraform.tfvars.example is committed
+**/terraform.tfvars
+**/*.auto.tfvars
+.terraformrc
+terraform.rc

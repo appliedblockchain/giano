@@ -1,0 +1,116 @@
+# The local stack's "ALB": one listener on :80 that routes by Host header.
+#
+# Read together with deploy/docker-compose.infrastructure.yml, whose `proxy` service mounts
+# this file. It exists because the stack needs real HOSTNAMES rather than ports, and it needs
+# them without a host-side process:
+#
+#   * A WebAuthn RP ID is a HOSTNAME — the port is not part of it. Two tenants reached as
+#     localhost:8081 and localhost:8082 would therefore share the RP ID `localhost`, and
+#     cross-tenant isolation — the thing this stack exists to demonstrate — becomes
+#     unobservable. wallet-api also rejects a seed whose tenants share an rpId.
+#   * `http://*.localhost` is a secure context in Chromium and Firefox and resolves to
+#     loopback without touching /etc/hosts, so passkeys work with no local CA to mint and
+#     trust. That is the same reason the e2e stack uses these names (see e2e/origins.mjs).
+#   * Unlike the e2e stack this needs no `portless` running on the host and no sudo: Docker
+#     binds :80 through its own privileged helper and Caddy does the routing.
+#
+# Two things about the routing are load-bearing rather than incidental:
+#
+#   1. `reverse_proxy` passes the incoming Host through UNCHANGED (Caddy's default; it does
+#      not rewrite it the way nginx's `proxy_pass` does). wallet-api resolves the tenant from
+#      Host on /.well-known/webauthn and from Origin everywhere else, so rewriting Host here
+#      would collapse both tenants into one — or into none.
+#   2. Every hostname below ends in `.localhost`, and `auto_https off` plus the explicit
+#      `http://` prefixes keep Caddy from trying to issue certificates for them.
+#
+# Server-to-server hops do NOT come through here: they use compose service names
+# (http://wallet-api:8080, http://anvil:8545). A backend that dialled a public name would
+# route back through this proxy with the browser's Host attached, which is a loop.
+{
+	auto_https off
+	admin off
+	log {
+		format console
+	}
+}
+
+# ── The index ─────────────────────────────────────────────────────────────────────────────
+# Also the proxy's healthcheck target, which is why it answers without reaching an upstream:
+# `proxy` reports healthy when the ROUTER is up, not when the stack behind it is.
+http://giano.localhost {
+	respond <<HTML
+		<!doctype html>
+		<title>Giano — local stack</title>
+		<body style="font: 15px/1.6 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem">
+		<h1>Giano — local stack</h1>
+		<p>Two tenants on one backend. They differ in <em>who wrote the wallet UI</em>, and are
+		indistinguishable to <code>wallet-api</code> — which is the point.</p>
+		<h2>Tenant <code>stock</code> — Giano's stock wallet UI</h2>
+		<ul>
+		<li><a href="http://stock.giano.localhost">stock.giano.localhost</a> — the demo dApp</li>
+		<li><a href="http://wallet.stock.giano.localhost">wallet.stock.giano.localhost</a> — its wallet origin, and its RP ID</li>
+		</ul>
+		<h2>Tenant <code>byo</code> — a wallet UI the tenant wrote itself</h2>
+		<ul>
+		<li><a href="http://byo.giano.localhost">byo.giano.localhost</a> — the same dApp image, pinned to the other wallet</li>
+		<li><a href="http://wallet.byo.giano.localhost">wallet.byo.giano.localhost</a> — its wallet origin, and its RP ID</li>
+		</ul>
+		<h2>Shared infrastructure — never a relying party</h2>
+		<ul>
+		<li><a href="http://api.giano.localhost/healthz">api.giano.localhost</a> — wallet-api (<a href="http://api.giano.localhost/readyz">/readyz</a>)</li>
+		<li><a href="http://paymaster.giano.localhost">paymaster.giano.localhost</a> — the paymaster console</li>
+		<li><a href="http://wallet.giano.localhost">wallet.giano.localhost</a> — the shared wallet UI host. No tenant is bound to it, so
+		<a href="http://wallet.giano.localhost/.well-known/webauthn">/.well-known/webauthn</a> must 404 here.</li>
+		<li>rpc.giano.localhost, rpc-b.giano.localhost — the two anvil chains (31337, 31338)</li>
+		</ul>
+		</body>
+		HTML 200
+}
+
+# ── Shared infrastructure ─────────────────────────────────────────────────────────────────
+http://api.giano.localhost {
+	reverse_proxy wallet-api:8080
+}
+
+http://paymaster.giano.localhost {
+	reverse_proxy paymaster-admin:8080
+}
+
+# ── Tenant `stock` — the stock wallet UI, reached by two names ─────────────────────────────
+# `wallet.giano.localhost` stands in for Giano's own serving hostname: the CNAME target that
+# every stock-UI tenant points at, and NEVER a relying party. It is here so the thing runbook
+# step 10 checks is checkable locally — it must return 404 on /.well-known/webauthn, because
+# no tenant row names it. A passkey bound to a serving hostname can never be moved.
+http://wallet.stock.giano.localhost, http://wallet.giano.localhost {
+	reverse_proxy wallet-web:8080
+}
+
+http://stock.giano.localhost {
+	reverse_proxy custom-example:8080
+}
+
+# ── Tenant `byo` — its own wallet origin, its own SPA ─────────────────────────────────────
+http://wallet.byo.giano.localhost {
+	reverse_proxy wallet-byo:8080
+}
+
+http://byo.giano.localhost {
+	reverse_proxy custom-example-byo:8080
+}
+
+# ── The chains ────────────────────────────────────────────────────────────────────────────
+# Browser-facing, and the only endpoints in the stack the dApps dial cross-origin: the demo
+# reads balances, token metadata and allowances dApp-side. anvil answers CORS preflights and
+# sends `access-control-allow-origin: *`, so no header rewriting is needed here — and each
+# dApp's CSP `connect-src` names these two origins (services/custom-example/docker/entrypoint.sh).
+#
+# The wallets do NOT use these names: wallet-web and the BYO server each proxy /rpc, /rpc-b,
+# /bundler and /bundler-b same-origin, which is the posture a real deployment wants because it
+# keeps a keyed RPC URL server-side.
+http://rpc.giano.localhost {
+	reverse_proxy anvil:8545
+}
+
+http://rpc-b.giano.localhost {
+	reverse_proxy anvil-b:8545
+}

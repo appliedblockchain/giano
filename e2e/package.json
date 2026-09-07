@@ -1,0 +1,34 @@
+{
+  "name": "@appliedblockchain/giano-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Two-origin end-to-end tests: demo dApp + wallet origin + wallet-api + devnet + bundler",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "portless:port80": "docker compose --profile portless -f ../deploy/docker-compose.e2e.yml up -d portless-port80",
+    "portless:proxy": "portless proxy start --no-tls",
+    "portless:up": "node portless-setup.mjs",
+    "portless:routes": "node portless-setup.mjs --routes-only",
+    "portless:down": "node portless-down.mjs",
+    "portless:list": "portless list",
+    "dapp": "node dapp/serve.mjs",
+    "wallet-byo": "node wallet-byo/serve.mjs",
+    "devnet:generate": "node devnet/with-pinned-anvil.mjs node devnet/generate-state.mjs",
+    "devnet:generate:raw": "node devnet/generate-state.mjs",
+    "devnet:provision": "node devnet/provision-sponsorship.mjs",
+    "devnet:generate:b": "ANVIL_CHAIN_ID=31338 CHAIN_ID=31338 node devnet/with-pinned-anvil.mjs node devnet/generate-state.mjs",
+    "devnet:generate:all": "pnpm devnet:generate && pnpm devnet:generate:b"
+  },
+  "devDependencies": {
+    "@appliedblockchain/giano-connector": "workspace:^",
+    "@appliedblockchain/giano-wallet-core": "workspace:^",
+    "@appliedblockchain/giano-wallet-kit": "workspace:^",
+    "@appliedblockchain/giano-wallet-transport": "workspace:^",
+    "@playwright/test": "^1.52.0",
+    "esbuild": "^0.25.4",
+    "portless": "^0.15.5",
+    "viem": "2.31.6"
+  }
+}

@@ -1,0 +1,62 @@
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # The demo dApp is not meant to be embedded, and framing it would put a wallet handshake
+    # inside someone else's page.
+    add_header X-Frame-Options "DENY" always;
+
+    # NOTE what is deliberately NOT here: Cross-Origin-Opener-Policy. The connector opens the
+    # wallet origin in a popup and talks to it over postMessage, which needs `window.opener`.
+    # A COOP header of `same-origin` severs that reference and the connect handshake times out
+    # with no error worth reading. The same omission is load-bearing in wallet-web and in the
+    # BYO fixture (`serve.mjs`), and in vite.config.ts for `pnpm dev`.
+    #
+    # connect-src has to carry THREE kinds of origin, and the third is the one that gets
+    # forgotten until a sponsored transaction hangs:
+    #   1. the chain RPC(s)   — balances, metadata and allowances are read dApp-side
+    #   2. 'self'             — /config.js and the assets
+    #   3. the WALLET origin  — the thin connector polls
+    #                           `${walletUrl}/api/v1/userops/<hash>/receipt` from THIS origin
+    #                           (packages/connector/src/thin/create-giano-wallet-provider.ts),
+    #                           so the wallet origin is a cross-origin fetch target, not just a
+    #                           postMessage peer. The tenant's `corsOrigins` must name this
+    #                           dApp origin for the same reason, from the other side.
+    # entrypoint.sh composes all of it into GIANO_CSP_CONNECT_SRC.
+    #
+    # 'unsafe-inline' for styles is Emotion's runtime style injection, which Chakra is built
+    # on. The Google Fonts origins are here because index.html links a webfont stylesheet;
+    # self-host the font and both can go.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ${GIANO_CSP_CONNECT_SRC}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # Same-origin RPC proxy. Unused by default — config.js points `rpcUrl` straight at the
+    # chain endpoint, because the browser has to read chain state and most providers send
+    # permissive CORS headers.
+    #
+    # Set GIANO_RPC_URL to `/rpc` and GIANO_RPC_UPSTREAM to the real endpoint to use this
+    # instead. That is the better posture whenever the RPC URL embeds an API key: as shipped,
+    # a keyed URL in GIANO_RPC_URL is published to every visitor in /config.js (§13.3).
+    location = /rpc {
+        proxy_pass ${GIANO_RPC_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
+
+    # Runtime config: never cached, or a redeploy serves the previous environment's wallet
+    # origin to anyone holding a warm cache.
+    location = /config.js {
+        add_header Cache-Control "no-store" always;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

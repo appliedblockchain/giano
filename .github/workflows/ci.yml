@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Build & typecheck packages (no solc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        # deliberately NO submodules: proves a fresh clone builds the TS surface
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build contracts TS surface (committed artifacts only)
+        run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Build wallet-core
+        run: pnpm --filter @appliedblockchain/giano-wallet-core build
+      - name: wallet-core unit tests
+        run: pnpm --filter @appliedblockchain/giano-wallet-core test
+      - name: Build wallet-transport
+        # connector's dts build resolves this via its dist/ types — must precede it
+        run: pnpm --filter @appliedblockchain/giano-wallet-transport build
+      - name: wallet-transport unit tests
+        run: pnpm --filter @appliedblockchain/giano-wallet-transport test
+      - name: Build connector
+        run: pnpm --filter @appliedblockchain/giano-connector build
+      - name: Build wallet-kit
+        # wallet-web and the BYO reference both build on it (WK-30/WK-31)
+        run: pnpm --filter @appliedblockchain/giano-wallet-kit build
+      - name: wallet-kit unit tests (the load-bearing invariants, WK-27/WK-28)
+        run: pnpm --filter @appliedblockchain/giano-wallet-kit test
+      - name: Build paymaster-sdk
+        # paymaster-admin's typecheck resolves this via its dist/ types — must precede it
+        run: pnpm --filter @appliedblockchain/giano-paymaster-sdk build
+      - name: paymaster-sdk unit tests
+        run: pnpm --filter @appliedblockchain/giano-paymaster-sdk test
+      - name: Build paymaster-admin
+        run: pnpm --filter @appliedblockchain/giano-paymaster-admin build
+      - name: addresses.ts drift check
+        run: |
+          pnpm --filter @appliedblockchain/giano-contracts gen:addresses
+          git diff --exit-code packages/contracts/addresses.ts
+
+  wallet-api:
+    name: wallet-api tests + OpenAPI drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build contracts TS surface
+        run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Typecheck
+        run: pnpm --filter @appliedblockchain/giano-wallet-api typecheck
+      - name: Vitest (unit + testcontainers integration)
+        run: pnpm --filter @appliedblockchain/giano-wallet-api test
+      - name: OpenAPI drift check
+        run: pnpm --filter @appliedblockchain/giano-wallet-api openapi:check
+
+  generated-drift:
+    name: generated.ts drift check (solc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned to the same Foundry release the repo pins everywhere else (the anvil
+          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifted past it and broke
+          # two things at once: `forge remappings` began emitting context remappings that
+          # hardhat-foundry rejects, and gas metering moved test_gas_validation past its
+          # budget. Bump deliberately, in step with the anvil pin.
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Recompile and regenerate ABIs
+        working-directory: packages/contracts
+        run: |
+          pnpm hh:compile
+          pnpm hh:wagmi
+      - name: Fail on drift
+        run: git diff --exit-code packages/contracts/generated.ts
+
+  forge:
+    name: Foundry tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned to the same Foundry release the repo pins everywhere else (the anvil
+          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifted past it and broke
+          # two things at once: `forge remappings` began emitting context remappings that
+          # hardhat-foundry rejects, and gas metering moved test_gas_validation past its
+          # budget. Bump deliberately, in step with the anvil pin.
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: forge test
+        working-directory: packages/contracts
+        run: forge test -vvv
