@@ -53,16 +53,25 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
-      RP_ID: localhost
-      RP_NAME: Giano Dev
-      EXPECTED_ORIGINS: http://localhost:4000,http://localhost:5173
       CHAIN_ID: '31337'
       RPC_URL: http://anvil:8545
       BUNDLER_URL: http://alto:4337
       # local chain is not in the committed registry — supply addresses from hh:initlocal
       ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
       FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run hh:initlocal and export FACTORY_ADDRESS}
-      OPEN_REGISTRATION: 'true'
-      ADMIN_API_KEYS: dev-admin-key
-      CORS_ORIGINS: http://localhost:4000,http://localhost:5173
       LOG_LEVEL: debug
+      # single dev tenant: the vite dev server (5173) is the wallet origin; 4000 is the
+      # legacy demo origin. Tenant provisioning is declarative — edit and restart.
+      TENANTS_SEED: |
+        [
+          {
+            "slug": "dev",
+            "walletOrigin": "http://localhost:5173",
+            "rpId": "localhost",
+            "rpName": "Giano Dev",
+            "expectedOrigins": ["http://localhost:4000", "http://localhost:5173"],
+            "corsOrigins": ["http://localhost:4000", "http://localhost:5173"],
+            "openRegistration": true,
+            "adminKeys": ["dev-admin-key-local"]
+          }
+        ]

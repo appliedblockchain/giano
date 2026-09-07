@@ -14,7 +14,19 @@ export function App() {
   return (
     <Container maxW="3xl" py={{ base: 6, md: 10 }}>
       <Stack gap="6">
-        <SectionCard title="Giano Demo" description="Passkey smart-account wallet · thin two-origin SDK">
+        <SectionCard
+          title={
+            <HStack gap="2">
+              <Text>Giano Demo</Text>
+              {config.appLabel && (
+                <Badge colorPalette="brand" variant="subtle" data-testid="app-label">
+                  {config.appLabel}
+                </Badge>
+              )}
+            </HStack>
+          }
+          description="Passkey smart-account wallet · thin two-origin SDK"
+        >
           <Stack direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ md: 'center' }} gap="4">
             <Text fontSize="sm" color="fg.muted" maxW="md">
               Signing and passkeys live on the wallet origin popup — this dApp ships no WebAuthn or bundler code.

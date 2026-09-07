@@ -4,6 +4,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "demo:dev": "pnpm -F @appliedblockchain/giano-example dev",
+    "demo:stock": "pnpm -F @appliedblockchain/giano-example dev:stock",
+    "demo:byo": "pnpm -F @appliedblockchain/giano-example dev:byo",
     "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
     "git:init": "git submodule update --init --recursive",
     "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",

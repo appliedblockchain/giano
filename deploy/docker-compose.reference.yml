@@ -33,12 +33,6 @@ services:
       # apply pending migrations on boot (or run `node dist/migrate.js` as a one-shot job)
       RUN_MIGRATIONS: 'true'
 
-      # --- WebAuthn relying party (IRREVERSIBLE per deployment — passkeys bind to RP_ID) ---
-      RP_ID: ${RP_ID:?e.g. wallet.clientapp.com}
-      RP_NAME: ${RP_NAME:-Giano Wallet}
-      # origins accepted during ceremony verification (comma-separated)
-      EXPECTED_ORIGINS: ${EXPECTED_ORIGINS:?e.g. https://wallet.clientapp.com}
-
       # --- chain ---
       CHAIN_ID: ${CHAIN_ID:?e.g. 8453}
       RPC_URL: ${RPC_URL:?JSON-RPC endpoint}
@@ -48,13 +42,22 @@ services:
       # ENTRYPOINT_ADDRESS: '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
       # FACTORY_ADDRESS: ''
 
-      # --- auth model ---
-      # production: keep registration closed; your backend calls /v1/webauthn/options
-      # server-to-server with one of these bearer keys
-      OPEN_REGISTRATION: 'false'
-      ADMIN_API_KEYS: ${ADMIN_API_KEYS:?comma-separated admin bearer keys}
+      # --- tenants (JSON array, upserted by slug at boot) ---
+      # One entry per client project. rpId is IRREVERSIBLE per tenant (passkeys bind to
+      # it) and must equal the walletOrigin host. openRegistration=false keeps
+      # registration server-to-server via the tenant's adminKeys.
+      # Example:
+      #   [{"slug":"clientapp",
+      #     "walletOrigin":"https://wallet.clientapp.com",
+      #     "rpName":"ClientApp Wallet",
+      #     "allowedDappOrigins":["https://app.clientapp.com"],
+      #     "corsOrigins":["https://app.clientapp.com"],
+      #     "openRegistration":false,
+      #     "adminKeys":["<long-random-secret>"]}]
+      TENANTS_SEED: ${TENANTS_SEED:?JSON array of tenants — see services/wallet-api/README.md}
 
-      # --- userop relay policy (integers; fees in wei) ---
+      # --- userop relay policy DEFAULTS (integers; fees in wei) — a tenant's policy
+      #     jsonb may override any field per tenant ---
       USEROP_MAX_CALL_GAS: ${USEROP_MAX_CALL_GAS:-5000000}
       USEROP_MAX_VERIFICATION_GAS: ${USEROP_MAX_VERIFICATION_GAS:-5000000}
       USEROP_MAX_FEE_PER_GAS: ${USEROP_MAX_FEE_PER_GAS:-500000000000}
@@ -62,12 +65,14 @@ services:
       # comma-separated contract addresses; empty = unrestricted
       USEROP_ALLOWED_TARGETS: ${USEROP_ALLOWED_TARGETS:-}
       USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-}
+      # per-tenant relay rate limit default (tenant policy.relayRateLimitPerMinute overrides)
+      USEROP_RATE_LIMIT_PER_MINUTE: ${USEROP_RATE_LIMIT_PER_MINUTE:-60}
 
-      # --- sessions / challenges / CORS ---
+      # --- sessions / challenges / observability ---
       CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-300}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
-      # dApp origins that poll the public receipt endpoint cross-origin (thin SDK)
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # when set, GET /metrics requires this bearer token (recommended in production)
+      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   wallet-web:

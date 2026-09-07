@@ -1,0 +1,86 @@
+/* Deliberately unmistakable: dark, monospace, orange — nothing like the stock Giano UI,
+   so traces and screenshots prove a different wallet UI served this tenant. */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #14100c;
+  color: #f5e9dc;
+  font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  display: flex;
+  flex-direction: column;
+}
+header {
+  padding: 16px 20px;
+  border-bottom: 2px solid #ff7a1a;
+}
+#brand {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ff7a1a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.subtitle {
+  font-size: 11px;
+  color: #a08d78;
+  margin-top: 2px;
+}
+main {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #ffb166;
+}
+.origin {
+  font-size: 12px;
+  color: #14100c;
+  background: #ff7a1a;
+  padding: 4px 8px;
+  border-radius: 3px;
+  align-self: flex-start;
+  word-break: break-all;
+}
+.payload {
+  font-size: 12px;
+  background: #221b14;
+  border: 1px solid #3a2e21;
+  border-radius: 4px;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow: auto;
+}
+.row {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+}
+button {
+  flex: 1;
+  padding: 12px;
+  font: inherit;
+  font-weight: 700;
+  border-radius: 4px;
+  border: 1px solid #ff7a1a;
+  cursor: pointer;
+  background: #ff7a1a;
+  color: #14100c;
+}
+button.secondary {
+  background: transparent;
+  color: #ff7a1a;
+}
+.idle {
+  color: #a08d78;
+  font-size: 13px;
+}

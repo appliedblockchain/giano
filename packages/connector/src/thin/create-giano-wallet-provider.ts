@@ -37,7 +37,8 @@ const WALLET_METHODS = new Set([
   'signed_eth_call',
 ]);
 
-const STORAGE_KEY = 'giano:sdk:session';
+/** Pre-namespacing cache key — migrated to the per-wallet key on first read. */
+const LEGACY_STORAGE_KEY = 'giano:sdk:session';
 
 type CachedSession = { accounts: string[]; chainId: string };
 
@@ -54,6 +55,9 @@ type CachedSession = { accounts: string[]; chainId: string };
 export function createGianoWalletProvider(params: CreateGianoWalletProviderParams): GianoWalletProvider {
   const { walletUrl, chain, sdkVersion = '1.0.0', walletApiPath = '/api' } = params;
   const walletOrigin = new URL(walletUrl).origin;
+  // Namespaced per wallet origin + chain: one dApp origin may legitimately address two
+  // wallet origins (two tenants), and an unnamespaced key would cross-answer eth_accounts.
+  const storageKey = `giano:sdk:session:${walletOrigin}:${chain.id}`;
   const storage = params.storage ?? (typeof localStorage !== 'undefined' ? localStorage : undefined);
 
   const publicClient = createPublicClient({
@@ -66,7 +70,16 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
 
   const readSession = (): CachedSession | null => {
     try {
-      const raw = storage?.getItem(STORAGE_KEY);
+      let raw = storage?.getItem(storageKey);
+      if (!raw) {
+        // one-time migration from the pre-namespacing key
+        const legacy = storage?.getItem(LEGACY_STORAGE_KEY);
+        if (legacy) {
+          storage?.setItem(storageKey, legacy);
+          storage?.removeItem(LEGACY_STORAGE_KEY);
+          raw = legacy;
+        }
+      }
       return raw ? (JSON.parse(raw) as CachedSession) : null;
     } catch {
       return null;
@@ -74,8 +87,8 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
   };
   const writeSession = (session: CachedSession | null) => {
     if (!storage) return;
-    if (session) storage.setItem(STORAGE_KEY, JSON.stringify(session));
-    else storage.removeItem(STORAGE_KEY);
+    if (session) storage.setItem(storageKey, JSON.stringify(session));
+    else storage.removeItem(storageKey);
   };
 
   const transportClient = new TransportClient({ walletUrl, sdkVersion });

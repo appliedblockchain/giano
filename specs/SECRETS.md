@@ -15,7 +15,7 @@ extractable) and an opaque session bearer token. All server secrets live in the
 | Secret | Held by | Purpose | Rotation |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | wallet-api, migrate job | Postgres DSN (credentials/sessions/audit) | on credential policy; app tolerates reconnect |
-| `ADMIN_API_KEYS` | wallet-api | server-to-server ceremony-options + ROR admin | rotate by adding a new key, draining, removing the old |
+| tenant `adminKeys` (in `TENANTS_SEED`) | wallet-api | per-tenant server-to-server ceremony-options + ROR admin; stored sha256-hashed | rotate by adding a new key to the tenant's seed entry, draining, removing the old (re-seed = restart) |
 | `ALTO_EXECUTOR_PRIVATE_KEYS` | bundler | signs bundle transactions on-chain (funded EOA) | rotate by funding a new EOA and swapping; keep gas topped up |
 | `ALTO_UTILITY_PRIVATE_KEY` | bundler | alto utility ops | as above |
 | `DEPLOYER_PRIVATE_KEY` | contracts-deployer job | one-shot CREATE2 deploy | ephemeral; never mount into long-running pods |

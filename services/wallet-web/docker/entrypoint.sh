@@ -9,6 +9,7 @@ set -eu
 export GIANO_WALLET_API_URL="${GIANO_WALLET_API_URL:-/api}"
 export GIANO_FACTORY_ADDRESS="${GIANO_FACTORY_ADDRESS:-}"
 export GIANO_PAYMASTER_ADDRESS="${GIANO_PAYMASTER_ADDRESS:-}"
+# JSON array of dApp origins allowed to drive the wallet; [] = none (fail closed), ["*"] = any (dev only)
 export GIANO_ALLOWED_DAPP_ORIGINS="${GIANO_ALLOWED_DAPP_ORIGINS:-[]}"
 export GIANO_RP_ID="${GIANO_RP_ID:-}"
 export GIANO_BRAND_NAME="${GIANO_BRAND_NAME:-Giano Wallet}"

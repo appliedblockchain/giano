@@ -37,7 +37,7 @@ export default fp(
       if (typeof fastifyError.statusCode === 'number' && fastifyError.statusCode < 500) {
         return reply.code(fastifyError.statusCode).send({ error: fastifyError.code ?? 'request', message: fastifyError.message ?? 'request error' });
       }
-      request.log.error({ err: error }, 'unhandled error');
+      request.log.error({ err: error, tenant: request.tenant?.slug }, 'unhandled error');
       return reply.code(500).send({ error: 'internal', message: 'internal server error' });
     });
   },

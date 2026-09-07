@@ -7,6 +7,11 @@ const sha256hex = (value: string) => createHash('sha256').update(value).digest('
 
 export type SessionContext = {
   sessionId: string;
+  /**
+   * Derived from the user's tenant_id: users are created inside a tenant-scoped
+   * ceremony and never move, so no denormalized column on sessions is needed.
+   */
+  tenantId: string;
   userId: string;
   externalUserId: string;
   credentialId: string;
@@ -33,6 +38,7 @@ export function createSessionService(db: Db, ttlSeconds: number) {
       const rows = await db
         .select({
           sessionId: sessions.id,
+          tenantId: users.tenantId,
           userId: sessions.userId,
           externalUserId: users.externalId,
           credentialId: sessions.credentialId,

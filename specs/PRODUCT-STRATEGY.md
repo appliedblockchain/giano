@@ -72,8 +72,8 @@ its own and creates no obligation to build the next one.
 |---|---|---|
 | Admin dashboard | KEO does not need one; a dashboard is a product, and we do not have a product | P6 |
 | User management UI | Same | P6 |
-| Our own hosted wallet UI (`wallet.giano.com`) | KEO brings its own; a reference UI is only needed for client #2 or a demo | P4 |
-| Multiple wallet origins on **one** backend | Needs multi-RP support — see [§5](#5-the-constraint-that-decides-the-roadmap-one-rp-id-per-backend). One origin per backend covers KEO | P4 |
+| A Giano-operated wallet origin shared across clients | **Rejected architecturally**, not deferred — see [§5.3](#53-every-tenant-owns-its-wallet-origin--and-that-removes-the-one-way-door). Every client owns its origin | Never |
+| Multiple wallet origins on **one** backend | Needs multi-RP support — see [§5](#5-the-constraint-that-decides-the-roadmap-one-rp-id-per-backend). One origin per backend covers KEO; a stack per client stays viable at 1–5 clients | P4 |
 | Logical multi-tenancy in `wallet-api` | Infrastructure-level isolation is cheap enough at 1–5 clients (see cost model) | P6 |
 | Self-serve signup / billing | No demand signal | Not scheduled |
 | Multi-chain in a single stack | KEO needs one chain | P5 |
@@ -147,7 +147,7 @@ boundary. The checklist below becomes the conformance contract:
 
 | Responsibility | Today handled by | KEO must |
 |---|---|---|
-| Serve the SPA over TLS at a stable host | `wallet-web` nginx | Serve it, and **never change the host** — see [§5.3](#53-the-rp-id-one-way-door) |
+| Serve the SPA over TLS at a stable host | `wallet-web` nginx | Serve it, and **never change the host** — see [§5.3](#53-every-tenant-owns-its-wallet-origin--and-that-removes-the-one-way-door) |
 | Reach `wallet-api` | nginx same-origin proxy `/api` | Either proxy it themselves, or call it cross-origin (viable — see below) |
 | `X-Frame-Options: DENY` + `frame-ancestors 'none'` | `docker/nginx.conf.template` | Reproduce both. **We cannot enforce this.** Without it the wallet is iframe-embeddable and the trust model is gone |
 | CSP `connect-src` restricted to RPC + bundler | Same template | Reproduce |
@@ -239,7 +239,7 @@ This is the most consequential technical fact in this document, and it directly 
   `credentials.credentialId` is globally `.unique()`; `credentials` has no `rpId`. `ror_origins` is a
   flat global table.
 
-**Consequence:** `wallet.giano.com` (RP ID `giano.com`) and `wallet.keo.com` (RP ID `wallet.keo.com`)
+**Consequence:** `wallet.keo.com` (RP ID `wallet.keo.com`) and `wallet.acme.app` (RP ID `wallet.acme.app`)
 **cannot share one `wallet-api` process today.** The service would refuse to boot. This is not a
 hardening gap — it is a load-bearing design decision that must change before two differently-named
 wallet origins can share a backend.
@@ -264,7 +264,7 @@ that we get for free because it is already how the config works.
 
 ```
   wallet.keo.com  ─┐
-  wallet.giano.com ─┼──►  ONE wallet-api  ──►  ONE DB
+  wallet.beta.io   ─┼──►  ONE wallet-api  ──►  ONE DB
   wallet.acme.com  ─┘     (multi-RP)
 ```
 
@@ -292,24 +292,46 @@ it gets its own phase (P4) and is not on KEO's critical path.**
 > Requests is **not** required for the popup architecture, though its endpoint leaks every tenant's
 > origins today.
 
-### 5.3 The RP ID one-way door
+### 5.3 Every tenant owns its wallet origin — and that removes the one-way door
 
-Passkeys bind cryptographically and permanently to the RP ID. Three consequences that must be signed
-off in writing before KEO's first deploy:
+**Architectural rule, decided:** every client provides its own wallet origin —
+`wallet.keo.com`, `wallet.acme.app` — and points it at either Giano's stock UI or a UI they built.
+**We do not operate a shared wallet origin serving multiple clients.**
+
+The reason is that a shared origin means a shared RP ID, and WebAuthn scopes credential discovery by
+RP ID. All tenants' passkeys would live in one namespace, so the browser credential picker would offer
+any tenant's passkey to any tenant's ceremony — making cross-tenant session issuance a live
+account-takeover path guarded only by server code being correct. With distinct RP IDs the browser
+refuses, and `verifyAuthenticationResponse` refuses again on `rpIdHash`. Isolation becomes
+cryptographic instead of a permanent obligation on us.
+Full reasoning and the rejected alternative: [`docs/MULTI-TENANCY-GAPS.md`](./MULTI-TENANCY-GAPS.md)
+§3 and Appendix B.
+
+**The consequence that matters commercially: the one-way door disappears.** Because the *client* owns
+the origin, changing what is served there — our stock UI today, their own SPA later — does not change
+the RP ID. Every passkey keeps working. So:
+
+> **Giano's UI is an on-ramp to bring-your-own-UI, not a fork.** A client can start on our UI to get
+> live quickly and migrate to their own later with **zero user re-registration**.
+
+Passkeys still bind permanently to the RP ID, so two things need written sign-off per client before
+first deploy:
 
 - **The host is permanent.** `wallet.keo.com` cannot later become `wallet.keo.io` or
-  `passkeys.keo.com` without every user re-registering.
-- **Credentials are not portable between wallet origins.** If KEO later wants to move onto our
-  reference UI at `wallet.giano.com`, its users start over. Choosing BYO wallet UI is a one-way door
-  *per client*.
-- **Related Origin Requests does not change this.** ROR lets several *app* origins share credentials
-  under **one** RP ID — e.g. `app.keo.com` and `admin.keo.com` both under RP ID `keo.com`. It does
-  not let one credential work under two different RP IDs. Setting `RP_ID = keo.com` (the registrable
-  parent) rather than `wallet.keo.com` is the flexible choice, and it is compatible with the existing
-  `endsWith` validation.
+  `passkeys.keo.com` without every user re-registering. Pick it once, deliberately.
+- **`RP_ID` must equal the wallet host** — `wallet.keo.com`, not `keo.com`. This is not a preference:
+  no code in the repo sets `rp.id`, so the browser defaults it to the current hostname while the
+  server verifies against `RP_ID`. A registrable-parent value **boots fine and then fails every
+  ceremony** with `400 verification-failed`. Using `keo.com` requires the `rpId` plumbing fix first
+  (which is also what activates ROR) — see `MULTI-TENANCY-GAPS.md` §3.2 and D1.
 
-**Recommendation for KEO: `RP_ID = keo.com`, wallet origin `wallet.keo.com`.** That keeps every
-`*.keo.com` origin usable later without re-registration, and satisfies boot validation.
+Note what ROR does and does not do: it lets several *app* origins share credentials under **one** RP
+ID (`app.keo.com` and `admin.keo.com` under `keo.com`); it does **not** let one credential work under
+two different RP IDs. It is not a tenancy mechanism.
+
+**What the client takes on:** a DNS record and a TLS certificate for their domain pointing at our
+edge. That is the price of the isolation, and it is an operations cost rather than a security
+obligation — see `MULTI-TENANCY-GAPS.md` §4.
 
 ---
 
@@ -385,7 +407,7 @@ Today this accidentally works, because the wallet is always served from a host e
 and expects credentials usable from `app.keo.com` too. Threading the server's `rpId` into
 `createWebAuthnCredential({ rp })` and `navigator.credentials.get({ publicKey: { rpId } })`:
 
-- makes the registrable-parent RP ID recommended in [§5.3](#53-the-rp-id-one-way-door) actually work;
+- makes the registrable-parent RP ID discussed in [§5.3](#53-every-tenant-owns-its-wallet-origin--and-that-removes-the-one-way-door) possible at all;
 - **activates Related Origin Requests**, which is fully implemented (`GET /.well-known/webauthn`, the
   `ror_origins` table, admin CRUD, nginx routing) but unreachable, because the browser only fetches
   that document when a client requests an `rp.id` differing from its own origin.
@@ -399,21 +421,31 @@ This is a P1 deliverable, not a P4 nice-to-have.
 Rather than one vague promise of "bring your own UI", three clearly-bounded tiers with different
 costs, different support burdens, and different security ownership.
 
-| | **Tier A — Brand ours** | **Tier B — Bring your own wallet origin** | **Tier C — Self-host everything** |
+**The client's own wallet origin is now common to Tiers A and B** ([§5.3](#53-every-tenant-owns-its-wallet-origin--and-that-removes-the-one-way-door)).
+The tiers differ only in **who writes the SPA served there** — which is what makes A → B a migration
+rather than a fork.
+
+| | **Tier A — Our UI, their origin** | **Tier B — Their UI, their origin** | **Tier C — Self-host everything** |
 |---|---|---|---|
-| Wallet origin | Our image, their branding | **Their app, our SDK** | Their app or ours |
+| Wallet origin | **Theirs** (`wallet.keo.com`) | **Theirs** (`wallet.keo.com`) | Theirs |
+| Who wrote the SPA | Us — they brand it | **Them, against our SDK** | Either |
 | Backend + DB | Ours | **Ours** | Theirs |
-| Who owns the trust boundary | Us | **Shared** | Them |
-| Security fixes | Automatic | They must upgrade the SDK | They must upgrade everything |
-| Effort for them | Config only | An SPA + hosting + conformance | A full deployment |
+| Who owns the trust boundary | Us (they own DNS + TLS) | **Shared** | Them |
+| Security fixes | Automatic — we redeploy | They must upgrade the SDK | They must upgrade everything |
+| Effort for them | DNS + TLS + branding config | Above, plus an SPA and conformance | A full deployment |
+| **Migration path** | → **B with zero re-registration** | — | — |
 | **KEO** | — | **This one** | — |
 
-### Tier A — Brand ours
+### Tier A — Our UI, their origin
 
-The client keeps the standard `giano-wallet-web` image and supplies branding through the
-runtime-injected `/config.json`. One image serves every deployment: `docker/entrypoint.sh` `envsubst`s
-`docker/config.json.template` at container start, so branding is deployment configuration, not a
-build. Zero code, zero fork, and every client inherits security fixes automatically.
+The client provides `wallet.<their-domain>` (DNS + TLS pointing at our edge) and we serve the standard
+`giano-wallet-web` build there, branded via the runtime-injected `/config.json`. One image serves every
+origin: `docker/entrypoint.sh` `envsubst`s `docker/config.json.template` at container start, so
+branding — and the per-origin `RP_ID`, allowed dApp origins and CSP — is deployment configuration, not
+a build. Zero client code, zero fork, and every client inherits security fixes when we redeploy.
+
+Because each origin gets its own rendered config, **serving one static build per tenant origin needs no
+code change at all**. That is the recommended starting point; see `MULTI-TENANCY-GAPS.md` D2.
 
 Plumbing to finish — it is 90% there:
 
@@ -425,15 +457,17 @@ Plumbing to finish — it is 90% there:
   object in `/config.json` and set the variables on `:root` at boot.
 - Publish the exact list of brandable tokens as the supported contract.
 
-Tier A remains the **default recommendation** for clients who do not have a strong reason to own the
-origin — it is cheaper for them and far cheaper for us to support.
+Tier A remains the **default recommendation** for clients without a strong reason to write their own
+wallet UI — it is cheaper for them and far cheaper for us to support, and because they already own the
+origin they can move to Tier B later without their users re-registering.
 
-### Tier B — Bring your own wallet origin *(KEO)*
+### Tier B — Their UI, their origin *(KEO)*
 
-The client builds and hosts `wallet.<their-domain>`, using `giano-wallet-client` +
-`giano-wallet-core` + `giano-wallet-transport`, against our `wallet-api` and database. Passkeys bind
-to their host. Requirements: everything in [§3.3](#33-what-keo-takes-on-by-owning-the-wallet-origin),
-plus the RP ID sign-off in [§5.3](#53-the-rp-id-one-way-door).
+The client builds and serves its own SPA at `wallet.<their-domain>`, using `giano-wallet-client` +
+`giano-wallet-core` + `giano-wallet-transport`, against our `wallet-api` and database. Passkeys bind to
+their host — the same host as Tier A, which is why the migration is non-destructive. Requirements:
+everything in [§3.3](#33-what-keo-takes-on-by-owning-the-wallet-origin), plus the RP ID sign-off in
+[§5.3](#53-every-tenant-owns-its-wallet-origin--and-that-removes-the-one-way-door).
 
 **Because the client's origin becomes part of the trust boundary, Tier B needs a conformance gate,
 not just documentation.** Deliverables:
@@ -543,7 +577,7 @@ Two independent sub-tracks; do either or both as demand dictates.
   acceptance run. Proves the marginal-cost figure in the cost model. *Exit: a new client onboarded in
   under a week with zero code changes.*
 - **P4b — multi-RP (topology T2), needed only if two differently-named wallet origins must share one
-  backend** — e.g. our own reference `wallet.giano.com` alongside `wallet.keo.com`. **Specified in
+  backend** — which is now every case beyond the first client, since each owns its origin. **Specified in
   detail in [`docs/MULTI-TENANCY-GAPS.md`](./MULTI-TENANCY-GAPS.md)** (gap inventory, defects C1–C3,
   required decisions, phased breakdown M0–M7). *Exit: two wallet origins with different RP IDs on one
   `wallet-api`, with the full isolation test matrix green — in particular a test proving a credential

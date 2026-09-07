@@ -59,9 +59,6 @@ services:
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
-      RP_ID: ${RP_ID:-wallet.localhost}
-      RP_NAME: ${RP_NAME:-Giano Sepolia}
-      EXPECTED_ORIGINS: ${EXPECTED_ORIGINS:-http://wallet.localhost:8081}
       CHAIN_ID: ${CHAIN_ID:-11155111}
       # server-side reads; can be a plain public RPC (no trace needed here)
       RPC_URL: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
@@ -69,12 +66,20 @@ services:
       # chain is not in the committed contracts registry — supply addresses explicitly
       ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
       FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set FACTORY_ADDRESS}
-      OPEN_REGISTRATION: ${OPEN_REGISTRATION:-true}
-      ADMIN_API_KEYS: ${ADMIN_API_KEYS:-sepolia-admin-key}
       # only sponsor through our own paymaster (empty = any paymaster allowed)
       USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-${PAYMASTER_ADDRESS:-}}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://app.localhost:4400,http://localhost:4400,http://127.0.0.1:4400}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # single demo tenant, interpolated from deploy/.env (validate the rendered JSON
+      # with `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml config`)
+      TENANTS_SEED: >-
+        [{"slug":"sepolia",
+        "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
+        "rpId":"${RP_ID:-wallet.localhost}",
+        "rpName":"${RP_NAME:-Giano Sepolia}",
+        "allowedDappOrigins":${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
+        "corsOrigins":${TENANT_CORS_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
+        "openRegistration":${OPEN_REGISTRATION:-true},
+        "adminKeys":["${ADMIN_API_KEY:-sepolia-admin-key}"]}]
 
   wallet-web:
     build:

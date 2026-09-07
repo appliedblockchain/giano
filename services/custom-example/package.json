@@ -6,6 +6,8 @@
   "description": "Giano sample dApp: a thin-SDK (two-origin) demo built with Vite + React + Chakra UI",
   "scripts": {
     "dev": "vite --host --port 4400",
+    "dev:stock": "env VITE_WALLET_URL=http://wallet.localhost:8081 VITE_APP_LABEL='tenant: stock' vite --host --port 4400 --strictPort",
+    "dev:byo": "env VITE_WALLET_URL=http://wallet-byo.localhost:8082 VITE_APP_LABEL='tenant: byo' vite --host --port 4401 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4400",
     "typecheck": "tsc --noEmit"

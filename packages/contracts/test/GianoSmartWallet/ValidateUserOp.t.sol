@@ -33,12 +33,12 @@ contract TestValidateUserOp is SmartWalletTestBase {
 
         PackedUserOperation memory userOp;
         // Success returns 0.
-        userOp.signature = abi.encode(GianoSmartWallet.SignatureWrapper(0, abi.encodePacked(t.r, t.s, t.v)));
+        userOp.signature = abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(t.signer), abi.encodePacked(t.r, t.s, t.v)));
         assertEq(ep.validateUserOp(address(account), userOp, t.userOpHash, t.missingAccountFunds), 0);
         assertEq(address(ep).balance, t.missingAccountFunds);
         // Failure returns 1.
         userOp.signature =
-            abi.encode(GianoSmartWallet.SignatureWrapper(0, abi.encodePacked(t.r, bytes32(uint256(t.s) ^ 1), t.v)));
+            abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(t.signer), abi.encodePacked(t.r, bytes32(uint256(t.s) ^ 1), t.v)));
         assertEq(ep.validateUserOp(address(account), userOp, t.userOpHash, t.missingAccountFunds), 1);
         assertEq(address(ep).balance, t.missingAccountFunds * 2);
         // Not entry point reverts.
@@ -55,7 +55,7 @@ contract TestValidateUserOp is SmartWalletTestBase {
         s = bytes32(Utils.normalizeS(uint256(s)));
         bytes memory sig = abi.encode(
             GianoSmartWallet.SignatureWrapper({
-                ownerIndex: 1,
+                ownerBytes: passkeyOwner,
                 signatureData: abi.encode(
                     WebAuthn.WebAuthnAuth({
                         authenticatorData: webAuthn.authenticatorData,
@@ -105,11 +105,11 @@ contract TestValidateUserOp is SmartWalletTestBase {
         bytes[] memory calls = new bytes[](1);
         calls[0] = abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, emptyImplementation, "");
 
-        UserOperation memory userOp;
+        PackedUserOperation memory userOp;
         userOp.nonce = account.REPLAYABLE_NONCE_KEY() << 64;
         userOp.callData = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, calls);
         userOp.signature =
-            abi.encode(GianoSmartWallet.SignatureWrapper(0, abi.encodePacked(bytes32(0), bytes32(0), uint8(27))));
+            abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), abi.encodePacked(bytes32(0), bytes32(0), uint8(27))));
 
         vm.startPrank(account.entryPoint());
         vm.expectRevert(abi.encodeWithSelector(GianoSmartWallet.InvalidImplementation.selector, emptyImplementation));
@@ -125,11 +125,11 @@ contract TestValidateUserOp is SmartWalletTestBase {
         bytes[] memory calls = new bytes[](1);
         calls[0] = abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, validImplementation, "");
 
-        UserOperation memory userOp;
+        PackedUserOperation memory userOp;
         userOp.nonce = account.REPLAYABLE_NONCE_KEY() << 64;
         userOp.callData = abi.encodeWithSelector(GianoSmartWallet.executeWithoutChainIdValidation.selector, calls);
         userOp.signature =
-            abi.encode(GianoSmartWallet.SignatureWrapper(0, abi.encodePacked(bytes32(0), bytes32(0), uint8(27))));
+            abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), abi.encodePacked(bytes32(0), bytes32(0), uint8(27))));
 
         vm.startPrank(account.entryPoint());
         // Should revert with signature error (1) rather than InvalidImplementation

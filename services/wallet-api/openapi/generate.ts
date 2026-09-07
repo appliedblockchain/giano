@@ -12,16 +12,15 @@ import { createDb } from '../src/db/index.js';
 
 const outPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'openapi.json');
 
+// No TENANTS_SEED: buildApp never reads the tenants table at registration time
+// (tenant resolution is strictly per-request), so no tenant data is needed here.
 const config = loadConfig({
   NODE_ENV: 'production',
   LOG_LEVEL: 'error',
   DATABASE_URL: 'postgres://user:pass@localhost:5432/openapi-codegen',
-  RP_ID: 'wallet.example.com',
-  EXPECTED_ORIGINS: 'https://wallet.example.com',
   CHAIN_ID: '84532',
   RPC_URL: 'http://localhost:8545',
   BUNDLER_URL: 'http://localhost:4337',
-  OPEN_REGISTRATION: 'true',
 } as NodeJS.ProcessEnv);
 
 const { db, pool } = createDb(config.DATABASE_URL);

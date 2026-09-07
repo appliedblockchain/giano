@@ -41,3 +41,23 @@ other networks:
 | `VITE_RPC_URL` | `http://localhost:8545` | read-path RPC (balances, metadata) |
 | `VITE_CHAIN_ID` | `31337` | chain id |
 | `VITE_TEST_ERC20` | devnet PrivateERC20 | prefilled token in the ERC-20 panel |
+| `VITE_APP_LABEL` | _(unset)_ | free-text badge next to the title, to tell instances apart |
+
+## Two tenants side by side
+
+The e2e stack seeds two tenants against one backend, each with its own wallet origin. This one
+dApp can serve both — point a second instance at the other wallet origin. Both dApp origins are
+already allow-listed by `deploy/docker-compose.e2e.yml`:
+
+```sh
+pnpm demo:stock   # -> http://app.localhost:4400,     wallet http://wallet.localhost:8081
+pnpm demo:byo     # -> http://app-byo.localhost:4401, wallet http://wallet-byo.localhost:8082
+```
+
+Tenant "byo" also needs its wallet origin served: `pnpm -F @appliedblockchain/giano-e2e wallet-byo`.
+
+> **Do not run these while the Playwright suite runs.** The suite drives the minimal fixture in
+> `e2e/dapp/` on these same two ports — 4400/4401 are the only dApp origins the e2e tenants
+> allow-list, so both apps compete for them. Playwright's `reuseExistingServer: true` will
+> silently adopt this app instead of the fixture and every test then fails on a missing
+> `#connect`. Stop these dev servers before running `pnpm -F @appliedblockchain/giano-e2e test`.
