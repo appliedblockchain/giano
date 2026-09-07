@@ -184,3 +184,97 @@ data "aws_iam_policy_document" "gha_deploy" {
     }
   }
 }
+
+# GitHub Actions, the Terraform half. §10.5.1
+#
+# The trust policy is `gha_deploy_assume` above — same repository, same refs.
+# What differs is the PERMISSIONS, and the split is the whole point of having
+# a second role: `plan` needs to read everything, `apply` needs to write only
+# what a version bump touches. So read comes from AWS's `ReadOnlyAccess`
+# (github_oidc.tf) and this document is the write half — ECS, the state
+# object, and nothing else.
+#
+# The consequence is deliberate: CI can roll a new image out and cannot do
+# anything else. A merged change that touches the VPC, RDS, DNS or IAM fails
+# the apply with an explicit AccessDenied and waits for a human at a
+# workstation. That is a narrower blast radius than a broad deploy role, and
+# it fails loudly rather than quietly doing the wrong thing.
+data "aws_iam_policy_document" "gha_terraform" {
+  # `use_lockfile = true` (§4.5) — the lock is an S3 object next to the state,
+  # written with a conditional PutObject, so no DynamoDB table and no extra
+  # permission beyond the three below.
+  statement {
+    sid = "TerraformState"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.s3_tfstate_name}/env/${terraform.workspace}/*",
+    ]
+  }
+
+  statement {
+    sid       = "TerraformStateBucket"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.s3_tfstate_name}"]
+  }
+
+  # The bucket's default encryption is `aws:kms` with the AWS-managed `aws/s3`
+  # key (modules/aws/s3/backend). ReadOnlyAccess does not carry kms:Decrypt,
+  # and without it the state cannot be read at all — the failure is an opaque
+  # `AccessDenied` on the state object rather than on the key.
+  statement {
+    sid       = "TerraformStateKms"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["s3.${var.aws_region[terraform.workspace]}.amazonaws.com"]
+    }
+  }
+
+  # A tag bump is a new task definition and an UpdateService per service.
+  # Deregister is included because Terraform revises a task definition in
+  # place and cleans up behind itself; without it the apply succeeds and then
+  # fails on the destroy half of the plan.
+  statement {
+    sid = "RollServices"
+    actions = [
+      "ecs:DescribeServices",
+      "ecs:UpdateService",
+      "ecs:TagResource",
+    ]
+    resources = [
+      "arn:aws:ecs:${var.aws_region[terraform.workspace]}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.ecs.name}/*",
+    ]
+  }
+
+  statement {
+    sid = "TaskDefinitions"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DeregisterTaskDefinition",
+      "ecs:DescribeTaskDefinition",
+      "ecs:TagResource",
+    ]
+    resources = ["*"] # neither Register nor Deregister takes a resource
+  }
+
+  # The same scoped list the deploy role gets: the execution and task roles,
+  # and nothing else.
+  statement {
+    sid       = "PassTaskRoles"
+    actions   = ["iam:PassRole"]
+    resources = local.gha_passable_role_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}

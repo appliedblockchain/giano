@@ -45,3 +45,31 @@ module "gha-deploy-role" {
 
   depends_on = [aws_iam_openid_connect_provider.github]
 }
+
+# The Terraform role. §10.5.1
+#
+# Separate from `gha-deploy` rather than an extension of it, because the two
+# jobs have different triggers and different blast radii: `docker.yml` pushes
+# images on every main push, `terraform.yml` rolls services out only when
+# infra/iac changes. One role for both would give the image build permission
+# to change the running services.
+#
+# `ReadOnlyAccess` is an AWS-managed policy, which §10.2 avoids for TASK roles
+# — there the objection is that AmazonECSTaskExecutionRolePolicy grants ECR
+# pull and log write account-wide to a running container. This is a read-only
+# grant to a CI role that already needs to read every resource in the account
+# to produce a plan, and enumerating that by hand would be a list to maintain
+# forever that is strictly worse than AWS's.
+module "gha-terraform-role" {
+  source = "./modules/aws/iam/role"
+
+  name        = "${local.name_prefix}-gha-terraform"
+  description = "${local.name_prefix} — GitHub Actions: terraform plan and apply"
+
+  # Same repository, same refs as the deploy role — iam.policies.tf.
+  assume_role_policy  = data.aws_iam_policy_document.gha_deploy_assume.json
+  inline_policies     = { "policy" = data.aws_iam_policy_document.gha_terraform.json }
+  managed_policy_arns = ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
+
+  depends_on = [aws_iam_openid_connect_provider.github]
+}

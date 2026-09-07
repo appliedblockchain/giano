@@ -49,8 +49,8 @@ module "svc-wallet-api" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["wallet-api"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-api"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-api"].repository_arn
 
   cpu            = 512
@@ -146,8 +146,8 @@ module "svc-wallet-web" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["wallet-web"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-web"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-web"].repository_arn
 
   cpu            = 256
@@ -231,8 +231,8 @@ module "svc-custom-example" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["example"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["example"].repository_arn
 
   cpu            = 256
@@ -303,8 +303,8 @@ module "svc-custom-example-byoui" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["example"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["example"].repository_arn
 
   cpu            = 256
@@ -372,8 +372,8 @@ module "svc-wallet-byo" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["wallet-byo"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-byo"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-byo"].repository_arn
 
   cpu            = 256
@@ -459,8 +459,8 @@ module "svc-paymaster-admin" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["paymaster-admin"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["paymaster-admin"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["paymaster-admin"].repository_arn
 
   cpu            = 256
@@ -526,8 +526,8 @@ module "svc-bundler" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["bundler"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["bundler"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["bundler"].repository_arn
 
   cpu            = 512

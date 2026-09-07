@@ -18,7 +18,7 @@ variable "ecr_image_tag_mutability" {
 }
 
 variable "ecr_lifecycle_image_count" {
-  description = "[REQUIRED] how many images each repository keeps, per environment"
+  description = "[REQUIRED] how many images each repository keeps, per environment. This is a RETENTION FLOOR for var.image_tag, not just a cost setting: the lifecycle rule expires on `tagStatus: any` (modules/aws/ecr), docker.yml publishes on every push to main, and the deployed tag is pinned rather than latest — so a pinned tag more than this many main-pushes old has been deleted out from under its own service. It surfaces on the next task placement, not on the apply that pinned it, which is the worst time to find out. 30 in dev is roughly a fortnight of main at current volume"
   type        = map(number)
-  default     = { dev = 10, stg = 10, prd = 30 }
+  default     = { dev = 30, stg = 30, prd = 30 }
 }

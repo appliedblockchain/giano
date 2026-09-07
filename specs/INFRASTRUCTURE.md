@@ -2066,7 +2066,7 @@ module "svc-wallet-api" {
   aws_region         = var.aws_region[terraform.workspace]
   account_id         = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["wallet-api"].repository_url}:${var.image_tag}"
+  image              = "${module.ecr["wallet-api"].repository_url}:${local.image_tag}"
   cpu                = 512     # task-level
   memory             = 2048    # task-level — app 1024 + agent 256 + router 100 + headroom
   app_memory         = 1024    # the application container's own limit
@@ -2439,6 +2439,28 @@ variable so `dev` can trust a feature branch and `prd` only `main`.
 
 No static credentials anywhere in CI, and no `iam:PassRole` beyond the task and execution roles.
 
+#### 10.5.1 The Terraform role
+
+`gha-terraform` is a **second** role, sharing that trust policy and differing only in permissions.
+It exists because the two CI jobs have different blast radii and should not borrow each other's:
+`docker.yml` pushes images on every push to `main`, `terraform.yml` changes what is running, and one
+role for both would give the image build permission to roll the services.
+
+| Half | Grant |
+|---|---|
+| read — `plan` reads every resource in the account | AWS-managed `ReadOnlyAccess` |
+| write — `apply` of a version bump | `ecs:UpdateService`, task definition register/deregister, the scoped `iam:PassRole`, and the state object under `env/<workspace>/` |
+
+`ReadOnlyAccess` is an AWS-managed policy, which [§10.2](#102-what-each-role-gets) avoids for *task*
+roles — the objection there is that `AmazonECSTaskExecutionRolePolicy` grants a running container
+ECR pull and log write account-wide. Here it is a read-only grant to a CI role that already needs to
+read everything to produce a plan, and hand-enumerating that would be a list to maintain forever
+that is strictly worse than AWS's.
+
+Nothing else is granted, deliberately: a merged change touching the VPC, RDS, DNS or IAM fails the
+apply with an explicit `AccessDenied` rather than being applied by CI
+([§15.1](#151-the-deployed-version-is-declared)).
+
 ---
 
 ## 11. ECR
@@ -2502,7 +2524,7 @@ section is the design, the constraints it must obey, and the weaknesses it knowi
 | `1Password/onepassword` | ≥ 3.1 | `ephemeral "onepassword_item"`, `note_value_wo` |
 | `hashicorp/aws` | 6.x | `secret_string_wo`, `password_wo` |
 | 1Password plan | Teams | see the limits below |
-| Execution | local, no CI pipeline | state in S3 with SSE-KMS |
+| Execution | local, **and CI for the rollout** | state in S3 with SSE-KMS. `terraform.yml` plans and applies `dev` when `infra/iac/**` changes ([§15.1](#151-the-deployed-version-is-declared)); everything else is still a workstation |
 
 The Teams plan's rate limits are not a footnote — **they drove the entire design**:
 
@@ -2523,7 +2545,7 @@ provider "onepassword" {
 | Context | How | Notes |
 |---|---|---|
 | Local | `var.op_account` | Uses the 1Password **desktop app SDK integration**, not the CLI. Requires *Settings → Developer → Integrate with 1Password SDKs* to be enabled. A variable rather than `OP_ACCOUNT` in the environment, so nothing has to be exported |
-| CI (later) | `OP_SERVICE_ACCOUNT_TOKEN` | the one case where an environment variable is unavoidable — a service-account token is not a value to put in a `.tf` file |
+| CI | `OP_SERVICE_ACCOUNT_TOKEN` | the one case where an environment variable is unavoidable — a service-account token is not a value to put in a `.tf` file. It is exclusive with `var.op_account`, which `terraform.yml` therefore sets empty; `asm.tf` drops the `op --account` flag to match, since `--account ""` is an error and not a no-op. The service account needs read on the `DevOps` vault and on this environment's |
 
 #### Which vault
 
@@ -3029,18 +3051,74 @@ assume the OIDC role (no static credentials)     §10.5
 build + push the six deployed images to ECR, tagged <full commit sha>     §11
 ```
 
-**The rollout is deliberately not in the workflow.** Terraform owns every task definition
-(`image = "${repository_url}:${var.image_tag}"`, [§14](#14-the-services)), so a
+**The rollout is deliberately not in that workflow.** Terraform owns every task definition
+(`image = "${repository_url}:${local.image_tag}"`, [§14](#14-the-services)), so a
 `RegisterTaskDefinition` from CI would publish a revision that the next `terraform apply` reverts —
-two writers, one resource. The tag goes to Terraform instead of to `update-service`:
+two writers, one resource. That rules out the `amazon-ecs-render-task-definition` /
+`amazon-ecs-deploy-task-definition` pair, which is the obvious way to do this and the wrong one
+here.
 
-```bash
-terraform apply -var image_tag="$(git rev-parse HEAD)"
+The rollout is `.github/workflows/terraform.yml` instead, and it is a `terraform apply` — the same
+one an operator runs, with the same two writers rule intact
+([§15.1](#151-the-deployed-version-is-declared)).
+
+The image tag is the **full** 40-character SHA and not `sha-<short>` because it is copied from
+`git rev-parse HEAD` into `var.image_tag` unaltered, and validated as forty hex characters there.
+
+### 15.1 The deployed version is declared
+
+**The version each environment runs is declared in the Terraform, not inferred from what is
+newest.** `var.image_tag` is a workspace-keyed map with a committed default
+(`ecs_services.vars.tf`), read once as `local.image_tag`:
+
+```hcl
+variable "image_tag" {
+  type = map(string)
+  default = {
+    dev = "deb51227c98a9f204e7bedc89f4b32260c8cdc21"
+    stg = ""
+    prd = ""
+  }
+}
 ```
 
-That is also why the image tag is the **full** 40-character SHA and not `sha-<short>`: it is copied
-from `git rev-parse HEAD` into `-var image_tag=`, unaltered. `ecs:UpdateService` stays on the role
-([§10.5](#105-the-github-actions-oidc-role)) for the day the rollout becomes a workflow of its own.
+So the two halves of delivery have different triggers, and that separation is the point:
+
+| Merge | Effect |
+|---|---|
+| app code | `docker.yml` publishes images tagged `<sha>` to ECR and GHCR. **Nothing deploys** |
+| a one-line bump to `var.image_tag` | `terraform.yml` applies it. The deployed version is whatever the map says |
+
+A deployment is therefore a reviewed diff naming a version, which is the property a GitOps
+controller like ArgoCD provides and the reason this is not `update-service` on the newest build. It
+also means a rollback is a revert, and that the commit deployed is a fact recorded in the
+repository rather than in a pipeline's history.
+
+`var.image_tag` being declared rather than passed removes the last `-var` for a non-secret setting
+([§4.6](#46-running-terraform)). Two flags remain, both CI-only and neither a setting:
+`-var 'ecs_wait_for_steady_state=true'`, so a crash-looping container fails the workflow rather
+than passing it; and `-var 'op_account='`, because `var.op_account` and `OP_SERVICE_ACCOUNT_TOKEN`
+are mutually exclusive ([§12.2](#122-provider-authentication)).
+
+#### What CI is allowed to do
+
+`plan` must read every resource in the account; `apply` only ever has to write what a version bump
+touches. So there is a **second** role, `gha-terraform` ([§10.5.1](#1051-the-terraform-role)), with
+AWS's `ReadOnlyAccess` for the read half and ECS, task definitions and the state object for the
+write half — and nothing else.
+
+That is not a formality. A merged change to the VPC, RDS, DNS or IAM fails the apply with an
+explicit `AccessDenied` and waits for a human at a workstation. CI can roll an image out; it cannot
+rebuild the environment, and it cannot half-rebuild it quietly.
+
+#### The retention floor
+
+`var.ecr_lifecycle_image_count` stops being a cost setting once the tag is pinned. The lifecycle
+rule expires on `tagStatus: any` ([§11](#11-ecr)) and `docker.yml` publishes on every push to
+`main`, so **a pinned tag more than that many main-pushes old has been deleted out from under its
+own service.** Nothing fails at the time; it surfaces on the next task placement — a scale-out, a
+redeploy, an AZ replacement — as a task that cannot pull its image. Raised to 30 in every
+environment for that reason.
 
 **There is no migration step in the workflow.** Schema is applied by the `migrate` init container as
 each new `wallet-api` task starts ([§9.6](#96-migrations--the-init-container)), so the ordering that
@@ -3094,11 +3172,11 @@ convention CI is trusted to keep:
 |---|---|
 | The role trusts `ref:refs/heads/main` only ([§10.5](#105-the-github-actions-oidc-role)) | The ECR steps are gated on the **ref**, not the event. A PR (`refs/pull/N/merge`) and a `v*` tag push (`refs/tags/v*`) skip ECR and still publish to GHCR — a release tag stays green |
 | Tags are `IMMUTABLE` ([§11](#11-ecr)) | No `latest` to ECR, so ECR gets a tag set of its own; and a re-run at an already-published commit drops just the ECR tag instead of failing on `PutImage` |
-| The lifecycle policy expires on `tagStatus: any` past 10 | `provenance: false` — an attestation manifest per image would spend retention meant for ten deployable commits |
+| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | `provenance: false` — an attestation manifest per image would spend retention meant for deployable commits |
 
-Not included: the `update-service` sequence. Terraform owns the task definitions, so the tag is
-handed to `terraform apply -var image_tag=<sha>` ([§15](#15-images-and-delivery)). No migration step
-either: the init container handles it ([§9.6](#96-migrations--the-init-container)).
+Not included: the `update-service` sequence. Terraform owns the task definitions, so the rollout is
+its own workflow applying a declared tag ([§15.1](#151-the-deployed-version-is-declared)). No
+migration step either: the init container handles it ([§9.6](#96-migrations--the-init-container)).
 
 ### 16.3 A deployable sponsorship provisioner
 
@@ -3380,7 +3458,7 @@ locals {
       { name = "DD_DOGSTATSD_NON_LOCAL_TRAFFIC", value = "true" },
       { name = "DD_ENV",                         value = terraform.workspace },
       { name = "DD_SERVICE",                     value = var.service },
-      { name = "DD_VERSION",                     value = var.image_tag },
+      { name = "DD_VERSION",                     value = local.image_tag },
       { name = "DD_TAGS",                        value = "env:${terraform.workspace} project:${var.project_name} service:${var.service}" },
     ]
 
@@ -3892,10 +3970,13 @@ for R in wallet-api wallet-web paymaster-admin example wallet-byo bundler; do
 done
 ```
 
-Then roll the services onto that tag:
+Then roll the services onto that tag by declaring it — set `dev` in `var.image_tag`
+(`ecs_services.vars.tf`) to `${SHA}` and apply. From here on that edit is a PR, and merging it is
+the deployment ([§15.1](#151-the-deployed-version-is-declared)); during bring-up there is no
+`gha-terraform` role yet, so it is a local apply:
 
 ```bash
-terraform apply -var image_tag="${SHA}"
+terraform apply -var 'ecs_wait_for_steady_state=true'
 ```
 
 **If `wallet-api` never stabilises, suspect the migration first.** This is the first time
@@ -4132,6 +4213,9 @@ third is the guarantee everything else in §12 rests on.
 | R23 | **Provider credentials are parsed out of shared `DevOps` notes with a regex.** `dnsimple-terraform` and `datadog-terraform` belong to no project in particular; anyone may reformat them. **This has already happened once**: the DNSimple note was written `export DNSIMPLE_TOKEN ="…"`, and the space before `=` makes a shell `eval` run the token as a command instead of assigning it. | A plan that fails with a regex error rather than a useful one — or an empty credential and a misleading 401 | The regex allows whitespace on **both** sides of the delimiter ([§6.2](#62-provider-authentication)), which is why that note parses correctly now. Runbook step 1 greps both notes for the expected variable names, and parses with `sed` rather than `eval` so a malformed note can never be executed. Only the token is taken from the note — the account id is a validated variable, which removes the other half of the exposure. |
 | R24 | **The Datadog API key has no rotation trigger of its own.** It lives in a shared note with nowhere to carry a version, so its ASM mirror is versioned by `var.datadog_api_key_version` ([§7.4](#74-the-derived-secrets)). | Rotating the key in 1Password without bumping the variable leaves every task shipping to Datadog with a dead key — and the failure is silent | The variable sits next to the mirror resource with a comment saying so. The "no metrics from service X" monitor ([§17.3.5](#1735-monitors)) fires within 15 minutes if it happens, which is the closest thing to a backstop this has. |
 | R25 | **DNSimple answers `401` when the *account* in the path is wrong, not `404`.** The account id is not a credential, but getting it wrong is indistinguishable from a bad token at the point of failure. | Time lost debugging authentication when the problem is addressing | `var.dnsimple_account` carries a `validation` block rejecting anything non-numeric ([§6.1](#61-provider-and-zone)), and runbook step 1 resolves the id from `/whoami` and prints it for comparison. `GET /v2/whoami` carries no account in its path, so it is the test that separates the two cases. |
+| R26 | **CI can now apply to `dev`.** A merge to `main` touching `infra/iac/**` rolls the environment without a human at a workstation ([§15.1](#151-the-deployed-version-is-declared)), which is a reversal of the "local, no CI pipeline" position §12.1 held. | A bad merge changes a running environment | Bounded by permission rather than by convention: `gha-terraform` holds `ReadOnlyAccess` plus write on ECS, task definitions and the state object only ([§10.5.1](#1051-the-terraform-role)), so an apply that would touch the VPC, RDS, DNS or IAM fails `AccessDenied` and waits for a person. The tag is also declared rather than newest, so the *default* CI outcome of merging app code is that nothing deploys. |
+| R27 | **A pinned tag can be expired by the registry it is pinned to.** The lifecycle rule counts `tagStatus: any` and `docker.yml` publishes on every push to `main`, so the deployed tag ages out after `var.ecr_lifecycle_image_count` pushes — and nothing fails until the next task placement. | A service that has been running for weeks cannot restart, and the cause looks like ECS rather than retention | Retention raised to 30 everywhere, which is the floor the pin needs rather than a cost setting ([§15.1](#151-the-deployed-version-is-declared)). Not closed: the real fix is a lifecycle rule that never expires the tag the state says is deployed, which ECR cannot express. Redeploy to a current tag if it happens. |
+| R28 | **`terraform.yml` writes the assumed role into a `[default]` AWS profile on the runner.** `_init.tf` names a profile, and a named profile is resolved from shared config files a runner does not have — so the workflow materialises one rather than the module dropping its §4.6 promise that an operator's shell needs nothing set. | Short-lived credentials on the runner's disk; a CI-only step the module does not describe | Accepted: the runner is ephemeral and the session expires in an hour. The alternative — defaulting `var.profile` to `""` — moves the burden onto every operator, which is the trade §4.6 exists to refuse. Revisit if `stg` gets a pipeline. |
 
 ---
 

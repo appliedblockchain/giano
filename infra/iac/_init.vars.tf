@@ -33,9 +33,9 @@ variable "profile" {
 }
 
 variable "s3_tfstate_name" {
-  description = "[REQUIRED] name of the S3 bucket holding state — must match the backend block in _init.tf"
+  description = "[REQUIRED] name of the S3 bucket holding state — must match the backend block in _init.tf, which cannot read a variable. It is also the bucket the CI Terraform role is scoped to (iam.policies.tf), so a value that does not match is an AccessDenied on the state object rather than a cosmetic drift"
   type        = string
-  default     = "giano-tfstate"
+  default     = "gianotest-tfstate"
 }
 
 variable "op_account" {

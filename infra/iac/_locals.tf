@@ -63,6 +63,12 @@ locals {
     var.byo_wallet_enabled[terraform.workspace] ? [local.tenant_hosts.byoui.wallet] : [],
   ))
 
+  # --- Delivery. §15 ---------------------------------------------------
+  # The version this environment runs, declared in ecs_services.vars.tf and
+  # merged to main to deploy. Indexed once here rather than at each of the
+  # fourteen call sites in ecs_services.tf and ecs_tasks_oneshot.tf.
+  image_tag = var.image_tag[terraform.workspace]
+
   # --- Compute ------------------------------------------------------------
   private_subnet_ids = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   public_subnet_ids  = [aws_subnet.subnet-a-pub.id, aws_subnet.subnet-b-pub.id]

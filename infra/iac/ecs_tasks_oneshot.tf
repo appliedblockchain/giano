@@ -31,7 +31,7 @@ resource "aws_ecs_task_definition" "provision-sponsorship" {
     # The container name the runbook's --overrides addresses. Do not rename it
     # without changing §18 step 8.
     name  = "provision-sponsorship"
-    image = "${module.ecr["wallet-api"].repository_url}:${var.image_tag}"
+    image = "${module.ecr["wallet-api"].repository_url}:${local.image_tag}"
 
     command   = var.provision_sponsorship_command
     essential = true
