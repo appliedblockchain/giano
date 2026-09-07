@@ -24,9 +24,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
+        # Every publishable package ships only `dist` (see its `files`), so all of them
+        # must be built here — and in dependency order, because each tsup dts build
+        # resolves its workspace deps through their built `dist` types, not their source.
+        # Same ordering constraint CI encodes in .github/workflows/ci.yml.
         run: |
           pnpm --filter @appliedblockchain/giano-contracts build:ts
+          pnpm --filter @appliedblockchain/giano-wallet-transport build
+          pnpm --filter @appliedblockchain/giano-wallet-core build
           pnpm --filter @appliedblockchain/giano-connector build
+          pnpm --filter @appliedblockchain/giano-wallet-kit build
+          pnpm --filter @appliedblockchain/giano-paymaster-sdk build
       - name: Configure GitHub Packages auth
         # auth only — no scope routing here (see Phase 1 scope-collision caveat in
         # packages/contracts/README.md); publish registry comes from each package's publishConfig
