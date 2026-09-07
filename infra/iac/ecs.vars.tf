@@ -1,3 +1,12 @@
+<<<<<<< HEAD
+# §9.1
+
+variable "ecs_container_insights" {
+  description = "disabled everywhere — the Agent covers what happens inside a task, the Datadog AWS integration covers whether the task exists; Container Insights duplicates both and bills CloudWatch custom-metric rates for the privilege (§9.1)"
+  type        = map(string)
+  default     = { dev = "disabled", stg = "disabled", prd = "disabled" }
+}
+=======
 variable "ecs_container_insights" {
   description = "[REQUIRED] Container Insights, per environment. `disabled` everywhere: the Agent covers what happens inside a task and the Datadog AWS integration covers whether the task exists, so Insights sits between the two, duplicates both, and charges CloudWatch custom-metric rates for it (§9.1)"
   type        = map(string)
@@ -9,3 +18,4 @@ variable "provision_sponsorship_command" {
   type        = list(string)
   default     = ["node", "dist/provision-sponsorship.js"]
 }
+>>>>>>> main

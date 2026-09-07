@@ -1,3 +1,9 @@
+<<<<<<< HEAD
+# The Datadog Agent and FireLens container definitions, appended to every task definition —
+# §17.3.3. `essential` differs between the two, deliberately: the Agent is false (a monitoring
+# failure must not take the application down), the router is true (a task with no logs is not
+# a task worth keeping alive, and the failure is otherwise silent).
+=======
 # The Datadog Agent and the FireLens log router. §17.3.3
 #
 # Both are built here and appended to every task definition's
@@ -8,10 +14,20 @@
 # can run is inside the task — every task definition carries its own. DD_TAGS
 # uses SPACE separators; the FireLens dd_tags option below uses COMMAS. They
 # are different parsers.
+>>>>>>> main
 
 locals {
   datadog_agent_container = {
     name   = "datadog-agent"
+<<<<<<< HEAD
+    image  = "public.ecr.aws/datadog/agent:latest"
+    cpu    = 0
+    memory = 256
+
+    essential = false
+
+    environment = [
+=======
     image  = var.datadog_agent_image
     cpu    = 0
     memory = 256
@@ -27,6 +43,7 @@ locals {
     environment = [
       # DD_HOSTNAME is deliberately absent: there is no host, and setting it
       # invents one that will collide across tasks.
+>>>>>>> main
       { name = "ECS_FARGATE", value = "true" },
       { name = "DD_SITE", value = var.datadog_site },
       { name = "DD_APM_ENABLED", value = "true" },
@@ -51,6 +68,10 @@ locals {
   }
 
   firelens_container = {
+<<<<<<< HEAD
+    name              = "log_router"
+    image             = "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable"
+=======
     name  = "log_router"
     image = var.firelens_image
 
@@ -59,6 +80,7 @@ locals {
     # logs go nowhere and the Docker log driver can back-pressure a writing
     # process. A task with no logs is not a task worth keeping alive, and
     # unlike telemetry the failure is silent.
+>>>>>>> main
     essential         = true
     memoryReservation = 100
 
@@ -67,6 +89,13 @@ locals {
       options = { "enable-ecs-log-metadata" = "true" }
     }
 
+<<<<<<< HEAD
+    # the one CloudWatch destination left in the deployment — §9.5
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.log_router.name
+=======
     # The one CloudWatch destination left in the deployment: if the router
     # cannot reach Datadog, its own stdout is the only place that says so —
     # and a router that logged to itself would have nowhere to report its own
@@ -75,11 +104,14 @@ locals {
       logDriver = "awslogs"
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.svc.name
+>>>>>>> main
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "ecs"
       }
     }
   }
+<<<<<<< HEAD
+=======
 
   # The application container's own logConfiguration — the stock inline-options
   # form, no custom Fluent Bit config file to maintain. D20, §17.3.4
@@ -118,4 +150,5 @@ locals {
   }
 
   app_log_configuration = var.datadog_enabled ? local.firelens_log_configuration : local.awslogs_log_configuration
+>>>>>>> main
 }

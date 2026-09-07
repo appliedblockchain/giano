@@ -1,3 +1,11 @@
+<<<<<<< HEAD
+# Giano — bootstrap root module. Applied ONCE, on its own, before the main root module is ever
+# initialised (specs/INFRASTRUCTURE.md §4.5, §18 step 4). Creates the S3 state bucket the main
+# root module's backend "s3" block points at — nothing else.
+#
+# Deliberately NO backend block: this module's own state stays local. The bucket cannot live in
+# the state it stores, and `-backend=false` does not solve that on a fresh clone (§4.5).
+=======
 # The state bucket, and nothing else. §4.5, §18 step 4
 #
 # A SEPARATE root module, applied once, with LOCAL state — and deliberately no
@@ -19,6 +27,7 @@
 # This module's own state stays local. It describes one bucket and holds
 # nothing sensitive, so losing it costs a `terraform import` and nothing else.
 # DO NOT migrate it into the bucket it manages.
+>>>>>>> main
 
 terraform {
   required_version = ">= 1.11"
@@ -31,6 +40,8 @@ terraform {
 provider "aws" {
   region  = var.aws_region
   profile = var.profile
+<<<<<<< HEAD
+=======
 
   default_tags {
     tags = {
@@ -42,10 +53,20 @@ provider "aws" {
       # rather than per-environment, and its own state is local.
     }
   }
+>>>>>>> main
 }
 
 module "s3-backend" {
   source = "../modules/aws/s3/backend"
 
+<<<<<<< HEAD
+  bucket_name = "giano-tfstate"
+
+  additional_tags = {
+    managed_by   = "terraform"
+    project_name = "giano"
+  }
+=======
   bucket_name = var.s3_tfstate_name
+>>>>>>> main
 }
