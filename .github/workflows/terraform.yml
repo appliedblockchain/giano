@@ -9,7 +9,7 @@ name: Terraform
 #
 # The version deployed is DECLARED, in `var.image_tag` (infra/iac/ecs_services.vars.tf),
 # not inferred from what is newest. Deploying is a one-line reviewed diff to that map.
-# specs/INFRASTRUCTURE.md §15.
+# specs/INFRASTRUCTURE.md §15.1.
 #
 # Terraform owns every task definition, which is why the rollout is an `apply` and not
 # `aws-actions/amazon-ecs-deploy-task-definition`. A RegisterTaskDefinition from CI
@@ -24,8 +24,6 @@ on:
 
 permissions:
   contents: read
-  # AWS OIDC. The role's own `sub` condition restricts who may actually use it.
-  id-token: write
 
 concurrency:
   # NOT cancel-in-progress: an apply cancelled between RegisterTaskDefinition and
@@ -34,20 +32,74 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: eu-west-2
-  AWS_ROLE_ARN: arn:aws:iam::379937780633:role/gianotest-dev-gha-terraform
-  # The workspace IS the environment (§4.1). It must already exist — bring-up
-  # created it (§18 step 5); `init` selects it, it does not create it.
-  TF_WORKSPACE: dev
+  # >= 1.11 for write-only arguments (§12.1). Pinned, not floating: a provider or
+  # core upgrade should be a reviewed diff like any other.
+  TF_VERSION: 1.11.4
   TF_IN_AUTOMATION: 'true'
 
 jobs:
-  terraform:
-    name: ${{ github.event_name == 'push' && 'Apply' || 'Plan' }} (dev)
+  # ---------------------------------------------------------------------------
+  # Runs on PRs, and holds NO credentials — deliberately. See the header of
+  # `deploy` for why a plan cannot run here.
+  # ---------------------------------------------------------------------------
+  check:
+    name: fmt + validate
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: infra/iac
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # -backend=false: no S3, no state, no AWS. It still downloads the providers,
+      # which is what `validate` needs to check resource schemas and every
+      # expression in the module — including that `local.image_tag` resolves and
+      # that the `var.image_tag` validation block parses.
+      - run: terraform init -backend=false -input=false
+      - run: terraform fmt -check -recursive -diff
+      - run: terraform validate
+
+  # ---------------------------------------------------------------------------
+  # Runs on main only, and this is a SECURITY boundary rather than a preference.
+  #
+  # `giano` is a public repository, and a `pull_request` workflow runs the PR's
+  # OWN copy of this file. Any AWS credential reachable from a PR job is therefore
+  # reachable by a step the PR author wrote — and `ReadOnlyAccess` on the plan role
+  # carries `secretsmanager:GetSecretValue`, so "read-only" would still exfiltrate
+  # every secret in the account. There is consequently no plan on PRs.
+  #
+  # The role's trust policy says the same thing independently: `sub` is pinned to
+  # `ref:refs/heads/main` (§10.5), and a pull_request event presents
+  # `repo:appliedblockchain/giano:pull_request`, which matches nothing. Same
+  # constraint that makes docker.yml gate its ECR steps on the ref, not the event.
+  #
+  # If a pre-merge plan is wanted later, the way to get one safely is a GitHub
+  # Environment with required reviewers on this job — approval gates the job
+  # before it is issued a token — plus a plan-only role without ASM read. That is
+  # a manual approval on every infra PR, so it is not the default here.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Plan + apply (dev)
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # AWS OIDC. The role's own `sub` condition restricts who may actually use it.
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/iac
+    env:
+      AWS_REGION: eu-west-2
+      AWS_ROLE_ARN: arn:aws:iam::379937780633:role/gianotest-dev-gha-terraform
+      # The workspace IS the environment (§4.1). It must already exist — bring-up
+      # created it (§18 step 5); `init` selects it, it does not create it.
+      TF_WORKSPACE: dev
     steps:
       - uses: actions/checkout@v7
 
@@ -77,16 +129,11 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          # >= 1.11 for write-only arguments (§12.1). Pinned, not floating: a
-          # provider or core upgrade should be a reviewed diff like any other.
-          terraform_version: 1.11.4
+          terraform_version: ${{ env.TF_VERSION }}
           # the wrapper rewrites stdout, which breaks `-detailed-exitcode` handling
           terraform_wrapper: false
 
       - run: terraform init -input=false
-
-      - run: terraform fmt -check -recursive
-      - run: terraform validate
 
       # `op_account` and OP_SERVICE_ACCOUNT_TOKEN are mutually exclusive — the
       # 1Password provider picks one, and the failure when both are set is a
@@ -109,21 +156,23 @@ jobs:
             -var 'op_account=' \
             -var 'ecs_wait_for_steady_state=true'
 
-      # Applying the SAVED plan, not re-planning: the apply is provably the change
-      # that was reviewed, and Terraform refuses a stale plan rather than widening it.
-      - name: Apply
-        if: github.event_name == 'push'
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: terraform apply -input=false dev.tfplan
-
-      - name: Summarise
-        if: always() && steps.plan.outcome == 'success'
+      - name: Summarise the plan
+        if: steps.plan.outcome == 'success'
         run: |
           {
-            echo '### Terraform (dev)'
+            echo '### Terraform plan (dev)'
             echo
             echo '```'
             terraform show -no-color dev.tfplan | head -300
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Applying the SAVED plan, not re-planning: the apply is provably the change
+      # that was summarised above, and Terraform refuses a stale plan rather than
+      # widening it. workflow_dispatch stops at the plan, so it is a safe way to
+      # see what a merge would do.
+      - name: Apply
+        if: github.event_name == 'push'
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: terraform apply -input=false dev.tfplan

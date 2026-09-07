@@ -3111,6 +3111,29 @@ That is not a formality. A merged change to the VPC, RDS, DNS or IAM fails the a
 explicit `AccessDenied` and waits for a human at a workstation. CI can roll an image out; it cannot
 rebuild the environment, and it cannot half-rebuild it quietly.
 
+It is a second role rather than a widening of `gha-deploy` for the same reason. Reusing that one
+means adding `ReadOnlyAccess` and state write to the role **the image build assumes on every push
+to `main`** — and `ReadOnlyAccess` carries `secretsmanager:GetSecretValue`. A Docker build step
+would then be able to read every secret in the account. Two roles cost one IAM resource and no
+extra operational step: both are Terraform, picked up by the same apply.
+
+#### Why there is no plan on pull requests
+
+`giano` is **public**, and a `pull_request` workflow runs the PR's own copy of the workflow file.
+Any credential a PR job can reach is therefore reachable by a step the PR author wrote, and a
+"read-only" plan role still reads Secrets Manager. So the PR job holds no credentials at all: it
+runs `terraform fmt -check` and `terraform validate -backend=false`, which needs no AWS and no
+1Password, and catches a malformed module without being able to touch anything.
+
+The role's trust policy enforces this independently — `sub` is pinned to `ref:refs/heads/main`
+([§10.5](#105-the-github-actions-oidc-role)) and a pull_request event presents
+`repo:appliedblockchain/giano:pull_request`, which matches nothing. The same constraint gates
+`docker.yml`'s ECR steps on the ref rather than the event ([§16.2](#162-an-ecr-aware-deploy-workflow-)).
+
+The cost is that the plan appears **after** merge, in the job summary, not on the PR. A
+`workflow_dispatch` from `main` stops at the plan and is the way to see what an apply would do
+without doing it. Recorded as [R29](#19-risks-and-open-items).
+
 #### The retention floor
 
 `var.ecr_lifecycle_image_count` stops being a cost setting once the tag is pinned. The lifecycle
@@ -4216,6 +4239,7 @@ third is the guarantee everything else in §12 rests on.
 | R26 | **CI can now apply to `dev`.** A merge to `main` touching `infra/iac/**` rolls the environment without a human at a workstation ([§15.1](#151-the-deployed-version-is-declared)), which is a reversal of the "local, no CI pipeline" position §12.1 held. | A bad merge changes a running environment | Bounded by permission rather than by convention: `gha-terraform` holds `ReadOnlyAccess` plus write on ECS, task definitions and the state object only ([§10.5.1](#1051-the-terraform-role)), so an apply that would touch the VPC, RDS, DNS or IAM fails `AccessDenied` and waits for a person. The tag is also declared rather than newest, so the *default* CI outcome of merging app code is that nothing deploys. |
 | R27 | **A pinned tag can be expired by the registry it is pinned to.** The lifecycle rule counts `tagStatus: any` and `docker.yml` publishes on every push to `main`, so the deployed tag ages out after `var.ecr_lifecycle_image_count` pushes — and nothing fails until the next task placement. | A service that has been running for weeks cannot restart, and the cause looks like ECS rather than retention | Retention raised to 30 everywhere, which is the floor the pin needs rather than a cost setting ([§15.1](#151-the-deployed-version-is-declared)). Not closed: the real fix is a lifecycle rule that never expires the tag the state says is deployed, which ECR cannot express. Redeploy to a current tag if it happens. |
 | R28 | **`terraform.yml` writes the assumed role into a `[default]` AWS profile on the runner.** `_init.tf` names a profile, and a named profile is resolved from shared config files a runner does not have — so the workflow materialises one rather than the module dropping its §4.6 promise that an operator's shell needs nothing set. | Short-lived credentials on the runner's disk; a CI-only step the module does not describe | Accepted: the runner is ephemeral and the session expires in an hour. The alternative — defaulting `var.profile` to `""` — moves the burden onto every operator, which is the trade §4.6 exists to refuse. Revisit if `stg` gets a pipeline. |
+| R29 | **The plan is not visible before merge.** A public repository runs a PR's own copy of the workflow, so a PR job cannot safely hold credentials ([§15.1](#151-the-deployed-version-is-declared)) — the plan therefore runs after merge, in the job summary. | An infra change is reviewed as a diff, not as a plan; a surprise shows up post-merge | Bounded by the same permission split that bounds the apply: the only thing CI can do unsupervised is change the image tag. `workflow_dispatch` from `main` plans without applying, which covers the case where the diff is not self-evident. The full fix is a GitHub Environment with required reviewers gating a plan job, plus a plan-only role with ASM read denied — a manual approval on every infra PR, deferred until that is worth paying. |
 
 ---
 
