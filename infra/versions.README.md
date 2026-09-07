@@ -34,12 +34,20 @@ without Terraform, and grepping HCL is not parsing.
 
 Revert the change and merge. The rollback path is the deployment path.
 
-## ⚠️ Changing anything else in `infra/iac` does NOT deploy
+## What `terraform apply` still does
 
-The ECS services carry `ignore_changes = [task_definition]`, so `terraform apply` writes a new
-task definition revision and leaves the running service on the old one. An env var, a CPU bump, a
-rotated secret, a sidecar change — all apply successfully and **none of them take effect**.
+Everything it did before. Terraform owns the task definitions and rolls the services onto them, so
+an apply that changes an env var, a secret version, cpu or a sidecar takes effect the way it always
+has — the services do **not** carry `ignore_changes = [task_definition]`, deliberately (§15.1).
 
-After any such apply, run `deploy.yml` manually (Actions → Deploy → Run workflow) to roll the
-services onto the revision you just wrote. R28 records why this is a convention rather than
-something the apply does for you.
+Two writers therefore touch the same attribute, and they agree because they read the same value:
+this file. Which means one thing to expect and not be alarmed by —
+
+> The first `terraform apply` after a deploy shows **all seven task definitions being replaced and
+> all seven services updating**. That is Terraform catching up to the revision the workflow already
+> rolled out, at the same tag. It restarts the tasks and re-runs `wallet-api`'s migrations, which
+> are tracked and idempotent.
+
+And one thing to be careful about: **applying from a stale branch downgrades the environment.**
+`local.image_tag` comes from this file in your working tree, so a branch cut before the last bump
+deploys the older tag. Rebase before you apply.

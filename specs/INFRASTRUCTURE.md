@@ -3075,37 +3075,47 @@ requests. That needs no credentials at all, which is what makes it safe in a **p
 a `pull_request` workflow runs the PR's own copy of the workflow file, so any credential such a job
 can reach, a PR author can reach.
 
-#### What that costs: Terraform stops owning the running revision
+#### Why the services do NOT carry `ignore_changes = [task_definition]`
 
 CI must register a task definition — with no Terraform there is no other way to get a new image into
-ECS — and `aws_ecs_service.task_definition` pointed at `aws_ecs_task_definition.svc.arn`. Two
-writers, one attribute. The attribute is handed over explicitly:
+ECS — and `aws_ecs_service.task_definition` carries a revision ARN, which Terraform also writes. Two
+writers, one attribute. The reflex is to hand the attribute over:
 
 ```hcl
 lifecycle {
-  ignore_changes = [desired_count, task_definition]
+  ignore_changes = [task_definition]   # deliberately NOT done
 }
 ```
 
-It joins `desired_count`, which the out-of-hours scheduler already owns
-([§17.2](#172-scheduling)) — the same pattern, for the same reason.
+**That is the right fix for a different design.** It is required when CI deploys *whatever is newest*
+while Terraform holds some other tag: the two disagree permanently and one has to yield. Here both
+writers read the **same declared value**, so after a rollout the next apply computes the tag
+`deploy.yml` just deployed, registers a revision with that image, and converges on it. Declaring the
+version is what removes the conflict — ignoring the attribute as well is redundant.
 
-Terraform still owns the task definition's **content**: cpu, memory, environment, secrets, the
-sidecars, the `migrate` init container, both IAM roles. It no longer owns which revision is
-**live**.
+Redundant, and expensive. It would leave Terraform owning the task definition's *content* — cpu,
+memory, environment, secrets, the sidecars, the `migrate` init container — while owning nothing about
+which revision is **live**. An apply that changed an environment variable, rotated a secret version
+or reconfigured a sidecar would then write a revision the running service ignores, and report
+success. *"The apply silently did nothing"* is a worse failure than anything it prevents, because
+there is nowhere for it to show up.
 
-> ⚠️ **An apply that is not a version bump will succeed and change nothing.**
->
-> Change an environment variable, bump cpu, rotate a secret version, reconfigure a sidecar —
-> `terraform apply` writes a new task definition revision and the running service ignores it. The
-> apply reports success. Nothing rolls.
->
-> **Run `deploy.yml` manually afterwards** (Actions → Deploy → Run workflow). It rolls the services
-> onto the current revision without changing the tag. Recorded as [R28](#19-risks-and-open-items),
-> and the reason the workflow has a `workflow_dispatch` trigger at all.
+What leaving it out costs instead — all of it visible in a plan, which is the failure direction to
+prefer:
 
-`terraform plan` also stops being the answer to "what is deployed". The declared tag is in git, the
-live revision is in `describe-services`, and nothing checks that they agree.
+| | |
+|---|---|
+| One redundant rollout | The first apply after a deploy replaces all seven task definitions and restarts all seven services, including re-running `wallet-api`'s migrations — tracked and idempotent, so a re-run is one query ([§9.6](#96-migrations--the-init-container)) |
+| Noisier plans | That apply shows around fourteen expected changes, which is the kind of noise that trains people to skim plans |
+| A stale checkout downgrades | An apply from a branch cut before a version bump rolls the environment back to the older tag. True of any stale apply; it matters more here because what it reverts is running application code |
+
+This rests on one condition: `deploy.yml` and Terraform must produce **equivalent** task definitions,
+or each will spend every apply undoing cosmetic differences from the other. That is why the workflow
+patches `DD_VERSION` rather than leaving it stale, and why it renders from the live definition rather
+than building one — everything Terraform owns passes through untouched.
+
+`terraform plan` therefore remains the answer to "what is running", which under `ignore_changes` it
+would not be.
 
 #### Three things the rollout has to get right
 
@@ -4223,8 +4233,6 @@ third is the guarantee everything else in §12 rests on.
 | R25 | **DNSimple answers `401` when the *account* in the path is wrong, not `404`.** The account id is not a credential, but getting it wrong is indistinguishable from a bad token at the point of failure. | Time lost debugging authentication when the problem is addressing | `var.dnsimple_account` carries a `validation` block rejecting anything non-numeric ([§6.1](#61-provider-and-zone)), and runbook step 1 resolves the id from `/whoami` and prints it for comparison. `GET /v2/whoami` carries no account in its path, so it is the test that separates the two cases. |
 | R26 | **CI can roll the services without a human.** A merge bumping `infra/versions.json` deploys ([§15.1](#151-the-deployed-version-is-declared)). | A bad merge changes a running environment | Bounded by what CI is *able* to do: no Terraform in the pipeline, so `gha-deploy` holds ECR push plus ECS register/update and the scoped `PassRole` and nothing else — it cannot touch the VPC, RDS, DNS, IAM or state. The tag is declared rather than newest, so the default outcome of merging app code is that **nothing deploys**. |
 | R27 | **A pinned tag can be expired by the registry it is pinned to.** The lifecycle rule counts `tagStatus: any` and `docker.yml` publishes on every push to `main`, so the deployed tag ages out after `var.ecr_lifecycle_image_count` pushes — and nothing fails until the next task placement. | A service running for weeks cannot restart, and the cause looks like ECS rather than retention | Retention raised to 30 everywhere, which is the floor the pin needs rather than a cost setting ([§15.1](#151-the-deployed-version-is-declared)). Not closed: the real fix is a lifecycle rule that never expires the tag the deployment declares, which ECR cannot express. Redeploy to a current tag if it happens. |
-| R28 | **An apply that is not a version bump succeeds and changes nothing.** `ignore_changes = [task_definition]` is what stops Terraform reverting CI's rollout ([§15.1](#151-the-deployed-version-is-declared)), and its cost is that a changed env var, secret version, cpu or sidecar writes a revision the running service ignores. The apply reports success. | A setting that was applied, reviewed and merged is not actually in effect — and nothing says so | **Open, and mitigated by convention rather than by mechanism: run `deploy.yml` manually after such an apply.** A convention will be forgotten at least once. Two alternatives were considered and can be adopted later without redoing anything else. **(a)** A `null_resource` with a `local-exec` `aws ecs update-service --force-new-deployment`, triggered on the task definition ARN — the operator's apply rolls out again, the pipeline still runs no Terraform. Costs an AWS CLI dependency on the workstation and makes every apply a deployment, including ones not meant to be. **(b)** Drop `ignore_changes`, put the tag back in Terraform's hands and let an apply be the only rollout — which is the design this replaced, and needs Terraform in the pipeline to keep merge-triggered deploys. Until one is adopted, `terraform plan` is not the answer to "what is running": the declared tag is in git, the live revision is in `describe-services`, and nothing reconciles them. |
-| R29 | **`render-task-definition` mutates what is DEPLOYED, not what Terraform last wrote.** It reads the live task definition and swaps the image, so a Terraform change that has not been rolled out yet is silently picked up by the next unrelated image deploy. | A setting arrives in production attached to a deployment that had nothing to do with it | The flip side of R28 and not separately fixable while both hold. It argues for keeping the gap short — run `deploy.yml` after an apply rather than letting revisions accumulate unrolled. |
 
 ---
 

@@ -11,18 +11,21 @@ name: Deploy
 # newest. Deploying is a one-line reviewed diff to that file; rolling back is
 # reverting it. specs/INFRASTRUCTURE.md §15.1.
 #
-# NO TERRAFORM RUNS HERE, by requirement. The consequence is that this workflow
-# is the writer of record for which revision each service runs, which is why
-# every ECS service carries `ignore_changes = [task_definition]`
-# (infra/iac/modules/aws/ecs-service). Read R28 before assuming an apply deploys.
+# NO TERRAFORM RUNS HERE, by requirement — the rollout is the ECS API directly.
+#
+# Terraform writes the same attribute this workflow does, and the services do NOT
+# carry `ignore_changes = [task_definition]`. They agree because both read the
+# tag from infra/versions.json, so an apply converges on what was deployed rather
+# than fighting it. That is only true while this workflow renders a task
+# definition EQUIVALENT to Terraform's — which is what the DD_VERSION patch below
+# is for, and why the base is the live definition rather than one built here. §15.1
 on:
   push:
     branches: [main]
     paths: ['infra/versions.json']
-  # The manual trigger is not a convenience. After ANY `terraform apply` that
-  # changes a task definition without changing the tag — an env var, a secret
-  # version, cpu, a sidecar — the services are still on the old revision until
-  # this is run. infra/versions.README.md.
+  # Re-roll the current declared tag without changing it: to replace tasks after
+  # an out-of-band change, or to recover a service the circuit breaker rolled
+  # back. Not needed after a `terraform apply` — that deploys on its own.
   workflow_dispatch:
 
 permissions:

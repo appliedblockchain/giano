@@ -95,23 +95,23 @@ resource "aws_ecs_service" "svc" {
   tags = merge(local.tags, { Name = local.name })
 
   lifecycle {
-    # Two attributes this module writes once and then stops owning.
+    # The out-of-hours scheduler owns desired_count, so a terraform apply at
+    # 20:00 does not silently scale the environment back up. §17.2
     #
-    # desired_count — the out-of-hours scheduler owns it, so a terraform apply
-    # at 20:00 does not silently scale the environment back up. §17.2
+    # task_definition is deliberately NOT here, though `deploy.yml` also writes
+    # it. Ignoring it is the reflex when CI moves a service, and it is wrong for
+    # this design: it would leave Terraform owning the task definition's content
+    # but not which revision is live, so an apply that changes an env var, a
+    # secret version or a sidecar would write a revision the running service
+    # ignores — succeeding while changing nothing.
     #
-    # task_definition — `deploy.yml` owns it, and this is the most consequential
-    # line in the module. Terraform is not in the deploy pipeline (§15.1), so the
-    # workflow is what registers a revision for a new image and points the
-    # service at it; without this, the next apply drags the service back to the
-    # revision Terraform last wrote — two writers, one attribute.
-    #
-    # THE COST: Terraform still owns the task definition's CONTENT but no longer
-    # owns which revision is LIVE. An apply that changes an env var, a secret
-    # version, cpu/memory or a sidecar writes a new revision the running service
-    # ignores — it reports success and changes nothing. Roll it out by running
-    # deploy.yml manually afterwards. R28, infra/versions.README.md.
-    ignore_changes = [desired_count, task_definition]
+    # It is safe to leave out because both writers read the SAME declared tag
+    # (infra/versions.json, §15.1). CI is not deploying "newest" against a
+    # Terraform that wants something else; the next apply computes the tag CI
+    # just deployed and converges on it. What that costs is one redundant
+    # rollout on the first apply after a deploy — visible in the plan, which is
+    # the failure direction to prefer.
+    ignore_changes = [desired_count]
   }
 
   depends_on = [aws_lb_listener_rule.svc]
