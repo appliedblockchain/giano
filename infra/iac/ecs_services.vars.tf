@@ -48,6 +48,7 @@ variable "entrypoint_address" {
 variable "paymaster_address" {
   description = "the deployed GianoPaymaster proxy address for this chain — §13.1, deploy it BEFORE the first apply that enables sponsorship"
   type        = string
+  default     = "0xf98b56de62ce88cEb70A9155582248cDBf2D0718"
 }
 
 # ⚠ REQUIRED for wallet-byo only (§14.5) — its bundle has no registry dependency, unlike

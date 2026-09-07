@@ -4,7 +4,7 @@
 
 resource "aws_security_group" "db-sg" {
   name        = "${var.name_prefix}-${var.component}-db-sg"
-  description = "giano ${var.component} db — 5432 from the tasks security group only"
+  description = "giano ${var.component} db - 5432 from the tasks security group only"
   vpc_id      = var.vpc_id
 
   tags = merge(local.tags, { Name = "${var.name_prefix}-${var.component}-db-sg" })

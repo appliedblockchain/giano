@@ -138,12 +138,24 @@ resource "aws_ecs_service" "svc" {
 
   enable_execute_command = var.enable_execute_command
 
-  # the out-of-hours scheduler (§17.2) owns desired_count between applies
+  # Two things outside Terraform legitimately own a field here (§9.3): the out-of-hours
+  # scheduler (§17.2) owns desired_count between applies, and CI owns WHICH task definition
+  # revision is actually deployed. Terraform still registers a new aws_ecs_task_definition
+  # revision whenever its content changes — it just never rolls the service onto it. Moving
+  # the service to the latest revision is `aws ecs update-service --task-definition ...`, run
+  # by the deploy workflow (§15), not `terraform apply`.
   lifecycle {
-    ignore_changes = [desired_count]
+    ignore_changes = [desired_count, task_definition]
   }
 
   tags = merge(local.tags, { Name = local.name })
 
-  depends_on = [aws_iam_role_policy.exec]
+  # The `load_balancer` block above only creates an implicit dependency on the TARGET GROUP
+  # resource, not on the LISTENER RULE that actually associates it with the ALB — nothing in
+  # this resource's arguments references aws_lb_listener_rule.svc, so without this Terraform
+  # has no graph edge forcing the rule to exist first. ECS's CreateService API validates that
+  # the target group already has an associated load balancer, so a race loses with
+  # "does not have an associated load balancer". aws_lb_listener_rule.svc has count = 0 when
+  # alb_enabled is false (bundler), which depends_on handles fine — zero instances to wait on.
+  depends_on = [aws_iam_role_policy.exec, aws_lb_listener_rule.svc]
 }

@@ -10,5 +10,5 @@ variable "aws_region" {
 variable "profile" {
   description = "AWS CLI/SDK profile used once, by hand, to create the state bucket"
   type        = string
-  default     = "giano"
+  default     = "default"
 }

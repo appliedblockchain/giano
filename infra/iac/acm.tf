@@ -13,11 +13,22 @@ resource "aws_acm_certificate" "main" {
   tags = { Name = "${local.name_prefix}-cert" }
 }
 
-resource "dnsimple_zone_record" "acm_validation" {
-  for_each = {
+locals {
+  # Keyed by domain_name, aws_acm_certificate.main.domain_validation_options has TWO entries —
+  # one for local.dns_apex, one for its "*." SAN — but ACM issues the SAME validation CNAME
+  # for a domain and its own wildcard, so both entries carry an identical
+  # resource_record_name/type/value. Grouping by record name (with `...` so a genuine
+  # collision doesn't error) and keeping one representative per group collapses that back down
+  # to the single DNS record ACM actually expects to see created.
+  acm_validation_grouped = {
     for dvo in aws_acm_certificate.main.domain_validation_options :
-    dvo.domain_name => dvo
+    dvo.resource_record_name => dvo...
   }
+  acm_validation_records = { for k, v in local.acm_validation_grouped : k => v[0] }
+}
+
+resource "dnsimple_zone_record" "acm_validation" {
+  for_each = local.acm_validation_records
 
   zone_name = data.dnsimple_zone.main.name
   # DNSimple names are relative to the zone; ACM emits them fully qualified.
@@ -56,8 +67,10 @@ resource "aws_acm_certificate" "tenant_wallet" {
 
 resource "dnsimple_zone_record" "tenant_wallet_validation" {
   for_each = {
+    # domain_validation_options is a SET of object — sets have no index, only `one()` (safe
+    # here: each tenant cert carries exactly one domain, no SANs, so exactly one element).
     for host, cert in aws_acm_certificate.tenant_wallet :
-    host => cert.domain_validation_options[0]
+    host => one(cert.domain_validation_options)
   }
 
   zone_name = data.dnsimple_zone.main.name

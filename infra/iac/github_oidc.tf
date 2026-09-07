@@ -2,13 +2,16 @@
 # giano-dev-gha-deploy, trusted by it with a subject condition pinned to the repository AND
 # the ref. An unpinned repo:appliedblockchain/giano:* subject would let a workflow on any
 # branch — including one opened by a fork's pull request — assume the role.
-
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
-
-  tags = { Name = "${local.name_prefix}-github-oidc" }
+#
+# The OIDC provider itself is a DATA SOURCE, not a resource: AWS allows exactly one
+# identity provider per issuer URL per ACCOUNT, so it is account-level shared infrastructure,
+# not something any one project owns. If this account already runs other GitHub-Actions-based
+# projects, one of them created it already — `terraform destroy` on this workspace must never
+# be able to take it away from them. Provisioning it (if it genuinely does not exist yet in a
+# fresh account) is a one-off `aws iam create-open-id-connect-provider`, not this Terraform's
+# job.
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 data "aws_iam_policy_document" "gha_assume" {
@@ -17,7 +20,7 @@ data "aws_iam_policy_document" "gha_assume" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
 
     condition {
@@ -62,6 +65,23 @@ data "aws_iam_policy_document" "gha_deploy" {
     sid       = "EcsDeploy"
     actions   = ["ecs:UpdateService", "ecs:DescribeServices"]
     resources = ["arn:aws:ecs:${var.aws_region[terraform.workspace]}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.ecs.name}/*"]
+  }
+
+  # ecs:RegisterTaskDefinition and ecs:DescribeTaskDefinition support NO resource-level
+  # permissions — a task-definition family has no ARN to scope to before it exists. Resource
+  # "*" is a limitation of the API, not a shortcut, and it is the one place in this document a
+  # policy says "*" for something other than ecr:GetAuthorizationToken. What keeps this from
+  # being "register anything" is PassEcsRoles below: a revision is only useful if it can
+  # reference an execution role and a task role, and this role may pass only the two belonging
+  # to this deployment — a revision naming any other role fails at RegisterTaskDefinition.
+  #
+  # ecs:DeregisterTaskDefinition is deliberately NOT granted. Old revisions accumulating is
+  # untidy and free; a deploy role that can deregister is a deploy role that can break a
+  # rollback.
+  statement {
+    sid       = "EcsTaskDefinition"
+    actions   = ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"]
+    resources = ["*"]
   }
 
   # iam:PassRole on the execution and task roles ONLY — no broader grant.

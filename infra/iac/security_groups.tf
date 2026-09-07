@@ -6,7 +6,7 @@
 
 resource "aws_security_group" "alb-sg" {
   name        = "${local.name_prefix}-alb-sg"
-  description = "the ALB — 443 and 80 from the internet"
+  description = "the ALB - 443 and 80 from the internet"
   vpc_id      = aws_vpc.vpc.id
 
   tags = { Name = "${local.name_prefix}-alb-sg" }
@@ -14,7 +14,7 @@ resource "aws_security_group" "alb-sg" {
 
 resource "aws_security_group" "tasks-sg" {
   name        = "${local.name_prefix}-tasks-sg"
-  description = "every ECS task — 8080 from the ALB only"
+  description = "every ECS task - 8080 from the ALB only"
   vpc_id      = aws_vpc.vpc.id
 
   tags = { Name = "${local.name_prefix}-tasks-sg" }
@@ -22,7 +22,7 @@ resource "aws_security_group" "tasks-sg" {
 
 resource "aws_security_group" "bundler-sg" {
   name        = "${local.name_prefix}-bundler-sg"
-  description = "the bundler — 4337 from the tasks security group only"
+  description = "the bundler - 4337 from the tasks security group only"
   vpc_id      = aws_vpc.vpc.id
 
   tags = { Name = "${local.name_prefix}-bundler-sg" }

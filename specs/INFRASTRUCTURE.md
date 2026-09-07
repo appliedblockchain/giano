@@ -2131,8 +2131,10 @@ Every service definition:
   ALB target; `0`/`100` for `bundler`, which has no target and only one task.
 - `wait_for_steady_state = true` in CI, so a failed deploy fails the workflow.
 - `enable_execute_command` from a workspace-keyed variable — on in `dev`, off in `prd`.
-- `lifecycle { ignore_changes = [desired_count] }` so the out-of-hours scheduler
-  ([§17.2](#172-scheduling)) does not fight Terraform.
+- `lifecycle { ignore_changes = [desired_count, task_definition] }` — `desired_count` so the
+  out-of-hours scheduler ([§17.2](#172-scheduling)) does not fight Terraform, and `task_definition`
+  so a `terraform apply` does not undo a deploy. Both are cases of something outside Terraform
+  legitimately owning a field.
 
 ### 9.4 Service discovery
 
@@ -2295,7 +2297,7 @@ other. Seven roles cost nothing and keep the answer to "what can this container 
 | `<service>-exec` | `ecr:GetAuthorizationToken` (`*`, as AWS requires); `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchCheckLayerAvailability` on **that service's repository ARN only**; `logs:CreateLogStream` + `logs:PutLogEvents` on **its own log-router group ARN only**; `secretsmanager:GetSecretValue` on **exactly the secret ARNs in its `secrets` block, plus `datadog-api-key`**; `kms:Decrypt` on the ASM CMK |
 | `<service>-task` | nothing by default. `ssmmessages:*` for Session Manager only when `enable_execute_command` is true |
 | `giano-dev-scheduler` | `ecs:UpdateService` on this cluster's services only ([§17.2](#172-scheduling)) |
-| `giano-dev-gha-deploy` | ECR push to the six repositories; `ecs:UpdateService` and `ecs:DescribeServices` on this cluster; `iam:PassRole` on **the execution and task roles only** |
+| `giano-dev-gha-deploy` | ECR push to the six repositories; `ecs:RegisterTaskDefinition` and `ecs:DescribeTaskDefinition` (`*` — see below); `ecs:UpdateService` and `ecs:DescribeServices` on this cluster's services; `iam:PassRole` on **the execution and task roles only** |
 
 Note the shape of every ECR and Logs grant: the *specific* ARN, never `*`. `AmazonECSTaskExecutionRolePolicy`
 is the AWS-managed policy that would do this in one line, and it grants ECR pull and log write across
@@ -2438,6 +2440,29 @@ one opened by a fork's pull request — assume the role. The allowed refs are a 
 variable so `dev` can trust a feature branch and `prd` only `main`.
 
 No static credentials anywhere in CI, and no `iam:PassRole` beyond the task and execution roles.
+
+#### What the deploy actually needs
+
+The workflow's ECS half is three calls, and each needs something different:
+
+| Call | Actions | Resource |
+|---|---|---|
+| read the current revision to base the new one on | `ecs:DescribeTaskDefinition` | `*` |
+| register a revision carrying the new image tag | `ecs:RegisterTaskDefinition` | `*` |
+| point the service at it | `ecs:UpdateService` | this cluster's services |
+| `wait services-stable` — polling, not a distinct action | `ecs:DescribeServices` | this cluster's services |
+
+**`ecs:RegisterTaskDefinition` and `ecs:DescribeTaskDefinition` must be `Resource: "*"`.** AWS
+supports no resource-level permissions for either — a task definition family has no ARN to scope to
+before it exists. This is the one place in this document where a policy says `*` for something other
+than `ecr:GetAuthorizationToken`, and it is a limitation of the API rather than a shortcut. What
+keeps it from being a general "register anything" grant is `iam:PassRole`: a task definition is only
+useful if it can reference an execution role and a task role, and this role may pass **only** the two
+belonging to this deployment. A revision registered with any other role fails at
+`RegisterTaskDefinition`.
+
+`ecs:DeregisterTaskDefinition` is deliberately **not** granted. Old revisions accumulate, which is
+untidy and free; a deploy role that can deregister is a deploy role that can break a rollback.
 
 ---
 
@@ -3025,11 +3050,26 @@ Extend `.github/workflows/docker.yml`, or add a sibling `deploy-dev.yml` trigger
 deployment branch and by `workflow_dispatch`:
 
 ```
-assume the OIDC role (no static credentials)     §10.5
-build + push each image to ECR, tagged <sha>     §11
-aws ecs update-service      → each of the seven services, new task definition revision
-aws ecs wait services-stable
+assume the OIDC role (no static credentials)          §10.5
+build + push each image to ECR, tagged <sha>          §11
+aws ecs describe-task-definition   → the current revision, per service
+aws ecs register-task-definition   → same JSON with image retagged <sha>
+aws ecs update-service             → point the service at the new revision
+aws ecs wait services-stable       → fails the workflow if it never stabilises
 ```
+
+**Terraform owns the task definition; CI owns which revision is deployed.** Terraform registers a
+revision carrying `var.image_tag` and defines everything else about the container — cpu, memory,
+environment, secrets, the sidecars, the init container. CI registers a revision that differs from
+the current one in the image tag alone, and moves the service to it. The service's
+`task_definition` is in `ignore_changes` ([§9.3](#93-the-ecs-service-module)) so the two do not
+fight.
+
+The consequence is worth stating plainly, because it surprises people: **a task-definition change
+made in Terraform does not roll out on `terraform apply`.** The apply registers a new revision; the
+service keeps running the revision CI last deployed. Adding an environment variable or raising a
+memory limit takes effect on the next deploy. If it is needed sooner, run the workflow — not a
+targeted apply.
 
 **There is no migration step in the workflow.** Schema is applied by the `migrate` init container as
 each new `wallet-api` task starts ([§9.6](#96-migrations--the-init-container)), so the ordering that
@@ -3242,8 +3282,9 @@ Two EventBridge Scheduler schedules invoking `ecs:UpdateService` through `giano-
 Weekends stay down: Friday's `down` fires and nothing brings it back until Monday. Gated by
 `var.enable_schedule[terraform.workspace]` — on in `dev`, off in `stg` and `prd`.
 
-Every service carries `lifecycle { ignore_changes = [desired_count] }` so a `terraform apply` at
-20:00 does not silently scale the environment back up.
+Every service carries `lifecycle { ignore_changes = [desired_count, task_definition] }`
+([§9.3](#93-the-ecs-service-module)), so a `terraform apply` at 20:00 neither scales the environment
+back up nor rolls back the last deploy.
 
 The visible symptom of the schedule is a 502 from the ALB outside working hours. Documenting that in
 the team channel is cheaper than the alarm that would explain it.

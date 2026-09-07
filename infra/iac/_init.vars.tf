@@ -27,9 +27,9 @@ variable "profile" {
   description = "AWS CLI/SDK profile used by the provider, per environment"
   type        = map(string)
   default = {
-    dev = "giano-dev"
-    stg = "giano-stg"
-    prd = "giano-prd"
+    dev = "default"
+    stg = "default"
+    prd = "default"
   }
 }
 
