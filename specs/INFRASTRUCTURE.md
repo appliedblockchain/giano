@@ -3021,25 +3021,36 @@ only person who can change anything through it.
 
 ## 15. Images and delivery
 
-Extend `.github/workflows/docker.yml`, or add a sibling `deploy-dev.yml` triggered on push to the
-deployment branch and by `workflow_dispatch`:
+`.github/workflows/docker.yml` carries the image half, on push to `main` and by
+`workflow_dispatch`:
 
 ```
 assume the OIDC role (no static credentials)     §10.5
-build + push each image to ECR, tagged <sha>     §11
-aws ecs update-service      → each of the seven services, new task definition revision
-aws ecs wait services-stable
+build + push the six deployed images to ECR, tagged <full commit sha>     §11
 ```
+
+**The rollout is deliberately not in the workflow.** Terraform owns every task definition
+(`image = "${repository_url}:${var.image_tag}"`, [§14](#14-the-services)), so a
+`RegisterTaskDefinition` from CI would publish a revision that the next `terraform apply` reverts —
+two writers, one resource. The tag goes to Terraform instead of to `update-service`:
+
+```bash
+terraform apply -var image_tag="$(git rev-parse HEAD)"
+```
+
+That is also why the image tag is the **full** 40-character SHA and not `sha-<short>`: it is copied
+from `git rev-parse HEAD` into `-var image_tag=`, unaltered. `ecs:UpdateService` stays on the role
+([§10.5](#105-the-github-actions-oidc-role)) for the day the rollout becomes a workflow of its own.
 
 **There is no migration step in the workflow.** Schema is applied by the `migrate` init container as
 each new `wallet-api` task starts ([§9.6](#96-migrations--the-init-container)), so the ordering that
 used to be the workflow's responsibility is now enforced by ECS: the application container does not
 start unless the migration exited `0`. A pipeline cannot forget to do something it does not do.
 
-That also changes what a failed migration looks like from CI's side. `wait services-stable` fails,
-the deployment circuit breaker rolls `wallet-api` back to the previous task definition, and the
-reason is in the migrate container's logs in Datadog rather than in the workflow output. Worth
-knowing before the first time it happens.
+That also changes what a failed migration looks like from the deployer's side. The wait for steady
+state fails (`var.ecs_wait_for_steady_state`), the deployment circuit breaker rolls `wallet-api`
+back to the previous task definition, and the reason is in the migrate container's logs in Datadog
+rather than in the apply output. Worth knowing before the first time it happens.
 
 The workflow needs no `run-task` at all. `provision-sponsorship`
 ([§9.7](#97-one-shot-tasks)) is an occasional administrative action run from a workstation, not part
@@ -3069,12 +3080,25 @@ The fix mirrors what `wallet-web` and `paymaster-admin` already do: a `docker/` 
 and `src/config.ts` reading the fetched `/config.json` with the `VITE_*` values as build-time
 fallbacks for `pnpm dev`.
 
-### 16.2 An ECR-aware deploy workflow
+### 16.2 An ECR-aware deploy workflow ✅
 
-`.github/workflows/docker.yml` pushes to GHCR only. It needs an OIDC-authenticated ECR push and the
-`update-service` sequence from [§15](#15-images-and-delivery) — either extended in place or as a
-sibling `deploy-dev.yml`. No migration step: the init container handles it
-([§9.6](#96-migrations--the-init-container)). GHCR pushes stay.
+Landed in `.github/workflows/docker.yml`, extended in place rather than as a sibling
+`deploy-dev.yml`: one build per image feeds both tag sets, so the digest in ECR is the one that was
+validated on the PR and published to GHCR, not a rebuild of the same commit. GHCR pushes stay
+([§11](#11-ecr)).
+
+Three constraints shaped it, and each is a rule the registry or the role enforces rather than a
+convention CI is trusted to keep:
+
+| Constraint | Consequence in the workflow |
+|---|---|
+| The role trusts `ref:refs/heads/main` only ([§10.5](#105-the-github-actions-oidc-role)) | The ECR steps are gated on the **ref**, not the event. A PR (`refs/pull/N/merge`) and a `v*` tag push (`refs/tags/v*`) skip ECR and still publish to GHCR — a release tag stays green |
+| Tags are `IMMUTABLE` ([§11](#11-ecr)) | No `latest` to ECR, so ECR gets a tag set of its own; and a re-run at an already-published commit drops just the ECR tag instead of failing on `PutImage` |
+| The lifecycle policy expires on `tagStatus: any` past 10 | `provenance: false` — an attestation manifest per image would spend retention meant for ten deployable commits |
+
+Not included: the `update-service` sequence. Terraform owns the task definitions, so the tag is
+handed to `terraform apply -var image_tag=<sha>` ([§15](#15-images-and-delivery)). No migration step
+either: the init container handles it ([§9.6](#96-migrations--the-init-container)).
 
 ### 16.3 A deployable sponsorship provisioner
 
@@ -3843,20 +3867,21 @@ are empty.** Expected.
 
 #### Step 6 — First deploy 🖥️
 
-One run: build, push to ECR, and roll the services out. **The migration happens inside the rollout** —
-each new `wallet-api` task runs its `migrate` init container and refuses to start the application
-until it exits `0` ([§9.6](#96-migrations--the-init-container)). There is nothing to sequence by
-hand and no migration step in the workflow.
+Two halves, in this order: the workflow builds and pushes the images, then an apply pins the tag and
+rolls the services onto it ([§15](#15-images-and-delivery)). **The migration happens inside the
+rollout** — each new `wallet-api` task runs its `migrate` init container and refuses to start the
+application until it exits `0` ([§9.6](#96-migrations--the-init-container)). There is nothing to
+sequence by hand and no migration step in either half.
 
 ```bash
-gh workflow run deploy-dev.yml --ref "$(git rev-parse --abbrev-ref HEAD)"
+gh workflow run docker.yml --ref main
 gh run watch
 ```
 
 Confirm every repository received the current commit's image:
 
 ```bash
-SHA=$(git rev-parse --short HEAD)
+SHA=$(git rev-parse HEAD)
 PREFIX=$(terraform output -raw name_prefix)
 for R in wallet-api wallet-web paymaster-admin example wallet-byo bundler; do
   aws ecr describe-images \
@@ -3865,6 +3890,12 @@ for R in wallet-api wallet-web paymaster-admin example wallet-byo bundler; do
     --query "imageDetails[0].imageTags" --output text >/dev/null 2>&1 \
     && echo "  ${R}: ok" || echo "  ${R}: MISSING"
 done
+```
+
+Then roll the services onto that tag:
+
+```bash
+terraform apply -var image_tag="${SHA}"
 ```
 
 **If `wallet-api` never stabilises, suspect the migration first.** This is the first time

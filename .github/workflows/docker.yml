@@ -6,6 +6,11 @@ name: Docker images
 # paymaster-admin, uses upstream images for the rest, and runs the demo dApp and the BYO
 # wallet host-side from source rather than as images — so without this a broken Dockerfile
 # first surfaces in the job that publishes it.
+#
+# Two registries, one build. GHCR is how Giano is DISTRIBUTED to client projects; ECR is how
+# the dev DEPLOYMENT is fed (specs/INFRASTRUCTURE.md §11, §15, §16.2). Because both tag sets
+# feed a single build-push-action, the digest in ECR is the one that was validated here and
+# published to GHCR — not a rebuild that happens to come from the same commit.
 on:
   push:
     branches: [main]
@@ -16,6 +21,18 @@ on:
 permissions:
   contents: read
   packages: write
+  # AWS OIDC for the ECR push. Required at the workflow level for the job to receive a token
+  # at all; the role's own `sub` condition is what actually restricts who may use it.
+  id-token: write
+
+# Not secrets: every value here is in specs/INFRASTRUCTURE.md (§10.5, §11). Kept together so
+# that pointing this workflow at another environment is a two-line change — the ECR namespace
+# carries the environment (`giano-dev/wallet-api`) precisely so dev and prd cannot collide.
+env:
+  ECR_REGISTRY: 379937780633.dkr.ecr.eu-west-2.amazonaws.com
+  ECR_NAMESPACE: giano-dev
+  AWS_REGION: eu-west-2
+  AWS_ROLE_ARN: arn:aws:iam::379937780633:role/giano-dev-gha-deploy
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -29,30 +46,43 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `ecr` is the repository under ${ECR_NAMESPACE}, or '' for an image this deployment
+        # does not run. Six repositories, deliberately not eight — infra/iac/ecr.vars.tf.
+        # Empty rather than absent: an unset key compares equal to '' only through GitHub's
+        # null-to-number coercion, which is not a rule to rest a publish decision on.
         image:
           - name: giano-wallet-api
             dockerfile: services/wallet-api/Dockerfile
+            ecr: wallet-api
           - name: giano-wallet-web
             dockerfile: services/wallet-web/Dockerfile
+            ecr: wallet-web
           - name: giano-paymaster-admin
             dockerfile: services/paymaster-admin/Dockerfile
+            ecr: paymaster-admin
           # The demo dApp. ONE image runs twice in the deployment — as custom-example and
           # custom-example-byoui, differing only in GIANO_WALLET_URL and GIANO_APP_LABEL —
           # which is why infra/iac has six ECR repositories for seven services.
           - name: giano-example
             dockerfile: services/custom-example/Dockerfile
+            ecr: example
           # Tenant `byoui`'s wallet origin: the reference SPA a real BYO tenant copies. It
           # lives under e2e/ because it is also the e2e fixture, and it is the only published
           # image Giano would not run in a real deployment — a real BYO tenant hosts its own
           # UI, so it is deployed in dev only (infra/iac var.byo_wallet_enabled).
           - name: giano-wallet-byo
             dockerfile: e2e/wallet-byo/Dockerfile
+            ecr: wallet-byo
           - name: giano-bundler
             dockerfile: services/bundler/Dockerfile
+            ecr: bundler
+          # GHCR only: neither is deployed to AWS, so neither has an ECR repository (§11).
           - name: giano-devnet
             dockerfile: services/devnet/Dockerfile
+            ecr: ''
           - name: giano-contracts-deployer
             dockerfile: packages/contracts/Dockerfile.deployer
+            ecr: ''
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +100,45 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- ECR ------------------------------------------------------------------------
+      # Gated on the REF, not the event. `giano-dev-gha-deploy` trusts
+      # `repo:appliedblockchain/giano:ref:refs/heads/main` and nothing else
+      # (infra/iac/github_oidc.vars.tf gha_allowed_refs), so a pull_request
+      # (refs/pull/N/merge) and a v* tag push (refs/tags/v*) are both denied by the role
+      # itself. Skipping them here is what keeps a release tag green: it still publishes to
+      # GHCR, which is where a tagged release belongs.
+      #
+      # The ECR steps below chain off `steps.aws.outcome` rather than restating the condition
+      # — a skipped step's outcome is 'skipped', never 'success'.
+      - name: Assume the deploy role
+        id: aws
+        if: matrix.image.ecr != '' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Log in to ECR
+        if: steps.aws.outcome == 'success'
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Skip the ECR tag if this commit is already published
+        id: ecr
+        if: steps.aws.outcome == 'success'
+        # The repositories are IMMUTABLE (infra/iac/ecr.vars.tf), so re-running a green build
+        # at the same commit would fail on PutImage with ImageAlreadyExistsException — every
+        # "Re-run failed jobs" on a published commit would be red. Dropping just the ECR tag
+        # keeps the build itself, and the mutable GHCR push, exactly as they were.
+        run: |
+          repo="$ECR_NAMESPACE/${{ matrix.image.ecr }}"
+          if aws ecr describe-images \
+              --repository-name "$repo" \
+              --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "::notice::$repo:$GITHUB_SHA already published — ECR tag skipped"
+            echo 'push=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'push=true' >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: docker/metadata-action@v6
         id: meta
         with:
@@ -78,6 +147,17 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha
+      - uses: docker/metadata-action@v6
+        id: meta-ecr
+        if: steps.ecr.outputs.push == 'true'
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_NAMESPACE }}/${{ matrix.image.ecr }}
+          # The full commit SHA and nothing else. `latest` is not repushable to an IMMUTABLE
+          # repository, and the tag is consumed verbatim — `terraform apply -var
+          # image_tag=<sha>` (infra/iac/ecs_services.vars.tf) — so it is the 40-character
+          # $GITHUB_SHA, not metadata-action's default `sha-<short>`.
+          tags: type=sha,format=long,prefix=
+
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -87,8 +167,17 @@ jobs:
           # ecs-service.tf, ecs_tasks_oneshot.tf), so arm64 is the leg that actually gets
           # deployed — validating only amd64 on a PR would skip the one that matters
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
+          # GHCR always, ECR when this ref may push there. metadata-action contributes
+          # nothing when skipped, and an empty entry in the list is ignored.
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ steps.meta-ecr.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # No provenance attestation. It publishes an extra untagged attestation manifest
+          # per image, and the ECR lifecycle policy expires on `tagStatus: any` past 10
+          # images (infra/iac/modules/aws/ecr/ecr.tf) — so attestations would spend the
+          # retention budget that is meant to hold ten deployable commits.
+          provenance: false
           cache-from: type=gha
           # PRs read main's cache but never write: branch cache entries are invisible to main
           # and would only evict it from the repo's shared 10GB budget
