@@ -74,13 +74,20 @@ Deterministic: baked into `e2e/devnet/state.json` and mirrored in `e2e/devnet/ad
 | EntryPoint v0.7 (canonical, all chains) | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 | `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` |
 | `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` |
-| **`GianoPaymaster` (proxy)** | `0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2` |
-| `GianoPaymaster` implementation | `0x25fd38704b938F656cCB4806e17A491d56b41ba8` |
+| **`GianoPaymaster` (proxy)** | `0xf98b56de62ce88cEb70A9155582248cDBf2D0718` |
+| `GianoPaymaster` implementation | `0xFc6e7a0b9b5E9E27C8E2caf8961A13FD16ebd818` |
 | `PermissivePaymaster` (test only) | `0xCbc040482c1dd07D533800874DC37De7b18c8092` |
 | Test ERC-20 | `0x9967bDf929856643e92EF65eefdE1fF8250774D8` |
 
 The **proxy** address is what tenants fund and what the admin console and `USEROP_ALLOWED_PAYMASTERS`
 point at. The implementation address changes on every upgrade; the proxy must not.
+
+These are not devnet-specific: the salt is fixed and nothing operator-specific reaches the init
+code, so this build lands on the same addresses on every chain. They are frozen as
+`CANONICAL_SPONSORSHIP_PAYMASTER` and friends in `packages/contracts/canonical.ts`, and the
+Determinism workflow fails if a fresh deployment stops matching. If you change a paymaster source
+file, expect that failure and re-freeze deliberately — then regenerate this state with
+`pnpm --filter @appliedblockchain/giano-e2e devnet:generate`.
 
 ### Well-known addresses the stack probes
 
