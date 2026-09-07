@@ -2439,28 +2439,6 @@ variable so `dev` can trust a feature branch and `prd` only `main`.
 
 No static credentials anywhere in CI, and no `iam:PassRole` beyond the task and execution roles.
 
-#### 10.5.1 The Terraform role
-
-`gha-terraform` is a **second** role, sharing that trust policy and differing only in permissions.
-It exists because the two CI jobs have different blast radii and should not borrow each other's:
-`docker.yml` pushes images on every push to `main`, `terraform.yml` changes what is running, and one
-role for both would give the image build permission to roll the services.
-
-| Half | Grant |
-|---|---|
-| read — `plan` reads every resource in the account | AWS-managed `ReadOnlyAccess` |
-| write — `apply` of a version bump | `ecs:UpdateService`, task definition register/deregister, the scoped `iam:PassRole`, and the state object under `env/<workspace>/` |
-
-`ReadOnlyAccess` is an AWS-managed policy, which [§10.2](#102-what-each-role-gets) avoids for *task*
-roles — the objection there is that `AmazonECSTaskExecutionRolePolicy` grants a running container
-ECR pull and log write account-wide. Here it is a read-only grant to a CI role that already needs to
-read everything to produce a plan, and hand-enumerating that would be a list to maintain forever
-that is strictly worse than AWS's.
-
-Nothing else is granted, deliberately: a merged change touching the VPC, RDS, DNS or IAM fails the
-apply with an explicit `AccessDenied` rather than being applied by CI
-([§15.1](#151-the-deployed-version-is-declared)).
-
 ---
 
 ## 11. ECR
@@ -2524,7 +2502,7 @@ section is the design, the constraints it must obey, and the weaknesses it knowi
 | `1Password/onepassword` | ≥ 3.1 | `ephemeral "onepassword_item"`, `note_value_wo` |
 | `hashicorp/aws` | 6.x | `secret_string_wo`, `password_wo` |
 | 1Password plan | Teams | see the limits below |
-| Execution | local, **and CI for the rollout** | state in S3 with SSE-KMS. `terraform.yml` plans and applies `dev` when `infra/iac/**` changes ([§15.1](#151-the-deployed-version-is-declared)); everything else is still a workstation |
+| Execution | local, no CI pipeline | state in S3 with SSE-KMS. Still true, and now a requirement rather than a default: the rollout is `deploy.yml` calling the ECS API, not a `terraform apply` ([§15.1](#151-the-deployed-version-is-declared)) |
 
 The Teams plan's rate limits are not a footnote — **they drove the entire design**:
 
@@ -2545,7 +2523,7 @@ provider "onepassword" {
 | Context | How | Notes |
 |---|---|---|
 | Local | `var.op_account` | Uses the 1Password **desktop app SDK integration**, not the CLI. Requires *Settings → Developer → Integrate with 1Password SDKs* to be enabled. A variable rather than `OP_ACCOUNT` in the environment, so nothing has to be exported |
-| CI | `OP_SERVICE_ACCOUNT_TOKEN` | the one case where an environment variable is unavoidable — a service-account token is not a value to put in a `.tf` file. It is exclusive with `var.op_account`, which `terraform.yml` therefore sets empty; `asm.tf` drops the `op --account` flag to match, since `--account ""` is an error and not a no-op. The service account needs read on the `DevOps` vault and on this environment's |
+| CI (later) | `OP_SERVICE_ACCOUNT_TOKEN` | the one case where an environment variable is unavoidable — a service-account token is not a value to put in a `.tf` file |
 
 #### Which vault
 
@@ -3051,35 +3029,21 @@ assume the OIDC role (no static credentials)     §10.5
 build + push the six deployed images to ECR, tagged <full commit sha>     §11
 ```
 
-**The rollout is deliberately not in that workflow.** Terraform owns every task definition
-(`image = "${repository_url}:${local.image_tag}"`, [§14](#14-the-services)), so a
-`RegisterTaskDefinition` from CI would publish a revision that the next `terraform apply` reverts —
-two writers, one resource. That rules out the `amazon-ecs-render-task-definition` /
-`amazon-ecs-deploy-task-definition` pair, which is the obvious way to do this and the wrong one
-here.
-
-The rollout is `.github/workflows/terraform.yml` instead, and it is a `terraform apply` — the same
-one an operator runs, with the same two writers rule intact
-([§15.1](#151-the-deployed-version-is-declared)).
+The rollout is `.github/workflows/deploy.yml`, on a bump to `infra/versions.json` and by
+`workflow_dispatch`. It is **not** a `terraform apply`: Terraform does not run in the pipeline, by
+requirement ([§15.1](#151-the-deployed-version-is-declared)).
 
 The image tag is the **full** 40-character SHA and not `sha-<short>` because it is copied from
-`git rev-parse HEAD` into `var.image_tag` unaltered, and validated as forty hex characters there.
+`git rev-parse HEAD` into `versions.json` unaltered, and validated as forty hex characters in three
+places — the file's check job, the deploy workflow, and a `precondition` on the task definition.
 
 ### 15.1 The deployed version is declared
 
-**The version each environment runs is declared in the Terraform, not inferred from what is
-newest.** `var.image_tag` is a workspace-keyed map with a committed default
-(`ecs_services.vars.tf`), read once as `local.image_tag`:
+**The version each environment runs is declared in `infra/versions.json`, not inferred from what is
+newest.**
 
-```hcl
-variable "image_tag" {
-  type = map(string)
-  default = {
-    dev = "deb51227c98a9f204e7bedc89f4b32260c8cdc21"
-    stg = ""
-    prd = ""
-  }
-}
+```json
+{ "dev": "deb51227c98a9f204e7bedc89f4b32260c8cdc21", "stg": "", "prd": "" }
 ```
 
 So the two halves of delivery have different triggers, and that separation is the point:
@@ -3087,61 +3051,82 @@ So the two halves of delivery have different triggers, and that separation is th
 | Merge | Effect |
 |---|---|
 | app code | `docker.yml` publishes images tagged `<sha>` to ECR and GHCR. **Nothing deploys** |
-| a one-line bump to `var.image_tag` | `terraform.yml` applies it. The deployed version is whatever the map says |
+| a one-line bump to `versions.json` | `deploy.yml` rolls the services onto that tag |
 
-A deployment is therefore a reviewed diff naming a version, which is the property a GitOps
-controller like ArgoCD provides and the reason this is not `update-service` on the newest build. It
-also means a rollback is a revert, and that the commit deployed is a fact recorded in the
-repository rather than in a pipeline's history.
+A deployment is therefore a reviewed diff naming a version — the property a GitOps controller like
+ArgoCD provides — and a rollback is a revert. The commit running in an environment is a fact
+recorded in the repository rather than in a pipeline's history.
 
-`var.image_tag` being declared rather than passed removes the last `-var` for a non-secret setting
-([§4.6](#46-running-terraform)). Two flags remain, both CI-only and neither a setting:
-`-var 'ecs_wait_for_steady_state=true'`, so a crash-looping container fails the workflow rather
-than passing it; and `-var 'op_account='`, because `var.op_account` and `OP_SERVICE_ACCOUNT_TOKEN`
-are mutually exclusive ([§12.2](#122-provider-authentication)).
+It is a **JSON file rather than a Terraform variable** because it has two readers and only one of
+them is Terraform. `_locals.tf` takes it with `jsondecode(file(...))`; `deploy.yml` takes it with
+`jq`, and grepping HCL is not parsing.
 
-#### What CI is allowed to do
+#### Terraform is not in the pipeline
 
-`plan` must read every resource in the account; `apply` only ever has to write what a version bump
-touches. So there is a **second** role, `gha-terraform` ([§10.5.1](#1051-the-terraform-role)), with
-AWS's `ReadOnlyAccess` for the read half and ECS, task definitions and the state object for the
-write half — and nothing else.
+This is a hard requirement, and everything below follows from it. No `terraform` binary runs in CI:
+no state credentials, no `OP_SERVICE_ACCOUNT_TOKEN`, no 1Password rate-limit exposure
+([§12.1](#121-environment) stands as written), and no second IAM role — `gha-deploy` already carries
+`RegisterTaskDefinition`, `UpdateService`, `DescribeTaskDefinition`, `DescribeServices` and the
+scoped `iam:PassRole` ([§10.5](#105-the-github-actions-oidc-role)), which is the entire permission
+set this needs.
 
-That is not a formality. A merged change to the VPC, RDS, DNS or IAM fails the apply with an
-explicit `AccessDenied` and waits for a human at a workstation. CI can roll an image out; it cannot
-rebuild the environment, and it cannot half-rebuild it quietly.
+`.github/workflows/terraform-check.yml` runs `fmt -check` and `validate -backend=false` on pull
+requests. That needs no credentials at all, which is what makes it safe in a **public** repository —
+a `pull_request` workflow runs the PR's own copy of the workflow file, so any credential such a job
+can reach, a PR author can reach.
 
-It is a second role rather than a widening of `gha-deploy` for the same reason. Reusing that one
-means adding `ReadOnlyAccess` and state write to the role **the image build assumes on every push
-to `main`** — and `ReadOnlyAccess` carries `secretsmanager:GetSecretValue`. A Docker build step
-would then be able to read every secret in the account. Two roles cost one IAM resource and no
-extra operational step: both are Terraform, picked up by the same apply.
+#### What that costs: Terraform stops owning the running revision
 
-#### Why there is no plan on pull requests
+CI must register a task definition — with no Terraform there is no other way to get a new image into
+ECS — and `aws_ecs_service.task_definition` pointed at `aws_ecs_task_definition.svc.arn`. Two
+writers, one attribute. The attribute is handed over explicitly:
 
-`giano` is **public**, and a `pull_request` workflow runs the PR's own copy of the workflow file.
-Any credential a PR job can reach is therefore reachable by a step the PR author wrote, and a
-"read-only" plan role still reads Secrets Manager. So the PR job holds no credentials at all: it
-runs `terraform fmt -check` and `terraform validate -backend=false`, which needs no AWS and no
-1Password, and catches a malformed module without being able to touch anything.
+```hcl
+lifecycle {
+  ignore_changes = [desired_count, task_definition]
+}
+```
 
-The role's trust policy enforces this independently — `sub` is pinned to `ref:refs/heads/main`
-([§10.5](#105-the-github-actions-oidc-role)) and a pull_request event presents
-`repo:appliedblockchain/giano:pull_request`, which matches nothing. The same constraint gates
-`docker.yml`'s ECR steps on the ref rather than the event ([§16.2](#162-an-ecr-aware-deploy-workflow-)).
+It joins `desired_count`, which the out-of-hours scheduler already owns
+([§17.2](#172-scheduling)) — the same pattern, for the same reason.
 
-The cost is that the plan appears **after** merge, in the job summary, not on the PR. A
-`workflow_dispatch` from `main` stops at the plan and is the way to see what an apply would do
-without doing it. Recorded as [R29](#19-risks-and-open-items).
+Terraform still owns the task definition's **content**: cpu, memory, environment, secrets, the
+sidecars, the `migrate` init container, both IAM roles. It no longer owns which revision is
+**live**.
+
+> ⚠️ **An apply that is not a version bump will succeed and change nothing.**
+>
+> Change an environment variable, bump cpu, rotate a secret version, reconfigure a sidecar —
+> `terraform apply` writes a new task definition revision and the running service ignores it. The
+> apply reports success. Nothing rolls.
+>
+> **Run `deploy.yml` manually afterwards** (Actions → Deploy → Run workflow). It rolls the services
+> onto the current revision without changing the tag. Recorded as [R28](#19-risks-and-open-items),
+> and the reason the workflow has a `workflow_dispatch` trigger at all.
+
+`terraform plan` also stops being the answer to "what is deployed". The declared tag is in git, the
+live revision is in `describe-services`, and nothing checks that they agree.
+
+#### Three things the rollout has to get right
+
+| | Why |
+|---|---|
+| `wallet-api` needs **two** image swaps | Its `migrate` init container runs the same image as the application ([§9.6](#96-migrations--the-init-container)). Swap only one and new code runs against the old migrator — silently, because the task still starts |
+| `DD_VERSION` must be patched | The render action swaps `image` and nothing else, but the Datadog Agent sidecar carries `DD_VERSION` built from the tag ([§17.3.3](#1733-the-sidecars)). Left alone, every trace is attributed to the tag of the last `terraform apply` — worse than no version, because it looks right |
+| Seven services, six repositories | `custom-example` and `custom-example-byoui` are one image run twice ([§14.4](#144-custom-example)). `wallet-byo` and `custom-example-byoui` are dev-only (`var.byo_wallet_enabled`) |
+
+`wait-for-service-stability` preserves what `var.ecs_wait_for_steady_state` gives an operator's
+apply: a crash-looping container, or a `migrate` container exiting non-zero, fails the workflow
+rather than passing it.
 
 #### The retention floor
 
-`var.ecr_lifecycle_image_count` stops being a cost setting once the tag is pinned. The lifecycle
-rule expires on `tagStatus: any` ([§11](#11-ecr)) and `docker.yml` publishes on every push to
-`main`, so **a pinned tag more than that many main-pushes old has been deleted out from under its
-own service.** Nothing fails at the time; it surfaces on the next task placement — a scale-out, a
-redeploy, an AZ replacement — as a task that cannot pull its image. Raised to 30 in every
-environment for that reason.
+`var.ecr_lifecycle_image_count` stops being a cost setting once the tag is pinned. The lifecycle rule
+expires on `tagStatus: any` ([§11](#11-ecr)) and `docker.yml` publishes on every push to `main`, so
+**a pinned tag more than that many main-pushes old has been deleted out from under its own service.**
+Nothing fails at the time; it surfaces at the next task placement — a scale-out, a redeploy, an AZ
+replacement — as a task that cannot pull its image. Raised to 30 in every environment for that
+reason.
 
 **There is no migration step in the workflow.** Schema is applied by the `migrate` init container as
 each new `wallet-api` task starts ([§9.6](#96-migrations--the-init-container)), so the ordering that
@@ -3197,9 +3182,9 @@ convention CI is trusted to keep:
 | Tags are `IMMUTABLE` ([§11](#11-ecr)) | No `latest` to ECR, so ECR gets a tag set of its own; and a re-run at an already-published commit drops just the ECR tag instead of failing on `PutImage` |
 | The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | `provenance: false` — an attestation manifest per image would spend retention meant for deployable commits |
 
-Not included: the `update-service` sequence. Terraform owns the task definitions, so the rollout is
-its own workflow applying a declared tag ([§15.1](#151-the-deployed-version-is-declared)). No
-migration step either: the init container handles it ([§9.6](#96-migrations--the-init-container)).
+Not included: the `update-service` sequence — that is `deploy.yml`'s job, on its own trigger
+([§15.1](#151-the-deployed-version-is-declared)). No migration step either: the init container
+handles it ([§9.6](#96-migrations--the-init-container)).
 
 ### 16.3 A deployable sponsorship provisioner
 
@@ -3481,7 +3466,7 @@ locals {
       { name = "DD_DOGSTATSD_NON_LOCAL_TRAFFIC", value = "true" },
       { name = "DD_ENV",                         value = terraform.workspace },
       { name = "DD_SERVICE",                     value = var.service },
-      { name = "DD_VERSION",                     value = local.image_tag },
+      { name = "DD_VERSION",                     value = var.image_tag }, # patched by deploy.yml — §15.1
       { name = "DD_TAGS",                        value = "env:${terraform.workspace} project:${var.project_name} service:${var.service}" },
     ]
 
@@ -3993,10 +3978,10 @@ for R in wallet-api wallet-web paymaster-admin example wallet-byo bundler; do
 done
 ```
 
-Then roll the services onto that tag by declaring it — set `dev` in `var.image_tag`
-(`ecs_services.vars.tf`) to `${SHA}` and apply. From here on that edit is a PR, and merging it is
-the deployment ([§15.1](#151-the-deployed-version-is-declared)); during bring-up there is no
-`gha-terraform` role yet, so it is a local apply:
+Then roll the services onto that tag. Set `dev` in `infra/versions.json` to `${SHA}` and apply —
+from here on that edit is a PR and merging it is the deployment
+([§15.1](#151-the-deployed-version-is-declared)), but the first one is local because no service
+exists yet for `deploy.yml` to update:
 
 ```bash
 terraform apply -var 'ecs_wait_for_steady_state=true'
@@ -4236,10 +4221,10 @@ third is the guarantee everything else in §12 rests on.
 | R23 | **Provider credentials are parsed out of shared `DevOps` notes with a regex.** `dnsimple-terraform` and `datadog-terraform` belong to no project in particular; anyone may reformat them. **This has already happened once**: the DNSimple note was written `export DNSIMPLE_TOKEN ="…"`, and the space before `=` makes a shell `eval` run the token as a command instead of assigning it. | A plan that fails with a regex error rather than a useful one — or an empty credential and a misleading 401 | The regex allows whitespace on **both** sides of the delimiter ([§6.2](#62-provider-authentication)), which is why that note parses correctly now. Runbook step 1 greps both notes for the expected variable names, and parses with `sed` rather than `eval` so a malformed note can never be executed. Only the token is taken from the note — the account id is a validated variable, which removes the other half of the exposure. |
 | R24 | **The Datadog API key has no rotation trigger of its own.** It lives in a shared note with nowhere to carry a version, so its ASM mirror is versioned by `var.datadog_api_key_version` ([§7.4](#74-the-derived-secrets)). | Rotating the key in 1Password without bumping the variable leaves every task shipping to Datadog with a dead key — and the failure is silent | The variable sits next to the mirror resource with a comment saying so. The "no metrics from service X" monitor ([§17.3.5](#1735-monitors)) fires within 15 minutes if it happens, which is the closest thing to a backstop this has. |
 | R25 | **DNSimple answers `401` when the *account* in the path is wrong, not `404`.** The account id is not a credential, but getting it wrong is indistinguishable from a bad token at the point of failure. | Time lost debugging authentication when the problem is addressing | `var.dnsimple_account` carries a `validation` block rejecting anything non-numeric ([§6.1](#61-provider-and-zone)), and runbook step 1 resolves the id from `/whoami` and prints it for comparison. `GET /v2/whoami` carries no account in its path, so it is the test that separates the two cases. |
-| R26 | **CI can now apply to `dev`.** A merge to `main` touching `infra/iac/**` rolls the environment without a human at a workstation ([§15.1](#151-the-deployed-version-is-declared)), which is a reversal of the "local, no CI pipeline" position §12.1 held. | A bad merge changes a running environment | Bounded by permission rather than by convention: `gha-terraform` holds `ReadOnlyAccess` plus write on ECS, task definitions and the state object only ([§10.5.1](#1051-the-terraform-role)), so an apply that would touch the VPC, RDS, DNS or IAM fails `AccessDenied` and waits for a person. The tag is also declared rather than newest, so the *default* CI outcome of merging app code is that nothing deploys. |
-| R27 | **A pinned tag can be expired by the registry it is pinned to.** The lifecycle rule counts `tagStatus: any` and `docker.yml` publishes on every push to `main`, so the deployed tag ages out after `var.ecr_lifecycle_image_count` pushes — and nothing fails until the next task placement. | A service that has been running for weeks cannot restart, and the cause looks like ECS rather than retention | Retention raised to 30 everywhere, which is the floor the pin needs rather than a cost setting ([§15.1](#151-the-deployed-version-is-declared)). Not closed: the real fix is a lifecycle rule that never expires the tag the state says is deployed, which ECR cannot express. Redeploy to a current tag if it happens. |
-| R28 | **`terraform.yml` writes the assumed role into a `[default]` AWS profile on the runner.** `_init.tf` names a profile, and a named profile is resolved from shared config files a runner does not have — so the workflow materialises one rather than the module dropping its §4.6 promise that an operator's shell needs nothing set. | Short-lived credentials on the runner's disk; a CI-only step the module does not describe | Accepted: the runner is ephemeral and the session expires in an hour. The alternative — defaulting `var.profile` to `""` — moves the burden onto every operator, which is the trade §4.6 exists to refuse. Revisit if `stg` gets a pipeline. |
-| R29 | **The plan is not visible before merge.** A public repository runs a PR's own copy of the workflow, so a PR job cannot safely hold credentials ([§15.1](#151-the-deployed-version-is-declared)) — the plan therefore runs after merge, in the job summary. | An infra change is reviewed as a diff, not as a plan; a surprise shows up post-merge | Bounded by the same permission split that bounds the apply: the only thing CI can do unsupervised is change the image tag. `workflow_dispatch` from `main` plans without applying, which covers the case where the diff is not self-evident. The full fix is a GitHub Environment with required reviewers gating a plan job, plus a plan-only role with ASM read denied — a manual approval on every infra PR, deferred until that is worth paying. |
+| R26 | **CI can roll the services without a human.** A merge bumping `infra/versions.json` deploys ([§15.1](#151-the-deployed-version-is-declared)). | A bad merge changes a running environment | Bounded by what CI is *able* to do: no Terraform in the pipeline, so `gha-deploy` holds ECR push plus ECS register/update and the scoped `PassRole` and nothing else — it cannot touch the VPC, RDS, DNS, IAM or state. The tag is declared rather than newest, so the default outcome of merging app code is that **nothing deploys**. |
+| R27 | **A pinned tag can be expired by the registry it is pinned to.** The lifecycle rule counts `tagStatus: any` and `docker.yml` publishes on every push to `main`, so the deployed tag ages out after `var.ecr_lifecycle_image_count` pushes — and nothing fails until the next task placement. | A service running for weeks cannot restart, and the cause looks like ECS rather than retention | Retention raised to 30 everywhere, which is the floor the pin needs rather than a cost setting ([§15.1](#151-the-deployed-version-is-declared)). Not closed: the real fix is a lifecycle rule that never expires the tag the deployment declares, which ECR cannot express. Redeploy to a current tag if it happens. |
+| R28 | **An apply that is not a version bump succeeds and changes nothing.** `ignore_changes = [task_definition]` is what stops Terraform reverting CI's rollout ([§15.1](#151-the-deployed-version-is-declared)), and its cost is that a changed env var, secret version, cpu or sidecar writes a revision the running service ignores. The apply reports success. | A setting that was applied, reviewed and merged is not actually in effect — and nothing says so | **Open, and mitigated by convention rather than by mechanism: run `deploy.yml` manually after such an apply.** A convention will be forgotten at least once. Two alternatives were considered and can be adopted later without redoing anything else. **(a)** A `null_resource` with a `local-exec` `aws ecs update-service --force-new-deployment`, triggered on the task definition ARN — the operator's apply rolls out again, the pipeline still runs no Terraform. Costs an AWS CLI dependency on the workstation and makes every apply a deployment, including ones not meant to be. **(b)** Drop `ignore_changes`, put the tag back in Terraform's hands and let an apply be the only rollout — which is the design this replaced, and needs Terraform in the pipeline to keep merge-triggered deploys. Until one is adopted, `terraform plan` is not the answer to "what is running": the declared tag is in git, the live revision is in `describe-services`, and nothing reconciles them. |
+| R29 | **`render-task-definition` mutates what is DEPLOYED, not what Terraform last wrote.** It reads the live task definition and swaps the image, so a Terraform change that has not been rolled out yet is silently picked up by the next unrelated image deploy. | A setting arrives in production attached to a deployment that had nothing to do with it | The flip side of R28 and not separately fixable while both hold. It argues for keeping the gap short — run `deploy.yml` after an apply rather than letting revisions accumulate unrolled. |
 
 ---
 

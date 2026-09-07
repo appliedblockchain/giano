@@ -32,13 +32,8 @@ data "external" "secret_inventory" {
     # which this call reuses it and never prompts. In CI,
     # OP_SERVICE_ACCOUNT_TOKEN removes the app from the path entirely
     # (§12.2, R20).
-    #
-    # `--account` is CONDITIONAL for that reason: it and a service-account
-    # token are mutually exclusive, so CI sets var.op_account = "" (§15.1)
-    # and the flag has to disappear rather than be passed empty — `--account
-    # ""` is an error, not a no-op, and `set -e` turns it into a failed plan.
     op item get "${local.op_item}" --vault "${local.op_vault}" \
-      ${var.op_account != "" ? "--account ${var.op_account}" : ""} --format json \
+      --account "${var.op_account}" --format json \
       | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
       | jq -c 'map_values(.version | tostring)'
   EOT

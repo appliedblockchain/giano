@@ -1,26 +1,3 @@
-# --- Delivery -------------------------------------------------------------
-
-variable "image_tag" {
-  description = "[REQUIRED] the tag every service runs, per environment. The deployed version is DECLARED HERE rather than passed at apply time: a deployment is a one-line reviewed change to this map, merged to main (§15). Tags are the full 40-character commit SHA, never `latest` — ECR is IMMUTABLE. An empty string is a workspace that has never been deployed; it will not resolve and the services fail to start, which §18 step 5 says to expect on a first apply"
-  type        = map(string)
-  default = {
-    # `git rev-parse` of the commit whose images are in ECR — NOT necessarily
-    # the newest. Bump it to deploy; leave it to hold. The tag must still be
-    # within the repositories' retention window (var.ecr_lifecycle_image_count)
-    # or the image it names has been expired out from under the service.
-    dev = "deb51227c98a9f204e7bedc89f4b32260c8cdc21"
-    stg = ""
-    prd = ""
-  }
-
-  validation {
-    condition = alltrue([
-      for tag in values(var.image_tag) : tag == "" || can(regex("^[0-9a-f]{40}$", tag))
-    ])
-    error_message = "each image_tag must be a full 40-character lowercase commit SHA, or \"\" for an undeployed environment."
-  }
-}
-
 # --- Ports ----------------------------------------------------------------
 
 variable "container_port" {

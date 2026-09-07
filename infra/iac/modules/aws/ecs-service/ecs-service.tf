@@ -26,6 +26,22 @@ resource "aws_ecs_task_definition" "svc" {
   container_definitions = jsonencode(local.container_definitions)
 
   tags = merge(local.tags, { Name = "${local.name}-task-definition" })
+
+  lifecycle {
+    # The registry is IMMUTABLE and the tag is the full commit SHA (§11), so a
+    # malformed value is not a typo that resolves to something wrong — it is an
+    # image that does not exist, and the failure would otherwise be a task that
+    # cannot start long after the apply reported success. Fail the plan instead.
+    #
+    # No empty string: an environment must DECLARE a version in
+    # infra/versions.json before it can be planned at all. That is the point of
+    # declaring it (§15.1), and `repository_url:` with nothing after the colon
+    # is a valid-looking string that fails only at task placement.
+    precondition {
+      condition     = can(regex("^[0-9a-f]{40}$", var.image_tag))
+      error_message = "image_tag must be a full 40-character lowercase commit SHA — set this workspace's entry in infra/versions.json. Got: \"${var.image_tag}\"."
+    }
+  }
 }
 
 resource "aws_ecs_service" "svc" {
@@ -79,9 +95,23 @@ resource "aws_ecs_service" "svc" {
   tags = merge(local.tags, { Name = local.name })
 
   lifecycle {
-    # The out-of-hours scheduler owns desired_count, so a terraform apply at
-    # 20:00 does not silently scale the environment back up. §17.2
-    ignore_changes = [desired_count]
+    # Two attributes this module writes once and then stops owning.
+    #
+    # desired_count — the out-of-hours scheduler owns it, so a terraform apply
+    # at 20:00 does not silently scale the environment back up. §17.2
+    #
+    # task_definition — `deploy.yml` owns it, and this is the most consequential
+    # line in the module. Terraform is not in the deploy pipeline (§15.1), so the
+    # workflow is what registers a revision for a new image and points the
+    # service at it; without this, the next apply drags the service back to the
+    # revision Terraform last wrote — two writers, one attribute.
+    #
+    # THE COST: Terraform still owns the task definition's CONTENT but no longer
+    # owns which revision is LIVE. An apply that changes an env var, a secret
+    # version, cpu/memory or a sidecar writes a new revision the running service
+    # ignores — it reports success and changes nothing. Roll it out by running
+    # deploy.yml manually afterwards. R28, infra/versions.README.md.
+    ignore_changes = [desired_count, task_definition]
   }
 
   depends_on = [aws_lb_listener_rule.svc]

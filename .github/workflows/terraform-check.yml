@@ -1,0 +1,61 @@
+name: Terraform check
+
+# `fmt` and `validate` only. NO credentials, no state, no plan, no apply —
+# Terraform does not run in the pipeline (specs/INFRASTRUCTURE.md §15.1), and
+# an apply is still a person at a workstation.
+#
+# `validate -backend=false` needs neither AWS nor 1Password, which is what makes
+# it safe to run on a pull request in a PUBLIC repository: a pull_request
+# workflow runs the PR's own copy of this file, so anything it can reach, a PR
+# author can reach.
+#
+# It is not nothing. It catches a malformed module, a bad reference, and — since
+# infra/versions.json is parsed at validate time — a version file that is not
+# valid JSON, before either reaches main.
+on:
+  pull_request:
+    paths: ['infra/**', '.github/workflows/terraform-check.yml']
+  push:
+    branches: [main]
+    paths: ['infra/**', '.github/workflows/terraform-check.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: fmt + validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/iac
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          # >= 1.11 for write-only arguments (§12.1). Pinned, not floating: a
+          # core upgrade should be a reviewed diff like any other.
+          terraform_version: 1.11.4
+          terraform_wrapper: false
+
+      # -backend=false: no S3, no state, no AWS. Providers are still downloaded,
+      # which is what validate needs to check resource schemas.
+      - run: terraform init -backend=false -input=false
+      - run: terraform fmt -check -recursive -diff
+      - run: terraform validate
+
+      # The workflow reads this file with jq and the module reads it with
+      # jsondecode; neither tolerates a trailing comma. Cheap to check here.
+      - name: Validate infra/versions.json
+        working-directory: .
+        run: |
+          jq -e 'has("dev") and has("stg") and has("prd")' infra/versions.json > /dev/null
+          tag=$(jq -er '.dev' infra/versions.json)
+          [[ "$tag" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::infra/versions.json .dev must be a 40-character commit SHA, got '$tag'"
+            exit 1
+          }

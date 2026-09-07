@@ -3,7 +3,6 @@ output "iam_roles" {
   value = {
     scheduler                  = module.scheduler-role.arn
     gha_deploy                 = module.gha-deploy-role.arn
-    gha_terraform              = module.gha-terraform-role.arn
     provision_sponsorship_exec = module.provision-sponsorship-exec-role.arn
     provision_sponsorship_task = module.provision-sponsorship-task-role.arn
   }

@@ -1,0 +1,180 @@
+name: Deploy
+
+# The ROLLOUT half of delivery. `docker.yml` builds and publishes images on every
+# push to main; this workflow deploys ONE of them, and the two are deliberately
+# separate because they answer to different triggers:
+#
+#   merge app code             → docker.yml publishes images tagged <sha>. Nothing deploys.
+#   merge a bump to versions.json → this workflow rolls the services onto that tag.
+#
+# The version is DECLARED in infra/versions.json, never inferred from what is
+# newest. Deploying is a one-line reviewed diff to that file; rolling back is
+# reverting it. specs/INFRASTRUCTURE.md §15.1.
+#
+# NO TERRAFORM RUNS HERE, by requirement. The consequence is that this workflow
+# is the writer of record for which revision each service runs, which is why
+# every ECS service carries `ignore_changes = [task_definition]`
+# (infra/iac/modules/aws/ecs-service). Read R28 before assuming an apply deploys.
+on:
+  push:
+    branches: [main]
+    paths: ['infra/versions.json']
+  # The manual trigger is not a convenience. After ANY `terraform apply` that
+  # changes a task definition without changing the tag — an env var, a secret
+  # version, cpu, a sidecar — the services are still on the old revision until
+  # this is run. infra/versions.README.md.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # AWS OIDC. The role's own `sub` condition is what restricts who may use it —
+  # `ref:refs/heads/main` only, which is also why there is no PR half here.
+  id-token: write
+
+concurrency:
+  # NOT cancel-in-progress: a rollout cancelled between RegisterTaskDefinition
+  # and UpdateService leaves the services half-deployed.
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  ECR_REGISTRY: 379937780633.dkr.ecr.eu-west-2.amazonaws.com
+  AWS_REGION: eu-west-2
+  AWS_ROLE_ARN: arn:aws:iam::379937780633:role/gianotest-dev-gha-deploy
+  # `local.name_prefix` — project_name + workspace (infra/iac/_locals.tf). Every
+  # cluster, service and task definition family is prefixed with it.
+  NAME_PREFIX: gianotest-dev
+  # The ECR namespace is the same string (infra/iac/ecr.tf).
+  ECR_NAMESPACE: gianotest-dev
+
+jobs:
+  # The tag is read once, validated once, and passed to every service — rather
+  # than each matrix leg re-reading the file and possibly disagreeing with the
+  # others if main moves mid-run.
+  version:
+    name: Read the declared version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.read.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: read
+        run: |
+          tag=$(jq -er '.dev' infra/versions.json)
+          # The registry is IMMUTABLE and tags are full commit SHAs (§11), so a
+          # malformed value is an image that does not exist. Catching it here
+          # costs a second; catching it at task placement costs a rollback.
+          if ! [[ "$tag" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::infra/versions.json .dev is not a 40-character commit SHA: '$tag'"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "::notice::deploying $tag"
+
+  deploy:
+    name: Roll ${{ matrix.service }}
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      # false: one service failing to stabilise must not leave the rest
+      # un-attempted. A partial rollout is recoverable by re-running; a rollout
+      # that stopped at an arbitrary point is harder to reason about.
+      fail-fast: false
+      # Seven services, six ECR repositories. `custom-example` and
+      # `custom-example-byoui` are ONE image run twice, differing only in
+      # environment (infra/iac/ecs_services.tf) — which is why `repo` is a
+      # separate column and not derived from `service`.
+      #
+      # `wallet-byo` and `custom-example-byoui` exist in dev only
+      # (var.byo_wallet_enabled). This workflow targets dev; pointing it at an
+      # environment without a BYO tenant means dropping both rows.
+      matrix:
+        include:
+          - service: wallet-api
+            repo: wallet-api
+            # wallet-api ALONE has a second container on the same image: the
+            # `migrate` init container (§9.6). Both must be swapped, or new
+            # application code runs against the old migrator — silently, because
+            # the task still starts.
+            init_container: migrate
+          - service: wallet-web
+            repo: wallet-web
+          - service: custom-example
+            repo: example
+          - service: custom-example-byoui
+            repo: example
+          - service: wallet-byo
+            repo: wallet-byo
+          - service: paymaster-admin
+            repo: paymaster-admin
+          - service: bundler
+            repo: bundler
+    steps:
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The base is the task definition the service is RUNNING, not one rendered
+      # from scratch — this workflow has no Terraform and therefore no way to
+      # build one. Everything Terraform owns (env, secrets, cpu, sidecars, roles)
+      # comes through untouched; only the image changes.
+      - name: Fetch the live task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${NAME_PREFIX}-${{ matrix.service }}" \
+            --query taskDefinition > taskdef.json
+
+      - name: Render the application container
+        id: render-app
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef.json
+          # The app container is named after the service (module `_locals.tf`).
+          container-name: ${{ matrix.service }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_NAMESPACE }}/${{ matrix.repo }}:${{ needs.version.outputs.tag }}
+
+      # Chained, not parallel: the action takes a task definition and returns
+      # one, so the second swap must start from the first's output or it
+      # silently discards it.
+      - name: Render the init container
+        id: render-init
+        if: matrix.init_container != ''
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-app.outputs.task-definition }}
+          container-name: ${{ matrix.init_container }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_NAMESPACE }}/${{ matrix.repo }}:${{ needs.version.outputs.tag }}
+
+      # The render action swaps `image` and nothing else, but the Datadog Agent
+      # sidecar carries DD_VERSION built from the same tag (module `sidecars.tf`).
+      # Left alone it would report the tag from the last `terraform apply`, so
+      # every trace and metric would be attributed to the wrong version — worse
+      # than no version at all, because it looks right.
+      - name: Correct DD_VERSION on the Datadog sidecar
+        id: patch
+        run: |
+          in='${{ steps.render-init.outputs.task-definition || steps.render-app.outputs.task-definition }}'
+          out="$RUNNER_TEMP/taskdef-final.json"
+          jq --arg v '${{ needs.version.outputs.tag }}' '
+            .containerDefinitions |= map(
+              if .name == "datadog-agent" then
+                .environment |= map(if .name == "DD_VERSION" then .value = $v else . end)
+              else . end
+            )
+          ' "$in" > "$out"
+          echo "task-definition=$out" >> "$GITHUB_OUTPUT"
+
+      # wait-for-service-stability is what preserves the property
+      # `ecs_wait_for_steady_state` gave the operator's apply: a crash-looping
+      # container — or a `migrate` init container exiting non-zero (§9.6) — fails
+      # this workflow instead of passing it. The deployment circuit breaker rolls
+      # the service back; the reason is in Datadog, not in this log. R21.
+      - name: Deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.patch.outputs.task-definition }}
+          service: ${{ env.NAME_PREFIX }}-${{ matrix.service }}
+          cluster: ${{ env.NAME_PREFIX }}
+          wait-for-service-stability: true
