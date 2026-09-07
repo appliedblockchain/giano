@@ -10,16 +10,26 @@ export type ByoChainConfig = {
   bundlerPath: string;
 };
 
+/**
+ * 0 when there is no second chain. serve.mjs defines this as '' for a single-chain
+ * deployment, and the chain falls away below rather than being advertised as a fiction
+ * pointing at /rpc-b (§16.5).
+ */
+const CHAIN_B_ID = Number(process.env.CHAIN_B_ID || '0');
+
 export const CONFIG = {
   chainId: Number(process.env.CHAIN_ID),
   /**
    * The chains this wallet origin serves (MC-39). Its shape is effectively public API —
    * tenants copy this reference — so it mirrors the stock wallet's `chains` list (MC-45).
-   * Both chains carry the canonical contracts at identical addresses (MC-19).
+   * Where several are served they carry the canonical contracts at identical addresses (MC-19).
+   *
+   * Names come from the environment: a deployment on a real chain calling it 'Devnet A' is
+   * worse than no name at all, and consent screens name the chain (MC-80, MC-81).
    */
   chains: [
-    { chainId: Number(process.env.CHAIN_ID), name: 'Devnet A', rpcPath: '/rpc', bundlerPath: '/bundler' },
-    { chainId: Number(process.env.CHAIN_B_ID), name: 'Devnet B', rpcPath: '/rpc-b', bundlerPath: '/bundler-b' },
+    { chainId: Number(process.env.CHAIN_ID), name: process.env.CHAIN_NAME, rpcPath: '/rpc', bundlerPath: '/bundler' },
+    ...(CHAIN_B_ID > 0 ? [{ chainId: CHAIN_B_ID, name: process.env.CHAIN_B_NAME, rpcPath: '/rpc-b', bundlerPath: '/bundler-b' }] : []),
   ] as ByoChainConfig[],
   factoryAddress: process.env.FACTORY_ADDRESS as `0x${string}`,
   /**

@@ -1,0 +1,802 @@
+# ==========================================================================================
+# Giano — full-stack INFRASTRUCTURE REFERENCE
+#
+# This file is not a development stack and not a client template. It is the compose
+# transcription of the AWS environment specified in `specs/INFRASTRUCTURE.md` and already
+# written as Terraform in `infra/iac/`. It exists so the DevOps team can read one file and
+# find every container, every environment variable, every secret, every inter-service
+# dependency and every health gate the deployment needs — in a form that can actually be
+# brought up and poked at, rather than inferred from HCL.
+#
+# The three files to read together:
+#   specs/INFRASTRUCTURE.md      the decisions and the per-service env tables (§14)
+#   infra/iac/ecs_services.tf    the seven ECS services this mirrors, one module call each
+#   this file                    the same roster, runnable
+#
+# Every service below carries the AWS resource it maps to, and every value carries its
+# provenance: `[ASM]` for a Secrets Manager secret, `[tfvar]` for a Terraform variable,
+# `[literal]` for a hardcoded value. Those three markers are the whole point of the file —
+# they are the inventory the deployment has to satisfy.
+#
+# ── How this maps onto AWS ────────────────────────────────────────────────────────────────
+#
+#   compose                          AWS (specs/INFRASTRUCTURE.md)
+#   ───────────────────────────────  ─────────────────────────────────────────────────────
+#   service                          one ECS Fargate service, ARM64, desired_count 1   §9.2
+#   `ports:` published               an ALB target group + host-header listener rule    §5.7
+#   no `ports:`                      no target group — reachable only inside the VPC    §3.4
+#   service name (DNS)               Cloud Map: <service>.giano-dev.local               §9.4
+#   `networks:`                      the security-group graph — who may reach whom      §5.6
+#   `depends_on: service_healthy`    ALB health check + health_check_grace_period        §9.3
+#   `depends_on: completed_success`  a task-definition init container, condition SUCCESS §9.6
+#   `environment:`                   the task definition's `environment` block           §14
+#   `${VAR:?}` marked [ASM]          the task definition's `secrets` block               §7.5
+#   `postgres` service               RDS Postgres 17, db.t4g.micro, single-AZ            §8
+#   profile `oneshot`                a task definition with no service, via `run-task`   §9.7
+#
+# Not modelled, because compose has no equivalent — and each is a real part of the
+# deployment, so do not read this file as the complete task definition:
+#   * Every ECS task runs THREE containers, not one: the application, a Datadog Agent
+#     sidecar (`public.ecr.aws/datadog/agent`, essential=false) and a FireLens log router
+#     (`aws-for-fluent-bit`, essential=true). wallet-api runs four. See §17.3.3 — and note
+#     that this is why every task's memory is double its application memory (§9.2).
+#   * TLS. The ALB terminates HTTPS with an ACM wildcard plus one SNI certificate per
+#     tenant wallet host (§6.3). Here everything is plain HTTP on loopback.
+#   * The per-AZ NAT gateways, the private subnets and the S3 gateway endpoint (§5).
+#
+# ── Running it ────────────────────────────────────────────────────────────────────────────
+#
+#   cp deploy/infrastructure.aws.env.example deploy/.env    # then fill in the [ASM] values
+#   docker compose --env-file deploy/.env -f deploy/docker-compose.infrastructure.aws.yml up
+#
+# The one-shot jobs are behind profiles, exactly as they are behind `run-task` in AWS:
+#   docker compose … --profile oneshot run --rm provision-sponsorship   # once PER TENANT
+#
+# ── ⚠ What is and is not deployable yet ───────────────────────────────────────────────────
+#
+# §16.1 and §16.5 have LANDED, so every service here except the one-shot builds:
+#
+#   custom-example, custom-example-byoui   §16.1 done. services/custom-example/Dockerfile
+#                                          plus docker/{entrypoint.sh,config.js.template,
+#                                          nginx.conf.template}. The SPA now takes its
+#                                          settings from a container-rendered /config.js,
+#                                          with VITE_* kept as `pnpm dev` fallbacks — so one
+#                                          image serves both demo tenants.
+#   wallet-byo                             §16.5 done. e2e/wallet-byo/Dockerfile; serve.mjs
+#                                          no longer requires e2e/devnet/addresses.json or
+#                                          ../origins.mjs, the second chain falls away unless
+#                                          asked for, and the /bundler proxy is switchable.
+#                                          ⚠ But R11 is NOT closed by that switch — read the
+#                                          note on that service before deploying it.
+#
+# Still outstanding:
+#   provision-sponsorship                  §16.3  `dist/provision-sponsorship.js` is not a
+#                                                 build entry; only `index` and `migrate` are
+#   the ECR half of delivery               §16.2  .github/workflows/docker.yml now builds all
+#                                                 eight images on every PR and pushes them to
+#                                                 GHCR — `giano-example` and `giano-wallet-byo`
+#                                                 included. What does not exist yet is the
+#                                                 OIDC-authenticated ECR push and the
+#                                                 `aws ecs update-service` sequence from §15;
+#                                                 nothing in this repo assumes an AWS role.
+# ==========================================================================================
+name: giano-infrastructure-aws
+
+# ── Documentation-only extension fields ───────────────────────────────────────────────────
+# Ignored by compose. Here because a DevOps reader needs them and they have nowhere else to
+# live in a compose file.
+
+x-secret-inventory: &secret-inventory
+  # §7.3 — the ASM secret roster, `giano-<env>-<key>`, KMS-encrypted with the project CMK
+  # and mirrored from one 1Password note. Every `[ASM]` marker below names one of these.
+  #   database-password       RDS master password; also composes database-url
+  #   database-url            DERIVED by Terraform, not in 1Password (§7.4)
+  #   rpc-url                 the RPC endpoint INCLUDING its API key — hence a secret (§13.3)
+  #   sponsorship-signer-key  32-byte hex; signs paymaster data, holds no funds
+  #   alto-executor-key       32-byte hex; MUST BE FUNDED — pays L1 gas for every bundle
+  #   alto-utility-key        32-byte hex; nonce/gas-price management, needs no funding
+  #   tenants-seed            the TENANTS_SEED JSON, because it carries adminKeys
+  #   metrics-bearer-token    random, min 16 chars; gates GET /metrics
+  #   datadog-api-key         MIRRORED from the shared DevOps vault, not Giano's own (§7.4)
+  # Placeholders are `PLACEHOLDER-DO-NOT-USE`, never an empty string: a service handed an
+  # empty RPC URL boots and then fails obscurely on its first chain call.
+  placeholder: 'documentation only'
+
+x-chain-prerequisites: &chain-prerequisites
+  # §13 — things that must exist ON CHAIN before this stack can work. None is created by
+  # Terraform and none is created by this file.
+  #   1. The GianoPaymaster proxy must be DEPLOYED. `gianoAddresses[84532]` carries no
+  #      sponsorshipPaymaster, so PAYMASTER_ADDRESS has no default and no registry fallback.
+  #      `pnpm --filter @appliedblockchain/giano-contracts hh:deploy:paymaster`  (§13.1)
+  #   2. Two accounts must be FUNDED, and will need topping up (§13.2):
+  #        the Alto executor      drains on every sponsored transaction
+  #        the paymaster deposit  the EntryPoint deposit + stake sponsorship spends from
+  #      Nothing currently alarms on either. It is the most likely cause of an environment
+  #      that "stopped working" for no visible reason — R2, and §16.6 is the fix.
+  #   3. EntryPoint v0.7 and the Giano factory/implementation are already canonical on
+  #      84532, and wallet-api VERIFIES them at boot and refuses to start otherwise.
+  placeholder: 'documentation only'
+
+# ── The security-group graph, as networks (§5.6) ──────────────────────────────────────────
+# In AWS every task shares one `tasks` security group; the isolation that matters is on the
+# two things that accept connections from it. Modelling that here is what stops this file
+# from quietly implying that anything may reach the database or the bundler.
+networks:
+  # Every task. Stands in for `giano-dev-tasks-sg`.
+  tasks:
+  # `giano-dev-db-sg` accepts 5432 from the tasks SG. Only wallet-api and the migrate job
+  # are on it — wallet-api is the only service with database access at all.
+  data:
+  # `giano-dev-bundler-sg` accepts 4337 from the tasks SG. Only wallet-api is on it: the
+  # wallet origin never dials the bundler, it relays through wallet-api after the policy
+  # check. wallet-byo is deliberately NOT here — see R11 on that service.
+  bundler:
+
+volumes:
+  pgdata:
+
+services:
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # postgres  →  RDS Postgres 17, db.t4g.micro, single-AZ in dev  (§8)
+  #
+  # In AWS this is not a container: it is an RDS instance in the private subnets with
+  # `publicly_accessible = false`, encrypted at rest with a customer-managed KMS key that
+  # CANNOT be changed after creation (R12), and reached only from the tasks security group.
+  # Developer access is `aws ecs execute-command` into a running task, never a bastion.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    networks: [data]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-giano}
+      POSTGRES_USER: ${POSTGRES_USER:-giano}
+      # [ASM] giano-<env>-database-password. In AWS this is the RDS master password, set
+      # through Terraform's write-only `password_wo` so the value never reaches the state
+      # file (§8.3, D13).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-giano} -d ${POSTGRES_DB:-giano}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # migrate  →  the `migrate` INIT CONTAINER inside the wallet-api task definition  (§9.6)
+  #
+  # Not a service in AWS and not a deploy-time job: it is a second container in wallet-api's
+  # own task definition, running the SAME image with a different command, `essential = false`,
+  # and the application container carries `dependsOn: [{ migrate, condition: SUCCESS }]`.
+  #
+  # `SUCCESS` is the whole mechanism. `COMPLETE` would accept any exit code and start the API
+  # against a half-applied schema. The guarantee bought is one ECS enforces rather than one a
+  # pipeline produces: no wallet-api container ever starts against an un-migrated schema —
+  # which matters because the out-of-hours scheduler (§17.2) starts tasks at 07:00 outside
+  # any deploy pipeline.
+  #
+  # Consequences, all of them real (R21, R22): it runs on EVERY task start, not once per
+  # deploy; application start-up is now coupled to database reachability permanently; and a
+  # failed migration presents as a failed DEPLOYMENT — the circuit breaker rolls back and
+  # destroys the task holding the evidence, so the migrate container's log line in Datadog is
+  # the only durable record of why.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  migrate:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    # The same image as wallet-api, one artefact, two commands. Idempotent and
+    # concurrency-safe: it takes a Postgres advisory lock, so replicas serialise rather
+    # than race — which is why health_check_grace_period_seconds must outlast the slowest
+    # migration (120s in dev, R22).
+    command: ['node', 'dist/migrate.js']
+    restart: 'no'
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # [ASM] giano-<env>-database-url — DERIVED by Terraform from the ephemeral RDS
+      # password and the instance endpoint, not stored in 1Password (§7.4). Note the
+      # password is `urlencode`d there: a `#`, `/` or `@` in it silently truncates the DSN
+      # and the failure looks like a wrong hostname.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # wallet-api  →  module "svc-wallet-api"   ALB rule 10, host api.<apex>   0.5 vCPU / 2048 MB
+  #
+  # The only service with database access and the only one carrying an init container.
+  # Multi-tenant: it resolves the tenant PER REQUEST — from `Origin` on ceremonies, sessions
+  # and the userop relay, and from `Host` on /.well-known/webauthn — never per container.
+  # That is what lets one wallet-web task serve N relying parties (§3.3).
+  #
+  # SINGLE-CHAIN SHORTHAND, not GIANO_CHAINS. The two shapes are mutually exclusive and the
+  # config loader refuses both together (`services/wallet-api/src/config.ts` superRefine):
+  #   shorthand  CHAIN_ID + RPC_URL + BUNDLER_URL, all three required together
+  #   multichain GIANO_CHAINS, a JSON array of {chainId,name,rpcUrl,bundlerUrl,…}
+  # Supplying GIANO_CHAINS additionally REJECTS ENTRYPOINT_ADDRESS, FACTORY_ADDRESS,
+  # SPONSORSHIP_PAYMASTER_ADDRESS and USEROP_ALLOWED_* as shorthand-only. One chain is
+  # served here, so shorthand is the correct shape.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  wallet-api:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    restart: unless-stopped
+    networks: [tasks, data, bundler]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # The init container's `condition = "SUCCESS"`, in compose form.
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      # → ALB target group, rule 10, host `api.<apex>`. Also proxied same-origin under each
+      # wallet host's /api, which is the path the browser actually uses.
+      - '${API_PORT:-8080}:8080'
+    environment:
+      # ── Deployment class ────────────────────────────────────────────────────────────────
+      # [literal] REQUIRED, with no default, on purpose. This is what the deployment IS, as
+      # distinct from how the image was built (that is NODE_ENV, which is `production` in the
+      # image and should stay there). `testnet` is the honest class for Base Sepolia and it is
+      # what makes a `local` sponsorship signer legal below — `production` refuses it
+      # outright, and the `hsm` alternative is not reachable from the published image (R14).
+      GIANO_DEPLOYMENT_CLASS: ${GIANO_DEPLOYMENT_CLASS:-testnet}
+
+      # [ASM] giano-<env>-database-url — see the migrate job above.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+
+      # [literal] false: the init container runs them. Both trying is how two containers in
+      # one task fight over the same advisory lock (§9.6).
+      RUN_MIGRATIONS: 'false'
+
+      # ── Chain (§13) ─────────────────────────────────────────────────────────────────────
+      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      # [ASM] giano-<env>-rpc-url. Server-side reads only. This is the URL WITH the API key.
+      RPC_URL: ${RPC_URL:?set RPC_URL}
+      # [literal] Cloud Map in AWS: http://bundler.giano-dev.local:4337. The bundler has no
+      # public listener and no ALB target; wallet-api is the only thing that talks to it.
+      BUNDLER_URL: http://bundler:4337
+      # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS are DELIBERATELY UNSET: 84532 is in the
+      # contracts registry and both default correctly from it. Setting them by hand is how
+      # they drift — and wallet-api verifies the canonical factory and implementation on
+      # chain at boot, refusing to start if they are wrong (§13).
+
+      # ── Gas sponsorship (§14.2) ─────────────────────────────────────────────────────────
+      SPONSORSHIP_ENABLED: 'true'
+      # [literal] `local` is REFUSED when GIANO_DEPLOYMENT_CLASS=production — the guard is
+      # gated on the deployment class, not on NODE_ENV, and it is the point: this key
+      # authorises spending against real balances.
+      SPONSORSHIP_SIGNER_KIND: local
+      # [ASM] giano-<env>-sponsorship-signer-key. Must match ^0x[0-9a-fA-F]{64}$ when the
+      # kind is `local`. Signs paymaster data; holds no funds itself.
+      SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY}
+      # [tfvar] var.paymaster_address — see x-chain-prerequisites: NOT in the registry for
+      # 84532, so this must be a real deployed proxy or sponsorship cannot work at all.
+      SPONSORSHIP_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
+      # Left at their defaults, and worth knowing: SPONSORSHIP_VALIDITY_SECONDS=180 (max
+      # 1800), SPONSORSHIP_RESERVATION_TTL_SECONDS=300 — and the loader requires the
+      # reservation TTL to be STRICTLY GREATER than the validity window.
+      PAYMASTER_WATCHER_ENABLED: 'true'
+
+      # ── Observability ───────────────────────────────────────────────────────────────────
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # [ASM] giano-<env>-metrics-bearer-token. Min 16 chars; gates GET /metrics. Unset
+      # means the endpoint is OPEN, which is acceptable only on a local stack.
+      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:?set METRICS_BEARER_TOKEN}
+
+      # ── Tenants (§14.2) ─────────────────────────────────────────────────────────────────
+      # [ASM] giano-<env>-tenants-seed — one secret, because it carries `adminKeys`.
+      # Declarative and upserted BY SLUG at boot, after migrations and before listen.
+      #
+      # Two tenants, because there are two ways to be one (D17): `example` takes Giano's
+      # stock wallet UI and CNAMEs to it; `byoui` serves a wallet SPA it wrote itself. They
+      # are INDISTINGUISHABLE to wallet-api, which is the point — it has no notion of who
+      # wrote the SPA behind a wallet origin.
+      #
+      # ⚠ `rpId` is IRREVERSIBLE per tenant (R1). Passkeys bind to it, and it must equal the
+      # `walletOrigin` host — `validateTenantSeed` enforces that. Note what is NOT here and
+      # must never be: a row for Giano's own serving hostname `wallet.<apex>`. That host
+      # terminates the shared UI and is never a relying party; a tenant row for it is how a
+      # passkey ends up bound to infrastructure nobody can ever move.
+      #
+      # `openRegistration: true` is defensible in dev and only in dev — anyone who can reach
+      # the environment can create a wallet (R4). It is the first field to turn off if the
+      # hostname circulates; doing so makes `adminKeys` mandatory.
+      #
+      # Validate the rendered JSON before trusting it:
+      #   docker compose --env-file deploy/.env -f deploy/docker-compose.infrastructure.aws.yml config
+      TENANTS_SEED: |
+        [
+          {
+            "slug": "example",
+            "walletOrigin": "${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}",
+            "rpId": "${EXAMPLE_WALLET_HOST}",
+            "rpName": "Giano Example",
+            "allowedDappOrigins": ["${URL_SCHEME:-https}://${EXAMPLE_DAPP_HOST:?set EXAMPLE_DAPP_HOST}"],
+            "corsOrigins": ["${URL_SCHEME:-https}://${EXAMPLE_DAPP_HOST}"],
+            "openRegistration": true,
+            "adminKeys": ["${EXAMPLE_ADMIN_KEY:?set EXAMPLE_ADMIN_KEY, min 16 chars}"]
+          },
+          {
+            "slug": "byoui",
+            "walletOrigin": "${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:?set BYOUI_WALLET_HOST}",
+            "rpId": "${BYOUI_WALLET_HOST}",
+            "rpName": "Giano BYO UI",
+            "allowedDappOrigins": ["${URL_SCHEME:-https}://${BYOUI_DAPP_HOST:?set BYOUI_DAPP_HOST}"],
+            "corsOrigins": ["${URL_SCHEME:-https}://${BYOUI_DAPP_HOST}"],
+            "openRegistration": true,
+            "adminKeys": ["${BYOUI_ADMIN_KEY:?set BYOUI_ADMIN_KEY, min 16 chars}"]
+          }
+        ]
+    healthcheck:
+      # The image ships this probe itself. Two endpoints exist and they are not
+      # interchangeable:
+      #   /healthz  liveness, no dependencies — this is the ALB's health_check_path
+      #   /readyz   pings the database, requires at least one chain `ready`, and checks the
+      #             sponsorship signer. Richer, but an unreachable RPC would then take the
+      #             target group down, so the ALB deliberately does not use it.
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/healthz || exit 1']
+      interval: 15s
+      timeout: 3s
+      start_period: 20s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # bundler  →  module "svc-bundler"   NO ALB TARGET   0.5 vCPU / 2048 MB   (§14.7)
+  #
+  # Self-hosted Alto, pinned to 0.0.18 in the image (D3). Note the absence of `ports:`: this
+  # is `alb_enabled = false` — no target group, no listener rule, no hostname. It is
+  # reachable only from the tasks security group, and wallet-api relays user operations to it
+  # AFTER the policy check. Nothing else in the deployment may dial it, which is precisely
+  # what R11 (on wallet-byo, below) is about.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  bundler:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-bundler:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/bundler/Dockerfile
+    restart: unless-stopped
+    networks: [bundler]
+    environment:
+      # [ASM] giano-<env>-rpc-url. Required — the entrypoint exits if unset.
+      ALTO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # [tfvar] EntryPoint v0.7, canonical at the same address on every chain.
+      ALTO_ENTRYPOINTS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      # [ASM] giano-<env>-alto-executor-key. ⚠ MUST BE FUNDED: this account signs and pays
+      # L1 gas for every bundle, and it drains. Note the PLURAL — the image reads
+      # ALTO_EXECUTOR_PRIVATE_KEYS, while the older compose stacks' .env uses the singular
+      # name because they invoke `npx alto` directly instead of using this image.
+      ALTO_EXECUTOR_PRIVATE_KEYS: ${ALTO_EXECUTOR_PRIVATE_KEYS:?set ALTO_EXECUTOR_PRIVATE_KEYS}
+      # [ASM] giano-<env>-alto-utility-key. Nonce management and gas-price checks; needs no
+      # funding. Omit it entirely and the flag is dropped rather than passed empty.
+      ALTO_UTILITY_PRIVATE_KEY: ${ALTO_UTILITY_PRIVATE_KEY:?set ALTO_UTILITY_PRIVATE_KEY}
+      # [literal] `true` because this is a real chain. Safe mode validates user operations
+      # with `debug_traceCall`, so the RPC MUST be trace-capable (Alchemy, QuickNode, or your
+      # own node) — a plain public RPC works only with safe mode off, which is what the
+      # devnet and sepolia stacks do and this deployment must not.
+      ALTO_SAFE_MODE: 'true'
+      # GIANO_DEV_MODE is DELIBERATELY UNSET. The entrypoint refuses to start if the
+      # well-known Anvil key appears in either key variable unless this is `true`. Leaving it
+      # unset keeps that guard armed, which is the only thing standing between a copy-pasted
+      # devnet key and a real chain.
+    healthcheck:
+      # The image's own probe, and note it is a JSON-RPC POST, not a GET on a path — there is
+      # no HTTP health endpoint to point an ALB at even if it had a target group.
+      test:
+        - 'CMD-SHELL'
+        - >-
+          curl -fsS -X POST -H 'content-type: application/json'
+          -d '{"jsonrpc":"2.0","id":1,"method":"eth_supportedEntryPoints","params":[]}'
+          http://127.0.0.1:4337 || exit 1
+      interval: 15s
+      timeout: 3s
+      start_period: 15s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # wallet-web  →  module "svc-wallet-web"   ALB rule 40   0.25 vCPU / 1024 MB   (§14.3)
+  #
+  # ONE task serves EVERY stock-UI tenant hostname. In AWS its listener rule carries Giano's
+  # own `wallet.<apex>` plus every tenant wallet host, and each tenant reaches it by CNAME.
+  # nginx forwards `Host` and `Origin` untouched (`proxy_set_header Host $host`), which is
+  # what lets wallet-api resolve a different tenant per request behind one container.
+  #
+  # ⚠ GIANO_RP_ID IS DELIBERATELY UNSET, and that is load-bearing rather than an omission.
+  # Unset, the SPA takes its RP ID from `window.location.hostname` — the host the browser
+  # actually used, i.e. the TENANT's hostname. Setting it would pin every tenant to one RP ID
+  # and break the entire CNAME model. This is the single value in the deployment that cannot
+  # be undone by a `terraform apply`: passkeys bound to the wrong RP ID are orphaned (R1).
+  #
+  # ⚠ R9 — the constraint to hold is ONE STOCK-UI TENANT PER wallet-web TASK.
+  # GIANO_ALLOWED_DAPP_ORIGINS and GIANO_BRAND_NAME are per TENANT but reach the SPA per
+  # CONTAINER, from /config.json. Two stock-UI tenants sharing this task would get the UNION
+  # of their dApp allowlists on BOTH hostnames — tenant A's dApp could complete the popup
+  # handshake against tenant B's wallet origin — and wallet-api stores allowed_dapp_origins
+  # per tenant but READS IT NOWHERE, so there is no server-side backstop. Dev gets away with
+  # two tenants only because `byoui` brings its own SPA and its own allowlist. §16.4 (a
+  # Host-resolved tenant-config endpoint) is the fix and is a PREREQUISITE of the second
+  # stock-UI tenant, which is a deadline that looks fine in dev and is a hole in staging.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  wallet-web:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-web:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/wallet-web/Dockerfile
+    restart: unless-stopped
+    networks: [tasks]
+    depends_on:
+      # service_healthy, not plain start order: nginx serves /config.json the instant it
+      # boots, so a start-order-only gate lets /api/* 502 while wallet-api is still migrating.
+      wallet-api:
+        condition: service_healthy
+    ports:
+      # → ALB target group, rule 40, host headers `wallet.<apex>` + every stock-UI tenant
+      # wallet host. Placed LAST of the wallet rules so a later broadening of the wallet
+      # condition cannot shadow rule 35 (wallet-byo).
+      - '${WALLET_WEB_PORT:-8081}:8080'
+    environment:
+      # ── Chain, single-chain shorthand ───────────────────────────────────────────────────
+      # Mutually exclusive with GIANO_CHAINS, enforced twice: the entrypoint exits 1 if both
+      # are given, and the SPA refuses to load. Beware that wallet-web's GIANO_CHAINS uses
+      # DIFFERENT per-chain field names from wallet-api's — `factoryAddress`/`sponsorship`
+      # here, `factory`/`sponsorshipPaymaster` there. Same variable name, different schema.
+      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      # [ASM] giano-<env>-rpc-url.
+      #
+      # ⚠ THIS VALUE IS BROWSER-FACING. It becomes `rpcUrl` in /config.json, which every
+      # visitor fetches — so the Alchemy API key embedded in it is published to anyone who
+      # opens the wallet. The spec accepts this because the browser must read chain state
+      # directly and Alchemy sends permissive CORS headers (§13.3), but the better posture is
+      # the one §13.3 also describes: point this at the wallet origin's own `/rpc` and set
+      # GIANO_RPC_UPSTREAM to the keyed URL, which keeps the key server-side. The nginx
+      # template already supports it. Decide this deliberately rather than by default.
+      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # [literal] Required by the entrypoint's shorthand branch even though sponsorship mode
+      # `service` relays user operations through wallet-api rather than dialling a bundler.
+      # R3: confirm during implementation whether the browser ever calls this directly — if
+      # it does, the bundler needs an ALB target and a hostname, and it currently has neither
+      # by design.
+      GIANO_BUNDLER_URL: ${URL_SCHEME:-https}://${API_HOST:?set API_HOST}/v1/userops
+      # [literal] Cloud Map in AWS: http://wallet-api.giano-dev.local:8080. nginx proxies
+      # /api/ and /.well-known/webauthn here. REQUIRED — the entrypoint exits if unset.
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
+      # GIANO_FACTORY_ADDRESS unset — defaults from the contracts registry for this chain.
+
+      # ── Sponsorship ─────────────────────────────────────────────────────────────────────
+      # [literal] `service` routes user operations through wallet-api's ERC-7677 sponsorship
+      # endpoint, which is what keeps the bundler private. The alternative,
+      # `test-paymaster`, is a PERMISSIVE fixture that cannot refuse anything — it must never
+      # be used here, and setting GIANO_PAYMASTER_ADDRESS would silently select it.
+      GIANO_SPONSORSHIP_MODE: service
+
+      # ── Per-tenant values that are per-container until §16.4 (see R9 above) ─────────────
+      GIANO_ALLOWED_DAPP_ORIGINS: '["${URL_SCHEME:-https}://${EXAMPLE_DAPP_HOST:?set EXAMPLE_DAPP_HOST}"]'
+      GIANO_BRAND_NAME: ${EXAMPLE_BRAND_NAME:-Giano Example}
+      # A set of ONE, not a union: only `example` is served by this task. An empty value
+      # fails CLOSED (no dApp may connect), which is the correct direction.
+
+      # ── CSP ─────────────────────────────────────────────────────────────────────────────
+      # [tfvar] var.rpc_origin — the RPC ORIGIN only, not the keyed URL. Space-separated
+      # additions to `connect-src`. Not a secret; the URL that embeds the key is.
+      GIANO_CSP_CONNECT_SRC: ${RPC_ORIGIN:?set RPC_ORIGIN}
+
+      # ⚠ GIANO_RP_ID: intentionally absent. See the block comment above before adding it.
+    healthcheck:
+      # Matches the image, and matches the ALB's `health_check_path = "/"` for this service.
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # custom-example  →  module "svc-custom-example"   ALB rule 20   0.25 vCPU / 1024 MB
+  #
+  # §16.1 is implemented, so the GIANO_* names below are live rather than aspirational.
+  # One departure from what wallet-web does, and it is deliberate: the config arrives as a
+  # rendered /config.js `<script>` ahead of the bundle, not as a fetched /config.json.
+  # src/giano.ts builds its provider and public client at MODULE level, and src/config.ts
+  # exports `chain`/`demoChains` as module constants, so the values have to be readable
+  # synchronously; fetching would mean making all of them async. The environment contract —
+  # which is the only part a deployment sees — is identical either way.
+  #
+  # `pnpm dev` still works from the VITE_* variables: public/config.js ships a null
+  # placeholder that the container overwrites at start.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  custom-example:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-example:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      # Built on every PR and pushed to GHCR by .github/workflows/docker.yml. The ECR push
+      # is the part of §16.2 still missing.
+      dockerfile: services/custom-example/Dockerfile
+    restart: unless-stopped
+    networks: [tasks]
+    ports:
+      # → ALB target group, rule 20, host `example.<apex>`.
+      - '${EXAMPLE_DAPP_PORT:-4400}:8080'
+    environment:
+      # config.json field names, per §14.4: chainId, chainName, rpcUrl, chainBId, walletUrl,
+      # appLabel, testErc20.
+      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      GIANO_CHAIN_NAME: ${CHAIN_NAME:-Base Sepolia}
+      # [literal] 0 disables the second chain. This deployment is single-chain and the
+      # config explicitly supports saying so.
+      GIANO_CHAIN_B_ID: '0'
+      # [ASM] giano-<env>-rpc-url — browser-facing here too; the same key-exposure note as
+      # wallet-web's GIANO_RPC_URL applies.
+      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # ⚠ [literal] The TENANT's wallet hostname. Pointing this at Giano's own serving
+      # hostname `wallet.<apex>` is the one-character mistake that binds this tenant's
+      # passkeys to infrastructure — irreversibly. Runbook §18 step 10 exists to catch it:
+      # the popup's address bar must read the tenant host, and `wallet.<apex>` must return
+      # 404 on /.well-known/webauthn. Each dApp is pinned to exactly ONE wallet origin, which
+      # is what makes the popup's origin check mean anything.
+      GIANO_WALLET_URL: ${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}
+      GIANO_APP_LABEL: ${EXAMPLE_BRAND_NAME:-Giano Example}
+      # GIANO_TEST_ERC20 unset: the devnet default address is meaningless on a real chain.
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # custom-example-byoui  →  module "svc-custom-example-byoui"   ALB rule 25
+  #
+  # THE SAME IMAGE as custom-example, with two values changed. That is the entire difference
+  # between the two dApps, and it is why a second instance exists rather than a wallet picker
+  # in the UI: a dApp offering a choice of wallet origins would blur exactly the boundary
+  # this environment exists to demonstrate. In AWS it is a second call of the same module
+  # against the same ECR repository — not a new image and not a module variant.
+  #
+  # Gated on `var.byo_wallet_enabled`, which is dev-only: a real BYO tenant hosts its own UI,
+  # so staging and production carry the tenant row and nothing else (§20).
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  custom-example-byoui:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-example:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/custom-example/Dockerfile # same image as custom-example
+    restart: unless-stopped
+    networks: [tasks]
+    ports:
+      # → ALB target group, rule 25, host `byoui.<apex>`.
+      - '${BYOUI_DAPP_PORT:-4401}:8080'
+    environment:
+      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      GIANO_CHAIN_NAME: ${CHAIN_NAME:-Base Sepolia}
+      GIANO_CHAIN_B_ID: '0'
+      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # The two values that differ. Everything else is identical to custom-example.
+      GIANO_WALLET_URL: ${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:?set BYOUI_WALLET_HOST}
+      GIANO_APP_LABEL: ${BYOUI_BRAND_NAME:-Giano Example (BYO UI)}
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # wallet-byo  →  module "svc-wallet-byo"   ALB rule 35   0.25 vCPU / 1024 MB   (§14.5)
+  #
+  # Tenant `byoui`'s wallet origin: the framework-free SPA in `e2e/wallet-byo/`, which is the
+  # reference a real BYO tenant copies. A Node server that bundles its own SPA with esbuild
+  # at CONTAINER START and reverse-proxies the same paths wallet-web's nginx does, forwarding
+  # `Host` and `Origin` untouched. That is the whole serving contract a BYO tenant must
+  # reproduce, and because the bundle is built from environment at start-up this image is
+  # already environment-independent in the way §16.1 has to MAKE custom-example be.
+  #
+  # It is the only service here Giano would not run in a real deployment. Its listener rule
+  # sits at 35, deliberately ABOVE wallet-web's 40: if a broadened wallet condition ever
+  # captured this host, byoui would be served the stock UI, which fails closed at the popup
+  # handshake and looks like a tenancy bug rather than the routing bug it is.
+  #
+  # §16.5 is implemented: there is a Dockerfile, `serve.mjs` no longer reads
+  # e2e/devnet/addresses.json or imports ../origins.mjs (absent, every value they defaulted
+  # becomes a required variable that fails loudly), the second chain falls away unless
+  # CHAIN_B_ID is set, and chain names come from the environment.
+  #
+  # ⚠ R11 IS STILL OPEN, AND IT IS NOT A FLAG PROBLEM. `BYO_BUNDLER_PROXY_ENABLED` is now
+  # real — false makes /bundler and /bundler-b answer 501 instead of relaying — but the
+  # spec's premise for it does not hold:
+  #
+  #   §16.5 says `service` sponsorship "never needs" the bundler proxy. The code says
+  #   otherwise. e2e/wallet-byo/src/runtime.ts builds a viem
+  #   `createBundlerClient({ transport: http(`${origin}${bundlerPath}`) })` and submits
+  #   through it on EVERY path — the sponsorship mode only swaps the paymaster hooks. So
+  #   turning the proxy off closes the relay AND stops this wallet submitting anything.
+  #
+  #   wallet-api's `POST /v1/userops` cannot substitute: it is REST
+  #   (`{userOperation, chainId}` plus a session, returning `{userOperationHash}`), not a
+  #   JSON-RPC bundler, so it will not serve as a viem transport.
+  #
+  #   The stock wallet does exactly the same thing (services/wallet-web/src/wallet.ts:175),
+  #   which means R3 is this same defect seen from the other end — and wallet-web's
+  #   GIANO_BUNDLER_URL is pointed at `https://api.<apex>/v1/userops` in
+  #   infra/iac/ecs_services.tf:171, which is that REST endpoint.
+  #
+  # So a deployment has to choose, and neither option is free:
+  #   proxy off — safe, and the wallet cannot send transactions (what dev is set to today)
+  #   proxy on  — the wallet works and the relay is exposed; only acceptable if the bundler
+  #               is not reachable from this task at all
+  # The real fix is a JSON-RPC relay endpoint on wallet-api, which would close R3 and R11
+  # together and let the bundler stay private for both wallets. It does not exist yet.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  wallet-byo:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-byo:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      # Node, the SPA sources and esbuild; no build step, because the bundle is produced at
+      # container start. Built and pushed to GHCR by .github/workflows/docker.yml.
+      dockerfile: e2e/wallet-byo/Dockerfile
+    restart: unless-stopped
+    # Deliberately NOT on the `bundler` network, which is what makes the open-relay vector
+    # unreachable here regardless of the flag. The cost is the one R11 describes: with no
+    # route to a bundler, this wallet cannot submit until wallet-api grows a JSON-RPC relay.
+    networks: [tasks]
+    depends_on:
+      wallet-api:
+        condition: service_healthy
+    ports:
+      # → ALB target group, rule 35, host `wallet.byoui.<apex>` — its own RP ID, and its own
+      # certificate, because it is two labels deep and the wildcard does not cover it.
+      - '${BYOUI_WALLET_PORT:-8082}:8080'
+    environment:
+      BYO_WALLET_PORT: '8080'
+      # [literal] Cloud Map in AWS. Proxies /api* and /.well-known/webauthn, forwarding Host
+      # and Origin untouched because wallet-api resolves tenants from them.
+      WALLET_API_UPSTREAM: http://wallet-api:8080
+      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      # [ASM] giano-<env>-rpc-url. Proxied SAME-ORIGIN through this server's /rpc, so unlike
+      # wallet-web's browser-facing GIANO_RPC_URL the API key stays server-side. This is the
+      # posture §13.3 recommends, and the BYO fixture happens to get it right.
+      RPC_UPSTREAM: ${RPC_URL:?set RPC_URL}
+      # [literal] The real sponsorship path, through /api/v1/paymaster. `service` mode needs
+      # neither a bundler proxy nor the permissive paymaster fixture, so PAYMASTER_ADDRESS
+      # stays unset.
+      SPONSORSHIP_MODE: service
+      # [literal] Now honoured: false makes /bundler and /bundler-b answer 501 with a
+      # JSON-RPC error naming the reason, rather than relaying. BUNDLER_UPSTREAM is
+      # deliberately absent as well, so there is nothing to relay TO even if it were on.
+      # ⚠ This also disables submission — see R11 above. It is the safe half of a trade-off,
+      # not a fix.
+      BYO_BUNDLER_PROXY_ENABLED: 'false'
+      # This tenant's OWN allowlist, shipped with its own SPA. That is why R9 cannot reach it
+      # and why it can be tenant two today.
+      BYO_ALLOWED_DAPP_ORIGINS: '["${URL_SCHEME:-https}://${BYOUI_DAPP_HOST:?set BYOUI_DAPP_HOST}"]'
+      # ⚠ [tfvar] REQUIRED here, unlike everywhere else. §14.5 says FACTORY_ADDRESS may be
+      # left unset and defaults from the contracts registry — that is true of wallet-api and
+      # wallet-web, but NOT of this SPA: its bundle has no registry dependency and passes
+      # this value straight to createGianoProvider. serve.mjs therefore refuses to start
+      # without it outside an e2e checkout. `infra/iac` does not set it yet.
+      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?set FACTORY_ADDRESS}
+      # CHAIN_B_ID unset: single-chain, and the second chain now falls away rather than being
+      # advertised as a fiction pointing at /rpc-b.
+    healthcheck:
+      # The server has no health endpoint of its own; ECS uses `health_check_path = "/"`.
+      # CI probes the tenant origin instead, which is the more meaningful check:
+      #   curl -fsS -H 'Host: wallet.byoui.<apex>' http://127.0.0.1:8080/.well-known/webauthn
+      test: ['CMD-SHELL', 'wget -q -O- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1']
+      interval: 15s
+      timeout: 3s
+      start_period: 15s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # paymaster-admin  →  module "svc-paymaster-admin"   ALB rule 30   0.25 vCPU / 1024 MB
+  #
+  # The operator's view of the same paymaster the wallets sponsor through. Everything it
+  # shows is read straight from the chain, so it needs neither wallet-api nor the database —
+  # note it is on the `tasks` network only, with no `data` and no `bundler`, and has no
+  # depends_on at all.
+  #
+  # It WRITES through an injected browser wallet, not through a service credential, so
+  # whoever holds the paymaster's role-admin key is the only person who can change anything
+  # through it. There is no server-side authorisation to configure here, and none to forget.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  paymaster-admin:
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-paymaster-admin:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/paymaster-admin/Dockerfile
+    restart: unless-stopped
+    networks: [tasks]
+    ports:
+      # → ALB target group, rule 30, host `paymaster.<apex>`.
+      - '${PAYMASTER_ADMIN_PORT:-8083}:8080'
+    environment:
+      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      # [ASM] giano-<env>-rpc-url. Browser-facing (it becomes `rpcUrl` in config.json) and
+      # also the default for GIANO_RPC_UPSTREAM, so the same key-exposure note applies. To
+      # keep the key server-side, set this to `<scheme>://<paymaster host>/rpc` and put the
+      # keyed URL in GIANO_RPC_UPSTREAM — the nginx template proxies `= /rpc`.
+      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # ⚠ [tfvar] MUST be set explicitly. The contracts registry has no paymaster entry for
+      # this chain, so an unset value leaves the SDK resolving nothing and the console shows
+      # an empty roster that looks exactly like a bug rather than a misconfiguration.
+      GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
+      GIANO_ENVIRONMENT_LABEL: ${GIANO_ENVIRONMENT_LABEL:-dev (Base Sepolia)}
+      GIANO_REFRESH_SECONDS: '15'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # provision-sponsorship  →  aws_ecs_task_definition, NO SERVICE ATTACHED   (§9.7, §18.8)
+  #
+  # Behind a profile because in AWS it is not a service: it is a task definition run by hand
+  # with `aws ecs run-task` and the RUN_TASK_NETWORK output, ONCE PER TENANT at bring-up and
+  # again whenever the rules change.
+  #
+  #   docker compose … --profile oneshot run --rm -e TENANT_SLUG=example provision-sponsorship
+  #   docker compose … --profile oneshot run --rm -e TENANT_SLUG=byoui   provision-sponsorship
+  #
+  # ⚠ A TENANT WITH NO SPONSORSHIP RULES IS REFUSED EVERY TRANSACTION, which looks exactly
+  # like a broken environment. Skipping this step is the most likely way to bring up a stack
+  # that appears deployed and does nothing.
+  #
+  # It is deliberately NOT an init container: it is an occasional administrative action
+  # against a RUNNING API, and running it on every task start would re-PUT the same rules a
+  # dozen times a day. It also uses plain awslogs rather than FireLens in AWS — a task that
+  # lives forty seconds can exit before Fluent Bit has flushed its buffer (§9.5).
+  #
+  # ⚠ BLOCKED ON §16.3. The command below is what `infra/iac` expects, but
+  # `dist/provision-sponsorship.js` is not a build entry of the wallet-api image — only
+  # `index` and `migrate` are. The existing `e2e/devnet/provision-sponsorship.mjs` hardcodes
+  # the e2e tenants' admin keys and reads `e2e/devnet/addresses.json`, so it needs
+  # generalising to be driven entirely by environment (or replacing with
+  # `packages/paymaster-sdk`'s CLI, which already speaks to the same endpoints).
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  provision-sponsorship:
+    profiles: ['oneshot']
+    image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    # The container is named `provision-sponsorship` in the task definition because the
+    # runbook's `--overrides` addresses it by name. Do not rename it without changing §18.
+    command: ['node', 'dist/provision-sponsorship.js'] # ⚠ §16.3 — not a build entry yet
+    restart: 'no'
+    networks: [tasks]
+    depends_on:
+      wallet-api:
+        condition: service_healthy
+    environment:
+      # Reached over Cloud Map rather than the public hostname: the tenant is selected by
+      # TENANT_SLUG and its admin key, not by the Host header, so there is nothing to gain
+      # from an internet round-trip.
+      WALLET_API_URL: http://wallet-api:8080
+      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
+      SPONSORSHIP_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
+      # Overridden per run — one invocation per tenant. `example` and `byoui` here.
+      TENANT_SLUG: ${TENANT_SLUG:-}
+      # [ASM] giano-<env>-tenants-seed — the job needs it for the tenants' adminKeys, which
+      # are what authorise PUT /v1/admin/sponsorship.
+      TENANTS_SEED: |
+        [
+          {
+            "slug": "example",
+            "walletOrigin": "${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST}",
+            "rpId": "${EXAMPLE_WALLET_HOST}",
+            "rpName": "Giano Example",
+            "adminKeys": ["${EXAMPLE_ADMIN_KEY}"]
+          },
+          {
+            "slug": "byoui",
+            "walletOrigin": "${URL_SCHEME:-https}://${BYOUI_WALLET_HOST}",
+            "rpId": "${BYOUI_WALLET_HOST}",
+            "rpName": "Giano BYO UI",
+            "adminKeys": ["${BYOUI_ADMIN_KEY}"]
+          }
+        ]

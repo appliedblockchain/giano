@@ -1,9 +1,11 @@
 name: Docker images
 
 # Every image builds on every PR; only main and tags push. A PR build is the only thing that
-# exercises giano-bundler, giano-devnet and giano-contracts-deployer at all — the e2e compose
-# stack builds just wallet-api, wallet-web and paymaster-admin, and uses upstream images for
-# the rest — so without this a broken Dockerfile first surfaces in the job that publishes it.
+# exercises giano-bundler, giano-devnet, giano-contracts-deployer, giano-example and
+# giano-wallet-byo at all — the e2e compose stack builds just wallet-api, wallet-web and
+# paymaster-admin, uses upstream images for the rest, and runs the demo dApp and the BYO
+# wallet host-side from source rather than as images — so without this a broken Dockerfile
+# first surfaces in the job that publishes it.
 on:
   push:
     branches: [main]
@@ -34,6 +36,17 @@ jobs:
             dockerfile: services/wallet-web/Dockerfile
           - name: giano-paymaster-admin
             dockerfile: services/paymaster-admin/Dockerfile
+          # The demo dApp. ONE image runs twice in the deployment — as custom-example and
+          # custom-example-byoui, differing only in GIANO_WALLET_URL and GIANO_APP_LABEL —
+          # which is why infra/iac has six ECR repositories for seven services.
+          - name: giano-example
+            dockerfile: services/custom-example/Dockerfile
+          # Tenant `byoui`'s wallet origin: the reference SPA a real BYO tenant copies. It
+          # lives under e2e/ because it is also the e2e fixture, and it is the only published
+          # image Giano would not run in a real deployment — a real BYO tenant hosts its own
+          # UI, so it is deployed in dev only (infra/iac var.byo_wallet_enabled).
+          - name: giano-wallet-byo
+            dockerfile: e2e/wallet-byo/Dockerfile
           - name: giano-bundler
             dockerfile: services/bundler/Dockerfile
           - name: giano-devnet
