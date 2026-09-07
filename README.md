@@ -9,8 +9,7 @@
 
 Giano ships as versioned artifacts deployed into a stack you control — either self-hosted by the
 integrator, or run by Applied Blockchain as a dedicated per-client deployment. There is no public
-multi-tenant Giano: one deployment serves one client, and `RP_ID` is fixed per deployment. See
-[`docs/PRODUCT-STRATEGY.md`](docs/PRODUCT-STRATEGY.md) for how the two distribution modes relate.
+multi-tenant Giano: one deployment serves one client, and `RP_ID` is fixed per deployment.
 
 - **Packages** (npm, GitHub Packages): `giano-contracts` (ABIs + address registry), `giano-wallet-core` (provider, passkey smart account, injection seam), `giano-wallet-transport` (popup protocol), `giano-connector` (the thin dApp SDK).
 - **Services** (Docker images, GHCR): `giano-wallet-api` (Fastify + Postgres: WebAuthn ceremonies, sessions, policied userop relay), `giano-wallet-web` (the dedicated wallet origin — passkey ceremonies + consent UI), `giano-bundler`, `giano-devnet`, `giano-contracts-deployer`.
@@ -20,6 +19,8 @@ A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives 
 ## Prerequisites
 
 - **Node 22** (`tsc` needs a big heap on this repo — see Troubleshooting) and **pnpm** (`corepack enable`).
+  The E2E demo needs **Node 24**, because [portless](https://github.com/vercel-labs/portless) — which
+  serves the demo's `*.localhost` addresses — requires it.
 - **Docker** (Compose) — for the local stacks, wallet-api integration tests, and E2E.
 - **Foundry** (`curl -L https://foundry.paradigm.xyz | bash`) and **git submodules** (`pnpm git:init`) — only needed to compile contracts or run `forge test`; the published-package build path needs neither.
 
@@ -36,29 +37,59 @@ instant-boot devnet (EntryPoint v0.7 + Giano factory + testing paymaster baked i
 state), so there is nothing to deploy by hand:
 
 ```sh
-docker compose -f deploy/docker-compose.e2e.yml up --build
+# --profile portless adds the container that lends the stack port 80
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
+
+# register the names, then wait until they answer
+pnpm -F @appliedblockchain/giano-e2e portless:up
 ```
 
-This starts:
+Addresses are names, not ports. [portless](https://github.com/vercel-labs/portless) maps each
+`*.localhost` name to the loopback port behind it; `e2e/origins.mjs` is the name/port table and
+the single source of truth the fixtures, the tenant seed and the tests all read.
+
+None of it runs as root. A URL with no port *is* port 80, and macOS and Linux reserve ports
+below 1024 for root — so rather than `sudo portless proxy start`, the `portless-port80`
+container holds port 80 (Docker already binds this stack's host ports through its own
+privileged helper) and relays it to portless listening unprivileged on 1355. `/etc/hosts` is
+left alone as well. If you would rather run the proxy on port 80 directly,
+`sudo pnpm -F @appliedblockchain/giano-e2e portless:proxy` does that and the container is then
+unnecessary.
 
 | Service | URL | Notes |
 | --- | --- | --- |
-| devnet (anvil) | http://localhost:8545 | chain 31337, contracts pre-deployed |
-| bundler (alto) | http://localhost:4337 | EntryPoint v0.7 |
-| wallet-api | (internal) | reached via the wallet-web `/api` proxy |
-| wallet-web | http://wallet.localhost:8081 | the wallet origin (open it directly for the Settings view) |
+| devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
+| bundler (alto) | http://bundler.localhost | EntryPoint v0.7 |
+| wallet-api | http://api.localhost | also reached via the wallet-web `/api` proxy |
+| wallet-web | http://wallet.localhost | the wallet origin (open it directly for the Settings view) |
+| paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at
-`http://wallet.localhost:8081` as the wallet URL; the stack already allow-lists the E2E dApp
-origin (`http://app.localhost:4400`).
+`http://wallet.localhost` as the wallet URL; the stack already allow-lists the demo dApp
+origin (`http://app.localhost`).
 
-To run the sample dApp against this stack (thin-SDK fixture on `http://app.localhost:4400`):
+Tear down with `docker compose --profile portless -f deploy/docker-compose.e2e.yml down`, and
+drop the names with `pnpm -F @appliedblockchain/giano-e2e portless:down`. HTTP rather than
+portless's default HTTPS is deliberate: `http://*.localhost` is already a secure context, so
+passkeys work without minting and trusting a local CA.
+
+### Which dApp goes in front of it
+
+Two dApps in this repo can sit on `http://app.localhost`, and it is worth knowing which is
+which — they are not interchangeable:
+
+| | What it is | When to use it |
+| --- | --- | --- |
+| **The example app**<br>`services/custom-example` | A real UI — Vite + React + Chakra UI: wallet basics, an ERC-20 panel, a gasless-sponsorship panel. | **This is the one to run.** Whenever you want to *use* Giano, show it to someone, or poke at a change by hand. See [Option C](#option-c--the-example-app). |
+| **The demo fixture**<br>`e2e/dapp` | Deliberately barebones: one static HTML page, no framework, stable element ids and nothing else. | Mostly just a Playwright target. The E2E suite starts it itself, so you rarely run it by hand — only to debug a failing test. |
+
+They share the one origin, so **only one of them can run at a time**: `http://app.localhost` is
+port 4400 behind portless, and 4400/4401 are the only dApp origins the E2E tenants allow-list.
 
 ```sh
-pnpm --filter @appliedblockchain/giano-e2e dapp
+pnpm demo:dev                                  # the example app — start here
+pnpm --filter @appliedblockchain/giano-e2e dapp # the barebones test fixture
 ```
-
-Tear down with `docker compose -f deploy/docker-compose.e2e.yml down`.
 
 ### Option B — iterate on wallet-api against a fresh devnet
 
@@ -76,20 +107,45 @@ FACTORY_ADDRESS=0x… docker compose -f deploy/docker-compose.dev.yml up --build
 
 Swagger UI is available at the wallet-api's `/docs` outside production.
 
-### Option C — Chakra sample dApp (thin SDK)
+### Option C — the example app
 
-`services/custom-example` (`pnpm demo:dev`) is a Vite + React + Chakra UI demo of the thin
-two-origin integration — the same model as the E2E fixture, but with a real UI: wallet basics
-(connect, send, sign) plus an ERC-20 panel (read balances, transfer, approve, and sign an
-EIP-2612 permit). Bring up the Option A stack, then:
+**`services/custom-example` is the app to run when you want to see Giano working.** It is a
+Vite + React + Chakra UI dApp with a real UI, and it demonstrates the thin two-origin
+integration — the same model as the barebones E2E fixture, but built to be used rather than
+asserted against:
+
+- **wallet basics** — connect / disconnect, send a user-operation, `personal_sign` and
+  `eth_signTypedData_v4`;
+- **an ERC-20 panel** — read a token's metadata and balance, transfer, approve, and sign an
+  EIP-2612 permit (tokens without permit support are reported cleanly);
+- **a gasless-sponsorship panel** — every send goes through Giano's paymaster, and because the
+  wallet origin runs its ERC-7677 sponsorship check *before* asking for a passkey, a
+  "call an unlisted contract" action is refused up front: no consent prompt, no passkey, nothing
+  charged.
+
+Bring up the Option A stack, then:
 
 ```sh
-pnpm demo:dev   # http://app.localhost:4400
+pnpm demo:dev   # http://app.localhost
 ```
 
-It defaults to the Option A stack (wallet origin `http://wallet.localhost:8081`, anvil RPC
-`http://localhost:8545`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
+(The root scripts are named `demo:*` for historical reasons — `pnpm demo:dev` runs the example
+app, not the `e2e/dapp` fixture.)
+
+It defaults to the Option A stack (wallet origin `http://wallet.localhost`, anvil RPC
+`http://rpc.localhost`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
 `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_TEST_ERC20` for other networks.
+
+**Two tenants side by side.** The E2E stack seeds two tenants against one backend, each with its
+own wallet origin, and this one app serves both:
+
+```sh
+pnpm demo:stock                                      # http://app.localhost     -> wallet.localhost
+pnpm demo:byo                                        # http://app-byo.localhost -> wallet-byo.localhost
+pnpm -F @appliedblockchain/giano-e2e wallet-byo       # tenant byo's wallet origin (needed for demo:byo)
+```
+
+Stop these dev servers before running the E2E suite — see [Running the tests](#running-the-tests).
 
 ## Running the tests
 
@@ -104,11 +160,23 @@ pnpm --filter @appliedblockchain/giano-wallet-api test
 # contract tests (needs Foundry + submodules)
 forge test    # from packages/contracts
 
-# end-to-end (two real origins, Chromium + virtual authenticator)
-docker compose -f deploy/docker-compose.e2e.yml up --build -d
+# end-to-end (four real origins, Chromium + virtual authenticator)
+# --profile portless adds the container that lends the stack port 80, so the demo's
+# addresses are names rather than ports — see e2e/README.md
+docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build -d --wait
 pnpm --filter @appliedblockchain/giano-e2e exec playwright install chromium
 pnpm --filter @appliedblockchain/giano-e2e test
 ```
+
+`pnpm test` registers the portless routes and starts the dApp/wallet fixtures itself (Playwright
+`globalSetup`), so the compose stack above is the only prerequisite.
+
+The dApp the suite drives is the barebones `e2e/dapp` fixture, not the example app — that is what
+the fixture is *for*: one static page with stable element ids and no framework to get in the way.
+
+> **Stop `pnpm demo:*` before running the suite.** The example app and the fixture compete for
+> ports 4400/4401, and Playwright's `reuseExistingServer: true` will silently adopt the example
+> app instead of the fixture — every test then fails on a missing `#connect`.
 
 The E2E suite drives the full flow — create wallet, connect, session resume, send a sponsored
 transaction through consent to a receipt, reject (4001), sign message / typed data, hostile-origin
@@ -123,7 +191,7 @@ rotated** (ops task) — treat them as public.
 
 ## Deploying Giano (for client projects)
 
-> **New to Giano? Start with [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md)** — a single
+> **New to Giano? Start with [`specs/DEVELOPER-GUIDE.md`](specs/DEVELOPER-GUIDE.md)** — a single
 > self-contained guide covering dApp integration, standing up the stack on any EVM chain, the
 > `giano-doctor` verification CLI, and a production checklist, with explicit software/keys/secrets/
 > infrastructure dependencies.
@@ -132,12 +200,11 @@ rotated** (ops task) — treat them as public.
   with a fully commented env matrix to copy into your own deployment.
 - `deploy/helm/giano` — Helm chart (wallet-api + migrations hook, wallet-web, optional bundler,
   contracts-deployer pre-install Job, ingress).
-- `docs/INTEGRATION.md` — DNS/TLS, proxy rules, the COOP caveat, per-container env, and the
-  upgrade runbook. `docs/SECRETS.md` — secrets inventory and monitoring. `COMPATIBILITY.md` —
-  versioning and upgrade order.
-- `docs/PRODUCT-STRATEGY.md` — how Giano evolves toward a standalone service: modularity seams, the
-  bring-your-own-UI contract, and the phased roadmap. `docs/COST-MODEL.md` — what it costs to run
-  and the breakeven analysis.
+- `specs/INTEGRATION.md` — DNS/TLS, proxy rules, the COOP caveat, per-container env, and the
+  upgrade runbook. `COMPATIBILITY.md` — versioning and upgrade order. The secrets inventory and the
+  metrics to watch them by are in `specs/DEVELOPER-GUIDE.md` §2.2 and §6.
+- `specs/PAYMASTER-REQUIREMENTS.md` and `specs/PAYMASTER-SPECS.md` — gas sponsorship: what it must
+  do and why the decisions were made, and the technical design that implements it.
 
 ### Important tips
 
@@ -150,6 +217,20 @@ rotated** (ops task) — treat them as public.
   CI `determinism` job fails if the CREATE2 addresses drift.
 
 ## Troubleshooting
+
+### The demo's `*.localhost` addresses do not answer
+
+The E2E demo is addressed by name rather than by port, via a local portless proxy. If
+`http://app.localhost` and friends fail:
+
+- a portless **404** means the routes are not registered — `pnpm -F @appliedblockchain/giano-e2e portless:up`;
+- a **502** means the route is registered but nothing is behind it — the compose stack or a host
+  fixture is down;
+- *connection refused* means nothing holds port 80 — bring up the relay with
+  `docker compose --profile portless -f deploy/docker-compose.e2e.yml up -d portless-port80`.
+
+`pnpm -F @appliedblockchain/giano-e2e portless:list` shows the active routes and `portless doctor`
+checks proxy, routes, DNS and trust in one go. Full reference: [`e2e/README.md`](./e2e/README.md).
 
 ### Heap Out of Memory Error
 

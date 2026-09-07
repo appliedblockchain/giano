@@ -17,7 +17,32 @@ const requests = createRequestStore();
 const root = document.getElementById('view')!;
 
 let inflight = 0;
-const rerender = () => render(root, requests.current, inflight > 0);
+/** null while the sponsorship pre-flight is still in the air; nothing is approvable until then. */
+let preflight: import('./runtime').SponsorshipPreflight | null = { state: 'not-applicable' };
+const rerender = () => render(root, requests.current, inflight > 0, preflight);
+
+/**
+ * Runs the pre-flight when a transaction request arrives, before anything approvable is rendered.
+ * The reason is written to the console as well as shown, because a transient notice is gone by the
+ * time anyone investigates — and the reason is what separates "this app is misconfigured" from
+ * "this app is out of credit".
+ */
+async function runSponsorshipPreflight(params: unknown): Promise<void> {
+  const tx = (Array.isArray(params) ? params[0] : params) as import('./runtime').TransactionRequest | undefined;
+  preflight = null;
+  rerender();
+
+  const result = await runtime.checkSponsorship(tx ?? {});
+  preflight = result;
+  if (result.state === 'refused') {
+    console.error('[giano-byo] sponsorship refused', { reason: result.reason, message: result.message, ruleResults: result.ruleResults });
+  } else if (result.state === 'unavailable') {
+    console.error('[giano-byo] sponsorship unavailable', { message: result.message });
+  } else if (result.state === 'sponsored') {
+    console.info('[giano-byo] sponsorship available — fees covered by the app');
+  }
+  rerender();
+}
 
 const transport = new TransportHost({
   walletVersion: '0.1.0-byo',
@@ -32,12 +57,17 @@ const transport = new TransportHost({
       await runtime.provider.request({ method: 'giano_restoreAccount' } as never).catch(() => undefined);
     }
     if (needsConsent) {
-      await requests.requestConsent({
+      const consent = requests.requestConsent({
         kind: method === 'eth_requestAccounts' ? 'connect' : method === 'eth_sendTransaction' ? 'transaction' : 'sign',
         method,
         params,
         dappOrigin: context.dappOrigin,
       });
+      // Started alongside the consent prompt rather than before it, so the request is on screen
+      // while the check runs — but the confirm button does not appear until it has answered.
+      if (method === 'eth_sendTransaction') void runSponsorshipPreflight(params);
+      await consent;
+      preflight = { state: 'not-applicable' };
     }
     inflight += 1;
     rerender();

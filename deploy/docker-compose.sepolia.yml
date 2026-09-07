@@ -59,6 +59,9 @@ services:
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
+      # A testnet: the balances at risk are worthless, so an environment-variable signing key is
+      # acceptable here where it would be refused for `production`.
+      GIANO_DEPLOYMENT_CLASS: testnet
       CHAIN_ID: ${CHAIN_ID:-11155111}
       # server-side reads; can be a plain public RPC (no trace needed here)
       RPC_URL: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}

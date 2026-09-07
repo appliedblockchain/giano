@@ -15,7 +15,7 @@ declare module 'fastify' {
 }
 
 /**
- * Per-request tenant resolution (docs/MULTI-TENANCY-GAPS.md §5.2). The Origin header is
+ * Per-request tenant resolution (specs/DEVELOPER-GUIDE.md §1). The Origin header is
  * authoritative for ceremony routes because WebAuthn independently verifies the ceremony
  * ran on that origin (clientDataJSON.origin must match the resolved tenant's
  * expected_origins); the Host header is authoritative for /.well-known/webauthn.

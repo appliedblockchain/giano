@@ -1,5 +1,7 @@
 import type { CDPSession, Page } from '@playwright/test';
 
+import { ORIGINS } from '../origins.mjs';
+
 /**
  * Tenant descriptors for the two-tenant e2e topology. UI labels differ per tenant on
  * purpose: asserting them proves which wallet UI actually ran the flow (tenant A serves
@@ -16,15 +18,15 @@ export type Tenant = {
 export const TENANTS: Record<'stock' | 'byo', Tenant> = {
   stock: {
     slug: 'stock',
-    walletUrl: process.env.WALLET_URL ?? 'http://wallet.localhost:8081',
-    dappUrl: process.env.DAPP_URL ?? 'http://app.localhost:4400',
+    walletUrl: process.env.WALLET_URL ?? ORIGINS.wallet,
+    dappUrl: process.env.DAPP_URL ?? ORIGINS.dapp,
     adminKey: 'e2e-admin-key-stock',
     ui: { connect: 'Continue with passkey', approveTx: 'Approve', rejectTx: 'Reject', sign: 'Sign', txHeading: 'Review transaction' },
   },
   byo: {
     slug: 'byo',
-    walletUrl: process.env.WALLET_BYO_URL ?? 'http://wallet-byo.localhost:8082',
-    dappUrl: process.env.DAPP_BYO_URL ?? 'http://app-byo.localhost:4401',
+    walletUrl: process.env.WALLET_BYO_URL ?? ORIGINS.walletByo,
+    dappUrl: process.env.DAPP_BYO_URL ?? ORIGINS.dappByo,
     adminKey: 'e2e-admin-key-byo00',
     ui: { connect: 'Unlock with passkey', approveTx: 'Confirm', rejectTx: 'Decline', sign: 'Sign it', txHeading: 'Confirm transaction' },
   },

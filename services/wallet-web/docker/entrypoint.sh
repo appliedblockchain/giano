@@ -8,7 +8,17 @@ set -eu
 : "${GIANO_WALLET_API_UPSTREAM:?GIANO_WALLET_API_UPSTREAM is required (e.g. http://wallet-api:8080)}"
 export GIANO_WALLET_API_URL="${GIANO_WALLET_API_URL:-/api}"
 export GIANO_FACTORY_ADDRESS="${GIANO_FACTORY_ADDRESS:-}"
+# How gas is sponsored: 'service' (the production paymaster, via the ERC-7677 sponsorship
+# service), 'test-paymaster' (the permissive paymaster — development and tests only) or 'off'.
+# Defaults to the dev path when a permissive paymaster address is supplied and to the service
+# otherwise, so an existing devnet config keeps working unchanged.
+if [ -n "${GIANO_PAYMASTER_ADDRESS:-}" ]; then
+  export GIANO_SPONSORSHIP_MODE="${GIANO_SPONSORSHIP_MODE:-test-paymaster}"
+else
+  export GIANO_SPONSORSHIP_MODE="${GIANO_SPONSORSHIP_MODE:-service}"
+fi
 export GIANO_PAYMASTER_ADDRESS="${GIANO_PAYMASTER_ADDRESS:-}"
+export GIANO_PAYMASTER_SERVICE_URL="${GIANO_PAYMASTER_SERVICE_URL:-${GIANO_WALLET_API_URL}/v1/paymaster}"
 # JSON array of dApp origins allowed to drive the wallet; [] = none (fail closed), ["*"] = any (dev only)
 export GIANO_ALLOWED_DAPP_ORIGINS="${GIANO_ALLOWED_DAPP_ORIGINS:-[]}"
 export GIANO_RP_ID="${GIANO_RP_ID:-}"

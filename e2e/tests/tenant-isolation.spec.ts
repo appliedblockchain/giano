@@ -14,7 +14,7 @@ import {
 } from './helpers';
 
 /**
- * Browser-level tenant-isolation proofs (docs/MULTI-TENANCY-GAPS.md §10). The wallet-api
+ * Browser-level tenant-isolation proofs (specs/DEVELOPER-GUIDE.md §1). The wallet-api
  * vitest suite owns the API-level negative matrix; this file proves what only a real
  * browser can:
  *  - V8:  passkeys are RP-bound — the assumption most severity downgrades rest on

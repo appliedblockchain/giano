@@ -45,7 +45,7 @@ export function App({ config }: { config: WalletConfig }) {
       </div>
 
       {pending?.kind === 'connect' ? <Connect request={withProcessing(pending)} /> : null}
-      {pending?.kind === 'transaction' ? <ReviewTransaction request={withProcessing(pending)} /> : null}
+      {pending?.kind === 'transaction' ? <ReviewTransaction request={withProcessing(pending)} runtime={runtime} /> : null}
       {pending?.kind === 'sign' ? <SignMessage request={withProcessing(pending)} /> : null}
 
       {!pending && processing ? (

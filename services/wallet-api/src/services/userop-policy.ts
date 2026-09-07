@@ -20,6 +20,20 @@ export type PolicyDecision = {
   rejectReason?: string;
 };
 
+/**
+ * Extracts the tenant id a sponsored operation names, from the paymaster authorisation header.
+ *
+ * `paymasterData` is everything after the EntryPoint's 20+16+16 prefix; the Giano layout is
+ * `version(1) ‖ tenantId(16) ‖ …`. Anything that is not that layout returns null — this is a
+ * cross-check, not a parser, and a paymaster with a different data format is not a mismatch.
+ */
+export function decodeSponsoredTenantId(paymasterData: Hex | undefined): Hex | null {
+  if (!paymasterData || paymasterData.length < 2 + 2 + 32) return null;
+  const body = paymasterData.slice(2);
+  if (body.slice(0, 2) !== '01') return null;
+  return `0x${body.slice(2, 34)}`;
+}
+
 export type PolicyConfig = {
   maxCallGas: bigint;
   maxVerificationGas: bigint;
@@ -29,6 +43,11 @@ export type PolicyConfig = {
   allowedTargets: string[];
   /** lowercase addresses; empty = no restriction */
   allowedPaymasters: string[];
+  /**
+   * The tenant this session belongs to, as the 16-byte id the paymaster bills. When present, an
+   * operation sponsored by Giano's paymaster must name it.
+   */
+  sponsorshipTenantId?: Hex;
 };
 
 export type PolicyUserOp = {
@@ -40,6 +59,7 @@ export type PolicyUserOp = {
   maxFeePerGas: bigint;
   maxPriorityFeePerGas: bigint;
   paymaster?: Address;
+  paymasterData?: Hex;
 };
 
 /** Decodes execute/executeBatch calldata into target addresses. Unknown selectors → null. */
@@ -122,6 +142,18 @@ export function evaluatePolicy(userOp: PolicyUserOp, sessionWalletAddress: strin
     }
   } else {
     pass('paymaster-allowlist', 'no restriction configured');
+  }
+
+  // 6. Sponsored-tenant cross-check. The paymaster already enforces this on chain — the tenant is
+  //    inside the authorisation signature — so this is defence in depth: it catches a service bug
+  //    or a tampered operation before the bundler sees it, and it costs a slice of bytes.
+  const sponsoredTenant = decodeSponsoredTenantId(userOp.paymasterData);
+  if (!config.sponsorshipTenantId || !sponsoredTenant) {
+    pass('sponsored-tenant-match', sponsoredTenant ? 'no session tenant to compare against' : 'not a Giano-sponsored operation');
+  } else if (sponsoredTenant.toLowerCase() !== config.sponsorshipTenantId.toLowerCase()) {
+    fail('sponsored-tenant-match', `operation bills tenant ${sponsoredTenant}, session belongs to ${config.sponsorshipTenantId}`);
+  } else {
+    pass('sponsored-tenant-match');
   }
 
   const firstFailure = results.find((r) => !r.passed);

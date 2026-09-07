@@ -51,6 +51,9 @@ services:
       - '8080:8080'
     environment:
       NODE_ENV: development
+      # What the deployment is, as distinct from how it was built — it is what gates whether a
+      # signing key may sit in an environment variable (see services/wallet-api/src/config.ts).
+      GIANO_DEPLOYMENT_CLASS: development
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
       CHAIN_ID: '31337'

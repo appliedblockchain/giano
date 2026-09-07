@@ -82,7 +82,7 @@ pnpm run doctor chain --rpc "$RPC_URL" --chain-id "$CHAIN_ID" \
 
 Confirms the EntryPoint, factory and implementation have code, the paymaster's EntryPoint deposit
 is funded, and — probed live — that P256 signatures verify via Sepolia's RIP-7212 precompile. Exits
-non-zero if any critical check fails. See `docs/DEVELOPER-GUIDE.md` §6 for the full `giano-doctor`
+non-zero if any critical check fails. See `specs/DEVELOPER-GUIDE.md` §6 for the full `giano-doctor`
 reference (including `doctor wallet` to inspect a specific passkey wallet).
 
 ### 4. Bring up the stack

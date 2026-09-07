@@ -292,4 +292,4 @@ Contracts: `packages/contracts/src/*.sol`, `addresses.ts`, `hardhat.config.ts`,
 `ignition/deployments/*`. SDK: `packages/{connector,wallet-core,wallet-transport}/`.
 Services: `services/{wallet-api,wallet-web,bundler,devnet}/`, `deploy/*`. Project's
 own analysis: `GAPS-TO-COMPLETION.md` (esp. §3, bundler lock-in), `COMPATIBILITY.md`,
-`docs/DEVELOPER-GUIDE.md`, `docs/INTEGRATION.md`.
+`specs/DEVELOPER-GUIDE.md`, `specs/INTEGRATION.md`.

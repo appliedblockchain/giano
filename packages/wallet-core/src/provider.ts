@@ -204,20 +204,41 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
     }
     // Hook provided: prepare complete user operation, sign it, and use backend validation and submission
 
-    // Prepare the user operation with gas estimates
-    const estimate = await bundler.estimateUserOperationGas(userOpRequest);
-    if (!estimate) {
-      throw new Error('Could not estimate user operation');
-    }
+    /*
+     * Fees are resolved BEFORE estimating and preparing, not after.
+     *
+     * A validating paymaster signs the operation's gas fees, and viem runs the paymaster hooks
+     * inside `prepareUserOperation`. Resolving fees afterwards would issue an authorisation over
+     * one set of fees and submit the operation with another — which the paymaster rejects on chain
+     * as `AA34`, long after anything could explain why. It also let the paymaster be asked to
+     * authorise an operation whose cost was not yet known, which is not a question it can answer.
+     *
+     * Doing it first is also simply more correct for the unsponsored path: the gas estimate is
+     * computed against the fees the operation will actually carry.
+     */
+    const fees = resolveUserOpFees(userOpRequest, {}, await estimateFeesPerGas());
+    const requestWithFees = { ...userOpRequest, ...fees };
 
-    const prepared = await bundler.prepareUserOperation({
-      ...userOpRequest,
-      ...estimate,
-    });
+    /*
+     * One `prepareUserOperation`, not an `estimateUserOperationGas` followed by a prepare.
+     *
+     * `prepareUserOperation` estimates gas itself, so the separate estimate was always redundant —
+     * but with a paymaster attached it is actively harmful: each call runs the paymaster hooks, and
+     * viem picks a fresh random nonce key each time. Against a validating paymaster that means two
+     * *signed* authorisations and two balance reservations per transaction, only one of which is
+     * ever submitted. The unused one holds the tenant's funds until its TTL expires, so a tenant's
+     * effective available balance is silently halved.
+     */
+    const prepared = await bundler.prepareUserOperation(requestWithFees);
+    if (!prepared) {
+      throw new Error('Could not prepare user operation');
+    }
 
     const preparedWithGas: UserOperation<GianoEntryPointVersion> = {
       ...prepared,
-      ...resolveUserOpFees(userOpRequest, prepared, await estimateFeesPerGas()),
+      // Still applied over `prepared`, because `prepareUserOperation` may echo its own fee values
+      // and the authorisation was issued against these.
+      ...fees,
     };
 
     // Sign the user operation

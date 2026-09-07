@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mergePolicy, tenantsSeedSchema, validateTenantSeed } from '../src/services/tenants.js';
 
 /**
- * V11 (docs/MULTI-TENANCY-GAPS.md §10): the RP/origin invariant is enforced on the
+ * The RP/origin invariant (specs/DEVELOPER-GUIDE.md §1) is enforced on the
  * tenant WRITE path — a row that violates it must be impossible to create. These are
  * pure validator tests; the seed-upsert immutability half lives in api.test.ts.
  */
@@ -91,5 +91,42 @@ describe('mergePolicy', () => {
   it('surfaces the per-tenant relay rate limit override', () => {
     expect(mergePolicy(defaults, { relayRateLimitPerMinute: 7 }).relayRateLimitPerMinute).toBe(7);
     expect(mergePolicy(defaults, {}).relayRateLimitPerMinute).toBeUndefined();
+  });
+});
+
+describe('pinned tenant ids', () => {
+  /**
+   * The tenant id is not purely internal: the paymaster keys per-tenant gas balances on its 16
+   * bytes. A deployment that pre-registers a tenant on chain has to be able to make the database
+   * agree, or every sponsorship for that tenant is refused as "unknown tenant".
+   */
+  it('accepts a pinned uuid', () => {
+    const seed = validateTenantSeed({
+      id: '11111111-1111-4111-8111-111111111111',
+      slug: 'pinned',
+      walletOrigin: 'https://wallet.pinned.example',
+      rpName: 'Pinned',
+      openRegistration: true,
+    });
+    expect(seed.id).toBe('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('rejects anything that is not a uuid', () => {
+    expect(() =>
+      validateTenantSeed({ id: 'not-a-uuid', slug: 'bad', walletOrigin: 'https://w.example', rpName: 'B', openRegistration: true }),
+    ).toThrow(/id/);
+  });
+
+  it('leaves the id to the database when unset, as it always did', () => {
+    const seed = validateTenantSeed({ slug: 'unpinned', walletOrigin: 'https://w2.example', rpName: 'U', openRegistration: true });
+    expect(seed.id).toBeUndefined();
+  });
+
+  it('rejects two tenants pinning the same id', () => {
+    const result = tenantsSeedSchema.safeParse([
+      { id: '11111111-1111-4111-8111-111111111111', slug: 'a', walletOrigin: 'https://a.example', rpName: 'A', openRegistration: true },
+      { id: '11111111-1111-4111-8111-111111111111', slug: 'b', walletOrigin: 'https://b.example', rpName: 'B', openRegistration: true },
+    ]);
+    expect(result.success).toBe(false);
   });
 });
