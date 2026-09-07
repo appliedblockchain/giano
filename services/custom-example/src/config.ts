@@ -1,12 +1,25 @@
-if (!process.env.NEXT_PUBLIC_BUNDLER_RPC_URL) {
-  throw new Error('NEXT_PUBLIC_BUNDLER_RPC_URL is not set');
-}
+import { defineChain } from 'viem';
+
+// Defaults target the local e2e stack (deploy/docker-compose.e2e.yml):
+// - wallet origin (wallet-web) on http://wallet.localhost:8081
+// - anvil devnet RPC on http://localhost:8545 (chain 31337)
+// - devnet PrivateERC20 baked into the devnet state, used to prefill the ERC-20 panel
+// Override any of these with VITE_* env vars for other networks.
+const RPC_URL = import.meta.env.VITE_RPC_URL ?? 'http://localhost:8545';
+const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? '31337');
+const WALLET_URL = import.meta.env.VITE_WALLET_URL ?? 'http://wallet.localhost:8081';
+const DEFAULT_TOKEN = (import.meta.env.VITE_TEST_ERC20 ?? '0x9967bDf929856643e92EF65eefdE1fF8250774D8') as `0x${string}`;
+
+export const chain = defineChain({
+  id: CHAIN_ID,
+  name: 'Giano Demo',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [RPC_URL] } },
+});
 
 export const config = {
-  hardhatRpcUrl: process.env.NEXT_PUBLIC_HARDHAT_RPC_URL || 'http://localhost:8545',
-  bundlerRpcUrl: process.env.NEXT_PUBLIC_BUNDLER_RPC_URL,
-  configKey: process.env.NEXT_PUBLIC_CONFIG_KEY ?? 'hardhat',
-  paymasterAddress: process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS,
-  gianoSmartWalletFactoryAddress: process.env.NEXT_PUBLIC_GIANO_SMART_WALLET_FACTORY_ADDRESS ?? '0x5A1dd8C52Daaa27D9ced48f7F96b2b05dD6dB0B0',
-  privateErc20Address: process.env.NEXT_PUBLIC_PRIVATE_ERC20_ADDRESS ?? '0x768F92504EDbACaf0502354ea8F75BD627301519',
+  walletUrl: WALLET_URL,
+  rpcUrl: RPC_URL,
+  chainId: CHAIN_ID,
+  defaultTokenAddress: DEFAULT_TOKEN,
 };

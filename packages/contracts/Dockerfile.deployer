@@ -1,0 +1,21 @@
+# giano-contracts-deployer — one-shot Ignition CREATE2 deploy from env, emitting the
+# address registry JSON. Idempotent via the Ignition journal.
+#   docker build -f packages/contracts/Dockerfile.deployer -t ghcr.io/appliedblockchain/giano-contracts-deployer .
+# Ships as a Helm pre-install hook / compose `profiles: [deploy]` job.
+FROM node:22-slim AS build
+RUN corepack enable && apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
+WORKDIR /repo
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
+COPY packages/contracts/package.json packages/contracts/package.json
+RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-contracts
+COPY packages/contracts packages/contracts
+RUN pnpm --filter @appliedblockchain/giano-contracts hh:compile
+
+FROM node:22-slim
+RUN corepack enable
+WORKDIR /repo/packages/contracts
+COPY --from=build /repo /repo
+COPY packages/contracts/scripts/deployer-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+VOLUME /out
+ENTRYPOINT ["/entrypoint.sh"]

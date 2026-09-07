@@ -1,0 +1,6 @@
+{
+  "$comment": "Per-chain overrides merged into the generated address registry (addresses.ts). Ignition deployments do not include contracts Giano does not deploy itself (e.g. the canonical EntryPoint), so they are declared here. Keys are chain ids; 'default' applies to every chain unless overridden.",
+  "default": {
+    "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+  }
+}

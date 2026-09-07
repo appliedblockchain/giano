@@ -1,0 +1,18 @@
+{
+  "name": "@appliedblockchain/giano-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Two-origin end-to-end tests: demo dApp + wallet origin + wallet-api + devnet + bundler",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "dapp": "node dapp/serve.mjs"
+  },
+  "devDependencies": {
+    "@appliedblockchain/giano-connector": "workspace:^",
+    "@playwright/test": "^1.52.0",
+    "esbuild": "^0.25.4",
+    "viem": "2.31.6"
+  }
+}

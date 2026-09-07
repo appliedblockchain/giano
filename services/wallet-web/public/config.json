@@ -1,0 +1,12 @@
+{
+  "chainId": 31337,
+  "rpcUrl": "http://localhost:8545",
+  "bundlerUrl": "http://localhost:4337",
+  "walletApiUrl": "/api",
+  "factoryAddress": "",
+  "allowedDappOrigins": [],
+  "rpId": "localhost",
+  "branding": {
+    "name": "Giano Wallet"
+  }
+}

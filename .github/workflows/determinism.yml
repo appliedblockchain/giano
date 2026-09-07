@@ -1,0 +1,53 @@
+name: Determinism
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/contracts/src/**'
+      - 'packages/contracts/hardhat.config.ts'
+      - 'packages/contracts/foundry.toml'
+      - '.github/workflows/determinism.yml'
+
+jobs:
+  create2:
+    name: CREATE2 address determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Recompile with canonical settings (solc 0.8.28 / runs 200 / viaIR)
+        working-directory: packages/contracts
+        run: pnpm hh:compile
+      - name: Recompute CREATE2 addresses on a fresh anvil and compare to committed registry
+        working-directory: packages/contracts
+        run: |
+          anvil --host 127.0.0.1 --chain-id 31337 > /tmp/anvil.log 2>&1 &
+          sleep 3
+          node ../../e2e/devnet/setup-entrypoint.mjs
+          rm -rf ignition/deployments/chain-31337
+          pnpm hh:deploy --network localhost
+          pnpm hh:deploy:testing --network localhost
+          # the redeployed local addresses must match the committed Base registry
+          # (salt 0xAB…AB, identical bytecode ⇒ identical CREATE2 address on every chain)
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const local = JSON.parse(fs.readFileSync('ignition/deployments/chain-31337/deployed_addresses.json','utf8'));
+            const base = JSON.parse(fs.readFileSync('ignition/deployments/chain-8453/deployed_addresses.json','utf8'));
+            for (const key of ['GianoAccountFactory#GianoSmartWallet','GianoAccountFactory#GianoSmartWalletFactory']) {
+              if (local[key].toLowerCase() !== base[key].toLowerCase()) {
+                console.error('DETERMINISM FAILURE for', key, '\n  local:', local[key], '\n  base: ', base[key]);
+                process.exit(1);
+              }
+              console.log('OK', key, local[key]);
+            }
+          "

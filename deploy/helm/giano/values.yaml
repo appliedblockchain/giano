@@ -1,0 +1,64 @@
+# Giano Helm values. External Postgres by default; secrets come from existingSecret refs.
+global:
+  imageRegistry: ghcr.io/appliedblockchain
+  # image tags default to .Chart.AppVersion when empty
+  imageTag: ""
+
+# --- chain / RP config shared by wallet-api and wallet-web ---
+config:
+  chainId: 8453
+  rpcUrl: ""
+  bundlerUrl: "" # leave empty to use the in-chart bundler service
+  rpId: "" # e.g. wallet.clientapp.com — IRREVERSIBLE per deployment
+  rpName: Giano Wallet
+  # origins accepted during ceremonies (wallet-web origin) and by CORS (dApp origins)
+  expectedOrigins: [] # e.g. ["https://wallet.clientapp.com"]
+  allowedDappOrigins: [] # e.g. ["https://app.clientapp.com"]
+  corsOrigins: [] # dApp origins polling the public receipt endpoint
+  # optional explicit addresses; default from the contracts registry for chainId
+  entryPointAddress: ""
+  factoryAddress: ""
+  paymasterAddress: ""
+  openRegistration: false
+
+# secrets: reference an existing k8s Secret; never inline production keys in values
+secrets:
+  existingSecret: "" # must provide keys: DATABASE_URL, ADMIN_API_KEYS
+  # bundler executor key (only when bundler.enabled): ALTO_EXECUTOR_PRIVATE_KEYS
+
+postgres:
+  # external by default — set the DSN in the existingSecret's DATABASE_URL
+  external: true
+
+walletApi:
+  replicas: 2
+  image: giano-wallet-api
+  runMigrationsJob: true # run a pre-install/upgrade Job instead of RUN_MIGRATIONS on the pod
+  resources: {}
+
+walletWeb:
+  replicas: 2
+  image: giano-wallet-web
+  resources: {}
+
+bundler:
+  enabled: false
+  image: giano-bundler
+  altoSafeMode: true
+
+deployer:
+  # one-shot CREATE2 deploy as a pre-install hook Job
+  enabled: false
+  image: giano-contracts-deployer
+  deployTesting: false
+
+ingress:
+  enabled: true
+  className: nginx
+  # wallet origin host; /.well-known/webauthn and /api route to wallet-api, / to wallet-web
+  walletHost: ""
+  tls: true
+  annotations: {}
+
+serviceMonitor:
+  enabled: false # Prometheus Operator ServiceMonitor for wallet-api metrics

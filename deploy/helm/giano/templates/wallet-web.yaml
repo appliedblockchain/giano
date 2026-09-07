@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-wallet-web
+  labels: {{- include "giano.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.walletWeb.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      giano/component: wallet-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        giano/component: wallet-web
+    spec:
+      containers:
+        - name: wallet-web
+          image: {{ include "giano.image" (dict "root" . "name" .Values.walletWeb.image) }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GIANO_CHAIN_ID
+              value: {{ .Values.config.chainId | quote }}
+            - name: GIANO_RPC_URL
+              value: {{ .Values.config.rpcUrl | quote }}
+            - name: GIANO_BUNDLER_URL
+              value: {{ .Values.config.bundlerUrl | default (printf "http://%s-bundler:4337" .Release.Name) | quote }}
+            - name: GIANO_WALLET_API_UPSTREAM
+              value: {{ printf "http://%s-wallet-api:8080" .Release.Name | quote }}
+            - name: GIANO_RP_ID
+              value: {{ .Values.config.rpId | quote }}
+            {{- with .Values.config.factoryAddress }}
+            - name: GIANO_FACTORY_ADDRESS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.paymasterAddress }}
+            - name: GIANO_PAYMASTER_ADDRESS
+              value: {{ . | quote }}
+            {{- end }}
+            - name: GIANO_ALLOWED_DAPP_ORIGINS
+              value: {{ toJson .Values.config.allowedDappOrigins | quote }}
+            - name: GIANO_BRAND_NAME
+              value: {{ .Values.config.rpName | quote }}
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+          resources: {{- toYaml .Values.walletWeb.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-wallet-web
+  labels: {{- include "giano.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    giano/component: wallet-web
+  ports:
+    - port: 8080
+      targetPort: 8080
