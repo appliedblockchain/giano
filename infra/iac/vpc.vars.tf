@@ -1,5 +1,12 @@
+<<<<<<< HEAD
+# §5.1
+
+variable "vpc_cidr" {
+  description = "VPC CIDR network, per environment"
+=======
 variable "vpc_cidr" {
   description = "[REQUIRED] VPC CIDR network, per environment"
+>>>>>>> main
   type        = map(string)
   default = {
     dev = "10.40.0.0/16"

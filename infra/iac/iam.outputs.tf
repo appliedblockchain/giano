@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+output "scheduler_role_arn" {
+  value = module.iam-role-scheduler.role_arn
+=======
 output "iam_roles" {
   description = "the roles that belong to no single service"
   value = {
@@ -6,4 +10,5 @@ output "iam_roles" {
     provision_sponsorship_exec = module.provision-sponsorship-exec-role.arn
     provision_sponsorship_task = module.provision-sponsorship-task-role.arn
   }
+>>>>>>> main
 }
