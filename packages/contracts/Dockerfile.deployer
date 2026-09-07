@@ -9,12 +9,21 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-contracts
 COPY packages/contracts packages/contracts
+# hardhat.config.ts loads @nomicfoundation/hardhat-foundry, which shells out to `forge` when
+# the CONFIG loads — so every hardhat invocation needs it, at build time here and at deploy time
+# in the runtime stage below. Same pinned digest as services/devnet and determinism.yml (forge
+# 1.7.1); one foundry version in the repo, not two. The image is Ubuntu 22.04 (glibc 2.35), so
+# the binary runs on bookworm. Dropping the plugin instead would change hardhat's remappings,
+# hence the bytecode, hence the CREATE2 addresses.
+COPY --from=ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd /usr/local/bin/forge /usr/local/bin/forge
 RUN pnpm --filter @appliedblockchain/giano-contracts hh:compile
 
 FROM node:22-slim
 RUN corepack enable
 WORKDIR /repo/packages/contracts
 COPY --from=build /repo /repo
+# forge again: deployer-entrypoint.sh runs `pnpm hh:deploy`, which loads the same config
+COPY --from=ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd /usr/local/bin/forge /usr/local/bin/forge
 COPY packages/contracts/scripts/deployer-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 VOLUME /out

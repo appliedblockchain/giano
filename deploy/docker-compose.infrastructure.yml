@@ -1,0 +1,615 @@
+# ==========================================================================================
+# Giano — the whole platform, running locally.
+#
+# Everything a deployment has, on one machine, with nothing to fill in: two tenants, both
+# demo dApps, both wallet UIs, the multi-tenant API, the paymaster console, two chains and a
+# bundler each. No .env file, no keys to source, no accounts to fund.
+#
+#   docker compose -f deploy/docker-compose.infrastructure.yml up --build --wait
+#   open http://giano.localhost
+#
+# Then read `docker compose -f deploy/docker-compose.infrastructure.yml logs -f`. To stop and
+# discard the database and chain state:
+#
+#   docker compose -f deploy/docker-compose.infrastructure.yml down -v
+#
+# ── The three sibling files ───────────────────────────────────────────────────────────────
+#
+#   this file                              the platform, locally, on a devnet. Start here.
+#   docker-compose.e2e.yml                 what Playwright runs: the same backend, the thin-SDK
+#                                          dApp fixtures, host-side, driven by e2e/.
+#   docker-compose.infrastructure.aws.yml  the AWS environment as compose, annotated with
+#                                          where every value comes from ([ASM]/[tfvar]).
+#                                          Documentation for DevOps, not a stack to run.
+#
+# This file deliberately looks like the e2e stack rather than like the AWS one: a baked anvil
+# devnet, committed worthless keys, `openRegistration`, an open /metrics. What it adds is the
+# two DEMO dApps as containers — services/custom-example, once per tenant — where the e2e
+# stack runs the thin-SDK fixtures from e2e/ on the host instead.
+#
+# ── Why hostnames, and why a proxy ────────────────────────────────────────────────────────
+#
+# Every browser-facing service is reached by NAME on port 80, through the `proxy` service
+# (deploy/infrastructure/Caddyfile), and none of them publishes a port. That is not polish:
+#
+#   * A WebAuthn RP ID is a hostname and does not include the port. Two tenants on
+#     localhost:8081 and localhost:8082 share the RP ID `localhost`, so cross-tenant
+#     isolation stops being observable — and wallet-api refuses a seed with duplicate rpIds.
+#   * `http://*.localhost` is a secure context in Chromium and Firefox and resolves to
+#     loopback with no /etc/hosts edit and no local CA, so passkeys just work.
+#
+# Unlike the e2e stack, nothing here needs `portless` on the host and nothing needs sudo:
+# Docker binds :80 through its own privileged helper. Because it holds :80, this stack and
+# the e2e stack cannot run at the same time — and they also collide on 8545/8546/4337/4338
+# and 8080 below, exactly as the e2e and dev stacks already do. `down` one before `up` the
+# other; `lsof -nP -iTCP -sTCP:LISTEN | grep 8545` is the fastest way to spot a leftover.
+#
+#   http://giano.localhost                 an index of every URL below
+#   http://stock.giano.localhost           tenant `stock`'s dApp        → custom-example
+#   http://wallet.stock.giano.localhost    its wallet origin, its RP ID → wallet-web
+#   http://byo.giano.localhost             tenant `byo`'s dApp          → custom-example-byo
+#   http://wallet.byo.giano.localhost      its wallet origin, its RP ID → wallet-byo
+#   http://api.giano.localhost             wallet-api
+#   http://paymaster.giano.localhost       the paymaster console
+#   http://wallet.giano.localhost          the shared UI serving host — never a relying party
+#   http://rpc.giano.localhost  /  rpc-b   the two anvil chains
+#
+# The ports that ARE published are the server-side ones, for tooling rather than for a
+# browser: 8545/8546 for `cast`, 4337/4338 for the bundlers, 8080 for `curl` against the
+# admin API. Open the wallet on a port and nothing works — the origin matches no tenant.
+#
+# ── The two tenants, and why they are the two shapes ──────────────────────────────────────
+#
+# `stock` takes Giano's wallet UI and points a hostname at it. `byo` serves a wallet SPA it
+# wrote itself (e2e/wallet-byo — the reference a real BYO tenant copies). They are
+# INDISTINGUISHABLE to wallet-api, which has no notion of who wrote the SPA behind a wallet
+# origin, and a stack with only one of them cannot show that.
+#
+# Their slugs and UUIDs are NOT free: the paymaster in e2e/devnet/state.json has both tenants
+# registered and funded ON CHAIN, keyed by the UUIDs below. Renaming a slug or changing an id
+# means an unfunded tenant, which presents as every transaction being refused. Their
+# hostnames, by contrast, are only in this file and in the Caddyfile.
+# ==========================================================================================
+name: giano-infrastructure
+
+volumes:
+  pgdata:
+
+services:
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # proxy — the local stand-in for the ALB: one :80 listener, routed by Host header.
+  #
+  # It forwards Host untouched, which is what lets one wallet-api resolve a different tenant
+  # per request and one wallet-web serve more than one hostname. See the Caddyfile.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    volumes:
+      - ./infrastructure/Caddyfile:/etc/caddy/Caddyfile:ro
+    # Start order only, for one specific reason: Caddy resolves an upstream name per request,
+    # so a service that is not up yet is a 502 rather than a failure to boot. (nginx is the
+    # opposite — see the depends_on on custom-example.)
+    depends_on:
+      - wallet-api
+      - wallet-web
+      - wallet-byo
+      - custom-example
+      - custom-example-byo
+      - paymaster-admin
+      - anvil
+      - anvil-b
+    healthcheck:
+      # The index page, which Caddy answers itself. Deliberately not a route through to an
+      # upstream: this reports whether the ROUTER is up, not the stack behind it.
+      test: ['CMD-SHELL', 'wget -q -O- --header="Host: giano.localhost" http://127.0.0.1/ >/dev/null || exit 1']
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # anvil / anvil-b — two chains, one baked state file.
+  #
+  # Instant boot: state.json carries EntryPoint v0.7, the Giano factory and implementation,
+  # the GianoPaymaster with both tenants registered and funded, and the demo ERC-20 — all
+  # pre-deployed by e2e/devnet/generate-state.mjs. Nothing is deployed at `up` time.
+  #
+  # Two chains rather than one, and the SAME state on both: `anvil_dumpState` carries
+  # accounts, code and storage but not the chain id, which anvil takes from --chain-id. One
+  # committed artefact, two chains, and identical contract addresses on both by construction
+  # — which is what makes "one passkey, one address, every chain" demonstrable rather than
+  # asserted, and what the demo's cross-chain panel needs.
+  #
+  # ⚠ The image is pinned by digest and the pin matters: state.json's format is tied to the
+  # anvil version that wrote it. A version mismatch takes the whole stack down in a way that
+  # looks like anything but a version mismatch. Regenerate with
+  # `pnpm --filter @appliedblockchain/giano-e2e devnet:generate` if you change it — that wrapper
+  # runs the generator against this same pinned image, which is the point of it.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  anvil:
+    image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
+    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337', '--load-state', '/devnet/state.json']
+    restart: unless-stopped
+    volumes:
+      - ../e2e/devnet/state.json:/devnet/state.json:ro
+    ports:
+      # For `cast`, not for a browser: the browser reaches this chain at rpc.giano.localhost.
+      - '8545:8545'
+
+  anvil-b:
+    image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
+    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31338', '--load-state', '/devnet/state.json']
+    restart: unless-stopped
+    volumes:
+      - ../e2e/devnet/state.json:/devnet/state.json:ro
+    ports:
+      - '8546:8545'
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # alto / alto-b — one ERC-4337 bundler per chain.
+  #
+  # Submission endpoints are never shared between chains, and each chain's executor is its own
+  # funded account. Both keys here are anvil's well-known accounts: deterministic, worthless,
+  # committed on purpose, and funded by the baked state.
+  #
+  # --safe-mode false because anvil is not trace-capable. A real deployment runs safe mode on
+  # and therefore needs a trace-capable RPC — that is the one line where this stack and the
+  # AWS one deliberately differ (see the bundler service in the .aws.yml sibling).
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  alto:
+    image: node:22-alpine
+    restart: unless-stopped
+    depends_on:
+      - anvil
+    command: >
+      npx -y @pimlico/alto@0.0.18 run
+      --rpc-url http://anvil:8545
+      --entrypoints 0x0000000071727De22E5E9d8BAf0edAc6f37da032
+      --executor-private-keys 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      --utility-private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+      --safe-mode false
+      --port 4337
+    ports:
+      - '4337:4337'
+
+  alto-b:
+    image: node:22-alpine
+    restart: unless-stopped
+    depends_on:
+      - anvil-b
+    command: >
+      npx -y @pimlico/alto@0.0.18 run
+      --rpc-url http://anvil-b:8545
+      --entrypoints 0x0000000071727De22E5E9d8BAf0edAc6f37da032
+      --executor-private-keys 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      --utility-private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+      --safe-mode false
+      --port 4337
+    ports:
+      - '4338:4337'
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # postgres — wallet-api's database, and the only service that has one.
+  #
+  # On a named volume, so wallets and passkeys survive a restart. `down -v` is what discards
+  # them, and it is also the fix when the seed no longer matches what is in the database:
+  # TENANTS_SEED is upserted BY SLUG, so changing a tenant's hostname updates that row, but
+  # the passkeys already bound to the old rpId are orphaned. That is the local rehearsal of
+  # the one mistake a real deployment cannot undo.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: giano
+      POSTGRES_USER: giano
+      POSTGRES_PASSWORD: giano
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # wallet-api — one backend, both tenants, both chains.
+  #
+  # The only service with database access. It resolves the tenant PER REQUEST — from `Origin`
+  # on ceremonies, sessions and the userop relay, and from `Host` on /.well-known/webauthn —
+  # never per container. That is what lets one wallet-web task serve N relying parties.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  wallet-api:
+    build:
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # For `curl` against the admin API. The browser reaches this at api.giano.localhost,
+      # and the wallet origins proxy it same-origin under /api, which is the path the SPA
+      # actually uses.
+      - '8080:8080'
+    environment:
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      # A build concern only, and `test` rather than `development` because the production
+      # image does not carry pino-pretty. What the deployment *is* — and therefore whether a
+      # signing key may sit in an environment variable — is GIANO_DEPLOYMENT_CLASS.
+      NODE_ENV: test
+      # `development` is what makes SPONSORSHIP_SIGNER_KIND=local legal below. `production`
+      # refuses it outright, and that guard is the point: the key authorises spending.
+      GIANO_DEPLOYMENT_CLASS: development
+      # No init container here, unlike the AWS stack: one process, one lock, migrations on
+      # boot. The advisory lock makes it safe either way.
+      RUN_MIGRATIONS: 'true'
+      # The closed list of chains this backend serves, one descriptor per chain. Identical
+      # canonical contracts on both — VERIFIED at boot against the chain, not assumed, so a
+      # stale state.json fails loudly here rather than mysteriously later.
+      #
+      # `allowedPaymasters` is per chain by design: only ops sponsored by our own paymaster
+      # reach the bundler through the relay.
+      GIANO_CHAINS: |
+        [
+          {
+            "chainId": 31337, "name": "Devnet A",
+            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
+            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorshipPaymaster": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
+            "policy": { "allowedPaymasters": ["0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2"] }
+          },
+          {
+            "chainId": 31338, "name": "Devnet B",
+            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
+            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorshipPaymaster": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
+            "policy": { "allowedPaymasters": ["0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2"] }
+          }
+        ]
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # METRICS_BEARER_TOKEN deliberately unset, which leaves GET /metrics OPEN. Acceptable
+      # on a loopback stack and nowhere else.
+
+      # ── Gas sponsorship ────────────────────────────────────────────────────────────────
+      # Through the PRODUCTION paymaster, not the permissive test fixture: what this stack
+      # demonstrates is the path real tenants take — rules enforced, balance debited, fee
+      # charged — rather than a paymaster that cannot refuse anything. The paymaster, its
+      # signer and both tenants' funded balances are baked into the devnet state; the RULES
+      # go in at bring-up through the real admin API (see sponsorship-provisioner).
+      SPONSORSHIP_ENABLED: 'true'
+      SPONSORSHIP_SIGNER_KIND: local
+      SPONSORSHIP_SIGNER_KEY_REF: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
+      SPONSORSHIP_VALIDITY_SECONDS: '180'
+      # Must be STRICTLY GREATER than the validity window; the config loader enforces it.
+      SPONSORSHIP_RESERVATION_TTL_SECONDS: '300'
+      # Generous on purpose: the baked state leaves the base fee high (~100 gwei after the
+      # deployment blocks), and a tight cap would refuse "add a passkey on a new device" for
+      # a reason that has nothing to do with wallet management.
+      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: '100000000000000000'
+      PAYMASTER_WATCHER_ENABLED: 'true'
+      PAYMASTER_WATCHER_POLL_MS: '1000'
+      PAYMASTER_WATCHER_CONFIRMATIONS: '0'
+      PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
+
+      # ── The two tenants ────────────────────────────────────────────────────────────────
+      # Declarative, and upserted BY SLUG at boot — after migrations, before listen. A
+      # restart therefore cannot revert a tenant's own sponsorship edits, because those live
+      # behind the admin API rather than here.
+      #
+      # ⚠ `rpId` is IRREVERSIBLE per tenant: passkeys bind to it, and it must equal the
+      # `walletOrigin` host (validateTenantSeed enforces the second part, and there is no
+      # enforcing the first). Note what is NOT here and must never be: a row for
+      # `wallet.giano.localhost`, the shared serving host. It is where the stock UI is
+      # served from and it is never a relying party.
+      #
+      # ⚠ The `id`s are the on-chain paymaster tenant ids from e2e/devnet/state.json. Change
+      # one and that tenant has no funded balance, which presents as every transaction being
+      # refused rather than as a wrong id.
+      #
+      # `corsOrigins` carries each tenant's dApp origin because the thin connector polls the
+      # public receipt endpoint from the dApp origin, cross-origin. `openRegistration` is
+      # defensible on loopback and nowhere else: anyone who can reach it can create a wallet.
+      TENANTS_SEED: |
+        [
+          {
+            "slug": "stock",
+            "walletOrigin": "http://wallet.stock.giano.localhost",
+            "rpId": "wallet.stock.giano.localhost",
+            "rpName": "Giano Local (stock UI)",
+            "allowedDappOrigins": ["http://stock.giano.localhost"],
+            "corsOrigins": ["http://stock.giano.localhost"],
+            "openRegistration": true,
+            "adminKeys": ["e2e-admin-key-stock"],
+            "id": "11111111-1111-4111-8111-111111111111"
+          },
+          {
+            "slug": "byo",
+            "walletOrigin": "http://wallet.byo.giano.localhost",
+            "rpId": "wallet.byo.giano.localhost",
+            "rpName": "Giano Local (BYO UI)",
+            "allowedDappOrigins": ["http://byo.giano.localhost"],
+            "corsOrigins": ["http://byo.giano.localhost"],
+            "openRegistration": true,
+            "adminKeys": ["e2e-admin-key-byo00"],
+            "id": "22222222-2222-4222-8222-222222222222"
+          }
+        ]
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # sponsorship-provisioner — installs each tenant's sponsorship RULES, then verifies them.
+  #
+  # Rules are a tenant's own to edit, so they go in the way a tenant would put them in: a PUT
+  # to /v1/admin/sponsorship with that tenant's admin key. There is therefore no dev-only
+  # seeding path that would have to be disabled in production, and "a tenant with no
+  # configuration gets no sponsorship" stays true here too.
+  #
+  # ⚠ A TENANT WITH NO RULES IS REFUSED EVERY TRANSACTION, which looks exactly like a broken
+  # stack. So this is a dependency of readiness rather than fire-and-forget: the wallet
+  # origins do not start until it exits 0 (see their depends_on). A one-shot container that
+  # has exited is neither running nor healthy, so `up --wait` cannot wait on it directly —
+  # but it can wait on the wallets, which is the same gate one hop away.
+  #
+  # It reads the tenant roster and the demo ERC-20 from e2e/devnet/addresses.json, mounted
+  # rather than baked, and needs no dependencies beyond node's builtins.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  sponsorship-provisioner:
+    image: node:22-alpine
+    restart: 'no'
+    depends_on:
+      wallet-api:
+        condition: service_healthy
+    volumes:
+      - ../e2e/devnet:/provision:ro
+    working_dir: /provision
+    environment:
+      # Over the compose network, not through the proxy: the tenant is selected by slug and
+      # admin key, not by Host, so there is nothing to gain from a round-trip through :80.
+      WALLET_API_URL: http://wallet-api:8080
+    command: ['node', 'provision-sponsorship.mjs']
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # wallet-web — tenant `stock`'s wallet origin, and the shared UI.
+  #
+  # ONE container serves both `wallet.stock.giano.localhost` and `wallet.giano.localhost`,
+  # which is how the real thing works: every stock-UI tenant CNAMEs to one deployment, and
+  # nginx forwards Host and Origin untouched so wallet-api can resolve a different tenant per
+  # request behind one container.
+  #
+  # ⚠ GIANO_RP_ID is set here because this stack has exactly ONE stock-UI tenant. Unset, the
+  # SPA takes its RP ID from `window.location.hostname` — which is what a multi-tenant
+  # deployment must do, since a pinned RP ID would break the CNAME model. Pinning it here
+  # instead means opening the wallet on the shared host cannot mint a passkey against the
+  # serving hostname by accident.
+  #
+  # ⚠ The constraint to hold is ONE STOCK-UI TENANT PER wallet-web CONTAINER.
+  # GIANO_ALLOWED_DAPP_ORIGINS and GIANO_BRAND_NAME are per TENANT but reach the SPA per
+  # CONTAINER, from /config.json. Two stock-UI tenants here would get the UNION of their dApp
+  # allowlists on BOTH hostnames — tenant A's dApp could complete the popup handshake against
+  # tenant B's wallet origin — and wallet-api stores allowed_dapp_origins per tenant but
+  # reads it nowhere, so there is no server-side backstop. This stack gets away with two
+  # tenants only because `byo` brings its own SPA and its own allowlist.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  wallet-web:
+    build:
+      context: ..
+      dockerfile: services/wallet-web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      # service_healthy, not plain start order: nginx serves /config.json the instant it
+      # boots, so a start-order-only gate lets /api/* 502 while wallet-api is still migrating.
+      wallet-api:
+        condition: service_healthy
+      # And not until the stack can actually sponsor — see the provisioner above.
+      sponsorship-provisioner:
+        condition: service_completed_successfully
+      # nginx resolves every proxy_pass upstream AT CONFIG LOAD and refuses to start if a
+      # name does not resolve, so the chains and bundlers have to exist before it does. Docker's
+      # DNS only answers for containers that are up, which makes this a real dependency rather
+      # than tidiness.
+      anvil:
+        condition: service_started
+      anvil-b:
+        condition: service_started
+      alto:
+        condition: service_started
+      alto-b:
+        condition: service_started
+    environment:
+      # Both chains, one wallet origin. Every endpoint is a SAME-ORIGIN proxy: the browser
+      # only ever talks to the wallet origin and nginx forwards to the containers. On a real
+      # chain that is also what keeps a keyed RPC URL server-side.
+      GIANO_CHAINS: |
+        [
+          {
+            "chainId": 31337, "name": "Devnet A",
+            "rpcUrl": "http://wallet.stock.giano.localhost/rpc",
+            "bundlerUrl": "http://wallet.stock.giano.localhost/bundler",
+            "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorship": "service"
+          },
+          {
+            "chainId": 31338, "name": "Devnet B",
+            "rpcUrl": "http://wallet.stock.giano.localhost/rpc-b",
+            "bundlerUrl": "http://wallet.stock.giano.localhost/bundler-b",
+            "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+            "sponsorship": "service"
+          }
+        ]
+      GIANO_RPC_UPSTREAM: http://anvil:8545
+      GIANO_BUNDLER_UPSTREAM: http://alto:4337
+      GIANO_RPC_B_UPSTREAM: http://anvil-b:8545
+      GIANO_BUNDLER_B_UPSTREAM: http://alto-b:4337
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
+      # A set of ONE, not a union — see the warning above. Empty fails CLOSED, which is the
+      # correct direction.
+      GIANO_ALLOWED_DAPP_ORIGINS: '["http://stock.giano.localhost"]'
+      GIANO_RP_ID: wallet.stock.giano.localhost
+      GIANO_BRAND_NAME: Giano Local
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # wallet-byo — tenant `byo`'s wallet origin: a wallet SPA the tenant wrote itself.
+  #
+  # The framework-free SPA in e2e/wallet-byo, which is the reference a real BYO tenant copies.
+  # A Node server that bundles its own SPA with esbuild at CONTAINER START and reverse-proxies
+  # the same paths wallet-web's nginx does, forwarding Host and Origin untouched. That is the
+  # whole serving contract a BYO tenant has to reproduce — and because the bundle is built
+  # from environment at start-up, the image is environment-independent with none of
+  # wallet-web's /config.json machinery.
+  #
+  # It is the one service Giano would not run in a real deployment: a real BYO tenant hosts
+  # its own UI. It is here so the contract is exercised rather than described.
+  #
+  # ⚠ BYO_BUNDLER_PROXY_ENABLED is `true` here and MUST be `false` on a real deployment.
+  # /bundler relays straight to the bundler, so wherever the wallet task can reach a private
+  # bundler this location is a public unauthenticated relay that bypasses every wallet-api
+  # policy check and drains the funded executor. On this stack the executor is anvil's
+  # well-known account, funded with worthless ETH, so the exposure costs nothing.
+  #
+  # Turning it off, though, ALSO STOPS THE WALLET SUBMITTING — sponsorship mode `service` does
+  # not remove the need for a bundler transport, it only swaps the paymaster hooks (the stock
+  # wallet does the same thing, and both need a JSON-RPC relay on wallet-api before this flag
+  # can be flipped without breaking submission). So on a real deployment the choice is
+  # between a wallet that cannot send and a relay that must not be reachable. Locally it is
+  # simply on, and that is the whole point of finding this out here.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  wallet-byo:
+    build:
+      context: ..
+      dockerfile: e2e/wallet-byo/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      wallet-api:
+        condition: service_healthy
+      sponsorship-provisioner:
+        condition: service_completed_successfully
+    environment:
+      BYO_WALLET_PORT: '8080'
+      # Proxied same-origin, Host and Origin forwarded untouched, because wallet-api resolves
+      # the tenant from them.
+      WALLET_API_UPSTREAM: http://wallet-api:8080
+      RPC_UPSTREAM: http://anvil:8545
+      RPC_B_UPSTREAM: http://anvil-b:8545
+      BUNDLER_UPSTREAM: http://alto:4337
+      BUNDLER_B_UPSTREAM: http://alto-b:4337
+      BYO_BUNDLER_PROXY_ENABLED: 'true' # ⚠ see the warning above before copying this
+      CHAIN_ID: '31337'
+      CHAIN_NAME: Devnet A
+      CHAIN_B_ID: '31338'
+      CHAIN_B_NAME: Devnet B
+      # Required: this image carries no contracts registry and no devnet artefacts, so the
+      # factory it derives addresses from has to be supplied. Same address on both chains.
+      FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
+      # The real sponsorship path, through /api/v1/paymaster. `service` needs no permissive
+      # paymaster fixture, so PAYMASTER_ADDRESS stays unset.
+      SPONSORSHIP_MODE: service
+      # This tenant's OWN allowlist, shipped with its own SPA — which is exactly why the
+      # one-stock-tenant-per-container constraint above cannot reach it.
+      BYO_ALLOWED_DAPP_ORIGINS: '["http://byo.giano.localhost"]'
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # custom-example / custom-example-byo — the demo dApp, once per tenant.
+  #
+  # THE SAME IMAGE both times, with two values changed: which wallet origin it is pinned to
+  # and what it calls itself. That is the entire difference, and it is why there are two
+  # containers rather than a wallet picker in the UI — a dApp offering a choice of wallet
+  # origins would blur exactly the boundary this stack exists to demonstrate. Each dApp is
+  # pinned to exactly ONE wallet origin, which is what makes the popup's origin check mean
+  # anything.
+  #
+  # Settings arrive at CONTAINER START as /config.js (docker/entrypoint.sh renders it with
+  # envsubst), not at build time, so one published image serves every deployment. The VITE_*
+  # variables survive only as `pnpm dev` fallbacks and setting them here does nothing.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  custom-example:
+    build:
+      context: ..
+      dockerfile: services/custom-example/Dockerfile
+    restart: unless-stopped
+    # nginx resolves GIANO_RPC_UPSTREAM at config load and will not start if the name does
+    # not resolve — see the note on wallet-web.
+    depends_on:
+      - anvil
+    environment:
+      # Browser-facing, and the only cross-origin endpoints the dApp dials: balances, token
+      # metadata and allowances are read dApp-side. anvil answers CORS preflights and sends
+      # `access-control-allow-origin: *`, so these work directly; the entrypoint puts both
+      # RPC origins and the wallet origin into the CSP `connect-src` for us.
+      #
+      # On a real chain, prefer the same-origin posture: GIANO_RPC_URL=/rpc with the keyed URL
+      # in GIANO_RPC_UPSTREAM, which keeps the API key server-side. The nginx template already
+      # proxies `= /rpc` for exactly that.
+      GIANO_CHAIN_ID: '31337'
+      GIANO_CHAIN_NAME: Devnet A
+      GIANO_RPC_URL: http://rpc.giano.localhost
+      GIANO_CHAIN_B_ID: '31338'
+      GIANO_CHAIN_B_NAME: Devnet B
+      GIANO_RPC_B_URL: http://rpc-b.giano.localhost
+      # A resolvable name, because nginx resolves it at start-up whether or not /rpc is used.
+      GIANO_RPC_UPSTREAM: http://anvil:8545
+      # ⚠ The TENANT's wallet hostname. Pointing this at the shared `wallet.giano.localhost`
+      # is the one-character mistake that binds a tenant's passkeys to infrastructure,
+      # irreversibly: the popup's address bar must read the tenant's own host.
+      GIANO_WALLET_URL: http://wallet.stock.giano.localhost
+      GIANO_APP_LABEL: tenant stock — the stock wallet UI
+      # The demo ERC-20 baked into the devnet state, and the only contract the sponsorship
+      # rules allow-list. It prefills the token panel.
+      GIANO_TEST_ERC20: '0x9967bDf929856643e92EF65eefdE1fF8250774D8'
+
+  custom-example-byo:
+    build:
+      context: ..
+      dockerfile: services/custom-example/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - anvil
+    environment:
+      GIANO_CHAIN_ID: '31337'
+      GIANO_CHAIN_NAME: Devnet A
+      GIANO_RPC_URL: http://rpc.giano.localhost
+      GIANO_CHAIN_B_ID: '31338'
+      GIANO_CHAIN_B_NAME: Devnet B
+      GIANO_RPC_B_URL: http://rpc-b.giano.localhost
+      GIANO_RPC_UPSTREAM: http://anvil:8545
+      # The two values that differ. Everything else is identical to custom-example above.
+      GIANO_WALLET_URL: http://wallet.byo.giano.localhost
+      GIANO_APP_LABEL: tenant byo — a tenant-built wallet UI
+      GIANO_TEST_ERC20: '0x9967bDf929856643e92EF65eefdE1fF8250774D8'
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # paymaster-admin — the operator's view of the same paymaster the wallets sponsor through.
+  #
+  # Everything it shows is read straight from the chain, so it needs neither wallet-api nor
+  # the database. It WRITES through an injected browser wallet rather than a service
+  # credential, so whoever holds the paymaster's role-admin key is the only one who can change
+  # anything through it — there is no server-side authorisation to configure, and none to
+  # forget. On this stack that key is anvil's first account.
+  #
+  # It waits for the provisioner all the same, so that opening it shows a provisioned
+  # deployment rather than an empty roster that looks exactly like a bug.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  paymaster-admin:
+    build:
+      context: ..
+      dockerfile: services/paymaster-admin/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      sponsorship-provisioner:
+        condition: service_completed_successfully
+      anvil:
+        condition: service_started
+    environment:
+      GIANO_CHAIN_ID: '31337'
+      # Same-origin proxy through this console's own nginx.
+      GIANO_RPC_URL: http://paymaster.giano.localhost/rpc
+      GIANO_RPC_UPSTREAM: http://anvil:8545
+      # The devnet has no contracts-registry entry, so the address is passed explicitly. It is
+      # the same deterministic address wallet-api sponsors through.
+      GIANO_PAYMASTER_ADDRESS: '0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2'
+      GIANO_ENVIRONMENT_LABEL: local devnet
+      GIANO_REFRESH_SECONDS: '5'

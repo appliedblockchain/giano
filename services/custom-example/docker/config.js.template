@@ -1,0 +1,31 @@
+// Rendered at container start by docker/entrypoint.sh. One published image serves every
+// deployment (§16.1), so nothing about which chain, which wallet origin or which label this
+// dApp uses is baked in at build time.
+//
+// A plain <script> rather than a fetched /config.json, deliberately — and this is the one
+// place custom-example departs from what wallet-web does:
+//
+//   src/giano.ts builds `provider` and `publicClient` at MODULE level from these values, and
+//   src/config.ts exports `chain`, `chainB` and `demoChains` as module-level constants. All
+//   of them therefore have to be readable SYNCHRONOUSLY by the time the bundle evaluates. A
+//   script tag ahead of the module bundle guarantees that for the cost of one line in
+//   index.html; fetching would mean making every one of those exports async and threading a
+//   loaded-config object through giano.ts, App.tsx and WalletPanel.tsx.
+//
+// wallet-web can fetch because its App takes the config as a prop and it has no module-level
+// clients. The environment contract — the GIANO_* variables — is identical either way, which
+// is the part the deployment actually depends on.
+window.__GIANO_CONFIG__ = {
+  chainId: ${GIANO_CHAIN_ID},
+  chainName: '${GIANO_CHAIN_NAME}',
+  rpcUrl: '${GIANO_RPC_URL}',
+  // 0 disables the second chain and the cross-chain panel with it.
+  chainBId: ${GIANO_CHAIN_B_ID},
+  chainBName: '${GIANO_CHAIN_B_NAME}',
+  rpcBUrl: '${GIANO_RPC_B_URL}',
+  // The TENANT's wallet origin, and each dApp is pinned to exactly one of them.
+  walletUrl: '${GIANO_WALLET_URL}',
+  // Empty strings are treated as unset by src/config.ts.
+  appLabel: '${GIANO_APP_LABEL}',
+  testErc20: '${GIANO_TEST_ERC20}',
+};

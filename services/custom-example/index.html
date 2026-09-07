@@ -11,6 +11,22 @@
       rel="stylesheet"
     />
     <title>Giano Demo</title>
+    <!--
+      Runtime config, rendered in the container at start (docker/entrypoint.sh) so one image
+      serves every deployment. src/config.ts reads window.__GIANO_CONFIG__ synchronously, so
+      two things about this tag are load-bearing:
+
+        * it MUST NOT be `type="module"` — module scripts are deferred, and this has to have
+          run before the bundle evaluates;
+        * it lives in <head> so that document order says so too. Execution order would be
+          correct from <body> as well (a classic script runs during parsing, the deferred
+          module bundle only after it), but `vite build` hoists the bundle's tag into <head>,
+          which leaves a body tag looking wrong to anyone reading dist/index.html.
+
+      In `pnpm dev` and `pnpm preview` this resolves to the null placeholder in
+      public/config.js and every value falls back to VITE_*.
+    -->
+    <script src="/config.js"></script>
   </head>
   <body>
     <div id="root"></div>
