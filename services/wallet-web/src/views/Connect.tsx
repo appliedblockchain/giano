@@ -9,6 +9,11 @@ export function Connect({ request }: { request: PendingRequest }) {
       </div>
       <div className="card">
         <h2>Connect your Giano wallet</h2>
+        {/* The chain the dApp asked for and was granted — named on every consent screen (MC-80). */}
+        <div className="kv">
+          <span className="k">Network</span>
+          <span className="v" data-testid="consent-chain">{request.chainName}</span>
+        </div>
         <p>
           Continue with your passkey. If you don't have a wallet on this device yet, one is created for you — the
           passkey never leaves your authenticator, and this app only receives your wallet address.

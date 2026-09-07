@@ -124,8 +124,11 @@ export const useropLog = pgTable(
   'userop_log',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // stays globally unique: a chain-level fact, and the constraint backs idempotency
+    // stays globally unique: the hash commits to the chain id, so two chains cannot
+    // collide, and the constraint continues to back relay idempotency
     useropHash: text('userop_hash').notNull().unique(),
+    /** Which chain the operation went to — answerable directly, never by inference (MC-59). */
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
     sender: text('sender').notNull(),
     tenantId: uuid('tenant_id')
       .notNull()
@@ -141,7 +144,11 @@ export const useropLog = pgTable(
     sponsorshipDecisionId: uuid('sponsorship_decision_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('userop_log_sender_idx').on(t.sender), index('userop_log_tenant_id_created_at_idx').on(t.tenantId, t.createdAt)],
+  (t) => [
+    index('userop_log_sender_idx').on(t.sender),
+    index('userop_log_tenant_id_created_at_idx').on(t.tenantId, t.createdAt),
+    index('userop_log_chain_id_created_at_idx').on(t.chainId, t.createdAt),
+  ],
 );
 
 export const rorOrigins = pgTable(

@@ -8,9 +8,8 @@ import type { AppConfig } from '../config.js';
 import type { Db } from '../db/index.js';
 import { sponsorshipDecisions, useropLog } from '../db/schema.js';
 import { ApiError } from '../plugins/error-handler.js';
-import type { BundlerService } from '../services/bundler.js';
+import type { ChainRegistry, ChainServices } from '../services/chains.js';
 import { mergePolicy } from '../services/tenants.js';
-import type { PolicyConfig } from '../services/userop-policy.js';
 import { evaluatePolicy } from '../services/userop-policy.js';
 
 const hexData = z.string().regex(/^0x[0-9a-fA-F]*$/) as z.ZodType<Hex>;
@@ -69,19 +68,39 @@ function toBigIntUserOp(op: RpcUserOp) {
 
 export default async function useropRoutes(
   instance: FastifyInstance,
-  opts: { db: Db; config: AppConfig; bundler: BundlerService; defaultPolicy: PolicyConfig },
+  opts: {
+    db: Db;
+    config: AppConfig;
+    registry: ChainRegistry;
+    /** Deployment-wide numeric caps. Address-valued defaults live on each chain descriptor (MC-61). */
+    defaultPolicy: { maxCallGas: bigint; maxVerificationGas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  },
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   // request.tenant is backfilled from the session by requireSession, so no tenant
   // service is needed here — the merged policy reads straight off the request.
-  const { db, config, bundler, defaultPolicy } = opts;
+  const { db, config, registry, defaultPolicy } = opts;
 
-  const tenantPolicy = (request: FastifyRequest) => ({
-    ...mergePolicy(defaultPolicy, request.tenant?.policy),
-    // The 16-byte id the paymaster bills, so `sponsored-tenant-match` can cross-check a sponsored
-    // operation against the session that submitted it.
-    ...(request.session ? { sponsorshipTenantId: `0x${request.session.tenantId.replace(/-/g, '')}` as `0x${string}` } : {}),
-  });
+  /**
+   * Policy for one (tenant, chain), per §9.5: env caps ← the chain descriptor's own policy
+   * ← the tenant's overrides for THAT chain. Address-valued fields never cross chains.
+   */
+  const tenantPolicy = (request: FastifyRequest, chain: ChainServices) => {
+    const chainDefaults = {
+      maxCallGas: chain.descriptor.policy.maxCallGas ?? defaultPolicy.maxCallGas,
+      maxVerificationGas: chain.descriptor.policy.maxVerificationGas ?? defaultPolicy.maxVerificationGas,
+      maxFeePerGas: chain.descriptor.policy.maxFeePerGas ?? defaultPolicy.maxFeePerGas,
+      maxPriorityFeePerGas: chain.descriptor.policy.maxPriorityFeePerGas ?? defaultPolicy.maxPriorityFeePerGas,
+      allowedTargets: chain.descriptor.policy.allowedTargets,
+      allowedPaymasters: chain.descriptor.policy.allowedPaymasters,
+    };
+    return {
+      ...mergePolicy(chainDefaults, request.tenant?.policy, chain.chainId),
+      // The 16-byte id the paymaster bills, so `sponsored-tenant-match` can cross-check a sponsored
+      // operation against the session that submitted it.
+      ...(request.session ? { sponsorshipTenantId: `0x${request.session.tenantId.replace(/-/g, '')}` as `0x${string}` } : {}),
+    };
+  };
 
   /**
    * Light per-tenant relay limit (G5.2): a shared bundler and executor balance mean one
@@ -89,11 +108,14 @@ export default async function useropRoutes(
    * (in-memory, single-process — acceptable for this iteration) rather than
    * @fastify/rate-limit, because it must run AFTER requireSession resolved the tenant.
    */
+  // One window per tenant, SHARED across chains (MC-63): adding a chain must not raise a
+  // tenant's effective ceiling — the limit protects the relay and the tenant's own spend,
+  // neither of which became N times more available when the deployment gained chains.
   const relayWindows = new Map<string, { windowStart: number; count: number }>();
   const relayLimit = async (request: FastifyRequest, reply: FastifyReply) => {
     const session = request.session;
-    if (!session) return; // requireSession already replied
-    const max = tenantPolicy(request).relayRateLimitPerMinute ?? config.USEROP_RATE_LIMIT_PER_MINUTE;
+    if (!session || !request.chain) return; // requireSession/requireChain already replied
+    const max = tenantPolicy(request, request.chain).relayRateLimitPerMinute ?? config.USEROP_RATE_LIMIT_PER_MINUTE;
     const now = Date.now();
     const window = relayWindows.get(session.tenantId);
     if (!window || now - window.windowStart >= 60_000) {
@@ -102,7 +124,7 @@ export default async function useropRoutes(
     }
     window.count += 1;
     if (window.count > max) {
-      app.metrics.useropRelayed.inc({ status: 'rate-limited', tenant: request.tenant?.slug ?? 'unknown' });
+      app.metrics.useropRelayed.inc({ status: 'rate-limited', tenant: request.tenant?.slug ?? 'unknown', chain: String(request.chain.chainId) });
       return reply.code(429).send({ error: 'rate-limited', message: `tenant relay limit of ${max}/minute exceeded` });
     }
   };
@@ -110,36 +132,51 @@ export default async function useropRoutes(
   app.post(
     '/v1/userops',
     {
-      preHandler: [app.requireSession, relayLimit],
+      // requireChain BEFORE the rate limit: an unserved chain is refused without consuming
+      // any of the tenant's window.
+      preHandler: [app.requireSession, app.requireChain, relayLimit],
       schema: {
         tags: ['userops'],
         security: [{ session: [] }],
-        body: z.object({ userOperation: rpcUserOpSchema }),
+        body: z.object({
+          userOperation: rpcUserOpSchema,
+          /**
+           * The chain to submit to. Required when the deployment serves several chains;
+           * optional when it serves one, where it must then match (MC-53). Validated against
+           * the closed configured registry before any work happens (MC-51, MC-52).
+           */
+          chainId: z.number().int().positive().optional(),
+        }),
         response: {
           200: z.object({ userOperationHash: z.string(), duplicate: z.boolean().optional() }),
+          400: z.object({ error: z.string(), message: z.string(), servedChainIds: z.array(z.number()).optional() }),
           403: z.object({ error: z.string(), message: z.string(), policy: z.array(z.object({ rule: z.string(), passed: z.boolean(), detail: z.string().optional() })) }),
           429: z.object({ error: z.string(), message: z.string() }),
+          503: z.object({ error: z.string(), message: z.string() }),
         },
       },
     },
     async (request, reply) => {
       const stopTimer = app.metrics.useropLatency.startTimer();
       const session = request.session!;
+      const chain = request.chain!;
+      const chainLabel = String(chain.chainId);
       const tenantSlug = request.tenant?.slug ?? 'unknown';
       try {
         const rpcOp = request.body.userOperation;
         const userOp = toBigIntUserOp(rpcOp);
 
-        // Hash is computed server-side against the SERVER's EntryPoint and chain — the
-        // request cannot influence where this op is valid.
+        // Hash is computed server-side against the RESOLVED chain and the server-configured
+        // EntryPoint for that chain (MC-57) — never from an unvalidated value in the request
+        // body, so the request cannot influence where this op is valid.
         const useropHash = getUserOperationHash({
-          chainId: config.CHAIN_ID,
-          entryPointAddress: bundler.entryPoint,
+          chainId: chain.chainId,
+          entryPointAddress: chain.entryPoint,
           entryPointVersion: '0.7',
           userOperation: userOp as never,
         });
 
-        // Per-tenant policy: tenant jsonb overrides merged over the deployment defaults.
+        // Per-(tenant, chain) policy: tenant jsonb overrides merged over the chain's defaults.
         const decision = evaluatePolicy(
           {
             sender: rpcOp.sender,
@@ -153,7 +190,7 @@ export default async function useropRoutes(
             paymasterData: rpcOp.paymasterData,
           },
           session.walletAddress,
-          tenantPolicy(request),
+          tenantPolicy(request, chain),
         );
 
         if (!decision.allowed) {
@@ -163,6 +200,7 @@ export default async function useropRoutes(
             .insert(useropLog)
             .values({
               useropHash,
+              chainId: chain.chainId,
               sender: rpcOp.sender,
               tenantId: session.tenantId,
               userId: session.userId,
@@ -172,11 +210,11 @@ export default async function useropRoutes(
               rejectReason: decision.rejectReason,
             })
             .onConflictDoNothing({ target: useropLog.useropHash });
-          request.log.warn({ useropHash, reason: decision.rejectReason }, 'userop rejected by policy');
+          request.log.warn({ useropHash, chainId: chain.chainId, reason: decision.rejectReason }, 'userop rejected by policy');
           for (const rule of decision.results.filter((r) => !r.passed)) {
-            app.metrics.policyRejections.inc({ rule: rule.rule, tenant: tenantSlug });
+            app.metrics.policyRejections.inc({ rule: rule.rule, tenant: tenantSlug, chain: chainLabel });
           }
-          app.metrics.useropRelayed.inc({ status: 'rejected', tenant: tenantSlug });
+          app.metrics.useropRelayed.inc({ status: 'rejected', tenant: tenantSlug, chain: chainLabel });
           return reply.code(403).send({ error: 'policy-rejected', message: decision.rejectReason!, policy: decision.results });
         }
 
@@ -197,6 +235,7 @@ export default async function useropRoutes(
           .insert(useropLog)
           .values({
             useropHash,
+            chainId: chain.chainId,
             sender: rpcOp.sender,
             tenantId: session.tenantId,
             userId: session.userId,
@@ -222,15 +261,17 @@ export default async function useropRoutes(
         }
 
         try {
-          const bundlerHash = await bundler.sendUserOperation(rpcOp as unknown as Record<string, unknown>);
+          // Submitted to the submission endpoint configured for the RESOLVED chain, and to
+          // no other (MC-58).
+          const bundlerHash = await chain.bundler.sendUserOperation(rpcOp as unknown as Record<string, unknown>);
           if (bundlerHash.toLowerCase() !== useropHash.toLowerCase()) {
-            request.log.warn({ useropHash, bundlerHash }, 'bundler returned a different userop hash than computed');
+            request.log.warn({ useropHash, bundlerHash, chainId: chain.chainId }, 'bundler returned a different userop hash than computed');
           }
           await db
             .update(useropLog)
             .set({ status: 'submitted', bundlerResponse: { bundlerHash } })
             .where(eq(useropLog.id, inserted[0].id));
-          app.metrics.useropRelayed.inc({ status: 'submitted', tenant: tenantSlug });
+          app.metrics.useropRelayed.inc({ status: 'submitted', tenant: tenantSlug, chain: chainLabel });
           // the server-computed hash is the canonical id (log key, status endpoint, idempotency)
           return { userOperationHash: useropHash };
         } catch (error) {
@@ -238,12 +279,12 @@ export default async function useropRoutes(
             .update(useropLog)
             .set({ status: 'failed', bundlerResponse: { error: (error as Error).message } })
             .where(eq(useropLog.id, inserted[0].id));
-          app.metrics.useropRelayed.inc({ status: 'failed', tenant: tenantSlug });
+          app.metrics.useropRelayed.inc({ status: 'failed', tenant: tenantSlug, chain: chainLabel });
           throw error;
         }
       } finally {
         // rejected and failed ops observe the histogram too (was success-path only)
-        stopTimer({ tenant: tenantSlug });
+        stopTimer({ tenant: tenantSlug, chain: chainLabel });
       }
     },
   );
@@ -259,6 +300,7 @@ export default async function useropRoutes(
         response: {
           200: z.object({
             userOperationHash: z.string(),
+            chainId: z.number(),
             sender: z.string(),
             status: z.enum(['accepted', 'rejected', 'submitted', 'failed']),
             policyResults: z.array(z.object({ rule: z.string(), passed: z.boolean(), detail: z.string().optional() })),
@@ -275,6 +317,7 @@ export default async function useropRoutes(
       }
       return {
         userOperationHash: row.useropHash,
+        chainId: row.chainId,
         sender: row.sender,
         status: row.status,
         policyResults: row.policyResults as never,
@@ -299,7 +342,14 @@ export default async function useropRoutes(
       },
     },
     async (request) => {
-      const receipt = await bundler.getUserOperationReceipt(request.params.hash);
+      // No chainId parameter: the operation hash commits to the chain, and userop_log now
+      // records it (MC-59) — so the chain is resolved from the logged row and the SDK's
+      // receipt polling keeps working untouched (§9.3). An op this deployment never relayed
+      // falls back to the sole chain when one is configured, and is unknown otherwise.
+      const row = await db.query.useropLog.findFirst({ where: eq(useropLog.useropHash, request.params.hash) });
+      const chain = (row && registry.tryGet(row.chainId)) || (registry.size === 1 ? registry.sole : undefined);
+      if (!chain) return { receipt: null };
+      const receipt = await chain.bundler.getUserOperationReceipt(request.params.hash);
       return { receipt };
     },
   );

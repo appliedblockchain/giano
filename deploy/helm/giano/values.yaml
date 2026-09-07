@@ -6,6 +6,18 @@ global:
 
 # --- chain / RP config shared by wallet-api and wallet-web ---
 config:
+  # SINGLE-CHAIN (on-premises profile, MC-88): the scalars below are the complete
+  # configuration. MULTI-CHAIN (standalone profile): set `chains` / `walletWeb.chains`
+  # instead — JSON documents passed through verbatim, because a per-field template cannot
+  # express a variable-length list (MC-94). Setting both is a wallet-api boot error.
+  #
+  # chains: one backend descriptor per served chain, e.g.
+  #   chains:
+  #     - chainId: 8453
+  #       name: Base
+  #       rpcUrl: https://…
+  #       bundlerUrl: https://…
+  chains: []
   chainId: 8453
   rpcUrl: ""
   bundlerUrl: "" # leave empty to use the in-chart bundler service
@@ -39,6 +51,9 @@ walletApi:
 walletWeb:
   replicas: 2
   image: giano-wallet-web
+  # multi-chain: one wallet descriptor per served chain ({chainId, name, rpcUrl,
+  # bundlerUrl, factoryAddress, sponsorship}); empty = the single-chain scalars in `config`
+  chains: []
   resources: {}
 
 bundler:

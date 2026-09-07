@@ -1,11 +1,17 @@
 import { ulid } from 'ulid';
-import { TransportError, TransportRpcError } from './errors';
+import { HandshakeRefusedError, TransportError, TransportRpcError, UnsupportedChainError } from './errors';
 import { PopupManager } from './popup-manager';
 import { PROTOCOL_VERSION, parseTransportMessage, type TransportMessage } from './protocol';
 
 export type TransportClientOptions = {
   /** Full URL of the wallet page (e.g. https://wallet.clientapp.com/connect). */
   walletUrl: string;
+  /**
+   * The chain this session will transact on — REQUIRED, declared in the handshake and fixed
+   * for the session's life (MC-01, MC-02, MC-11). The wallet origin grants it or refuses the
+   * connection outright; there is no default chain.
+   */
+  chainId: number;
   sdkVersion?: string;
   capabilities?: string[];
   /** ms to wait for the popup's ready+handshake:ack (default 15s). */
@@ -26,6 +32,10 @@ type EventHandler = (data: unknown) => void;
  */
 export class TransportClient {
   readonly walletOrigin: string;
+  /** The chain declared for every session this client opens. */
+  readonly chainId: number;
+  /** Chains the wallet origin advertised in the last handshake ack. */
+  private advertisedChainIds: readonly number[] = [];
   private readonly options: Required<Pick<TransportClientOptions, 'sdkVersion' | 'capabilities' | 'handshakeTimeoutMs' | 'requestTimeoutMs'>>;
   private readonly listenWindow: Window;
   private readonly popupManager: PopupManager;
@@ -39,6 +49,7 @@ export class TransportClient {
 
   constructor(options: TransportClientOptions) {
     this.walletOrigin = new URL(options.walletUrl).origin;
+    this.chainId = options.chainId;
     this.options = {
       sdkVersion: options.sdkVersion ?? '0.0.0',
       capabilities: options.capabilities ?? [],
@@ -51,6 +62,11 @@ export class TransportClient {
 
   get isConnected(): boolean {
     return this.connected && !!this.popup && !this.popup.closed;
+  }
+
+  /** Every chain the wallet origin declared it serves, from the last handshake ack (MC-05). */
+  get supportedChainIds(): readonly number[] {
+    return this.advertisedChainIds;
   }
 
   /** Must be called from a user gesture (popup). Resolves once the handshake is acked. */
@@ -140,11 +156,27 @@ export class TransportClient {
           giano: PROTOCOL_VERSION,
           id: ulid(),
           type: 'handshake',
-          payload: { sdkVersion: this.options.sdkVersion, capabilities: this.options.capabilities },
+          payload: { sdkVersion: this.options.sdkVersion, capabilities: this.options.capabilities, chainId: this.chainId },
         });
         return;
       }
       case 'handshake:ack': {
+        // MC-06: the granted chain must equal the requested one. A wallet origin that granted
+        // a different chain (or an old origin that granted none) must fail loudly here — a
+        // silent difference between the chain the dApp believes it is on and the chain its
+        // transactions reach must not be reachable.
+        if (message.payload.chainId !== this.chainId) {
+          this.teardown(
+            new UnsupportedChainError(
+              this.chainId,
+              message.payload.supportedChainIds ?? [],
+              `the wallet granted chain ${message.payload.chainId ?? 'none'} but this session requested chain ${this.chainId}`,
+            ),
+          );
+          this.popupManager.close();
+          return;
+        }
+        this.advertisedChainIds = message.payload.supportedChainIds;
         this.connected = true;
         this.connectPromise = null;
         if (this.handshakeWaiter) {
@@ -152,6 +184,16 @@ export class TransportClient {
           this.handshakeWaiter.resolve();
           this.handshakeWaiter = null;
         }
+        return;
+      }
+      case 'handshake:nack': {
+        const { reason, message: detail, supportedChainIds = [] } = message.payload;
+        const error =
+          reason === 'unsupported-chain' || reason === 'chain-required'
+            ? new UnsupportedChainError(reason === 'chain-required' ? undefined : this.chainId, supportedChainIds, detail)
+            : new HandshakeRefusedError(reason, detail, supportedChainIds);
+        this.teardown(error);
+        this.popupManager.close();
         return;
       }
       case 'rpc:response': {

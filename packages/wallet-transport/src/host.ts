@@ -1,11 +1,17 @@
 import { ulid } from 'ulid';
 import { TransportRpcError } from './errors';
-import { PROTOCOL_VERSION, RPC_ERRORS, parseTransportMessage, type TransportMessage } from './protocol';
+import { PROTOCOL_VERSION, RPC_ERRORS, parseTransportMessage, type HandshakeNackReason, type TransportMessage } from './protocol';
 
 export type RequestContext = {
   /** The pinned dApp origin — show it on every consent screen. */
   dappOrigin: string;
   sdkVersion: string;
+  /**
+   * The chain GRANTED for this transport session, negotiated in the handshake and fixed for
+   * the session's life (MC-01). Every request on the session is served against it — there is
+   * no path by which a request reaches a different chain's runtime.
+   */
+  chainId: number;
 };
 
 export type RequestHandler = (method: string, params: unknown, context: RequestContext) => Promise<unknown>;
@@ -20,6 +26,12 @@ export type TransportHostOptions = {
    * `allowedDappOrigins`.
    */
   allowedOrigins?: string[];
+  /**
+   * The closed list of chains this wallet origin serves (D8). A handshake naming a chain
+   * outside it — or naming none — is refused with `handshake:nack` before any request is
+   * served (MC-03, MC-11). The list is disclosed only in that refusal and in the ack (MC-13).
+   */
+  servedChainIds: number[];
   onRequest: RequestHandler;
   /** The popup window (overridable in tests). */
   hostWindow?: Window;
@@ -31,6 +43,8 @@ export type TransportHostOptions = {
  * Wallet side of the popup transport. Pins the FIRST validated dApp origin+source per
  * popup lifetime: after the handshake, messages from any other origin or window are
  * silently ignored, and every outgoing message targets the pinned origin explicitly.
+ * The handshake also negotiates the session's chain: the dApp's declaration is a request,
+ * never an instruction — only the configured served list admits a chain (D2).
  */
 export class TransportHost {
   private readonly options: TransportHostOptions;
@@ -38,6 +52,7 @@ export class TransportHost {
   private pinnedOrigin: string | null = null;
   private pinnedSource: MessageEventSource | null = null;
   private sdkVersion = 'unknown';
+  private sessionChainId: number | null = null;
   private started = false;
   private readonly onMessage = (event: MessageEvent) => void this.handleMessage(event);
 
@@ -48,6 +63,11 @@ export class TransportHost {
 
   get dappOrigin(): string | null {
     return this.pinnedOrigin;
+  }
+
+  /** The chain granted for the current session, or null before a successful handshake. */
+  get chainId(): number | null {
+    return this.sessionChainId;
   }
 
   /** Attach listeners and announce readiness to the opener. */
@@ -87,35 +107,83 @@ export class TransportHost {
     return allowed.includes(origin);
   }
 
+  /**
+   * Refuses a handshake with a machine-readable reason (MC-04). Sent directly to the
+   * requesting window — the session is NOT established, so nothing is pinned and no rpc
+   * message will ever be processed for it.
+   */
+  private nack(event: MessageEvent, id: string, reason: HandshakeNackReason, message: string, withChains = true): void {
+    if (!event.source) return;
+    (event.source as Window).postMessage(
+      {
+        giano: PROTOCOL_VERSION,
+        id,
+        type: 'handshake:nack',
+        payload: {
+          reason,
+          message,
+          ...(withChains ? { supportedChainIds: this.options.servedChainIds } : {}),
+        },
+      } satisfies TransportMessage,
+      { targetOrigin: event.origin },
+    );
+  }
+
   private async handleMessage(event: MessageEvent): Promise<void> {
     const message = parseTransportMessage(event.data);
     if (!message) return;
 
     if (message.type === 'handshake') {
-      // first validated handshake pins origin + source for the popup's lifetime
+      // origin pinning — unchanged, still first, still fail-closed
       if (this.pinnedOrigin) {
         if (event.origin !== this.pinnedOrigin || event.source !== this.pinnedSource) return;
       } else {
         if (!event.source || !this.isAllowedOrigin(event.origin)) {
-          // The drop stays silent on the wire — but not in the wallet's own console. Without
-          // this, a misconfigured allow-list is indistinguishable from a severed opener: both
-          // surface on the dApp as the same 15s HANDSHAKE_TIMEOUT.
+          // Refused with a reason instead of silence: a misconfigured allow-list used to be
+          // indistinguishable from a severed opener (both surfaced as HANDSHAKE_TIMEOUT).
+          // The served-chains list is deliberately NOT disclosed to a disallowed origin.
           console.warn(
             `[giano] handshake refused: origin ${event.origin} is not in allowedDappOrigins (${JSON.stringify(this.options.allowedOrigins ?? [])})`,
           );
+          this.nack(event, message.id, 'origin-not-allowed', 'this wallet does not accept connections from your origin', false);
           return;
         }
         this.pinnedOrigin = event.origin;
         this.pinnedSource = event.source;
       }
+
+      // Chain negotiation (MC-03, MC-11): the dApp names a chain; only the configured list
+      // admits one. A refusal here precedes everything — no consent screen, no passkey
+      // ceremony, no request is ever served on an unnegotiated session (MC-85).
+      const requested = message.payload.chainId;
+      if (requested === undefined) {
+        this.nack(event, message.id, 'chain-required', 'the connection must name the chain it will transact on — there is no default chain');
+        return;
+      }
+      if (!this.options.servedChainIds.includes(requested)) {
+        this.nack(
+          event,
+          message.id,
+          'unsupported-chain',
+          `this wallet does not serve chain ${requested} — it serves: ${this.options.servedChainIds.join(', ')}`,
+        );
+        return;
+      }
+
+      this.sessionChainId = requested;
       this.sdkVersion = message.payload.sdkVersion;
       this.post({
         giano: PROTOCOL_VERSION,
         id: message.id,
         type: 'handshake:ack',
-        payload: { walletVersion: this.options.walletVersion ?? '0.0.0', capabilities: this.options.capabilities ?? [] },
+        payload: {
+          walletVersion: this.options.walletVersion ?? '0.0.0',
+          capabilities: this.options.capabilities ?? [],
+          chainId: requested,
+          supportedChainIds: this.options.servedChainIds,
+        },
       });
-      this.options.onConnected?.({ dappOrigin: this.pinnedOrigin!, sdkVersion: this.sdkVersion });
+      this.options.onConnected?.({ dappOrigin: this.pinnedOrigin!, sdkVersion: this.sdkVersion, chainId: requested });
       return;
     }
 
@@ -123,10 +191,21 @@ export class TransportHost {
     if (!this.pinnedOrigin || event.origin !== this.pinnedOrigin || event.source !== this.pinnedSource) return;
 
     if (message.type === 'rpc') {
+      // A session exists only once the chain is negotiated; anything earlier is refused.
+      if (this.sessionChainId === null) {
+        this.post({
+          giano: PROTOCOL_VERSION,
+          id: message.id,
+          type: 'rpc:response',
+          payload: { error: { code: RPC_ERRORS.DISCONNECTED, message: 'no session — the handshake was not completed' } },
+        });
+        return;
+      }
       try {
         const result = await this.options.onRequest(message.payload.method, message.payload.params, {
           dappOrigin: this.pinnedOrigin,
           sdkVersion: this.sdkVersion,
+          chainId: this.sessionChainId,
         });
         this.post({ giano: PROTOCOL_VERSION, id: message.id, type: 'rpc:response', payload: { result } });
       } catch (error) {

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Giano Wallet API",
-    "description": "WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets (multi-tenant).",
+    "description": "WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets (multi-tenant, multi-chain).",
     "version": "1.0.0"
   },
   "components": {
@@ -133,12 +133,41 @@
                       "type": "string"
                     },
                     "chainId": {
-                      "type": "number"
+                      "type": "number",
+                      "nullable": true
+                    },
+                    "chains": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "chainId": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ready",
+                              "unavailable"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "chainId",
+                          "name",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "version",
-                    "chainId"
+                    "chainId",
+                    "chains"
                   ],
                   "additionalProperties": false
                 }
@@ -373,6 +402,18 @@
         "tags": [
           "admin"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          }
+        ],
         "security": [
           {
             "adminKey": []
@@ -430,11 +471,11 @@
         }
       },
       "put": {
-        "summary": "Replace this tenant's sponsorship rules",
+        "summary": "Replace this tenant's sponsorship rules (for one chain)",
         "tags": [
           "admin"
         ],
-        "description": "Full replace, validated on write. Rejected with per-path messages on any violation, so an invalid rule set is never stored and therefore never interpreted permissively.",
+        "description": "Full replace, validated on write. Rejected with per-path messages on any violation, so an invalid rule set is never stored and therefore never interpreted permissively. Rules are per chain and never inherited from another chain (MC-67): enabling a new chain is an explicit act.",
         "requestBody": {
           "required": true,
           "content": {
@@ -443,6 +484,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          }
+        ],
         "security": [
           {
             "adminKey": []
@@ -515,7 +568,7 @@
         }
       },
       "patch": {
-        "summary": "Update fields of this tenant's sponsorship rules",
+        "summary": "Update fields of this tenant's sponsorship rules (for one chain)",
         "tags": [
           "admin"
         ],
@@ -531,6 +584,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          }
+        ],
         "security": [
           {
             "adminKey": []
@@ -613,6 +678,16 @@
           {
             "schema": {
               "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
               "minimum": 1,
               "maximum": 200,
               "default": 50
@@ -679,6 +754,18 @@
           "admin"
         ],
         "description": "Read live from the paymaster contract, with the block it was read at, so the figures can be reproduced from the chain rather than taken on trust.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          }
+        ],
         "security": [
           {
             "adminKey": []
@@ -800,6 +887,16 @@
         ],
         "description": "One row per settled operation, with gas, Giano's fee and the overhead allowance kept separate — each row traceable to a `Sponsored` event on chain.",
         "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
           {
             "schema": {
               "type": "integer",
@@ -930,6 +1027,16 @@
         ],
         "description": "Includes the pre-approval checks that never became transactions — those are exactly the decisions a user was shown, so they are what answers \"why did my user see a refusal?\".",
         "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": true,
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
           {
             "schema": {
               "type": "integer",
@@ -2006,6 +2113,11 @@
                       "signature"
                     ],
                     "additionalProperties": false
+                  },
+                  "chainId": {
+                    "type": "integer",
+                    "exclusiveMinimum": true,
+                    "minimum": 0
                   }
                 },
                 "required": [
@@ -2038,6 +2150,35 @@
                   },
                   "required": [
                     "userOperationHash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "servedChainIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }
@@ -2112,6 +2253,29 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
@@ -2147,6 +2311,9 @@
                   "properties": {
                     "userOperationHash": {
                       "type": "string"
+                    },
+                    "chainId": {
+                      "type": "number"
                     },
                     "sender": {
                       "type": "string"
@@ -2192,6 +2359,7 @@
                   },
                   "required": [
                     "userOperationHash",
+                    "chainId",
                     "sender",
                     "status",
                     "policyResults",

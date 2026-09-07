@@ -265,6 +265,35 @@ const connector = createGianoConnector({ provider });
 
 See `packages/connector/README.md` for the full API and the 0.x → 1.x migration guide.
 
+### Chains: how a dApp names one, and what a refusal means
+
+The `chain` you pass to `createGianoWalletProvider` is not only the read path — it is **declared
+to the wallet origin** when the popup session is established, and the wallet either grants it or
+refuses the connection outright (MC-01–MC-06). There is no default chain: a connection that names
+none is refused, and the SDK always names the chain you constructed it with, so this costs you
+nothing (MC-11, MC-12).
+
+- **The chain is fixed for the life of the provider.** To address another chain, construct
+  another provider — two instances against the same wallet origin coexist cleanly, with separate
+  sessions and caches (MC-10). `wallet_switchEthereumChain` / `wallet_addEthereumChain` are
+  refused with EIP-1193 `4200`, and the wagmi adapter's `switchChain` throws a typed
+  `UnsupportedChainSwitchError` (MC-14, MC-15).
+- **A refusal is diagnosable without the wallet's configuration.** When the wallet origin does
+  not serve your chain, `connect`/`eth_requestAccounts` rejects with `UnsupportedChainError`
+  (code `4902`, EIP-3326) carrying `requestedChainId` and `supportedChainIds` (MC-04). That is
+  permanent — resolve it with the wallet operator. A `4901` means the chain is served but
+  temporarily unreachable, and is worth retrying (MC-55).
+- **One address, every chain.** The same passkey controls the **same smart-account address on
+  every chain the deployment serves** — guaranteed by construction (canonical factory and
+  implementation at identical addresses, verified at the wallet-api's boot) and never by a
+  mapping table (MC-16, MC-17). Funds sent to the user's address on any served chain reach the
+  same wallet. The account deploys lazily per chain: "not yet deployed on this chain" is
+  normal, and the first transaction there deploys it (MC-29, MC-30).
+- **Sponsorship is per chain.** A tenant configures and funds gas sponsorship independently on
+  each chain; nothing is inherited, and an authorisation issued for one chain is unusable on
+  another (MC-65, MC-67, MC-69). See `specs/CHAIN-ADOPTION.md` for what serving a new chain
+  involves.
+
 ## 10. Upgrade runbook
 
 All artifacts share one version (Changesets fixed mode). Upgrade order: **wallet-api

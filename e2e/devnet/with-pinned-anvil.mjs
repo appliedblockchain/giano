@@ -14,6 +14,8 @@ import { execFileSync, spawn } from 'node:child_process';
 const IMAGE = 'ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd';
 const NAME = 'giano-devnet-generator';
 const PORT = Number(process.env.ANVIL_PORT ?? 8545);
+/** The chain id the anvil announces — 31337 for chain A, 31338 for chain B (MC-116). */
+const CHAIN_ID = process.env.ANVIL_CHAIN_ID ?? '31337';
 
 const [command, ...args] = process.argv.slice(2);
 if (!command) throw new Error('usage: with-pinned-anvil.mjs <command> [args...]');
@@ -29,11 +31,11 @@ try {
   // nothing to remove
 }
 
-console.log(`Starting pinned anvil (${IMAGE.slice(0, 40)}…) on :${PORT}`);
+console.log(`Starting pinned anvil (${IMAGE.slice(0, 40)}…) on :${PORT}, chain ${CHAIN_ID}`);
 docker([
   'run', '-d', '--name', NAME, '-p', `${PORT}:8545`,
   '--entrypoint', 'anvil', IMAGE,
-  '--host', '0.0.0.0', '--chain-id', '31337', '--silent',
+  '--host', '0.0.0.0', '--chain-id', CHAIN_ID, '--silent',
 ]);
 
 let failed = false;

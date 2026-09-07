@@ -146,10 +146,14 @@ export function createWalletApiInjection(options: CreateWalletApiInjectionOption
       // The server already derived and stored the public key during registration verify.
     },
 
-    encodeUserId: (id: string, factoryAddress: string, chainId: string, chainType: ChainType) => {
+    // Layout: id(16) ‖ factory(20) ‖ chainType(1) = 37 bytes. Deliberately NO chain id
+    // (MC-78): the credential is valid on every served chain, and the handle is written
+    // into the authenticator at registration and can never be rewritten — a chain stamped
+    // in would be misleading by construction.
+    encodeUserId: (id: string, factoryAddress: string, chainType: ChainType) => {
       const strip = (hex: string) => hex.replace(/^0x/, '');
       const pad = (hex: string, bytes: number) => strip(hex).padStart(bytes * 2, '0');
-      const packed = pad(id, 16) + pad(factoryAddress, 20) + pad(chainId, 4) + pad(chainType.toString(16), 1);
+      const packed = pad(id, 16) + pad(factoryAddress, 20) + pad(chainType.toString(16), 1);
       const out = new Uint8Array(packed.length / 2);
       for (let i = 0; i < out.length; i++) out[i] = parseInt(packed.slice(i * 2, i * 2 + 2), 16);
       return out;
@@ -162,16 +166,17 @@ export function createWalletApiInjection(options: CreateWalletApiInjectionOption
       return {
         userId: [idHex.slice(0, 8), idHex.slice(8, 12), idHex.slice(12, 16), idHex.slice(16, 20), idHex.slice(20)].join('-'),
         walletFactoryAddress: `0x${hex(bytes.slice(16, 36))}`,
-        chainId: parseInt(hex(bytes.slice(36, 40)), 16),
-        chainType: parseInt(hex(bytes.slice(40, 41)), 16) as ChainType,
+        chainType: parseInt(hex(bytes.slice(36, 37)), 16) as ChainType,
       };
     },
 
-    submitUserOperation: async (signedUserOp): Promise<Hash> => {
+    submitUserOperation: async (signedUserOp, chainId): Promise<Hash> => {
       const result = await api<{ userOperationHash: Hash }>('/v1/userops', {
         method: 'POST',
         auth: true,
-        body: JSON.stringify({ userOperation: serializeUserOperation(signedUserOp as unknown as Record<string, unknown>) }),
+        // chainId names the chain the op was signed for; the backend validates it against
+        // its closed registry and computes the hash from the RESOLVED chain (MC-51, MC-57).
+        body: JSON.stringify({ chainId, userOperation: serializeUserOperation(signedUserOp as unknown as Record<string, unknown>) }),
       });
       return result.userOperationHash;
     },

@@ -58,10 +58,12 @@ unnecessary.
 
 | Service | URL | Notes |
 | --- | --- | --- |
-| devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler (alto) | http://bundler.localhost | EntryPoint v0.7 |
-| wallet-api | http://api.localhost | also reached via the wallet-web `/api` proxy |
-| wallet-web | http://wallet.localhost | the wallet origin (open it directly for the Settings view) |
+| devnet A (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
+| bundler A (alto) | http://bundler.localhost | EntryPoint v0.7 |
+| devnet B (anvil) | http://rpc-b.localhost | chain 31338 — same contracts at the SAME addresses (the stack is two-chain by default; see `e2e/README.md`) |
+| bundler B (alto) | http://bundler-b.localhost | chain B's own submission infrastructure |
+| wallet-api | http://api.localhost | serves both chains; also reached via the wallet-web `/api` proxy |
+| wallet-web | http://wallet.localhost | the wallet origin, serving both chains (open it directly for the Settings view) |
 | paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at

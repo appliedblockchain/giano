@@ -9,7 +9,14 @@ import { createWindowPair, flush, FakeWindow } from './fake-windows';
 const DAPP = 'https://dapp.example.com';
 const WALLET = 'https://wallet.example.com';
 
-function setup(options: { allowedOrigins?: string[]; onRequest?: (method: string, params: unknown) => Promise<unknown> } = {}) {
+function setup(
+  options: {
+    allowedOrigins?: string[];
+    onRequest?: (method: string, params: unknown) => Promise<unknown>;
+    chainId?: number;
+    servedChainIds?: number[];
+  } = {},
+) {
   const pair = createWindowPair(DAPP, WALLET);
 
   const popupManager = new PopupManager({
@@ -19,6 +26,7 @@ function setup(options: { allowedOrigins?: string[]; onRequest?: (method: string
 
   const client = new TransportClient({
     walletUrl: `${WALLET}/connect`,
+    chainId: options.chainId ?? 31337,
     sdkVersion: '1.0.0-test',
     listenWindow: pair.dappWindow as unknown as Window,
     popupManager,
@@ -29,6 +37,7 @@ function setup(options: { allowedOrigins?: string[]; onRequest?: (method: string
   const host = new TransportHost({
     walletVersion: '2.0.0-test',
     allowedOrigins: options.allowedOrigins ?? [DAPP],
+    servedChainIds: options.servedChainIds ?? [31337, 31338],
     onRequest: options.onRequest ?? (async (method) => `handled:${method}`),
     hostWindow: pair.hostWindow as unknown as Window,
   });
@@ -60,16 +69,16 @@ describe('handshake', () => {
     await expect(client.connect()).rejects.toMatchObject({ code: 'HANDSHAKE_TIMEOUT' });
   });
 
-  it('ignores handshakes from origins not in the allowlist', async () => {
+  it('refuses handshakes from origins not in the allowlist, with a reason', async () => {
     const { client, host, connect } = setup({ allowedOrigins: ['https://only-this.example.com'] });
-    await expect(connect()).rejects.toMatchObject({ code: 'HANDSHAKE_TIMEOUT' });
+    await expect(connect()).rejects.toMatchObject({ code: 'HANDSHAKE_REFUSED', reason: 'origin-not-allowed' });
     expect(host.dappOrigin).toBeNull();
     expect(client.isConnected).toBe(false);
   });
 
   it('fails closed: an empty allowlist rejects every handshake', async () => {
     const { client, host, connect } = setup({ allowedOrigins: [] });
-    await expect(connect()).rejects.toMatchObject({ code: 'HANDSHAKE_TIMEOUT' });
+    await expect(connect()).rejects.toMatchObject({ code: 'HANDSHAKE_REFUSED', reason: 'origin-not-allowed' });
     expect(host.dappOrigin).toBeNull();
     expect(client.isConnected).toBe(false);
   });
@@ -79,6 +88,96 @@ describe('handshake', () => {
     await connect();
     expect(client.isConnected).toBe(true);
     expect(host.dappOrigin).toBe(DAPP);
+  });
+});
+
+describe('chain negotiation', () => {
+  it('grants the requested chain and advertises the served list', async () => {
+    const { client, host, connect } = setup({ chainId: 31338, servedChainIds: [31337, 31338] });
+    await connect();
+    expect(client.isConnected).toBe(true);
+    expect(host.chainId).toBe(31338);
+    expect(client.supportedChainIds).toEqual([31337, 31338]);
+  });
+
+  it('refuses an unserved chain with 4902 and reports the served chains (MC-03, MC-04)', async () => {
+    const { client, host, connect } = setup({ chainId: 10, servedChainIds: [31337, 31338] });
+    await expect(connect()).rejects.toMatchObject({
+      name: 'UnsupportedChainError',
+      code: RPC_ERRORS.UNSUPPORTED_CHAIN,
+      reason: 'unsupported-chain',
+      requestedChainId: 10,
+      supportedChainIds: [31337, 31338],
+    });
+    expect(host.chainId).toBeNull();
+    expect(client.isConnected).toBe(false);
+  });
+
+  it('refuses a handshake that names no chain — there is no default chain (MC-11)', async () => {
+    const { pair, host } = setup();
+    host.start();
+    const nacks: unknown[] = [];
+    pair.dappWindow.addEventListener('message', (event) => {
+      const data = event.data as { type?: string; payload?: { reason?: string; supportedChainIds?: number[] } };
+      if (data?.type === 'handshake:nack') nacks.push(data.payload);
+    });
+    // a raw handshake with no chainId, as an old SDK would send it
+    pair.popupHandle.postMessage(
+      { giano: PROTOCOL_VERSION, id: '01OLDSDKHANDSHAKE000000000', type: 'handshake', payload: { sdkVersion: 'old', capabilities: [] } },
+      WALLET,
+    );
+    await flush();
+    expect(host.chainId).toBeNull();
+    expect(nacks).toMatchObject([{ reason: 'chain-required', supportedChainIds: [31337, 31338] }]);
+  });
+
+  it('serves no rpc on a session whose chain was refused', async () => {
+    const onRequest = vi.fn(async () => 'should-never-run');
+    const { pair, connect } = setup({ chainId: 10, servedChainIds: [31337], onRequest });
+    await expect(connect()).rejects.toMatchObject({ reason: 'unsupported-chain' });
+    pair.popupHandle.postMessage(
+      { giano: PROTOCOL_VERSION, id: '01AFTERNACKRPC000000000000', type: 'rpc', payload: { method: 'eth_accounts' } },
+      WALLET,
+    );
+    await flush();
+    expect(onRequest).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly when the granted chain differs from the requested one (MC-06)', async () => {
+    const pair = createWindowPair(DAPP, WALLET);
+    const popupManager = new PopupManager({
+      url: `${WALLET}/connect`,
+      parent: { open: () => pair.popupHandle as unknown as Window, screenX: 0, screenY: 0, innerWidth: 1440, innerHeight: 900 } as never,
+    });
+    const client = new TransportClient({
+      walletUrl: `${WALLET}/connect`,
+      chainId: 31337,
+      listenWindow: pair.dappWindow as unknown as Window,
+      popupManager,
+      handshakeTimeoutMs: 500,
+    });
+    const connected = client.connect();
+    // a misbehaving wallet grants a DIFFERENT chain than requested
+    pair.dappWindowHandle.postMessage(
+      {
+        giano: PROTOCOL_VERSION,
+        id: '01MISBEHAVINGACK0000000000',
+        type: 'handshake:ack',
+        payload: { walletVersion: 'x', capabilities: [], chainId: 31338, supportedChainIds: [31338] },
+      },
+      DAPP,
+    );
+    await expect(connected).rejects.toMatchObject({ name: 'UnsupportedChainError', requestedChainId: 31337 });
+    expect(client.isConnected).toBe(false);
+  });
+
+  it('exposes the granted chain on the request context — what hosts route runtimes by', async () => {
+    let seenChainId: number | undefined;
+    const { client, host, connect } = setup({ chainId: 31338, onRequest: async () => 'ok' });
+    host['options'].onConnected = (context: { chainId: number }) => (seenChainId = context.chainId);
+    await connect();
+    expect(seenChainId).toBe(31338);
+    expect(client.isConnected).toBe(true);
   });
 });
 

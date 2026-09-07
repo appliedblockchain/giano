@@ -23,6 +23,10 @@ const bundle = await esbuild.build({
     // A name, not a port: the browser reaches anvil through portless like everything else.
     'process.env.RPC_URL': JSON.stringify(process.env.RPC_URL ?? ORIGINS.rpc),
     'process.env.CHAIN_ID': JSON.stringify(process.env.CHAIN_ID ?? '31337'),
+    // The second chain (MC-121): a real provider constructed for it, negotiating it with
+    // the wallet origin — never a simulation (MC-122).
+    'process.env.RPC_B_URL': JSON.stringify(process.env.RPC_B_URL ?? ORIGINS.rpcB),
+    'process.env.CHAIN_B_ID': JSON.stringify(process.env.CHAIN_B_ID ?? '31338'),
     'process.env.TEST_ERC20_ADDRESS': JSON.stringify(process.env.TEST_ERC20_ADDRESS ?? addresses.testErc20),
   },
 });

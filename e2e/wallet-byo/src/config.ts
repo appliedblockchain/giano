@@ -3,8 +3,24 @@
  * a tenant-built wallet needs none of Giano's /config.json machinery. The rpc/bundler/
  * api endpoints are same-origin proxies served by serve.mjs.
  */
+export type ByoChainConfig = {
+  chainId: number;
+  name: string;
+  rpcPath: string;
+  bundlerPath: string;
+};
+
 export const CONFIG = {
   chainId: Number(process.env.CHAIN_ID),
+  /**
+   * The chains this wallet origin serves (MC-39). Its shape is effectively public API —
+   * tenants copy this reference — so it mirrors the stock wallet's `chains` list (MC-45).
+   * Both chains carry the canonical contracts at identical addresses (MC-19).
+   */
+  chains: [
+    { chainId: Number(process.env.CHAIN_ID), name: 'Devnet A', rpcPath: '/rpc', bundlerPath: '/bundler' },
+    { chainId: Number(process.env.CHAIN_B_ID), name: 'Devnet B', rpcPath: '/rpc-b', bundlerPath: '/bundler-b' },
+  ] as ByoChainConfig[],
   factoryAddress: process.env.FACTORY_ADDRESS as `0x${string}`,
   /**
    * How gas is sponsored. A BYO tenant chooses this exactly as the stock wallet does:

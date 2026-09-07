@@ -69,14 +69,15 @@ export function startMockRpc(): Promise<{ url: string; close: () => Promise<void
   });
 }
 
-export type BundlerCall = { method: string; params: unknown[] };
+export type BundlerCall = { method: string; params: unknown[]; url: string };
 
-/** Fetch stub for the bundler URL, recording calls and answering with canned results. */
+/** Fetch stub for the bundler URL, recording calls (with the URL — per-chain routing is
+ *  observable, MC-113) and answering with canned results. */
 export function createMockBundlerFetch(results: Record<string, unknown> = {}) {
   const calls: BundlerCall[] = [];
-  const fetchImpl: typeof fetch = async (_url, init) => {
+  const fetchImpl: typeof fetch = async (url, init) => {
     const { id, method, params } = JSON.parse(String(init?.body)) as { id: number; method: string; params: unknown[] };
-    calls.push({ method, params });
+    calls.push({ method, params, url: String(url) });
     const result =
       method in results ? results[method] : method === 'eth_sendUserOperation' ? '0x' + 'ab'.repeat(32) : null;
     return new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), {
@@ -124,7 +125,7 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   const rpc = await startMockRpc();
   const { fetchImpl, calls } = createMockBundlerFetch();
 
-  const config = loadConfig({
+  const baseEnv: Record<string, string> = {
     NODE_ENV: 'test',
     GIANO_DEPLOYMENT_CLASS: 'development',
     LOG_LEVEL: 'error',
@@ -137,8 +138,13 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
     FACTORY_ADDRESS: '0x2222222222222222222222222222222222222222',
     CEREMONY_RATE_LIMIT_PER_MINUTE: '1000',
     USEROP_RATE_LIMIT_PER_MINUTE: '1000',
-    ...envOverrides,
-  } as NodeJS.ProcessEnv);
+  };
+  // GIANO_CHAINS and the scalar shorthand are mutually exclusive by design: a test that
+  // supplies the list gets the scalars dropped rather than a config error.
+  if (envOverrides.GIANO_CHAINS) {
+    for (const key of ['CHAIN_ID', 'RPC_URL', 'BUNDLER_URL', 'ENTRYPOINT_ADDRESS', 'FACTORY_ADDRESS']) delete baseEnv[key];
+  }
+  const config = loadConfig({ ...baseEnv, ...envOverrides } as NodeJS.ProcessEnv);
 
   const { db, pool } = createDb(databaseUrl);
   // the production write path — tenant seeds run the same validation as a real boot

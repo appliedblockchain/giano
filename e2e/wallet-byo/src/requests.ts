@@ -11,6 +11,8 @@ export type PendingRequest = {
   method: string;
   params: unknown;
   dappOrigin: string;
+  /** The session's negotiated chain, named on every consent screen (MC-80, MC-81). */
+  chainName: string;
   approve: () => void;
   reject: () => void;
 };

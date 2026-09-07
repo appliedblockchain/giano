@@ -22,6 +22,14 @@ export type GianoWalletProvider = {
   /** True once a wallet session is cached (answers eth_accounts without a popup). */
   isConnected: () => boolean;
   disconnect: () => void;
+  /**
+   * The chain this provider is bound to, fixed for its life (MC-01). Once connected, this
+   * is also the chain the wallet origin GRANTED — the SDK asserts the two are equal and
+   * fails loudly on any disagreement (MC-06).
+   */
+  chainId: number;
+  /** Chains the wallet origin advertised on the last connect; empty before connecting. */
+  readonly supportedChainIds: readonly number[];
 };
 
 /** Methods that always go to the wallet popup (user action / signing / credentials). */
@@ -91,7 +99,10 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
     else storage.removeItem(storageKey);
   };
 
-  const transportClient = new TransportClient({ walletUrl, sdkVersion });
+  // The chain the dApp already declares to the SDK goes onto the wire with the handshake
+  // (MC-02, MC-12): the wallet origin grants it or refuses the connection outright with the
+  // chains it does serve. The transport client itself asserts granted === requested (MC-06).
+  const transportClient = new TransportClient({ walletUrl, chainId: chain.id, sdkVersion });
 
   transportClient.on('accountsChanged', (accounts) => {
     const session = readSession();
@@ -148,6 +159,10 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
   };
 
   const provider: GianoWalletProvider = {
+    chainId: chain.id,
+    get supportedChainIds() {
+      return transportClient.supportedChainIds;
+    },
     isConnected: () => readSession() !== null,
 
     disconnect: () => {
@@ -169,7 +184,19 @@ export function createGianoWalletProvider(params: CreateGianoWalletProviderParam
           return (readSession()?.accounts ?? []) as T;
         }
         case 'eth_chainId': {
+          // Always the granted chain (MC-07) — which the connect path asserted equals
+          // `chain.id`, so the read path and the write path cannot disagree.
           return (readSession()?.chainId ?? `0x${chain.id.toString(16)}`) as T;
+        }
+        case 'wallet_switchEthereumChain':
+        case 'wallet_addEthereumChain': {
+          // MC-14: refused explicitly with EIP-1193 4200, never silently ignored and never
+          // answered by the read path (today these fell through to the HTTP RPC transport,
+          // which cannot honour them, so the failure was obscure and endpoint-dependent).
+          throw new TransportRpcError(
+            RPC_ERRORS.UNSUPPORTED_METHOD,
+            'Giano binds one chain per provider instance; construct another provider for another chain',
+          );
         }
         case 'eth_requestAccounts': {
           try {

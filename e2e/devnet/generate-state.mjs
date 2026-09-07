@@ -48,6 +48,16 @@ const contractsDir = path.join(repoRoot, 'packages', 'contracts');
 const RPC = process.env.RPC_URL ?? 'http://127.0.0.1:8545';
 
 /**
+ * Which chain this state is for. The two-chain stack runs 31337 (chain A, `state.json`) and
+ * 31338 (chain B, `state-31338.json`) — the SAME generator run twice, so both chains carry
+ * identical canonical contracts at identical addresses (MC-116, MC-119). For any chain other
+ * than 31337, the produced addresses are asserted equal to the committed `addresses.json`,
+ * and generation FAILS rather than emitting a divergent pair.
+ */
+const CHAIN_ID = Number(process.env.CHAIN_ID ?? 31337);
+const STATE_FILE = CHAIN_ID === 31337 ? 'state.json' : `state-${CHAIN_ID}.json`;
+
+/**
  * The anvil version `deploy/docker-compose.e2e.yml` and `services/devnet/Dockerfile` run. Keep the
  * three in step: a state this script writes with any other version may not load there.
  */
@@ -103,6 +113,11 @@ async function waitForRpc(attempts = 60) {
 
 await waitForRpc();
 
+const reportedChainId = Number(BigInt(await rpc('eth_chainId')));
+if (reportedChainId !== CHAIN_ID) {
+  throw new Error(`the anvil at ${RPC} reports chain ${reportedChainId}, expected ${CHAIN_ID} — start it with --chain-id ${CHAIN_ID} (or ANVIL_CHAIN_ID=${CHAIN_ID} for with-pinned-anvil.mjs)`);
+}
+
 const clientVersion = await rpc('web3_clientVersion');
 if (!String(clientVersion).includes(PINNED_ANVIL_VERSION) && !process.env.ALLOW_ANVIL_VERSION_MISMATCH) {
   throw new Error(
@@ -130,7 +145,7 @@ run('npx', ['hardhat', 'run', 'scripts/p256_deploy.ts', '--network', 'localhost'
 // ── 3. Wallet factory, implementation and the testing fixtures ────────────────
 // The deployments directory is wiped first so Ignition re-executes rather than reconciling
 // against a journal from a previous run's chain.
-fs.rmSync(path.join(contractsDir, 'ignition', 'deployments', 'chain-31337'), { recursive: true, force: true });
+fs.rmSync(path.join(contractsDir, 'ignition', 'deployments', `chain-${CHAIN_ID}`), { recursive: true, force: true });
 run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy', '--network', 'localhost']);
 run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy:testing', '--network', 'localhost']);
 
@@ -138,7 +153,7 @@ run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy:testin
 run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy:paymaster', '--network', 'localhost']);
 
 const deployed = JSON.parse(
-  fs.readFileSync(path.join(contractsDir, 'ignition', 'deployments', 'chain-31337', 'deployed_addresses.json'), 'utf8'),
+  fs.readFileSync(path.join(contractsDir, 'ignition', 'deployments', `chain-${CHAIN_ID}`, 'deployed_addresses.json'), 'utf8'),
 );
 
 const sponsorshipPaymaster = deployed['GianoPaymaster#SponsorshipPaymaster'];
@@ -189,7 +204,7 @@ run(
     '--rpc',
     RPC,
     '--chain-id',
-    '31337',
+    String(CHAIN_ID),
     '--factory',
     deployed['GianoAccountFactory#GianoSmartWalletFactory'],
     '--sponsorship-paymaster',
@@ -203,9 +218,33 @@ run(
   ],
 );
 
-// ── 6. Bake ───────────────────────────────────────────────────────────────────
+// ── 6. Cross-chain address identity ───────────────────────────────────────────
+// The whole multi-chain design rests on the factory (and everything downstream) sitting at
+// identical addresses on every chain (MC-16, MC-19). Both chains' states come from this one
+// generator, and a divergent pair is REFUSED rather than committed.
+if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, 'addresses.json'))) {
+  const canonical = JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
+  const pairs = [
+    ['factory', deployed['GianoAccountFactory#GianoSmartWalletFactory']],
+    ['implementation', deployed['GianoAccountFactory#GianoSmartWallet']],
+    ['sponsorshipPaymaster', sponsorshipPaymaster],
+    ['testPaymaster', deployed['Testing#PermissivePaymaster']],
+    ['testErc20', deployed['Testing#PrivateERC20']],
+  ];
+  for (const [field, address] of pairs) {
+    if (canonical[field] && canonical[field].toLowerCase() !== String(address).toLowerCase()) {
+      throw new Error(
+        `chain ${CHAIN_ID} deployed ${field} at ${address}, but chain 31337's state has ${canonical[field]} — ` +
+          'the two chains MUST carry identical addresses (MC-116); refusing to write a divergent state',
+      );
+    }
+  }
+  console.log('\nCross-chain address identity verified against addresses.json');
+}
+
+// ── 7. Bake ───────────────────────────────────────────────────────────────────
 const state = await rpc('anvil_dumpState');
-fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify(JSON.parse(decodeState(state)), null, 0));
+fs.writeFileSync(path.join(dir, STATE_FILE), JSON.stringify(JSON.parse(decodeState(state)), null, 0));
 
 const addresses = {
   chainId: 31337,
@@ -221,9 +260,13 @@ const addresses = {
   testErc20: deployed['Testing#PrivateERC20'],
   tenants: DEMO_TENANTS,
 };
-fs.writeFileSync(path.join(dir, 'addresses.json'), `${JSON.stringify(addresses, null, 2)}\n`);
+// addresses.json records the canonical devnet addresses once; they are identical on every
+// generated chain (asserted above), so only the chain-A run writes it.
+if (CHAIN_ID === 31337) {
+  fs.writeFileSync(path.join(dir, 'addresses.json'), `${JSON.stringify(addresses, null, 2)}\n`);
+}
 
-console.log('\nWrote e2e/devnet/state.json and e2e/devnet/addresses.json');
+console.log(`\nWrote e2e/devnet/${STATE_FILE}${CHAIN_ID === 31337 ? ' and e2e/devnet/addresses.json' : ''}`);
 console.log(`  sponsorship paymaster: ${sponsorshipPaymaster}`);
 console.log(`  signer:                ${ANVIL.sponsorshipSigner.address}`);
 for (const tenant of DEMO_TENANTS) console.log(`  tenant ${tenant.slug}: ${tenant.id} funded ${tenant.fundEth} ETH`);

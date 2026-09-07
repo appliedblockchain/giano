@@ -4,7 +4,7 @@ import { cose, decodeClientDataJSON, decodeCredentialPublicKey } from '@simplewe
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import type { Hex, PublicClient } from 'viem';
+import type { Hex } from 'viem';
 import { z } from 'zod';
 import type { AppConfig } from '../config.js';
 import type { Db } from '../db/index.js';
@@ -13,6 +13,7 @@ import { ApiError } from '../plugins/error-handler.js';
 import type { ChallengeService } from '../services/challenges.js';
 import type { SessionService } from '../services/sessions.js';
 import { computeWalletAddress } from '../services/wallet-address.js';
+import type { ChainRegistry } from '../services/chains.js';
 
 const registrationResponseSchema = z
   .object({
@@ -85,7 +86,7 @@ export default async function webauthnRoutes(
     config: AppConfig;
     challenges: ChallengeService;
     sessions: SessionService;
-    publicClient: PublicClient;
+    registry: ChainRegistry;
   },
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
@@ -225,7 +226,13 @@ export default async function webauthnRoutes(
 
       const info = verification.registrationInfo;
       const { x, y } = coseToXY(info.credential.publicKey);
-      const walletAddress = await computeWalletAddress(opts.publicClient, config.FACTORY_ADDRESS, x, y);
+      // The wallet address is obtained from a served chain's own factory (MC-22). ANY ready
+      // chain answers identically: the derivation has no chain-dependent term (MC-18), the
+      // factory sits at the canonical address on every served chain (MC-19, verified at
+      // boot), and exactly ONE address is stored per credential (MC-24) — the schema cannot
+      // even represent a per-chain answer.
+      const derivation = opts.registry.anyReady();
+      const walletAddress = await computeWalletAddress(derivation.publicClient, derivation.factory, x, y);
 
       const result = await db.transaction(async (tx) => {
         // C1: get-or-create is scoped by (tenant_id, external_id) — two tenants using

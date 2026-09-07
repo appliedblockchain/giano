@@ -17,7 +17,9 @@
     "wallet-byo": "node wallet-byo/serve.mjs",
     "devnet:generate": "node devnet/with-pinned-anvil.mjs node devnet/generate-state.mjs",
     "devnet:generate:raw": "node devnet/generate-state.mjs",
-    "devnet:provision": "node devnet/provision-sponsorship.mjs"
+    "devnet:provision": "node devnet/provision-sponsorship.mjs",
+    "devnet:generate:b": "ANVIL_CHAIN_ID=31338 CHAIN_ID=31338 node devnet/with-pinned-anvil.mjs node devnet/generate-state.mjs",
+    "devnet:generate:all": "pnpm devnet:generate && pnpm devnet:generate:b"
   },
   "devDependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",

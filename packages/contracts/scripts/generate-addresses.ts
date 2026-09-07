@@ -6,6 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION } from '../canonical';
 
 const pkgRoot = path.resolve(__dirname, '..');
 const deploymentsDir = path.join(pkgRoot, 'ignition', 'deployments');
@@ -34,6 +35,10 @@ function isAddress(value: unknown): value is string {
 function main(): void {
   const overrides: Overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'));
   delete overrides.$comment;
+  // Chains whose committed deployment predates the canonical freeze: excluded from the
+  // registry (MC-28), each with a recorded reason in address-overrides.json.
+  const nonCanonical: Record<string, string> = (overrides.nonCanonical as Record<string, string>) ?? {};
+  delete overrides.nonCanonical;
 
   const chains: Record<number, Record<string, string>> = {};
 
@@ -41,7 +46,11 @@ function main(): void {
     const match = /^chain-(\d+)$/.exec(entry);
     if (!match) continue;
     const chainId = Number(match[1]);
-    if (chainId === 31337) continue; // local devnet deployments are never committed
+    if (chainId === 31337 || chainId === 31338) continue; // local devnet deployments are never committed
+    if (nonCanonical[String(chainId)]) {
+      console.warn(`chain ${chainId}: excluded from the registry (non-canonical): ${nonCanonical[String(chainId)]}`);
+      continue;
+    }
 
     const deployedPath = path.join(deploymentsDir, entry, 'deployed_addresses.json');
     if (!fs.existsSync(deployedPath)) continue;
@@ -140,6 +149,24 @@ export function getGianoDeployment(chainId: number): GianoDeployment {
   return deployment;
 }
 `;
+
+  // MC-19/MC-27: every chain the registry admits must carry the canonical factory and
+  // implementation. A divergent deployment either gets redeployed from the frozen build or
+  // is listed under `nonCanonical` with a reason — it never lands in the registry.
+  for (const [chainId, record] of Object.entries(chains)) {
+    if (record.factory.toLowerCase() !== CANONICAL_FACTORY.toLowerCase()) {
+      throw new Error(
+        `chain ${chainId}: factory ${record.factory} differs from the canonical ${CANONICAL_FACTORY}. ` +
+          'Redeploy the frozen canonical build, or record the chain under "nonCanonical" in address-overrides.json with a reason.',
+      );
+    }
+    if (record.implementation.toLowerCase() !== CANONICAL_IMPLEMENTATION.toLowerCase()) {
+      throw new Error(
+        `chain ${chainId}: implementation ${record.implementation} differs from the canonical ${CANONICAL_IMPLEMENTATION}. ` +
+          'Redeploy the frozen canonical build, or record the chain under "nonCanonical" in address-overrides.json with a reason.',
+      );
+    }
+  }
 
   // R-29 layer 2: a testing artifact on a production chain is a build failure, not a warning.
   for (const chainId of PRODUCTION_CHAIN_IDS) {

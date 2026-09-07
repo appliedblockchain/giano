@@ -27,7 +27,7 @@ afterEach(() => mock.uninstall());
 type BuildOptions = {
   transportOptions?: MockClientOptions;
   injection?: CreateGianoProviderParams['injection'];
-  bundler?: CreateGianoProviderParams['bundler'];
+  bundler?: CreateGianoProviderParams['bundlers'][number];
   overrides?: Partial<CreateGianoProviderParams>;
 };
 
@@ -38,11 +38,11 @@ function buildProvider(authenticator: MockAuthenticator, opts: BuildOptions = {}
   const { bundler, sentUserOps } = createMockBundler();
   const provider = createGianoProvider({
     initialChainId: TEST_CHAIN_ID,
-    bundler: opts.bundler ?? bundler,
+    bundlers: { [TEST_CHAIN_ID]: opts.bundler ?? bundler },
     chains: [testChain],
     transports: { [TEST_CHAIN_ID]: transport },
     injection: opts.injection ?? createMockInjection(authenticator),
-    gianoSmartWalletFactoryAddress: FACTORY_ADDRESS,
+    factoryAddresses: { [TEST_CHAIN_ID]: FACTORY_ADDRESS },
     logger: silentLogger,
     ...opts.overrides,
   }).gianoProvider;
@@ -208,19 +208,72 @@ describe('chain management', () => {
     const { bundler } = createMockBundler();
     const provider = createGianoProvider({
       initialChainId: TEST_CHAIN_ID,
-      bundler,
+      bundlers: { [TEST_CHAIN_ID]: bundler },
       chains: [testChain, otherChain],
       transports: { [TEST_CHAIN_ID]: transport }, // no transport for 999
       injection: createMockInjection(mock.authenticator),
-      gianoSmartWalletFactoryAddress: FACTORY_ADDRESS,
+      factoryAddresses: { [TEST_CHAIN_ID]: FACTORY_ADDRESS },
     }).gianoProvider;
     await expect(provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x3e7' }] })).rejects.toThrow(/No transport/);
   });
 
-  it('wallet_addEthereumChain is a no-op and wallet_revokePermissions disconnects', async () => {
+  it('wallet_switchEthereumChain errors when the target chain has no bundler or no factory', async () => {
+    const { transport } = createMockTransport({ code: '0xabcd' });
+    const otherChain = { ...testChain, id: 999 };
+    const { bundler } = createMockBundler();
+    // A chain configured for reads but not for submission is a misconfiguration — silently
+    // keeping the previous chain's bundler is exactly the defect §7.3 closes.
+    const provider = createGianoProvider({
+      initialChainId: TEST_CHAIN_ID,
+      bundlers: { [TEST_CHAIN_ID]: bundler },
+      chains: [testChain, otherChain],
+      transports: { [TEST_CHAIN_ID]: transport, 999: transport },
+      injection: createMockInjection(mock.authenticator),
+      factoryAddresses: { [TEST_CHAIN_ID]: FACTORY_ADDRESS },
+    }).gianoProvider;
+    await expect(provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x3e7' }] })).rejects.toThrow(/No bundler/);
+  });
+
+  it('a chain change swaps the bundler — operations reach the NEW chain\'s bundler (MC-113)', async () => {
+    const chainB = { ...testChain, id: 31338, name: 'giano-test-b' };
+    const { transport: transportA } = createMockTransport({ code: '0xabcd' });
+    const { transport: transportB } = createMockTransport({ code: '0xabcd' });
+    const { bundler: bundlerA, sentUserOps: sentA } = createMockBundler();
+    const { bundler: bundlerB, sentUserOps: sentB } = createMockBundler();
+    const credentialId = await (async () => {
+      const created = await mock.authenticator.create({
+        publicKey: { rp: { id: 'localhost', name: 'g' }, user: { id: new Uint8Array([1]), name: 'a', displayName: 'a' }, challenge: new Uint8Array([1]), pubKeyCredParams: [{ type: 'public-key', alg: -7 }] },
+      } as CredentialCreationOptions);
+      return new Uint8Array(created.rawId);
+    })();
+    const provider = createGianoProvider({
+      initialChainId: TEST_CHAIN_ID,
+      bundlers: { [TEST_CHAIN_ID]: bundlerA, 31338: bundlerB },
+      chains: [testChain, chainB],
+      transports: { [TEST_CHAIN_ID]: transportA, 31338: transportB },
+      injection: createMockInjection(mock.authenticator, { credentialId }),
+      factoryAddresses: { [TEST_CHAIN_ID]: FACTORY_ADDRESS, 31338: FACTORY_ADDRESS },
+      logger: silentLogger,
+    }).gianoProvider;
+
+    await provider.request({ method: 'eth_requestAccounts' });
+    await provider.request({ method: 'eth_sendTransaction', params: [{ to: WALLET_ADDRESS, value: '0x0', data: '0x' }] as never });
+    expect(sentA.length).toBe(1);
+    expect(sentB.length).toBe(0);
+
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x7a6a' }] });
+    expect(await provider.request({ method: 'eth_chainId' })).toBe('0x7a6a');
+    // the chain change nulled the account; reconnect on the new chain
+    await provider.request({ method: 'eth_requestAccounts' });
+    await provider.request({ method: 'eth_sendTransaction', params: [{ to: WALLET_ADDRESS, value: '0x0', data: '0x' }] as never });
+    expect(sentA.length).toBe(1); // unchanged — nothing leaked to the old chain's bundler
+    expect(sentB.length).toBe(1);
+  });
+
+  it('wallet_addEthereumChain is refused explicitly, and wallet_revokePermissions disconnects', async () => {
     const { provider } = buildProvider(mock.authenticator);
     await connect(provider);
-    expect(await provider.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x1' } as never] })).toBeNull();
+    await expect(provider.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x1' } as never] })).rejects.toThrow(/not supported/);
 
     const disconnects: unknown[] = [];
     provider.on('disconnect', (p) => disconnects.push(p));

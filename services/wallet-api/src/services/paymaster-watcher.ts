@@ -45,10 +45,14 @@ export type WatcherMetrics = {
 };
 
 /**
- * `giano.paymaster.watcher` — distinct from the migration lock. Exactly one replica may ingest,
- * or a rolling deploy would process the same log twice.
+ * `giano.paymaster.watcher.<chainId>` — distinct from the migration lock. Exactly one
+ * replica may ingest PER CHAIN, or a rolling deploy would process the same log twice. The
+ * lock key is derived from the chain id: each chain's watcher is an independent loop with
+ * its own cursor and its own lock (MC-73), so one process running watchers for N chains
+ * holds N locks — a deployment-wide key would leave every chain but the first permanently
+ * on standby. `hashtextextended` rather than a two-int key because chain ids can exceed int4.
  */
-const WATCHER_LOCK_KEY = 0x67_70_6d_77;
+const WATCHER_LOCK_NAME = 'giano.paymaster.watcher';
 
 /** Blocks to look back on a cold start, so a brief outage does not need a manual backfill. */
 const COLD_START_LOOKBACK = 5_000n;
@@ -393,7 +397,10 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
      */
     async start() {
       lockConnection = await options.pool.connect();
-      const { rows } = await lockConnection.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1) AS locked', [WATCHER_LOCK_KEY]);
+      const { rows } = await lockConnection.query<{ locked: boolean }>(
+        'SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked',
+        [`${WATCHER_LOCK_NAME}.${chainId}`],
+      );
       if (!rows[0]?.locked) {
         lockConnection.release();
         lockConnection = undefined;
@@ -433,7 +440,7 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
       if (pollTimer) clearInterval(pollTimer);
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (lockConnection) {
-        await lockConnection.query('SELECT pg_advisory_unlock($1)', [WATCHER_LOCK_KEY]);
+        await lockConnection.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [`${WATCHER_LOCK_NAME}.${chainId}`]);
         lockConnection.release();
         lockConnection = undefined;
       }

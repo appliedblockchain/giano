@@ -37,6 +37,15 @@ server {
         proxy_pass ${GIANO_BUNDLER_UPSTREAM}/;
         proxy_set_header Host $host;
     }
+    # Second chain's proxies (two-chain stacks); default to the primary upstreams when unused.
+    location = /rpc-b {
+        proxy_pass ${GIANO_RPC_B_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
+    location = /bundler-b {
+        proxy_pass ${GIANO_BUNDLER_B_UPSTREAM}/;
+        proxy_set_header Host $host;
+    }
 
     location = /config.json {
         add_header Cache-Control "no-store" always;

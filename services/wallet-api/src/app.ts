@@ -4,10 +4,10 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 import { jsonSchemaTransform, serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
-import { createPublicClient, http } from 'viem';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/index.js';
 import authPlugin from './plugins/auth.js';
+import chainPlugin from './plugins/chain.js';
 import errorHandler from './plugins/error-handler.js';
 import metricsPlugin from './plugins/metrics.js';
 import tenantPlugin from './plugins/tenant.js';
@@ -19,12 +19,11 @@ import healthRoutes from './routes/health.js';
 import useropRoutes from './routes/userops.js';
 import webauthnRoutes from './routes/webauthn.js';
 import wellKnownRoutes from './routes/well-known.js';
-import { createBundlerService } from './services/bundler.js';
+import { buildChainRegistry, type ChainRegistry } from './services/chains.js';
 import { createChallengeService } from './services/challenges.js';
 import { createSessionService } from './services/sessions.js';
-import { createPaymasterReader, type PaymasterReader } from './services/paymaster-contract.js';
+import type { PaymasterReader } from './services/paymaster-contract.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
-import { createSponsorshipService } from './services/sponsorship-service.js';
 import { createHsmSponsorshipSigner, createLocalSponsorshipSigner, type HsmSignerAdapter, type SponsorshipSigner } from './services/sponsorship-signer.js';
 import { createTenantService } from './services/tenants.js';
 
@@ -40,14 +39,16 @@ export type BuildAppOptions = {
    * the key material never enters this process.
    */
   hsmSignerAdapter?: HsmSignerAdapter;
-  /** Overridable in tests, so a sponsorship test needs no chain. */
+  /** Overridable in tests, so a sponsorship test needs no chain. Applied to every sponsoring chain. */
   paymasterReader?: PaymasterReader;
 };
 
 /**
  * Design constraint: buildApp must never READ the tenants table — tenant resolution is
  * strictly per-request (plugins/tenant.ts), so tenants seeded or edited after boot are
- * live immediately and openapi/generate.ts can build the app without a database.
+ * live immediately and openapi/generate.ts can build the app without a database. The same
+ * holds for chains: the registry is CONSTRUCTED here (pure object wiring, no network);
+ * verification against the chains themselves happens in index.ts before listen (§3.5).
  */
 export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymasterReader }: BuildAppOptions) {
   const app = Fastify({
@@ -62,8 +63,6 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
 
   const challenges = createChallengeService(db, config.CHALLENGE_TTL_SECONDS);
   const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
-  const bundler = createBundlerService(config.BUNDLER_URL, config.ENTRYPOINT_ADDRESS, fetchImpl);
-  const publicClient = createPublicClient({ transport: http(config.RPC_URL) });
   const tenants = createTenantService(db);
 
   await app.register(errorHandler);
@@ -88,7 +87,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
       openapi: '3.1.0',
       info: {
         title: 'Giano Wallet API',
-        description: 'WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets (multi-tenant).',
+        description: 'WebAuthn ceremonies, sessions and policied ERC-4337 user-operation relay for Giano smart wallets (multi-tenant, multi-chain).',
         version: '1.0.0',
       },
       components: {
@@ -107,88 +106,92 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   await app.register(tenantPlugin, { tenants });
   await app.register(authPlugin, { sessions, tenants });
 
-  // ── Gas sponsorship ──────────────────────────────────────────────────────────
+  // ── The chain registry ─────────────────────────────────────────────────────────
   //
-  // Off by default and wired only when explicitly enabled, so a deployment that does not sponsor
-  // carries none of this: no routes, no signer, no chain reads.
+  // One entry per configured chain, each holding its own read client, bundler, paymaster
+  // reader and sponsorship service (MC-50). Sponsorship is off by default and wired only
+  // when explicitly enabled, so a deployment that does not sponsor carries none of it:
+  // no routes, no signer, no chain reads.
   const ledger = createLedgerService(db);
-  let sponsorship: ReturnType<typeof createSponsorshipService> | undefined;
-  let paymaster: PaymasterReader | undefined;
-
-  if (config.SPONSORSHIP_ENABLED) {
-    paymaster =
-      paymasterReader ??
-      createPaymasterReader({
-        client: publicClient,
-        address: config.SPONSORSHIP_PAYMASTER_ADDRESS!,
+  const signer = config.SPONSORSHIP_ENABLED ? createSigner(config, hsmSignerAdapter) : undefined;
+  const registry: ChainRegistry = buildChainRegistry({
+    config,
+    db,
+    ledger,
+    fetchImpl,
+    signer,
+    paymasterReader,
+    onDecision: (chainId) => (event) => {
+      // Slugs, not uuids, as metric labels: bounded cardinality and readable on a dashboard.
+      // Resolving the slug is a lookup we deliberately skip here — the tenant id is already on
+      // the log line, and a metric that needed a database read per increment would be a
+      // liability on the hot path.
+      app.metrics.sponsorshipDecisions.inc({
+        tenant: event.tenantId,
+        method: event.method,
+        outcome: event.outcome,
+        reason: event.reason ?? '',
+        chain: String(chainId),
       });
+      if (event.keyId) app.metrics.sponsorshipSignatures.inc({ tenant: event.tenantId, key_id: event.keyId, chain: String(chainId) });
+      if (event.reason === 'temporarily-unavailable') app.metrics.sponsorshipUnavailable.inc({ cause: 'signer' });
+    },
+  });
+  app.decorate('chains', registry);
 
-    const signer = createSigner(config, hsmSignerAdapter);
-    sponsorship = createSponsorshipService({
-      db,
-      chainId: config.CHAIN_ID,
-      paymaster,
-      ledger,
-      signer,
-      entryPoint: config.ENTRYPOINT_ADDRESS,
-      validitySeconds: config.SPONSORSHIP_VALIDITY_SECONDS,
-      reservationTtlSeconds: config.SPONSORSHIP_RESERVATION_TTL_SECONDS,
-      walletManagementCapWei: config.SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI,
-      isEmergencyStopped: () => config.SPONSORSHIP_EMERGENCY_STOP,
-      onDecision: (event) => {
-        // Slugs, not uuids, as metric labels: bounded cardinality and readable on a dashboard.
-        // Resolving the slug is a lookup we deliberately skip here — the tenant id is already on
-        // the log line, and a metric that needed a database read per increment would be a
-        // liability on the hot path.
-        app.metrics.sponsorshipDecisions.inc({
-          tenant: event.tenantId,
-          method: event.method,
-          outcome: event.outcome,
-          reason: event.reason ?? '',
-        });
-        if (event.keyId) app.metrics.sponsorshipSignatures.inc({ tenant: event.tenantId, key_id: event.keyId });
-        if (event.reason === 'temporarily-unavailable') app.metrics.sponsorshipUnavailable.inc({ cause: 'signer' });
-      },
-    });
-
+  const sponsoringChains = registry.all.filter((chain) => chain.sponsorship);
+  if (sponsoringChains.length > 0) {
     app.log.info(
-      { paymaster: paymaster.address, signerKind: config.SPONSORSHIP_SIGNER_KIND, keyId: signer.keyId },
+      {
+        chains: sponsoringChains.map((chain) => ({ chainId: chain.chainId, paymaster: chain.paymaster!.address })),
+        signerKind: config.SPONSORSHIP_SIGNER_KIND,
+        keyId: signer!.keyId,
+      },
       'gas sponsorship enabled',
     );
   }
 
+  await app.register(chainPlugin, { registry });
+
   await app.register(healthRoutes, {
     db,
     version: process.env.GIANO_VERSION ?? '0.1.0',
-    chainId: config.CHAIN_ID,
+    registry,
     // The sponsorship service is on the critical path for transacting: if it cannot sign, this
-    // deployment cannot sponsor, and reporting itself healthy would hide that.
-    sponsorshipHealth: sponsorship ? () => sponsorship!.health() : undefined,
+    // deployment cannot sponsor, and reporting itself healthy would hide that. The signer is
+    // shared, so asking any sponsoring chain answers for all of them (MC-72).
+    sponsorshipHealth: sponsoringChains.length > 0 ? () => sponsoringChains[0].sponsorship!.health() : undefined,
   });
   await app.register(wellKnownRoutes, { db });
   await app.register(adminRoutes, { db });
-  await app.register(adminSponsorshipRoutes, { db, config, ledger, paymaster });
-  if (sponsorship) {
-    await app.register(paymasterRoutes, { config, sponsorship });
+  await app.register(adminSponsorshipRoutes, { db, config, ledger, registry });
+  if (sponsoringChains.length > 0) {
+    await app.register(paymasterRoutes, { config, registry });
   }
-  await app.register(webauthnRoutes, { db, config, challenges, sessions, publicClient });
+  await app.register(webauthnRoutes, { db, config, challenges, sessions, registry });
   await app.register(credentialRoutes, { db, sessions });
   await app.register(useropRoutes, {
     db,
     config,
-    bundler,
-    // deployment-wide defaults; tenants.policy overrides per field (mergePolicy)
+    registry,
+    // deployment-wide default caps; the chain descriptor's policy and tenants.policy
+    // override per field, per chain (mergePolicy)
     defaultPolicy: {
       maxCallGas: config.USEROP_MAX_CALL_GAS,
       maxVerificationGas: config.USEROP_MAX_VERIFICATION_GAS,
       maxFeePerGas: config.USEROP_MAX_FEE_PER_GAS,
       maxPriorityFeePerGas: config.USEROP_MAX_PRIORITY_FEE_PER_GAS,
-      allowedTargets: config.USEROP_ALLOWED_TARGETS,
-      allowedPaymasters: config.USEROP_ALLOWED_PAYMASTERS,
     },
   });
 
   return app;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** The chain registry — the only way this process reaches a chain (MC-96). */
+    chains: ChainRegistry;
+  }
 }
 
 /**

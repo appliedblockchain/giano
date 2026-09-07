@@ -10,14 +10,42 @@ tenants against one shared backend, over four browser origins:
 | http://app-byo.localhost | `byo` | the same dApp fixture, pointed at the other wallet |
 | http://wallet-byo.localhost | `byo` | tenant-built wallet fixture, `wallet-byo/` |
 
-Plus four service endpoints, useful when poking at the stack by hand:
+Plus the service endpoints, useful when poking at the stack by hand:
 
 | Origin | What |
 | --- | --- |
 | http://api.localhost | `wallet-api` — public + admin |
-| http://rpc.localhost | anvil devnet JSON-RPC (chain 31337) |
-| http://bundler.localhost | alto ERC-4337 bundler |
+| http://rpc.localhost | anvil devnet JSON-RPC (chain A, 31337) |
+| http://bundler.localhost | alto ERC-4337 bundler (chain A) |
+| http://rpc-b.localhost | anvil devnet JSON-RPC (chain B, 31338) |
+| http://bundler-b.localhost | alto ERC-4337 bundler (chain B) |
 | http://paymaster.localhost | paymaster admin console — tenant balances, treasury, roles, health |
+
+## Two chains, by default
+
+The stack runs **two chains** — chain A (`31337`) and chain B (`31338`) — with the same canonical
+contracts at the same addresses on both, so multi-chain behaviour is exercised rather than
+reasoned about (MC-116–MC-118). Both anvils load the **same** baked `devnet/state.json` (the
+dumped state carries accounts, code and storage; the chain id comes from `--chain-id`), and both
+are provisioned identically for sponsorship at bring-up (`devnet/provision-sponsorship.mjs`, one
+explicit PUT per tenant per chain). One wallet-api, one wallet origin, one Postgres, two chains —
+the topology the standalone profile actually uses.
+
+The dApp fixture holds two thin-SDK providers over the same wallet origin, one per chain
+(`#send-chain-b` and friends), and reports the chain and the account of every send in its output,
+so tests assert both directly. The same passkey produces the **same account address on both
+chains** — the property `tests/multichain.spec.ts` exists to verify.
+
+To run the stack with a **single chain** (the on-premises profile, MC-88): comment out the
+`anvil-b` and `alto-b` services in `deploy/docker-compose.e2e.yml`, drop the second entry from
+each `GIANO_CHAINS` list (wallet-api and wallet-web), and set `SPONSOR_CHAIN_IDS=31337` on the
+`sponsorship-provisioner`. The single-chain wallet flows pass unmodified against the two-chain
+stack, so this is only needed when specifically exercising the single-chain shape.
+
+To regenerate the baked state with the pinned anvil: `pnpm -F @appliedblockchain/giano-e2e
+devnet:generate` (chain A; also writes `devnet/addresses.json`). `devnet:generate:b` produces a
+`state-31338.json` and asserts its addresses are identical to chain A's — a divergent pair is
+refused rather than committed (MC-119).
 
 The paymaster console is the operator's side of the same sponsorship the dApps are using: open it
 next to http://app.localhost and a sponsored send shows up as a falling tenant balance and a new

@@ -29,17 +29,44 @@ const addressArray = z
   .array(z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'expected a 0x address'))
   .transform((addrs) => addrs.map((a) => a.toLowerCase()));
 
-/** Partial per-tenant overrides of the deployment-wide userop policy defaults. */
-export const tenantPolicySchema = z
+/**
+ * Chain-agnostic overrides: gas and fee caps and the rate limit are safe to state once for
+ * every chain (and refine per chain under `perChain`). Address-valued fields are NOT here —
+ * see below.
+ */
+const tenantPolicyBaseSchema = z.object({
+  maxCallGas: bigintString.optional(),
+  maxVerificationGas: bigintString.optional(),
+  maxFeePerGas: bigintString.optional(),
+  maxPriorityFeePerGas: bigintString.optional(),
+  /** Per-tenant override of USEROP_RATE_LIMIT_PER_MINUTE — shared across chains (MC-63). */
+  relayRateLimitPerMinute: z.number().int().positive().optional(),
+});
+
+/**
+ * The per-chain layer. Address-valued policy (`allowedTargets`, `allowedPaymasters`) exists
+ * ONLY here, keyed by chain id — the same address denotes different contracts on different
+ * chains, so a chain-agnostic address allowlist is deliberately not expressible (MC-61, S6):
+ * the violation is unrepresentable rather than prevented by a resolution rule someone could
+ * misread. The existing sense of an empty array — any value allowed — is preserved WITHIN
+ * an entry.
+ */
+const tenantPolicyPerChainSchema = z
   .object({
+    // no relayRateLimitPerMinute here: the relay limit is shared across chains (MC-63)
     maxCallGas: bigintString.optional(),
     maxVerificationGas: bigintString.optional(),
     maxFeePerGas: bigintString.optional(),
     maxPriorityFeePerGas: bigintString.optional(),
     allowedTargets: addressArray.optional(),
     allowedPaymasters: addressArray.optional(),
-    /** Per-tenant override of USEROP_RATE_LIMIT_PER_MINUTE. */
-    relayRateLimitPerMinute: z.number().int().positive().optional(),
+  })
+  .strict();
+
+/** Partial per-tenant overrides of the deployment-wide userop policy defaults. */
+export const tenantPolicySchema = tenantPolicyBaseSchema
+  .extend({
+    perChain: z.record(z.string().regex(/^\d+$/, 'perChain keys are chain ids'), tenantPolicyPerChainSchema).optional(),
   })
   .strict();
 
@@ -262,18 +289,32 @@ export function createTenantService(db: Db) {
   };
 }
 
-/** Per-request policy: tenant jsonb overrides (already validated at seed time) over env defaults. */
-export function mergePolicy(defaults: PolicyConfig, tenantPolicy: unknown): PolicyConfig & { relayRateLimitPerMinute?: number } {
+/**
+ * Per-request policy for one (tenant, chain), per specs/MULTICHAIN_SPECS.md §9.5.
+ *
+ * `defaults` is already per chain (deployment env defaults + the chain descriptor's policy).
+ * On top of it: chain-agnostic caps resolve `tenant base` ← `tenant perChain[chainId]`
+ * (later wins — inheritance across chains is fine and wanted for numbers, MC-62); the
+ * address-valued allowlists resolve from `perChain[chainId]` ONLY, falling back to the
+ * chain's own defaults — never to another chain's values, and never to a tenant base value,
+ * which the schema cannot even express (MC-61).
+ */
+export function mergePolicy(defaults: PolicyConfig, tenantPolicy: unknown, chainId: number): PolicyConfig & { relayRateLimitPerMinute?: number } {
   const parsed = tenantPolicySchema.safeParse(tenantPolicy ?? {});
   // fail safe: an unparseable stored policy falls back to the deployment defaults
   const overrides = parsed.success ? parsed.data : {};
+  const perChain = parsed.success ? (parsed.data.perChain?.[String(chainId)] ?? {}) : {};
+  const cap = (chain: string | undefined, base: string | undefined, fallback: bigint) =>
+    chain ? BigInt(chain) : base ? BigInt(base) : fallback;
   return {
-    maxCallGas: overrides.maxCallGas ? BigInt(overrides.maxCallGas) : defaults.maxCallGas,
-    maxVerificationGas: overrides.maxVerificationGas ? BigInt(overrides.maxVerificationGas) : defaults.maxVerificationGas,
-    maxFeePerGas: overrides.maxFeePerGas ? BigInt(overrides.maxFeePerGas) : defaults.maxFeePerGas,
-    maxPriorityFeePerGas: overrides.maxPriorityFeePerGas ? BigInt(overrides.maxPriorityFeePerGas) : defaults.maxPriorityFeePerGas,
-    allowedTargets: overrides.allowedTargets ?? defaults.allowedTargets,
-    allowedPaymasters: overrides.allowedPaymasters ?? defaults.allowedPaymasters,
+    maxCallGas: cap(perChain.maxCallGas, overrides.maxCallGas, defaults.maxCallGas),
+    maxVerificationGas: cap(perChain.maxVerificationGas, overrides.maxVerificationGas, defaults.maxVerificationGas),
+    maxFeePerGas: cap(perChain.maxFeePerGas, overrides.maxFeePerGas, defaults.maxFeePerGas),
+    maxPriorityFeePerGas: cap(perChain.maxPriorityFeePerGas, overrides.maxPriorityFeePerGas, defaults.maxPriorityFeePerGas),
+    allowedTargets: perChain.allowedTargets ?? defaults.allowedTargets,
+    allowedPaymasters: perChain.allowedPaymasters ?? defaults.allowedPaymasters,
+    // The relay rate limit is SHARED across chains (MC-63) — one window per tenant — so a
+    // per-chain value would be meaningless and only the base override applies.
     relayRateLimitPerMinute: overrides.relayRateLimitPerMinute,
   };
 }

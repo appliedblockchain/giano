@@ -60,6 +60,26 @@ What happens at runtime:
 - `waitForUserOperationReceipt` polls the wallet-api's public receipt endpoint — dApps
   never need a bundler URL.
 
+### Chains
+
+The `chain` you pass is **declared to the wallet origin** in the popup handshake, and the wallet
+grants it or refuses the connection outright. Naming it is mandatory and costs nothing — the
+parameter was already required; there is no default chain anywhere.
+
+- The chain is **fixed for the provider's life**. To address another chain, construct another
+  provider — two instances against the same wallet origin coexist with separate sessions and
+  caches. `provider.chainId` is the granted chain; `provider.supportedChainIds` lists every
+  chain the wallet origin advertised on the last connect.
+- If the wallet origin does not serve your chain, connecting rejects with
+  `UnsupportedChainError` (EIP-1193 code `4902`) carrying `requestedChainId` and
+  `supportedChainIds` — permanent, resolved by the wallet operator. A `4901` means the chain is
+  served but temporarily unreachable, and is worth retrying.
+- `wallet_switchEthereumChain` / `wallet_addEthereumChain` are refused with `4200`, and the
+  wagmi connector's `switchChain` throws a typed `UnsupportedChainSwitchError` — build chain
+  pickers by constructing a provider per chain, not by switching.
+- The same passkey controls the **same smart-account address on every chain the wallet origin
+  serves**; the account deploys lazily on each chain with its first transaction there.
+
 ### Popup requirements
 
 - Call `connect()` / `eth_requestAccounts` from a **user gesture** (Safari blocks popups

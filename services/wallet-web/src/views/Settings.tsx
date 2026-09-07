@@ -1,17 +1,29 @@
 import { useEffect, useState } from 'react';
 import type { WalletConfig } from '../config';
-import type { WalletRuntime } from '../wallet';
+import type { WalletRuntimes } from '../wallet';
 
 type Me = { externalUserId: string; walletAddress: string; credentialId: string };
 type Credential = { credentialId: string; walletAddress: string; createdAt: string };
+type ChainRow = { chainId: number; name: string; deployed: boolean | null };
 
-/** Standalone view when the wallet page is opened directly (not via a dApp popup). */
-export function Settings({ runtime, config }: { runtime: WalletRuntime; config: WalletConfig }) {
+/**
+ * Standalone view when the wallet page is opened directly (not via a dApp popup).
+ *
+ * Shows the account address ONCE — it is the same on every served chain (MC-16) — and one
+ * row per chain with its deployment state there (MC-84). "Not yet deployed on this chain"
+ * is normal, never an error: the account deploys lazily with its first transaction on each
+ * chain (MC-29, MC-30). With one chain served this collapses to a single row (MC-89).
+ */
+export function Settings({ runtimes, config }: { runtimes: WalletRuntimes; config: WalletConfig }) {
   const [me, setMe] = useState<Me | null>(null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [chainRows, setChainRows] = useState<ChainRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Any chain's runtime carries the shared, chain-agnostic session (MC-76); the first
+  // configured chain is where a direct sign-in deploys the account.
+  const runtime = runtimes.runtimeFor(runtimes.servedChainIds[0]);
   const token = runtime.injection.getSessionToken();
 
   const load = async () => {
@@ -23,8 +35,22 @@ export function Settings({ runtime, config }: { runtime: WalletRuntime; config: 
         fetch(`${base}/v1/me`, { headers }),
         fetch(`${base}/v1/me/credentials`, { headers }),
       ]);
-      if (meRes.ok) setMe((await meRes.json()) as Me);
       if (credsRes.ok) setCredentials(((await credsRes.json()) as { credentials: Credential[] }).credentials);
+      if (meRes.ok) {
+        const loadedMe = (await meRes.json()) as Me;
+        setMe(loadedMe);
+        // Per-chain deployment state, read from each chain itself.
+        const rows = await Promise.all(
+          runtimes.servedChainIds.map(async (chainId) => {
+            const chainRuntime = runtimes.runtimeFor(chainId);
+            const deployed = await chainRuntime
+              .isAccountDeployed(loadedMe.walletAddress as `0x${string}`)
+              .catch(() => null);
+            return { chainId, name: chainRuntime.chainName, deployed };
+          }),
+        );
+        setChainRows(rows);
+      }
     } catch (err) {
       setError((err as Error).message);
     }
@@ -54,6 +80,7 @@ export function Settings({ runtime, config }: { runtime: WalletRuntime; config: 
       await runtime.injection.logout();
       setMe(null);
       setCredentials([]);
+      setChainRows([]);
     } finally {
       setBusy(false);
     }
@@ -67,12 +94,18 @@ export function Settings({ runtime, config }: { runtime: WalletRuntime; config: 
           <>
             <div className="kv">
               <span className="k">Address</span>
-              <span className="v">{me.walletAddress}</span>
+              <span className="v" data-testid="settings-address">{me.walletAddress}</span>
             </div>
-            <div className="kv">
-              <span className="k">Chain</span>
-              <span className="v">{runtime.chainId}</span>
-            </div>
+            {chainRows.map((row) => (
+              <div className="kv" key={row.chainId} data-testid={`settings-chain-${row.chainId}`}>
+                <span className="k">
+                  {row.name} ({row.chainId})
+                </span>
+                <span className="v">
+                  {row.deployed === null ? 'status unavailable' : row.deployed ? 'deployed' : 'deploys with your first transaction'}
+                </span>
+              </div>
+            ))}
           </>
         ) : (
           <p>{token ? 'Loading session…' : 'No active session on this device.'}</p>

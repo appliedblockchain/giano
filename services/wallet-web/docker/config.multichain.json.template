@@ -1,0 +1,9 @@
+{
+  "chains": ${GIANO_CHAINS},
+  "walletApiUrl": "${GIANO_WALLET_API_URL}",
+  "allowedDappOrigins": ${GIANO_ALLOWED_DAPP_ORIGINS},
+  "rpId": "${GIANO_RP_ID}",
+  "branding": {
+    "name": "${GIANO_BRAND_NAME}"
+  }
+}

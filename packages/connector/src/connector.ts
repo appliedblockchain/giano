@@ -24,6 +24,20 @@ export type CreateGianoConnectorParams = {
   provider: GianoProviderLike | GianoWalletProvider;
 };
 
+/**
+ * Thrown by the wagmi adapter's `switchChain`: Giano binds one chain per provider instance
+ * (MC-01), so switching is refused with a typed error rather than left to fail obscurely
+ * deeper in the stack (MC-15). wagmi's `useSwitchChain` surfaces this to the UI.
+ */
+export class UnsupportedChainSwitchError extends Error {
+  constructor(public readonly requestedChainId: number) {
+    super(
+      'Giano binds one chain per connector instance. Create a connector over a provider constructed for the target chain.',
+    );
+    this.name = 'UnsupportedChainSwitchError';
+  }
+}
+
 type GianoConnectorProperties = {
   waitForUserOperationReceipt: (hash: Hash) => Promise<UserOperationReceipt>;
 }
@@ -32,7 +46,7 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
   return createConnector<
     GianoProviderLike,
     GianoConnectorProperties
-  >(({ chains }) => {
+  >(() => {
     const request = (method: string, params?: unknown) => (provider as GianoProviderLike).request({ method, params });
 
     const connector = <const>{
@@ -64,8 +78,9 @@ export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
       setup: async () => {
       },
       switchChain: async ({ chainId }: { chainId: number }) => {
-        await request('wallet_switchEthereumChain', [{ chainId: `0x${chainId.toString(16)}` }]);
-        return chains.find((chain) => chain.id === chainId)!;
+        // Throwing rather than removing the method: wagmi's useSwitchChain surfaces a thrown
+        // error to the UI, whereas an absent method produces a less legible failure (MC-15).
+        throw new UnsupportedChainSwitchError(chainId);
       },
       getChainId: async () => {
         const chainId = (await request('eth_chainId')) as string;

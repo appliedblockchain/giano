@@ -1,4 +1,4 @@
-import { createGianoWalletProvider, TransportRpcError } from '@appliedblockchain/giano-connector';
+import { createGianoWalletProvider, TransportRpcError, UnsupportedChainError } from '@appliedblockchain/giano-connector';
 import { defineChain, http } from 'viem';
 
 const chain = defineChain({
@@ -8,10 +8,25 @@ const chain = defineChain({
   rpcUrls: { default: { http: [process.env.RPC_URL as string] } },
 });
 
+const chainB = defineChain({
+  id: Number(process.env.CHAIN_B_ID),
+  name: 'e2e-b',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [process.env.RPC_B_URL as string] } },
+});
+
 const provider = createGianoWalletProvider({
   walletUrl: process.env.WALLET_URL as string,
   chain,
   transport: http(process.env.RPC_URL as string),
+});
+
+// TWO providers over the SAME wallet URL, one per chain — the real mechanism (MC-10, MC-122):
+// providerB negotiates chain B in its own handshake and holds its own session cache.
+const providerB = createGianoWalletProvider({
+  walletUrl: process.env.WALLET_URL as string,
+  chain: chainB,
+  transport: http(process.env.RPC_B_URL as string),
 });
 
 const out = document.getElementById('out')!;
@@ -21,10 +36,10 @@ const log = (label: string, value: unknown) => {
 
 declare global {
   interface Window {
-    giano: { provider: typeof provider; log: typeof log };
+    giano: { provider: typeof provider; providerB: typeof providerB; log: typeof log };
   }
 }
-window.giano = { provider, log };
+window.giano = { provider, providerB, log };
 
 provider.on('accountsChanged', (accounts) => log('event:accountsChanged', accounts));
 provider.on('disconnect', () => log('event:disconnect', ''));
@@ -38,18 +53,70 @@ document.getElementById('connect')!.addEventListener('click', async () => {
   }
 });
 
+/**
+ * Sends 0 ETH to self through the given provider and reports, in the output surface, the
+ * chain the transaction went to and the account used — so a test asserts both DIRECTLY
+ * rather than inferring them (MC-123).
+ */
+async function sendToSelf(via: typeof provider, chainId: number) {
+  const [account] = await via.request<string[]>({ method: 'eth_accounts' });
+  const hash = await via.request<string>({
+    method: 'eth_sendTransaction',
+    params: [{ to: account, value: '0x0' }],
+  });
+  log('userOpHash', hash);
+  const receipt = await via.request<{ success: boolean }>({ method: 'waitForUserOperationReceipt', params: [hash] });
+  log('receipt:success', receipt.success);
+  log('result', { action: 'send', chainId, account, userOpHash: hash, receiptSuccess: receipt.success });
+}
+
 document.getElementById('send')!.addEventListener('click', async () => {
   try {
-    const [account] = await provider.request<string[]>({ method: 'eth_accounts' });
-    const hash = await provider.request<string>({
-      method: 'eth_sendTransaction',
-      params: [{ to: account, value: '0x0' }],
-    });
-    log('userOpHash', hash);
-    const receipt = await provider.request<{ success: boolean }>({ method: 'waitForUserOperationReceipt', params: [hash] });
-    log('receipt:success', receipt.success);
+    await sendToSelf(provider, chain.id);
   } catch (error) {
     log('send:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
+  }
+});
+
+document.getElementById('connect-chain-b')!.addEventListener('click', async () => {
+  try {
+    const accounts = await providerB.request<string[]>({ method: 'eth_requestAccounts' });
+    log('accountsB', accounts);
+  } catch (error) {
+    log('connectB:error', error instanceof TransportRpcError ? `rpc:${error.code} ${error.message}` : (error as Error).message);
+  }
+});
+
+document.getElementById('send-chain-b')!.addEventListener('click', async () => {
+  try {
+    await sendToSelf(providerB, chainB.id);
+  } catch (error) {
+    log('sendB:error', error instanceof TransportRpcError ? `rpc:${error.code}` : (error as Error).message);
+  }
+});
+
+/** A chain the wallet origin does not serve: the connection itself must be refused (MC-109). */
+document.getElementById('connect-unserved')!.addEventListener('click', async () => {
+  const unserved = defineChain({
+    id: 99_999,
+    name: 'unserved',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [process.env.RPC_URL as string] } },
+  });
+  const doomed = createGianoWalletProvider({
+    walletUrl: process.env.WALLET_URL as string,
+    chain: unserved,
+    transport: http(process.env.RPC_URL as string),
+  });
+  try {
+    await doomed.request({ method: 'eth_requestAccounts' });
+    log('unserved:error', 'connection unexpectedly SUCCEEDED');
+  } catch (error) {
+    if (error instanceof UnsupportedChainError) {
+      log('unserved:refused', { code: error.code, requestedChainId: error.requestedChainId, supportedChainIds: error.supportedChainIds });
+    } else {
+      log('unserved:error', (error as Error).message);
+    }
   }
 });
 
