@@ -141,16 +141,16 @@ services:
             "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
             "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
-            "policy": { "allowedPaymasters": ["0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2"] }
+            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
           },
           {
             "chainId": 31338, "name": "Devnet B",
             "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
             "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2",
-            "policy": { "allowedPaymasters": ["0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2"] }
+            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
           }
         ]
       LOG_LEVEL: info
@@ -268,7 +268,7 @@ services:
       GIANO_RPC_UPSTREAM: http://anvil:8545
       # The devnet has no contracts-registry entry, so the address is passed explicitly. It is the
       # same deterministic address wallet-api sponsors through, above.
-      GIANO_PAYMASTER_ADDRESS: '0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2'
+      GIANO_PAYMASTER_ADDRESS: '0xf98b56de62ce88cEb70A9155582248cDBf2D0718'
       GIANO_ENVIRONMENT_LABEL: e2e devnet
       GIANO_REFRESH_SECONDS: '5'
 
