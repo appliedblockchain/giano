@@ -13,8 +13,7 @@
   },
   "dependencies": {
     "@appliedblockchain/giano-contracts": "workspace:^",
-    "@appliedblockchain/giano-wallet-core": "workspace:^",
-    "@appliedblockchain/giano-wallet-transport": "workspace:^",
+    "@appliedblockchain/giano-wallet-kit": "workspace:^",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "2.31.6"

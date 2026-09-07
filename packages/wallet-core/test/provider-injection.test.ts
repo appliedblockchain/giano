@@ -135,7 +135,9 @@ describe('requirement literals', () => {
 
   it('exposes sane defaults', () => {
     expect(DEFAULT_CREDENTIAL_MEDIATION_REQUIREMENT).toBe('optional');
-    expect(DEFAULT_RESIDENT_KEY_REQUIREMENT).toBe('preferred');
+    // 'required', not 'preferred': silent account restore and discoverable sign-in depend
+    // on every credential being discoverable (WK-20; commit ba729c8).
+    expect(DEFAULT_RESIDENT_KEY_REQUIREMENT).toBe('required');
     expect(DEFAULT_USER_VERIFICATION_REQUIREMENT).toBe('required');
   });
 });

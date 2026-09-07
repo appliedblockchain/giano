@@ -13,6 +13,12 @@ declare module 'fastify' {
       useropLatency: Histogram<'tenant' | 'chain'>;
       /** ALERTABLE: if this ever fires, RP resolution is broken or someone is probing. */
       crossTenantRejections: Counter<'kind' | 'tenant'>;
+      /**
+       * Wallet-management lifecycle events (WM-50…WM-52). ALERTABLE on
+       * action="pending-declined": a fingerprint the user refused to confirm is either a
+       * bug or an attempted key substitution — exactly what D8 exists to prevent.
+       */
+      walletManagement: Counter<'action' | 'outcome' | 'tenant'>;
 
       // ── Gas sponsorship ──────────────────────────────────────────────────────
       /** ALERTABLE: a refusal-rate spike for one tenant usually means a rule change went wrong. */
@@ -85,6 +91,12 @@ export default fp(
         name: 'giano_cross_tenant_rejections_total',
         help: "Requests rejected for crossing a tenant boundary (kind: credential|challenge|session) — alert on any increase",
         labelNames: ['kind', 'tenant'] as const,
+        registers: [registry],
+      }),
+      walletManagement: new Counter({
+        name: 'giano_wallet_management_events_total',
+        help: 'Wallet-management lifecycle events by action, outcome and tenant — alert on action="pending-declined" (a refused fingerprint is a bug or an attempted key substitution)',
+        labelNames: ['action', 'outcome', 'tenant'] as const,
         registers: [registry],
       }),
 

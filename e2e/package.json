@@ -24,6 +24,7 @@
   "devDependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",
     "@appliedblockchain/giano-wallet-core": "workspace:^",
+    "@appliedblockchain/giano-wallet-kit": "workspace:^",
     "@appliedblockchain/giano-wallet-transport": "workspace:^",
     "@playwright/test": "^1.52.0",
     "esbuild": "^0.25.4",

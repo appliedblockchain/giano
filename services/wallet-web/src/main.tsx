@@ -1,12 +1,15 @@
+import { loadWalletConfig } from '@appliedblockchain/giano-wallet-kit';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
-import { loadWalletConfig } from './config';
 import './styles.css';
 
 const root = createRoot(document.getElementById('root')!);
 
-loadWalletConfig()
+// Runtime config: fetched from /config.json (rendered in the container at boot, MC-41).
+// The kit validates it and fails fatally, naming the chain and field (WK-06); the
+// production flag arms the test-paymaster guard (WK-05).
+loadWalletConfig({ production: import.meta.env.PROD })
   .then((config) => {
     root.render(
       <StrictMode>
