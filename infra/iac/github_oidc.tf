@@ -1,47 +1,91 @@
-# GitHub Actions, authenticated by OIDC. §10.5
-#
-# No static credentials anywhere in CI: no access key to rotate, no PAT, and
-# no iam:PassRole beyond the task and execution roles.
+# §10.5 — the OIDC provider for token.actions.githubusercontent.com, and one role,
+# giano-dev-gha-deploy, trusted by it with a subject condition pinned to the repository AND
+# the ref. An unpinned repo:appliedblockchain/giano:* subject would let a workflow on any
+# branch — including one opened by a fork's pull request — assume the role.
 
-locals {
-  # Exactly the roles CI may hand to ECS. Built from the module outputs so a
-  # new service is covered automatically and nothing else ever is.
-  gha_passable_role_arns = concat(
-    [
-      module.svc-wallet-api.exec_role_arn, module.svc-wallet-api.task_role_arn,
-      module.svc-wallet-web.exec_role_arn, module.svc-wallet-web.task_role_arn,
-      module.svc-custom-example.exec_role_arn, module.svc-custom-example.task_role_arn,
-      module.svc-paymaster-admin.exec_role_arn, module.svc-paymaster-admin.task_role_arn,
-      module.svc-bundler.exec_role_arn, module.svc-bundler.task_role_arn,
-    ],
-    var.byo_wallet_enabled[terraform.workspace] ? [
-      module.svc-custom-example-byoui[0].exec_role_arn, module.svc-custom-example-byoui[0].task_role_arn,
-      module.svc-wallet-byo[0].exec_role_arn, module.svc-wallet-byo[0].task_role_arn,
-    ] : [],
-  )
-}
-
-# The provider is ACCOUNT-GLOBAL, so exactly one workspace creates it and the
-# others reference it by ARN (iam.policies.tf). Gated on a boolean map rather
-# than a workspace comparison, per §4.1.
 resource "aws_iam_openid_connect_provider" "github" {
-  count = var.gha_create_oidc_provider[terraform.workspace] ? 1 : 0
-
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = var.gha_oidc_thumbprints
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 
   tags = { Name = "${local.name_prefix}-github-oidc" }
 }
 
-module "gha-deploy-role" {
+data "aws_iam_policy_document" "gha_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        for r in var.gha_allowed_refs[terraform.workspace] :
+        "repo:appliedblockchain/giano:ref:refs/heads/${r}"
+      ]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "gha_deploy" {
+  statement {
+    sid       = "EcrAuth"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "EcrPush"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+    ]
+    resources = [for r in module.ecr : r.repository_arn]
+  }
+
+  statement {
+    sid       = "EcsDeploy"
+    actions   = ["ecs:UpdateService", "ecs:DescribeServices"]
+    resources = ["arn:aws:ecs:${var.aws_region[terraform.workspace]}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.ecs.name}/*"]
+  }
+
+  # iam:PassRole on the execution and task roles ONLY — no broader grant.
+  statement {
+    sid     = "PassEcsRoles"
+    actions = ["iam:PassRole"]
+    resources = concat(
+      [module.svc-wallet-api.execution_role_arn, module.svc-wallet-api.task_role_arn],
+      [module.svc-wallet-web.execution_role_arn, module.svc-wallet-web.task_role_arn],
+      [module.svc-custom-example.execution_role_arn, module.svc-custom-example.task_role_arn],
+      [module.svc-paymaster-admin.execution_role_arn, module.svc-paymaster-admin.task_role_arn],
+      [module.svc-bundler.execution_role_arn, module.svc-bundler.task_role_arn],
+      length(module.svc-custom-example-byoui) > 0 ? [module.svc-custom-example-byoui[0].execution_role_arn, module.svc-custom-example-byoui[0].task_role_arn] : [],
+      length(module.svc-wallet-byo) > 0 ? [module.svc-wallet-byo[0].execution_role_arn, module.svc-wallet-byo[0].task_role_arn] : [],
+    )
+  }
+}
+
+module "iam-role-gha-deploy" {
   source = "./modules/aws/iam/role"
 
-  name               = "${local.name_prefix}-gha-deploy"
-  description        = "${local.name_prefix} — GitHub Actions: ECR push and service rollout"
-  assume_role_policy = data.aws_iam_policy_document.gha_deploy_assume.json
+  name                    = "${local.name_prefix}-gha-deploy"
+  assume_role_policy_json = data.aws_iam_policy_document.gha_assume.json
+  inline_policy_json      = data.aws_iam_policy_document.gha_deploy.json
 
-  inline_policies = { "policy" = data.aws_iam_policy_document.gha_deploy.json }
-
-  depends_on = [aws_iam_openid_connect_provider.github]
+  additional_tags = local.default_tags
 }

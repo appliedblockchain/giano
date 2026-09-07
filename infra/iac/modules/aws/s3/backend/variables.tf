@@ -1,5 +1,5 @@
 variable "bucket_name" {
-  description = "[REQUIRED] name of the state bucket — must match the backend block in _init.tf"
+  description = "[REQUIRED] name of the S3 bucket that holds Terraform state for the whole project"
   type        = string
 }
 

@@ -1,14 +1,14 @@
-output "arn" {
-  description = "ARN of the role"
-  value       = aws_iam_role.role.arn
+output "role_arn" {
+  description = "ARN of the created role"
+  value       = aws_iam_role.this.arn
 }
 
-output "name" {
-  description = "name of the role"
-  value       = aws_iam_role.role.name
+output "role_name" {
+  description = "name of the created role"
+  value       = aws_iam_role.this.name
 }
 
-output "id" {
-  description = "id of the role"
-  value       = aws_iam_role.role.id
+output "role_id" {
+  description = "id of the created role"
+  value       = aws_iam_role.this.id
 }
