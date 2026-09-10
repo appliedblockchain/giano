@@ -1,4 +1,4 @@
-# One repository per deployed image. §11
+# §11
 
 resource "aws_ecr_repository" "repo" {
   name                 = var.repo_name
@@ -16,12 +16,9 @@ resource "aws_ecr_repository" "repo" {
   tags = merge(local.tags, { Name = var.repo_name })
 }
 
-# jsonencode(), not a .json.tpl — a template is unvalidated string
-# interpolation, and a missing comma is a runtime failure with no plan-time
-# signal. D19
+# aws_ecr_lifecycle_policy is tag-exempt (§4.3.1) — a child of the repository, which is tagged.
 resource "aws_ecr_lifecycle_policy" "repo" {
   repository = aws_ecr_repository.repo.name
-
   policy = jsonencode({
     rules = [{
       rulePriority = 1

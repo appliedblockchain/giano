@@ -1,5 +1,5 @@
-# Neither output is sensitive, because neither is a value. There is no output
-# that returns one. §7.5
+# §7.5 — neither output is sensitive, because neither is a value. There is no output that
+# returns one.
 
 output "secret_arns" {
   description = "{ key => secret ARN } — for ECS `secrets` blocks and IAM policies"

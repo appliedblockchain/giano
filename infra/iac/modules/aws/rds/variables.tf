@@ -1,63 +1,68 @@
+# §8.1, §8.3
+
 variable "name_prefix" {
-  description = "[REQUIRED] prefix for every resource name, e.g. giano-dev"
+  description = "[REQUIRED] e.g. giano-dev"
   type        = string
 }
 
 variable "component" {
-  description = "[REQUIRED] what this database is for, e.g. `app` — the second half of every name"
+  description = "[REQUIRED] which database this is, e.g. \"app\" — feeds every resource name"
   type        = string
 }
 
 variable "engine_version" {
-  description = "[REQUIRED] Postgres major version"
+  description = "[REQUIRED] Postgres major/minor version, e.g. \"17\""
   type        = string
 }
 
 variable "instance_class" {
-  description = "[REQUIRED] instance class"
+  description = "[REQUIRED] e.g. db.t4g.micro"
   type        = string
 }
 
 variable "allocated_storage" {
-  description = "[REQUIRED] allocated storage, GB"
+  description = "[REQUIRED] initial storage, GB"
   type        = number
 }
 
 variable "storage_autoscale_max" {
-  description = "[REQUIRED] maximum storage autoscaling will grow to, GB"
+  description = "[REQUIRED] max_allocated_storage, GB"
   type        = number
 }
 
 variable "multi_az" {
-  description = "[REQUIRED] whether the instance is multi-AZ — false in dev"
+  description = "[REQUIRED] false in dev — see §2.2"
   type        = bool
 }
 
 variable "backup_retention_period" {
-  description = "[REQUIRED] automated backup retention, days"
+  description = "[REQUIRED] days"
   type        = number
 }
 
 variable "deletion_protection" {
-  description = "[REQUIRED] whether the instance refuses to be destroyed"
+  description = "[REQUIRED] false in dev, true in stg/prd"
   type        = bool
 }
 
 variable "skip_final_snapshot" {
-  description = "[REQUIRED] whether destroying the instance skips a final snapshot"
+  description = "[REQUIRED] true in dev, false in stg/prd"
   type        = bool
 }
 
 variable "db_name" {
-  description = "[REQUIRED] initial database name"
+  description = "[REQUIRED] the initial database name"
   type        = string
 }
 
 variable "db_username" {
-  description = "[REQUIRED] master username"
+  description = "[REQUIRED] the master username"
   type        = string
 }
 
+# write-only — §8.3. random_password is rejected: its result would be stored in state,
+# forever, and would be the one exception that makes the "no secrets in state" guarantee
+# useless.
 variable "db_password_wo" {
   description = "[REQUIRED] master password, write-only — never persisted to state"
   type        = string
@@ -71,29 +76,23 @@ variable "db_password_wo_version" {
 }
 
 variable "kms_key_id" {
-  description = "[REQUIRED] customer-managed KMS key ARN for storage encryption. CANNOT be changed after creation (R12)"
+  description = "[REQUIRED] customer-managed KMS key ARN encrypting storage at rest — cannot change after creation"
   type        = string
 }
 
 variable "vpc_id" {
-  description = "[REQUIRED] VPC the instance and its security group live in"
+  description = "[REQUIRED]"
   type        = string
 }
 
 variable "subnet_ids" {
-  description = "[REQUIRED] private subnets for the subnet group"
+  description = "[REQUIRED] private subnet ids for the DB subnet group"
   type        = list(string)
 }
 
 variable "source_sg_id" {
-  description = "[REQUIRED] the security group allowed to reach 5432 — the ECS tasks group, never a VPC CIDR"
+  description = "[REQUIRED] the tasks security group — the ONLY thing granted ingress on 5432"
   type        = string
-}
-
-variable "log_min_duration_statement" {
-  description = "[OPTIONAL] log statements slower than this, ms"
-  type        = number
-  default     = 1000
 }
 
 variable "additional_tags" {
