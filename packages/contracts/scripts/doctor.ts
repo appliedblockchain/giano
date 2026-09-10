@@ -292,12 +292,15 @@ async function checkSponsorshipPaymaster(
       report('fail', 'tenant roster', 'unreadable: the paymaster exposes no tenantCount and no --tenants list was given');
       report('info', 'fix', 'pass --tenants <uuid,uuid> (or set PAYMASTER_TENANT_IDS) for a deployment that predates the enumerable roster');
     } else {
+      // Zero tenants is a warning, not a failure: tenant onboarding is a separate step from
+      // deploying the paymaster, so a freshly provisioned one legitimately has an empty roster.
+      // Registered-but-unfunded further down stays critical — that is a stalled onboarding.
       report(
-        rows.length > 0 ? 'ok' : 'fail',
+        rows.length > 0 ? 'ok' : 'warn',
         'tenants registered',
         rows.length > 0
           ? `${rows.length}${source === 'flags' ? ' (from --tenants; roster not enumerable on-chain)' : ''}`
-          : 'none — a paymaster with no tenants can sponsor nothing',
+          : 'none — nothing can be sponsored until a tenant is registered and funded',
       );
     }
 
