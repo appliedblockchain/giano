@@ -1,9 +1,4 @@
-<<<<<<< HEAD
-# Giano — name_prefix, default_tags, and every shared derived value other files read by name.
-# specs/INFRASTRUCTURE.md §4.3.
-=======
 # Naming, tagging and the derived values more than one file needs. §4.3
->>>>>>> main
 
 locals {
   name_prefix = join("-", [var.project_name, terraform.workspace])
@@ -16,19 +11,6 @@ locals {
     tfstate      = "s3:${var.s3_tfstate_name}"
   }
 
-<<<<<<< HEAD
-  # 1Password coordinates for this environment's secrets — §12.2. op_vault_suffix is declared
-  # in asm.vars.tf.
-  op_vault = "${title(var.project_name)} ${var.op_vault_suffix[terraform.workspace]}"
-  op_item  = "secrets-${terraform.workspace}"
-
-  # DNS apex for this environment — §6.1. dns_zone / dns_prefix are declared in dns.vars.tf.
-  dns_zone = var.dns_zone[terraform.workspace] # appliedblockchain.dev
-  dns_apex = "${var.dns_prefix[terraform.workspace]}.${local.dns_zone}"
-  # dev.giano.appliedblockchain.dev
-
-  # Giano's own serving hostnames — never relying parties themselves (§3.4, §6.4).
-=======
   # 1Password coordinates for this environment's secrets. §12.2
   #
   # Derived, never typed: selecting a workspace selects the vault, so there is
@@ -48,21 +30,16 @@ locals {
 
   # Giano's own hostnames — infrastructure, shared by every tenant, and never
   # a relying party. §2.1
->>>>>>> main
   hosts = {
     wallet    = "wallet.${local.dns_apex}"
     api       = "api.${local.dns_apex}"
     paymaster = "paymaster.${local.dns_apex}"
   }
 
-<<<<<<< HEAD
-  # Per-tenant dApp and wallet hostnames, keyed by tenant slug (§2.1, §6.4, §4.7).
-=======
   # The two tenants of this environment (D17). Each wallet host is that
   # tenant's WebAuthn RP ID and is irreversible — R1. `example` takes the
   # stock UI and CNAMEs to local.hosts.wallet; `byoui` brings its own SPA and
   # points at Giano's wallet hostname not at all.
->>>>>>> main
   tenant_hosts = {
     example = {
       dapp   = "example.${local.dns_apex}"
@@ -74,14 +51,6 @@ locals {
     }
   }
 
-<<<<<<< HEAD
-  # The application database name — matches the compose reference's POSTGRES_DB default (§8, §7.4).
-  app_db_name = "giano"
-
-  # every stock-UI tenant wallet host, plus Giano's own wallet host — ALB rule 40 (§5.7) and
-  # the wildcard-exempt SNI certificates (§6.3).
-  stock_ui_wallet_hosts = concat([local.hosts.wallet], var.tenant_wallet_hosts[terraform.workspace])
-=======
   # The stock-UI tenant wallet hostnames wallet-web answers on, alongside
   # Giano's own serving hostname. §5.7 rule 40.
   tenant_wallet_hosts = var.tenant_wallet_hosts[terraform.workspace]
@@ -93,6 +62,27 @@ locals {
     local.tenant_wallet_hosts,
     var.byo_wallet_enabled[terraform.workspace] ? [local.tenant_hosts.byoui.wallet] : [],
   ))
+
+  # --- Delivery. §15.1 -------------------------------------------------
+  # The version this environment runs, DECLARED in infra/versions.json and
+  # merged to main to deploy.
+  #
+  # A JSON file rather than a variable because it has two readers, and the
+  # second one is deploy.yml, which must parse it with `jq` and without
+  # Terraform. A `.tf` variable would have to be grepped out of HCL.
+  #
+  # Terraform is not the writer of record for what is RUNNING — the services
+  # carry ignore_changes on task_definition (modules/aws/ecs-service) — so
+  # this is the image of the revision an `apply` writes, which the workflow
+  # then rolls onto. Both sides read this one value, which is what keeps two
+  # writers from disagreeing.
+  # lookup() with an empty fallback rather than a bare index, for the error
+  # message. A `file()` call is known at validate time (a variable is not), so a
+  # bare index makes `terraform validate` fail on the `default` workspace with
+  # "The given key does not identify an element in this collection value" — true,
+  # unhelpful, and nothing to do with what is wrong. The empty string instead
+  # reaches the task definition's precondition, which says which file to edit.
+  image_tag = lookup(jsondecode(file("${path.module}/../versions.json")), terraform.workspace, "")
 
   # --- Compute ------------------------------------------------------------
   private_subnet_ids = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
@@ -122,5 +112,4 @@ locals {
     for name, svc in local.ecs_services : name => svc
     if var.byo_wallet_enabled[terraform.workspace] || !contains(["wallet-byo", "custom-example-byoui"], name)
   }
->>>>>>> main
 }

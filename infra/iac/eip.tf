@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-# §5.4 — one Elastic IP per NAT gateway. Stable addresses, which is worth knowing: they are
-=======
 # One Elastic IP per NAT gateway. §5.4
 #
 # These addresses are stable, which is a side benefit worth knowing: they are
->>>>>>> main
 # the source addresses an RPC provider or a partner would allowlist.
 
 resource "aws_eip" "nat-gw-a-eip" {

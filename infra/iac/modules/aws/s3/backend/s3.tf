@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-resource "aws_s3_bucket" "this" {
-=======
 # The state bucket. §4.5, applied ONCE in the `default` workspace against a
 # local backend, after which the state is migrated into it (§18 step 2).
 #
@@ -13,50 +10,28 @@ resource "aws_s3_bucket" "this" {
 # (§12.5).
 
 resource "aws_s3_bucket" "tfstate" {
->>>>>>> main
   bucket = var.bucket_name
 
   tags = merge(local.tags, { Name = var.bucket_name })
 }
 
-<<<<<<< HEAD
-resource "aws_s3_bucket_versioning" "this" {
-  bucket = aws_s3_bucket.this.id
-=======
 # Versioning is what makes a bad apply recoverable: the previous state is a
 # prior object version.
 resource "aws_s3_bucket_versioning" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
->>>>>>> main
 
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-<<<<<<< HEAD
-# aws_s3_bucket_server_side_encryption_configuration has no `tags` argument — it configures a
-# child resource of the tagged bucket above.
-resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
-  bucket = aws_s3_bucket.this.id
-=======
 resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
->>>>>>> main
 
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "aws:kms"
     }
-<<<<<<< HEAD
-  }
-}
-
-# aws_s3_bucket_public_access_block has no `tags` argument — it configures a child resource of
-# the tagged bucket above.
-resource "aws_s3_bucket_public_access_block" "this" {
-  bucket = aws_s3_bucket.this.id
-=======
 
     bucket_key_enabled = true
   }
@@ -64,15 +39,12 @@ resource "aws_s3_bucket_public_access_block" "this" {
 
 resource "aws_s3_bucket_public_access_block" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
->>>>>>> main
 
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
-<<<<<<< HEAD
-=======
 
 resource "aws_s3_bucket_ownership_controls" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
@@ -102,4 +74,3 @@ resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
     }
   }
 }
->>>>>>> main

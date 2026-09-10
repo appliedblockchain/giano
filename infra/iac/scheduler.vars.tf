@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-# §17.2
-
-variable "enable_schedule" {
-  description = "on in dev, off in stg/prd"
-  type        = map(bool)
-  default     = { dev = true, stg = false, prd = false }
-}
-=======
 variable "enable_schedule" {
   description = "[REQUIRED] out-of-hours scale-to-zero, per environment — on in dev, off in stg and prd"
   type        = map(bool)
@@ -30,4 +21,3 @@ variable "schedule_timezone" {
   type        = string
   default     = "UTC"
 }
->>>>>>> main

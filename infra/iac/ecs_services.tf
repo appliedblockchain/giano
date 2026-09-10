@@ -1,21 +1,3 @@
-<<<<<<< HEAD
-# §9.2, §9.3, §14 — seven near-identical services differing only in image, size, environment,
-# secrets, and whether they get an ALB target. Target groups and listener rules live inside
-# the ecs-service module (§9.3), not here.
-
-# ── wallet-api — rule 10, api.* — §9.2, §9.3, §9.6, §14.2 ──────────────────────────────────
-module "svc-wallet-api" {
-  source = "./modules/aws/ecs-service"
-
-  name_prefix  = local.name_prefix
-  service      = "wallet-api"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-=======
 # The seven services. §9.2, and §14 for the environment poured into them.
 #
 # Five of the seven are the same module with different inputs; the two that
@@ -66,35 +48,10 @@ module "svc-wallet-api" {
   aws_region   = local.service_defaults.aws_region
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
->>>>>>> main
 
-  image              = "${module.ecr["wallet-api"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-api"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-api"].repository_arn
-<<<<<<< HEAD
-  cpu                = 512  # task-level
-  memory             = 2048 # app 1024 + agent 256 + router 100 + migrate 256 + headroom — §9.6
-  app_memory         = 1024
-  container_port     = 8080
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.tasks-sg.id]
-
-  environment = {
-    GIANO_DEPLOYMENT_CLASS        = "testnet"
-    RUN_MIGRATIONS                = "false" # the init container runs them — §9.6
-    CHAIN_ID                      = var.chain_id
-    BUNDLER_URL                   = "http://bundler.${local.name_prefix}.local:4337"
-    SPONSORSHIP_ENABLED           = "true"
-    SPONSORSHIP_SIGNER_KIND       = "local"
-    SPONSORSHIP_PAYMASTER_ADDRESS = var.paymaster_address
-    PAYMASTER_WATCHER_ENABLED     = "true"
-    LOG_LEVEL                     = "info"
-    # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS deliberately unset — 84532 is in the contracts
-    # registry and both default correctly from it.
-  }
-=======
 
   cpu            = 512
   memory         = 2048 # app 1024 + agent 256 + router 100 + migrate 256 + headroom
@@ -131,7 +88,6 @@ module "svc-wallet-api" {
     # them by hand is how they drift. §14.2
   }
 
->>>>>>> main
   secret_arns = {
     DATABASE_URL               = aws_secretsmanager_secret.database-url.arn
     RPC_URL                    = module.asm-app.secret_arns["rpc-url"]
@@ -139,36 +95,17 @@ module "svc-wallet-api" {
     TENANTS_SEED               = module.asm-app.secret_arns["tenants-seed"]
     METRICS_BEARER_TOKEN       = module.asm-app.secret_arns["metrics-bearer-token"]
   }
-<<<<<<< HEAD
-  asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
-
-  # the migrate init container — wallet-api only. §9.6
-=======
 
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   # No wallet-api container ever starts against an un-migrated schema — a
   # guarantee ECS enforces rather than one a pipeline produces. §9.6
->>>>>>> main
   init_container = {
     name    = "migrate"
     command = ["node", "dist/migrate.js"]
     secrets = { DATABASE_URL = aws_secretsmanager_secret.database-url.arn }
   }
 
-<<<<<<< HEAD
-  alb_enabled                       = true
-  alb_listener_arn                  = aws_lb_listener.https.arn
-  alb_rule_priority                 = 10
-  alb_host_headers                  = [local.hosts.api]
-  health_check_path                 = "/healthz"
-  health_check_grace_period_seconds = 120 # must outlast the slowest migration — §9.6
-
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
   alb_enabled       = true
   alb_listener_arn  = aws_lb_listener.https.arn
   alb_rule_priority = 10
@@ -181,30 +118,10 @@ module "svc-wallet-api" {
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nodejs"
-
-  additional_tags = local.default_tags
-}
-
-# ── wallet-web — rule 40, wallet.* + every stock-UI tenant host — §9.2, §14.3 ───────────────
-module "svc-wallet-web" {
-  source = "./modules/aws/ecs-service"
-
-  name_prefix  = local.name_prefix
-  service      = "wallet-web"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-=======
   datadog_source      = local.ecs_services["wallet-api"].datadog_source
 
   additional_tags = { service = "wallet-api" }
@@ -228,48 +145,10 @@ module "svc-wallet-web" {
   aws_region   = local.service_defaults.aws_region
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
->>>>>>> main
 
-  image              = "${module.ecr["wallet-web"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-web"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-web"].repository_arn
-<<<<<<< HEAD
-  cpu                = 256
-  memory             = 1024
-  app_memory         = 512
-  container_port     = 8080
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.tasks-sg.id]
-
-  environment = {
-    GIANO_CHAIN_ID             = var.chain_id
-    GIANO_BUNDLER_URL          = "https://${local.hosts.api}/v1/userops" # R3
-    GIANO_WALLET_API_UPSTREAM  = "http://wallet-api.${local.name_prefix}.local:8080"
-    GIANO_SPONSORSHIP_MODE     = "service"
-    GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
-    GIANO_BRAND_NAME           = var.example_brand_name
-    GIANO_CSP_CONNECT_SRC      = var.rpc_origin
-    # GIANO_RP_ID deliberately unset — load-bearing, §3.4, §14.3
-  }
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
-  asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
-
-  alb_enabled                       = true
-  alb_listener_arn                  = aws_lb_listener.https.arn
-  alb_rule_priority                 = 40 # placed LAST of the wallet rules — §5.7
-  alb_host_headers                  = local.stock_ui_wallet_hosts
-  health_check_path                 = "/"
-  health_check_grace_period_seconds = 30
-
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
 
   cpu            = 256
   memory         = 1024
@@ -326,30 +205,10 @@ module "svc-wallet-web" {
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nginx"
-
-  additional_tags = local.default_tags
-}
-
-# ── custom-example — rule 20, example.* — §9.2, §14.4 ───────────────────────────────────────
-module "svc-custom-example" {
-  source = "./modules/aws/ecs-service"
-
-  name_prefix  = local.name_prefix
-  service      = "custom-example"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-=======
   datadog_source      = local.ecs_services["wallet-web"].datadog_source
 
   additional_tags = { service = "wallet-web" }
@@ -371,33 +230,10 @@ module "svc-custom-example" {
   aws_region   = local.service_defaults.aws_region
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
->>>>>>> main
 
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["example"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["example"].repository_arn
-<<<<<<< HEAD
-  cpu                = 256
-  memory             = 1024
-  app_memory         = 512
-  container_port     = 8080
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.tasks-sg.id]
-
-  environment = {
-    GIANO_CHAIN_ID   = var.chain_id
-    GIANO_CHAIN_NAME = "Base Sepolia"
-    GIANO_CHAIN_B_ID = "0" # single-chain — the config explicitly supports this
-    GIANO_WALLET_URL = "https://${local.tenant_hosts.example.wallet}"
-    GIANO_APP_LABEL  = var.example_brand_name
-    # GIANO_TEST_ERC20 unset — the devnet default address is meaningless on 84532
-  }
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
-=======
 
   cpu            = 256
   memory         = 1024
@@ -428,7 +264,6 @@ module "svc-custom-example" {
     GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
   }
 
->>>>>>> main
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled       = true
@@ -437,28 +272,13 @@ module "svc-custom-example" {
   alb_host_headers  = [local.tenant_hosts.example.dapp]
   health_check_path = "/"
 
-<<<<<<< HEAD
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nginx"
-
-  additional_tags = local.default_tags
-}
-
-# ── custom-example-byoui — rule 25, byoui.* — the SAME image, two values differ — §9.2, §14.4
-=======
   datadog_source      = local.ecs_services["custom-example"].datadog_source
 
   additional_tags = { service = "custom-example", tenant = "example" }
@@ -470,44 +290,10 @@ module "svc-custom-example" {
 # the whole reason a second instance exists rather than a wallet picker in the
 # UI. §14.4
 
->>>>>>> main
 module "svc-custom-example-byoui" {
   count  = var.byo_wallet_enabled[terraform.workspace] ? 1 : 0
   source = "./modules/aws/ecs-service"
 
-<<<<<<< HEAD
-  name_prefix  = local.name_prefix
-  service      = "custom-example-byoui"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}" # same image as custom-example
-  image_tag          = var.image_tag
-  ecr_repository_arn = module.ecr["example"].repository_arn
-  cpu                = 256
-  memory             = 1024
-  app_memory         = 512
-  container_port     = 8080
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.tasks-sg.id]
-
-  environment = {
-    GIANO_CHAIN_ID   = var.chain_id
-    GIANO_CHAIN_NAME = "Base Sepolia"
-    GIANO_CHAIN_B_ID = "0"
-    GIANO_WALLET_URL = "https://${local.tenant_hosts.byoui.wallet}" # the whole difference from custom-example
-    GIANO_APP_LABEL  = var.byoui_brand_name
-  }
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
-=======
   name_prefix = local.name_prefix
   service     = "custom-example-byoui"
 
@@ -517,8 +303,8 @@ module "svc-custom-example-byoui" {
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
 
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["example"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["example"].repository_arn
 
   cpu            = 256
@@ -545,7 +331,6 @@ module "svc-custom-example-byoui" {
     GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
   }
 
->>>>>>> main
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled       = true
@@ -554,30 +339,13 @@ module "svc-custom-example-byoui" {
   alb_host_headers  = [local.tenant_hosts.byoui.dapp]
   health_check_path = "/"
 
-<<<<<<< HEAD
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nginx"
-
-  additional_tags = local.default_tags
-}
-
-# ── wallet-byo — rule 35, wallet.byoui.* — tenant byoui's OWN SPA — §9.2, §14.5 ─────────────
-# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, which
-# is what makes the open-relay vector unreachable here regardless of BYO_BUNDLER_PROXY_ENABLED.
-=======
   datadog_source      = local.ecs_services["custom-example-byoui"].datadog_source
 
   additional_tags = { service = "custom-example-byoui", tenant = "byoui" }
@@ -591,21 +359,10 @@ module "svc-custom-example-byoui" {
 # it is a public unauthenticated bundler relay that bypasses wallet-api's
 # policy check and drains the Alto executor. Runbook step 13 verifies it.
 
->>>>>>> main
 module "svc-wallet-byo" {
   count  = var.byo_wallet_enabled[terraform.workspace] ? 1 : 0
   source = "./modules/aws/ecs-service"
 
-<<<<<<< HEAD
-  name_prefix  = local.name_prefix
-  service      = "wallet-byo"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-=======
   name_prefix = local.name_prefix
   service     = "wallet-byo"
 
@@ -614,48 +371,10 @@ module "svc-wallet-byo" {
   aws_region   = local.service_defaults.aws_region
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
->>>>>>> main
 
-  image              = "${module.ecr["wallet-byo"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-byo"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-byo"].repository_arn
-<<<<<<< HEAD
-  cpu                = 256
-  memory             = 1024
-  app_memory         = 512
-  container_port     = 8080
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.tasks-sg.id] # NOT bundler-sg — R11
-
-  environment = {
-    BYO_WALLET_PORT           = "8080"
-    WALLET_API_UPSTREAM       = "http://wallet-api.${local.name_prefix}.local:8080"
-    CHAIN_ID                  = var.chain_id
-    SPONSORSHIP_MODE          = "service"
-    BYO_BUNDLER_PROXY_ENABLED = "false" # R11 — must stay disabled; service mode never needs it
-    BYO_ALLOWED_DAPP_ORIGINS  = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
-    FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
-    # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
-    # CHAIN_B_ID unset — single-chain, the second chain falls away
-  }
-  secret_arns = {
-    RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url"]
-  }
-  asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
-
-  alb_enabled       = true
-  alb_listener_arn  = aws_lb_listener.https.arn
-  alb_rule_priority = 35 # ABOVE rule 40 — a defensive ordering, §5.7
-  alb_host_headers  = [local.tenant_hosts.byoui.wallet]
-  health_check_path = "/"
-
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
 
   cpu            = 256
   memory         = 1024
@@ -713,30 +432,10 @@ module "svc-wallet-byo" {
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nodejs"
-
-  additional_tags = local.default_tags
-}
-
-# ── paymaster-admin — rule 30, paymaster.* — §9.2, §14.6 ────────────────────────────────────
-module "svc-paymaster-admin" {
-  source = "./modules/aws/ecs-service"
-
-  name_prefix  = local.name_prefix
-  service      = "paymaster-admin"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-=======
   datadog_source      = local.ecs_services["wallet-byo"].datadog_source
 
   additional_tags = { service = "wallet-byo", tenant = "byoui" }
@@ -759,31 +458,10 @@ module "svc-paymaster-admin" {
   aws_region   = local.service_defaults.aws_region
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
->>>>>>> main
 
-  image              = "${module.ecr["paymaster-admin"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["paymaster-admin"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["paymaster-admin"].repository_arn
-<<<<<<< HEAD
-  cpu                = 256
-  memory             = 1024
-  app_memory         = 512
-  container_port     = 8080
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.tasks-sg.id]
-
-  environment = {
-    GIANO_CHAIN_ID          = var.chain_id
-    GIANO_PAYMASTER_ADDRESS = var.paymaster_address # the registry has no entry — must be set
-    GIANO_ENVIRONMENT_LABEL = "dev (Base Sepolia)"
-    GIANO_REFRESH_SECONDS   = "15"
-  }
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
-=======
 
   cpu            = 256
   memory         = 1024
@@ -810,7 +488,6 @@ module "svc-paymaster-admin" {
     GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
   }
 
->>>>>>> main
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled       = true
@@ -819,39 +496,13 @@ module "svc-paymaster-admin" {
   alb_host_headers  = [local.hosts.paymaster]
   health_check_path = "/"
 
-<<<<<<< HEAD
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nginx"
-
-  additional_tags = local.default_tags
-}
-
-# ── bundler — NO ALB target — §9.2, §14.7 ────────────────────────────────────────────────────
-module "svc-bundler" {
-  source = "./modules/aws/ecs-service"
-
-  name_prefix  = local.name_prefix
-  service      = "bundler"
-  project_name = var.project_name
-
-  cluster_arn  = aws_ecs_cluster.ecs.arn
-  cluster_name = aws_ecs_cluster.ecs.name
-  aws_region   = var.aws_region[terraform.workspace]
-  account_id   = data.aws_caller_identity.current.account_id
-=======
   datadog_source      = local.ecs_services["paymaster-admin"].datadog_source
 
   additional_tags = { service = "paymaster-admin" }
@@ -874,27 +525,10 @@ module "svc-bundler" {
   aws_region   = local.service_defaults.aws_region
   account_id   = local.service_defaults.account_id
   project_name = local.service_defaults.project_name
->>>>>>> main
 
-  image              = "${module.ecr["bundler"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["bundler"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["bundler"].repository_arn
-<<<<<<< HEAD
-  cpu                = 512
-  memory             = 2048
-  app_memory         = 1024
-  container_port     = 4337
-  desired_count      = var.ecs_desired_count[terraform.workspace]
-
-  subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
-  security_group_ids = [aws_security_group.bundler-sg.id] # reachable only from the tasks SG
-
-  environment = {
-    ALTO_ENTRYPOINTS = var.entrypoint_address
-    ALTO_SAFE_MODE   = "true" # a real chain — safe mode needs a trace-capable RPC
-    # GIANO_DEV_MODE deliberately unset — keeps the Anvil-key guard armed
-  }
-=======
 
   cpu            = 512
   memory         = 2048
@@ -914,22 +548,11 @@ module "svc-bundler" {
     # GIANO_DEV_MODE unset: the entrypoint's Anvil-key guard stays armed.
   }
 
->>>>>>> main
   secret_arns = {
     ALTO_RPC_URL               = module.asm-app.secret_arns["rpc-url"]
     ALTO_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]
     ALTO_UTILITY_PRIVATE_KEY   = module.asm-app.secret_arns["alto-utility-key"]
   }
-<<<<<<< HEAD
-  asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
-
-  alb_enabled = false # no target group, no listener rule, no hostname
-
-  vpc_id                 = aws_vpc.vpc.id
-  service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
-  log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
-  enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
-=======
 
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -938,18 +561,11 @@ module "svc-bundler" {
   enable_execute_command = var.ecs_enable_execute_command[terraform.workspace]
   wait_for_steady_state  = var.ecs_wait_for_steady_state
   log_retention_in_days  = var.log_retention_in_days[terraform.workspace]
->>>>>>> main
 
   datadog_enabled     = var.datadog_enabled[terraform.workspace]
   datadog_site        = var.datadog_site
   datadog_api_key_arn = aws_secretsmanager_secret.datadog-api-key.arn
-<<<<<<< HEAD
-  datadog_source      = "nodejs"
-
-  additional_tags = local.default_tags
-=======
   datadog_source      = local.ecs_services["bundler"].datadog_source
 
   additional_tags = { service = "bundler" }
->>>>>>> main
 }

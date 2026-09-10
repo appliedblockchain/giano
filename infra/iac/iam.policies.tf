@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-# standalone IAM policy documents that are not one-to-one with a resource elsewhere — §10.2,
-# §17.2. The EventBridge Scheduler execution role: ecs:UpdateService on this cluster's
-# services only, never on the whole account.
-=======
 # Every policy in this file is built with data.aws_iam_policy_document. There
 # is no templates/ directory and no .json.tpl anywhere in this tree: a
 # template is unvalidated string interpolation, where a missing comma or an
@@ -74,7 +69,6 @@ data "aws_iam_policy_document" "provision-sponsorship-exec" {
 }
 
 # --- EventBridge Scheduler. §17.2 -----------------------------------------
->>>>>>> main
 
 data "aws_iam_policy_document" "scheduler_assume" {
   statement {
@@ -93,26 +87,17 @@ data "aws_iam_policy_document" "scheduler_assume" {
   }
 }
 
-<<<<<<< HEAD
-data "aws_iam_policy_document" "scheduler_update_service" {
-  statement {
-    sid     = "UpdateServiceDesiredCount"
-    actions = ["ecs:UpdateService", "ecs:DescribeServices"]
-=======
 data "aws_iam_policy_document" "scheduler" {
   statement {
     sid     = "UpdateThisClustersServices"
     actions = ["ecs:UpdateService"]
 
     # This cluster's services only.
->>>>>>> main
     resources = [
       "arn:aws:ecs:${var.aws_region[terraform.workspace]}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.ecs.name}/*",
     ]
   }
 }
-<<<<<<< HEAD
-=======
 
 # --- GitHub Actions. §10.5 ------------------------------------------------
 
@@ -199,4 +184,3 @@ data "aws_iam_policy_document" "gha_deploy" {
     }
   }
 }
->>>>>>> main

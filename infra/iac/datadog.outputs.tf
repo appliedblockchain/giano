@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-output "datadog_site" {
-  value = var.datadog_site
-=======
 output "datadog_monitor_ids" {
   description = "the monitors created for this environment, by name"
   value = merge(
@@ -15,5 +11,4 @@ output "datadog_monitor_ids" {
       "certificate-expiry" = module.datadog_monitor_certificate_expiry[0].id
     } : {},
   )
->>>>>>> main
 }

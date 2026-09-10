@@ -1,10 +1,5 @@
-<<<<<<< HEAD
-# §7.5 — neither output is sensitive, because neither is a value. There is no output that
-# returns one.
-=======
 # Neither output is sensitive, because neither is a value. There is no output
 # that returns one. §7.5
->>>>>>> main
 
 output "secret_arns" {
   description = "{ key => secret ARN } — for ECS `secrets` blocks and IAM policies"

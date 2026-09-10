@@ -1,40 +1,3 @@
-<<<<<<< HEAD
-# §9.2, §13, §14, §20
-
-variable "image_tag" {
-  description = "the commit SHA to deploy — set by the deploy workflow (§15), TF_VAR_image_tag rather than a committed default in CI"
-=======
-# --- Delivery -------------------------------------------------------------
-
-variable "image_tag" {
-  description = "[REQUIRED] the tag every service runs. Tags are the commit SHA, never `latest`, and ECR is IMMUTABLE — so the default will not resolve and the first apply's services fail to start, which §18 step 5 says to expect. CI passes -var image_tag=<sha>"
->>>>>>> main
-  type        = string
-  default     = "latest"
-}
-
-<<<<<<< HEAD
-variable "ecs_desired_count" {
-  description = "1 in dev (D9 — the schedule owns the rest), 2 in stg/prd — §20"
-  type        = map(number)
-  default     = { dev = 1, stg = 1, prd = 2 }
-}
-
-variable "log_retention_in_days" {
-  description = "the log router's own CloudWatch group — §9.5"
-  type        = map(number)
-  default     = { dev = 7, stg = 7, prd = 30 }
-}
-
-variable "ecs_enable_execute_command" {
-  description = "on in dev, off in prd — §20"
-  type        = map(bool)
-  default     = { dev = true, stg = true, prd = false }
-}
-
-variable "byo_wallet_enabled" {
-  description = "dev-only: a real BYO tenant hosts its own UI, so stg/prd carry the tenant row and nothing else (D17, §9.2, §20)"
-=======
 # --- Ports ----------------------------------------------------------------
 
 variable "container_port" {
@@ -59,57 +22,10 @@ variable "ecs_desired_count" {
 
 variable "ecs_enable_execute_command" {
   description = "[REQUIRED] `aws ecs execute-command`, per environment — on in dev, off in prd"
->>>>>>> main
   type        = map(bool)
   default     = { dev = true, stg = false, prd = false }
 }
 
-<<<<<<< HEAD
-# ── Chain — §13 ──────────────────────────────────────────────────────────────────────────────
-variable "chain_id" {
-  description = "Base Sepolia — D2"
-  type        = string
-  default     = "84532"
-}
-
-variable "entrypoint_address" {
-  description = "EntryPoint v0.7 — canonical at the same address on every chain"
-  type        = string
-  default     = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
-}
-
-# ⚠ REQUIRED, no default. §13.1: the GianoPaymaster proxy is not frozen in the contracts
-# registry for 84532, so this must be a real deployed proxy or sponsorship cannot work at all.
-variable "paymaster_address" {
-  description = "the deployed GianoPaymaster proxy address for this chain — §13.1, deploy it BEFORE the first apply that enables sponsorship"
-  type        = string
-  default     = "0xf98b56de62ce88cEb70A9155582248cDBf2D0718"
-}
-
-# ⚠ REQUIRED for wallet-byo only (§14.5) — its bundle has no registry dependency, unlike
-# wallet-api and wallet-web which default correctly from the contracts registry.
-variable "factory_address" {
-  description = "GianoSmartWalletFactory address — required by wallet-byo's serve.mjs, which has no contracts-registry dependency"
-  type        = string
-  default     = "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050"
-}
-
-variable "rpc_origin" {
-  description = "the RPC origin only (not the keyed URL) — space-separated additions to wallet-web's CSP connect-src. Not a secret; the URL that embeds the key is (§14.3)"
-  type        = string
-  default     = "https://base-sepolia.g.alchemy.com"
-}
-
-# ── Branding — §14.3, §14.4 ─────────────────────────────────────────────────────────────────
-variable "example_brand_name" {
-  type    = string
-  default = "Giano Example"
-}
-
-variable "byoui_brand_name" {
-  type    = string
-  default = "Giano Example (BYO UI)"
-=======
 variable "ecs_wait_for_steady_state" {
   description = "[OPTIONAL] block the apply until every service stabilises. CI sets this so a failed deploy fails the workflow; a human running plan/apply usually does not want to wait"
   type        = bool
@@ -167,5 +83,4 @@ variable "entrypoint_address" {
   description = "[REQUIRED] EntryPoint v0.7 — canonical at the same address on every chain"
   type        = string
   default     = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
->>>>>>> main
 }
