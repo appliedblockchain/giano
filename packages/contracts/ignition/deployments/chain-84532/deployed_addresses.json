@@ -1,4 +1,7 @@
 {
   "GianoAccountFactory#GianoSmartWallet": "0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56",
-  "GianoAccountFactory#GianoSmartWalletFactory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050"
+  "GianoAccountFactory#GianoSmartWalletFactory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+  "GianoPaymaster#GianoPaymaster": "0xFc6e7a0b9b5E9E27C8E2caf8961A13FD16ebd818",
+  "GianoPaymaster#GianoPaymasterDeployer": "0xD90a7Ec5724DA9f30D3224Eb68d39B2790b36b09",
+  "GianoPaymaster#SponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718"
 }
