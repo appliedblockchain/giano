@@ -7,10 +7,18 @@ name: Docker images
 # wallet host-side from source rather than as images — so without this a broken Dockerfile
 # first surfaces in the job that publishes it.
 #
+# Each arch builds on its own NATIVE runner and is pushed by digest; a merge job then joins
+# the two digests into one manifest list. The previous shape — one job, both platforms, arm64
+# under QEMU via setup-qemu-action — cost roughly 8x on the emulated leg (wallet-web:
+# `pnpm install` 17.7s amd64 vs 107s arm64, the workspace build 49.6s vs 404.2s) and, worse,
+# `pnpm install` under emulation intermittently deadlocked outright, burning the full 6h job
+# timeout on a random image per run. Native arm64 runners are free for public repositories.
+#
 # Two registries, one build. GHCR is how Giano is DISTRIBUTED to client projects; ECR is how
-# the dev DEPLOYMENT is fed (specs/INFRASTRUCTURE.md §11, §15, §16.2). Because both tag sets
-# feed a single build-push-action, the digest in ECR is the one that was validated here and
-# published to GHCR — not a rebuild that happens to come from the same commit.
+# the dev DEPLOYMENT is fed (specs/INFRASTRUCTURE.md §11, §15, §16.2). The per-arch digests
+# are pushed to GHCR only; the merge job assembles the list there and then copies that exact
+# list into ECR by digest, so the bytes in ECR are the ones that were validated and published
+# to GHCR — not a rebuild that happens to come from the same commit.
 on:
   push:
     branches: [main]
@@ -33,6 +41,7 @@ env:
   ECR_NAMESPACE: giano-dev
   AWS_REGION: eu-west-2
   AWS_ROLE_ARN: arn:aws:iam::379937780633:role/giano-dev-gha-deploy
+  GHCR_NAMESPACE: ghcr.io/appliedblockchain
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -40,49 +49,78 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  images:
-    name: Build ${{ matrix.image.name }}
+  # The image list lives here and nowhere else. `build` fans it out across two arches and
+  # `merge` walks it once, so holding it in either matrix directly would mean two copies that
+  # drift the first time an image is added.
+  setup:
+    name: Enumerate images
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+    steps:
+      - id: list
         # `ecr` is the repository under ${ECR_NAMESPACE}, or '' for an image this deployment
         # does not run. Six repositories, deliberately not eight — infra/iac/ecr.vars.tf.
         # Empty rather than absent: an unset key compares equal to '' only through GitHub's
         # null-to-number coercion, which is not a rule to rest a publish decision on.
-        image:
-          - name: giano-wallet-api
-            dockerfile: services/wallet-api/Dockerfile
-            ecr: wallet-api
-          - name: giano-wallet-web
-            dockerfile: services/wallet-web/Dockerfile
-            ecr: wallet-web
-          - name: giano-paymaster-admin
-            dockerfile: services/paymaster-admin/Dockerfile
-            ecr: paymaster-admin
-          # The demo dApp. ONE image runs twice in the deployment — as custom-example and
-          # custom-example-byoui, differing only in GIANO_WALLET_URL and GIANO_APP_LABEL —
-          # which is why infra/iac has six ECR repositories for seven services.
-          - name: giano-example
-            dockerfile: services/custom-example/Dockerfile
-            ecr: example
-          # Tenant `byoui`'s wallet origin: the reference SPA a real BYO tenant copies. It
-          # lives under e2e/ because it is also the e2e fixture, and it is the only published
-          # image Giano would not run in a real deployment — a real BYO tenant hosts its own
-          # UI, so it is deployed in dev only (infra/iac var.byo_wallet_enabled).
-          - name: giano-wallet-byo
-            dockerfile: e2e/wallet-byo/Dockerfile
-            ecr: wallet-byo
-          - name: giano-bundler
-            dockerfile: services/bundler/Dockerfile
-            ecr: bundler
-          # GHCR only: neither is deployed to AWS, so neither has an ECR repository (§11).
-          - name: giano-devnet
-            dockerfile: services/devnet/Dockerfile
-            ecr: ''
-          - name: giano-contracts-deployer
-            dockerfile: packages/contracts/Dockerfile.deployer
-            ecr: ''
+        #
+        # giano-example is the demo dApp: ONE image runs twice in the deployment — as
+        # custom-example and custom-example-byoui, differing only in GIANO_WALLET_URL and
+        # GIANO_APP_LABEL — which is why infra/iac has six ECR repositories for seven
+        # services. giano-wallet-byo is tenant `byoui`'s wallet origin, the reference SPA a
+        # real BYO tenant copies; it lives under e2e/ because it is also the e2e fixture, and
+        # it is the only published image Giano would not run in a real deployment — a real
+        # BYO tenant hosts its own UI, so it is deployed in dev only (infra/iac
+        # var.byo_wallet_enabled). giano-devnet and giano-contracts-deployer are GHCR only:
+        # neither is deployed to AWS, so neither has an ECR repository (§11).
+        run: |
+          cat > images.json <<'JSON'
+          [
+            { "name": "giano-wallet-api",
+              "dockerfile": "services/wallet-api/Dockerfile",
+              "ecr": "wallet-api" },
+            { "name": "giano-wallet-web",
+              "dockerfile": "services/wallet-web/Dockerfile",
+              "ecr": "wallet-web" },
+            { "name": "giano-paymaster-admin",
+              "dockerfile": "services/paymaster-admin/Dockerfile",
+              "ecr": "paymaster-admin" },
+            { "name": "giano-example",
+              "dockerfile": "services/custom-example/Dockerfile",
+              "ecr": "example" },
+            { "name": "giano-wallet-byo",
+              "dockerfile": "e2e/wallet-byo/Dockerfile",
+              "ecr": "wallet-byo" },
+            { "name": "giano-bundler",
+              "dockerfile": "services/bundler/Dockerfile",
+              "ecr": "bundler" },
+            { "name": "giano-devnet",
+              "dockerfile": "services/devnet/Dockerfile",
+              "ecr": "" },
+            { "name": "giano-contracts-deployer",
+              "dockerfile": "packages/contracts/Dockerfile.deployer",
+              "ecr": "" }
+          ]
+          JSON
+          jq -e . images.json > /dev/null
+          echo "images=$(jq -c . images.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.image.name }} (${{ matrix.platform.arch }})
+    needs: setup
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.setup.outputs.images) }}
+        # Native runners on both legs — no setup-qemu-action, no binfmt, no emulation. arm64
+        # is the arch that actually gets deployed (ECS runs ARM64: infra/iac ecs-service.tf,
+        # ecs_tasks_oneshot.tf), so it stays on every event, PRs included.
+        platform:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -90,8 +128,6 @@ jobs:
           # `solady` through foundry's libs auto-remapping from packages/contracts/lib/solady
           # — a submodule, not an npm dep. Without it: HH411, solady is not installed.
           submodules: recursive
-      - uses: docker/setup-qemu-action@v4
-        # binfmt for the emulated linux/arm64 leg
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         # no registry credentials on PRs — nothing is pushed, and a fork PR has none
@@ -100,6 +136,99 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        id: build
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/${{ matrix.platform.arch }}
+          # Pushed by digest under no tag at all; `merge` is what attaches tags. On a PR the
+          # expression is empty, so the image is built and discarded — the Dockerfile is
+          # still exercised on both arches, which is the whole point of building on a PR.
+          outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.GHCR_NAMESPACE, matrix.image.name) || '' }}
+          # No provenance attestation. It publishes an extra untagged attestation manifest
+          # per image, and the ECR lifecycle policy expires on `tagStatus: any` past
+          # var.ecr_lifecycle_image_count images — 30 in dev (infra/iac/ecr.vars.tf,
+          # modules/aws/ecr/ecr.tf) — so attestations would spend a retention budget that is
+          # a floor for the pinned var.image_tag, not just a cost setting.
+          provenance: false
+          # Scoped per image AND per arch. The default scope is shared by every build in the
+          # repository, so sixteen jobs would evict each other's layers on every run and each
+          # would then read back a cache written by a different image.
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          # PRs read main's cache but never write: branch cache entries are invisible to main
+          # and would only evict it from the repo's shared 10GB budget
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}-{1}', matrix.image.name, matrix.platform.arch) || '' }}
+
+      # The digest is the only thing `merge` needs, and an empty file named for it is the
+      # smallest artifact that carries one. Two arches upload two artifacts per image; merge
+      # collects them back by name pattern.
+      - name: Export the digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish ${{ matrix.image.name }}
+    needs: [setup, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.setup.outputs.images) }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-${{ matrix.image.name }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.GHCR_NAMESPACE }}/${{ matrix.image.name }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      # One manifest list per image, assembled from the two per-arch digests.
+      - name: Create the manifest list on GHCR
+        id: ghcr
+        working-directory: /tmp/digests
+        run: |
+          image="$GHCR_NAMESPACE/${{ matrix.image.name }}"
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$image@sha256:%s " *)
+          # Resolve the list's own digest through a tag that cannot move: `latest` is
+          # rewritten by every main build, so reading it back would race a concurrent run.
+          # The type=sha tag is unique to this commit — taken from metadata-action's own
+          # output rather than rebuilt from $GITHUB_SHA, so the short-sha length stays the
+          # action's business and not a constant duplicated here.
+          ref=$(jq -r '[.tags[] | select(contains(":sha-"))] + .tags | first' \
+                  <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          list=$(docker buildx imagetools inspect "$ref" \
+                   --format '{{json .Manifest}}' | jq -r .digest)
+          echo "resolved $ref -> $list"
+          echo "digest=$list" >> "$GITHUB_OUTPUT"
 
       # --- ECR ------------------------------------------------------------------------
       # Gated on the REF, not the event. `giano-dev-gha-deploy` trusts
@@ -138,47 +267,17 @@ jobs:
           else
             echo 'push=true' >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: docker/metadata-action@v6
-        id: meta
-        with:
-          images: ghcr.io/appliedblockchain/${{ matrix.image.name }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha
-      - uses: docker/metadata-action@v6
-        id: meta-ecr
+      - name: Copy the manifest list to ECR
         if: steps.ecr.outputs.push == 'true'
-        with:
-          images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_NAMESPACE }}/${{ matrix.image.ecr }}
-          # The full commit SHA and nothing else. `latest` is not repushable to an IMMUTABLE
-          # repository, and the tag is consumed verbatim — `terraform apply -var
-          # image_tag=<sha>` (infra/iac/ecs_services.vars.tf) — so it is the 40-character
-          # $GITHUB_SHA, not metadata-action's default `sha-<short>`.
-          tags: type=sha,format=long,prefix=
-
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ${{ matrix.image.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
-          # both arches on every event, PRs included: ECS runs ARM64 (infra/iac
-          # ecs-service.tf, ecs_tasks_oneshot.tf), so arm64 is the leg that actually gets
-          # deployed — validating only amd64 on a PR would skip the one that matters
-          platforms: linux/amd64,linux/arm64
-          # GHCR always, ECR when this ref may push there. metadata-action contributes
-          # nothing when skipped, and an empty entry in the list is ignored.
-          tags: |
-            ${{ steps.meta.outputs.tags }}
-            ${{ steps.meta-ecr.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # No provenance attestation. It publishes an extra untagged attestation manifest
-          # per image, and the ECR lifecycle policy expires on `tagStatus: any` past 10
-          # images (infra/iac/modules/aws/ecr/ecr.tf) — so attestations would spend the
-          # retention budget that is meant to hold ten deployable commits.
-          provenance: false
-          cache-from: type=gha
-          # PRs read main's cache but never write: branch cache entries are invisible to main
-          # and would only evict it from the repo's shared 10GB budget
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
+        # The full commit SHA and nothing else. `latest` is not repushable to an IMMUTABLE
+        # repository, and the tag is consumed verbatim — `terraform apply -var
+        # image_tag=<sha>` (infra/iac/ecs_services.vars.tf) — so it is the 40-character
+        # $GITHUB_SHA, not metadata-action's default `sha-<short>`.
+        #
+        # The source is the GHCR list BY DIGEST, so this re-tags the manifest that was just
+        # published rather than rebuilding it: the same digest lands in both registries by
+        # construction, which is what the old single-build-two-tag-sets shape guaranteed.
+        run: |
+          docker buildx imagetools create \
+            --tag "$ECR_REGISTRY/$ECR_NAMESPACE/${{ matrix.image.ecr }}:$GITHUB_SHA" \
+            "$GHCR_NAMESPACE/${{ matrix.image.name }}@${{ steps.ghcr.outputs.digest }}"
