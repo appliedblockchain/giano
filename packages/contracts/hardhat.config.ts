@@ -39,7 +39,11 @@ const config: HardhatUserConfig = {
     },
     ['base-sepolia']: {
       enableRip7212: true,
-      url: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://base-sepolia.public.blastapi.io',
+      // publicnode, matching the `base` and `sepolia` defaults below. The previous default,
+      // base-sepolia.public.blastapi.io, is dead: it answers every call with "Blast API is no
+      // longer available", which surfaces as an unrelated-looking ProviderError on the chain-id
+      // check before any deployment work starts.
+      url: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://base-sepolia-rpc.publicnode.com',
       accounts: process.env.BASE_PRIVATE_KEY ? [process.env.BASE_PRIVATE_KEY] : [],
       chainId: 84532,
     },

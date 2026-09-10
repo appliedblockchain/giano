@@ -80,13 +80,42 @@ echo "    deploy key : $DEPLOYER_ADDR — $BALANCE ETH (gas only, ends with no r
 echo "    role admin : $ROLE_ADMIN (from $NETWORK.json — not signed for here)"
 echo
 
+# Ignition's exit code covers the whole DEPLOYMENT ID, not this module. The deployment directory
+# is shared — chain-84532 also holds the factory module — and an unrelated future left incomplete
+# there fails the run even when every paymaster future succeeded. That happened on the real Base
+# Sepolia deploy: GianoAccountFactory#GianoSmartWallet is stuck at NETWORK_INTERACTION_REQUEST in
+# the committed journal, so `[ GianoPaymaster ] failed` was reported over a correct deployment.
+#
+# Under `set -e` that exit code aborted the script here, hiding both the verification and the
+# runbook — the opposite of useful. So the code is captured, and the on-chain state decides: what
+# the chain says about the paymaster is authoritative, and Ignition's bookkeeping is reported
+# alongside it rather than overriding it.
+set +e
 pnpm run hh:deploy:paymaster --network "$NETWORK" --parameters "$PARAMS"
+IGNITION_EXIT=$?
+set -e
 
 PROXY="$(node -e "
   const path = './ignition/deployments/chain-$CHAIN_ID/deployed_addresses.json';
   console.log(require(path)['GianoPaymaster#SponsorshipPaymaster'] ?? '');
-")"
-[ -n "$PROXY" ] || { echo "ERROR: no proxy address in the Ignition deployment for chain $CHAIN_ID"; exit 1; }
+" 2>/dev/null)"
+if [ -z "$PROXY" ]; then
+  echo
+  echo "ERROR: Ignition recorded no paymaster proxy for chain $CHAIN_ID (exit $IGNITION_EXIT)."
+  echo "       Nothing was deployed, or the deployment directory is not readable."
+  exit 1
+fi
+
+if [ "$IGNITION_EXIT" != "0" ]; then
+  echo
+  echo "⚠ Ignition exited $IGNITION_EXIT, but it recorded the proxy at $PROXY."
+  echo "  Its exit code covers every future in deployment id chain-$CHAIN_ID, including modules"
+  echo "  other than this one. The on-chain checks below are what decide whether THIS deployment"
+  echo "  is good. Incomplete futures in that deployment id:"
+  npx hardhat ignition status "chain-$CHAIN_ID" 2>&1 | sed 's/^/    /' || true
+  echo "  Do not retry with --reset: it re-runs from scratch and CreateX reverts with"
+  echo "  FailedContractCreation, because the contracts already occupy their addresses."
+fi
 
 # Check what the deploy was actually for: the right address, the role on the right account, and
 # nothing left on the deploy key. All read-only, so none of it needs the role admin's key. A wrong
@@ -94,6 +123,7 @@ PROXY="$(node -e "
 # deploy key, which is the one outcome the split exists to prevent.
 echo
 echo "==> verifying the deployment"
+set +e
 PROXY="$PROXY" ROLE_ADMIN="$ROLE_ADMIN" DEPLOYER_ADDR="$DEPLOYER_ADDR" RPC="$RPC" npx ts-node -e "
 import { JsonRpcProvider, Contract, getAddress } from 'ethers';
 import { CANONICAL_SPONSORSHIP_PAYMASTER } from './canonical';
@@ -133,6 +163,15 @@ const check = (ok: boolean, label: string, detail: string) => {
   process.exit(1);
 });
 "
+VERIFY_EXIT=$?
+set -e
+
+if [ "$VERIFY_EXIT" != "0" ]; then
+  echo
+  echo "ERROR: the deployed paymaster is not in the expected state (see the ✗ above)."
+  echo "       Not printing the provisioning runbook — fix this first."
+  exit 1
+fi
 
 cat <<NEXT
 
@@ -162,12 +201,10 @@ cat <<NEXT
          … provision:paymaster -- --paymaster $PROXY \\
            --tenant <uuid>:<withdrawAddress>:<slug>:<fundEth>
 
-    3. Register the address so the SDK and the doctor default to it. Add to
-       packages/contracts/address-overrides.json:
-
-         "$CHAIN_ID": { "sponsorshipPaymaster": "$PROXY" }
-
-       then regenerate and commit both:
+    3. Register the address so the SDK and the doctor default to it. gen:addresses reads
+       the Ignition deployment record this run just wrote, so no hand-edited
+       address-overrides.json entry is needed — just regenerate and commit
+       addresses.ts along with ignition/deployments/chain-$CHAIN_ID/:
 
          pnpm --filter @appliedblockchain/giano-contracts gen:addresses
 
