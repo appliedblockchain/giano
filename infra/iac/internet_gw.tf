@@ -1,10 +1,5 @@
-<<<<<<< HEAD
 # §5.3 — one gateway, serving both directions: inbound for the ALB, outbound for the NATs.
 # No second gateway and no egress-only gateway (no IPv6 in this design).
-=======
-# One gateway, serving both directions: inbound for the ALB, outbound for the
-# NAT gateways. No egress-only gateway — there is no IPv6 in this design. §5.3
->>>>>>> main
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.vpc.id

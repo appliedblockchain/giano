@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 output "database_url_secret_arn" {
   value = aws_secretsmanager_secret.database-url.arn
 }
@@ -10,20 +9,4 @@ output "datadog_api_key_secret_arn" {
 output "app_secret_arns" {
   description = "{ key => secret ARN } for every 1Password-sourced app secret — §7.3"
   value       = module.asm-app.secret_arns
-=======
-output "secret_names" {
-  description = "every secret this environment holds, by key. Names only — there is no output that returns a value"
-  value = merge(
-    module.asm-app.secret_names,
-    {
-      "database-url"    = aws_secretsmanager_secret.database-url.name
-      "datadog-api-key" = aws_secretsmanager_secret.datadog-api-key.name
-    },
-  )
-}
-
-output "secret_inventory_versions" {
-  description = "{ key => rotation version } as read from the 1Password note — the first thing to check when a rotation 'did not take' (R6)"
-  value       = { for k, v in local.secret_inventory : k => v.version }
->>>>>>> main
 }

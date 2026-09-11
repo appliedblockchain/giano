@@ -1,17 +1,11 @@
-<<<<<<< HEAD
 # §11
 
 variable "repo_name" {
   description = "[REQUIRED] full repository name, e.g. giano-dev/wallet-api"
-=======
-variable "repo_name" {
-  description = "[REQUIRED] repository name, including the environment namespace, e.g. giano-dev/wallet-api"
->>>>>>> main
   type        = string
 }
 
 variable "image_tag_mutability" {
-<<<<<<< HEAD
   description = "[REQUIRED] MUTABLE or IMMUTABLE"
   type        = string
 }
@@ -23,39 +17,14 @@ variable "scan_on_push" {
 
 variable "lifecycle_image_count" {
   description = "[REQUIRED] number of images to keep; older images expire"
-=======
-  description = "[REQUIRED] IMMUTABLE or MUTABLE. IMMUTABLE everywhere: a tag that can be repointed means the deployed artefact cannot be identified from the console"
-  type        = string
-
-  validation {
-    condition     = contains(["IMMUTABLE", "MUTABLE"], var.image_tag_mutability)
-    error_message = "image_tag_mutability must be IMMUTABLE or MUTABLE."
-  }
-}
-
-variable "scan_on_push" {
-  description = "[REQUIRED] basic scanning on push — free"
-  type        = bool
-  default     = true
-}
-
-variable "lifecycle_image_count" {
-  description = "[REQUIRED] how many images to keep"
->>>>>>> main
   type        = number
 }
 
 variable "kms_key_arn" {
-<<<<<<< HEAD
   description = "[OPTIONAL] KMS key ARN to encrypt the repository with; null uses AES256"
   type        = string
   default     = null
   nullable    = true
-=======
-  description = "[OPTIONAL] CMK for layer encryption. null selects AES256 — image layers are not secrets, and a CMK complicates cross-account pulls later"
-  type        = string
-  default     = null
->>>>>>> main
 }
 
 variable "additional_tags" {

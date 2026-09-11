@@ -1,0 +1,240 @@
+name: Deploy
+
+# The ROLLOUT half of delivery. `docker.yml` builds and publishes images on every
+# push to main; this workflow deploys ONE of them, and the two are deliberately
+# separate because they answer to different triggers:
+#
+#   merge app code             → docker.yml publishes images tagged <sha>. Nothing deploys.
+#   merge a bump to versions.json → this workflow rolls the changed environment(s) onto that tag.
+#
+# The version is DECLARED in infra/versions.json, per environment, never inferred
+# from what is newest. Deploying is a one-line reviewed diff to that file; rolling
+# back is reverting it. specs/INFRASTRUCTURE.md §15.1.
+#
+# NO TERRAFORM RUNS HERE, by requirement — the rollout is the ECS API directly.
+#
+# Terraform writes the same attribute this workflow does, and the services do NOT
+# carry `ignore_changes = [task_definition]`. They agree because both read the
+# tag from infra/versions.json, so an apply converges on what was deployed rather
+# than fighting it. That is only true while this workflow renders a task
+# definition EQUIVALENT to Terraform's — which is what the DD_VERSION patch below
+# is for, and why the base is the live definition rather than one built here. §15.1
+on:
+  push:
+    branches: [main]
+    paths: ['infra/versions.json']
+  # Re-roll one environment's current declared tag without changing it: to
+  # replace tasks after an out-of-band change, or to recover a service the
+  # circuit breaker rolled back. Not needed after a `terraform apply` — that
+  # deploys on its own.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to re-roll onto its currently declared tag'
+        required: true
+        type: choice
+        options: [dev, stg, prd]
+
+permissions:
+  contents: read
+  # AWS OIDC. The role's own `sub` condition is what restricts who may use it —
+  # `ref:refs/heads/main` only, which is also why there is no PR half here.
+  id-token: write
+
+env:
+  ECR_REGISTRY: 379937780633.dkr.ecr.eu-west-2.amazonaws.com
+  AWS_REGION: eu-west-2
+
+jobs:
+  # Reads infra/versions.json once and turns it into the flat list of
+  # {environment, service, repo, init_container, tag} rows the deploy job's
+  # matrix runs over — rather than each matrix leg re-reading the file and
+  # possibly disagreeing with the others if main moves mid-run.
+  plan:
+    name: Work out what to deploy
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.plan.outputs.include }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: a push event needs the PREVIOUS commit's copy of
+          # versions.json to tell which environment's tag actually moved, and a
+          # shallow clone may not have `github.event.before` locally.
+          fetch-depth: 0
+
+      - id: plan
+        run: |
+          set -euo pipefail
+
+          # Which environment(s) to roll. workflow_dispatch names exactly one;
+          # a push touching versions.json can in principle bump more than one,
+          # so every environment whose value actually changed is deployed —
+          # `paths: ['infra/versions.json']` above only proves the FILE
+          # changed, not which key, and a formatting-only diff must deploy
+          # nothing.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            envs=("${{ inputs.environment }}")
+          else
+            git show "${{ github.event.before }}:infra/versions.json" > /tmp/before.json 2>/dev/null || echo '{}' > /tmp/before.json
+            envs=()
+            for e in dev stg prd; do
+              before=$(jq -r --arg e "$e" '.[$e] // ""' /tmp/before.json)
+              after=$(jq -r --arg e "$e" '.[$e] // ""' infra/versions.json)
+              [[ "$before" != "$after" ]] && envs+=("$e")
+            done
+          fi
+
+          if [[ ${#envs[@]} -eq 0 ]]; then
+            echo "::notice::no environment's declared tag changed — nothing to deploy"
+            echo "include=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # wallet-byo and custom-example-byoui exist in dev only
+          # (infra/iac/ecs_services.vars.tf var.byo_wallet_enabled) — a real BYO
+          # tenant hosts its own UI, so no other environment runs either
+          # service. Keep this list in sync with that map, not the other way
+          # round: this workflow has no Terraform and cannot read it.
+          byo_envs=(dev)
+
+          include='[]'
+          for env in "${envs[@]}"; do
+            # The registry is IMMUTABLE and tags are full commit SHAs (§11), so a
+            # malformed value is an image that does not exist. Catching it here
+            # costs a second; catching it at task placement costs a rollback.
+            tag=$(jq -er --arg e "$env" '.[$e]' infra/versions.json)
+            if ! [[ "$tag" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::infra/versions.json .$env is not a 40-character commit SHA: '$tag'"
+              exit 1
+            fi
+            echo "::notice::deploying $env @ $tag"
+
+            has_byo=false
+            for b in "${byo_envs[@]}"; do [[ "$b" == "$env" ]] && has_byo=true; done
+
+            rows=$(jq -n --arg env "$env" --arg tag "$tag" --argjson byo "$has_byo" '
+              [
+                # wallet-api ALONE has a second container on the same image: the
+                # `migrate` init container (§9.6). Both must be swapped, or new
+                # application code runs against the old migrator — silently,
+                # because the task still starts.
+                {service: "wallet-api",       repo: "wallet-api",       init_container: "migrate"},
+                {service: "wallet-web",       repo: "wallet-web",       init_container: ""},
+                {service: "custom-example",   repo: "example",          init_container: ""},
+                {service: "paymaster-admin",  repo: "paymaster-admin",  init_container: ""},
+                {service: "bundler",          repo: "bundler",          init_container: ""}
+              ]
+              + (if $byo then [
+                # custom-example and custom-example-byoui are ONE image run
+                # twice, differing only in environment (infra/iac/ecs_services.tf)
+                # — which is why `repo` is a separate column and not derived
+                # from `service`.
+                {service: "custom-example-byoui", repo: "example",    init_container: ""},
+                {service: "wallet-byo",           repo: "wallet-byo", init_container: ""}
+              ] else [] end)
+              | map(. + {environment: $env, tag: $tag})
+            ')
+            include=$(jq -s '.[0] + .[1]' <(echo "$include") <(echo "$rows"))
+          done
+
+          echo "include=$(jq -c '.' <<< "$include")" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Roll ${{ matrix.environment }}/${{ matrix.service }}
+    needs: plan
+    if: needs.plan.outputs.include != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      # false: one service failing to stabilise must not leave the rest
+      # un-attempted. A partial rollout is recoverable by re-running; a rollout
+      # that stopped at an arbitrary point is harder to reason about.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.include) }}
+    # Keyed on environment AND service, not just environment: a rollout
+    # cancelled between RegisterTaskDefinition and UpdateService leaves the
+    # service half-deployed (hence NOT cancel-in-progress), but that guard
+    # only needs to block a second run from racing the SAME service in the
+    # SAME environment — dev and stg, or two different services, roll
+    # independently.
+    concurrency:
+      group: deploy-${{ matrix.environment }}-${{ matrix.service }}
+      cancel-in-progress: false
+    env:
+      # `local.name_prefix` — project_name + workspace (infra/iac/_locals.tf).
+      # Every service and task definition family is prefixed with it; the
+      # cluster is this plus `-ecs` (infra/iac/ecs.tf).
+      NAME_PREFIX: giano-${{ matrix.environment }}
+      # The ECR namespace is the same string (infra/iac/ecr.tf).
+      ECR_NAMESPACE: giano-${{ matrix.environment }}
+      AWS_ROLE_ARN: arn:aws:iam::379937780633:role/giano-${{ matrix.environment }}-gha-deploy
+    steps:
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The base is the task definition the service is RUNNING, not one rendered
+      # from scratch — this workflow has no Terraform and therefore no way to
+      # build one. Everything Terraform owns (env, secrets, cpu, sidecars, roles)
+      # comes through untouched; only the image changes.
+      - name: Fetch the live task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${NAME_PREFIX}-${{ matrix.service }}" \
+            --query taskDefinition > taskdef.json
+
+      - name: Render the application container
+        id: render-app
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef.json
+          # The app container is named after the service (module `_locals.tf`).
+          container-name: ${{ matrix.service }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_NAMESPACE }}/${{ matrix.repo }}:${{ matrix.tag }}
+
+      # Chained, not parallel: the action takes a task definition and returns
+      # one, so the second swap must start from the first's output or it
+      # silently discards it.
+      - name: Render the init container
+        id: render-init
+        if: matrix.init_container != ''
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-app.outputs.task-definition }}
+          container-name: ${{ matrix.init_container }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_NAMESPACE }}/${{ matrix.repo }}:${{ matrix.tag }}
+
+      # The render action swaps `image` and nothing else, but the Datadog Agent
+      # sidecar carries DD_VERSION built from the same tag (module `sidecars.tf`).
+      # Left alone it would report the tag from the last `terraform apply`, so
+      # every trace and metric would be attributed to the wrong version — worse
+      # than no version at all, because it looks right.
+      - name: Correct DD_VERSION on the Datadog sidecar
+        id: patch
+        run: |
+          in='${{ steps.render-init.outputs.task-definition || steps.render-app.outputs.task-definition }}'
+          out="$RUNNER_TEMP/taskdef-final.json"
+          jq --arg v '${{ matrix.tag }}' '
+            .containerDefinitions |= map(
+              if .name == "datadog-agent" then
+                .environment |= map(if .name == "DD_VERSION" then .value = $v else . end)
+              else . end
+            )
+          ' "$in" > "$out"
+          echo "task-definition=$out" >> "$GITHUB_OUTPUT"
+
+      # wait-for-service-stability is what preserves the property
+      # `ecs_wait_for_steady_state` gave the operator's apply: a crash-looping
+      # container — or a `migrate` init container exiting non-zero (§9.6) — fails
+      # this workflow instead of passing it. The deployment circuit breaker rolls
+      # the service back; the reason is in Datadog, not in this log. R21.
+      - name: Deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.patch.outputs.task-definition }}
+          service: ${{ env.NAME_PREFIX }}-${{ matrix.service }}
+          cluster: ${{ env.NAME_PREFIX }}-ecs
+          wait-for-service-stability: true
