@@ -15,11 +15,11 @@ module "svc-wallet-api" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["wallet-api"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-api"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-api"].repository_arn
   cpu                = 512  # task-level
-  memory             = 2048 # app 1024 + agent 256 + router 100 + migrate 256 + headroom — §9.6
+  memory             = 2048 # app 1024 + agent 256 + router 100 + headroom
   app_memory         = 1024
   container_port     = 8080
   desired_count      = var.ecs_desired_count[terraform.workspace]
@@ -28,40 +28,40 @@ module "svc-wallet-api" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_DEPLOYMENT_CLASS        = "testnet"
-    RUN_MIGRATIONS                = "false" # the init container runs them — §9.6
-    CHAIN_ID                      = var.chain_id
-    BUNDLER_URL                   = "http://bundler.${local.name_prefix}.local:4337"
-    SPONSORSHIP_ENABLED           = "true"
-    SPONSORSHIP_SIGNER_KIND       = "local"
-    SPONSORSHIP_PAYMASTER_ADDRESS = var.paymaster_address
-    PAYMASTER_WATCHER_ENABLED     = "true"
-    LOG_LEVEL                     = "info"
-    # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS deliberately unset — 84532 is in the contracts
-    # registry and both default correctly from it.
+    GIANO_DEPLOYMENT_CLASS = "testnet"
+    # No init container: wallet-api runs its own migrations on boot, before it starts
+    # listening, serialised by a Postgres advisory lock — safe under concurrent replicas the
+    # same way `services/tenants.ts` seeding already is. Matches
+    # deploy/docker-compose.infrastructure.yml, which never had an init container either.
+    RUN_MIGRATIONS            = "true"
+    SPONSORSHIP_ENABLED       = "true"
+    SPONSORSHIP_SIGNER_KIND   = "local"
+    PAYMASTER_WATCHER_ENABLED = "true"
+    LOG_LEVEL                 = "info"
+    # No CHAIN_ID / RPC_URL / BUNDLER_URL / SPONSORSHIP_PAYMASTER_ADDRESS: GIANO_CHAINS
+    # carries all four per chain, and the two shapes are mutually exclusive (§14.2).
+    # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS deliberately unset — both chains are in the
+    # contracts registry and default correctly from it.
   }
   secret_arns = {
-    DATABASE_URL               = aws_secretsmanager_secret.database-url.arn
-    RPC_URL                    = module.asm-app.secret_arns["rpc-url"]
+    DATABASE_URL = aws_secretsmanager_secret.database-url.arn
+    # Composed by hand in 1Password, not by Terraform: each descriptor's rpcUrl embeds a
+    # QuickNode key, and an ECS secret substitutes a WHOLE variable from ONE ARN (§7.3).
+    GIANO_CHAINS               = module.asm-app.secret_arns["chains"]
     SPONSORSHIP_SIGNER_KEY_REF = module.asm-app.secret_arns["sponsorship-signer-key"]
     TENANTS_SEED               = module.asm-app.secret_arns["tenants-seed"]
     METRICS_BEARER_TOKEN       = module.asm-app.secret_arns["metrics-bearer-token"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
-  # the migrate init container — wallet-api only. §9.6
-  init_container = {
-    name    = "migrate"
-    command = ["node", "dist/migrate.js"]
-    secrets = { DATABASE_URL = aws_secretsmanager_secret.database-url.arn }
-  }
-
-  alb_enabled                       = true
-  alb_listener_arn                  = aws_lb_listener.https.arn
-  alb_rule_priority                 = 10
-  alb_host_headers                  = [local.hosts.api]
-  health_check_path                 = "/healthz"
-  health_check_grace_period_seconds = 120 # must outlast the slowest migration — §9.6
+  alb_enabled       = true
+  alb_listener_arn  = aws_lb_listener.https.arn
+  alb_rule_priority = 10
+  alb_host_headers  = [local.hosts.api]
+  health_check_path = "/healthz"
+  # Must outlast the slowest migration: migrations run in-process before wallet-api starts
+  # listening, so until they complete /healthz doesn't exist to answer at all.
+  health_check_grace_period_seconds = 120
 
   vpc_id                 = aws_vpc.vpc.id
   service_discovery_id   = aws_service_discovery_private_dns_namespace.ns.id
@@ -89,8 +89,8 @@ module "svc-wallet-web" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["wallet-web"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-web"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-web"].repository_arn
   cpu                = 256
   memory             = 1024
@@ -102,17 +102,18 @@ module "svc-wallet-web" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAIN_ID             = var.chain_id
-    GIANO_BUNDLER_URL          = "https://${local.hosts.api}/v1/userops" # R3
     GIANO_WALLET_API_UPSTREAM  = "http://wallet-api.${local.name_prefix}.local:8080"
     GIANO_SPONSORSHIP_MODE     = "service"
     GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
     GIANO_BRAND_NAME           = var.example_brand_name
-    GIANO_CSP_CONNECT_SRC      = var.rpc_origin
+    # Both chains' RPC origins, space-separated — the browser dials each directly (§14.3).
+    GIANO_CSP_CONNECT_SRC = join(" ", [var.rpc_origin, var.rpc_b_origin])
     # GIANO_RP_ID deliberately unset — load-bearing, §3.4, §14.3
   }
   secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
+    # wallet-web's own field names per chain — incompatible schema with wallet-api's
+    # GIANO_CHAINS, hence a second composed secret rather than one shared blob (§7.3).
+    GIANO_CHAINS = module.asm-app.secret_arns["chains-web"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -149,8 +150,8 @@ module "svc-custom-example" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["example"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["example"].repository_arn
   cpu                = 256
   memory             = 1024
@@ -162,15 +163,17 @@ module "svc-custom-example" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAIN_ID   = var.chain_id
-    GIANO_CHAIN_NAME = "Base Sepolia"
-    GIANO_CHAIN_B_ID = "0" # single-chain — the config explicitly supports this
-    GIANO_WALLET_URL = "https://${local.tenant_hosts.example.wallet}"
-    GIANO_APP_LABEL  = var.example_brand_name
-    # GIANO_TEST_ERC20 unset — the devnet default address is meaningless on 84532
+    GIANO_CHAIN_ID     = var.chain_id
+    GIANO_CHAIN_NAME   = var.chain_name
+    GIANO_CHAIN_B_ID   = var.chain_b_id
+    GIANO_CHAIN_B_NAME = var.chain_b_name
+    GIANO_WALLET_URL   = "https://${local.tenant_hosts.example.wallet}"
+    GIANO_APP_LABEL    = var.example_brand_name
+    # GIANO_TEST_ERC20 unset — the devnet default address is meaningless on a real chain
   }
   secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
+    GIANO_RPC_URL   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    GIANO_RPC_B_URL = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -207,8 +210,8 @@ module "svc-custom-example-byoui" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["example"].repository_url}:${var.image_tag}" # same image as custom-example
-  image_tag          = var.image_tag
+  image              = "${module.ecr["example"].repository_url}:${local.image_tag}" # same image as custom-example
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["example"].repository_arn
   cpu                = 256
   memory             = 1024
@@ -220,14 +223,16 @@ module "svc-custom-example-byoui" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAIN_ID   = var.chain_id
-    GIANO_CHAIN_NAME = "Base Sepolia"
-    GIANO_CHAIN_B_ID = "0"
-    GIANO_WALLET_URL = "https://${local.tenant_hosts.byoui.wallet}" # the whole difference from custom-example
-    GIANO_APP_LABEL  = var.byoui_brand_name
+    GIANO_CHAIN_ID     = var.chain_id
+    GIANO_CHAIN_NAME   = var.chain_name
+    GIANO_CHAIN_B_ID   = var.chain_b_id
+    GIANO_CHAIN_B_NAME = var.chain_b_name
+    GIANO_WALLET_URL   = "https://${local.tenant_hosts.byoui.wallet}" # the whole difference from custom-example
+    GIANO_APP_LABEL    = var.byoui_brand_name
   }
   secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
+    GIANO_RPC_URL   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    GIANO_RPC_B_URL = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -266,8 +271,8 @@ module "svc-wallet-byo" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["wallet-byo"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["wallet-byo"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["wallet-byo"].repository_arn
   cpu                = 256
   memory             = 1024
@@ -279,18 +284,21 @@ module "svc-wallet-byo" {
   security_group_ids = [aws_security_group.tasks-sg.id] # NOT bundler-sg — R11
 
   environment = {
-    BYO_WALLET_PORT           = "8080"
-    WALLET_API_UPSTREAM       = "http://wallet-api.${local.name_prefix}.local:8080"
-    CHAIN_ID                  = var.chain_id
-    SPONSORSHIP_MODE          = "service"
-    BYO_BUNDLER_PROXY_ENABLED = "false" # R11 — must stay disabled; service mode never needs it
+    BYO_WALLET_PORT     = "8080"
+    WALLET_API_UPSTREAM = "http://wallet-api.${local.name_prefix}.local:8080"
+    CHAIN_ID            = var.chain_id
+    CHAIN_B_ID          = var.chain_b_id # the fixture emits two chains only when this is set — §16.5
+    SPONSORSHIP_MODE    = "service"
+    # R11 — BOTH /bundler and /bundler-b must stay shut; service mode never needs either.
+    BYO_BUNDLER_PROXY_ENABLED = "false"
     BYO_ALLOWED_DAPP_ORIGINS  = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
     FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
     # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
-    # CHAIN_B_ID unset — single-chain, the second chain falls away
   }
   secret_arns = {
-    RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url"]
+    # Proxied same-origin, so both API keys stay server-side — §14.5
+    RPC_UPSTREAM   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    RPC_B_UPSTREAM = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -326,8 +334,8 @@ module "svc-paymaster-admin" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["paymaster-admin"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  image              = "${module.ecr["paymaster-admin"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["paymaster-admin"].repository_arn
   cpu                = 256
   memory             = 1024
@@ -345,7 +353,8 @@ module "svc-paymaster-admin" {
     GIANO_REFRESH_SECONDS   = "15"
   }
   secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
+    # Single-chain deliberately — the console has no chain switcher (§14.6).
+    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url-base-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -368,12 +377,25 @@ module "svc-paymaster-admin" {
   additional_tags = local.default_tags
 }
 
-# ── bundler — NO ALB target — §9.2, §14.7 ────────────────────────────────────────────────────
+# ── bundler-base-sepolia / bundler-eth-sepolia — no ALB target — §9.2, §14.7 ────────────────
+#
+# Two services, one image. Alto does not multiplex chains inside one process (D3): a bundler's
+# executor and submission endpoint are chain-specific, so one chain means one bundler. They
+# share an executor and a utility key — one EOA funded on both chains (§13.2) — and differ in
+# ALTO_RPC_URL alone.
+locals {
+  bundlers = {
+    "bundler-base-sepolia" = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    "bundler-eth-sepolia"  = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
+  }
+}
+
 module "svc-bundler" {
-  source = "./modules/aws/ecs-service"
+  for_each = local.bundlers
+  source   = "./modules/aws/ecs-service"
 
   name_prefix  = local.name_prefix
-  service      = "bundler"
+  service      = each.key
   project_name = var.project_name
 
   cluster_arn  = aws_ecs_cluster.ecs.arn
@@ -381,8 +403,9 @@ module "svc-bundler" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  image              = "${module.ecr["bundler"].repository_url}:${var.image_tag}"
-  image_tag          = var.image_tag
+  # One repository for both — same image, different ALTO_RPC_URL (§11).
+  image              = "${module.ecr["bundler"].repository_url}:${local.image_tag}"
+  image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["bundler"].repository_arn
   cpu                = 512
   memory             = 2048
@@ -395,11 +418,11 @@ module "svc-bundler" {
 
   environment = {
     ALTO_ENTRYPOINTS = var.entrypoint_address
-    ALTO_SAFE_MODE   = "true" # a real chain — safe mode needs a trace-capable RPC
+    ALTO_SAFE_MODE   = "true" # a real chain — safe mode needs a trace-capable RPC on BOTH chains
     # GIANO_DEV_MODE deliberately unset — keeps the Anvil-key guard armed
   }
   secret_arns = {
-    ALTO_RPC_URL               = module.asm-app.secret_arns["rpc-url"]
+    ALTO_RPC_URL               = each.value
     ALTO_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]
     ALTO_UTILITY_PRIVATE_KEY   = module.asm-app.secret_arns["alto-utility-key"]
   }
