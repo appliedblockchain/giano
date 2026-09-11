@@ -278,12 +278,12 @@ module "svc-wallet-byo" {
   security_group_ids = [aws_security_group.tasks-sg.id] # NOT bundler-sg — R11
 
   environment = {
-    BYO_WALLET_PORT           = "8080"
-    WALLET_API_UPSTREAM       = "http://wallet-api.${local.name_prefix}.local:8080"
-    CHAIN_ID                  = var.chain_id
-    SPONSORSHIP_MODE          = "service"
-    BYO_ALLOWED_DAPP_ORIGINS  = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
-    FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
+    BYO_WALLET_PORT          = "8080"
+    WALLET_API_UPSTREAM      = "http://wallet-api.${local.name_prefix}.local:8080"
+    CHAIN_ID                 = var.chain_id
+    SPONSORSHIP_MODE         = "service"
+    BYO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
+    FACTORY_ADDRESS          = var.factory_address # required here, unlike everywhere else — §14.5
     # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
     # CHAIN_B_ID unset — single-chain, the second chain falls away
     # No RPC_UPSTREAM and no bundler variable: reads and the bundler go through wallet-api's
