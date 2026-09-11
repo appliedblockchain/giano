@@ -1,6 +1,6 @@
 {
   "name": "@appliedblockchain/giano-wallet-web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Giano wallet origin: passkey ceremonies and consent UI served from a dedicated origin (nginx + static SPA)",
   "license": "MIT",
