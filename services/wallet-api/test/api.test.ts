@@ -392,6 +392,191 @@ describe('userop relay', () => {
 });
 
 /**
+ * The JSON-RPC bundler facade (POST /v1/bundler/:chainId): what a wallet origin points its
+ * bundler client at instead of a bundler. Same pipeline as the REST relay behind a second
+ * door, so every assertion here is about the two doors being the same door.
+ */
+describe('bundler relay (JSON-RPC)', () => {
+  const ENTRY_POINT = '0x0000000071727De22E5E9d8BAf0edAc6f37da032';
+  const target = '0x4444444444444444444444444444444444444444';
+  let sessionToken: string;
+  let walletAddress: string;
+
+  const makeOp = (nonce: number, overrides: Record<string, string> = {}) => ({
+    sender: walletAddress,
+    nonce: `0x${nonce.toString(16)}`,
+    callData: encodeFunctionData({ abi: gianoSmartWalletAbi, functionName: 'execute', args: [target, 0n, '0x'] }),
+    callGasLimit: '0x30000',
+    verificationGasLimit: '0x30000',
+    preVerificationGas: '0x10000',
+    maxFeePerGas: '0x3b9aca00',
+    maxPriorityFeePerGas: '0x3b9aca00',
+    signature: '0x1234',
+    ...overrides,
+  });
+
+  type RpcResult = { jsonrpc: '2.0'; id: number; result?: unknown; error?: { code: number; message: string; data?: Record<string, unknown> } };
+  const rpc = async (method: string, params: unknown[] = [], url = '/v1/bundler/31337', token = sessionToken) => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url,
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      payload: { jsonrpc: '2.0', id: 7, method, params },
+    });
+    return { status: res.statusCode, body: res.json() as RpcResult };
+  };
+
+  beforeAll(async () => {
+    const registered = await register('bundler-relay-user', createAuthenticator());
+    sessionToken = registered.session.token;
+    walletAddress = registered.walletAddress;
+  });
+
+  it('requires a session', async () => {
+    const { status } = await rpc('eth_chainId', [], '/v1/bundler/31337', '');
+    expect(status).toBe(401);
+  });
+
+  it('answers eth_chainId and eth_supportedEntryPoints from configuration, without a bundler round trip', async () => {
+    const before = ctx.bundlerCalls.length;
+    expect((await rpc('eth_chainId')).body).toEqual({ jsonrpc: '2.0', id: 7, result: '0x7a69' });
+    expect((await rpc('eth_supportedEntryPoints')).body.result).toEqual([ENTRY_POINT]);
+    expect(ctx.bundlerCalls.length).toBe(before);
+  });
+
+  it('resolves the sole chain when the path names none (MC-53), and refuses an unserved one', async () => {
+    expect((await rpc('eth_chainId', [], '/v1/bundler')).body.result).toBe('0x7a69');
+    const { status, body } = await rpc('eth_chainId', [], '/v1/bundler/999');
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ error: 'unsupported-chain' });
+  });
+
+  it('forwards eth_estimateUserOperationGas for the session wallet, against the SERVER EntryPoint', async () => {
+    const { status, body } = await rpc('eth_estimateUserOperationGas', [{ sender: walletAddress, nonce: '0x1', callData: '0x' }, ENTRY_POINT]);
+    expect(status).toBe(200);
+    expect(body.result).toMatchObject({ callGasLimit: '0x30000' });
+    const estimate = ctx.bundlerCalls.filter((c) => c.method === 'eth_estimateUserOperationGas').at(-1)!;
+    expect(estimate.params[1]).toBe(ENTRY_POINT);
+    expect((estimate.params[0] as { sender: string }).sender).toBe(walletAddress);
+  });
+
+  it('refuses to estimate for a wallet the session does not own', async () => {
+    const before = ctx.bundlerCalls.length;
+    const { body } = await rpc('eth_estimateUserOperationGas', [{ sender: '0x9999999999999999999999999999999999999999', nonce: '0x1', callData: '0x' }, ENTRY_POINT]);
+    expect(body.error).toMatchObject({ code: -32020, data: { reason: 'sender-binding' } });
+    expect(ctx.bundlerCalls.length).toBe(before);
+  });
+
+  it('refuses a foreign EntryPoint and a state override', async () => {
+    const foreign = await rpc('eth_estimateUserOperationGas', [{ sender: walletAddress, nonce: '0x1', callData: '0x' }, '0x9999999999999999999999999999999999999999']);
+    expect(foreign.body.error?.code).toBe(-32010);
+    const withOverride = await rpc('eth_estimateUserOperationGas', [{ sender: walletAddress, nonce: '0x1', callData: '0x' }, ENTRY_POINT, { [target]: { balance: '0x1' } }]);
+    expect(withOverride.body.error?.code).toBe(-32602);
+  });
+
+  it('eth_sendUserOperation goes through the relay pipeline: server hash, audit row, bundler submission', async () => {
+    const { status, body } = await rpc('eth_sendUserOperation', [makeOp(1), ENTRY_POINT]);
+    expect(status).toBe(200);
+    expect(body.result).toMatch(/^0x[0-9a-f]{64}$/);
+
+    const send = ctx.bundlerCalls.filter((c) => c.method === 'eth_sendUserOperation').at(-1)!;
+    expect(send.params[1]).toBe(ENTRY_POINT);
+
+    // the same audit trail the REST door writes, under the same server-computed hash
+    const row = await ctx.app.inject({ method: 'GET', url: `/v1/userops/${body.result}`, headers: { authorization: `Bearer ${sessionToken}` } });
+    expect(row.statusCode).toBe(200);
+    expect((row.json() as { status: string }).status).toBe('submitted');
+  });
+
+  it('is idempotent across both doors: the REST relay sees the JSON-RPC submission as its own duplicate', async () => {
+    const op = makeOp(2);
+    const first = await rpc('eth_sendUserOperation', [op, ENTRY_POINT]);
+    const again = await rpc('eth_sendUserOperation', [op, ENTRY_POINT]);
+    expect(again.body.result).toBe(first.body.result);
+
+    const rest = await ctx.app.inject({
+      method: 'POST',
+      url: '/v1/userops',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { userOperation: op },
+    });
+    expect(rest.statusCode).toBe(200);
+    expect(rest.json()).toEqual({ userOperationHash: first.body.result, duplicate: true });
+  });
+
+  it('applies the same policy as the REST relay, with the rule results in error.data', async () => {
+    const { body } = await rpc('eth_sendUserOperation', [makeOp(3, { sender: '0x9999999999999999999999999999999999999999' }), ENTRY_POINT]);
+    expect(body.error?.code).toBe(-32020);
+    expect(body.error?.message).toContain('sender-binding');
+    const policy = body.error?.data?.policy as { rule: string; passed: boolean }[];
+    expect(policy.find((r) => r.rule === 'sender-binding')!.passed).toBe(false);
+
+    const overCap = await rpc('eth_sendUserOperation', [makeOp(4, { callGasLimit: '0x4c4b4000' }), ENTRY_POINT]);
+    expect(overCap.body.error?.message).toContain('call-gas-cap');
+  });
+
+  it('never submits against an EntryPoint named by the request', async () => {
+    const before = ctx.bundlerCalls.filter((c) => c.method === 'eth_sendUserOperation').length;
+    const { body } = await rpc('eth_sendUserOperation', [makeOp(5), '0x9999999999999999999999999999999999999999']);
+    expect(body.error?.code).toBe(-32010);
+    expect(ctx.bundlerCalls.filter((c) => c.method === 'eth_sendUserOperation').length).toBe(before);
+  });
+
+  it('forwards receipt and by-hash lookups, and validates their parameters', async () => {
+    const hash = `0x${'cd'.repeat(32)}`;
+    expect((await rpc('eth_getUserOperationReceipt', [hash])).body).toEqual({ jsonrpc: '2.0', id: 7, result: null });
+    expect(ctx.bundlerCalls.at(-1)).toMatchObject({ method: 'eth_getUserOperationReceipt', params: [hash] });
+    expect((await rpc('eth_getUserOperationByHash', [hash])).body.result).toBeNull();
+    expect((await rpc('eth_getUserOperationReceipt', ['not-a-hash'])).body.error?.code).toBe(-32602);
+  });
+
+  it('relays nothing it was not built for', async () => {
+    const { body } = await rpc('eth_sendRawTransaction', ['0x00']);
+    expect(body.error?.code).toBe(-32601);
+    expect((await rpc('pimlico_getUserOperationGasPrice')).body.error?.code).toBe(-32601);
+  });
+});
+
+/**
+ * The chain RPC read relay (POST /v1/rpc/:chainId): tenant-bound by Origin, read-only by
+ * allowlist, so a wallet origin needs no node URL and a keyed provider URL stays server-side.
+ */
+describe('rpc relay (JSON-RPC reads)', () => {
+  type RpcResult = { jsonrpc: '2.0'; id: number; result?: unknown; error?: { code: number; message: string } };
+  // `null` = send no Origin at all (an explicit `undefined` would just select the default).
+  const rpc = async (method: string, params: unknown[] = [], url = '/v1/rpc/31337', origin: string | null = TENANT_A.walletOrigin) => {
+    const res = await ctx.app.inject({ method: 'POST', url, headers: origin ? { origin } : {}, payload: { jsonrpc: '2.0', id: 3, method, params } });
+    return { status: res.statusCode, body: res.json() as RpcResult };
+  };
+
+  it('requires a registered tenant Origin — no session needed, reads happen before sign-in', async () => {
+    expect((await rpc('eth_chainId', [], '/v1/rpc/31337', null)).status).toBe(403);
+    expect((await rpc('eth_chainId', [], '/v1/rpc/31337', 'http://evil.example')).status).toBe(403);
+    expect((await rpc('eth_chainId')).body).toEqual({ jsonrpc: '2.0', id: 3, result: '0x7a69' });
+  });
+
+  it('forwards read methods to the chain node verbatim', async () => {
+    const call = await rpc('eth_call', [{ to: '0x2222222222222222222222222222222222222222', data: '0x1234' }, 'latest']);
+    expect(call.status).toBe(200);
+    expect(call.body.result).toMatch(/^0x[0-9a-f]{64}$/); // the mock node's abi-encoded address answer
+    expect((await rpc('eth_getCode', ['0x2222222222222222222222222222222222222222', 'latest'])).body.result).toBe('0x');
+  });
+
+  it('refuses anything outside the read allowlist', async () => {
+    for (const method of ['eth_sendRawTransaction', 'eth_sendTransaction', 'debug_traceCall', 'anvil_setBalance', 'eth_sendUserOperation']) {
+      expect((await rpc(method, [])).body.error?.code).toBe(-32601);
+    }
+  });
+
+  it('resolves the sole chain when the path names none, and refuses an unserved one', async () => {
+    expect((await rpc('eth_chainId', [], '/v1/rpc')).body.result).toBe('0x7a69');
+    const { status, body } = await rpc('eth_chainId', [], '/v1/rpc/999');
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ error: 'unsupported-chain' });
+  });
+});
+
+/**
  * The tenant-isolation negative matrix. Each case pins one way isolation could leak
  * (specs/DEVELOPER-GUIDE.md §1); none of them may pass without the fix it exists for.
  */

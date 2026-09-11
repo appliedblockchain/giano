@@ -102,19 +102,24 @@ module "svc-wallet-web" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
+    # {chainId} only, per chain — rpcUrl/bundlerUrl are DELIBERATELY absent so wallet-kit
+    # defaults each to wallet-api's same-origin relay (${walletApiUrl}/v1/rpc/${chainId},
+    # .../v1/bundler/${chainId}); GIANO_CHAINS and the single-chain GIANO_CHAIN_ID shorthand
+    # are mutually exclusive (services/wallet-web/docker/entrypoint.sh).
+    GIANO_CHAINS = jsonencode([
+      { chainId = tonumber(var.chain_id) },
+      { chainId = tonumber(var.chain_b_id) },
+    ])
     GIANO_WALLET_API_UPSTREAM  = "http://wallet-api.${local.name_prefix}.local:8080"
     GIANO_SPONSORSHIP_MODE     = "service"
     GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
     GIANO_BRAND_NAME           = var.example_brand_name
-    # Both chains' RPC origins, space-separated — the browser dials each directly (§14.3).
-    GIANO_CSP_CONNECT_SRC = join(" ", [var.rpc_origin, var.rpc_b_origin])
+    # No GIANO_RPC_URL / GIANO_BUNDLER_URL / GIANO_CSP_CONNECT_SRC: the SPA reads and submits
+    # through wallet-api's /api/v1/rpc and /api/v1/bundler relays for every chain in
+    # GIANO_CHAINS, so no keyed RPC URL ever reaches the browser. R3 closed.
     # GIANO_RP_ID deliberately unset — load-bearing, §3.4, §14.3
   }
-  secret_arns = {
-    # wallet-web's own field names per chain — incompatible schema with wallet-api's
-    # GIANO_CHAINS, hence a second composed secret rather than one shared blob (§7.3).
-    GIANO_CHAINS = module.asm-app.secret_arns["chains-web"]
-  }
+  secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled                       = true
@@ -256,8 +261,8 @@ module "svc-custom-example-byoui" {
 }
 
 # ── wallet-byo — rule 35, wallet.byoui.* — tenant byoui's OWN SPA — §9.2, §14.5 ─────────────
-# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, which
-# is what makes the open-relay vector unreachable here regardless of BYO_BUNDLER_PROXY_ENABLED.
+# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, and no
+# /bundler location either; chain reads and the bundler both go through wallet-api's /api relays.
 module "svc-wallet-byo" {
   count  = var.byo_wallet_enabled[terraform.workspace] ? 1 : 0
   source = "./modules/aws/ecs-service"
@@ -284,22 +289,19 @@ module "svc-wallet-byo" {
   security_group_ids = [aws_security_group.tasks-sg.id] # NOT bundler-sg — R11
 
   environment = {
-    BYO_WALLET_PORT     = "8080"
-    WALLET_API_UPSTREAM = "http://wallet-api.${local.name_prefix}.local:8080"
-    CHAIN_ID            = var.chain_id
-    CHAIN_B_ID          = var.chain_b_id # the fixture emits two chains only when this is set — §16.5
-    SPONSORSHIP_MODE    = "service"
-    # R11 — BOTH /bundler and /bundler-b must stay shut; service mode never needs either.
-    BYO_BUNDLER_PROXY_ENABLED = "false"
-    BYO_ALLOWED_DAPP_ORIGINS  = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
-    FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
+    BYO_WALLET_PORT          = "8080"
+    WALLET_API_UPSTREAM      = "http://wallet-api.${local.name_prefix}.local:8080"
+    CHAIN_ID                 = var.chain_id
+    CHAIN_B_ID               = var.chain_b_id # the fixture emits two chains only when this is set — §16.5
+    SPONSORSHIP_MODE         = "service"
+    BYO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
+    FACTORY_ADDRESS          = var.factory_address # required here, unlike everywhere else — §14.5
     # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
+    # No BYO_BUNDLER_PROXY_ENABLED, no RPC_UPSTREAM/RPC_B_UPSTREAM: serve.mjs no longer proxies
+    # /bundler or /rpc at all — reads and the bundler go through wallet-api's /api/v1/rpc and
+    # /api/v1/bundler relays for every chain. R11 closed.
   }
-  secret_arns = {
-    # Proxied same-origin, so both API keys stay server-side — §14.5
-    RPC_UPSTREAM   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
-    RPC_B_UPSTREAM = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
-  }
+  secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled       = true

@@ -75,17 +75,8 @@ variable "factory_address" {
   default     = "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050"
 }
 
-variable "rpc_origin" {
-  description = "chain A RPC origin only (not the keyed URL) — joined into wallet-web's CSP connect-src. Not a secret; the URL that embeds the key is (§14.3)"
-  type        = string
-  default     = "https://base-sepolia.quiknode.pro"
-}
-
-variable "rpc_b_origin" {
-  description = "chain B RPC origin only — the browser dials both chains directly, so both belong in connect-src (§14.3)"
-  type        = string
-  default     = "https://eth-sepolia.quiknode.pro"
-}
+# rpc_origin / rpc_b_origin (wallet-web's CSP connect-src for direct browser RPC) are gone: the
+# SPA no longer dials either chain's node directly, only wallet-api's same-origin relay — R3.
 
 # ── Branding — §14.3, §14.4 ─────────────────────────────────────────────────────────────────
 variable "example_brand_name" {

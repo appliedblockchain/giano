@@ -12,8 +12,12 @@ declare module 'fastify' {
   }
 }
 
-/** Reads the chain a request NAMES (body, ERC-7677 params[2], or query) — a request, never an instruction. */
+/** Reads the chain a request NAMES (path, body, ERC-7677 params[2], or query) — a request, never an instruction. */
 function extractChainId(request: FastifyRequest): number | undefined {
+  // A bundler client carries no chain in its calls, so the bundler relay puts it in the path.
+  const routeParams = request.params as { chainId?: unknown } | undefined;
+  if (typeof routeParams?.chainId === 'number') return routeParams.chainId;
+  if (typeof routeParams?.chainId === 'string' && /^\d+$/.test(routeParams.chainId)) return Number(routeParams.chainId);
   const body = request.body as { chainId?: unknown; params?: unknown[] } | undefined;
   if (typeof body?.chainId === 'number') return body.chainId;
   // ERC-7677 puts the chain at params[2], as a hex quantity.

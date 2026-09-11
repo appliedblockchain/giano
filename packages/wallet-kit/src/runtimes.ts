@@ -110,9 +110,29 @@ function paymasterHooks(chain: WalletChainConfig, sponsorshipClient: ReturnType<
 }
 
 /**
+ * viem's http transport with the wallet-api session on every call.
+ *
+ * The default bundler URL is wallet-api's relay (`/v1/bundler/:chainId`), which sits behind the
+ * session so that estimation and submission are bound to the wallet that signed in — a wallet
+ * origin never needs a route to the bundler itself. The header is read per request, not at
+ * construction: the runtime is built before the user signs in and the token changes over the
+ * session's life. A bundler dialled directly ignores the header.
+ */
+export function sessionHttp(url: string, getSessionToken: () => string | null) {
+  return http(url, {
+    onFetchRequest: (_request, init) => {
+      const token = getSessionToken();
+      if (!token) return undefined;
+      return { ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${token}` } };
+    },
+  });
+}
+
+/**
  * The bundler-client options for one chain, as a pure function so the load-bearing shape is
- * testable (WK-04, WK-27): the fee estimator is ALWAYS wired into `userOperation`, and there is
- * no construction path that attaches paymaster hooks without it.
+ * testable (WK-04, WK-27): the fee estimator is ALWAYS wired into `userOperation`, there is
+ * no construction path that attaches paymaster hooks without it, and the transport always
+ * carries the session.
  *
  * Fees must be resolved *before* the paymaster hooks run, not after. A validating paymaster
  * signs the operation's gas fees, so an authorisation issued while `maxFeePerGas` is still unset
@@ -125,10 +145,11 @@ export function bundlerOptions(
   chain: Chain,
   estimateFeesPerGas: FeeEstimator,
   sponsorshipClient: ReturnType<typeof createErc7677PaymasterClient> | undefined,
+  getSessionToken: () => string | null,
 ) {
   return {
     chain,
-    transport: http(chainConfig.bundlerUrl),
+    transport: sessionHttp(chainConfig.bundlerUrl, getSessionToken),
     userOperation: { estimateFeesPerGas: async () => estimateFeesPerGas() },
     ...paymasterHooks(chainConfig, sponsorshipClient),
   };
@@ -216,7 +237,8 @@ function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInject
         })
       : undefined;
 
-  const bundler = createBundlerClient(bundlerOptions(chainConfig, chain, estimateFeesPerGas, sponsorshipClient));
+  // The injection holds the session (WK-03): one source of truth for the bearer the relay checks.
+  const bundler = createBundlerClient(bundlerOptions(chainConfig, chain, estimateFeesPerGas, sponsorshipClient, injection.getSessionToken));
 
   const { gianoProvider } = createGianoProvider({
     initialChainId: chainConfig.chainId,

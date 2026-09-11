@@ -272,7 +272,7 @@ subgraph VPCX["VPC giano-dev · 10.40.0.0/16 · eu-west-2 · two AZs"]
 
   subgraph PRIVSUB["private subnets — 10.40.32.0/20 (AZ a) · 10.40.48.0/20 (AZ b) — no public IPs, ever"]
     SWEB["wallet-web · nginx :8080<br/>0.25 vCPU / 512 MB<br/>GIANO_RP_ID unset — one task serves every STOCK-UI tenant host"]
-    SBYO["wallet-byo · node :8080 · 0.25 / 512<br/>tenant byoui's OWN SPA (e2e/wallet-byo)<br/>esbuilds at container start · proxies /api<br/>/bundler MUST be disabled — R11"]
+    SBYO["wallet-byo · node :8080 · 0.25 / 512<br/>tenant byoui's OWN SPA (e2e/wallet-byo)<br/>esbuilds at container start · proxies /api<br/>bundler via wallet-api /v1/bundler — no /bundler route"]
     SEX["custom-example · nginx :8080<br/>0.25 / 512 — tenant example's dApp"]
     SEX2["custom-example-byoui · nginx :8080<br/>0.25 / 512 — tenant byoui's dApp<br/>same image, GIANO_WALLET_URL differs"]
     SPM["paymaster-admin · nginx :8080<br/>0.25 / 512 — operator console"]
@@ -1646,31 +1646,34 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | wallet-byo, paymaster-admin, custom-example, custom-example-byoui, bundler-base-sepolia |
 | `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | wallet-byo, custom-example, custom-example-byoui, bundler-eth-sepolia |
 | `chains` | the full `GIANO_CHAINS` JSON for wallet-api — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api |
-| `chains-web` | the full `GIANO_CHAINS` JSON for wallet-web — same two chains, wallet-web's own field names (§14.3) | wallet-web |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
 | `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)) | bundler-base-sepolia, bundler-eth-sepolia |
 | `alto-utility-key` | 32-byte hex — likewise shared, needs no funding | bundler-base-sepolia, bundler-eth-sepolia |
 | `tenants-seed` | the [§14.2](#142-wallet-api) JSON, carrying `adminKeys` | wallet-api |
 | `metrics-bearer-token` | random string | wallet-api |
 
-**`chains` and `chains-web` are composed secrets, not derived ones** — the same shape as
-`tenants-seed`. Most of what they carry (chain id, name, entry point, factory, paymaster address,
-policy, and each chain's own bundler's Cloud Map URL) is a plan-time-knowable literal, not a secret at all; but
-each chain descriptor's `rpcUrl` embeds a QuickNode API key, and the ECS `secrets` block can only
-substitute a **whole** environment variable from a **single** secret ARN — it cannot interpolate a
-secret into the middle of a larger JSON string Terraform composes. So the whole array is hand-typed
-into 1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys`
-alongside otherwise-literal tenant fields). This is why there are two of them rather than one:
-`services/wallet-web/src/config.ts` uses different field names per chain (`factoryAddress` /
-`sponsorship`) from `services/wallet-api/src/config.ts` (`factory` / `sponsorshipPaymaster` /
-`policy`) — same variable name, incompatible schema, so one JSON blob cannot serve both consumers.
+**`chains` is a composed secret, not a derived one** — the same shape as `tenants-seed`. Most of
+what it carries (chain id, name, entry point, factory, paymaster address, policy, and each chain's
+own bundler's Cloud Map URL) is a plan-time-knowable literal, not a secret at all; but each chain
+descriptor's `rpcUrl` embeds a QuickNode API key, and the ECS `secrets` block can only substitute a
+**whole** environment variable from a **single** secret ARN — it cannot interpolate a secret into
+the middle of a larger JSON string Terraform composes. So the whole array is hand-typed into
+1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys` alongside
+otherwise-literal tenant fields).
 
-`rpc-url-base-sepolia` and `rpc-url-eth-sepolia` are separate secrets from `chains`/`chains-web`
-because four other services need a **scalar** RPC URL, not the multichain array: `bundler-*` (each
-needs only its own chain's), `custom-example`/`custom-example-byoui` (per-chain `GIANO_RPC_URL` /
-`GIANO_RPC_B_URL`), and `wallet-byo` (`RPC_UPSTREAM` / `RPC_B_UPSTREAM`). Splitting them out means
-those services' task definitions map ordinary scalar `secrets` entries, the same as before, rather
-than parsing a chain out of a JSON blob meant for a different consumer.
+There is only the one composed `GIANO_CHAINS` secret, for `wallet-api` alone. `wallet-web` also sets
+`GIANO_CHAINS`, but as a **literal** — `[{ "chainId": 84532 }, { "chainId": 11155111 }]`, no
+`rpcUrl` — so no secret is needed for it at all: every browser-facing chain descriptor defaults to
+wallet-api's relay ([§14.3](#143-wallet-web)). An earlier revision gave `wallet-web` its own
+composed `chains-web` secret, carrying real `rpcUrl`s in its own field-name schema; it was removed
+once nothing read the RPC URL directly (R3).
+
+`rpc-url-base-sepolia` and `rpc-url-eth-sepolia` are separate secrets from `chains` because three
+other services need a **scalar** RPC URL, not the multichain array: `bundler-*` (each needs only its
+own chain's) and `custom-example`/`custom-example-byoui` (per-chain `GIANO_RPC_URL` /
+`GIANO_RPC_B_URL`, since the demo dApp dials its provider directly from the browser — §13.3).
+Splitting them out means those services' task definitions map ordinary scalar `secrets` entries,
+rather than parsing a chain out of a JSON blob meant for a different consumer.
 
 The Datadog keys are **not** in this table. They are not Giano's secrets — they live in the shared
 `DevOps` vault ([§17.3.2](#1732-credentials)) — but the Agent sidecar and FireLens both need the API
@@ -2687,7 +2690,6 @@ hand** and is not managed by Terraform.
   "rpc-url-base-sepolia":   { "value": "https://…/v2/…",        "version": 1 },
   "rpc-url-eth-sepolia":    { "value": "https://…/v2/…",        "version": 1 },
   "chains":                 { "value": "[{…},{…}]",             "version": 1 },
-  "chains-web":             { "value": "[{…},{…}]",             "version": 1 },
   "sponsorship-signer-key": { "value": "0x…",                   "version": 1 },
   "alto-executor-key":      { "value": "0x…",                   "version": 1 },
   "alto-utility-key":       { "value": "0x…",                   "version": 1 },
@@ -2912,20 +2914,21 @@ than one, there are twice as many balances that can go quiet independently.
 A **QuickNode** endpoint per chain — one for Base Sepolia, one for Ethereum Sepolia. QuickNode's free
 tier is ample for a dev environment on either. Each URL embeds its own API key, so each is its own
 secret ([§7.3](#73-the-secrets)): `rpc-url-base-sepolia` and `rpc-url-eth-sepolia`. Direct consumers
-differ by service — `custom-example`/`custom-example-byoui` and `wallet-byo` take both scalar
-secrets directly; `wallet-api` and `wallet-web` instead take them pre-composed into their own
-`GIANO_CHAINS` secret (`chains` and `chains-web` respectively, [§7.3](#73-the-secrets)); each
-bundler takes only its own chain's.
+differ by service — `custom-example`/`custom-example-byoui` take both scalar secrets directly;
+`wallet-api` instead takes them pre-composed into its own `GIANO_CHAINS` secret (`chains`,
+[§7.3](#73-the-secrets)); each bundler takes only its own chain's.
 
 The bundler's safe mode (`ALTO_SAFE_MODE=true`, [§14.7](#147-bundler)) validates every user operation
 with `debug_traceCall`, so **both** endpoints must be trace-capable — QuickNode's are, on the tiers
 this needs.
 
-Because the browser reaches the RPC directly rather than through the wallet origin's `/rpc` proxy,
-the provider must send permissive CORS headers on both endpoints. QuickNode does. If a provider that
-does not is chosen later, set `GIANO_RPC_UPSTREAM` / `GIANO_RPC_B_UPSTREAM` on `wallet-web` and point
-the chain descriptors' `rpcUrl`s at `/rpc` / `/rpc-b` — the nginx template already supports it, and
-the API keys then stay server-side, which is the better posture anyway.
+**The wallet origins never see either key.** `wallet-web` and `wallet-byo` read every chain through
+`wallet-api`'s `/v1/rpc/:chainId` relay (same-origin under `/api`), so both keys stay in
+`wallet-api` — `GIANO_CHAINS` on `wallet-web` carries only `chainId` per chain, deliberately no
+`rpcUrl`/`bundlerUrl`, so the SDK's own default points it at the relay (R3, R11 closed). Only the
+demo dApps (`custom-example`/`custom-example-byoui`, which read balances client-side from their own
+`GIANO_RPC_URL`/`GIANO_RPC_B_URL`) reach either provider from a browser, so permissive CORS from the
+provider matters for them alone. QuickNode sends it on both endpoints.
 
 ---
 
@@ -3048,47 +3051,40 @@ leaks beyond the team.
 ### 14.3 `wallet-web`
 
 `GIANO_CHAINS` again, not single-chain shorthand — same two chains as `wallet-api`
-([§14.2](#142-wallet-api)), but a **different schema**: `factoryAddress`/`sponsorship` here, where
-`wallet-api` has `factory`/`sponsorshipPaymaster`/`policy`. Same env var name, incompatible shape,
-enforced twice (the entrypoint exits 1 if both shapes are given, and the SPA refuses to load) — which
-is why this gets its own secret, `giano-dev-chains-web`, rather than reusing wallet-api's
-([§7.3](#73-the-secrets)). The browser talks to the RPC directly (CORS, §13.3) and to either bundler
-*not at all* — sponsorship mode `service` routes user operations through `wallet-api`, which is what
-keeps both bundlers private.
+([§14.2](#142-wallet-api)), but a **different schema**: wallet-kit's `WalletChainConfig` has
+`factoryAddress`/`sponsorship` where `wallet-api` has `factory`/`sponsorshipPaymaster`/`policy`. Same
+env var name, incompatible shape, enforced twice (the entrypoint exits 1 if both shapes are given,
+and the SPA refuses to load). The browser talks to neither node nor bundler for either chain: chain
+reads go through `wallet-api`'s `/api/v1/rpc/:chainId` relay (tenant-bound, read-only allowlist) and
+bundler calls through `/api/v1/bundler/:chainId` (session-bound, submissions through the same policy
+pipeline as `POST /v1/userops`). Both keyed RPC URLs and both bundlers stay private to `wallet-api`,
+and this task proxies nothing but `/api` and `/.well-known/webauthn`.
 
 | Variable | Value |
 |---|---|
-| `GIANO_CHAINS` | both chain descriptors, below (**ASM** `giano-dev-chains-web`) |
+| `GIANO_CHAINS` | both chain descriptors, below — a **literal**, not a secret: neither entry carries a key |
 | `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
 | `GIANO_RP_ID` | **unset** — derived per request from the host the browser used |
 | `GIANO_ALLOWED_DAPP_ORIGINS` | `["https://example.dev.giano.appliedblockchain.dev"]` — only `example` is served here, so this is a set of one, not a union ([R9](#19-risks-and-open-items)) |
 | `GIANO_SPONSORSHIP_MODE` | `service` (the default when no `GIANO_PAYMASTER_ADDRESS` is set) |
 | `GIANO_BRAND_NAME` | `Giano Example` — likewise, one stock-UI tenant means no conflict yet |
-| `GIANO_CSP_CONNECT_SRC` | both chains' RPC origins, space-separated |
+| `GIANO_CSP_CONNECT_SRC` | **unset** — everything the SPA dials is same-origin |
 
 The `GIANO_CHAINS` array:
 
 ```json
 [
-  {
-    "chainId": 84532, "name": "Base Sepolia",
-    "rpcUrl": "<base sepolia quicknode endpoint>",
-    "bundlerUrl": "https://api.dev.giano.appliedblockchain.dev/v1/userops",
-    "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-    "sponsorship": "service"
-  },
-  {
-    "chainId": 11155111, "name": "Ethereum Sepolia",
-    "rpcUrl": "<eth sepolia quicknode endpoint>",
-    "bundlerUrl": "https://api.dev.giano.appliedblockchain.dev/v1/userops",
-    "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-    "sponsorship": "service"
-  }
+  { "chainId": 84532 },
+  { "chainId": 11155111 }
 ]
 ```
 
-Both entries' `bundlerUrl` is the same REST endpoint on `wallet-api`, not either bundler directly —
-see the note below this table before assuming otherwise.
+**`chainId` only, deliberately.** `rpcUrl`, `bundlerUrl`, `factoryAddress` and `sponsorship` are all
+absent from every entry — wallet-kit's `resolveChain` defaults `rpcUrl`/`bundlerUrl` to
+`${walletApiUrl}/v1/rpc/${chainId}` / `.../v1/bundler/${chainId}` (same-origin, so no key or bundler
+address ever reaches the browser — R3, R11 closed for both chains at once), `factoryAddress` from
+the contracts registry, and `sponsorship` to `'service'`. Supplying any of them explicitly is how a
+future edit re-opens R3/R11 one chain at a time without anyone noticing the other chain still closed.
 
 `GIANO_RP_ID` being unset is load-bearing, not an omission: it is what lets this one task serve every
 tenant hostname ([§3.3](#33-how-one-wallet-ui-serves-many-tenants)). Setting it would pin every
@@ -3101,11 +3097,14 @@ tenants and still avoids that, because only `example` is served here — `byoui`
 its own allowlist. The constraint is therefore "one **stock-UI** tenant per wallet-web task", not
 "one tenant per deployment", and it binds the moment a second stock-UI tenant is added.
 
-Each chain descriptor's `bundlerUrl` is required even though sponsorship mode `service` is meant to
-route through `wallet-api` rather than dial a bundler directly. Confirm during implementation whether
-the wallet origin ever calls it directly in `service` mode; if it does, **both** bundlers need an ALB
-target group and a hostname of their own, not just one, and this table changes
-([R3](#19-risks-and-open-items)).
+Neither chain descriptor needs a `bundlerUrl`, and the question R3 asked has its answer: the wallet
+origin *did* dial it directly, in every sponsorship mode — viem's bundler client estimates gas and
+polls receipts through it, and sponsorship mode only swaps the paymaster hooks — which is why
+pointing it at the REST endpoint left the wallet unable to transact. The wallet kit now defaults
+every chain's `bundlerUrl` to wallet-api's JSON-RPC relay and sends the session bearer with each
+call, so neither bundler needs an ALB target group nor a hostname of its own
+([R3](#19-risks-and-open-items)). Setting the variable dials a bundler directly and is a
+development posture only.
 
 ### 14.4 `custom-example`
 
@@ -3153,10 +3152,8 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 |---|---|
 | `BYO_WALLET_PORT` | `8080` |
 | `WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
-| `RPC_UPSTREAM` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) — proxied same-origin, so the API key stays server-side |
-| `RPC_B_UPSTREAM` | Ethereum Sepolia endpoint (**ASM** `giano-dev-rpc-url-eth-sepolia`) — same posture, second chain |
-| `BUNDLER_UPSTREAM` | **must be disabled** — see below ([R11](#19-risks-and-open-items)) |
-| `BUNDLER_B_UPSTREAM` | likewise disabled — same reasoning, second chain's bundler |
+| `RPC_UPSTREAM` | **does not exist** — chain reads for both chains go through wallet-api's `/api/v1/rpc/<chainId>` relay over the `/api` proxy |
+| `BUNDLER_UPSTREAM` | **does not exist** — there is no bundler proxy for either chain; the SPA uses `/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), closed) |
 | `CHAIN_ID` | `84532` |
 | `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
 | `FACTORY_ADDRESS` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
@@ -3169,14 +3166,15 @@ environment-independent in the way [§16.1](#161-a-dockerfile-and-runtime-config
 has to *make* `custom-example` be. That is a happy accident of it being an e2e fixture, not a
 designed property, and §16.5 should keep it.
 
-**Neither `/bundler` nor `/bundler-b` proxy may be reachable.** `serve.mjs` proxies both
-unconditionally to `BUNDLER_UPSTREAM` / `BUNDLER_B_UPSTREAM`, and this task sits in the `tasks`
-security group, which the `bundler` group accepts on 4337 — both bundlers. Deployed as-is,
-`https://wallet.byoui.dev.giano.appliedblockchain.dev/bundler` (and `/bundler-b`) would each be a
-public, unauthenticated relay to its chain's bundler, bypassing wallet-api's policy check entirely
-and draining the shared Alto executor on whichever chain it targets. Sponsorship mode `service` means
-the SPA never needs either. Disabling both locations is part of §16.5 and is the single most
-important line in it.
+**It has no `/bundler` or `/bundler-b` proxy, for either chain.** `serve.mjs` used to relay both
+unconditionally to `BUNDLER_UPSTREAM`/`BUNDLER_B_UPSTREAM`, and because this task sits in the `tasks`
+security group — which the `bundler` group accepts on 4337 —
+`https://wallet.byoui.dev.giano.appliedblockchain.dev/bundler` (and `/bundler-b`) would have been a
+public, unauthenticated relay to each chain's bundler, bypassing wallet-api's policy check entirely.
+Both locations are removed rather than switched off: the SPA's bundler client goes to wallet-api's
+relay, `/api/v1/bundler/<chainId>`, through the same `/api` proxy as every other call, so the origin
+has nothing to relay and no bundler configuration of any kind on either chain. Runbook step 13
+confirms `/bundler` does not answer JSON-RPC.
 
 ### 14.6 `paymaster-admin`
 
@@ -3455,11 +3453,14 @@ is the *wallet* origin. Defence in depth, not a substitute for the above.
 about being a wallet. Tenant `byoui` ([§14.5](#145-wallet-byo)) needs them lifted. None is deep, and
 the first is not optional:
 
-- **Make the `/bundler` proxy disableable, and disable it here.** `serve.mjs` proxies `/bundler`
-  unconditionally to `BUNDLER_UPSTREAM`, and the task can reach the private bundler on 4337. Left
-  as-is, this tenant's wallet origin becomes a public unauthenticated bundler relay that bypasses
-  wallet-api's policy check and drains the Alto executor ([R11](#19-risks-and-open-items)). The same
-  applies to `/bundler-b`. `service` sponsorship never needs either.
+- **Remove the `/bundler` proxy — done.** `serve.mjs` used to proxy `/bundler` (and `/bundler-b`)
+  to `BUNDLER_UPSTREAM`, and the task can reach the private bundler on 4337: an open,
+  unauthenticated relay on a wallet origin ([R11](#19-risks-and-open-items)). The first attempt was
+  a flag, which turned out to be a choice between an open relay and a wallet that could not submit
+  — viem's bundler client needs a JSON-RPC bundler for estimation and receipts whatever the
+  sponsorship mode. What closed it is wallet-api's `POST /v1/bundler/:chainId`: the same JSON-RPC
+  surface, behind the session, with `eth_sendUserOperation` going through the `/v1/userops`
+  pipeline. The SPA reaches it through `/api`, and the proxy locations are gone.
 - **Stop requiring `e2e/devnet/addresses.json`.** It is read unconditionally at start-up for
   defaults that every deployment overrides by environment (`CHAIN_ID`, `FACTORY_ADDRESS`,
   `SPONSORSHIP_MODE`, `PAYMASTER_ADDRESS`), so the container simply crashes without a devnet file
@@ -4443,25 +4444,25 @@ This is what the second tenant is *for*; with one tenant it is unobservable.
 The three checks that cannot be deferred. Run them at bring-up, and again after anything that
 touches routing, networking or secrets.
 
-#### Step 13 — Confirm both BYO bundler proxies are shut 🖥️
+#### Step 13 — Confirm no wallet origin answers as a bundler 🖥️
 
-An open relay here bypasses every policy check wallet-api makes and drains the shared Alto executor
-on whichever chain it fronts ([R11](#19-risks-and-open-items), [§16.5](#165-a-deployable-byo-wallet-reference)).
-Check **both** — `/bundler` and `/bundler-b` are independently switchable, and a fix that only closes
-one looks identical to a fix that closes both until this is run.
+An open relay here would bypass every policy check wallet-api makes and drain the shared Alto
+executor on whichever chain it fronts. The `/bundler` location no longer exists on either wallet
+origin, for either chain — every path goes through wallet-api's session-bound relay,
+`/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), [§16.5](#165-a-deployable-byo-wallet-reference))
+— so this step confirms nothing has put one back.
 
 ```bash
-WALLET_BYOUI=$(terraform output -json tenant_hosts | jq -r .byoui.wallet)
-for PATH_ in bundler bundler-b; do
-  curl -s -o /dev/null -w "byo /${PATH_}: %{http_code}\n" -X POST \
-    -H 'content-type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' \
-    "https://${WALLET_BYOUI}/${PATH_}"
+for host in $(terraform output -json tenant_hosts | jq -r '.[].wallet'); do
+  printf '%s /bundler: ' "$host"
+  curl -s -X POST -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' "https://${host}/bundler" | head -c 120; echo
 done
 ```
 
-Anything but a `2xx` is a pass, on both lines. A `200` carrying a chain id on either means that
-proxy is live — stop and fix §16.5 before anyone else reaches this hostname.
+The SPA's fallback HTML (`<!doctype html>…`) or a 404 page is a pass. A JSON-RPC body —
+`{"jsonrpc":"2.0","id":1,"result":"0x…"}` — means something is relaying to a bundler again, and
+nothing in the repository does: stop and find out what.
 
 #### Step 14 — Confirm no task has a public IP 🖥️
 
@@ -4514,7 +4515,7 @@ third is the guarantee everything else in §12 rests on.
 |---|---|---|---|
 | R1 | **`rpId` is irreversible.** Every passkey binds to the *tenant's* host, not Giano's. Renaming it orphans them all. | Total loss of dev accounts | Settle `tenant_wallet_hosts` at runbook step 2. Cheap now, impossible later. Step 10 verifies no passkey bound to Giano's serving hostname instead. |
 | R2 | **Funded accounts drain silently.** An empty executor or paymaster deposit presents as "transactions stopped working". | Environment appears broken, cause non-obvious | **Half-closed.** The Datadog monitor exists ([§17.3.5](#1735-monitors)), but nothing emits `giano.chain.balance` yet — a small scheduled task must submit it over DogStatsD. That is a repository change, listed as the cheapest item in §16. Until it lands, the monitor is declared and never fires. |
-| R3 | **Each chain descriptor's `bundlerUrl` on `wallet-web`.** Required by the entrypoint even in `service` sponsorship mode; unverified whether the browser ever dials it directly. | Both bundlers may need public exposure, not just one | Verify in §14.3 during implementation. If it does, add an ALB rule for **each** bundler and accept that both become internet-reachable. |
+| R3 | **Each chain descriptor's `bundlerUrl` on `wallet-web`.** Required by the entrypoint even in `service` sponsorship mode; unverified whether the browser ever dials it directly. | Both bundlers may need public exposure, not just one | **Closed, for every chain.** The browser did dial it — viem estimates gas and polls receipts through the bundler client in every sponsorship mode — so pointing it at the REST endpoint broke transacting. wallet-api now exposes a JSON-RPC bundler relay (`POST /v1/bundler/:chainId`, session-bound, submissions through the `/v1/userops` pipeline) and the wallet kit defaults every chain's `bundlerUrl` to it. `GIANO_CHAINS`'s entries carry no `bundlerUrl` ([§14.3](#143-wallet-web)); neither bundler is ever exposed. |
 | R4 | **`openRegistration: true`.** Anyone reaching the hostname can create a wallet. | Unbounded rows, no funds at risk | Accepted for dev. First thing to disable if the hostname circulates. |
 | R5 | **Single task per service.** Any task failure is downtime until ECS replaces it. | Minutes of downtime | Accepted. It is a dev environment. The *network* is two-AZ, so this is a `desired_count` change and not a rebuild. |
 | R6 | **`secret_string_wo_version` is the only rotation signal.** Editing a value in 1Password without bumping its version leaves ASM on the old value, silently. | A rotated credential that never rotated | The version sits next to the value in the JSON. First thing to check when a rotation "did not take" ([§12.6](#126-known-weak-points)). |
@@ -4522,7 +4523,7 @@ third is the guarantee everything else in §12 rests on.
 | R8 | **Deleting a key from the note destroys the ASM secret.** | Secret loss | `recovery_window_in_days = 30`, and the removal appears in the plan as a named `destroy` — which is why step 5 says read it. |
 | R9 | **The dApp allowlist is per container, so across tenants it is a union.** One shared wallet-web enforces every tenant's `allowedDappOrigins` for all of them, and wallet-api never enforces the column at all. | Cross-tenant dApp handshake | [§16.4](#164-a-host-resolved-tenant-config-endpoint) is the fix and is a **prerequisite of the second stock-UI tenant**, not of bring-up. Dev has two tenants and still avoids it: only `example` is served by wallet-web, and `byoui` brings its own SPA and allowlist (D17). The rule to hold is one stock-UI tenant per wallet-web task. |
 | R10 | **Tenant certificate renewal depends on the tenant.** ACM renews only while the validation `CNAME` still resolves in the tenant's DNS. | A tenant's wallet host goes dark at renewal, ~13 months in | **Closed.** §6.6 tells tenants to leave the record in place, and the `aws.acm.days_to_expiry` monitor ([§17.3.5](#1735-monitors)) catches it 30 days out. Needs the Datadog AWS integration enabled on the account for the metric to exist. Does not apply to either dev tenant — both hostnames are in our zone. |
-| R11 | **The BYO fixture proxies `/bundler` unconditionally.** `e2e/wallet-byo/serve.mjs` relays `/bundler` and `/bundler-b` to `BUNDLER_UPSTREAM`, and its task can reach the private bundler on 4337. | A public unauthenticated bundler relay on a wallet origin, bypassing every wallet-api policy check and draining the Alto executor | **Blocks deploying `wallet-byo` at all.** First bullet of [§16.5](#165-a-deployable-byo-wallet-reference); verified by runbook step 13. |
+| R11 | **The BYO fixture proxies `/bundler` unconditionally.** `e2e/wallet-byo/serve.mjs` relays `/bundler` and `/bundler-b` to `BUNDLER_UPSTREAM`, and its task can reach the private bundler on 4337. | A public unauthenticated bundler relay on a wallet origin, bypassing every wallet-api policy check and draining the Alto executor | **Closed.** The proxy locations, `BUNDLER_UPSTREAM` and `BYO_BUNDLER_PROXY_ENABLED` are removed; the SPA's bundler client goes to wallet-api's `/v1/bundler/:chainId` relay through `/api` (first bullet of [§16.5](#165-a-deployable-byo-wallet-reference)). Runbook step 13 now guards against the route coming back. `wallet-byo` is deployable. |
 | R12 | **The RDS KMS key cannot be changed after creation.** Re-keying means snapshot, copy, restore — an outage and a new endpoint. | A wrong key at bring-up is expensive to correct | Get it right at step 5. The key is created in the same apply as the instance, so there is no window in which it can be got wrong quietly ([§8.2](#82-encryption)). |
 | R13 | **The NAT gateways are $70/mo and cannot be scheduled away.** They dominate the bill and run at 3am on a Sunday. | The cost-control story is weaker than it looks | Accepted, and stated plainly in [§17.1](#171-cost) so nobody discovers it from an invoice. Revisit only if the environment's total becomes a problem, and then by destroying the workspace rather than by re-architecting the network. |
 | R14 | **The `hsm` signer path is unreachable from the published image.** | Blocks a `production` deployment class, not this one | Out of scope; flagged so it is not discovered during a production build ([§10.4](#104-the-sponsorship-signer-constraint)). |

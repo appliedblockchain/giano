@@ -51,7 +51,7 @@ An integration has **two halves**:
   │  giano-connector   │                                     │  passkey ceremony + consent  │
   └────────────────────┘                                     └──────────────┬───────────────┘
         │ reads (eth_call…) answered dApp-side                   nginx same-origin proxy
-        ▼                                                                    │  /api  /bundler  /rpc
+        ▼                                                                    │  /api  (incl. /v1/rpc, /v1/bundler relays)
    EVM RPC (public)                                              ┌───────────┴───────────┐
                                                                  ▼                       ▼
                                                         wallet-api + Postgres     ERC-4337 bundler (Alto)
@@ -427,15 +427,17 @@ one set per tenant, because the wallet host is that tenant's RP ID).
 ### 5.5 wallet-web environment
 
 wallet-web's nginx serves the SPA + `GET /config.json` and same-origin-proxies `/api` and
-`/.well-known/webauthn` → wallet-api (and optionally `/rpc`, `/bundler` → your node/bundler to avoid
-CORS). Env: `GIANO_CHAIN_ID`, `GIANO_RPC_URL`, `GIANO_BUNDLER_URL`, `GIANO_WALLET_API_UPSTREAM`,
+`/.well-known/webauthn` → wallet-api — and nothing else. Chain reads go through wallet-api's
+`/api/v1/rpc/<chainId>` relay and bundler calls through `/api/v1/bundler/<chainId>`, so the wallet
+origin holds no node or bundler URL. Env: `GIANO_CHAIN_ID`, `GIANO_WALLET_API_UPSTREAM`,
 `GIANO_RP_ID`, `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array), `GIANO_FACTORY_ADDRESS` /
-`GIANO_PAYMASTER_ADDRESS` (default from the registry), `GIANO_BRAND_NAME`.
+`GIANO_PAYMASTER_ADDRESS` (default from the registry), `GIANO_BRAND_NAME`. `GIANO_RPC_URL` /
+`GIANO_BUNDLER_URL` exist only to dial a node or bundler directly in development.
 
 - Give each tenant's wallet its **own TLS host** — that host is the tenant's RP ID and must match
   the tenant's `walletOrigin` in `TENANTS_SEED`. WebAuthn requires a secure context.
-- The browser reads chain state directly from `GIANO_RPC_URL`, so it must be CORS-enabled and safe to
-  expose (keyless public endpoint, or the bundler proxied same-origin).
+- The node URL — API key included — lives only in wallet-api's `RPC_URL`; the wallet reads it through
+  the relay, so it need not be CORS-enabled or safe to publish.
 - **How many wallet-web containers you run is a topology choice**, not a fixed rule — one per
   tenant, or one shared. See §5.5a immediately below.
 

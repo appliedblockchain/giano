@@ -51,6 +51,8 @@ Swagger UI at `/docs` outside production).
 | `GET /v1/me`, `/v1/me/credentials`, `/v1/me/credentials/:id/public-key` | session (tenant-scoped) | current identity/credentials |
 | `POST /v1/sessions/logout` | session | revoke session |
 | `POST /v1/userops` | session; per-tenant policy + rate limit | policy-checked relay to the bundler |
+| `POST /v1/bundler/:chainId` | session; per-tenant rate limits | JSON-RPC bundler facade for wallet origins: `eth_sendUserOperation` through the same pipeline as `/v1/userops`, `eth_estimateUserOperationGas` bound to the session wallet, receipts forwarded, `eth_chainId`/`eth_supportedEntryPoints` answered locally — so no bundler is ever browser-reachable |
+| `POST /v1/rpc/:chainId` | `Origin` → tenant; per-tenant rate limit | JSON-RPC read relay to the chain node (allowlisted `eth_*` reads only) — so a wallet origin needs no node URL and a keyed provider URL never reaches a browser |
 | `GET /v1/userops/:hash` | session (tenant-scoped) | relay log/status incl. policy audit |
 | `GET /v1/userops/:hash/receipt` | public (deliberately tenant-free) | read-only receipt proxy (thin-SDK receipt waiting) |
 | `GET /.well-known/webauthn` | `Host` → tenant | that tenant's Related Origin Requests document |
