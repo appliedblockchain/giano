@@ -93,7 +93,7 @@ data "aws_iam_policy_document" "gha_deploy" {
       [module.svc-wallet-web.execution_role_arn, module.svc-wallet-web.task_role_arn],
       [module.svc-custom-example.execution_role_arn, module.svc-custom-example.task_role_arn],
       [module.svc-paymaster-admin.execution_role_arn, module.svc-paymaster-admin.task_role_arn],
-      [module.svc-bundler.execution_role_arn, module.svc-bundler.task_role_arn],
+      flatten([for m in module.svc-bundler : [m.execution_role_arn, m.task_role_arn]]),
       length(module.svc-custom-example-byoui) > 0 ? [module.svc-custom-example-byoui[0].execution_role_arn, module.svc-custom-example-byoui[0].task_role_arn] : [],
       length(module.svc-wallet-byo) > 0 ? [module.svc-wallet-byo[0].execution_role_arn, module.svc-wallet-byo[0].task_role_arn] : [],
     )

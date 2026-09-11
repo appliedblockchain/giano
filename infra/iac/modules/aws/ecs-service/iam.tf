@@ -38,10 +38,9 @@ resource "aws_iam_role" "exec" {
 
 locals {
   # the exec role reads every secret this service's task definition can reference: its own
-  # `secrets` block, the init container's (if any), and the Datadog API key when enabled.
+  # `secrets` block, and the Datadog API key when enabled.
   exec_secret_arns = concat(
     values(var.secret_arns),
-    var.init_container == null ? [] : values(var.init_container.secrets),
     var.datadog_enabled ? [var.datadog_api_key_arn] : [],
   )
 }

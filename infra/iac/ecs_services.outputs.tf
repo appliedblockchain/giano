@@ -5,7 +5,7 @@ output "ecs_services" {
     { wallet-web = module.svc-wallet-web.task_definition_family },
     { custom-example = module.svc-custom-example.task_definition_family },
     { paymaster-admin = module.svc-paymaster-admin.task_definition_family },
-    { bundler = module.svc-bundler.task_definition_family },
+    { for k, m in module.svc-bundler : k => m.task_definition_family },
     length(module.svc-custom-example-byoui) > 0 ? { custom-example-byoui = module.svc-custom-example-byoui[0].task_definition_family } : {},
     length(module.svc-wallet-byo) > 0 ? { wallet-byo = module.svc-wallet-byo[0].task_definition_family } : {},
   )

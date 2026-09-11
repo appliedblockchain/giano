@@ -103,17 +103,6 @@ variable "asm_kms_key_arn" {
   type        = string
 }
 
-# the migrate init container — wallet-api only (§9.6). null for every other service.
-variable "init_container" {
-  description = "[OPTIONAL] { name, command, secrets } — appended as a non-essential container the app container depends on with condition = SUCCESS"
-  type = object({
-    name    = string
-    command = list(string)
-    secrets = optional(map(string), {})
-  })
-  default = null
-}
-
 variable "alb_enabled" {
   description = "[REQUIRED] false drops the target group, listener rule and load-balancer block entirely — e.g. bundler"
   type        = bool
