@@ -6,12 +6,17 @@
 #
 # One-time prerequisites (see deploy/sepolia/README.md for the full runbook):
 #   1. cp deploy/sepolia.env.example deploy/.env  and fill in the keys/RPC
-#   2. Deploy the Giano contracts once:  ./deploy/sepolia/deploy-contracts.sh
-#      (writes FACTORY_ADDRESS / PAYMASTER_ADDRESS / TEST_ERC20_ADDRESS back into deploy/.env)
-#   3. Fund the deployer + Alto executor EOAs with testnet ETH (the deploy script prints them)
+#   2. Fund the deployer + Alto executor EOAs with testnet ETH (./deploy/sepolia/print-funding.sh)
+#   3. Deploy the Giano contracts once:  ./deploy/sepolia/deploy-contracts.sh
+#      (writes FACTORY_ADDRESS / SPONSORSHIP_PAYMASTER_ADDRESS / TEST_PAYMASTER_ADDRESS /
+#       TEST_ERC20_ADDRESS back into deploy/.env, and refuses to continue if any address
+#       diverges from the canonical freeze)
+#   4. Provision the paymaster:  ./deploy/sepolia/provision-paymaster.sh
+#      (roles, signer, stake, tenant registration and funding)
 #
 # Run:
 #   docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml up --build
+#   ./deploy/sepolia/provision-sponsorship.sh          # the tenant's rules — REQUIRED, see below
 #   pnpm --filter @appliedblockchain/giano-e2e dapp    # sample dApp on http://app.localhost:4400
 name: giano-sepolia
 
@@ -70,12 +75,34 @@ services:
       ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
       FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set FACTORY_ADDRESS}
       # only sponsor through our own paymaster (empty = any paymaster allowed)
-      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-${PAYMASTER_ADDRESS:-}}
+      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-${SPONSORSHIP_PAYMASTER_ADDRESS:-}}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # ── Sponsorship — the production GianoPaymaster, not the permissive test one ───────────
+      # The demo sponsors the way a real deployment does: wallet-api signs an ERC-7677 sponsorship
+      # against the tenant's funded balance on the paymaster. The permissive test paymaster is
+      # still deployed (Testing.ts) but nothing here points at it — the two are kept structurally
+      # apart so neither can stand in for the other.
+      #
+      # Both halves are required. provision-paymaster.sh registers and funds the tenant ON CHAIN;
+      # provision-sponsorship.sh installs its rules through the admin API. Funding without rules
+      # sponsors nothing, and the stack gives no hint that that is why.
+      SPONSORSHIP_ENABLED: 'true'
+      SPONSORSHIP_PAYMASTER_ADDRESS: ${SPONSORSHIP_PAYMASTER_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set SPONSORSHIP_PAYMASTER_ADDRESS}
+      # `local` is refused outright when GIANO_DEPLOYMENT_CLASS is `production`; a testnet key
+      # guarding worthless balances is the case the distinction exists to allow.
+      SPONSORSHIP_SIGNER_KIND: local
+      SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in deploy/.env}
+      # Credits tenant balances from on-chain deposits. Without it a funded tenant stays at zero.
+      PAYMASTER_WATCHER_ENABLED: 'true'
       # single demo tenant, interpolated from deploy/.env (validate the rendered JSON
       # with `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml config`)
+      #
+      # The `id` is load-bearing and must equal the TENANT_ID provision-paymaster.sh registered on
+      # the paymaster: it is the key the tenant's on-chain balance is held under. Let it default
+      # and the tenant gets a fresh id, whose balance is zero.
       TENANTS_SEED: >-
-        [{"slug":"sepolia",
+        [{"slug":"${TENANT_SLUG:-sepolia}",
+        "id":"${TENANT_ID:-33333333-3333-4333-8333-333333333333}",
         "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
         "rpId":"${RP_ID:-wallet.localhost}",
         "rpName":"${RP_NAME:-Giano Sepolia}",
@@ -100,7 +127,11 @@ services:
       # wallet-api base URL nginx proxies /api to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       GIANO_FACTORY_ADDRESS: ${FACTORY_ADDRESS:?set FACTORY_ADDRESS}
-      GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:-}
+      # Sponsorship through wallet-api's ERC-7677 service, against the production paymaster.
+      # GIANO_PAYMASTER_ADDRESS is deliberately NOT set: in the single-chain shape that variable
+      # names the permissive *test* paymaster and flips the mode to `test-paymaster`
+      # (services/wallet-web/docker/entrypoint.sh), which is the path this stack moved off.
+      GIANO_SPONSORSHIP_MODE: service
       GIANO_ALLOWED_DAPP_ORIGINS: ${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]}
       GIANO_RP_ID: ${RP_ID:-wallet.localhost}
       GIANO_BRAND_NAME: ${BRAND_NAME:-Giano Sepolia}
