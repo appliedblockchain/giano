@@ -1,6 +1,6 @@
 {
   "name": "@appliedblockchain/giano-wallet-kit",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Giano wallet SDK: the framework-agnostic orchestration a Giano wallet origin is built from — runtimes, transport host with consent, and the wallet-management controller",
   "license": "MIT",
   "repository": {

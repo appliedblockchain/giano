@@ -1,7 +1,7 @@
 {
   "name": "@appliedblockchain/giano-paymaster-admin",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Giano paymaster admin console: an operator view of tenants, treasury, roles and health, read straight from the chain",
   "license": "MIT",
