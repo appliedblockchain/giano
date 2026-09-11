@@ -28,10 +28,8 @@ spec:
             {{- else }}
             - name: GIANO_CHAIN_ID
               value: {{ .Values.config.chainId | quote }}
-            - name: GIANO_RPC_URL
-              value: {{ .Values.config.rpcUrl | quote }}
-            - name: GIANO_BUNDLER_URL
-              value: {{ .Values.config.bundlerUrl | default (printf "http://%s-bundler:4337" .Release.Name) | quote }}
+            # no GIANO_RPC_URL / GIANO_BUNDLER_URL: the wallet reads and submits through wallet-api's
+            # relays (/api/v1/rpc/<chainId>, /api/v1/bundler/<chainId>); only wallet-api dials the node and bundler
             {{- with .Values.config.factoryAddress }}
             - name: GIANO_FACTORY_ADDRESS
               value: {{ . | quote }}

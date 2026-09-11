@@ -103,17 +103,16 @@ module "svc-wallet-web" {
 
   environment = {
     GIANO_CHAIN_ID             = var.chain_id
-    GIANO_BUNDLER_URL          = "https://${local.hosts.api}/v1/userops" # R3
     GIANO_WALLET_API_UPSTREAM  = "http://wallet-api.${local.name_prefix}.local:8080"
     GIANO_SPONSORSHIP_MODE     = "service"
     GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
     GIANO_BRAND_NAME           = var.example_brand_name
-    GIANO_CSP_CONNECT_SRC      = var.rpc_origin
+    # No GIANO_RPC_URL / GIANO_BUNDLER_URL / GIANO_CSP_CONNECT_SRC: the SPA reads and submits
+    # through wallet-api's /api/v1/rpc and /api/v1/bundler relays, so everything it dials is
+    # same-origin and the keyed RPC URL stays in wallet-api. R3 closed.
     # GIANO_RP_ID deliberately unset — load-bearing, §3.4, §14.3
   }
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
+  secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled                       = true
@@ -251,8 +250,8 @@ module "svc-custom-example-byoui" {
 }
 
 # ── wallet-byo — rule 35, wallet.byoui.* — tenant byoui's OWN SPA — §9.2, §14.5 ─────────────
-# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, which
-# is what makes the open-relay vector unreachable here regardless of BYO_BUNDLER_PROXY_ENABLED.
+# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, and no
+# /bundler location either; chain reads and the bundler both go through wallet-api's /api relays.
 module "svc-wallet-byo" {
   count  = var.byo_wallet_enabled[terraform.workspace] ? 1 : 0
   source = "./modules/aws/ecs-service"
@@ -279,19 +278,18 @@ module "svc-wallet-byo" {
   security_group_ids = [aws_security_group.tasks-sg.id] # NOT bundler-sg — R11
 
   environment = {
-    BYO_WALLET_PORT           = "8080"
-    WALLET_API_UPSTREAM       = "http://wallet-api.${local.name_prefix}.local:8080"
-    CHAIN_ID                  = var.chain_id
-    SPONSORSHIP_MODE          = "service"
-    BYO_BUNDLER_PROXY_ENABLED = "false" # R11 — must stay disabled; service mode never needs it
-    BYO_ALLOWED_DAPP_ORIGINS  = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
-    FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
+    BYO_WALLET_PORT          = "8080"
+    WALLET_API_UPSTREAM      = "http://wallet-api.${local.name_prefix}.local:8080"
+    CHAIN_ID                 = var.chain_id
+    SPONSORSHIP_MODE         = "service"
+    BYO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
+    FACTORY_ADDRESS          = var.factory_address # required here, unlike everywhere else — §14.5
     # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
     # CHAIN_B_ID unset — single-chain, the second chain falls away
+    # No RPC_UPSTREAM and no bundler variable: reads and the bundler go through wallet-api's
+    # /api/v1/rpc and /api/v1/bundler relays. R11 closed.
   }
-  secret_arns = {
-    RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url"]
-  }
+  secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled       = true

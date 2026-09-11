@@ -402,6 +402,44 @@ describe('two-chain relay', () => {
     expect(res.json()).toMatchObject({ error: 'unsupported-chain', servedChainIds: [31337, 31338] });
   });
 
+  it("the JSON-RPC bundler relay routes by the chain in its PATH, to that chain's bundler (MC-58)", async () => {
+    const entryPoint = '0x0000000071727De22E5E9d8BAf0edAc6f37da032';
+    const relay = (url: string, method: string, params: unknown[] = []) =>
+      ctx.app.inject({
+        method: 'POST',
+        url,
+        headers: { authorization: `Bearer ${sessionToken}` },
+        payload: { jsonrpc: '2.0', id: 1, method, params },
+      });
+
+    const onA = await relay('/v1/bundler/31337', 'eth_sendUserOperation', [makeOp(4), entryPoint]);
+    const onB = await relay('/v1/bundler/31338', 'eth_sendUserOperation', [makeOp(4), entryPoint]);
+    const hashA = (onA.json() as { result: string }).result;
+    const hashB = (onB.json() as { result: string }).result;
+    expect(hashA).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(hashA).not.toBe(hashB); // the hash commits to the chain (MC-57)
+
+    const sends = ctx.bundlerCalls.filter((call) => call.method === 'eth_sendUserOperation').slice(-2);
+    expect(sends.map((call) => call.url)).toEqual([CHAIN_A_BUNDLER, CHAIN_B_BUNDLER]);
+
+    // the locally-answered methods answer for the chain in the path, too
+    expect((await relay('/v1/bundler/31338', 'eth_chainId')).json()).toMatchObject({ result: '0x7a6a' });
+
+    // and a relay URL naming no chain is ambiguous here, exactly like an omitted chainId (MC-53)
+    const bare = await relay('/v1/bundler', 'eth_chainId');
+    expect(bare.statusCode).toBe(400);
+    expect(bare.json()).toMatchObject({ error: 'chain-required', servedChainIds: [31337, 31338] });
+
+    // the read relay routes the same way, tenant-bound by Origin
+    const read = await ctx.app.inject({
+      method: 'POST',
+      url: '/v1/rpc/31338',
+      headers: { origin: TENANT_A.walletOrigin },
+      payload: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
+    });
+    expect(read.json()).toMatchObject({ result: '0x7a6a' });
+  });
+
   it('reports both chains on /v1/version, with no privileged one (MC-56)', async () => {
     const res = await ctx.app.inject({ method: 'GET', url: '/v1/version' });
     const body = res.json() as { chainId: number | null; chains: Array<{ chainId: number }> };

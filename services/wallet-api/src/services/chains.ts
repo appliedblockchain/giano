@@ -1,6 +1,7 @@
 import { createPublicClient, http, type PublicClient } from 'viem';
 import type { AppConfig, ResolvedChain } from '../config.js';
 import { createBundlerService, type BundlerService } from './bundler.js';
+import { createNodeRpcService, type NodeRpcService } from './node-rpc.js';
 import { createPaymasterReader, type PaymasterReader } from './paymaster-contract.js';
 import type { LedgerService } from './sponsorship-ledger.js';
 import { createSponsorshipService, type SponsorshipService } from './sponsorship-service.js';
@@ -22,6 +23,8 @@ export type ChainServices = {
   chainId: number;
   publicClient: PublicClient;
   bundler: BundlerService;
+  /** Verbatim JSON-RPC to the node, for the wallet read relay (`/v1/rpc/:chainId`). */
+  nodeRpc: NodeRpcService;
   entryPoint: `0x${string}`;
   factory: `0x${string}`;
   /** Present when sponsorship is enabled for this chain. */
@@ -84,6 +87,8 @@ export function buildChainRegistry(options: BuildChainRegistryOptions): ChainReg
   for (const descriptor of config.CHAINS) {
     const publicClient = createPublicClient({ transport: http(descriptor.rpcUrl) });
     const bundler = createBundlerService(descriptor.bundlerUrl, descriptor.entryPoint, fetchImpl);
+    // Not `fetchImpl`: that override stands in for the bundler in tests; the node is a real endpoint there.
+    const nodeRpc = createNodeRpcService(descriptor.rpcUrl);
 
     let paymaster: PaymasterReader | undefined;
     let sponsorship: SponsorshipService | undefined;
@@ -111,6 +116,7 @@ export function buildChainRegistry(options: BuildChainRegistryOptions): ChainReg
       chainId: descriptor.chainId,
       publicClient,
       bundler,
+      nodeRpc,
       entryPoint: descriptor.entryPoint,
       factory: descriptor.factory,
       paymaster,

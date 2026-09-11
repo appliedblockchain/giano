@@ -28,6 +28,8 @@ export function createBundlerService(bundlerUrl: string, entryPoint: Address, fe
     /** rpcUserOp fields must already be hex-encoded (RpcUserOperation shape). */
     sendUserOperation: (rpcUserOp: Record<string, unknown>) =>
       rpc<string>('eth_sendUserOperation', [rpcUserOp, entryPoint]),
+    estimateUserOperationGas: (rpcUserOp: Record<string, unknown>) =>
+      rpc<Record<string, unknown>>('eth_estimateUserOperationGas', [rpcUserOp, entryPoint]),
     getUserOperationReceipt: (hash: string) => rpc<Record<string, unknown> | null>('eth_getUserOperationReceipt', [hash]),
     getUserOperationByHash: (hash: string) => rpc<Record<string, unknown> | null>('eth_getUserOperationByHash', [hash]),
   };

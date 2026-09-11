@@ -89,9 +89,10 @@ services:
     environment:
       # the dedicated wallet origin, e.g. https://wallet.clientapp.com behind your TLS proxy
       GIANO_CHAIN_ID: ${CHAIN_ID:?}
-      GIANO_RPC_URL: ${RPC_URL:?}
-      GIANO_BUNDLER_URL: ${BUNDLER_URL:?}
-      # nginx proxies /api and /.well-known/webauthn here (same-origin)
+      # No RPC or bundler URL here: the wallet reads through wallet-api's /api/v1/rpc/<chainId>
+      # and submits through /api/v1/bundler/<chainId>, so RPC_URL and BUNDLER_URL above stay
+      # server-side and need not be reachable from a browser.
+      # wallet-api base URL nginx proxies /api and /.well-known/webauthn to (same-origin)
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # defaults from the contracts registry when empty and CHAIN_ID is known
       GIANO_FACTORY_ADDRESS: ${FACTORY_ADDRESS:-}

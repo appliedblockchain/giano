@@ -25,7 +25,8 @@ Key properties visible in the flow:
   rejects a mismatch as a plain 401 while incrementing an alertable metric.
 - **Tx → UserOp.** `eth_sendTransaction` is repackaged into an EntryPoint v0.7
   UserOperation inside the wallet (`wallet-core` provider), gas-estimated and prepared
-  against the tenant's bundler proxy, signed by the passkey, then relayed.
+  through wallet-api's session-bound bundler relay (`/api/v1/bundler/:chainId`), signed by
+  the passkey, then relayed.
 - **Policied relay, per tenant.** The signed op is not sent straight to the bundler by
   the browser; it goes through **wallet-api**, which recomputes the hash against its
   *own* EntryPoint and chain id, applies the **tenant's** merged policy and per-tenant
@@ -109,7 +110,10 @@ sequenceDiagram
     GP->>BC: estimateUserOperationGas(userOp)
     activate BC
     BC->>BC: getPaymasterStubData()<br/>→ { paymaster: tenant config.paymasterAddress }
-    BC->>Node: eth_estimateUserOperationGas<br/>(via tenant edge /bundler → shared Alto)
+    BC->>API: eth_estimateUserOperationGas<br/>POST {walletOrigin}/api/v1/bundler/:chainId · Bearer session<br/>(sender must be the session wallet)
+    API->>Bundler: eth_estimateUserOperationGas<br/>(SERVER EntryPoint)
+    Bundler-->>API: gas limits
+    API-->>BC: gas limits
     Node-->>BC: gas limits (verificationGasLimit ≥ 800k for WebAuthn)
     BC-->>GP: gas estimate
     GP->>BC: prepareUserOperation({...op, ...estimate})
@@ -119,11 +123,11 @@ sequenceDiagram
     BC-->>GP: prepared UserOperation
     deactivate BC
     GP->>Read: estimateFeesPerGas()
-    Read->>Node: eth_feeHistory / gasPrice (tenant edge /rpc)
+    Read->>Node: eth_feeHistory / gasPrice<br/>(via wallet-api /api/v1/rpc/:chainId, tenant-bound read relay)
     Node-->>Read: maxFeePerGas / maxPriorityFeePerGas
     Read-->>GP: fees
     Note over GP: resolveUserOpFees:<br/>requested → prepared → chain estimate
-    Note over GP,BC: estimate + prepare are NOT policied —<br/>they hit the shared bundler through the tenant's<br/>own proxy. Only the SIGNED op is policied (step 6).
+    Note over GP,BC: estimate + prepare are bound to the session wallet<br/>but NOT policied — they reach the shared bundler through<br/>wallet-api's /v1/bundler relay, never a tenant-edge proxy.<br/>Only the SIGNED op is policied (step 6).
 
     %% ---------- 5. Sign with the passkey ----------
     GP->>Acct: signUserOperation(preparedWithGas)
@@ -262,8 +266,9 @@ cannot legitimately collide).
 - **With the wallet-api injection hook (shown above, the default for `wallet-web` and for
   the BYO reference SPA)** — the provider estimates + prepares + signs locally, then hands
   the *signed* op to `injection.submitUserOperation`, which `POST`s to `wallet-api`. The
-  bundler is only ever reached *for submission* by the backend, after tenant resolution and
-  policy. The dApp never holds a bundler URL.
+  bundler is only ever reached by the backend: for estimation and receipts through the
+  session-bound `/v1/bundler/:chainId` relay, for submission after tenant resolution and
+  policy. Neither the dApp nor the wallet origin holds a route to a bundler.
 - **Without the hook** — the provider calls `bundler.sendUserOperation(userOpRequest)`
   directly (viem's account-abstraction client builds, signs and submits in one call). This is
   the embedded/no-backend path: no tenant, no policy, no audit row, no per-tenant rate limit.

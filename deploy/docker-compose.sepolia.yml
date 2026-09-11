@@ -95,17 +95,12 @@ services:
       - '8081:8080'
     environment:
       GIANO_CHAIN_ID: ${CHAIN_ID:-11155111}
-      # The browser reads chain state directly from RPC_URL, so it must be CORS-enabled and
-      # safe to expose (use a keyless public endpoint, or a key you don't mind shipping to the
-      # client). The bundler is proxied same-origin via nginx to avoid CORS on alto.
-      GIANO_RPC_URL: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
-      GIANO_BUNDLER_URL: http://wallet.localhost:8081/bundler
-      GIANO_BUNDLER_UPSTREAM: http://alto:4337
+      # No RPC or bundler URL: the wallet reads through wallet-api's /api/v1/rpc/<chainId> and
+      # submits through /api/v1/bundler/<chainId>, so RPC_URL above never reaches the browser.
+      # wallet-api base URL nginx proxies /api to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       GIANO_FACTORY_ADDRESS: ${FACTORY_ADDRESS:?set FACTORY_ADDRESS}
       GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:-}
       GIANO_ALLOWED_DAPP_ORIGINS: ${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]}
       GIANO_RP_ID: ${RP_ID:-wallet.localhost}
       GIANO_BRAND_NAME: ${BRAND_NAME:-Giano Sepolia}
-      # allow the browser to reach the external RPC directly (bundler is same-origin)
-      GIANO_CSP_CONNECT_SRC: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}

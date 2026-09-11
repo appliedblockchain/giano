@@ -19,7 +19,9 @@ config:
   #       bundlerUrl: https://…
   chains: []
   chainId: 8453
-  rpcUrl: ""
+  # node RPC and bundler for wallet-api; the wallet UI reaches both through wallet-api's relays
+  # (/api/v1/rpc/<chainId>, /api/v1/bundler/<chainId>), so neither URL is published to a browser.
+  rpcUrl: "" # e.g. https://mainnet.base.org (a keyed provider URL is fine here)
   bundlerUrl: "" # leave empty to use the in-chart bundler service
   rpId: "" # e.g. wallet.clientapp.com — IRREVERSIBLE per deployment
   rpName: Giano Wallet
@@ -51,8 +53,9 @@ walletApi:
 walletWeb:
   replicas: 2
   image: giano-wallet-web
-  # multi-chain: one wallet descriptor per served chain ({chainId, name, rpcUrl,
-  # bundlerUrl, factoryAddress, sponsorship}); empty = the single-chain scalars in `config`
+  # multi-chain: one wallet descriptor per served chain ({chainId, name, factoryAddress,
+  # sponsorship}); empty = the single-chain scalars in `config`. rpcUrl/bundlerUrl default to
+  # wallet-api's relays for that chain.
   chains: []
   resources: {}
 

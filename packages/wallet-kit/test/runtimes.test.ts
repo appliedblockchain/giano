@@ -1,7 +1,7 @@
 import { defineChain } from 'viem';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletChainConfig, WalletConfig } from '../src/config';
-import { bundlerOptions, createWalletRuntimes } from '../src/runtimes';
+import { bundlerOptions, createWalletRuntimes, sessionHttp } from '../src/runtimes';
 
 const chain = (chainId: number): WalletChainConfig => ({
   chainId,
@@ -63,6 +63,7 @@ describe('fee-before-paymaster is held by construction (WK-04, WK-27)', () => {
   });
   const estimate = async () => ({ maxFeePerGas: 2n, maxPriorityFeePerGas: 1n });
   const stubClient = { getPaymasterData: async () => ({}), getPaymasterStubData: async () => ({}) } as never;
+  const noSession = () => null;
 
   it('always wires the fee estimator into userOperation, in every sponsorship mode', async () => {
     for (const descriptor of [
@@ -70,7 +71,7 @@ describe('fee-before-paymaster is held by construction (WK-04, WK-27)', () => {
       { ...chain(31337), sponsorship: 'service' as const },
       { ...chain(31337), sponsorship: 'test-paymaster' as const, testPaymasterAddress: '0x2222222222222222222222222222222222222222' as const },
     ]) {
-      const options = bundlerOptions(descriptor, viemChain, estimate, descriptor.sponsorship === 'service' ? stubClient : undefined);
+      const options = bundlerOptions(descriptor, viemChain, estimate, descriptor.sponsorship === 'service' ? stubClient : undefined, noSession);
       // viem populates fees during prepareUserOperation via this hook — BEFORE the
       // paymaster hooks run. There is no construction path without it.
       await expect(options.userOperation.estimateFeesPerGas()).resolves.toEqual({ maxFeePerGas: 2n, maxPriorityFeePerGas: 1n });
@@ -78,17 +79,46 @@ describe('fee-before-paymaster is held by construction (WK-04, WK-27)', () => {
   });
 
   it('attaches paymaster hooks only alongside the fee hook', () => {
-    const sponsored = bundlerOptions({ ...chain(31337), sponsorship: 'service' }, viemChain, estimate, stubClient);
+    const sponsored = bundlerOptions({ ...chain(31337), sponsorship: 'service' }, viemChain, estimate, stubClient, noSession);
     expect('paymaster' in sponsored && sponsored.paymaster).toBeTruthy();
     expect(sponsored.userOperation.estimateFeesPerGas).toBeTypeOf('function');
 
-    const off = bundlerOptions(chain(31337), viemChain, estimate, undefined);
+    const off = bundlerOptions(chain(31337), viemChain, estimate, undefined, noSession);
     expect('paymaster' in off).toBe(false);
   });
 
   it('refuses test-paymaster mode without an address', () => {
-    expect(() => bundlerOptions({ ...chain(31337), sponsorship: 'test-paymaster' }, viemChain, estimate, undefined)).toThrow(
+    expect(() => bundlerOptions({ ...chain(31337), sponsorship: 'test-paymaster' }, viemChain, estimate, undefined, noSession)).toThrow(
       /no testPaymasterAddress/,
     );
+  });
+});
+
+describe('the bundler transport carries the wallet-api session', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const capture = () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const { id } = JSON.parse(String(init?.body)) as { id: number };
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id, result: '0x7a69' }), { headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  it('sends the bearer read at call time, so a sign-in after construction is honoured', async () => {
+    const fetchMock = capture();
+    let token: string | null = null;
+    const transport = sessionHttp('http://relay.test/v1/bundler/31337', () => token)({ retryCount: 0 });
+
+    await transport.request({ method: 'eth_chainId' });
+    expect((fetchMock.mock.calls[0][1]!.headers as Record<string, string>).authorization).toBeUndefined();
+
+    token = 'session-token';
+    await transport.request({ method: 'eth_chainId' });
+    const headers = fetchMock.mock.calls[1][1]!.headers as Record<string, string>;
+    expect(headers.authorization).toBe('Bearer session-token');
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(String(fetchMock.mock.calls[1][0])).toBe('http://relay.test/v1/bundler/31337');
   });
 });

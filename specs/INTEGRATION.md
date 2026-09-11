@@ -41,10 +41,10 @@ tenants, and wallet-api tenant-scopes everything beneath that.
 - serves the SPA and `GET /config.json` (runtime config, injected at container start);
 - proxies `/api/*` → `giano-wallet-api` (same-origin: no CORS, no third-party cookies);
 - proxies `GET /.well-known/webauthn` → wallet-api (Related Origin Requests);
-- optionally proxies `/rpc` and `/bundler` to a non-CORS node/bundler
-  (`GIANO_RPC_UPSTREAM` / `GIANO_BUNDLER_UPSTREAM`);
-- sets `frame-ancestors 'none'` + `X-Frame-Options: DENY` (popup-only) and a CSP whose
-  `connect-src` includes your rpc/bundler.
+- has **no** node or bundler proxy: chain reads go to wallet-api's `/api/v1/rpc/<chainId>` relay
+  and the bundler client to `/api/v1/bundler/<chainId>`, both over the same `/api` proxy — so
+  neither a node URL nor a bundler is ever reachable from a browser;
+- sets `frame-ancestors 'none'` + `X-Frame-Options: DENY` (popup-only) and a same-origin-only CSP.
 
 **Bring-your-own-UI tenants must reproduce this serving contract** in their own edge/proxy.
 Two headers are load-bearing for tenant resolution: forward `Origin` untouched (ceremony
@@ -65,9 +65,11 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
   array with one entry per tenant carrying its `walletOrigin` (host = RP ID), origins,
   `openRegistration`, `adminKeys` and `corsOrigins` (your dApp origins, for the public
   receipt endpoint).
-- **wallet-web** — `GIANO_CHAIN_ID`, `GIANO_RPC_URL`, `GIANO_BUNDLER_URL`,
-  `GIANO_WALLET_API_UPSTREAM`, `GIANO_RP_ID`, `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array),
-  `GIANO_FACTORY_ADDRESS`/`GIANO_PAYMASTER_ADDRESS` (default from the contracts registry).
+- **wallet-web** — `GIANO_CHAIN_ID`, `GIANO_WALLET_API_UPSTREAM`, `GIANO_RP_ID`,
+  `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array), `GIANO_FACTORY_ADDRESS`/`GIANO_PAYMASTER_ADDRESS`
+  (default from the contracts registry). No node or bundler URL: the wallet uses wallet-api's
+  `/api/v1/rpc/<chainId>` and `/api/v1/bundler/<chainId>` relays (`GIANO_RPC_URL` /
+  `GIANO_BUNDLER_URL` exist only to dial them directly in development).
 - **bundler** (optional in-stack) — `ALTO_RPC_URL`, `ALTO_EXECUTOR_PRIVATE_KEYS` (from a
   secret), `ALTO_SAFE_MODE=true`.
 
