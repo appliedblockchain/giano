@@ -123,7 +123,7 @@ sequenceDiagram
     BC-->>GP: prepared UserOperation
     deactivate BC
     GP->>Read: estimateFeesPerGas()
-    Read->>Node: eth_feeHistory / gasPrice (tenant edge /rpc)
+    Read->>Node: eth_feeHistory / gasPrice<br/>(via wallet-api /api/v1/rpc/:chainId, tenant-bound read relay)
     Node-->>Read: maxFeePerGas / maxPriorityFeePerGas
     Read-->>GP: fees
     Note over GP: resolveUserOpFees:<br/>requested → prepared → chain estimate

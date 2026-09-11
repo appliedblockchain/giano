@@ -447,23 +447,12 @@ services:
       # DIFFERENT per-chain field names from wallet-api's — `factoryAddress`/`sponsorship`
       # here, `factory`/`sponsorshipPaymaster` there. Same variable name, different schema.
       GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      # [ASM] giano-<env>-rpc-url.
-      #
-      # ⚠ THIS VALUE IS BROWSER-FACING. It becomes `rpcUrl` in /config.json, which every
-      # visitor fetches — so the Alchemy API key embedded in it is published to anyone who
-      # opens the wallet. The spec accepts this because the browser must read chain state
-      # directly and Alchemy sends permissive CORS headers (§13.3), but the better posture is
-      # the one §13.3 also describes: point this at the wallet origin's own `/rpc` and set
-      # GIANO_RPC_UPSTREAM to the keyed URL, which keeps the key server-side. The nginx
-      # template already supports it. Decide this deliberately rather than by default.
-      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
-      # No GIANO_BUNDLER_URL, and R3 is closed the way it had to be: the browser DID dial that
-      # URL — viem estimates gas and polls receipts through the bundler client, whatever the
-      # sponsorship mode — so pointing it at the REST endpoint left the wallet unable to
-      # transact. The SPA now defaults to wallet-api's JSON-RPC relay,
-      # `${GIANO_WALLET_API_URL}/v1/bundler/<chainId>`, same-origin through /api: behind the
-      # session, submissions through the same policy pipeline as POST /v1/userops. The bundler
-      # needs no ALB target and no hostname, as designed.
+      # No GIANO_RPC_URL and no GIANO_BUNDLER_URL. The SPA reads through wallet-api's
+      # /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId> (session-bound,
+      # policy-checked), so the keyed Alchemy URL stays in wallet-api's RPC_URL and never reaches
+      # a browser, and the bundler needs no ALB target or hostname. (R3 closed: the browser did
+      # dial the bundler URL — viem estimates and polls receipts through it in every sponsorship
+      # mode — so the REST endpoint it used to point at left the wallet unable to transact.)
       # [literal] Cloud Map in AWS: http://wallet-api.giano-dev.local:8080. nginx proxies
       # /api/ and /.well-known/webauthn here. REQUIRED — the entrypoint exits if unset.
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
@@ -482,11 +471,7 @@ services:
       # A set of ONE, not a union: only `example` is served by this task. An empty value
       # fails CLOSED (no dApp may connect), which is the correct direction.
 
-      # ── CSP ─────────────────────────────────────────────────────────────────────────────
-      # [tfvar] var.rpc_origin — the RPC ORIGIN only, not the keyed URL. Space-separated
-      # additions to `connect-src`. Not a secret; the URL that embeds the key is.
-      GIANO_CSP_CONNECT_SRC: ${RPC_ORIGIN:?set RPC_ORIGIN}
-
+      # GIANO_CSP_CONNECT_SRC unset: everything the SPA dials is same-origin now.
       # ⚠ GIANO_RP_ID: intentionally absent. See the block comment above before adding it.
     healthcheck:
       # Matches the image, and matches the ALB's `health_check_path = "/"` for this service.
@@ -636,17 +621,13 @@ services:
     environment:
       BYO_WALLET_PORT: '8080'
       # [literal] Cloud Map in AWS. Proxies /api* and /.well-known/webauthn, forwarding Host
-      # and Origin untouched because wallet-api resolves tenants from them.
+      # and Origin untouched because wallet-api resolves tenants from them. Chain reads and the
+      # bundler travel through /api too (wallet-api's /v1/rpc and /v1/bundler relays), so this
+      # service has no RPC or bundler variable of any kind.
       WALLET_API_UPSTREAM: http://wallet-api:8080
       CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      # [ASM] giano-<env>-rpc-url. Proxied SAME-ORIGIN through this server's /rpc, so unlike
-      # wallet-web's browser-facing GIANO_RPC_URL the API key stays server-side. This is the
-      # posture §13.3 recommends, and the BYO fixture happens to get it right.
-      RPC_UPSTREAM: ${RPC_URL:?set RPC_URL}
       # [literal] The real sponsorship path, through /api/v1/paymaster. `service` mode needs
-      # no permissive paymaster fixture, so PAYMASTER_ADDRESS stays unset. There is no bundler
-      # variable of any kind: the bundler client goes to /api/v1/bundler/<chainId> (see the
-      # note above).
+      # no permissive paymaster fixture, so PAYMASTER_ADDRESS stays unset.
       SPONSORSHIP_MODE: service
       # This tenant's OWN allowlist, shipped with its own SPA. That is why R9 cannot reach it
       # and why it can be tenant two today.

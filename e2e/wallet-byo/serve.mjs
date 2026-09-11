@@ -1,6 +1,8 @@
 // BYO-wallet reference server: the SECOND tenant's wallet origin. Serves a tenant-built
-// (framework-free) wallet SPA and reverse-proxies /api, /.well-known/webauthn and /rpc — the
-// same shape a real tenant would deploy with nginx/CloudFront.
+// (framework-free) wallet SPA and reverse-proxies /api and /.well-known/webauthn to wallet-api —
+// the whole serving contract a real tenant reproduces with nginx/CloudFront. Chain reads and
+// the bundler both travel through /api (wallet-api's /v1/rpc and /v1/bundler relays), so this
+// origin holds no node or bundler URL.
 //
 // It runs in two contexts, and everything conditional below is because of that (§16.5):
 //
@@ -43,8 +45,6 @@ try {
   // not a devnet checkout; env supplies the addresses
 }
 
-const loopbackOf = (name) => (origins ? origins.loopbackOf(name) : undefined);
-
 /** Required outside a devnet checkout, where there is no fixture default to fall back to. */
 function required(value, name, why) {
   if (value === undefined || value === null || value === '') {
@@ -55,47 +55,27 @@ function required(value, name, why) {
   return value;
 }
 
+// the port to listen on, e.g. 8080
 const port = Number(process.env.BYO_WALLET_PORT ?? (origins ? origins.portOf('wallet-byo') : 8080));
 
-// Loopback, not the portless names: these are server-to-server hops, and this proxy forwards
-// the browser's Host untouched (see `proxy` below) because wallet-api resolves the tenant from
-// it. Sending that Host back through portless would route the request straight back here — a
-// loop portless would have to reject.
+// wallet-api base URL, e.g. http://wallet-api:8080. Loopback rather than a portless name in the
+// e2e checkout: this is a server-to-server hop, and the proxy below forwards the browser's Host
+// untouched (wallet-api resolves the tenant from it) — sending that Host back through portless
+// would route the request straight back here.
 const walletApiUpstream = required(
-  process.env.WALLET_API_UPSTREAM ?? loopbackOf('api'),
+  process.env.WALLET_API_UPSTREAM ?? (origins ? origins.loopbackOf('api') : undefined),
   'WALLET_API_UPSTREAM',
   'the wallet-api this origin proxies /api and /.well-known/webauthn to',
 );
-const rpcUpstream = required(process.env.RPC_UPSTREAM ?? loopbackOf('rpc'), 'RPC_UPSTREAM', 'the chain RPC this origin proxies /rpc to');
-const rpcBUpstream = process.env.RPC_B_UPSTREAM ?? loopbackOf('rpc-b');
-
-// --- no bundler proxy, deliberately ------------------------------------------------------
-//
-// There used to be a /bundler location relaying straight to the ERC-4337 bundler, behind a
-// flag (R11). On any deployment where this task could reach a bundler it was a PUBLIC
-// UNAUTHENTICATED RELAY that bypassed every wallet-api policy check — and turning it off
-// stopped the wallet submitting, because viem's bundler client needs a JSON-RPC bundler for
-// estimation and receipts as well as submission. The SPA now points its bundler client at
-// wallet-api's relay, `/api/v1/bundler/<chainId>` (see src/config.ts): the same JSON-RPC
-// surface, behind the session, with submissions going through the same policy pipeline as
-// `POST /v1/userops`. It travels through the /api proxy below, so this origin needs no route
-// to a bundler at all. That is the whole serving contract a BYO tenant has to reproduce.
 
 // --- chain configuration ------------------------------------------------------------------
-// The second chain used to be unconditional, so a single-chain deployment advertised a
-// fiction pointing at /rpc-b. It now falls away unless asked for — and it is asked for
-// implicitly in a devnet checkout, which is what keeps the two-chain e2e suite (MC-129)
-// passing with no environment at all.
-const chainId = required(process.env.CHAIN_ID ?? devnet?.chainId, 'CHAIN_ID', 'the chain this wallet origin serves');
-const chainBId = process.env.CHAIN_B_ID ?? (devnet ? '31338' : '');
+// Only ids and names: every endpoint is wallet-api's. The second chain falls away unless asked
+// for — implicitly in a devnet checkout, which keeps the two-chain e2e suite (MC-129) passing
+// with no environment at all.
+const chainId = required(process.env.CHAIN_ID ?? devnet?.chainId, 'CHAIN_ID', 'the chain this wallet origin serves, e.g. 84532');
+const chainBId = process.env.CHAIN_B_ID ?? (devnet ? '31338' : ''); // second chain id, or unset for single-chain
 const chainName = process.env.CHAIN_NAME ?? (devnet ? 'Devnet A' : `chain ${chainId}`);
 const chainBName = process.env.CHAIN_B_NAME ?? (devnet ? 'Devnet B' : `chain ${chainBId}`);
-
-if (chainBId && !rpcBUpstream) {
-  console.error(`FATAL: CHAIN_B_ID=${chainBId} but RPC_B_UPSTREAM is unset.`);
-  console.error('       Set RPC_B_UPSTREAM, or leave CHAIN_B_ID unset for a single-chain deployment.');
-  process.exit(1);
-}
 
 // The SPA passes this straight to createGianoProvider. §14.5 says it defaults from the
 // contracts registry, but this bundle has no registry dependency — so outside a devnet
@@ -103,13 +83,13 @@ if (chainBId && !rpcBUpstream) {
 const factoryAddress = required(
   process.env.FACTORY_ADDRESS ?? devnet?.factory,
   'FACTORY_ADDRESS',
-  'the account factory this wallet derives addresses from',
+  'the account factory this wallet derives addresses from, e.g. 0x26dC…',
 );
 
 const allowedDappOrigins = required(
   process.env.BYO_ALLOWED_DAPP_ORIGINS ?? (origins ? JSON.stringify([origins.ORIGINS.dappByo]) : undefined),
   'BYO_ALLOWED_DAPP_ORIGINS',
-  'a JSON array of the dApp origins allowed to connect — this tenant\'s own allowlist, which is why R9 does not reach it',
+  'a JSON array of the dApp origins allowed to connect, e.g. ["https://app.example"] — this tenant\'s own allowlist (R9)',
 );
 
 const bundle = await esbuild.build({
@@ -125,12 +105,12 @@ const bundle = await esbuild.build({
     'process.env.CHAIN_B_ID': JSON.stringify(String(chainBId)),
     'process.env.CHAIN_B_NAME': JSON.stringify(chainBName),
     'process.env.FACTORY_ADDRESS': JSON.stringify(factoryAddress),
-    // Defaults to the production paymaster path when the devnet baked one, so what the BYO
-    // reference demonstrates is the path real tenants use — rules enforced, balance debited, fee
-    // charged — rather than a permissive fixture that cannot fail.
+    // service | test-paymaster | off. Defaults to the production paymaster path when the devnet
+    // baked one, so the BYO reference demonstrates the path real tenants use.
     'process.env.SPONSORSHIP_MODE': JSON.stringify(
       process.env.SPONSORSHIP_MODE ?? (devnet?.sponsorshipPaymaster ? 'service' : devnet?.testPaymaster ? 'test-paymaster' : 'off'),
     ),
+    // the permissive dev paymaster; only used in test-paymaster mode
     'process.env.PAYMASTER_ADDRESS': JSON.stringify(process.env.PAYMASTER_ADDRESS ?? devnet?.testPaymaster ?? devnet?.paymaster ?? ''),
     'process.env.ALLOWED_DAPP_ORIGINS': JSON.stringify(allowedDappOrigins),
   },
@@ -148,7 +128,8 @@ const css = fs.readFileSync(path.join(dir, 'styles.css'), 'utf8');
 
 /**
  * Minimal reverse proxy. Two headers are load-bearing for tenant resolution:
- *  - `Origin` is forwarded untouched (spread) — wallet-api resolves ceremony tenants by it;
+ *  - `Origin` is forwarded untouched (spread) — wallet-api resolves ceremony tenants and the
+ *    read relay's tenant by it;
  *  - `Host` is explicitly preserved as the browser sent it (Node would otherwise rewrite
  *    it to the upstream) — /.well-known/webauthn resolves its tenant by Host.
  */
@@ -188,16 +169,6 @@ http
     if (url === '/.well-known/webauthn') {
       return proxy(req, res, walletApiUpstream, url);
     }
-    if (url === '/rpc') {
-      return proxy(req, res, rpcUpstream, '/');
-    }
-    if (url === '/rpc-b') {
-      if (!rpcBUpstream) {
-        res.statusCode = 404;
-        return res.end('second chain not configured on this wallet origin');
-      }
-      return proxy(req, res, rpcBUpstream, '/');
-    }
     if (url === '/main.js') {
       res.setHeader('content-type', 'text/javascript');
       return res.end(js);
@@ -212,5 +183,5 @@ http
   })
   .listen(port, () => {
     const chains = chainBId ? `${chainId},${chainBId}` : String(chainId);
-    console.log(`BYO wallet on :${port} (chains ${chains}, api→${walletApiUpstream}, rpc→${rpcUpstream}, bundler→via wallet-api /api/v1/bundler)`);
+    console.log(`BYO wallet on :${port} (chains ${chains}, api→${walletApiUpstream}; rpc and bundler via wallet-api /api/v1/{rpc,bundler})`);
   });

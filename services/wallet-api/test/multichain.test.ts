@@ -429,6 +429,15 @@ describe('two-chain relay', () => {
     const bare = await relay('/v1/bundler', 'eth_chainId');
     expect(bare.statusCode).toBe(400);
     expect(bare.json()).toMatchObject({ error: 'chain-required', servedChainIds: [31337, 31338] });
+
+    // the read relay routes the same way, tenant-bound by Origin
+    const read = await ctx.app.inject({
+      method: 'POST',
+      url: '/v1/rpc/31338',
+      headers: { origin: TENANT_A.walletOrigin },
+      payload: { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] },
+    });
+    expect(read.json()).toMatchObject({ result: '0x7a6a' });
   });
 
   it('reports both chains on /v1/version, with no privileged one (MC-56)', async () => {

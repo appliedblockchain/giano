@@ -5,12 +5,14 @@ export type WalletChainConfig = {
   chainId: number;
   /** Human-readable — consent screens name the chain, never a bare id (MC-80, MC-81). */
   name: string;
+  /**
+   * Chain reads. Defaults to wallet-api's read relay, `${walletApiUrl}/v1/rpc/${chainId}`, so the
+   * node URL (and any API key in it) stays server-side. Set explicitly only to dial a node directly.
+   */
   rpcUrl: string;
   /**
-   * Where the bundler client sends its JSON-RPC. Defaults to wallet-api's bundler relay for
-   * this chain (`${walletApiUrl}/v1/bundler/${chainId}`), which is behind the session and puts
-   * every submission through the policy check — so the bundler itself never has to be
-   * reachable from a browser. Set explicitly only to dial a bundler directly (development).
+   * Bundler JSON-RPC. Defaults to wallet-api's bundler relay, `${walletApiUrl}/v1/bundler/${chainId}`:
+   * session-bound, submissions through the policy check. Set explicitly only to dial a bundler directly.
    */
   bundlerUrl: string;
   factoryAddress: `0x${string}`;
@@ -113,8 +115,8 @@ export function resolveWalletConfig({ raw, production = false, defaultRpId }: Re
 
 /** Validates one chain entry; failures are fatal and name the chain and the field (MC-42). */
 function resolveChain(entry: RawChainEntry, raw: RawWalletConfig, walletApiUrl: string, seenIds: Set<number>, production: boolean): WalletChainConfig {
-  if (!entry.chainId || !entry.rpcUrl) {
-    throw new Error(`wallet config: every chain must set chainId and rpcUrl (chain ${entry.chainId ?? '?'})`);
+  if (!entry.chainId) {
+    throw new Error('wallet config: every chain must set chainId');
   }
   if (seenIds.has(entry.chainId)) {
     throw new Error(`wallet config: duplicate chainId ${entry.chainId}`);
@@ -147,7 +149,7 @@ function resolveChain(entry: RawChainEntry, raw: RawWalletConfig, walletApiUrl: 
   return {
     chainId: entry.chainId,
     name: entry.name || KNOWN_CHAIN_NAMES[entry.chainId] || `chain ${entry.chainId}`,
-    rpcUrl: entry.rpcUrl,
+    rpcUrl: entry.rpcUrl || `${walletApiUrl}/v1/rpc/${entry.chainId}`,
     bundlerUrl: entry.bundlerUrl || `${walletApiUrl}/v1/bundler/${entry.chainId}`,
     factoryAddress,
     sponsorship,

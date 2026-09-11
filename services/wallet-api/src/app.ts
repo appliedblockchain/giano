@@ -15,6 +15,7 @@ import adminRoutes from './routes/admin.js';
 import adminSponsorshipRoutes from './routes/admin-sponsorship.js';
 import bundlerRelayRoutes from './routes/bundler-relay.js';
 import paymasterRoutes from './routes/paymaster.js';
+import rpcRelayRoutes from './routes/rpc-relay.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
 import useropRoutes from './routes/userops.js';
@@ -191,6 +192,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   });
   await app.register(useropRoutes, { db, registry, relay });
   await app.register(bundlerRelayRoutes, { config, relay });
+  await app.register(rpcRelayRoutes, { config });
 
   return app;
 }

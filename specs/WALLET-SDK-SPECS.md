@@ -71,7 +71,8 @@ interface WalletConfig {
 interface WalletChainConfig {
   chainId: number
   name: string          // human-readable; named on every consent screen
-  rpcUrl: string
+  rpcUrl?: string                   // defaults to `${walletApiUrl}/v1/rpc/${chainId}` — wallet-api's read relay;
+                                    // set only to dial a node directly (dev)
   bundlerUrl?: string               // defaults to `${walletApiUrl}/v1/bundler/${chainId}` — wallet-api's
                                     // session-bound JSON-RPC relay; set only to dial a bundler directly (dev)
   factoryAddress: `0x${string}`
@@ -90,8 +91,8 @@ const config: WalletConfig = {
   rpId: 'wallet.example.com',
   branding: { name: 'Example Wallet' },
   chains: [
-    { chainId: 8453, name: 'Base', rpcUrl: 'https://…',
-      factoryAddress: '0x26dC…', sponsorship: 'service' },   // bundler: wallet-api's relay, by default
+    { chainId: 8453, name: 'Base', factoryAddress: '0x26dC…', sponsorship: 'service' },
+    // rpc and bundler: wallet-api's relays, by default — a chain needs only its id
   ],
 }
 ```

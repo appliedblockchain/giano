@@ -10,6 +10,8 @@ declare module 'fastify' {
       useropRelayed: Counter<'status' | 'tenant' | 'chain'>;
       /** The JSON-RPC bundler facade, by method and outcome — submissions ALSO count in useropRelayed. */
       bundlerRelay: Counter<'method' | 'outcome' | 'tenant' | 'chain'>;
+      /** The chain RPC read relay (POST /v1/rpc), by method and outcome. */
+      rpcRelay: Counter<'method' | 'outcome' | 'tenant' | 'chain'>;
       policyRejections: Counter<'rule' | 'tenant' | 'chain'>;
       ceremonyFailures: Counter<'kind' | 'tenant'>;
       useropLatency: Histogram<'tenant' | 'chain'>;
@@ -73,6 +75,12 @@ export default fp(
       bundlerRelay: new Counter({
         name: 'giano_bundler_relay_requests_total',
         help: 'JSON-RPC bundler relay requests (POST /v1/bundler), by method, outcome, tenant and chain',
+        labelNames: ['method', 'outcome', 'tenant', 'chain'] as const,
+        registers: [registry],
+      }),
+      rpcRelay: new Counter({
+        name: 'giano_rpc_relay_requests_total',
+        help: 'Chain RPC read relay requests (POST /v1/rpc), by method, outcome, tenant and chain',
         labelNames: ['method', 'outcome', 'tenant', 'chain'] as const,
         registers: [registry],
       }),

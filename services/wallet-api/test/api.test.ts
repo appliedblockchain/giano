@@ -538,6 +538,45 @@ describe('bundler relay (JSON-RPC)', () => {
 });
 
 /**
+ * The chain RPC read relay (POST /v1/rpc/:chainId): tenant-bound by Origin, read-only by
+ * allowlist, so a wallet origin needs no node URL and a keyed provider URL stays server-side.
+ */
+describe('rpc relay (JSON-RPC reads)', () => {
+  type RpcResult = { jsonrpc: '2.0'; id: number; result?: unknown; error?: { code: number; message: string } };
+  // `null` = send no Origin at all (an explicit `undefined` would just select the default).
+  const rpc = async (method: string, params: unknown[] = [], url = '/v1/rpc/31337', origin: string | null = TENANT_A.walletOrigin) => {
+    const res = await ctx.app.inject({ method: 'POST', url, headers: origin ? { origin } : {}, payload: { jsonrpc: '2.0', id: 3, method, params } });
+    return { status: res.statusCode, body: res.json() as RpcResult };
+  };
+
+  it('requires a registered tenant Origin — no session needed, reads happen before sign-in', async () => {
+    expect((await rpc('eth_chainId', [], '/v1/rpc/31337', null)).status).toBe(403);
+    expect((await rpc('eth_chainId', [], '/v1/rpc/31337', 'http://evil.example')).status).toBe(403);
+    expect((await rpc('eth_chainId')).body).toEqual({ jsonrpc: '2.0', id: 3, result: '0x7a69' });
+  });
+
+  it('forwards read methods to the chain node verbatim', async () => {
+    const call = await rpc('eth_call', [{ to: '0x2222222222222222222222222222222222222222', data: '0x1234' }, 'latest']);
+    expect(call.status).toBe(200);
+    expect(call.body.result).toMatch(/^0x[0-9a-f]{64}$/); // the mock node's abi-encoded address answer
+    expect((await rpc('eth_getCode', ['0x2222222222222222222222222222222222222222', 'latest'])).body.result).toBe('0x');
+  });
+
+  it('refuses anything outside the read allowlist', async () => {
+    for (const method of ['eth_sendRawTransaction', 'eth_sendTransaction', 'debug_traceCall', 'anvil_setBalance', 'eth_sendUserOperation']) {
+      expect((await rpc(method, [])).body.error?.code).toBe(-32601);
+    }
+  });
+
+  it('resolves the sole chain when the path names none, and refuses an unserved one', async () => {
+    expect((await rpc('eth_chainId', [], '/v1/rpc')).body.result).toBe('0x7a69');
+    const { status, body } = await rpc('eth_chainId', [], '/v1/rpc/999');
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ error: 'unsupported-chain' });
+  });
+});
+
+/**
  * The tenant-isolation negative matrix. Each case pins one way isolation could leak
  * (specs/DEVELOPER-GUIDE.md §1); none of them may pass without the fix it exists for.
  */

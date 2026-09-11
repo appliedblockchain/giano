@@ -27,22 +27,30 @@ describe('resolveWalletConfig (WK-06)', () => {
     expect(() => resolveWalletConfig({ raw: { ...chainEntry, chains: [chainEntry] } })).toThrow(/mutually exclusive/);
   });
 
-  it('fails fatally on an incomplete chain entry, naming the chain and the field (MC-42)', () => {
-    const raw: RawWalletConfig = { chains: [{ chainId: 84532 }] };
-    expect(() => resolveWalletConfig({ raw })).toThrow(/chainId and rpcUrl.*84532/);
+  it('fails fatally on a chain entry with no chainId (MC-42)', () => {
+    const raw: RawWalletConfig = { chains: [{ rpcUrl: 'http://rpc' }] };
+    expect(() => resolveWalletConfig({ raw })).toThrow(/must set chainId/);
   });
 
-  it('defaults bundlerUrl to the wallet-api bundler relay for that chain', () => {
+  it('defaults rpcUrl and bundlerUrl to the wallet-api relays for that chain — a chain needs only its id', () => {
     const config = resolveWalletConfig({
-      raw: { chains: [{ ...chainEntry, bundlerUrl: undefined }, { ...chainEntry, chainId: 84532, bundlerUrl: '' }], walletApiUrl: 'https://api.test' },
+      raw: {
+        chains: [{ chainId: 31337, factoryAddress: chainEntry.factoryAddress }, { ...chainEntry, chainId: 84532, rpcUrl: '', bundlerUrl: '' }],
+        walletApiUrl: 'https://api.test',
+      },
     });
-    expect(config.chains.map((chain) => chain.bundlerUrl)).toEqual(['https://api.test/v1/bundler/31337', 'https://api.test/v1/bundler/84532']);
+    expect(config.chains.map((chain) => [chain.rpcUrl, chain.bundlerUrl])).toEqual([
+      ['https://api.test/v1/rpc/31337', 'https://api.test/v1/bundler/31337'],
+      ['https://api.test/v1/rpc/84532', 'https://api.test/v1/bundler/84532'],
+    ]);
     // and the same-origin default when no walletApiUrl is given
-    expect(resolveWalletConfig({ raw: { chains: [{ ...chainEntry, bundlerUrl: undefined }] } }).chains[0].bundlerUrl).toBe('/api/v1/bundler/31337');
+    const sameOrigin = resolveWalletConfig({ raw: { chains: [{ chainId: 31337, factoryAddress: chainEntry.factoryAddress }] } }).chains[0];
+    expect([sameOrigin.rpcUrl, sameOrigin.bundlerUrl]).toEqual(['/api/v1/rpc/31337', '/api/v1/bundler/31337']);
   });
 
-  it('keeps an explicit bundlerUrl — dialling a bundler directly is a choice, not the default', () => {
-    expect(resolveWalletConfig({ raw: { chains: [chainEntry] } }).chains[0].bundlerUrl).toBe('http://bundler.local');
+  it('keeps explicit rpcUrl/bundlerUrl — dialling a node or bundler directly is a choice, not the default', () => {
+    const chain = resolveWalletConfig({ raw: { chains: [chainEntry] } }).chains[0];
+    expect([chain.rpcUrl, chain.bundlerUrl]).toEqual(['http://rpc.local', 'http://bundler.local']);
   });
 
   it('fails on a duplicate chainId', () => {

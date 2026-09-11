@@ -250,12 +250,10 @@ module "svc-wallet-web" {
     GIANO_SPONSORSHIP_MODE     = "service"
     GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
     GIANO_BRAND_NAME           = var.example_brand_name
-    GIANO_CSP_CONNECT_SRC      = var.rpc_origin
+    # no GIANO_RPC_URL / GIANO_CSP_CONNECT_SRC — reads go through wallet-api's /api/v1/rpc relay
     # GIANO_RP_ID deliberately unset — load-bearing, §3.4, §14.3
   }
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
+  secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled                       = true
@@ -296,7 +294,9 @@ module "svc-wallet-web" {
     GIANO_WALLET_API_UPSTREAM = local.upstream_wallet_api
 
     GIANO_SPONSORSHIP_MODE = "service"
-    GIANO_CSP_CONNECT_SRC  = var.rpc_origin[terraform.workspace]
+    # No GIANO_RPC_URL and no GIANO_CSP_CONNECT_SRC: the SPA reads through
+    # wallet-api's /api/v1/rpc/<chainId> relay, so the keyed RPC URL stays in
+    # wallet-api and everything the browser dials is same-origin.
 
     # These two are per TENANT but reach the SPA per CONTAINER, from
     # /config.json. A set of one here, not a union: only `example` is served
@@ -306,9 +306,7 @@ module "svc-wallet-web" {
     GIANO_BRAND_NAME           = "Giano Example"
   }
 
-  secret_arns = {
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url"]
-  }
+  secret_arns = {}
 
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -639,10 +637,9 @@ module "svc-wallet-byo" {
     FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
     # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
     # CHAIN_B_ID unset — single-chain, the second chain falls away
+    # no RPC_UPSTREAM — reads go through wallet-api's /api/v1/rpc relay
   }
-  secret_arns = {
-    RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url"]
-  }
+  secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   alb_enabled       = true
@@ -685,12 +682,11 @@ module "svc-wallet-byo" {
 
     # CHAIN_B_ID and FACTORY_ADDRESS unset: single-chain, and the factory
     # defaults from the contracts registry.
+    # No RPC_UPSTREAM: chain reads go through wallet-api's /api/v1/rpc relay,
+    # over the same /api proxy, so this task holds no node URL.
   }
 
-  secret_arns = {
-    # Proxied same-origin, so the API key stays server-side.
-    RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url"]
-  }
+  secret_arns = {}
 
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

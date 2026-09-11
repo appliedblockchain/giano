@@ -244,6 +244,8 @@ const envSchema = z
      * many times; sharing the submission window would silently shrink it.
      */
     BUNDLER_RELAY_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(600),
+    /** The chain RPC read relay (POST /v1/rpc), per tenant per minute — every wallet page load reads through it. */
+    RPC_RELAY_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(3000),
 
     /** When set (non-empty), GET /metrics requires this bearer token; unset = open (dev only). */
     METRICS_BEARER_TOKEN: z

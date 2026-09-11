@@ -2835,13 +2835,12 @@ the most likely cause of a silently broken environment.
 
 An Alchemy (or equivalent) Base Sepolia endpoint. The free tier is ample for a dev environment. The
 URL embeds the API key, so it is a secret ([§7.3](#73-the-secrets)), and it is consumed by
-`wallet-api`, the bundler and — via CSP `connect-src` — the browser.
+`wallet-api`, the bundler and the demo dApps.
 
-Because the browser reaches the RPC directly rather than through the wallet origin's `/rpc` proxy,
-the provider must send permissive CORS headers. Alchemy does. If a provider that does not is chosen
-later, set `GIANO_RPC_UPSTREAM` on `wallet-web` and point the chain descriptor's `rpcUrl` at
-`/rpc` — the nginx template already supports it, and the API key then stays server-side, which is
-the better posture anyway.
+The wallet origins never see it: they read the chain through `wallet-api`'s `/v1/rpc/:chainId`
+relay (same-origin under `/api`), so the key stays in `wallet-api`. Only the demo dApps
+(`custom-example`, which read balances client-side from their own `GIANO_RPC_URL`) reach the
+provider from a browser, so permissive CORS from the provider matters for them alone. Alchemy does.
 
 ---
 
@@ -2932,22 +2931,23 @@ leaks beyond the team.
 
 ### 14.3 `wallet-web`
 
-Single-chain shorthand again. The browser talks to the RPC directly (CORS, §13.3) and to the bundler
-only through `wallet-api`'s JSON-RPC relay — `POST /v1/bundler/:chainId`, reached same-origin as
-`/api/v1/bundler/84532` — which is behind the session and puts every submission through the same
-policy pipeline as `POST /v1/userops`. That is what keeps the bundler private.
+Single-chain shorthand again. The browser talks to neither the node nor the bundler: chain reads go
+through `wallet-api`'s `/api/v1/rpc/84532` relay (tenant-bound, read-only allowlist) and bundler
+calls through `/api/v1/bundler/84532` (session-bound, submissions through the same policy pipeline as
+`POST /v1/userops`). The keyed RPC URL and the bundler both stay private to `wallet-api`, and this
+task proxies nothing but `/api` and `/.well-known/webauthn`.
 
 | Variable | Value |
 |---|---|
 | `GIANO_CHAIN_ID` | `84532` |
-| `GIANO_RPC_URL` | Base Sepolia endpoint (**ASM**) |
+| `GIANO_RPC_URL` | **unset** — the SPA defaults to wallet-api's read relay, `/api/v1/rpc/84532`; the keyed URL stays in wallet-api |
 | `GIANO_BUNDLER_URL` | **unset** — the SPA defaults to wallet-api's relay, `/api/v1/bundler/84532` ([R3](#19-risks-and-open-items), closed) |
 | `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
 | `GIANO_RP_ID` | **unset** — derived per request from the host the browser used |
 | `GIANO_ALLOWED_DAPP_ORIGINS` | `["https://example.dev.giano.appliedblockchain.dev"]` — only `example` is served here, so this is a set of one, not a union ([R9](#19-risks-and-open-items)) |
 | `GIANO_SPONSORSHIP_MODE` | `service` (the default when no `GIANO_PAYMASTER_ADDRESS` is set) |
 | `GIANO_BRAND_NAME` | `Giano Example` — likewise, one stock-UI tenant means no conflict yet |
-| `GIANO_CSP_CONNECT_SRC` | the RPC origin |
+| `GIANO_CSP_CONNECT_SRC` | **unset** — everything the SPA dials is same-origin |
 
 `GIANO_RP_ID` being unset is load-bearing, not an omission: it is what lets this one task serve every
 tenant hostname ([§3.3](#33-how-one-wallet-ui-serves-many-tenants)). Setting it would pin every
@@ -3013,7 +3013,7 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 |---|---|
 | `BYO_WALLET_PORT` | `8080` |
 | `WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
-| `RPC_UPSTREAM` | Base Sepolia endpoint (**ASM**) — proxied same-origin, so the API key stays server-side |
+| `RPC_UPSTREAM` | **does not exist** — chain reads go through wallet-api's `/api/v1/rpc/<chainId>` relay over the `/api` proxy |
 | `BUNDLER_UPSTREAM` | **does not exist** — there is no bundler proxy; the SPA uses `/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), closed) |
 | `CHAIN_ID` | `84532` |
 | `CHAIN_B_ID` | unset — single-chain here, and the fixture currently always emits two chains (§16.5) |

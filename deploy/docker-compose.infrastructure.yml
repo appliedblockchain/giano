@@ -408,42 +408,18 @@ services:
       # And not until the stack can actually sponsor — see the provisioner above.
       sponsorship-provisioner:
         condition: service_completed_successfully
-      # nginx resolves every proxy_pass upstream AT CONFIG LOAD and refuses to start if a
-      # name does not resolve, so the chains have to exist before it does. Docker's DNS only
-      # answers for containers that are up, which makes this a real dependency rather than
-      # tidiness. (Not the bundlers: this origin has no route to them — see GIANO_CHAINS.)
-      anvil:
-        condition: service_started
-      anvil-b:
-        condition: service_started
     environment:
-      # Both chains, one wallet origin. The RPC endpoints are SAME-ORIGIN proxies: the browser
-      # only ever talks to the wallet origin and nginx forwards to the containers. On a real
-      # chain that is also what keeps a keyed RPC URL server-side.
-      #
-      # There is NO bundler URL, and no /bundler proxy behind this origin. The wallet points
-      # its bundler client at wallet-api's relay (/api/v1/bundler/<chainId>) — the same
-      # JSON-RPC surface, behind the session, with every submission going through the policy
-      # check — so alto is dialled by wallet-api and by nothing else. Where a wallet origin
-      # used to proxy /bundler straight to alto, it was an open relay that bypassed every
-      # policy check; that location no longer exists in either wallet image.
+      # Both chains, one wallet origin. Only ids, names and contracts: the wallet reads through
+      # wallet-api's /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId> (behind
+      # the session and the policy check), so anvil and alto are dialled by wallet-api only and
+      # this origin proxies nothing but /api. On a real chain that is also what keeps a keyed
+      # RPC URL out of the browser.
       GIANO_CHAINS: |
         [
-          {
-            "chainId": 31337, "name": "Devnet A",
-            "rpcUrl": "http://wallet.stock.giano.localhost/rpc",
-            "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorship": "service"
-          },
-          {
-            "chainId": 31338, "name": "Devnet B",
-            "rpcUrl": "http://wallet.stock.giano.localhost/rpc-b",
-            "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorship": "service"
-          }
+          { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" },
+          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" }
         ]
-      GIANO_RPC_UPSTREAM: http://anvil:8545
-      GIANO_RPC_B_UPSTREAM: http://anvil-b:8545
+      # wallet-api base URL nginx proxies /api and /.well-known/webauthn to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # A set of ONE, not a union — see the warning above. Empty fails CLOSED, which is the
       # correct direction.
@@ -456,19 +432,14 @@ services:
   #
   # The framework-free SPA in e2e/wallet-byo, which is the reference a real BYO tenant copies.
   # A Node server that bundles its own SPA with esbuild at CONTAINER START and reverse-proxies
-  # the same paths wallet-web's nginx does — /api, /.well-known/webauthn, /rpc — forwarding
-  # Host and Origin untouched. That is the whole serving contract a BYO tenant has to
-  # reproduce — and because the bundle is built from environment at start-up, the image is
-  # environment-independent with none of wallet-web's /config.json machinery.
+  # /api and /.well-known/webauthn to wallet-api, forwarding Host and Origin untouched. That is
+  # the whole serving contract a BYO tenant has to reproduce: chain reads and the bundler both
+  # travel through /api (wallet-api's /v1/rpc and /v1/bundler relays), so the origin holds no
+  # node or bundler URL. Because the bundle is built from environment at start-up, the image
+  # is environment-independent with none of wallet-web's /config.json machinery.
   #
   # It is the one service Giano would not run in a real deployment: a real BYO tenant hosts
   # its own UI. It is here so the contract is exercised rather than described.
-  #
-  # Note what is NOT proxied: a bundler. The SPA points its bundler client at wallet-api's
-  # relay, /api/v1/bundler/<chainId>, which travels through the /api proxy like everything
-  # else — behind the session, with submissions going through the same policy pipeline as
-  # POST /v1/userops. A tenant's wallet origin therefore needs no route to a bundler and no
-  # bundler configuration at all, which is what makes the contract safe to copy.
   # ════════════════════════════════════════════════════════════════════════════════════════
   wallet-byo:
     build:
@@ -482,11 +453,8 @@ services:
         condition: service_completed_successfully
     environment:
       BYO_WALLET_PORT: '8080'
-      # Proxied same-origin, Host and Origin forwarded untouched, because wallet-api resolves
-      # the tenant from them.
+      # wallet-api base URL /api is proxied to; Host and Origin forwarded untouched
       WALLET_API_UPSTREAM: http://wallet-api:8080
-      RPC_UPSTREAM: http://anvil:8545
-      RPC_B_UPSTREAM: http://anvil-b:8545
       CHAIN_ID: '31337'
       CHAIN_NAME: Devnet A
       CHAIN_B_ID: '31338'

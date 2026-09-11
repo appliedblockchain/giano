@@ -11,9 +11,9 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "no-referrer" always;
 
-    # same-origin proxy to the wallet-api: no CORS, no third-party cookies. The bundler is
-    # reached THROUGH it (/api/v1/bundler/:chainId) — behind the session and the policy
-    # check — so this origin has no route to a bundler of its own.
+    # Same-origin proxy to wallet-api: no CORS, no third-party cookies. Everything chain-bound
+    # goes through it too — /api/v1/rpc/:chainId for reads, /api/v1/bundler/:chainId for the
+    # bundler — so this origin holds no node or bundler URL.
     location /api/ {
         proxy_pass ${GIANO_WALLET_API_UPSTREAM}/;
         proxy_http_version 1.1;
@@ -25,18 +25,6 @@ server {
     # Related Origin Requests document must live on the wallet origin
     location = /.well-known/webauthn {
         proxy_pass ${GIANO_WALLET_API_UPSTREAM}/.well-known/webauthn;
-        proxy_set_header Host $host;
-    }
-
-    # Optional same-origin RPC proxy (avoids CORS when the node is not itself CORS-enabled,
-    # and keeps a keyed RPC URL server-side — set config rpcUrl to /rpc). Harmless when unused.
-    location = /rpc {
-        proxy_pass ${GIANO_RPC_UPSTREAM}/;
-        proxy_set_header Host $host;
-    }
-    # Second chain's proxy (two-chain stacks); defaults to the primary upstream when unused.
-    location = /rpc-b {
-        proxy_pass ${GIANO_RPC_B_UPSTREAM}/;
         proxy_set_header Host $host;
     }
 

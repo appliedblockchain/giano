@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 900" role="img"
-     aria-label="Giano local infrastructure stack: browser traffic enters through one Caddy proxy that routes by Host header to six front-door services; wallet-api owns Postgres and is the only service that talks to the bundlers, relaying the wallet origins' estimation, submission and receipt calls behind the session; a one-shot provisioner gates the wallet UIs' startup; chain reads reach a shared, doubled anvil+alto pair for Devnet A and Devnet B.">
+     aria-label="Giano local infrastructure stack: browser traffic enters through one Caddy proxy that routes by Host header to six front-door services; wallet-api owns Postgres and is the only service the wallet origins' chain traffic reaches — it relays their reads to the nodes and their estimation, submission and receipt calls to the bundlers; a one-shot provisioner gates the wallet UIs' startup; the demo dApps read a shared, doubled anvil+alto pair for Devnet A and Devnet B directly.">
   <title>Giano docker-compose.infrastructure.yml — service topology</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -175,29 +175,23 @@
   <path class="edge" d="M160,294 L160,560"/>
   <text x="55" y="450" class="lbl" transform="rotate(-90 55 450)">direct CORS read (balances)</text>
 
-  <path class="edge" d="M400,294 L400,560"/>
-  <text x="420" y="450" class="lbl">/rpc same-origin proxy, both chains (reads only)</text>
-
   <path class="edge" d="M640,294 L640,560"/>
   <text x="660" y="480" class="lbl">direct CORS read</text>
 
-  <path class="edge" d="M880,294 L880,560"/>
-  <text x="900" y="480" class="lbl">/rpc same-origin proxy (reads only)</text>
-
   <path class="edge" d="M1300,294 C1240,340 1200,420 1230,560"/>
-  <text x="1160" y="455" class="lbl" text-anchor="middle">the ONLY bundler caller: estimate + submit after policy, both chains</text>
+  <text x="1160" y="455" class="lbl" text-anchor="middle">the ONLY node + bundler caller: reads, estimate, submit after policy — both chains</text>
 
   <path class="edge" d="M1600,294 L1600,560"/>
   <text x="1590" y="450" class="lbl" text-anchor="end">reads + writes paymaster</text>
 
   <!-- labels that sit on crossing lines, drawn last on a ground-coloured plate -->
   <rect class="lblbg" x="483" y="331" width="554" height="13" rx="2"/>
-  <text x="760" y="341" class="lbl" text-anchor="middle">/api same-origin: ceremonies · ERC-7677 sponsorship · bundler relay /v1/bundler/:chainId (estimate, submit, receipts)</text>
+  <text x="760" y="341" class="lbl" text-anchor="middle">/api same-origin: ceremonies · ERC-7677 sponsorship · chain reads /v1/rpc/:chainId · bundler /v1/bundler/:chainId</text>
   <rect class="lblbg" x="573" y="369" width="334" height="13" rx="2"/>
   <text x="740" y="379" class="lbl" text-anchor="middle">waits for exit 0 (a tenant with no rules is refused every tx)</text>
 
   <!-- caption -->
   <text x="880" y="882" class="sub" text-anchor="middle">
-    docker-compose.infrastructure.yml — solid = HTTP/RPC traffic, dashed = startup gate (depends_on). No wallet origin has a route to a bundler: alto is reached only through wallet-api.
+    docker-compose.infrastructure.yml — solid = HTTP/RPC traffic, dashed = startup gate (depends_on). Wallet origins hold no node or bundler URL: anvil and alto are reached only through wallet-api.
   </text>
 </svg>
