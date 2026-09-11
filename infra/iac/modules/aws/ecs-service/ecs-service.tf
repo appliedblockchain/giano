@@ -147,14 +147,17 @@ resource "aws_ecs_service" "svc" {
 
   enable_execute_command = var.enable_execute_command
 
-  # Two things outside Terraform legitimately own a field here (§9.3): the out-of-hours
-  # scheduler (§17.2) owns desired_count between applies, and CI owns WHICH task definition
-  # revision is actually deployed. Terraform still registers a new aws_ecs_task_definition
-  # revision whenever its content changes — it just never rolls the service onto it. Moving
-  # the service to the latest revision is `aws ecs update-service --task-definition ...`, run
-  # by the deploy workflow (§15), not `terraform apply`.
+  # desired_count is the one field another owner legitimately holds between applies: the
+  # out-of-hours scheduler (§17.2) scales it directly. task_definition is deliberately NOT
+  # ignored — deploy.yml and Terraform both read the same declared tag from
+  # infra/versions.json and render equivalent task definitions, so an apply converges on
+  # whatever deploy.yml already rolled out instead of fighting it (§15.1). Ignoring it here
+  # would leave Terraform owning the task definition's CONTENT — env, secrets, cpu, sidecars —
+  # while owning nothing about which revision is actually live: an apply that rotated a secret
+  # or changed an env var would register a new revision the running service silently ignores,
+  # and report success.
   lifecycle {
-    ignore_changes = [desired_count, task_definition]
+    ignore_changes = [desired_count]
   }
 
   tags = merge(local.tags, { Name = local.name })

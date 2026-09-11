@@ -1643,8 +1643,8 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | Secret (`giano-dev-…`) | Contents | Consumed by |
 |---|---|---|
 | `database-password` | RDS master password | RDS itself ([§8.3](#83-the-master-password)), and `database-url` |
-| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | wallet-byo, paymaster-admin, custom-example, custom-example-byoui, bundler-base-sepolia |
-| `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | wallet-byo, custom-example, custom-example-byoui, bundler-eth-sepolia |
+| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin, custom-example, custom-example-byoui, bundler-base-sepolia |
+| `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui, bundler-eth-sepolia |
 | `chains` | the full `GIANO_CHAINS` JSON for wallet-api — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
 | `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)) | bundler-base-sepolia, bundler-eth-sepolia |
@@ -3155,11 +3155,24 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 | `RPC_UPSTREAM` | **does not exist** — chain reads for both chains go through wallet-api's `/api/v1/rpc/<chainId>` relay over the `/api` proxy |
 | `BUNDLER_UPSTREAM` | **does not exist** — there is no bundler proxy for either chain; the SPA uses `/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), closed) |
 | `CHAIN_ID` | `84532` |
+| `CHAIN_NAME` | `Base Sepolia` (tfvar `var.chain_name` — the same one `custom-example`'s `GIANO_CHAIN_NAME` already reads, [§14.4](#144-custom-example)) — **not currently wired**, see below |
 | `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
+| `CHAIN_B_NAME` | `Ethereum Sepolia` (tfvar `var.chain_b_name`) — **not currently wired**, see below |
 | `FACTORY_ADDRESS` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
 | `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
 | `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
 | `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.appliedblockchain.dev"]` — this tenant's own allowlist, which is why R9 does not reach it |
+
+**⚠ `CHAIN_NAME`/`CHAIN_B_NAME` are not set by `infra/iac/ecs_services.tf` today** — the
+`svc-wallet-byo` module's `environment` block carries `CHAIN_ID`/`CHAIN_B_ID` but not the two name
+variables, even though `var.chain_name`/`var.chain_b_name` already exist for exactly this purpose
+(`custom-example` already reads them, [§14.4](#144-custom-example)). `serve.mjs` does not crash
+without them — it falls back to `chain 84532`/`chain 11155111` rather than to the devnet's
+hardcoded `Devnet A`/`Devnet B`, because the code's own comment is explicit that "a deployment on a
+real chain calling it 'Devnet A' is worse than no name at all" — but that fallback is a worse label
+than the one this environment already has on hand for the other dApp. Adding
+`CHAIN_NAME = var.chain_name` and `CHAIN_B_NAME = var.chain_b_name` to that module block is a
+two-line fix, not a design question.
 
 Because the SPA is bundled at container start from these variables, the image is already
 environment-independent in the way [§16.1](#161-a-dockerfile-and-runtime-config-for-custom-example)

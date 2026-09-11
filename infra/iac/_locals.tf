@@ -54,12 +54,12 @@ locals {
   # second is the deploy workflow, which must parse it with `jq` and without Terraform — a
   # `.tf` variable would have to be grepped out of HCL.
   #
-  # Terraform is not the writer of record for what is RUNNING — the services carry
-  # ignore_changes on task_definition (modules/aws/ecs-service) — so this is the image of the
-  # revision an `apply` writes, which the workflow then rolls onto. Both sides read this one
-  # value, which is what keeps two writers from disagreeing. NEVER a literal "latest": every
-  # ECR repo has IMMUTABLE tags and CI never pushes that tag (§11), so a task definition built
-  # from it can never actually pull.
+  # Two writers register task definitions against the same services — `terraform apply` and
+  # deploy.yml — and this is what keeps them from disagreeing: both read this one declared
+  # value, so each renders an equivalent task definition and an apply converges on whatever
+  # deploy.yml already rolled out rather than reverting it (§15.1). NEVER a literal "latest":
+  # every ECR repo has IMMUTABLE tags and CI never pushes that tag (§11), so a task definition
+  # built from it can never actually pull.
   #
   # lookup() with an empty-string fallback rather than a bare index, so a missing workspace key
   # reaches the task definition's precondition (which names the file to edit) instead of
