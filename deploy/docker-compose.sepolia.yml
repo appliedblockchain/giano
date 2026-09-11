@@ -101,15 +101,15 @@ services:
       # the paymaster: it is the key the tenant's on-chain balance is held under. Let it default
       # and the tenant gets a fresh id, whose balance is zero.
       TENANTS_SEED: >-
-        [{"slug":"${TENANT_SLUG:-sepolia}",
-        "id":"${TENANT_ID:-33333333-3333-4333-8333-333333333333}",
+        [{"slug":"${TENANT_SLUG:-example}",
+        "id":"${TENANT_ID:-a1000000-0000-4000-8000-000000000001}",
         "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
         "rpId":"${RP_ID:-wallet.localhost}",
-        "rpName":"${RP_NAME:-Giano Sepolia}",
+        "rpName":"${RP_NAME:-Giano Example}",
         "allowedDappOrigins":${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
         "corsOrigins":${TENANT_CORS_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
         "openRegistration":${OPEN_REGISTRATION:-true},
-        "adminKeys":["${ADMIN_API_KEY:-sepolia-admin-key}"]}]
+        "adminKeys":["${ADMIN_API_KEY:-sepolia-admin-key-0000}"]}]
 
   wallet-web:
     build:
@@ -134,4 +134,4 @@ services:
       GIANO_SPONSORSHIP_MODE: service
       GIANO_ALLOWED_DAPP_ORIGINS: ${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]}
       GIANO_RP_ID: ${RP_ID:-wallet.localhost}
-      GIANO_BRAND_NAME: ${BRAND_NAME:-Giano Sepolia}
+      GIANO_BRAND_NAME: ${BRAND_NAME:-Giano Example}

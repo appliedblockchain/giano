@@ -30,7 +30,7 @@ required but needs no funding:
 
 | Account | Suggested | Why |
 | --- | --- | --- |
-| **Deployer** (`DEPLOYER_PRIVATE_KEY`) | ~0.15 ETH | Deploys the contracts, stakes the paymaster (`STAKE_ETH`), funds the demo tenant's sponsorship balance (`TENANT_FUND_ETH`) and seeds the test paymaster's deposit (`PAYMASTER_FUND_ETH`). |
+| **Deployer** (`DEPLOYER_PRIVATE_KEY`) | ~0.15 ETH | Deploys the contracts, stakes the paymaster (`STAKE_ETH`), funds **each** tenant's sponsorship balance (`TENANT_FUND_ETH`, spent once per entry in `PAYMASTER_TENANTS`) and seeds the test paymaster's deposit (`PAYMASTER_FUND_ETH`). |
 | **Alto executor** (`ALTO_EXECUTOR_PRIVATE_KEY`) | ~0.05 ETH | Signs and pays gas for every bundle on-chain. It's reimbursed from the paymaster deposit, but must front the ETH. |
 | **Sponsorship signer** (`SPONSORSHIP_SIGNER_KEY`) | none | The key wallet-api signs ERC-7677 sponsorships with. It authorises spending against the tenant's paymaster balance; it never pays gas. |
 
@@ -63,10 +63,16 @@ The end user's passkey wallet pays nothing.
 cp deploy/sepolia.env.example deploy/.env
 ```
 
-Edit `deploy/.env` and set at minimum:
-- `DEPLOYER_PRIVATE_KEY`, `ALTO_EXECUTOR_PRIVATE_KEY`, `ALTO_UTILITY_PRIVATE_KEY`,
-  `SPONSORSHIP_SIGNER_KEY`
-- (optional) `RPC_URL` — browser/api/bundler reads; the keyless publicnode default is fine
+`deploy/.env` is gitignored; `deploy/sepolia.env.example` is **not**, so never put a real key in
+the example. The example has two independent halves — *A. contract deployment*, whose values are
+aligned with the environment described in `infra/`, and *B. the local demo stack*.
+
+Set at minimum:
+- `DEPLOYER_PRIVATE_KEY` and `SPONSORSHIP_SIGNER_KEY` (half A — deployment and provisioning)
+- `ALTO_EXECUTOR_PRIVATE_KEY`, `ALTO_UTILITY_PRIVATE_KEY` (half B — only to run the stack)
+- (optional) `DEPLOY_RPC_URL` — the **only** RPC the deployment needs. Prefer a keyed endpoint:
+  a dropped receipt mid-run is what corrupts the Ignition journal.
+- (optional) `RPC_URL` — the local stack's serving RPC; the keyless publicnode default is fine
 - (optional) `BUNDLER_NODE_RPC_URL` — leave blank to reuse `RPC_URL`; only needed if you enable
   Alto's safe mode (then point it at a `debug_traceCall`-capable RPC)
 
@@ -107,9 +113,22 @@ the frozen one.
 ./deploy/sepolia/provision-paymaster.sh
 ```
 
-Grants the roles, registers the sponsorship signing key, stakes with the EntryPoint, registers the
-demo tenant and funds its balance — then verifies all of it with `giano-doctor chain`, which must
-exit green before you go on.
+Grants the roles, registers the sponsorship signing key, stakes with the EntryPoint, registers
+every tenant in `PAYMASTER_TENANTS` and funds each balance — then verifies all of it with
+`giano-doctor chain`, which must exit green before you go on.
+
+`PAYMASTER_TENANTS` defaults to the two tenants the development environment serves
+(`infra/iac/_locals.tf`): `example` and `byoui`. Their UUIDs are **pinned** in
+`deploy/sepolia.env.example`, and that is load-bearing — the paymaster keys each tenant's balance
+on the 16 bytes of its UUID, so the database and the chain have to agree. `wallet-api` states the
+consequence directly (`services/wallet-api/src/services/tenants.ts`): a tenant seeded without an
+`id` gets a random one, and *"a random id would leave every sponsorship refused as unknown
+tenant"*. The id is immutable once set; changing it orphans that tenant's on-chain balance.
+
+> ⚠ The deployed environment does not pin them today.
+> `deploy/docker-compose.infrastructure.aws.yml` seeds both tenants with no `id` field, so what
+> this script registers on chain cannot be matched by that deployment until its `TENANTS_SEED`
+> carries the same UUIDs. That is a change to the `tenants-seed` secret, not to anything here.
 
 Every role lands on the deployer EOA. That is the development shape the e2e devnet uses too, not a
 shortcut smuggled in: a production deployment routes every grant through the timelock, and

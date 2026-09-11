@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Provisions the sponsorship paymaster deployed by ./deploy/sepolia/deploy-contracts.sh:
-# grants roles, registers the sponsorship signing key, stakes with the EntryPoint, registers the
-# demo tenant and funds its balance. Then verifies its own work with `giano-doctor chain`.
+# grants roles, registers the sponsorship signing key, stakes with the EntryPoint, registers every
+# tenant in PAYMASTER_TENANTS and funds each balance. Then verifies its own work with
+# `giano-doctor chain`.
 #
 # Separate from deploy-contracts.sh on purpose, and the split is the same one the Ignition module
 # argues for: the deployed addresses must be identical for every operator, while everything here
@@ -10,8 +11,8 @@
 # ⚠ Costs real testnet ETH: the stake, the tenant's funded balance, and gas for ~10 transactions.
 #
 # Usage:  ./deploy/sepolia/provision-paymaster.sh
-#   Idempotent — re-running re-applies the same roles, tops the stake back up to STAKE_ETH and
-#   adds TENANT_FUND_ETH to the tenant's balance again.
+#   Idempotent for roles, signer and stake. NOT for funding: re-running adds TENANT_FUND_ETH to
+#   each tenant's balance again rather than topping it up to that figure.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,12 +27,19 @@ set -a; . "$ENV_FILE"; set +a
 : "${SPONSORSHIP_PAYMASTER_ADDRESS:?not set — run ./deploy/sepolia/deploy-contracts.sh first}"
 : "${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in deploy/.env (the key wallet-api signs sponsorships with)}"
 
-export RPC_URL="${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
+# Provisioning writes to the chain, so it uses the DEPLOYMENT rpc, not the stack's serving one.
+export RPC_URL="${DEPLOY_RPC_URL:-${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}}"
 CHAIN_ID="${CHAIN_ID:-11155111}"
 
-TENANT_ID="${TENANT_ID:-33333333-3333-4333-8333-333333333333}"
-TENANT_SLUG="${TENANT_SLUG:-sepolia}"
-# How much of the tenant's sponsorship balance to fund, and the paymaster's EntryPoint stake.
+# The tenants to register, as `slug:uuid` pairs. Defaults to the two the development environment
+# serves (infra/iac/_locals.tf `tenant_hosts`). Each gets TENANT_FUND_ETH, so the deployer spends
+# that amount once per tenant.
+#
+# The ids must equal the ones in that deployment's TENANTS_SEED: the paymaster keys a tenant's
+# balance on the 16 bytes of its UUID, and a tenant whose database id differs from its on-chain id
+# has every sponsorship refused as an unknown tenant.
+PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:a1000000-0000-4000-8000-000000000001,byoui:a1000000-0000-4000-8000-000000000002}"
+# How much of each tenant's sponsorship balance to fund, and the paymaster's EntryPoint stake.
 # Both are deliberately small: Sepolia faucets are rate-limited, and the e2e devnet's 1 ETH stake
 # / 50 ETH balance are anvil figures. Alto runs with --safe-mode false here, so the EntryPoint's
 # reputation rules — the reason a large stake matters on a public network — are not in play.
@@ -47,15 +55,37 @@ SIGNER_ADDR="${DERIVED##* }"
 # and the deployer already holds every role; a real tenant supplies its own address.
 TENANT_WITHDRAW_ADDRESS="${TENANT_WITHDRAW_ADDRESS:-$DEPLOYER_ADDR}"
 
+# Expand `slug:uuid,slug:uuid` into the provisioner's repeated --tenant flags and the doctor's
+# bytes16 --tenants list. Both are built in one pass so they cannot drift apart.
+TENANT_ARGS=()
+TENANT_BYTES16=""
+TENANT_SUMMARY=""
+IFS=',' read -r -a TENANT_PAIRS <<< "$PAYMASTER_TENANTS"
+for pair in "${TENANT_PAIRS[@]}"; do
+  pair="$(echo "$pair" | tr -d '[:space:]')"
+  [ -z "$pair" ] && continue
+  slug="${pair%%:*}"
+  uuid="${pair#*:}"
+  if [ -z "$slug" ] || [ -z "$uuid" ] || [ "$slug" = "$uuid" ]; then
+    echo "ERROR: PAYMASTER_TENANTS entry '$pair' is not in the form slug:uuid" >&2
+    exit 1
+  fi
+  TENANT_ARGS+=(--tenant "$uuid:$TENANT_WITHDRAW_ADDRESS:$slug:$TENANT_FUND_ETH")
+  # --tenants takes bytes16, not the dashed UUID form --tenant takes.
+  TENANT_BYTES16="${TENANT_BYTES16:+$TENANT_BYTES16,}0x$(echo "$uuid" | tr -d '-')"
+  TENANT_SUMMARY="${TENANT_SUMMARY:+$TENANT_SUMMARY, }$slug=$uuid"
+done
+[ ${#TENANT_ARGS[@]} -gt 0 ] || { echo "ERROR: PAYMASTER_TENANTS is empty — nothing to register" >&2; exit 1; }
+
 echo "==> Provisioning the sponsorship paymaster"
 echo "    chain id   : $CHAIN_ID"
 echo "    rpc        : $RPC_URL"
 echo "    paymaster  : $SPONSORSHIP_PAYMASTER_ADDRESS"
 echo "    role admin : $DEPLOYER_ADDR   (every role — a development shape, see below)"
 echo "    signer     : $SIGNER_ADDR"
-echo "    tenant     : $TENANT_SLUG  $TENANT_ID"
+echo "    tenants    : $TENANT_SUMMARY"
 echo "    withdraw to: $TENANT_WITHDRAW_ADDRESS"
-echo "    stake      : $STAKE_ETH ETH (unstake delay ${UNSTAKE_DELAY}s)   tenant balance: $TENANT_FUND_ETH ETH"
+echo "    stake      : $STAKE_ETH ETH (unstake delay ${UNSTAKE_DELAY}s)   per-tenant balance: $TENANT_FUND_ETH ETH"
 echo
 
 # Every role on the deployer EOA, and the timelock topology D13/D14 describe deliberately absent —
@@ -69,12 +99,10 @@ DEPLOYER_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY" RPC_URL="$RPC_URL" \
     --signer "$SIGNER_ADDR" \
     --stake-eth "$STAKE_ETH" \
     --unstake-delay "$UNSTAKE_DELAY" \
-    --tenant "$TENANT_ID:$TENANT_WITHDRAW_ADDRESS:$TENANT_SLUG:$TENANT_FUND_ETH"
+    "${TENANT_ARGS[@]}"
 
 echo
 echo "==> Verifying on-chain (adoption checklist step 8)"
-# --tenants takes bytes16, not the dashed UUID form the provisioner takes.
-TENANT_BYTES16="0x$(echo "$TENANT_ID" | tr -d '-')"
 pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
   --rpc "$RPC_URL" \
   --chain-id "$CHAIN_ID" \
@@ -88,5 +116,5 @@ pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
 echo
 echo "==> Done. Next:"
 echo "    1. docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml up --build"
-echo "    2. Install the tenant's sponsorship rules (a tenant with no rules gets no sponsorship):"
+echo "    2. Install each tenant's sponsorship rules (a tenant with no rules gets no sponsorship):"
 echo "         ./deploy/sepolia/provision-sponsorship.sh"
