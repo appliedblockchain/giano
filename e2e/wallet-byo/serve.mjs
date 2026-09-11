@@ -1,6 +1,6 @@
 // BYO-wallet reference server: the SECOND tenant's wallet origin. Serves a tenant-built
-// (framework-free) wallet SPA and reverse-proxies /api, /.well-known/webauthn, /rpc and
-// /bundler — the same shape a real tenant would deploy with nginx/CloudFront.
+// (framework-free) wallet SPA and reverse-proxies /api, /.well-known/webauthn and /rpc — the
+// same shape a real tenant would deploy with nginx/CloudFront.
 //
 // It runs in two contexts, and everything conditional below is because of that (§16.5):
 //
@@ -69,31 +69,17 @@ const walletApiUpstream = required(
 const rpcUpstream = required(process.env.RPC_UPSTREAM ?? loopbackOf('rpc'), 'RPC_UPSTREAM', 'the chain RPC this origin proxies /rpc to');
 const rpcBUpstream = process.env.RPC_B_UPSTREAM ?? loopbackOf('rpc-b');
 
-// --- the /bundler proxy, and why it is a flag (R11) ---------------------------------------
+// --- no bundler proxy, deliberately ------------------------------------------------------
 //
-// This location relays straight to the ERC-4337 bundler. On a deployment where the wallet
-// task can reach a private bundler, leaving it on makes the wallet origin a PUBLIC
-// UNAUTHENTICATED BUNDLER RELAY: it bypasses every wallet-api policy check and lets anyone
-// drain the funded Alto executor. So it is now switchable, and a deployment turns it off.
-//
-// ⚠ BUT TURNING IT OFF ALSO STOPS THE WALLET SUBMITTING. §16.5 assumed `service` sponsorship
-// needs no bundler; the code says otherwise. src/runtime.ts builds a viem
-// `createBundlerClient({ transport: http(`${origin}${bundlerPath}`) })` and submits through it
-// on EVERY path — sponsorship mode only swaps the paymaster hooks. wallet-api's
-// `POST /v1/userops` is a REST endpoint (`{userOperation, chainId}` + a session), not a
-// JSON-RPC bundler, so it cannot be dropped in as that transport. The stock wallet
-// (services/wallet-web/src/wallet.ts) does exactly the same thing, which is why R3 is the same
-// defect seen from the other end.
-//
-// Until wallet-api exposes a JSON-RPC relay, a deployment therefore has to choose:
-//   * proxy off  — safe, and the wallet cannot send transactions (this is what dev is set to)
-//   * proxy on   — the wallet works and the relay is exposed; only acceptable if the bundler
-//                  is not reachable from this task at all
-// The route below answers 501 with an explanatory JSON-RPC error rather than 404, so the
-// choice shows up in the browser console as a decision instead of a mystery.
-const bundlerProxyEnabled = (process.env.BYO_BUNDLER_PROXY_ENABLED ?? 'true') !== 'false';
-const bundlerUpstream = bundlerProxyEnabled ? (process.env.BUNDLER_UPSTREAM ?? loopbackOf('bundler')) : undefined;
-const bundlerBUpstream = bundlerProxyEnabled ? (process.env.BUNDLER_B_UPSTREAM ?? loopbackOf('bundler-b')) : undefined;
+// There used to be a /bundler location relaying straight to the ERC-4337 bundler, behind a
+// flag (R11). On any deployment where this task could reach a bundler it was a PUBLIC
+// UNAUTHENTICATED RELAY that bypassed every wallet-api policy check — and turning it off
+// stopped the wallet submitting, because viem's bundler client needs a JSON-RPC bundler for
+// estimation and receipts as well as submission. The SPA now points its bundler client at
+// wallet-api's relay, `/api/v1/bundler/<chainId>` (see src/config.ts): the same JSON-RPC
+// surface, behind the session, with submissions going through the same policy pipeline as
+// `POST /v1/userops`. It travels through the /api proxy below, so this origin needs no route
+// to a bundler at all. That is the whole serving contract a BYO tenant has to reproduce.
 
 // --- chain configuration ------------------------------------------------------------------
 // The second chain used to be unconditional, so a single-chain deployment advertised a
@@ -193,24 +179,6 @@ function proxy(req, res, upstreamBase, upstreamPath) {
   req.pipe(proxyReq);
 }
 
-/** A disabled bundler location, answered so the reason reaches the browser console. */
-function bundlerDisabled(res) {
-  res.writeHead(501, { 'content-type': 'application/json' });
-  res.end(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      id: null,
-      error: {
-        code: -32601,
-        message:
-          'bundler proxy disabled on this wallet origin (BYO_BUNDLER_PROXY_ENABLED=false). ' +
-          'A wallet origin that relays to the bundler bypasses wallet-api policy checks and can drain the executor (R11). ' +
-          'Submission needs a JSON-RPC relay on wallet-api; POST /v1/userops is REST and cannot serve as a bundler transport.',
-      },
-    }),
-  );
-}
-
 http
   .createServer((req, res) => {
     const url = req.url ?? '/';
@@ -223,18 +191,12 @@ http
     if (url === '/rpc') {
       return proxy(req, res, rpcUpstream, '/');
     }
-    if (url === '/bundler') {
-      return bundlerUpstream ? proxy(req, res, bundlerUpstream, '/') : bundlerDisabled(res);
-    }
     if (url === '/rpc-b') {
       if (!rpcBUpstream) {
         res.statusCode = 404;
         return res.end('second chain not configured on this wallet origin');
       }
       return proxy(req, res, rpcBUpstream, '/');
-    }
-    if (url === '/bundler-b') {
-      return bundlerBUpstream ? proxy(req, res, bundlerBUpstream, '/') : bundlerDisabled(res);
     }
     if (url === '/main.js') {
       res.setHeader('content-type', 'text/javascript');
@@ -250,10 +212,5 @@ http
   })
   .listen(port, () => {
     const chains = chainBId ? `${chainId},${chainBId}` : String(chainId);
-    console.log(`BYO wallet on :${port} (chains ${chains}, api→${walletApiUpstream}, rpc→${rpcUpstream}, bundler→${bundlerUpstream ?? 'DISABLED'})`);
-    if (!bundlerProxyEnabled) {
-      console.warn('WARNING: /bundler and /bundler-b are disabled, so this wallet CANNOT SUBMIT transactions.');
-      console.warn('         See the R11 note in serve.mjs: closing the relay and keeping submission needs a');
-      console.warn('         JSON-RPC relay endpoint on wallet-api, which does not exist yet.');
-    }
+    console.log(`BYO wallet on :${port} (chains ${chains}, api→${walletApiUpstream}, rpc→${rpcUpstream}, bundler→via wallet-api /api/v1/bundler)`);
   });

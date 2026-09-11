@@ -1,0 +1,203 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 900" role="img"
+     aria-label="Giano local infrastructure stack: browser traffic enters through one Caddy proxy that routes by Host header to six front-door services; wallet-api owns Postgres and is the only service that talks to the bundlers, relaying the wallet origins' estimation, submission and receipt calls behind the session; a one-shot provisioner gates the wallet UIs' startup; chain reads reach a shared, doubled anvil+alto pair for Devnet A and Devnet B.">
+  <title>Giano docker-compose.infrastructure.yml — service topology</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <marker id="arrowWarn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+  </defs>
+
+  <style>
+    text { font-family: -apple-system, Helvetica, Arial, sans-serif; fill: currentColor; }
+    .title { font-size: 13px; font-weight: 600; }
+    .sub   { font-size: 10px; opacity: 0.65; }
+    .lbl   { font-size: 10px; opacity: 0.8; }
+    .lblbg { fill: var(--diagram-bg, #f7f5f2); }
+    .box   { fill: var(--diagram-bg, #f7f5f2); stroke: currentColor; stroke-width: 1.4; }
+    .boxAlt{ fill: none; stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+    .edge  { fill: none; stroke: currentColor; stroke-width: 1.3; marker-end: url(#arrow); opacity: 0.85; }
+    .gate  { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-dasharray: 5 4; marker-end: url(#arrow); opacity: 0.55; }
+    .warn  { fill: none; stroke: #c2410c; stroke-width: 1.4; marker-end: url(#arrowWarn); opacity: 0.9; }
+  </style>
+
+  <rect x="0" y="0" width="1760" height="900" fill="var(--diagram-bg, #f7f5f2)" opacity="0"/>
+
+  <!-- ============ Row 1: browser ============ -->
+  <rect class="box" x="780" y="18" width="200" height="46" rx="6"/>
+  <text x="880" y="37" class="title" text-anchor="middle">browser</text>
+  <text x="880" y="52" class="sub" text-anchor="middle">visits *.giano.localhost</text>
+
+  <line class="edge" x1="880" y1="64" x2="880" y2="98"/>
+  <text x="895" y="85" class="lbl">:80, any hostname</text>
+
+  <!-- ============ Row 2: proxy ============ -->
+  <rect class="box" x="750" y="98" width="260" height="50" rx="6"/>
+  <text x="880" y="119" class="title" text-anchor="middle">proxy (Caddy)</text>
+  <text x="880" y="134" class="sub" text-anchor="middle">one :80 listener, routes by Host header</text>
+
+  <!-- ============ Row 3: front-door services ============ -->
+  <!-- columns: custom-example(60-260) wallet-web(300-500) custom-example-byo(540-740)
+       wallet-byo(780-980) sponsorship-provisioner(1020-1220) wallet-api(1260-1460) paymaster-admin(1500-1700) -->
+  <g>
+    <rect class="box" x="60" y="230" width="200" height="64" rx="6"/>
+    <text x="160" y="253" class="title" text-anchor="middle">custom-example</text>
+    <text x="160" y="268" class="sub" text-anchor="middle">demo dApp · tenant stock</text>
+    <text x="160" y="282" class="sub" text-anchor="middle">stock.giano.localhost</text>
+  </g>
+
+  <g>
+    <rect class="box" x="300" y="230" width="200" height="64" rx="6"/>
+    <text x="400" y="253" class="title" text-anchor="middle">wallet-web</text>
+    <text x="400" y="268" class="sub" text-anchor="middle">stock wallet UI + shared host</text>
+    <text x="400" y="282" class="sub" text-anchor="middle">wallet.stock / wallet.giano</text>
+  </g>
+
+  <g>
+    <rect class="box" x="540" y="230" width="200" height="64" rx="6"/>
+    <text x="640" y="253" class="title" text-anchor="middle">custom-example-byo</text>
+    <text x="640" y="268" class="sub" text-anchor="middle">demo dApp · tenant byo</text>
+    <text x="640" y="282" class="sub" text-anchor="middle">byo.giano.localhost</text>
+  </g>
+
+  <g>
+    <rect class="box" x="780" y="230" width="200" height="64" rx="6"/>
+    <text x="880" y="253" class="title" text-anchor="middle">wallet-byo</text>
+    <text x="880" y="268" class="sub" text-anchor="middle">tenant's own SPA, bundled at boot</text>
+    <text x="880" y="282" class="sub" text-anchor="middle">wallet.byo.giano.localhost</text>
+  </g>
+
+  <g>
+    <rect class="boxAlt" x="1020" y="230" width="200" height="64" rx="6"/>
+    <text x="1120" y="253" class="title" text-anchor="middle">sponsorship-</text>
+    <text x="1120" y="266" class="title" text-anchor="middle">provisioner</text>
+    <text x="1120" y="282" class="sub" text-anchor="middle">one-shot · restart: no · not proxied</text>
+  </g>
+
+  <g>
+    <rect class="box" x="1260" y="230" width="200" height="64" rx="6"/>
+    <text x="1360" y="253" class="title" text-anchor="middle">wallet-api</text>
+    <text x="1360" y="268" class="sub" text-anchor="middle">both tenants, both chains</text>
+    <text x="1360" y="282" class="sub" text-anchor="middle">api.giano.localhost</text>
+  </g>
+
+  <g>
+    <rect class="box" x="1500" y="230" width="200" height="64" rx="6"/>
+    <text x="1600" y="253" class="title" text-anchor="middle">paymaster-admin</text>
+    <text x="1600" y="268" class="sub" text-anchor="middle">reads chain, writes via injected key</text>
+    <text x="1600" y="282" class="sub" text-anchor="middle">paymaster.giano.localhost</text>
+  </g>
+
+  <!-- proxy fan-out arrows -->
+  <path class="edge" d="M810,148 C700,180 300,190 165,230"/>
+  <path class="edge" d="M850,148 C820,180 480,200 405,230"/>
+  <path class="edge" d="M880,148 C780,190 700,195 645,230"/>
+  <path class="edge" d="M900,148 C860,190 920,195 885,230"/>
+  <path class="edge" d="M950,148 C1200,185 1380,195 1362,230"/>
+  <path class="edge" d="M1000,148 C1350,185 1620,195 1602,230"/>
+  <text x="330" y="200" class="lbl">Host: stock.giano.localhost</text>
+  <text x="490" y="196" class="lbl" transform="rotate(-4 490 196)">Host: wallet.stock / wallet.giano</text>
+  <text x="700" y="203" class="lbl">Host: byo.giano.localhost</text>
+  <text x="900" y="200" class="lbl">Host: wallet.byo.giano.localhost</text>
+  <text x="1130" y="188" class="lbl">Host: api.giano.localhost</text>
+  <text x="1330" y="177" class="lbl">Host: paymaster.giano.localhost</text>
+
+  <!-- proxy direct-to-chain elbow (rpc.giano.localhost / rpc-b) -->
+  <path class="edge" d="M1010,120 L1745,120 L1745,540 L1660,560"/>
+  <text x="1748" y="330" class="lbl" transform="rotate(90 1748 330)">Host: rpc(-b).giano.localhost</text>
+
+  <!-- ============ dApp <-> wallet popup flows ============ -->
+  <path class="edge" d="M260,262 L300,262"/>
+  <text x="280" y="255" class="lbl" text-anchor="middle">popup</text>
+  <path class="edge" d="M740,262 L780,262"/>
+  <text x="760" y="255" class="lbl" text-anchor="middle">popup</text>
+
+  <!-- ============ Row 4: postgres + provisioner's own calls ============ -->
+  <rect class="box" x="1310" y="360" width="140" height="52" rx="6"/>
+  <text x="1380" y="381" class="title" text-anchor="middle">postgres</text>
+  <text x="1380" y="395" class="sub" text-anchor="middle">named volume pgdata</text>
+
+  <line class="edge" x1="1380" y1="294" x2="1380" y2="360"/>
+  <text x="1392" y="330" class="lbl">wallets, passkeys</text>
+
+  <!-- provisioner -> wallet-api (PUT rules) -->
+  <path class="edge" d="M1220,260 L1260,260"/>
+  <text x="1240" y="250" class="lbl" text-anchor="middle" transform="rotate(0)">PUT rules</text>
+
+  <!-- wallet origins -> wallet-api: sessions, sponsorship, and the bundler relay -->
+  <path class="edge" d="M455,294 C520,326 1190,326 1268,294"/>
+  <path class="edge" d="M935,294 C990,322 1215,322 1272,294"/>
+
+  <!-- provisioner gates (depends_on: service_completed_successfully) -->
+  <path class="gate" d="M1060,294 C1000,392 700,392 405,294"/>
+  <path class="gate" d="M1080,294 C1000,372 940,372 885,294"/>
+  <path class="gate" d="M1200,294 C1350,360 1520,345 1595,294"/>
+
+  <!-- ============ Row 5: chain infrastructure cluster ============ -->
+  <rect x="120" y="560" width="1540" height="300" rx="10" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5" stroke-dasharray="2 4"/>
+  <text x="145" y="585" class="sub">chain infrastructure — one baked state.json, identical contracts on both chains</text>
+
+  <!-- Devnet A -->
+  <g>
+    <rect class="box" x="260" y="610" width="260" height="60" rx="6"/>
+    <text x="390" y="632" class="title" text-anchor="middle">anvil</text>
+    <text x="390" y="647" class="sub" text-anchor="middle">chain 31337 · :8545 published</text>
+  </g>
+  <g>
+    <rect class="box" x="620" y="610" width="260" height="60" rx="6"/>
+    <text x="750" y="632" class="title" text-anchor="middle">alto</text>
+    <text x="750" y="647" class="sub" text-anchor="middle">4337 bundler · :4337 published</text>
+  </g>
+  <path class="edge" d="M750,670 C700,695 560,695 520,655"/>
+  <text x="640" y="700" class="lbl" text-anchor="middle">submits userops (RPC), well-known executor key</text>
+  <text x="390" y="600" class="lbl" text-anchor="middle">Devnet A</text>
+
+  <!-- Devnet B -->
+  <g>
+    <rect class="box" x="980" y="610" width="260" height="60" rx="6"/>
+    <text x="1110" y="632" class="title" text-anchor="middle">anvil-b</text>
+    <text x="1110" y="647" class="sub" text-anchor="middle">chain 31338 · :8546 published</text>
+  </g>
+  <g>
+    <rect class="box" x="1340" y="610" width="260" height="60" rx="6"/>
+    <text x="1470" y="632" class="title" text-anchor="middle">alto-b</text>
+    <text x="1470" y="647" class="sub" text-anchor="middle">4337 bundler · :4338 published</text>
+  </g>
+  <path class="edge" d="M1470,670 C1420,695 1280,695 1240,655"/>
+  <text x="1360" y="700" class="lbl" text-anchor="middle">same, on Devnet B</text>
+  <text x="1110" y="600" class="lbl" text-anchor="middle">Devnet B</text>
+
+  <text x="880" y="740" class="sub" text-anchor="middle">anvil_dumpState carries accounts/code/storage but not chain id → one artefact, two chain ids, same addresses</text>
+
+  <!-- ============ arrows from front-door services down into the chain cluster ============ -->
+  <path class="edge" d="M160,294 L160,560"/>
+  <text x="55" y="450" class="lbl" transform="rotate(-90 55 450)">direct CORS read (balances)</text>
+
+  <path class="edge" d="M400,294 L400,560"/>
+  <text x="420" y="450" class="lbl">/rpc same-origin proxy, both chains (reads only)</text>
+
+  <path class="edge" d="M640,294 L640,560"/>
+  <text x="660" y="480" class="lbl">direct CORS read</text>
+
+  <path class="edge" d="M880,294 L880,560"/>
+  <text x="900" y="480" class="lbl">/rpc same-origin proxy (reads only)</text>
+
+  <path class="edge" d="M1300,294 C1240,340 1200,420 1230,560"/>
+  <text x="1160" y="455" class="lbl" text-anchor="middle">the ONLY bundler caller: estimate + submit after policy, both chains</text>
+
+  <path class="edge" d="M1600,294 L1600,560"/>
+  <text x="1590" y="450" class="lbl" text-anchor="end">reads + writes paymaster</text>
+
+  <!-- labels that sit on crossing lines, drawn last on a ground-coloured plate -->
+  <rect class="lblbg" x="483" y="331" width="554" height="13" rx="2"/>
+  <text x="760" y="341" class="lbl" text-anchor="middle">/api same-origin: ceremonies · ERC-7677 sponsorship · bundler relay /v1/bundler/:chainId (estimate, submit, receipts)</text>
+  <rect class="lblbg" x="573" y="369" width="334" height="13" rx="2"/>
+  <text x="740" y="379" class="lbl" text-anchor="middle">waits for exit 0 (a tenant with no rules is refused every tx)</text>
+
+  <!-- caption -->
+  <text x="880" y="882" class="sub" text-anchor="middle">
+    docker-compose.infrastructure.yml — solid = HTTP/RPC traffic, dashed = startup gate (depends_on). No wallet origin has a route to a bundler: alto is reached only through wallet-api.
+  </text>
+</svg>

@@ -245,7 +245,7 @@ module "svc-wallet-web" {
 
   environment = {
     GIANO_CHAIN_ID             = var.chain_id
-    GIANO_BUNDLER_URL          = "https://${local.hosts.api}/v1/userops" # R3
+    # no GIANO_BUNDLER_URL — the SPA defaults to wallet-api's /api/v1/bundler relay (R3 closed)
     GIANO_WALLET_API_UPSTREAM  = "http://wallet-api.${local.name_prefix}.local:8080"
     GIANO_SPONSORSHIP_MODE     = "service"
     GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
@@ -285,11 +285,10 @@ module "svc-wallet-web" {
   environment = {
     GIANO_CHAIN_ID = local.chain_id
 
-    # Required by the entrypoint's shorthand branch even though sponsorship
-    # mode `service` relays user operations through wallet-api. R3 — if the
-    # browser turns out to dial this directly, the bundler needs an ALB target
-    # and a hostname of its own.
-    GIANO_BUNDLER_URL = "https://${local.hosts.api}/v1/userops"
+    # No GIANO_BUNDLER_URL. The wallet's bundler client defaults to wallet-api's
+    # JSON-RPC relay, /api/v1/bundler/<chainId>, same-origin — behind the
+    # session, submissions through the same policy pipeline as POST /v1/userops.
+    # The bundler needs no ALB target and no hostname. R3 closed.
 
     # Same-origin /api and /.well-known/webauthn. nginx forwards Host and
     # Origin untouched, which is what lets wallet-api resolve the tenant per
@@ -575,8 +574,8 @@ module "svc-custom-example-byoui" {
 }
 
 # ── wallet-byo — rule 35, wallet.byoui.* — tenant byoui's OWN SPA — §9.2, §14.5 ─────────────
-# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, which
-# is what makes the open-relay vector unreachable here regardless of BYO_BUNDLER_PROXY_ENABLED.
+# Deliberately NOT on the bundler security group — R11: no route to a bundler at all, and no
+# /bundler location either; the SPA's bundler client goes through wallet-api's /api/v1/bundler relay.
 =======
   datadog_source      = local.ecs_services["custom-example-byoui"].datadog_source
 
@@ -586,10 +585,11 @@ module "svc-custom-example-byoui" {
 # --- wallet-byo, tenant `byoui`'s wallet origin ---------------------------
 #
 # The framework-free SPA in e2e/wallet-byo, bundled with esbuild at container
-# start, reverse-proxying the same paths wallet-web's nginx does. Blocked on
-# §16.5 — and its /bundler proxy MUST NOT be reachable (R11): deployed as-is
-# it is a public unauthenticated bundler relay that bypasses wallet-api's
-# policy check and drains the Alto executor. Runbook step 13 verifies it.
+# start, reverse-proxying the same paths wallet-web's nginx does: /api,
+# /.well-known/webauthn and /rpc. It has no /bundler location — the SPA's
+# bundler client goes to wallet-api's relay, /api/v1/bundler/<chainId>, over
+# the /api proxy — so the open-relay vector R11 described no longer exists.
+# Runbook step 13 verifies that /bundler on this host does not answer.
 
 >>>>>>> main
 module "svc-wallet-byo" {
@@ -634,7 +634,7 @@ module "svc-wallet-byo" {
     WALLET_API_UPSTREAM       = "http://wallet-api.${local.name_prefix}.local:8080"
     CHAIN_ID                  = var.chain_id
     SPONSORSHIP_MODE          = "service"
-    BYO_BUNDLER_PROXY_ENABLED = "false" # R11 — must stay disabled; service mode never needs it
+    # no bundler variable of any kind — submission, estimation and receipts go through wallet-api's relay (R11 closed)
     BYO_ALLOWED_DAPP_ORIGINS  = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
     FACTORY_ADDRESS           = var.factory_address # required here, unlike everywhere else — §14.5
     # PAYMASTER_ADDRESS unset — service mode does not use the permissive fixture
@@ -674,16 +674,10 @@ module "svc-wallet-byo" {
     CHAIN_ID            = local.chain_id
 
     # The real sponsorship path, through /api/v1/paymaster. `service` mode
-    # needs no bundler proxy and no permissive paymaster fixture, so
-    # PAYMASTER_ADDRESS stays unset.
+    # needs no permissive paymaster fixture, so PAYMASTER_ADDRESS stays unset.
+    # No bundler variable of any kind: submission, estimation and receipts all
+    # go through wallet-api's /v1/bundler relay, behind the session. R11 closed.
     SPONSORSHIP_MODE = "service"
-
-    # BUNDLER_UPSTREAM is deliberately ABSENT and the proxy explicitly off.
-    # This task sits in the tasks security group, which the bundler group
-    # accepts on 4337 — so a live /bundler location here is an open relay on a
-    # wallet origin. §16.5 must make the proxy disableable and honour this
-    # flag; until it does, this service must not be deployed. R11
-    BYO_BUNDLER_PROXY_ENABLED = "false"
 
     # This tenant's OWN allowlist, shipped with its own SPA — which is why R9
     # does not reach it, and why it can be tenant two today.

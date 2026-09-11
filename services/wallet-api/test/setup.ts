@@ -119,7 +119,13 @@ export function createMockBundlerFetch(results: Record<string, unknown> = {}) {
     const { id, method, params } = JSON.parse(String(init?.body)) as { id: number; method: string; params: unknown[] };
     calls.push({ method, params, url: String(url) });
     const result =
-      method in results ? results[method] : method === 'eth_sendUserOperation' ? '0x' + 'ab'.repeat(32) : null;
+      method in results
+        ? results[method]
+        : method === 'eth_sendUserOperation'
+          ? '0x' + 'ab'.repeat(32)
+          : method === 'eth_estimateUserOperationGas'
+            ? { preVerificationGas: '0x10000', verificationGasLimit: '0xc3500', callGasLimit: '0x30000' }
+            : null;
     return new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), {
       headers: { 'content-type': 'application/json' },
     });

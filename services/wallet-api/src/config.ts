@@ -232,8 +232,18 @@ const envSchema = z
 
     /** Rate limit for ceremony endpoints, requests per minute per tenant+IP. */
     CEREMONY_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
-    /** Relay rate limit for POST /v1/userops, per tenant per minute (policy-overridable). */
+    /**
+     * Submission rate limit, per tenant per minute (policy-overridable). One window whichever
+     * door an operation arrives through — POST /v1/userops or eth_sendUserOperation on the
+     * bundler relay.
+     */
     USEROP_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+    /**
+     * The bundler relay's OTHER methods — estimation and receipt polling — per tenant per minute.
+     * Its own budget, because a transaction estimates once or twice and polls for its receipt
+     * many times; sharing the submission window would silently shrink it.
+     */
+    BUNDLER_RELAY_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(600),
 
     /** When set (non-empty), GET /metrics requires this bearer token; unset = open (dev only). */
     METRICS_BEARER_TOKEN: z

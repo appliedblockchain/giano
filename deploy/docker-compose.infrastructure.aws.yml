@@ -65,9 +65,9 @@
 #   wallet-byo                             §16.5 done. e2e/wallet-byo/Dockerfile; serve.mjs
 #                                          no longer requires e2e/devnet/addresses.json or
 #                                          ../origins.mjs, the second chain falls away unless
-#                                          asked for, and the /bundler proxy is switchable.
-#                                          ⚠ But R11 is NOT closed by that switch — read the
-#                                          note on that service before deploying it.
+#                                          asked for, and there is no /bundler proxy at all:
+#                                          the SPA submits through wallet-api's JSON-RPC
+#                                          relay (/v1/bundler/:chainId). R3 and R11 closed.
 #
 # Still outstanding:
 #   provision-sponsorship                  §16.3  `dist/provision-sponsorship.js` is not a
@@ -127,9 +127,10 @@ networks:
   # `giano-dev-db-sg` accepts 5432 from the tasks SG. Only wallet-api and the migrate job
   # are on it — wallet-api is the only service with database access at all.
   data:
-  # `giano-dev-bundler-sg` accepts 4337 from the tasks SG. Only wallet-api is on it: the
-  # wallet origin never dials the bundler, it relays through wallet-api after the policy
-  # check. wallet-byo is deliberately NOT here — see R11 on that service.
+  # `giano-dev-bundler-sg` accepts 4337 from the tasks SG. Only wallet-api is on it: both
+  # wallet origins reach the bundler through wallet-api's JSON-RPC relay
+  # (/v1/bundler/:chainId), behind the session and the policy check — estimation, submission
+  # and receipts alike. Neither wallet task is here, and neither has anything to dial.
   bundler:
 
 volumes:
@@ -352,8 +353,8 @@ services:
   # Self-hosted Alto, pinned to 0.0.18 in the image (D3). Note the absence of `ports:`: this
   # is `alb_enabled = false` — no target group, no listener rule, no hostname. It is
   # reachable only from the tasks security group, and wallet-api relays user operations to it
-  # AFTER the policy check. Nothing else in the deployment may dial it, which is precisely
-  # what R11 (on wallet-byo, below) is about.
+  # AFTER the policy check. Nothing else in the deployment dials it: the wallet origins speak
+  # to wallet-api's /v1/bundler relay instead, which is what let R3 and R11 close.
   # ════════════════════════════════════════════════════════════════════════════════════════
   bundler:
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-bundler:${GIANO_IMAGE_TAG:-latest}
@@ -456,12 +457,13 @@ services:
       # GIANO_RPC_UPSTREAM to the keyed URL, which keeps the key server-side. The nginx
       # template already supports it. Decide this deliberately rather than by default.
       GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
-      # [literal] Required by the entrypoint's shorthand branch even though sponsorship mode
-      # `service` relays user operations through wallet-api rather than dialling a bundler.
-      # R3: confirm during implementation whether the browser ever calls this directly — if
-      # it does, the bundler needs an ALB target and a hostname, and it currently has neither
-      # by design.
-      GIANO_BUNDLER_URL: ${URL_SCHEME:-https}://${API_HOST:?set API_HOST}/v1/userops
+      # No GIANO_BUNDLER_URL, and R3 is closed the way it had to be: the browser DID dial that
+      # URL — viem estimates gas and polls receipts through the bundler client, whatever the
+      # sponsorship mode — so pointing it at the REST endpoint left the wallet unable to
+      # transact. The SPA now defaults to wallet-api's JSON-RPC relay,
+      # `${GIANO_WALLET_API_URL}/v1/bundler/<chainId>`, same-origin through /api: behind the
+      # session, submissions through the same policy pipeline as POST /v1/userops. The bundler
+      # needs no ALB target and no hostname, as designed.
       # [literal] Cloud Map in AWS: http://wallet-api.giano-dev.local:8080. nginx proxies
       # /api/ and /.well-known/webauthn here. REQUIRED — the entrypoint exits if unset.
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
@@ -604,31 +606,14 @@ services:
   # becomes a required variable that fails loudly), the second chain falls away unless
   # CHAIN_B_ID is set, and chain names come from the environment.
   #
-  # ⚠ R11 IS STILL OPEN, AND IT IS NOT A FLAG PROBLEM. `BYO_BUNDLER_PROXY_ENABLED` is now
-  # real — false makes /bundler and /bundler-b answer 501 instead of relaying — but the
-  # spec's premise for it does not hold:
-  #
-  #   §16.5 says `service` sponsorship "never needs" the bundler proxy. The code says
-  #   otherwise. e2e/wallet-byo/src/runtime.ts builds a viem
-  #   `createBundlerClient({ transport: http(`${origin}${bundlerPath}`) })` and submits
-  #   through it on EVERY path — the sponsorship mode only swaps the paymaster hooks. So
-  #   turning the proxy off closes the relay AND stops this wallet submitting anything.
-  #
-  #   wallet-api's `POST /v1/userops` cannot substitute: it is REST
-  #   (`{userOperation, chainId}` plus a session, returning `{userOperationHash}`), not a
-  #   JSON-RPC bundler, so it will not serve as a viem transport.
-  #
-  #   The stock wallet does exactly the same thing (services/wallet-web/src/wallet.ts:175),
-  #   which means R3 is this same defect seen from the other end — and wallet-web's
-  #   GIANO_BUNDLER_URL is pointed at `https://api.<apex>/v1/userops` in
-  #   infra/iac/ecs_services.tf:171, which is that REST endpoint.
-  #
-  # So a deployment has to choose, and neither option is free:
-  #   proxy off — safe, and the wallet cannot send transactions (what dev is set to today)
-  #   proxy on  — the wallet works and the relay is exposed; only acceptable if the bundler
-  #               is not reachable from this task at all
-  # The real fix is a JSON-RPC relay endpoint on wallet-api, which would close R3 and R11
-  # together and let the bundler stay private for both wallets. It does not exist yet.
+  # R11 IS CLOSED, and not by a flag. The /bundler proxy is gone from serve.mjs altogether,
+  # along with `BYO_BUNDLER_PROXY_ENABLED` and `BUNDLER_UPSTREAM`. What replaced it is the
+  # thing the previous note said was missing: wallet-api's JSON-RPC bundler relay,
+  # `POST /v1/bundler/:chainId`. The SPA's bundler client points at `/api/v1/bundler/<chainId>`,
+  # which travels through the /api proxy like every other call — behind the session, with
+  # `eth_sendUserOperation` going through the identical policy, audit and idempotency pipeline
+  # as `POST /v1/userops`, estimation bound to the session's wallet, receipts forwarded. The
+  # same relay closes R3 on wallet-web. The bundler stays private to wallet-api for both.
   # ════════════════════════════════════════════════════════════════════════════════════════
   wallet-byo:
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-byo:${GIANO_IMAGE_TAG:-latest}
@@ -638,9 +623,8 @@ services:
       # container start. Built and pushed to GHCR by .github/workflows/docker.yml.
       dockerfile: e2e/wallet-byo/Dockerfile
     restart: unless-stopped
-    # Deliberately NOT on the `bundler` network, which is what makes the open-relay vector
-    # unreachable here regardless of the flag. The cost is the one R11 describes: with no
-    # route to a bundler, this wallet cannot submit until wallet-api grows a JSON-RPC relay.
+    # Deliberately NOT on the `bundler` network: this origin has nothing to say to a bundler.
+    # Its bundler traffic is wallet-api traffic, over /api.
     networks: [tasks]
     depends_on:
       wallet-api:
@@ -660,15 +644,10 @@ services:
       # posture §13.3 recommends, and the BYO fixture happens to get it right.
       RPC_UPSTREAM: ${RPC_URL:?set RPC_URL}
       # [literal] The real sponsorship path, through /api/v1/paymaster. `service` mode needs
-      # neither a bundler proxy nor the permissive paymaster fixture, so PAYMASTER_ADDRESS
-      # stays unset.
+      # no permissive paymaster fixture, so PAYMASTER_ADDRESS stays unset. There is no bundler
+      # variable of any kind: the bundler client goes to /api/v1/bundler/<chainId> (see the
+      # note above).
       SPONSORSHIP_MODE: service
-      # [literal] Now honoured: false makes /bundler and /bundler-b answer 501 with a
-      # JSON-RPC error naming the reason, rather than relaying. BUNDLER_UPSTREAM is
-      # deliberately absent as well, so there is nothing to relay TO even if it were on.
-      # ⚠ This also disables submission — see R11 above. It is the safe half of a trade-off,
-      # not a fix.
-      BYO_BUNDLER_PROXY_ENABLED: 'false'
       # This tenant's OWN allowlist, shipped with its own SPA. That is why R9 cannot reach it
       # and why it can be tenant two today.
       BYO_ALLOWED_DAPP_ORIGINS: '["${URL_SCHEME:-https}://${BYOUI_DAPP_HOST:?set BYOUI_DAPP_HOST}"]'

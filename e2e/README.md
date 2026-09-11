@@ -139,7 +139,7 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
 - and, by hand rather than by import, the tenant seed in `deploy/docker-compose.e2e.yml`.
 
 That last one is the seam to watch: compose is YAML and cannot import a module, so the origins in
-`TENANTS_SEED`, `GIANO_ALLOWED_DAPP_ORIGINS`, `GIANO_RPC_URL`, `GIANO_BUNDLER_URL` and `GIANO_RP_ID`
+`TENANTS_SEED`, `GIANO_ALLOWED_DAPP_ORIGINS`, `GIANO_RPC_URL` and `GIANO_RP_ID`
 have to be kept in step with `origins.mjs` by hand.
 
 ### Adding or renaming a name

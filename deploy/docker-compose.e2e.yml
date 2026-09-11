@@ -220,28 +220,29 @@ services:
     ports:
       - '8081:8080'
     environment:
-      # Both chains, one wallet origin (MC-39). Endpoints are same-origin proxies: the
-      # browser hits the wallet origin; nginx forwards to the containers (alto/anvil have
-      # no CORS). The production paymaster through the sponsorship service on both chains.
+      # Both chains, one wallet origin (MC-39). The RPC endpoints are same-origin proxies: the
+      # browser hits the wallet origin; nginx forwards to anvil (which has no CORS). There is
+      # NO bundler URL: the wallet reaches each chain's bundler through wallet-api's relay
+      # (/api/v1/bundler/<chainId>), behind the session and the policy check — alto is only
+      # ever dialled by wallet-api. The production paymaster through the sponsorship service
+      # on both chains.
       GIANO_CHAINS: |
         [
           {
             "chainId": 31337, "name": "Devnet A",
-            "rpcUrl": "http://wallet.localhost/rpc", "bundlerUrl": "http://wallet.localhost/bundler",
+            "rpcUrl": "http://wallet.localhost/rpc",
             "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
             "sponsorship": "service"
           },
           {
             "chainId": 31338, "name": "Devnet B",
-            "rpcUrl": "http://wallet.localhost/rpc-b", "bundlerUrl": "http://wallet.localhost/bundler-b",
+            "rpcUrl": "http://wallet.localhost/rpc-b",
             "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
             "sponsorship": "service"
           }
         ]
       GIANO_RPC_UPSTREAM: http://anvil:8545
-      GIANO_BUNDLER_UPSTREAM: http://alto:4337
       GIANO_RPC_B_UPSTREAM: http://anvil-b:8545
-      GIANO_BUNDLER_B_UPSTREAM: http://alto-b:4337
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost"]'
       GIANO_RP_ID: wallet.localhost

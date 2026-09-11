@@ -72,7 +72,8 @@ interface WalletChainConfig {
   chainId: number
   name: string          // human-readable; named on every consent screen
   rpcUrl: string
-  bundlerUrl: string
+  bundlerUrl?: string               // defaults to `${walletApiUrl}/v1/bundler/${chainId}` — wallet-api's
+                                    // session-bound JSON-RPC relay; set only to dial a bundler directly (dev)
   factoryAddress: `0x${string}`
   sponsorship: 'service' | 'test-paymaster' | 'off'
   paymasterServiceUrl?: string      // defaults to `${walletApiUrl}/v1/paymaster`
@@ -89,8 +90,8 @@ const config: WalletConfig = {
   rpId: 'wallet.example.com',
   branding: { name: 'Example Wallet' },
   chains: [
-    { chainId: 8453, name: 'Base', rpcUrl: 'https://…', bundlerUrl: 'https://…',
-      factoryAddress: '0x26dC…', sponsorship: 'service' },
+    { chainId: 8453, name: 'Base', rpcUrl: 'https://…',
+      factoryAddress: '0x26dC…', sponsorship: 'service' },   // bundler: wallet-api's relay, by default
   ],
 }
 ```

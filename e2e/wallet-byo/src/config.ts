@@ -3,8 +3,10 @@ import type { WalletConfig } from '@appliedblockchain/giano-wallet-kit';
 /**
  * BYO-wallet config: baked in at bundle time via esbuild `define` (see serve.mjs) —
  * a tenant-built wallet needs none of Giano's /config.json machinery (WK-07: the config
- * is the host's to supply). The rpc/bundler/api endpoints are same-origin proxies served
- * by serve.mjs, so the URLs are resolved against the page origin at startup.
+ * is the host's to supply). The rpc and api endpoints are same-origin proxies served by
+ * serve.mjs, so the URLs are resolved against the page origin at startup. There is no
+ * bundler endpoint: the kit defaults each chain's `bundlerUrl` to wallet-api's relay
+ * (`/api/v1/bundler/<chainId>`), which is the only route a wallet origin needs to a bundler.
  */
 
 const SPONSORSHIP = (process.env.SPONSORSHIP_MODE || (process.env.PAYMASTER_ADDRESS ? 'test-paymaster' : 'off')) as
@@ -31,11 +33,12 @@ export const BRAND_NAME = 'BYO Wallet';
  */
 export function walletConfig(): WalletConfig {
   const origin = window.location.origin;
-  const chain = (chainId: number, name: string, rpcPath: string, bundlerPath: string) => ({
+  const chain = (chainId: number, name: string, rpcPath: string) => ({
     chainId,
     name,
     rpcUrl: `${origin}${rpcPath}`,
-    bundlerUrl: `${origin}${bundlerPath}`,
+    /** Through wallet-api, same-origin under /api — behind the session and the policy check. */
+    bundlerUrl: `/api/v1/bundler/${chainId}`,
     factoryAddress: process.env.FACTORY_ADDRESS as `0x${string}`,
     sponsorship: SPONSORSHIP,
     /** Same-origin, through the `/api` proxy — no tenant onboarding change is needed for this. */
@@ -45,8 +48,8 @@ export function walletConfig(): WalletConfig {
 
   return {
     chains: [
-      chain(Number(process.env.CHAIN_ID), process.env.CHAIN_NAME as string, '/rpc', '/bundler'),
-      ...(CHAIN_B_ID > 0 ? [chain(CHAIN_B_ID, process.env.CHAIN_B_NAME as string, '/rpc-b', '/bundler-b')] : []),
+      chain(Number(process.env.CHAIN_ID), process.env.CHAIN_NAME as string, '/rpc'),
+      ...(CHAIN_B_ID > 0 ? [chain(CHAIN_B_ID, process.env.CHAIN_B_NAME as string, '/rpc-b')] : []),
     ],
     walletApiUrl: '/api',
     /** fail closed: only the tenant's own dApp origins may drive this wallet */

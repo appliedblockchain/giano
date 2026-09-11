@@ -13,6 +13,7 @@ import metricsPlugin from './plugins/metrics.js';
 import tenantPlugin from './plugins/tenant.js';
 import adminRoutes from './routes/admin.js';
 import adminSponsorshipRoutes from './routes/admin-sponsorship.js';
+import bundlerRelayRoutes from './routes/bundler-relay.js';
 import paymasterRoutes from './routes/paymaster.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
@@ -27,6 +28,7 @@ import type { PaymasterReader } from './services/paymaster-contract.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
 import { createHsmSponsorshipSigner, createLocalSponsorshipSigner, type HsmSignerAdapter, type SponsorshipSigner } from './services/sponsorship-signer.js';
 import { createTenantService } from './services/tenants.js';
+import { createUseropRelay } from './services/userop-relay.js';
 
 export type BuildAppOptions = {
   config: AppConfig;
@@ -172,10 +174,11 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   await app.register(webauthnRoutes, { db, config, challenges, sessions, registry });
   await app.register(credentialRoutes, { db, sessions, registry });
   await app.register(walletManagementRoutes, { db, config, challenges, registry });
-  await app.register(useropRoutes, {
+  // One relay pipeline behind two doors: the REST endpoint and the JSON-RPC bundler facade
+  // share policy, audit log, idempotency and the per-tenant submission window.
+  const relay = createUseropRelay({
     db,
     config,
-    registry,
     // deployment-wide default caps; the chain descriptor's policy and tenants.policy
     // override per field, per chain (mergePolicy)
     defaultPolicy: {
@@ -184,7 +187,10 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
       maxFeePerGas: config.USEROP_MAX_FEE_PER_GAS,
       maxPriorityFeePerGas: config.USEROP_MAX_PRIORITY_FEE_PER_GAS,
     },
+    metrics: app.metrics,
   });
+  await app.register(useropRoutes, { db, registry, relay });
+  await app.register(bundlerRelayRoutes, { config, relay });
 
   return app;
 }
