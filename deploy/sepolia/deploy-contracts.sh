@@ -106,11 +106,27 @@ if ! run_deploy ignition/modules/GianoPaymaster.ts; then
   exit 1
 fi
 
-# The demo fixtures. SKIP_TESTING=1 omits them, which is what parity with Base Sepolia looks like:
-# 84532 carries the factory, implementation and paymaster and nothing else. Keep them for a chain
-# that has to run the demo — provision-sponsorship.sh allowlists the ERC-20, and deploying it
-# through create2 puts it at the same address as every other chain (HANDOVER-TASKS H3 R13).
-if [ "${SKIP_TESTING:-0}" = "1" ]; then
+# The demo fixtures (PrivateERC20 + PermissivePaymaster).
+#
+# NEVER deployed to a chain in PRODUCTION_CHAIN_IDS (scripts/generate-addresses.ts) — 8453, 84532
+# and 11155111. That is R-29 layer 2, and gen:addresses enforces it as a build failure: a chain
+# carrying testPaymaster or testErc20 cannot be registered at all. Skipping is therefore not a
+# preference, it is the only way the chain can be adopted. This is also why Base Sepolia has no
+# test ERC-20 — the rule, not an omission.
+#
+# Note the conflict, because it is real and unresolved: HANDOVER-TASKS H3 R13 asks for the test
+# ERC-20 on *each testnet* with CREATE2 so its address is identical everywhere, and both 84532 and
+# 11155111 are testnets. R-29 wins here only because it is the rule the code enforces.
+case " 8453 84532 11155111 " in
+  *" $CHAIN_ID "*) PRODUCTION_CHAIN=1 ;;
+  *) PRODUCTION_CHAIN=0 ;;
+esac
+
+if [ "$PRODUCTION_CHAIN" = "1" ]; then
+  echo
+  echo "==> chain $CHAIN_ID is a production chain — NOT deploying PrivateERC20 / PermissivePaymaster"
+  echo "    (R-29 layer 2; gen:addresses refuses to register a chain that carries them)"
+elif [ "${SKIP_TESTING:-0}" = "1" ]; then
   echo
   echo "==> SKIP_TESTING=1 — not deploying PrivateERC20 / PermissivePaymaster"
 elif ! run_deploy ignition/modules/Testing.ts; then

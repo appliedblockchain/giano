@@ -15,14 +15,14 @@ RPC="${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}" \
 pnpm --filter @appliedblockchain/giano-contracts exec node - <<'NODE'
 const { JsonRpcProvider, Wallet, formatEther } = require('ethers');
 const provider = new JsonRpcProvider(process.env.RPC);
-const stake = process.env.STAKE_ETH ?? '0.01';
+const stake = process.env.STAKE_ETH ?? '0.1';
 const tenantFund = process.env.TENANT_FUND_ETH ?? '0.02';
 const testDeposit = process.env.PAYMASTER_FUND_ETH ?? '0.01';
 const rows = [
   [
     'Deployer',
     process.env.DEPLOYER_PRIVATE_KEY,
-    '~0.15',
+    '~0.25',
     `contracts + paymaster stake (${stake}) + tenant balance (${tenantFund}) + test deposit (${testDeposit}) + gas`,
   ],
   ['Alto executor', process.env.ALTO_EXECUTOR_PRIVATE_KEY, '~0.05', 'fronts gas for every bundle (reimbursed by paymaster)'],

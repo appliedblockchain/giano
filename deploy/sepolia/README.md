@@ -30,7 +30,7 @@ required but needs no funding:
 
 | Account | Suggested | Why |
 | --- | --- | --- |
-| **Deployer** (`DEPLOYER_PRIVATE_KEY`) | ~0.15 ETH | Deploys the contracts, stakes the paymaster (`STAKE_ETH`), funds **each** tenant's sponsorship balance (`TENANT_FUND_ETH`, spent once per entry in `PAYMASTER_TENANTS`) and seeds the test paymaster's deposit (`PAYMASTER_FUND_ETH`). |
+| **Deployer** (`DEPLOYER_PRIVATE_KEY`) | ~0.25 ETH | Deploys the contracts, stakes the paymaster (`STAKE_ETH`), funds **each** tenant's sponsorship balance (`TENANT_FUND_ETH`, spent once per entry in `PAYMASTER_TENANTS`) and seeds the test paymaster's deposit (`PAYMASTER_FUND_ETH`). |
 | **Alto executor** (`ALTO_EXECUTOR_PRIVATE_KEY`) | ~0.05 ETH | Signs and pays gas for every bundle on-chain. It's reimbursed from the paymaster deposit, but must front the ETH. |
 | **Sponsorship signer** (`SPONSORSHIP_SIGNER_KEY`) | none | The key wallet-api signs ERC-7677 sponsorships with. It authorises spending against the tenant's paymaster balance; it never pays gas. |
 

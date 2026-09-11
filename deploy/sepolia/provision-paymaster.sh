@@ -39,12 +39,15 @@ CHAIN_ID="${CHAIN_ID:-11155111}"
 # balance on the 16 bytes of its UUID, and a tenant whose database id differs from its on-chain id
 # has every sponsorship refused as an unknown tenant.
 PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:a1000000-0000-4000-8000-000000000001,byoui:a1000000-0000-4000-8000-000000000002}"
-# How much of each tenant's sponsorship balance to fund, and the paymaster's EntryPoint stake.
-# Both are deliberately small: Sepolia faucets are rate-limited, and the e2e devnet's 1 ETH stake
-# / 50 ETH balance are anvil figures. Alto runs with --safe-mode false here, so the EntryPoint's
-# reputation rules — the reason a large stake matters on a public network — are not in play.
+# Per-tenant balance, and the paymaster's EntryPoint stake.
+#
+# STAKE_ETH must be at least 0.1: that is MIN_STAKE_WEI in scripts/doctor.ts, and the doctor
+# reports anything below it as a FAILED check — "deployed but not staked" is treated as a broken
+# deployment, not a warning, because bundlers reject an under-staked validating paymaster and it
+# reads to a client as a bug in their own code. Running Alto with --safe-mode false does not make
+# this optional; it only means the local stack happens not to exercise the rule.
 TENANT_FUND_ETH="${TENANT_FUND_ETH:-0.02}"
-STAKE_ETH="${STAKE_ETH:-0.01}"
+STAKE_ETH="${STAKE_ETH:-0.1}"
 UNSTAKE_DELAY="${UNSTAKE_DELAY:-86400}"
 
 DERIVED="$(pnpm --filter @appliedblockchain/giano-contracts exec node -e \
