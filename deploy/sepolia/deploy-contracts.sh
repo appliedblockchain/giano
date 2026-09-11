@@ -106,7 +106,14 @@ if ! run_deploy ignition/modules/GianoPaymaster.ts; then
   exit 1
 fi
 
-if ! run_deploy ignition/modules/Testing.ts; then
+# The demo fixtures. SKIP_TESTING=1 omits them, which is what parity with Base Sepolia looks like:
+# 84532 carries the factory, implementation and paymaster and nothing else. Keep them for a chain
+# that has to run the demo — provision-sponsorship.sh allowlists the ERC-20, and deploying it
+# through create2 puts it at the same address as every other chain (HANDOVER-TASKS H3 R13).
+if [ "${SKIP_TESTING:-0}" = "1" ]; then
+  echo
+  echo "==> SKIP_TESTING=1 — not deploying PrivateERC20 / PermissivePaymaster"
+elif ! run_deploy ignition/modules/Testing.ts; then
   echo >&2
   echo "ERROR: testing-contracts deployment failed." >&2
   echo "  Re-run the script to resume, or start clean with:  RESET=1 $0" >&2
