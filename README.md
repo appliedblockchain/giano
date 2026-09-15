@@ -191,6 +191,56 @@ Developer Platform bundler RPC URLs whose path segment is an API key. Those file
 removed (the thin-SDK demo needs no bundler URL), but **the keys remain in git history and must be
 rotated** (ops task) — treat them as public.
 
+## Releasing
+
+The six publishable packages — `giano-contracts`, `giano-wallet-transport`, `giano-wallet-core`,
+`giano-connector`, `giano-wallet-kit`, `giano-paymaster-sdk` — go to GitHub Packages
+(`https://npm.pkg.github.com`) under one shared version. Everything under `services/` and `e2e/` is
+private and never published.
+
+**Every merge to `main` publishes a snapshot.** Once CI and Determinism pass, the Release workflow
+publishes `3.0.0-main-<sha>` for all six under the `main` dist-tag, so any commit on `main` is
+installable:
+
+```fish
+pnpm add @appliedblockchain/giano-wallet-kit@main
+```
+
+A snapshot pins its Giano siblings to the exact version in the same build, and the version number
+names the release line it is heading for, so `^3.0.0-main-…` also satisfies the eventual `3.0.0`.
+
+**A `v*` tag publishes the stable version.** Cutting a release is two human steps:
+
+```fish
+pnpm changeset version   # bumps all six, writes CHANGELOGs, consumes the changesets
+# commit on a branch, open a PR, get it reviewed and merged like any other change
+
+git tag v3.0.0 <the merge commit>
+git push origin v3.0.0
+```
+
+The tag job checks that the tagged commit is on `main` and that the six `package.json` versions
+match the tag before it publishes anything. `docker.yml` also triggers on `v*`, so the same tag
+builds container images carrying that version — one Giano version across packages and images.
+
+### Working with changesets
+
+- A pull request that changes publishable source under `packages/` must carry a changeset; CI fails
+  it otherwise. Add one with `pnpm changeset`. A pull request touching only `package.json` and
+  `CHANGELOG.md` there — a release bump — is exempt.
+- For a change that should release nothing — a comment, a test, a build tweak — use
+  `pnpm changeset --empty`.
+- A single changeset may not name both a publishable package and an ignored one (the four services
+  and `e2e`); Changesets rejects a mixed changeset. Write two.
+- The six publishable packages are in a `fixed` group: bumping one bumps all of them to the same
+  version.
+
+### A published version is permanent
+
+Neither GitHub Packages nor npmjs lets a version be replaced, and deleting a version to republish
+it breaks every lockfile that already resolved it. A broken release is superseded by a new version,
+never by re-publishing the same number.
+
 ## Deploying Giano (for client projects)
 
 > **New to Giano? Start with [`specs/DEVELOPER-GUIDE.md`](specs/DEVELOPER-GUIDE.md)** — a single

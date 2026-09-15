@@ -3,17 +3,35 @@ name: Release
 on:
   push:
     branches: [main]
+    tags: ['v*']
 
+# String form, so cancel-in-progress defaults to false: a second merge queues behind a publish in
+# flight rather than cancelling it between the third and fourth of six sequential publishes, which
+# is the one state npm's immutability makes unrecoverable.
 concurrency: release-${{ github.ref }}
 
 permissions:
-  contents: write
+  contents: read
   packages: write
-  pull-requests: write
 
 jobs:
-  release:
-    name: Changesets version / publish
+  # The gate runs on the main path only. A tag points at a commit that already passed it on the
+  # way in, so the release job asserts ancestry instead of spending another ~4m proving the same
+  # tree twice.
+  ci:
+    name: CI
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
+  determinism:
+    name: Determinism
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/determinism.yml
+
+  snapshot:
+    name: Publish snapshot
+    if: github.ref == 'refs/heads/main'
+    needs: [ci, determinism]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -24,10 +42,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
-        # Every publishable package ships only `dist` (see its `files`), so all of them
-        # must be built here — and in dependency order, because each tsup dts build
-        # resolves its workspace deps through their built `dist` types, not their source.
-        # Same ordering constraint CI encodes in .github/workflows/ci.yml.
+        # Every publishable package ships only `dist` (see its `files`), so all of them must be
+        # built here — and in dependency order, because each tsup dts build resolves its workspace
+        # deps through their built `dist` types, not their source.
         run: |
           pnpm --filter @appliedblockchain/giano-contracts build:ts
           pnpm --filter @appliedblockchain/giano-wallet-transport build
@@ -36,16 +53,66 @@ jobs:
           pnpm --filter @appliedblockchain/giano-wallet-kit build
           pnpm --filter @appliedblockchain/giano-paymaster-sdk build
       - name: Configure GitHub Packages auth
-        # auth only — no scope routing here (see Phase 1 scope-collision caveat in
-        # packages/contracts/README.md); publish registry comes from each package's publishConfig
+        # auth only — the publish registry comes from each package's own publishConfig
         run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create release PR or publish
-        uses: changesets/action@v1
+
+      - name: Publish a snapshot of this commit
+        run: |
+          # Without this guard, the merge of a release PR — which has consumed every changeset —
+          # would publish the STABLE version under the `main` dist-tag, ahead of its own tag.
+          pnpm changeset status --output=/tmp/status.json
+          if [ "$(jq '[.releases[] | select(.type != "none")] | length' /tmp/status.json)" -eq 0 ]; then
+            echo "no pending changesets — this commit releases nothing"
+            exit 0
+          fi
+          pnpm changeset version --snapshot main
+          pnpm changeset publish --tag main --no-git-tag
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push the six per-package git tags changeset publish creates
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
         with:
-          publish: pnpm changeset publish
-          title: 'chore: version packages'
-          commit: 'chore: version packages'
+          # merge-base needs real history, not the default shallow clone
+          fetch-depth: 0
+      - name: This tag is on main, and names the version it publishes
+        # Ancestry stands in for re-running the gate: the commit passed CI and Determinism when it
+        # merged. What that does NOT cover is a tag pushed from somewhere else entirely.
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
+            || { echo "$GITHUB_SHA is not on main — it never passed the merge gate"; exit 1; }
+          want="${GITHUB_REF_NAME#v}"
+          for p in contracts wallet-transport wallet-core connector wallet-kit paymaster-sdk; do
+            got=$(jq -r .version "packages/$p/package.json")
+            [ "$got" = "$want" ] || { echo "packages/$p is $got, tag says $want"; exit 1; }
+          done
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build publishable packages
+        run: |
+          pnpm --filter @appliedblockchain/giano-contracts build:ts
+          pnpm --filter @appliedblockchain/giano-wallet-transport build
+          pnpm --filter @appliedblockchain/giano-wallet-core build
+          pnpm --filter @appliedblockchain/giano-connector build
+          pnpm --filter @appliedblockchain/giano-wallet-kit build
+          pnpm --filter @appliedblockchain/giano-paymaster-sdk build
+      - name: Configure GitHub Packages auth
+        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish
+        run: |
+          pnpm changeset publish
+          git push --tags

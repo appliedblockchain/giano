@@ -8,6 +8,7 @@
       "@appliedblockchain/giano-wallet-core",
       "@appliedblockchain/giano-wallet-transport",
       "@appliedblockchain/giano-connector",
+      "@appliedblockchain/giano-wallet-kit",
       "@appliedblockchain/giano-paymaster-sdk"
     ]
   ],
@@ -15,7 +16,15 @@
   "access": "restricted",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
+  "snapshot": {
+    "useCalculatedVersion": true,
+    "prereleaseTemplate": "{tag}-{commit}"
+  },
   "ignore": [
-    "@appliedblockchain/giano-example"
+    "@appliedblockchain/giano-example",
+    "@appliedblockchain/giano-wallet-api",
+    "@appliedblockchain/giano-wallet-web",
+    "@appliedblockchain/giano-paymaster-admin",
+    "@appliedblockchain/giano-e2e"
   ]
 }

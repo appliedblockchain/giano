@@ -1,13 +1,22 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
+
+# Without this a called workflow inherits the CALLER's token — every job here would then run
+# with release.yml's `packages: write`. Nothing below needs more than read: no step reads a
+# secret, all six git submodules are public, and setup-node's pnpm cache authenticates with
+# ACTIONS_RUNTIME_TOKEN rather than GITHUB_TOKEN.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # The `github` context inside a called workflow is the caller's, so this is `push` when CI
+  # runs as the release gate and `pull_request` when it runs standalone: a merge's gate run is
+  # never cancelled out from under the publish that needs it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   packages:
@@ -15,7 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        # deliberately NO submodules: proves a fresh clone builds the TS surface
+        with:
+          # deliberately NO submodules: proves a fresh clone builds the TS surface.
+          # Full history so `origin/<base>` exists for `changeset status --since`.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -51,6 +63,37 @@ jobs:
         run: |
           pnpm --filter @appliedblockchain/giano-contracts gen:addresses
           git diff --exit-code packages/contracts/addresses.ts
+
+      - name: The publishable set is exactly the six R1 packages
+        # `changeset publish` publishes whatever is not `private: true`; release.yml's build list
+        # only controls what gets BUILT. This ties the two together, so a new workspace package is
+        # unpublishable until someone edits this list on purpose, and a package that loses
+        # `private: true` by accident fails here rather than at a permanent version in the registry.
+        run: |
+          expected="@appliedblockchain/giano-connector
+          @appliedblockchain/giano-contracts
+          @appliedblockchain/giano-paymaster-sdk
+          @appliedblockchain/giano-wallet-core
+          @appliedblockchain/giano-wallet-kit
+          @appliedblockchain/giano-wallet-transport"
+          # the workspace root is itself `private: true`, so it drops out with the other five
+          actual=$(pnpm ls -r --depth -1 --json | jq -r '.[] | select(.private != true) | .name')
+          diff <(sort <<< "$expected") <(sort <<< "$actual")
+
+      - name: A change to a publishable package carries a changeset
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # A release PR touches only package.json and CHANGELOG.md under packages/ — its whole job
+          # is to CONSUME changesets, so requiring one of it would make it unmergeable under the
+          # required status checks on main.
+          if git diff --quiet "origin/$BASE_REF...HEAD" -- packages/ \
+               ':(exclude)packages/*/package.json' ':(exclude)packages/*/CHANGELOG.md'; then
+            echo "no publishable source touched — no changeset required"
+            exit 0
+          fi
+          pnpm changeset status --since="origin/$BASE_REF"
 
   wallet-api:
     name: wallet-api tests + OpenAPI drift

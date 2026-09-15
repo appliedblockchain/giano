@@ -149,7 +149,7 @@ jobs:
           outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.GHCR_NAMESPACE, matrix.image.name) || '' }}
           # No provenance attestation. It publishes an extra untagged attestation manifest
           # per image, and the ECR lifecycle policy expires on `tagStatus: any` past
-          # var.ecr_lifecycle_image_count images — 30 in dev (infra/iac/ecr.vars.tf,
+          # var.ecr_lifecycle_image_count images — 10 in dev (infra/iac/ecr.vars.tf,
           # modules/aws/ecr/ecr.tf) — so attestations would spend a retention budget that is
           # a floor for the pinned var.image_tag, not just a cost setting.
           provenance: false
