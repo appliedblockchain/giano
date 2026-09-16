@@ -209,26 +209,25 @@ pnpm add @appliedblockchain/giano-wallet-kit@main
 A snapshot pins its Giano siblings to the exact version in the same build, and the version number
 names the release line it is heading for, so `^3.0.0-main-…` also satisfies the eventual `3.0.0`.
 
-A merge with no pending changesets publishes nothing, and that is deliberate on both paths it
-covers. An empty changeset — a comment, a test, a CI tweak — asks for no version, so there is no
-snapshot to compute. A release pull request has consumed every changeset by the time it merges, and
-publishing from it would compute the *stable* number and put it under the `main` dist-tag ahead of
-its own tag.
+A merge with no pending changesets publishes no snapshot. An empty changeset — a comment, a test, a
+CI tweak — asks for no version, so there is nothing to compute.
 
-**A `v*` tag publishes the stable version.** Cutting a release is two human steps:
+**Merging the version pull request publishes the stable version.** Every merge that carries a
+changeset also opens or updates `changeset-release/main`, titled *chore: version packages*, holding
+the bump for all six plus their CHANGELOGs. Cutting a release is merging it. Nothing to run locally,
+no tag to push:
 
 ```fish
-pnpm changeset version   # bumps all six, writes CHANGELOGs, consumes the changesets
-# commit on a branch, open a PR, get it reviewed and merged like any other change
-
-git tag v3.0.0 <the merge commit>
-git push origin v3.0.0
+gh pr list --head changeset-release/main
 ```
 
-A tag runs CI and Determinism again at that commit, then checks that it is on `main` and that the
-six `package.json` versions match the tag, before it publishes anything. `docker.yml` also triggers
-on `v*`, so the same tag builds container images carrying that version — one Giano version across
-packages and images.
+That merge leaves `main` with no changesets pending, so the Release workflow publishes `3.0.0` under
+`latest` instead of a snapshot, pushes a `v3.0.0` tag, and builds container images at it — one Giano
+version across packages and images.
+
+The version pull request carries no checks. A pull request opened by a workflow using the default
+token starts no further workflow runs, so its branch never gets a CI run; the gate that matters runs
+after the merge, and nothing publishes that CI and Determinism have not passed at that commit.
 
 ### Working with changesets
 

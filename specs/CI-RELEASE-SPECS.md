@@ -56,8 +56,8 @@ Nine deliverables, D1–D8 plus D1a, stand between "the workflow runs" and "R1�
 | **D-b** | The publishable set stays **explicitly enumerated**. Never derived from a directory glob. | Publishing must be an intentional act. Under R3 the two failure modes are not symmetrical: a package that should have shipped and did not is fixed in the next release, while one published by accident is permanent, at a version that can never be reused. A glob makes creating a directory sufficient to publish; a list makes it a deliberate edit that a reviewer sees. Nothing in CI enforces the list against what `changeset publish` would actually pick up — **O-8**. [§4.2](#42-the-set-is-enumerated). |
 | **D-c** | Immutability is the **registry's** guarantee, asserted in CI — not a convention. | GitHub Packages rejects a re-publish over an existing version with `E403`; ECR repositories are `IMMUTABLE`. Both are already true. What is missing is the assertion that they stay true. [§6](#6-r3--a-published-version-is-never-overridden). |
 | **D-d** | A stable release is cut by pushing a `v*` tag, not by promoting a snapshot. | npm has no promote operation: `3.0.0-main-<sha>` and `3.0.0` are two distinct immutable versions, so the stable number can only come from a second publish of the same tree, and something has to trigger it. A tag is a reviewable, assertable trigger that `docker.yml` already listens to, so one push ships packages and images at one Giano version. |
-| **D-e** | The version bump reaches `main` through an ordinary human-authored pull request, never a push from CI. | A commit pushed to `main` by a workflow carries no check runs, and D5's required status checks block direct pushes as well as merges — so a CI-side write-back would need an admin PAT or an App in the ruleset bypass list. A release pull request draws review and CI like any other change, needs no privileged credential, and keeps the tag→version mapping assertable. [§5.5](#55-d5--main-requires-green-checks). |
-| **D-f** | The tag path re-runs CI and Determinism, and additionally asserts that the commit is an ancestor of `main` and that the six `package.json` versions match the tag. | The tagged commit already passed the gate on its way into `main`, so this re-proves a green tree at ~4m25s — on a job that runs a handful of times a year. The alternative, reading the verdict out of the run history, expires: from 2026-10-01 GitHub retires check, run and status records on the Actions retention setting, 90 days at most on a public repository, so a patch cut from an older commit would read as one that never passed. Ancestry is not redundant with the gate — the gate says the tree is green, ancestry says it came from `main`. [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked). |
+| **D-e** | The version bump reaches `main` through a pull request, opened and kept up to date by `changesets/action`, never a push straight to `main`. | The stable number has to be written back or the next release recomputes it and collides. A pull request makes that write-back reviewable and leaves the merge commit that publishes it. Authored with `GITHUB_TOKEN`, so its branch gets no CI run and required checks on `main` are off the table — see D5. [§5.1](#51-what-every-merge-to-main-means). |
+| **D-f** | There is no tag trigger. `v3.0.0` is pushed by the publish job after `changeset publish` succeeds, and `docker.yml` is dispatched at it. | A tag is a pointer at an arbitrary commit, so a tag trigger is an entry point that has to be defended — ancestry, version match, a second gate run. Pushing the tag *after* publishing makes it a record of what shipped rather than the instruction to ship. A tag pushed with `GITHUB_TOKEN` starts no workflow, which is why `docker.yml` is dispatched; `workflow_dispatch` is the documented exception. [§5.1](#51-what-every-merge-to-main-means). |
 
 ### 1.3 Out of scope
 
@@ -136,7 +136,7 @@ including the two with no ECR repository. ECR does not replace it.
 | Anything has been published to `npm.pkg.github.com` | ❌ **No** | The only publish path was `changesets/action`'s publish branch, which runs only when no changesets are pending; 11 are pending |
 | `ci.yml` gates the publish | ❌ **No** | `ci.yml` and `release.yml` both trigger on `push: branches: [main]` and run **concurrently**, so a green publish over a red CI is reachable |
 | `main` is protected | ✅ | `gh api .../branches/main` → `protected: true`, a classic rule (`rulesets` and `rules/branches/main` are both `[]`) |
-| That protection requires any status check | ❌ **No** | same call → `required_status_checks: {checks: [], contexts: [], enforcement_level: "off"}`; [§5.5](#55-d5--main-requires-green-checks) |
+| That protection requires any status check | ❌ **No** | same call → `required_status_checks: {checks: [], contexts: [], enforcement_level: "off"}`; [§5.5](#55-d5--dropped) |
 | `@appliedblockchain/giano-contracts` already exists on **npmjs.org** | ⚠️ **Yes**, `1.0.0`–`2.0.1`, `latest = 2.0.1`, public | `npm view … --registry=https://registry.npmjs.org`. Published before `publishConfig` was introduced — see git tags `contracts-v1.0.1`…`contracts-v2.0.1` |
 | The other five exist on npmjs.org | ✅ No — all `E404` | same |
 | `docker.yml` builds all eight images and pushes all eight to GHCR | ✅ | `.github/workflows/docker.yml`, `setup` job image list; all eight Dockerfiles exist at the stated paths |
@@ -278,38 +278,45 @@ This is also why `changeset publish` must run through pnpm, which it does: Chang
 ### 5.1 What "every merge to `main`" means
 
 Every merge that changes a publishable package publishes one, as a snapshot, once CI and Determinism
-are green. Cutting a stable release is a separate, deliberate act that ends in a tag.
+are green. The same merge also updates a standing pull request that holds the next stable version;
+merging *that* is what cuts the release.
 
 ```
   PR with a changeset ──merge──▶ main
                                   └─ release.yml
                                      ├─ ci.yml + determinism.yml as a gate (~4m25s)
-                                     └─ changeset version --snapshot main
-                                        changeset publish --tag main --no-git-tag
-                                        └─ 3.0.0-main-<sha> ×6, dist-tag `main`
+                                     ├─ changeset version --snapshot main
+                                     │  changeset publish --tag main --no-git-tag
+                                     │  └─ 3.0.0-main-<sha> ×6, dist-tag `main`
+                                     └─ changesets/action
+                                        └─ open/update `changeset-release/main`
+                                           ("chore: version packages")
 
-  cutting a release (human, local):
-    pnpm changeset version    → bumps all six to 3.0.0, writes CHANGELOGs,
-                                consumes the changesets
-    commit on a branch, open a PR, normal review + required checks, merge
-
-  git push origin v3.0.0 ────▶ release.yml
-                                 ├─ assert the tag is on main and names the
-                                 │  version in package.json
-                                 └─ changeset publish  → 3.0.0 ×6, dist-tag `latest`
-                                    git push --tags    → six per-package tags
+  merge the version PR ────────▶ main
+                                  └─ release.yml
+                                     ├─ the gate again
+                                     ├─ no changesets left, so no snapshot
+                                     └─ changesets/action
+                                        ├─ changeset publish → 3.0.0 ×6, `latest`
+                                        │  + six per-package git tags
+                                        └─ git push v3.0.0
+                                           gh workflow run docker.yml --ref v3.0.0
 ```
 
-R2's "no manual publish step" holds in the strict reading: the merge itself puts an artifact on the
-registry, with no human running `npm publish`, setting a version by hand, or dispatching a workflow.
+R2's "no manual publish step" holds in the strict reading: every artifact reaches the registry from a
+merge, with no human running `npm publish`, setting a version by hand, or dispatching a workflow.
 
-Two properties worth stating plainly:
+Three properties worth stating plainly:
 
 - **"Every merge publishes" holds for every merge that changes a publishable package**, because D3
   forces such a pull request to carry a changeset. A merge that touches nothing publishable publishes
   nothing, and the snapshot job exits zero after saying so.
-- `docker.yml` already triggers on `tags: ['v*']`, so a `v3.0.0` tag builds and pushes images tagged
-  `v3.0.0` alongside the six packages. One Giano version across both halves of the release.
+- **The version PR is recomputed on every merge**, so the stable version it proposes always reflects
+  every changeset on `main`. Two merges landing close together both update it; the later state wins
+  and the next merge recomputes it either way.
+- **`v3.0.0` is pushed by the publish job**, not by a human, and `docker.yml` is dispatched at that
+  tag rather than left to its own `v*` push trigger — a tag pushed with `GITHUB_TOKEN` starts no
+  workflow. One Giano version across packages and images, as before.
 
 #### Why the stable bump lands through a pull request
 
@@ -318,11 +325,8 @@ immutable versions, so promoting a snapshot means re-publishing the same tree un
 number — and that number has to be written back to `main`, or the next release recomputes `3.0.0`
 and collides with what is already on the registry.
 
-A commit pushed to `main` by a workflow carries no check runs, and D5's required status checks block
-direct pushes as well as merges, so a CI-side write-back would need an admin PAT or a GitHub App in
-the ruleset bypass list — a credential to own and rotate, bought for one commit a human is going to
-read anyway. A human-authored release pull request draws review and CI like any other change, needs
-no privileged credential, and leaves a merge commit the tag job can assert against.
+The pull request is what carries that write-back. It is authored by `changesets/action` rather than
+by hand, which costs the project D5 — see [§5.5](#55-d5--dropped).
 
 ### 5.2 D1 — one fixed group, identical to the publishable set
 
@@ -419,10 +423,10 @@ and the job gains the gate:
 guard keeps infra-only and docs-only pull requests green. An intentional no-release change — a
 comment, a test — is unblocked the documented way, `pnpm changeset --empty`.
 
-The two pathspec exclusions are what stop this deadlocking with D5. A release pull request consumes
+The two pathspec exclusions are what stop this firing on the version pull request, which consumes
 every changeset and touches nothing under `packages/` except `package.json` and `CHANGELOG.md`;
 without the exclusions this step would demand a changeset of the one pull request whose purpose is to
-have none, and required checks would make it permanently unmergeable.
+have none.
 
 `BASE_REF` goes through `env:` rather than a raw `${{ }}` interpolation, so a branch name never
 reaches the shell's parser.
@@ -500,76 +504,11 @@ jobs:
 One run of each per ref, and neither publish can start until both are green. Neither
 needs `secrets: inherit` — their jobs use only `actions/checkout`, pnpm, Node and Foundry.
 
-#### The tag path re-runs the gate
+#### Both publish jobs sit behind the gate
 
-A `v*` tag points at a commit that already passed CI and Determinism on its way into `main` — same
-SHA, same tree — so the gate jobs lose their `if: github.ref == 'refs/heads/main'` and run on both
-paths, and `release` picks up the same `needs: [ci, determinism]` the snapshot job has:
-
-```yaml
-jobs:
-  ci:
-    name: CI
-    uses: ./.github/workflows/ci.yml
-
-  determinism:
-    name: Determinism
-    uses: ./.github/workflows/determinism.yml
-
-  release:
-    name: Publish release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ci, determinism]
-```
-
-This does re-prove a tree that was already green, at ~4m25s on a job that runs a handful of times a
-year. What it buys is that the proof is produced rather than looked up.
-
-The alternative is to assert the gate *already* passed, by asking the API whether a successful `main`
-run of `release.yml` exists at this SHA — one query, about a second, and no dependence on `main`
-rejecting red commits, which is D5 and not yet configured. That version was written and then
-withdrawn, because its evidence expires. From **2026-10-01** GitHub governs checks, workflow runs and
-statuses by the Actions retention setting rather than keeping them 400+ days; on a public repository
-that setting caps at 90 days. A patch cut from an older commit — a maintenance line, a release
-deferred past a quarter — would then find no run record and read as a commit that never passed, and
-the failure mode is a release blocked by bookkeeping rather than by anything about the code. A gate
-that runs cannot expire.
-
-It also removes a dependency in the wrong direction. Reading the verdict makes the tag path correct
-only while the run history is intact; re-running makes it correct on its own terms, and leaves D5 as
-what it should be — the thing that moves a failure *before* the merge, where a human is still
-looking at it, rather than the thing a publish quietly rests on.
-
-What the gate does **not** establish is where the tree came from. It would pass just as happily on a
-tag pushed at a feature branch, or at a commit that left `main` on a force-push. Two assertions in
-the release job cover the rest:
-
-```yaml
-      - name: This tag is on main, and names the version it publishes
-        run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
-            || { echo "$GITHUB_SHA is not on main — a release is cut from main or not at all"; exit 1; }
-          want="${GITHUB_REF_NAME#v}"
-          for p in contracts wallet-transport wallet-core connector wallet-kit paymaster-sdk; do
-            got=$(jq -r .version "packages/$p/package.json")
-            [ "$got" = "$want" ] || { echo "packages/$p is $got, tag says $want"; exit 1; }
-          done
-```
-
-**The commit is on `main`.** Not redundant with the gate — it is the other half of the claim, and
-the only thing here that makes *released from `main`* true. It needs `fetch-depth: 0`, because
-`merge-base` on a shallow clone has no history to walk.
-
-**The tag names what it publishes.** This is what makes the tag→version mapping assertable rather
-than conventional: `v3.0.0` publishes `3.0.0` or it publishes nothing.
-
-Neither called workflow misbehaves on the tag path. The `github` context inside a called workflow is
-the caller's, so `event_name` is `push` and both concurrency groups keep `cancel-in-progress: false`,
-under keys (`ci-refs/tags/v3.0.0`, `determinism-refs/tags/v3.0.0`) distinct from the `main` ones and
-from `release-`. D3's changeset assertion is `if: github.event_name == 'pull_request'` and skips.
-`determinism.yml`'s `paths:` filter lives under `pull_request:` and is ignored by `workflow_call`, so
-both determinism jobs run — correct for a gate.
+`snapshot` and `release` both declare `needs: [ci, determinism]`, so nothing reaches the registry
+that the gate has not checked at that commit. There is no tag trigger and no second entry point: the
+only way to publish is a merge to `main`, and every merge to `main` runs the gate.
 
 #### The snapshot job's own guard
 
@@ -647,7 +586,7 @@ under the `Release` run. Nothing is checked less, and one run tells the whole st
 > so "the commit that was tested" and "the commit being published" are one object by construction
 > rather than by a correctly remembered `ref:`.
 
-### 5.5 D5 — `main` requires green checks
+### 5.5 D5 — dropped
 
 `main` is protected, and the protection requires nothing:
 
@@ -658,42 +597,41 @@ $ gh api repos/appliedblockchain/giano/branches/main --jq '{protected, protectio
                "required_status_checks":{"checks":[],"contexts":[],"enforcement_level":"off"}}}
 ```
 
-A classic rule, enabled, with an empty required-checks list and enforcement off.
-`gh api repos/appliedblockchain/giano/rulesets` and `.../rules/branches/main` both return `[]`, so no
-ruleset supplies it either. There is a rule, and it asks for no checks — which is why a pull request
-showing nothing but a CodeRabbit check is mergeable. **Every merge to `main` now publishes, so the
-pull request that can merge with no green check is a pull request that can publish unchecked.**
+An earlier draft proposed **D5**: add `ci.yml`'s four jobs as required status checks on `main`, so a
+pull request that has not gone green cannot merge. That is incompatible with the version pull
+request, and the incompatibility is not a matter of degree.
 
-The release pull request is the sharp case: its merge is followed by a tag, and the tag publishes six
-immutable versions. That particular hole is closed in the workflow rather than here — the tag path
-runs the gate itself ([§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked)), so a
-commit that cannot pass is unreleasable no matter what `main` accepted. What required checks add is
-timing, not coverage: D4's gate runs *after* the merge, so a red gate means a commit already on
-`main` that cannot be released, rather than a pull request that cannot be merged. D5 moves that
-failure back before the merge, where a human is still looking at it.
+A pull request opened by a workflow using `GITHUB_TOKEN` starts no further workflow runs, so
+`changeset-release/main` never gets a `pull_request` CI run. Verified on the one that exists:
 
-**D5.** Add `ci.yml`'s four jobs as required status checks on `main`, by their display names — these
-are what a pull-request run reports, and a pull-request run is what a required check evaluates:
+```console
+$ gh pr view 94 --json headRefOid --jq .headRefOid
+2d06c5805ec5ca979b1259b750b0c8bb2f02458c
+$ gh api repos/appliedblockchain/giano/commits/2d06c580.../check-runs --jq .total_count
+0
+```
 
-- `Build & typecheck packages (no solc)`
-- `wallet-api tests + OpenAPI drift`
-- `generated.ts drift check (solc)`
-- `Foundry tests`
+Required checks evaluate the head commit of the pull request and block on a check that never reports
+— the same argument [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) makes about
+`determinism.yml`'s path filter. They apply to the *target* branch, so the version pull request
+cannot be exempted by its source branch either. Turning D5 on makes the release unmergeable.
 
-`determinism.yml`'s two jobs are **not** on that list, and must not be. Its `pull_request` trigger is
-path-filtered to `packages/contracts/**`, so on a release pull request — which touches only
-`package.json`, `CHANGELOG.md` and `.changeset/*` — they would never report and the pull request
-would sit at *Expected* forever. They gate the release through `needs`
-([§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked)), which is the right mechanism
-for a check that legitimately does not run on every pull request.
+**Decision: D5 is dropped.** The version pull request merges unchecked, and the gate that matters
+runs after the merge — `release.yml` will not publish anything CI and Determinism have not passed at
+that commit. What is lost is timing, not coverage: a red release commit lands on `main` and then
+fails to publish, rather than being caught before it merges.
 
-A repository setting, not a file, so the acceptance evidence is the readback above showing a
-non-empty `contexts` and `enforcement_level` no longer `off`.
+Two ways back, neither taken here:
 
-> The rest of the rule could not be read: this account has `admin: false` on the repository, and
-> `GET /branches/main/protection` answers `404` to a non-admin rather than `403`. Required reviews,
-> force-push and linear-history settings are therefore unverified here — someone with admin should
-> confirm them while adding the checks.
+- Author the version pull request with a GitHub App token (`actions/create-github-app-token`) or a
+  PAT instead of `GITHUB_TOKEN`. Its branch then gets CI like any other, and D5 works. Costs a
+  credential to own and rotate, and org rights this repository's maintainers do not all have.
+- Keep `GITHUB_TOKEN` and have a human close and reopen the version pull request, or push an empty
+  commit to its branch, which does trigger CI. A per-release chore, done by the person merging it.
+
+> The rest of the branch rule could not be read: this account has `admin: false` on the repository,
+> and `GET /branches/main/protection` answers `404` to a non-admin rather than `403`. Required
+> reviews, force-push and linear-history settings are unverified here.
 
 ### 5.6 Provenance of the published version
 
@@ -705,8 +643,8 @@ is the commit. Nothing is inferred from a branch name or a run number, and re-ru
 the same commit recomputes the same string.
 
 A **stable** version is whatever `changeset version` wrote into `package.json` in the release pull
-request, from the same changesets — and the tag job refuses to publish unless the tag says the same
-number. "Correct version" is therefore a property of the changesets in both cases, and D3 is what
+request, from the same changesets — and `changeset publish` publishes exactly what that pull request
+wrote. "Correct version" is therefore a property of the changesets in both cases, and D3 is what
 makes the changesets exist.
 
 ---
@@ -1016,13 +954,15 @@ gh run list --workflow=release.yml --branch=main --json headSha,conclusion
 Expected: no run with conclusion `cancelled`, and a `3.0.0-main-<sha>` for each SHA whose merge
 carried a changeset.
 
-### 9.3 The release pull request
+### 9.3 The version pull request
 
+- It exists on `changeset-release/main`, titled *chore: version packages*, and is recreated or
+  updated by every merge that carries a changeset.
 - Its diff touches only `package.json`, `CHANGELOG.md` and `.changeset/*` — never a source file.
-- The four required checks report green before it is mergeable.
+- It carries no check runs, which is expected — [§5.5](#55-d5--dropped).
 - D3's changeset gate does **not** fire on it: the step prints *no publishable source touched*.
 
-### 9.4 Post-tag — R1
+### 9.4 Post-release — R1
 
 ```fish
 # Six packages resolve on GitHub Packages at the tagged version
@@ -1040,12 +980,13 @@ for p in giano-wallet-api giano-wallet-web giano-paymaster-admin giano-example g
       or echo 'PUBLISHED — R1 VIOLATION'
 end
 
-# Git tags and GitHub Releases exist, one per package
-git fetch --tags && git tag --list '@appliedblockchain/*'
+# Git tags exist: one per package from `changeset publish`, plus the v* tag the job pushed
+git fetch --tags && git tag --list '@appliedblockchain/*' && git tag --list 'v*'
 ```
 
-A tag on a commit that is not on `main`, or whose `package.json` versions disagree with the tag name,
-must fail the *This tag is on main* step before anything is published.
+The merge of the version pull request is what publishes. Its `release.yml` run should show the
+snapshot job exiting zero (*no pending changesets*) and the release job publishing six packages,
+pushing `v3.0.0`, and dispatching `docker.yml` at it.
 
 ### 9.5 R4 / R5
 
@@ -1079,7 +1020,7 @@ copy-by-digest guarantee.
 | **O-5** | No GHCR retention. Eight images × one `sha-` tag per merge, forever. Not an H2 requirement; worth a follow-up ticket with an `actions/delete-package-versions` scheduled job that keeps `latest`, every `v*` tag, and the last N `sha-` tags. |
 | **O-6** | `ecr_lifecycle_image_count.dev` is 10, against a workflow comment that assumed 30 ([§7.2](#72-discrepancy-1--the-retention-comment-is-wrong-and-the-floor-may-be-real)). Ten merges to `main` after a deploy, the image `infra/versions.json` still pins can expire, and a task replacement or scale-out fails to pull. `infra/versions.json` pinned `dev` three commits behind `main` when this was written. **For devops** — `infra/iac/` is outside H2, and this spec changes nothing there. |
 | **O-7** | Snapshot versions accumulate on GitHub Packages at one per changeset-carrying merge per package. Nothing prunes them, and unlike GHCR tags they are versions of a published package, so deletion is the policy-forbidden operation of [§6.4](#64-deletion-and-re-publication--needs-a-policy). The tension is real and unresolved: if the count becomes a problem, the answer is a retention policy written *before* any deletion, naming which prerelease versions may go and why that does not violate R3. |
-| **O-8** | Nothing enforces that the publishable set is the six packages `release.yml` builds. `changeset publish` publishes whatever is not `private: true`, so a seventh package added under `packages/` without the flag, or an existing one that loses it, publishes an unbuilt `dist` at a permanent version. A `pnpm ls -r --depth -1 --json` assertion in `ci.yml`'s `packages` job closes it; it was drafted and is not in the pipeline. Until a seventh package exists the exposure is theoretical, and the acceptance check in [§9.4](#94-post-tag--r1) catches it after the fact rather than before — which under [§6](#6-r3--a-published-version-is-never-overridden) is after it is unrecoverable. |
+| **O-8** | Nothing enforces that the publishable set is the six packages `release.yml` builds. `changeset publish` publishes whatever is not `private: true`, so a seventh package added under `packages/` without the flag, or an existing one that loses it, publishes an unbuilt `dist` at a permanent version. A `pnpm ls -r --depth -1 --json` assertion in `ci.yml`'s `packages` job closes it; it was drafted and is not in the pipeline. Until a seventh package exists the exposure is theoretical, and the acceptance check in [§9.4](#94-post-release--r1) catches it after the fact rather than before — which under [§6](#6-r3--a-published-version-is-never-overridden) is after it is unrecoverable. |
 | **R-1** | `@changesets/cli` is pinned `^2.31.1`. The GitHub-Packages `latest`-tag handling that makes the idempotent re-run work ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)) arrived in that line, and `snapshot.prereleaseTemplate` needs 2.27 or later. A major bump must be re-verified against [§9.2](#92-post-merge--r2-r3) before merging. |
 | **R-2** | `changeset version --snapshot` runs in the workflow and rewrites `package.json` on the runner. Those writes are never committed and the checkout is discarded, but a future step added *after* the snapshot publish would see mutated manifests. Keep the publish last in that job. |
 
@@ -1090,10 +1031,10 @@ copy-by-digest guarantee.
 | Req | Satisfied by | Status |
 | --- | --- | --- |
 | **R1** — six packages published to `npm.pkg.github.com` under `@appliedblockchain` | [§4.1](#41-registry-scope-and-auth) routing + auth; [§4.2](#42-the-set-is-enumerated) the enumeration in `release.yml` | Built; first publish is the first merge after this lands. The enumeration is unenforced — **O-8** |
-| **R1** — the five private packages stay unpublished | `private: true` on all five ([§3](#3-current-state-verified)); checked after the fact by [§9.4](#94-post-tag--r1) | ✅, but nothing fails a build if one loses the flag — **O-8** |
+| **R1** — the five private packages stay unpublished | `private: true` on all five ([§3](#3-current-state-verified)); checked after the fact by [§9.4](#94-post-release--r1) | ✅, but nothing fails a build if one loses the flag — **O-8** |
 | **R1** — installable, not merely published | [§4.3](#43-what-each-package-ships) `workspace:*` exact pins (**D-a2**); [§8.1](#81-the-scope-collision) **D8** | Pins done; D8 is a one-off outside CI |
 | **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-what-every-merge-to-main-means) snapshot per merge (**D-a**); **D4** CI gates the publish; per-SHA concurrency so no merge's run is evicted ([§6.3](#63-concurrent-releases--closed)) | ✅ for a merge that releases something; a merge with no pending changesets (an empty changeset, or a release pull request) publishes nothing, by design |
-| **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set, plus the snapshot config; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) the tag runs the gate and asserts its own version | ✅ |
+| **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set, plus the snapshot config; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) both publish jobs sit behind the gate | ✅ |
 | **R3** — no override by re-run | [§6.1](#61-a-workflow-re-run-at-the-same-commit--closed) Changesets skip-if-published, plus `{commit}` making a re-run recompute the same version | ✅ |
 | **R3** — no override by rebuilt artifact | [§6.2](#62-a-rebuilt-artifact-at-the-same-version--closed-by-the-registry) registry rejection; [§6.3](#63-concurrent-releases--closed) no cancel-in-progress, and concurrent merges publish distinct versions | ✅ |
 | **R3** — no override at all | [§6.4](#64-deletion-and-re-publication--needs-a-policy) **D6** deletion policy + package admin restriction | Policy written; settings are a follow-up |
@@ -1111,7 +1052,6 @@ copy-by-digest guarantee.
 | **D1a** | Inter-package dependencies become `workspace:*` (decision **D-a2**), so a snapshot tarball pins its siblings exactly | `packages/{connector,paymaster-sdk,wallet-core,wallet-kit}/package.json` |
 | **D3** | A pull request touching publishable source must carry a changeset, with `package.json` and `CHANGELOG.md` excluded so a release pull request stays mergeable | `.github/workflows/ci.yml` |
 | **D4** | `ci.yml` and `determinism.yml` drop `push: main`, gain `workflow_call`, `permissions: contents: read` and a PR-only `cancel-in-progress`; `release.yml` is rewritten into a `main` snapshot job behind `needs: [ci, determinism]`, keyed per SHA so no merge's run is evicted, and a tag release job behind the same `needs: [ci, determinism]` plus an ancestry and version assertion | `.github/workflows/{ci,determinism,release}.yml` |
-| **D5** | `main`'s branch protection requires `ci.yml`'s four jobs as status checks | repository settings |
 | **D6** | The release flow, the no-mixed-changeset constraint and the no-deletion policy are written down; package admin restricted | `README.md`, package settings |
 | **D7** | ECR retention comment corrected to ten, and to what ten means | `.github/workflows/docker.yml` |
 | **D8** | Deprecate `@appliedblockchain/giano-contracts@<=2.0.1` on npmjs | one-off, npmjs |

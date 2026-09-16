@@ -3,7 +3,6 @@ name: Release
 on:
   push:
     branches: [main]
-    tags: ['v*']
 
 # The SHA is in the group key because at most one run per group may be pending: keyed on ref alone,
 # a burst of merges leaves the middle ones cancelled before they publish, and each carries its own
@@ -19,12 +18,8 @@ permissions:
   packages: write
 
 jobs:
-  # The gate runs on both paths. On main it is what the snapshot publishes behind; on a tag it runs
-  # again at the same SHA, which does re-prove a tree that was already green. That ~4m25s buys
-  # independence: the alternative is reading a past run's verdict out of the API, and from
-  # 2026-10-01 GitHub expires check, run and status records on the Actions retention setting — 90
-  # days at most on a public repository. A patch cut from an older commit would then read as a
-  # commit that never passed. A gate that runs is a gate that cannot expire.
+  # Both publish jobs sit behind this. Nothing reaches the registry that CI and Determinism have not
+  # checked at that exact commit.
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
@@ -35,7 +30,6 @@ jobs:
 
   snapshot:
     name: Publish snapshot
-    if: github.ref == 'refs/heads/main'
     needs: [ci, determinism]
     runs-on: ubuntu-latest
     steps:
@@ -76,32 +70,16 @@ jobs:
           pnpm changeset publish --tag main --no-git-tag
 
   release:
-    name: Publish release
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Version PR or publish
     needs: [ci, determinism]
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # push the six per-package git tags changeset publish creates
+      contents: write        # push the version PR branch, and the v* tag after a publish
       packages: write
+      pull-requests: write   # open and update the version PR
+      actions: write         # dispatch docker.yml for the tag it just pushed
     steps:
       - uses: actions/checkout@v7
-        with:
-          # merge-base needs real history, not the default shallow clone
-          fetch-depth: 0
-      - name: This tag is on main, and names the version it publishes
-        # The gate above proves the tree is green; it says nothing about where the tree came from,
-        # and it would pass just as happily on a tag pushed at a feature branch. Ancestry is the
-        # only thing here that makes "released from main" true, so it is not redundant with the
-        # gate — it is the other half of the claim.
-        run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
-            || { echo "$GITHUB_SHA is not on main — a release is cut from main or not at all"; exit 1; }
-          want="${GITHUB_REF_NAME#v}"
-          for p in contracts wallet-transport wallet-core connector wallet-kit paymaster-sdk; do
-            got=$(jq -r .version "packages/$p/package.json")
-            [ "$got" = "$want" ] || { echo "packages/$p is $got, tag says $want"; exit 1; }
-          done
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -109,6 +87,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
+        # Every publishable package ships only `dist` (see its `files`), so all of them must be
+        # built here — and in dependency order, because each tsup dts build resolves its workspace
+        # deps through their built `dist` types, not their source.
         run: |
           pnpm --filter @appliedblockchain/giano-contracts build:ts
           pnpm --filter @appliedblockchain/giano-wallet-transport build
@@ -117,10 +98,35 @@ jobs:
           pnpm --filter @appliedblockchain/giano-wallet-kit build
           pnpm --filter @appliedblockchain/giano-paymaster-sdk build
       - name: Configure GitHub Packages auth
+        # auth only — the publish registry comes from each package's own publishConfig
         run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish
+
+      - name: Create the version PR, or publish what it merged
+        id: changesets
+        # With changesets pending, this opens or updates `changeset-release/main`. With none — which
+        # is what merging that PR leaves behind — it publishes instead.
+        uses: changesets/action@v1
+        with:
+          publish: pnpm changeset publish
+          title: 'chore: version packages'
+          commit: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the release and build its images
+        if: steps.changesets.outputs.published == 'true'
+        # The six packages are a fixed group, so any one of them names the release version.
+        #
+        # A tag pushed with GITHUB_TOKEN does not trigger a workflow — which is why docker.yml is
+        # dispatched rather than left to its own `v*` push trigger. workflow_dispatch is the
+        # documented exception to that rule, and docker.yml reads the version from the ref it runs
+        # on, so a dispatch at the tag produces the same images a tag push would.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pnpm changeset publish
-          git push --tags
+          v=v$(jq -r .version packages/contracts/package.json)
+          git tag "$v"
+          git push origin "$v"
+          gh workflow run docker.yml --ref "$v"
