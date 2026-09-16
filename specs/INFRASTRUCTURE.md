@@ -2861,9 +2861,27 @@ by the same CREATE2 salt on each — at the **same addresses** on both:
 | Contract | Address | On 84532? | On 11155111? |
 |---|---|---|---|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | yes (canonical, everywhere) | yes |
-| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` | **yes** — `ignition/deployments/chain-84532` | **yes** — `ignition/deployments/chain-11155111` |
+| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` | **yes** — `ignition/deployments/chain-84532` | **yes** — on chain; deployment record reconstructed, see below |
 | `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` | **yes** — same | **yes** — same |
 | `GianoPaymaster` proxy | *not frozen; CREATE2 from the fixed salt* | **no** | **no** |
+
+⚠ The 11155111 deployment was made outside this repo and its Ignition journal was never committed to
+any branch, so `ignition/deployments/chain-11155111` holds a **hand-written
+`deployed_addresses.json` and no journal** — the registry is generated from that file, and without an
+entry for the chain `wallet-web` cannot default `factoryAddress` and the SPA refuses to load for
+every served chain at once, because one unresolvable chain fails the whole config
+([§14.3](#143-wallet-web)). Both contracts were created through CreateX from
+`0xFebBB1e5b6D66E6281d0d4d4816f76B69365a09d` on 2026-09-11 — implementation in block 11683085,
+factory in block 11683090, transaction hashes in that directory's `README.md` — and both carry
+runtime bytecode byte-identical to Base Sepolia's.
+
+**This is a placeholder, and it is the one thing in §13 that should not survive to staging.** It
+satisfies the address generator and the determinism workflow, both of which read only
+`deployed_addresses.json`, and it satisfies nothing else: `hardhat ignition status chain-11155111`
+has no journal to read, and a deploy against the chain treats it as undeployed (harmlessly — the
+salt is fixed, so CreateX reverts with `FailedContractCreation` rather than producing a divergent
+deployment). Recover the journal from the deploying machine, or redeploy the frozen canonical build
+to a fresh chain, and replace the directory with what Ignition writes.
 
 ### 13.1 The paymaster must be deployed on both chains
 
