@@ -225,11 +225,10 @@ git tag v3.0.0 <the merge commit>
 git push origin v3.0.0
 ```
 
-The tag job checks that the tagged commit passed the merge gate — a successful `main` run of the
-Release workflow at that exact SHA — that it is still on `main`, and that the six `package.json`
-versions match the tag, before it publishes anything. `docker.yml` also triggers on `v*`, so the
-same tag builds container images carrying that version — one Giano version across packages and
-images.
+A tag runs CI and Determinism again at that commit, then checks that it is on `main` and that the
+six `package.json` versions match the tag, before it publishes anything. `docker.yml` also triggers
+on `v*`, so the same tag builds container images carrying that version — one Giano version across
+packages and images.
 
 ### Working with changesets
 
