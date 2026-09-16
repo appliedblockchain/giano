@@ -16,10 +16,6 @@
   "access": "restricted",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "snapshot": {
-    "useCalculatedVersion": true,
-    "prereleaseTemplate": "{tag}-{commit}"
-  },
   "ignore": [
     "@appliedblockchain/giano-example",
     "@appliedblockchain/giano-wallet-api",

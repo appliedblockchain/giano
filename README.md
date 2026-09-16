@@ -198,32 +198,22 @@ The six publishable packages — `giano-contracts`, `giano-wallet-transport`, `g
 (`https://npm.pkg.github.com`) under one shared version. Everything under `services/` and `e2e/` is
 private and never published.
 
-**Every merge to `main` that releases something publishes a snapshot.** Once CI and Determinism
-pass, the Release workflow publishes `3.0.0-main-<sha>` for all six under the `main` dist-tag, so
-any commit carrying a package change is installable:
-
-```fish
-pnpm add @appliedblockchain/giano-wallet-kit@main
-```
-
-A snapshot pins its Giano siblings to the exact version in the same build, and the version number
-names the release line it is heading for, so `^3.0.0-main-…` also satisfies the eventual `3.0.0`.
-
-A merge with no pending changesets publishes no snapshot. An empty changeset — a comment, a test, a
-CI tweak — asks for no version, so there is nothing to compute.
-
-**Merging the version pull request publishes the stable version.** Every merge that carries a
-changeset also opens or updates `changeset-release/main`, titled *chore: version packages*, holding
-the bump for all six plus their CHANGELOGs. Cutting a release is merging it. Nothing to run locally,
-no tag to push:
+**Merging the version pull request publishes.** Every merge to `main` that carries a changeset opens
+or updates `changeset-release/main`, titled *chore: version packages*, holding the bump for all six
+plus their CHANGELOGs. Cutting a release is merging it — nothing to run locally, no tag to push:
 
 ```fish
 gh pr list --head changeset-release/main
 ```
 
-That merge leaves `main` with no changesets pending, so the Release workflow publishes `3.0.0` under
-`latest` instead of a snapshot, pushes a `v3.0.0` tag, and builds container images at it — one Giano
-version across packages and images.
+That merge leaves `main` with no changesets pending, so the Release workflow publishes `3.0.0` for
+all six under `latest`, pushes a `v3.0.0` tag, and builds container images at it — one Giano version
+across packages and images. A published tarball pins its Giano siblings to that exact version, so
+installing one of the six installs that release rather than a resolution across two.
+
+Every other merge to `main` runs CI and Determinism and publishes nothing. There is no prerelease
+line and nothing installable between releases; a consumer who needs the tip of `main` builds from
+source.
 
 The version pull request carries no checks. A pull request opened by a workflow using the default
 token starts no further workflow runs, so its branch never gets a CI run; the gate that matters runs

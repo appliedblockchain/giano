@@ -4,13 +4,12 @@ on:
   push:
     branches: [main]
 
-# The SHA is in the group key because at most one run per group may be pending: keyed on ref alone,
-# a burst of merges leaves the middle ones cancelled before they publish, and each carries its own
-# snapshot version that nothing else will ever publish. Distinct SHAs now never share a group, so
-# nothing queues and nothing is dropped. What still shares one is a re-run at the same SHA, and the
-# string form keeps cancel-in-progress false there: a cancellation between the third and fourth of
-# six sequential publishes leaves a half-released fixed group, the one state npm's immutability
-# makes unrecoverable.
+# The SHA is in the group key because at most one run per group may be pending: keyed on ref alone, a
+# merge landing while the version PR's own merge is still queued would evict it, and that run is the
+# one that publishes. Distinct SHAs never share a group, so nothing queues and nothing is dropped.
+# What still shares one is a re-run at the same SHA, and the string form keeps cancel-in-progress
+# false there: a cancellation between the third and fourth of six sequential publishes leaves a
+# half-released fixed group, the one state npm's immutability makes unrecoverable.
 concurrency: release-${{ github.ref }}-${{ github.sha }}
 
 permissions:
@@ -18,7 +17,7 @@ permissions:
   packages: write
 
 jobs:
-  # Both publish jobs sit behind this. Nothing reaches the registry that CI and Determinism have not
+  # The publish sits behind this. Nothing reaches the registry that CI and Determinism have not
   # checked at that exact commit.
   ci:
     name: CI
@@ -27,47 +26,6 @@ jobs:
   determinism:
     name: Determinism
     uses: ./.github/workflows/determinism.yml
-
-  snapshot:
-    name: Publish snapshot
-    needs: [ci, determinism]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Build publishable packages
-        # Every publishable package ships only `dist` (see its `files`), so all of them must be
-        # built here — and in dependency order, because each tsup dts build resolves its workspace
-        # deps through their built `dist` types, not their source.
-        run: |
-          pnpm --filter @appliedblockchain/giano-contracts build:ts
-          pnpm --filter @appliedblockchain/giano-wallet-transport build
-          pnpm --filter @appliedblockchain/giano-wallet-core build
-          pnpm --filter @appliedblockchain/giano-connector build
-          pnpm --filter @appliedblockchain/giano-wallet-kit build
-          pnpm --filter @appliedblockchain/giano-paymaster-sdk build
-      - name: Configure GitHub Packages auth
-        # auth only — the publish registry comes from each package's own publishConfig
-        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish a snapshot of this commit
-        run: |
-          # Without this guard, the merge of a release PR — which has consumed every changeset —
-          # would publish the STABLE version under the `main` dist-tag, ahead of its own tag.
-          pnpm changeset status --output=/tmp/status.json
-          if [ "$(jq '[.releases[] | select(.type != "none")] | length' /tmp/status.json)" -eq 0 ]; then
-            echo "no pending changesets — this commit releases nothing"
-            exit 0
-          fi
-          pnpm changeset version --snapshot main
-          pnpm changeset publish --tag main --no-git-tag
 
   release:
     name: Version PR or publish

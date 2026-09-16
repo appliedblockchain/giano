@@ -41,23 +41,23 @@ records the verification and the two discrepancies it turned up.
 
 The npm half is the work. `.github/workflows/release.yml` ran green on every merge to `main`
 without ever putting a package on `npm.pkg.github.com`: it maintained a version pull request, and
-publishing waited on that pull request being merged. H2 replaces it with a pipeline that publishes a
-snapshot on every merge and the stable version on a `v*` tag.
+publishing waited on that pull request being merged, and it never was. H2 keeps that shape and fixes
+what was broken behind it: the publish is gated on CI, the fixed group is complete, and the version
+pull request's merge is the release.
 
-Nine deliverables, D1–D8 plus D1a, stand between "the workflow runs" and "R1–R3 hold".
+The deliverables D1–D8 plus D1a stand between "the workflow runs" and "R1–R3 hold".
 
 ### 1.2 Decisions taken in this spec
 
 | # | Decision | Why |
 | --- | --- | --- |
-| **D-a** | Every merge to `main` that releases something publishes a **snapshot**, `3.0.0-main-<sha>`. A `v*` tag publishes the **stable** version. | R2 read literally: the merge itself is what puts an artifact on the registry. Each commit gets a distinct immutable version, so nothing is overridden (R3) and no stable version number is burned — the stable line advances only when a human cuts a release. The snapshot names the line it is heading for, so `^3.0.0-main-…` also matches the eventual `3.0.0`, and an integrator tracking `main` converges onto the real release rather than away from it. [§5.1](#51-what-every-merge-to-main-means). |
-| **D-a1** | Snapshot versions come from `snapshot.useCalculatedVersion: true` with `prereleaseTemplate: "{tag}-{commit}"`. | `{commit}` rather than `{datetime}`: a workflow re-run then computes the *identical* version, which is what keeps the re-run idempotent under R3 ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)). A timestamp would publish a fresh version on every re-run. |
-| **D-a2** | Inter-package dependencies are declared `workspace:*`. | pnpm rewrites it to the sibling's **exact** version at pack time, so a snapshot tarball names one specific sibling build. A caret range over a prerelease line is satisfiable by *other* snapshots, which would let an install assemble six fixed-group packages from more than one commit. [§4.3](#43-what-each-package-ships). |
+| **D-a** | The merge that publishes is the merge of the **version pull request**. Every other merge to `main` runs the checks and publishes nothing. | R2 says every merge publishes at the correct version; the correct version is the one the changesets resolve to, and that number only exists once `changeset version` has written it. A merge of ordinary work has no correct version to publish under — inventing one means a per-commit prerelease line that nothing installs and nothing prunes. So the release is a merge, with no manual publish step, and it is the merge of the pull request that carries the version. [§5.1](#51-which-merge-publishes). |
+| **D-a2** | Inter-package dependencies are declared `workspace:*`. | pnpm rewrites it to the sibling's **exact** version at pack time, so `giano-wallet-kit@3.0.0` requires `giano-contracts@3.0.0` and not a range. The six are a fixed group released together, and an exact pin is what makes an install of one of them an install of that release rather than a resolution across two. [§4.3](#43-what-each-package-ships). |
 | **D-b** | The publishable set stays **explicitly enumerated**. Never derived from a directory glob. | Publishing must be an intentional act. Under R3 the two failure modes are not symmetrical: a package that should have shipped and did not is fixed in the next release, while one published by accident is permanent, at a version that can never be reused. A glob makes creating a directory sufficient to publish; a list makes it a deliberate edit that a reviewer sees. Nothing in CI enforces the list against what `changeset publish` would actually pick up — **O-8**. [§4.2](#42-the-set-is-enumerated). |
 | **D-c** | Immutability is the **registry's** guarantee, asserted in CI — not a convention. | GitHub Packages rejects a re-publish over an existing version with `E403`; ECR repositories are `IMMUTABLE`. Both are already true. What is missing is the assertion that they stay true. [§6](#6-r3--a-published-version-is-never-overridden). |
-| **D-d** | A stable release is cut by pushing a `v*` tag, not by promoting a snapshot. | npm has no promote operation: `3.0.0-main-<sha>` and `3.0.0` are two distinct immutable versions, so the stable number can only come from a second publish of the same tree, and something has to trigger it. A tag is a reviewable, assertable trigger that `docker.yml` already listens to, so one push ships packages and images at one Giano version. |
-| **D-e** | The version bump reaches `main` through a pull request, opened and kept up to date by `changesets/action`, never a push straight to `main`. | The stable number has to be written back or the next release recomputes it and collides. A pull request makes that write-back reviewable and leaves the merge commit that publishes it. Authored with `GITHUB_TOKEN`, so its branch gets no CI run and required checks on `main` are off the table — see D5. [§5.1](#51-what-every-merge-to-main-means). |
-| **D-f** | There is no tag trigger. `v3.0.0` is pushed by the publish job after `changeset publish` succeeds, and `docker.yml` is dispatched at it. | A tag is a pointer at an arbitrary commit, so a tag trigger is an entry point that has to be defended — ancestry, version match, a second gate run. Pushing the tag *after* publishing makes it a record of what shipped rather than the instruction to ship. A tag pushed with `GITHUB_TOKEN` starts no workflow, which is why `docker.yml` is dispatched; `workflow_dispatch` is the documented exception. [§5.1](#51-what-every-merge-to-main-means). |
+| **D-d** | There is one publishing path and one version line. No prereleases, no `main` dist-tag, nothing installable between releases. | A second line is a second thing to keep correct: its own version scheme, its own dist-tag, its own retention question under R3 (nothing may be deleted, so every published prerelease is permanent). Nobody outside the repository consumes `main` today. If that changes, `changeset version --snapshot` is a few lines in the release job — but it is a decision to take then, with a consumer to design for. |
+| **D-e** | The version bump reaches `main` through a pull request, opened and kept up to date by `changesets/action`, never a push straight to `main`. | The stable number has to be written back or the next release recomputes it and collides. A pull request makes that write-back reviewable and leaves the merge commit that publishes it. Authored with `GITHUB_TOKEN`, so its branch gets no CI run and required checks on `main` are off the table — see D5. [§5.1](#51-which-merge-publishes). |
+| **D-f** | There is no tag trigger. `v3.0.0` is pushed by the publish job after `changeset publish` succeeds, and `docker.yml` is dispatched at it. | A tag is a pointer at an arbitrary commit, so a tag trigger is an entry point that has to be defended — ancestry, version match, a second gate run. Pushing the tag *after* publishing makes it a record of what shipped rather than the instruction to ship. A tag pushed with `GITHUB_TOKEN` starts no workflow, which is why `docker.yml` is dispatched; `workflow_dispatch` is the documented exception. [§5.1](#51-which-merge-publishes). |
 
 ### 1.3 Out of scope
 
@@ -251,22 +251,21 @@ Unchanged by H2, recorded because R1's "published" means "published usably":
 | `giano-paymaster-sdk` | `dist` | `pnpm build` | contracts |
 
 Every workspace dependency is declared **`workspace:*`** (D-a2). `pnpm publish` rewrites that to the
-sibling's exact version at pack time — `workspace:*` → `3.0.0`, and in a snapshot build
-`workspace:*` → `3.0.0-main-<sha>` — so a published tarball names one specific sibling build rather
-than a range over several.
+sibling's exact version at pack time — `workspace:*` → `3.0.0` — so a published tarball names one
+specific sibling build rather than a range over several.
 
-The distinction is what makes snapshots safe to install. Under `workspace:^` the snapshot tarball
-would carry `^3.0.0-main-<sha>`; semver orders prereleases lexically within a version, so that range
-also admits *other* `3.0.0-main-…` snapshots, and an install could assemble `giano-wallet-kit` from
-one commit with a `giano-wallet-core` from another. Six packages in a fixed group are one artifact
-split six ways, and an exact pin is what keeps them one artifact.
+Six packages in a fixed group are one artifact split six ways, and an exact pin is what keeps them
+one artifact: installing `giano-wallet-kit@3.0.0` gets `giano-contracts@3.0.0`, not whatever else a
+caret would have admitted. It also leaves the door open to a prerelease line later (D-d), where the
+distinction stops being cosmetic — semver orders prereleases lexically within a version, so
+`^3.0.0-x` admits other `3.0.0-…` builds and an install could assemble the group from two commits.
 
 Two facts this rests on, both verified against the versions pinned here:
 
 - `@changesets/apply-release-plan@7.1.1` leaves a bare `workspace:*` untouched when it rewrites
   versions, so a `changeset version` run does not turn it back into a range.
-- `pnpm pack` of a snapshot-versioned `giano-wallet-kit` emits `"@appliedblockchain/giano-contracts":
-  "3.0.0-main-<sha>"` — the concrete version, no caret.
+- `pnpm pack` of `giano-wallet-kit` emits `"@appliedblockchain/giano-contracts": "3.0.0"` — the
+  concrete version, no caret.
 
 This is also why `changeset publish` must run through pnpm, which it does: Changesets 2.31.1's
 `getPublishTool()` detects pnpm and spawns `pnpm publish --no-git-checks`.
@@ -275,63 +274,62 @@ This is also why `changeset publish` must run through pnpm, which it does: Chang
 
 ## 5. R2 — every merge publishes at the correct version
 
-### 5.1 What "every merge to `main`" means
+### 5.1 Which merge publishes
 
-Every merge that changes a publishable package publishes one, as a snapshot, once CI and Determinism
-are green. The same merge also updates a standing pull request that holds the next stable version;
-merging *that* is what cuts the release.
+R2 asks that every merge to `main` publish a package at the correct version, with no manual publish
+step. The correct version is whatever the pending changesets resolve to, and that number does not
+exist as a fact about the repository until `changeset version` has written it into the six
+`package.json` files. So the merge that publishes is the merge that carries the version — the
+version pull request — and every other merge runs the checks and publishes nothing.
 
 ```
   PR with a changeset ──merge──▶ main
                                   └─ release.yml
-                                     ├─ ci.yml + determinism.yml as a gate (~4m25s)
-                                     ├─ changeset version --snapshot main
-                                     │  changeset publish --tag main --no-git-tag
-                                     │  └─ 3.0.0-main-<sha> ×6, dist-tag `main`
+                                     ├─ ci.yml + determinism.yml (~4m25s)
                                      └─ changesets/action
                                         └─ open/update `changeset-release/main`
                                            ("chore: version packages")
+                                           — nothing published
 
   merge the version PR ────────▶ main
                                   └─ release.yml
-                                     ├─ the gate again
-                                     ├─ no changesets left, so no snapshot
+                                     ├─ ci.yml + determinism.yml (~4m25s)
                                      └─ changesets/action
+                                        ├─ no changesets pending, so publish
                                         ├─ changeset publish → 3.0.0 ×6, `latest`
                                         │  + six per-package git tags
                                         └─ git push v3.0.0
                                            gh workflow run docker.yml --ref v3.0.0
 ```
 
-R2's "no manual publish step" holds in the strict reading: every artifact reaches the registry from a
-merge, with no human running `npm publish`, setting a version by hand, or dispatching a workflow.
+R2's "no manual publish step" holds literally: nobody runs `npm publish`, sets a version by hand, or
+dispatches a workflow. A merge is what puts packages on the registry. Which merge is decided by
+`changeset status` rather than by a person choosing a moment.
 
 Three properties worth stating plainly:
 
-- **"Every merge publishes" holds for every merge that changes a publishable package**, because D3
-  forces such a pull request to carry a changeset. A merge that touches nothing publishable publishes
-  nothing, and the snapshot job exits zero after saying so.
-- **The version PR is recomputed on every merge**, so the stable version it proposes always reflects
-  every changeset on `main`. Two merges landing close together both update it; the later state wins
-  and the next merge recomputes it either way.
+- **The version pull request is recomputed on every merge**, so the version it proposes always
+  reflects every changeset on `main`. Two merges landing close together both update it; the later
+  state wins, and the next merge recomputes it either way.
+- **Nothing is installable between releases.** There is one version line and one dist-tag (D-d). A
+  consumer who needs the tip of `main` builds from source.
 - **`v3.0.0` is pushed by the publish job**, not by a human, and `docker.yml` is dispatched at that
   tag rather than left to its own `v*` push trigger — a tag pushed with `GITHUB_TOKEN` starts no
-  workflow. One Giano version across packages and images, as before.
+  workflow. One Giano version across packages and images.
 
-#### Why the stable bump lands through a pull request
+#### Why the bump lands through a pull request
 
-Promotion cannot be literal. npm has no rename: `3.0.0-main-<sha>` and `3.0.0` are two distinct
-immutable versions, so promoting a snapshot means re-publishing the same tree under the stable
-number — and that number has to be written back to `main`, or the next release recomputes `3.0.0`
-and collides with what is already on the registry.
+The version has to be written back to `main`. If it is not, the next release recomputes `3.0.0` from
+the same changesets and collides with what is already on the registry — and under R3 that collision
+is not repairable, only avoidable.
 
-The pull request is what carries that write-back. It is authored by `changesets/action` rather than
-by hand, which costs the project D5 — see [§5.5](#55-d5--dropped).
+A pull request is what carries the write-back. It is authored by `changesets/action` rather than by
+hand, which costs the project D5 — see [§5.5](#55-d5--dropped).
 
 ### 5.2 D1 — one fixed group, identical to the publishable set
 
-`.changeset/config.json` gains the sixth name in `fixed`, the four remaining private packages in
-`ignore`, and the `snapshot` block:
+`.changeset/config.json` gains the sixth name in `fixed` and the four remaining private packages in
+`ignore`:
 
 ```json
   "fixed": [
@@ -344,10 +342,6 @@ by hand, which costs the project D5 — see [§5.5](#55-d5--dropped).
       "@appliedblockchain/giano-paymaster-sdk"
     ]
   ],
-  "snapshot": {
-    "useCalculatedVersion": true,
-    "prereleaseTemplate": "{tag}-{commit}"
-  },
   "ignore": [
     "@appliedblockchain/giano-example",
     "@appliedblockchain/giano-wallet-api",
@@ -361,11 +355,6 @@ With this the pending release resolves all six to `3.0.0` instead of five at `3.
 at `1.0.0`, and the release diff shows six version changes instead of eleven. The fixed group is then
 *identical* to the publishable set, which is the invariant worth having: one Giano version, published
 six times.
-
-`useCalculatedVersion` is what makes the snapshot base `3.0.0` — the version the pending changesets
-resolve to — rather than the current `0.1.0`. Without it a snapshot would be
-`0.0.0-main-<sha>`, which sorts below everything and tells an integrator nothing about where the
-line is heading.
 
 The private packages are ignored rather than versioned because their versions are cosmetic: images
 are tagged by commit SHA, never by package version (`infra/versions.json`,
@@ -385,9 +374,9 @@ errors on mixed changesets only.
 ### 5.3 D3 — a merge that should publish, but carries no changeset, fails
 
 Nothing today stops a pull request that changes `packages/wallet-core/src` from merging without a
-changeset. It merges, publishes a snapshot at whatever version the *other* pending changesets imply,
-and ships inside whatever release happens next — silently, at a version that does not describe it.
-That is the practical way R2 breaks.
+changeset. It merges, and ships inside whatever release happens next — silently, under a version
+number that was computed from other people's changesets and describes none of its work. That is the
+practical way R2's *at the correct version* breaks.
 
 The `packages` job's checkout gains full history, because `changeset status --since` resolves
 `origin/<base>` and the default shallow clone has no such ref:
@@ -477,7 +466,6 @@ reason release wall-clock goes from ~1m16s to ~4m25s.
 on:
   push:
     branches: [main]
-    tags: ['v*']
 
 jobs:
   ci:
@@ -488,49 +476,18 @@ jobs:
     name: Determinism
     uses: ./.github/workflows/determinism.yml
 
-  snapshot:
-    name: Publish snapshot
-    if: github.ref == 'refs/heads/main'
-    needs: [ci, determinism]
-    # …
-
   release:
-    name: Publish release
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Version PR or publish
     needs: [ci, determinism]
     # …
 ```
 
-One run of each per ref, and neither publish can start until both are green. Neither
-needs `secrets: inherit` — their jobs use only `actions/checkout`, pnpm, Node and Foundry.
+One run of each per merge, and the release job cannot start until both are green. Neither called
+workflow needs `secrets: inherit` — their jobs use only `actions/checkout`, pnpm, Node and Foundry.
 
-#### Both publish jobs sit behind the gate
-
-`snapshot` and `release` both declare `needs: [ci, determinism]`, so nothing reaches the registry
-that the gate has not checked at that commit. There is no tag trigger and no second entry point: the
-only way to publish is a merge to `main`, and every merge to `main` runs the gate.
-
-#### The snapshot job's own guard
-
-A release pull request's merge is a merge to `main` like any other, and by then every changeset has
-been consumed. Publishing a snapshot from it would compute the *stable* version — there is no
-pending bump left to add a prerelease suffix to — and put `3.0.0` on the registry under the `main`
-dist-tag, ahead of its own tag:
-
-```yaml
-      - name: Publish a snapshot of this commit
-        run: |
-          pnpm changeset status --output=/tmp/status.json
-          if [ "$(jq '[.releases[] | select(.type != "none")] | length' /tmp/status.json)" -eq 0 ]; then
-            echo "no pending changesets — this commit releases nothing"
-            exit 0
-          fi
-          pnpm changeset version --snapshot main
-          pnpm changeset publish --tag main --no-git-tag
-```
-
-`--no-git-tag` because a snapshot is not a release: tagging git for every commit on `main` would put
-six tags per merge in the repository, and `contents: read` on that job could not push them anyway.
+There is one entry point. `release.yml` triggers on `push: branches: [main]` and nothing else, no
+tag and no dispatch, and its single publishing job sits behind the gate — so "what reaches the
+registry" and "what the gate checked at that commit" are the same tree by construction.
 
 #### What this gates for `giano-contracts`
 
@@ -562,8 +519,8 @@ both cases.
 Whether a called workflow's **workflow-level** `concurrency` applies is not documented; GitHub speaks
 only to the job-level key, warning against sharing a group between caller and callee, which `ci-*`,
 `determinism-*` and `release-*` do not. Write the guard anyway — free if the nested block is ignored,
-and if it is honoured it stops a second merge cancelling the first merge's gate and failing the
-snapshot job between the third and fourth of six publishes. Confirm which from the first real run.
+and if it is honoured it stops a second merge cancelling the first merge's gate out from under the
+publish that needs it. Confirm which from the first real run.
 
 The trade is the standalone `CI` entry against each commit on `main`; those jobs now appear nested
 under the `Release` run. Nothing is checked less, and one run tells the whole story of a merge.
@@ -577,7 +534,7 @@ under the `Release` run. Nothing is checked less, and one run tells the whole st
 >
 > - `ref: ${{ github.event.workflow_run.head_sha }}` — the commit CI actually validated. If `main`
 >   has moved since (and under `concurrency` it often will have, because the release queues), the
->   publish ships a stale tree under a snapshot version naming an older commit.
+>   publish ships a stale tree under the version the tip's changesets resolved to.
 > - the default — which for `workflow_run` is the **default branch head**, not the triggering commit.
 >   That is the tip, which is what a release wants, but CI may never have run against it. The gate
 >   then certifies one commit while the publish ships another.
@@ -635,12 +592,7 @@ Two ways back, neither taken here:
 
 ### 5.6 Provenance of the published version
 
-Two versions, one source.
-
-A **snapshot** version is computed by `changeset version --snapshot main` from the pending changesets
-plus `$GITHUB_SHA`: the base is what those changesets resolve to (`useCalculatedVersion`), the suffix
-is the commit. Nothing is inferred from a branch name or a run number, and re-running the workflow on
-the same commit recomputes the same string.
+One version, one source.
 
 A **stable** version is whatever `changeset version` wrote into `package.json` in the release pull
 request, from the same changesets — and `changeset publish` publishes exactly what that pull request
@@ -661,11 +613,9 @@ and skips the ones already at that version. If the pre-check is stale, `pnpm pub
 specific error as **`skipped`, not `failed`** (`isAlreadyPublishedError()`), so a re-run of a
 published commit is green and publishes nothing.
 
-This covers snapshots as well as stable releases, and only because of `{commit}` (D-a1). The
-version a re-run computes is a pure function of the commit and the pending changesets, both of which
-are fixed by the SHA, so the re-run tries to publish the exact same `3.0.0-main-<sha>` and is skipped.
-`{datetime}` would compute a new version on every re-run and publish it — green, idempotent-looking,
-and quietly adding a version per click.
+The version a re-run publishes is whatever the checked-out `package.json` files say, and those are
+fixed by the SHA — the release job publishes the numbers the version pull request committed rather
+than computing any. So a re-run attempts the identical version and is skipped.
 
 Version 2.31.1 also handles the GitHub-Packages-specific wrinkle that makes this work at all:
 GitHub Packages does not auto-assign the `latest` dist-tag the way npmjs does, so a bare
@@ -710,16 +660,11 @@ form's `cancel-in-progress: false` still protects a publish in flight, and where
 pending re-run costs nothing: it would recompute a version that is already on the registry and
 Changesets would skip it ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)).
 
-The `main` and tag refs remain separate groups, so a tag publish is never queued behind or dropped
-by merge traffic.
-
-What this trades away is ordering. Two merges landing close together now publish concurrently
-instead of one after the other, and the `main` dist-tag is the one piece of mutable state they
-share: if the earlier run finishes last, `@main` points at the older of the two snapshots until the
-next merge moves it. No version is overwritten — the versions are distinct and immutable, so R3 is
-untouched — and `main` is a moving pointer by definition. Buying the ordering back means a mutex or
-FIFO action wrapped around a job that holds `packages: write`, which is a worse trade than a
-dist-tag that is briefly one merge stale.
+What this trades away is ordering, and only for the version pull request. Two merges landing close
+together both run `changesets/action` against their own tree and both force-push
+`changeset-release/main`; the later state wins, and the next merge recomputes it from `main` either
+way. Nothing is published in that path, so R3 is untouched. Publishing happens on exactly one commit
+— the version pull request's merge — which is the run this key exists to keep from being evicted.
 
 ### 6.4 Deletion and re-publication — needs a policy
 
@@ -731,7 +676,7 @@ is no ECR-style `IMMUTABLE` flag for GitHub Packages npm.
 package-version deletion is never used, with package admin held by the same small set that holds
 repository admin. Record it in the repository:
 
-- `README.md` **Releasing** section: the snapshot-per-merge / tag-per-release flow, the constraint
+- `README.md` **Releasing** section: the version-pull-request flow, the constraint
   that a changeset may not name both a published and an ignored package, the `pnpm changeset --empty`
   escape, and the policy itself — a published `@appliedblockchain/giano-*` version is permanent, and
   a broken release is superseded by a new version, never replaced by deleting and re-publishing.
@@ -870,18 +815,12 @@ rather than deprecating it.
 ### 8.3 The first published versions
 
 Consumers reading R1's table will expect `0.1.0` for five of the six. What actually reaches GitHub
-Packages first is a **snapshot**, `3.0.0-main-<sha>` for all six, and the first stable version is
-`3.0.0`. Both follow from the fixed group (D1) and `useCalculatedVersion`, and the jump is intended —
-it is what `.changeset/phase-4-version-alignment.md` decided.
+Packages is `3.0.0` for all six, at once. That follows from the fixed group (D1), and the jump is
+intended — it is what `.changeset/phase-4-version-alignment.md` decided.
 
-Two things follow for a consumer:
-
-- Tracking `main` means `pnpm add @appliedblockchain/giano-wallet-kit@main`, which resolves through
-  the `main` dist-tag. `latest` stays empty until the first `v*` tag, so a plain
-  `pnpm add @appliedblockchain/giano-wallet-kit` fails until then — correct, and worth saying once in
-  the integration docs rather than debugging per integrator.
-- A dependency written `^3.0.0-main-<sha>` also admits `3.0.0`, so a project pinned to a snapshot
-  moves onto the stable release at its next resolution instead of stranding on a prerelease line.
+One thing follows for a consumer: nothing resolves at all until the first version pull request is
+merged. `latest` is empty until then, so `pnpm add @appliedblockchain/giano-wallet-kit` fails —
+correct, and worth saying once in the integration docs rather than debugging per integrator.
 
 The H2 page's version column and the `COMPATIBILITY.md` that `phase-4-version-alignment.md` refers to
 (**which does not exist in the repository**) still need reconciling. See **O-3**.
@@ -903,10 +842,10 @@ jq -r '.fixed[0][]' .changeset/config.json | sort
 pnpm changeset status --output=/tmp/status.json
 jq -r '.releases[] | select(.type != "none") | "\(.name)\t\(.oldVersion) -> \(.newVersion)"' /tmp/status.json
 
-# R2 — the snapshot version is what we expect, and siblings pin exactly. On a throwaway tree:
-pnpm changeset version --snapshot main
+# R2 — the bump is what we expect, and siblings pin exactly. On a throwaway tree:
+pnpm changeset version
 jq -r '.version, (.dependencies // {} | to_entries[] | select(.key|startswith("@appliedblockchain")) | "  \(.key) = \(.value)")' packages/wallet-kit/package.json
-git checkout -- .   # discard; the snapshot bump is never committed
+git checkout -- . ; and git clean -fd .changeset   # discard
 
 # R1 — release.yml's build list, verbatim: a fresh clone with no submodules and no Foundry
 #      builds all six, in dependency order
@@ -918,41 +857,39 @@ pnpm --filter @appliedblockchain/giano-wallet-kit build
 pnpm --filter @appliedblockchain/giano-paymaster-sdk build
 ```
 
-Expected: six names in the first two lists, identical; six releases all at `3.0.0`;
-`3.0.0-main-<40-char sha>` with siblings pinned exactly, no caret; the build green with no submodules
-checked out.
+Expected: six names in the first two lists, identical; six releases all at `3.0.0`; `3.0.0` in
+wallet-kit with siblings pinned exactly, no caret; the build green with no submodules checked out.
 
 ### 9.2 Post-merge — R2, R3
 
+A merge that carries a changeset must publish nothing and leave the version pull request up to date:
+
 ```fish
-# The snapshot is on the registry under the `main` dist-tag
+# No new version reached the registry
+npm view '@appliedblockchain/giano-wallet-kit' versions --registry=https://npm.pkg.github.com
+
+# The version PR exists and reflects this merge
+gh pr list --head changeset-release/main --json number,title,updatedAt
+```
+
+The merge of that pull request is the one that publishes:
+
+```fish
+# `latest` points at the version the PR wrote
 npm view '@appliedblockchain/giano-wallet-kit' dist-tags --registry=https://npm.pkg.github.com
 
-# The tarball pins its siblings exactly, at the same snapshot version
-npm pack '@appliedblockchain/giano-wallet-kit@main' --registry=https://npm.pkg.github.com
+# The tarball pins its siblings exactly, at that same version
+npm pack '@appliedblockchain/giano-wallet-kit' --registry=https://npm.pkg.github.com
 tar -xzOf appliedblockchain-giano-wallet-kit-*.tgz package/package.json \
   | jq '.dependencies | with_entries(select(.key | startswith("@appliedblockchain")))'
 
-# R3 — re-run the same commit's Release; green, publishing nothing
+# R3 — re-run that commit's Release; green, publishing nothing
 gh run rerun <release-run-id>
 gh run view <release-run-id> --log | grep -i 'skipped\|already published'
 ```
 
-Expected: `main` pointing at `3.0.0-main-<sha>`; every `@appliedblockchain` dependency in the tarball
-at that same version; the re-run green with each package reported as skipped, and no new version on
-the registry.
-
-Once enough merges have landed to have overlapped, R2's *every* merge is checkable directly — no
-release-bearing commit on `main` may be missing its snapshot:
-
-```fish
-# Every published snapshot version, and every main SHA that carried a changeset
-npm view '@appliedblockchain/giano-wallet-kit' versions --registry=https://npm.pkg.github.com
-gh run list --workflow=release.yml --branch=main --json headSha,conclusion
-```
-
-Expected: no run with conclusion `cancelled`, and a `3.0.0-main-<sha>` for each SHA whose merge
-carried a changeset.
+Expected: `latest` at `3.0.0`; every `@appliedblockchain` dependency in the tarball at `3.0.0`; the
+re-run green with each package reported as skipped, and no new version on the registry.
 
 ### 9.3 The version pull request
 
@@ -985,8 +922,7 @@ git fetch --tags && git tag --list '@appliedblockchain/*' && git tag --list 'v*'
 ```
 
 The merge of the version pull request is what publishes. Its `release.yml` run should show the
-snapshot job exiting zero (*no pending changesets*) and the release job publishing six packages,
-pushing `v3.0.0`, and dispatching `docker.yml` at it.
+release job publishing six packages, pushing `v3.0.0`, and dispatching `docker.yml` at it.
 
 ### 9.5 R4 / R5
 
@@ -1019,10 +955,9 @@ copy-by-digest guarantee.
 | **O-4** | **Is GitHub Packages the right registry at all?** Answered: **yes, R1 as written.** The repository is public, so the six packages are public, and every integrator still needs a `read:packages` PAT and an all-or-nothing scope route to install one — [§8.2](#82-a-public-package-that-still-needs-a-token) has the comparison. Not revisited here; changing it is a change to R1. |
 | **O-5** | No GHCR retention. Eight images × one `sha-` tag per merge, forever. Not an H2 requirement; worth a follow-up ticket with an `actions/delete-package-versions` scheduled job that keeps `latest`, every `v*` tag, and the last N `sha-` tags. |
 | **O-6** | `ecr_lifecycle_image_count.dev` is 10, against a workflow comment that assumed 30 ([§7.2](#72-discrepancy-1--the-retention-comment-is-wrong-and-the-floor-may-be-real)). Ten merges to `main` after a deploy, the image `infra/versions.json` still pins can expire, and a task replacement or scale-out fails to pull. `infra/versions.json` pinned `dev` three commits behind `main` when this was written. **For devops** — `infra/iac/` is outside H2, and this spec changes nothing there. |
-| **O-7** | Snapshot versions accumulate on GitHub Packages at one per changeset-carrying merge per package. Nothing prunes them, and unlike GHCR tags they are versions of a published package, so deletion is the policy-forbidden operation of [§6.4](#64-deletion-and-re-publication--needs-a-policy). The tension is real and unresolved: if the count becomes a problem, the answer is a retention policy written *before* any deletion, naming which prerelease versions may go and why that does not violate R3. |
 | **O-8** | Nothing enforces that the publishable set is the six packages `release.yml` builds. `changeset publish` publishes whatever is not `private: true`, so a seventh package added under `packages/` without the flag, or an existing one that loses it, publishes an unbuilt `dist` at a permanent version. A `pnpm ls -r --depth -1 --json` assertion in `ci.yml`'s `packages` job closes it; it was drafted and is not in the pipeline. Until a seventh package exists the exposure is theoretical, and the acceptance check in [§9.4](#94-post-release--r1) catches it after the fact rather than before — which under [§6](#6-r3--a-published-version-is-never-overridden) is after it is unrecoverable. |
-| **R-1** | `@changesets/cli` is pinned `^2.31.1`. The GitHub-Packages `latest`-tag handling that makes the idempotent re-run work ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)) arrived in that line, and `snapshot.prereleaseTemplate` needs 2.27 or later. A major bump must be re-verified against [§9.2](#92-post-merge--r2-r3) before merging. |
-| **R-2** | `changeset version --snapshot` runs in the workflow and rewrites `package.json` on the runner. Those writes are never committed and the checkout is discarded, but a future step added *after* the snapshot publish would see mutated manifests. Keep the publish last in that job. |
+| **R-1** | `@changesets/cli` is pinned `^2.31.1`. The GitHub-Packages `latest`-tag handling that makes the idempotent re-run work ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)) arrived in that line. A major bump must be re-verified against [§9.2](#92-post-merge--r2-r3) before merging. |
+| **R-2** | `changesets/action` runs `changeset version` on the runner in its version mode, rewriting `package.json` before it force-pushes the branch. The tag-and-dispatch step reads `packages/contracts/package.json` *after* the action, which is correct in publish mode — that tree is the merged version PR's — but a future step must not assume the checkout still matches the commit. |
 
 ---
 
@@ -1033,8 +968,8 @@ copy-by-digest guarantee.
 | **R1** — six packages published to `npm.pkg.github.com` under `@appliedblockchain` | [§4.1](#41-registry-scope-and-auth) routing + auth; [§4.2](#42-the-set-is-enumerated) the enumeration in `release.yml` | Built; first publish is the first merge after this lands. The enumeration is unenforced — **O-8** |
 | **R1** — the five private packages stay unpublished | `private: true` on all five ([§3](#3-current-state-verified)); checked after the fact by [§9.4](#94-post-release--r1) | ✅, but nothing fails a build if one loses the flag — **O-8** |
 | **R1** — installable, not merely published | [§4.3](#43-what-each-package-ships) `workspace:*` exact pins (**D-a2**); [§8.1](#81-the-scope-collision) **D8** | Pins done; D8 is a one-off outside CI |
-| **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-what-every-merge-to-main-means) snapshot per merge (**D-a**); **D4** CI gates the publish; per-SHA concurrency so no merge's run is evicted ([§6.3](#63-concurrent-releases--closed)) | ✅ for a merge that releases something; a merge with no pending changesets (an empty changeset, or a release pull request) publishes nothing, by design |
-| **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set, plus the snapshot config; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) both publish jobs sit behind the gate | ✅ |
+| **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-which-merge-publishes) the version pull request's merge publishes (**D-a**); **D4** CI gates it; per-SHA concurrency so that run cannot be evicted ([§6.3](#63-concurrent-releases--closed)) | ✅ under D-a's reading: the release is a merge, and no human runs a publish. Merges of ordinary work publish nothing |
+| **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.6](#56-provenance-of-the-published-version) the version is what the pull request committed, not something CI computes | ✅ |
 | **R3** — no override by re-run | [§6.1](#61-a-workflow-re-run-at-the-same-commit--closed) Changesets skip-if-published, plus `{commit}` making a re-run recompute the same version | ✅ |
 | **R3** — no override by rebuilt artifact | [§6.2](#62-a-rebuilt-artifact-at-the-same-version--closed-by-the-registry) registry rejection; [§6.3](#63-concurrent-releases--closed) no cancel-in-progress, and concurrent merges publish distinct versions | ✅ |
 | **R3** — no override at all | [§6.4](#64-deletion-and-re-publication--needs-a-policy) **D6** deletion policy + package admin restriction | Policy written; settings are a follow-up |
@@ -1048,10 +983,10 @@ copy-by-digest guarantee.
 
 | # | Change | File |
 | --- | --- | --- |
-| **D1** | `giano-wallet-kit` joins the `fixed` group; the four remaining private packages join `ignore`; the `snapshot` block sets `useCalculatedVersion` and `{tag}-{commit}` | `.changeset/config.json` |
-| **D1a** | Inter-package dependencies become `workspace:*` (decision **D-a2**), so a snapshot tarball pins its siblings exactly | `packages/{connector,paymaster-sdk,wallet-core,wallet-kit}/package.json` |
+| **D1** | `giano-wallet-kit` joins the `fixed` group; the four remaining private packages join `ignore` | `.changeset/config.json` |
+| **D1a** | Inter-package dependencies become `workspace:*` (decision **D-a2**), so a published tarball pins its siblings exactly | `packages/{connector,paymaster-sdk,wallet-core,wallet-kit}/package.json` |
 | **D3** | A pull request touching publishable source must carry a changeset, with `package.json` and `CHANGELOG.md` excluded so a release pull request stays mergeable | `.github/workflows/ci.yml` |
-| **D4** | `ci.yml` and `determinism.yml` drop `push: main`, gain `workflow_call`, `permissions: contents: read` and a PR-only `cancel-in-progress`; `release.yml` is rewritten into a `main` snapshot job behind `needs: [ci, determinism]`, keyed per SHA so no merge's run is evicted, and a tag release job behind the same `needs: [ci, determinism]` plus an ancestry and version assertion | `.github/workflows/{ci,determinism,release}.yml` |
+| **D4** | `ci.yml` and `determinism.yml` drop `push: main`, gain `workflow_call`, `permissions: contents: read` and a PR-only `cancel-in-progress`; `release.yml` triggers on `push: main` only and puts its single `changesets/action` job behind `needs: [ci, determinism]`, keyed per SHA so the publishing run cannot be evicted | `.github/workflows/{ci,determinism,release}.yml` |
 | **D6** | The release flow, the no-mixed-changeset constraint and the no-deletion policy are written down; package admin restricted | `README.md`, package settings |
 | **D7** | ECR retention comment corrected to ten, and to what ten means | `.github/workflows/docker.yml` |
 | **D8** | Deprecate `@appliedblockchain/giano-contracts@<=2.0.1` on npmjs | one-off, npmjs |
