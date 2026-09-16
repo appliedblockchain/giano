@@ -557,7 +557,13 @@ waiting on a repository setting: `snapshot` declares `needs: [ci, determinism]`,
 `main` run of `release.yml` at that SHA is the gate having passed, and a run still in flight is not
 one. Asking this workflow about its own runs rather than enumerating check-run names keeps the
 assertion from drifting the next time a job is added to `ci.yml`, and costs the release job an
-`actions: read` scope. D5 stays on the list — it moves the failure back before the merge, where a
+`actions: read` scope.
+
+Two details of that query are load-bearing. `--method GET` is required because any `-f` field makes
+`gh api` default to `POST`, and there is no `POST` on this endpoint — without the flag the step 404s
+before it reads `total_count`. And `head_sha` matches on the full 40-character SHA only; an
+abbreviated one matches nothing, which this step reads as a gate that never passed. `$GITHUB_SHA` is
+full, so the workflow is right, but a hand-run reproduction needs `git rev-parse`. D5 stays on the list — it moves the failure back before the merge, where a
 human is still looking at it — but the tag no longer depends on it.
 
 **The commit is still on `main`.** What the run query cannot see is history rewritten after the
