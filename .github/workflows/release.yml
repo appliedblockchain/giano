@@ -4,17 +4,38 @@ on:
   push:
     branches: [main]
 
-concurrency: release-${{ github.ref }}
+# The SHA is in the group key because at most one run per group may be pending: keyed on ref alone, a
+# merge landing while the version PR's own merge is still queued would evict it, and that run is the
+# one that publishes. Distinct SHAs never share a group, so nothing queues and nothing is dropped.
+# What still shares one is a re-run at the same SHA, and the string form keeps cancel-in-progress
+# false there: a cancellation between the third and fourth of six sequential publishes leaves a
+# half-released fixed group, the one state npm's immutability makes unrecoverable.
+concurrency: release-${{ github.ref }}-${{ github.sha }}
 
 permissions:
-  contents: write
+  contents: read
   packages: write
-  pull-requests: write
 
 jobs:
+  # The publish sits behind this. Nothing reaches the registry that CI and Determinism have not
+  # checked at that exact commit.
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  determinism:
+    name: Determinism
+    uses: ./.github/workflows/determinism.yml
+
   release:
-    name: Changesets version / publish
+    name: Version PR or publish
+    needs: [ci, determinism]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the version PR branch, and the v* tag after a publish
+      packages: write
+      pull-requests: write   # open and update the version PR
+      actions: write         # dispatch docker.yml for the tag it just pushed
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -24,10 +45,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
-        # Every publishable package ships only `dist` (see its `files`), so all of them
-        # must be built here — and in dependency order, because each tsup dts build
-        # resolves its workspace deps through their built `dist` types, not their source.
-        # Same ordering constraint CI encodes in .github/workflows/ci.yml.
+        # Every publishable package ships only `dist` (see its `files`), so all of them must be
+        # built here — and in dependency order, because each tsup dts build resolves its workspace
+        # deps through their built `dist` types, not their source.
         run: |
           pnpm --filter @appliedblockchain/giano-contracts build:ts
           pnpm --filter @appliedblockchain/giano-wallet-transport build
@@ -36,12 +56,15 @@ jobs:
           pnpm --filter @appliedblockchain/giano-wallet-kit build
           pnpm --filter @appliedblockchain/giano-paymaster-sdk build
       - name: Configure GitHub Packages auth
-        # auth only — no scope routing here (see Phase 1 scope-collision caveat in
-        # packages/contracts/README.md); publish registry comes from each package's publishConfig
+        # auth only — the publish registry comes from each package's own publishConfig
         run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create release PR or publish
+
+      - name: Create the version PR, or publish what it merged
+        id: changesets
+        # With changesets pending, this opens or updates `changeset-release/main`. With none — which
+        # is what merging that PR leaves behind — it publishes instead.
         uses: changesets/action@v1
         with:
           publish: pnpm changeset publish
@@ -49,3 +72,26 @@ jobs:
           commit: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the release and build its images
+        if: steps.changesets.outputs.published == 'true'
+        # The six packages are a fixed group, so any one of them names the release version.
+        #
+        # A tag pushed with GITHUB_TOKEN does not trigger a workflow — which is why docker.yml is
+        # dispatched rather than left to its own `v*` push trigger. workflow_dispatch is the
+        # documented exception to that rule, and docker.yml reads the version from the ref it runs
+        # on, so a dispatch at the tag produces the same images a tag push would.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v=v$(jq -r .version packages/contracts/package.json)
+          # A re-run at this commit republishes nothing, but it re-enters this step if the action
+          # still reports `published`. `git tag` on an existing name fails, which would turn an
+          # idempotent re-run red — so the remote is what decides whether there is work here.
+          if git ls-remote --exit-code --tags origin "$v" >/dev/null 2>&1; then
+            echo "$v already exists — nothing to tag"
+            exit 0
+          fi
+          git tag "$v"
+          git push origin "$v"
+          gh workflow run docker.yml --ref "$v"
