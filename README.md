@@ -198,9 +198,9 @@ The six publishable packages — `giano-contracts`, `giano-wallet-transport`, `g
 (`https://npm.pkg.github.com`) under one shared version. Everything under `services/` and `e2e/` is
 private and never published.
 
-**Every merge to `main` publishes a snapshot.** Once CI and Determinism pass, the Release workflow
-publishes `3.0.0-main-<sha>` for all six under the `main` dist-tag, so any commit on `main` is
-installable:
+**Every merge to `main` that releases something publishes a snapshot.** Once CI and Determinism
+pass, the Release workflow publishes `3.0.0-main-<sha>` for all six under the `main` dist-tag, so
+any commit carrying a package change is installable:
 
 ```fish
 pnpm add @appliedblockchain/giano-wallet-kit@main
@@ -208,6 +208,12 @@ pnpm add @appliedblockchain/giano-wallet-kit@main
 
 A snapshot pins its Giano siblings to the exact version in the same build, and the version number
 names the release line it is heading for, so `^3.0.0-main-…` also satisfies the eventual `3.0.0`.
+
+A merge with no pending changesets publishes nothing, and that is deliberate on both paths it
+covers. An empty changeset — a comment, a test, a CI tweak — asks for no version, so there is no
+snapshot to compute. A release pull request has consumed every changeset by the time it merges, and
+publishing from it would compute the *stable* number and put it under the `main` dist-tag ahead of
+its own tag.
 
 **A `v*` tag publishes the stable version.** Cutting a release is two human steps:
 
@@ -219,9 +225,11 @@ git tag v3.0.0 <the merge commit>
 git push origin v3.0.0
 ```
 
-The tag job checks that the tagged commit is on `main` and that the six `package.json` versions
-match the tag before it publishes anything. `docker.yml` also triggers on `v*`, so the same tag
-builds container images carrying that version — one Giano version across packages and images.
+The tag job checks that the tagged commit passed the merge gate — a successful `main` run of the
+Release workflow at that exact SHA — that it is still on `main`, and that the six `package.json`
+versions match the tag, before it publishes anything. `docker.yml` also triggers on `v*`, so the
+same tag builds container images carrying that version — one Giano version across packages and
+images.
 
 ### Working with changesets
 

@@ -50,14 +50,14 @@ Nine deliverables, D1–D8 plus D1a, stand between "the workflow runs" and "R1�
 
 | # | Decision | Why |
 | --- | --- | --- |
-| **D-a** | Every merge to `main` publishes a **snapshot**, `3.0.0-main-<sha>`. A `v*` tag publishes the **stable** version. | R2 read literally: the merge itself is what puts an artifact on the registry. Each commit gets a distinct immutable version, so nothing is overridden (R3) and no stable version number is burned — the stable line advances only when a human cuts a release. The snapshot names the line it is heading for, so `^3.0.0-main-…` also matches the eventual `3.0.0`, and an integrator tracking `main` converges onto the real release rather than away from it. [§5.1](#51-what-every-merge-to-main-means). |
+| **D-a** | Every merge to `main` that releases something publishes a **snapshot**, `3.0.0-main-<sha>`. A `v*` tag publishes the **stable** version. | R2 read literally: the merge itself is what puts an artifact on the registry. Each commit gets a distinct immutable version, so nothing is overridden (R3) and no stable version number is burned — the stable line advances only when a human cuts a release. The snapshot names the line it is heading for, so `^3.0.0-main-…` also matches the eventual `3.0.0`, and an integrator tracking `main` converges onto the real release rather than away from it. [§5.1](#51-what-every-merge-to-main-means). |
 | **D-a1** | Snapshot versions come from `snapshot.useCalculatedVersion: true` with `prereleaseTemplate: "{tag}-{commit}"`. | `{commit}` rather than `{datetime}`: a workflow re-run then computes the *identical* version, which is what keeps the re-run idempotent under R3 ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)). A timestamp would publish a fresh version on every re-run. |
 | **D-a2** | Inter-package dependencies are declared `workspace:*`. | pnpm rewrites it to the sibling's **exact** version at pack time, so a snapshot tarball names one specific sibling build. A caret range over a prerelease line is satisfiable by *other* snapshots, which would let an install assemble six fixed-group packages from more than one commit. [§4.3](#43-what-each-package-ships). |
 | **D-b** | The publishable set stays **explicitly enumerated**, and CI asserts the enumeration. Never derived from a directory glob. | Publishing must be an intentional act. Under R3 the two failure modes are not symmetrical: a package that should have shipped and did not is fixed in the next release, while one published by accident is permanent, at a version that can never be reused. A glob makes creating a directory sufficient to publish; a list plus an assertion makes it require a deliberate edit that a reviewer sees. [§4.2](#42-the-set-is-enumerated-and-the-enumeration-is-enforced). |
 | **D-c** | Immutability is the **registry's** guarantee, asserted in CI — not a convention. | GitHub Packages rejects a re-publish over an existing version with `E403`; ECR repositories are `IMMUTABLE`. Both are already true. What is missing is the assertion that they stay true. [§6](#6-r3--a-published-version-is-never-overridden). |
 | **D-d** | A stable release is cut by pushing a `v*` tag, not by promoting a snapshot. | npm has no promote operation: `3.0.0-main-<sha>` and `3.0.0` are two distinct immutable versions, so the stable number can only come from a second publish of the same tree, and something has to trigger it. A tag is a reviewable, assertable trigger that `docker.yml` already listens to, so one push ships packages and images at one Giano version. |
 | **D-e** | The version bump reaches `main` through an ordinary human-authored pull request, never a push from CI. | A commit pushed to `main` by a workflow carries no check runs, and D5's required status checks block direct pushes as well as merges — so a CI-side write-back would need an admin PAT or an App in the ruleset bypass list. A release pull request draws review and CI like any other change, needs no privileged credential, and keeps the tag→version mapping assertable. [§5.5](#55-d5--main-requires-green-checks). |
-| **D-f** | The tag path does **not** re-run CI and Determinism. It asserts that the tagged commit is an ancestor of `main`, and that the six `package.json` versions match the tag. | The tagged commit passed the gate on its way into `main` — same SHA, same tree — so a second run proves the same thing twice at ~4m25s. What ancestry covers instead is the real risk: a tag on a commit that never went through the merge gate. [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked). |
+| **D-f** | The tag path does **not** re-run CI and Determinism. It asserts that a successful `main` run of `release.yml` exists at the tagged SHA, that the commit is still an ancestor of `main`, and that the six `package.json` versions match the tag. | The tagged commit passed the gate on its way into `main` — same SHA, same tree — so a second run proves the same thing twice at ~4m25s. Reading the run history proves it passed without assuming that `main` rejects red commits, which D5 has not yet made true; ancestry then covers a commit force-pushed off `main` afterwards. [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked). |
 
 ### 1.3 Out of scope
 
@@ -518,14 +518,23 @@ jobs:
 One run of each per `main` SHA, and the snapshot publish cannot start until both are green. Neither
 needs `secrets: inherit` — their jobs use only `actions/checkout`, pnpm, Node and Foundry.
 
-#### The tag path asserts ancestry instead of re-running the gate
+#### The tag path asserts the gate ran instead of re-running it
 
 A `v*` tag points at a commit that already passed CI and Determinism on its way into `main` — same
-SHA, same tree — so running them again proves the same thing twice. What that leaves uncovered is a
-tag on a commit that never went through the merge gate at all, and that is what the release job
-checks directly, at the cost of a second:
+SHA, same tree — so running them again proves the same thing twice. Asserting that it *did* pass
+costs a second, and is three separate claims:
 
 ```yaml
+      - name: The merge gate passed at this exact commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          n=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+                -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f status=success \
+                --jq .total_count)
+          [ "${n:-0}" -gt 0 ] \
+            || { echo "no successful main run of release.yml at $GITHUB_SHA — the gate has not passed"; exit 1; }
+
       - name: This tag is on main, and names the version it publishes
         run: |
           git fetch --no-tags origin main
@@ -538,9 +547,26 @@ checks directly, at the cost of a second:
           done
 ```
 
-The second half is what makes the tag→version mapping assertable rather than conventional: `v3.0.0`
-publishes `3.0.0` or it publishes nothing. It needs `fetch-depth: 0`, because `merge-base` on a
+**The gate passed.** Ancestry alone does not establish this. It proves the commit is on `main`, and
+the inference from there — *therefore it passed* — holds only if nothing red can reach `main`, which
+is exactly what D5 has not delivered yet ([§5.5](#55-d5--main-requires-green-checks)): required
+checks are configured with an empty list and enforcement `off`. Until that changes, a merge whose
+gate fails, or whose gate is still running, sits on `main` like any other commit, and a tag on it
+would publish six immutable stable versions over an unchecked tree. The query closes that without
+waiting on a repository setting: `snapshot` declares `needs: [ci, determinism]`, so a **successful**
+`main` run of `release.yml` at that SHA is the gate having passed, and a run still in flight is not
+one. Asking this workflow about its own runs rather than enumerating check-run names keeps the
+assertion from drifting the next time a job is added to `ci.yml`, and costs the release job an
+`actions: read` scope. D5 stays on the list — it moves the failure back before the merge, where a
+human is still looking at it — but the tag no longer depends on it.
+
+**The commit is still on `main`.** What the run query cannot see is history rewritten after the
+fact: a commit that passed, then left `main` on a force-push. `merge-base --is-ancestor` against a
+freshly fetched `origin/main` covers it, and needs `fetch-depth: 0`, because `merge-base` on a
 shallow clone has no history to walk.
+
+**The tag names what it publishes.** This is what makes the tag→version mapping assertable rather
+than conventional: `v3.0.0` publishes `3.0.0` or it publishes nothing.
 
 #### The snapshot job's own guard
 
@@ -636,9 +662,13 @@ showing nothing but a CodeRabbit check is mergeable. **Every merge to `main` now
 pull request that can merge with no green check is a pull request that can publish unchecked.**
 
 The release pull request is the sharp case: its merge is followed by a tag, and the tag publishes six
-immutable versions. It is also the ordinary case — D4's gate runs *after* the merge, and a red gate
-then means a commit already on `main` that cannot be released, rather than a pull request that cannot
-be merged. Required checks are what move that failure back before the merge.
+immutable versions. That particular hole is closed in the workflow rather than here — the tag job
+refuses to publish unless a successful `main` run of `release.yml` exists at that SHA
+([§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked)), so an unchecked commit on
+`main` is unreleasable rather than merely unreleased-by-convention. What that leaves is the ordinary
+case: D4's gate runs *after* the merge, so a red gate means a commit already on `main` that cannot be
+released, rather than a pull request that cannot be merged. Required checks are what move that
+failure back before the merge, where a human is still looking at it.
 
 **D5.** Add `ci.yml`'s four jobs as required status checks on `main`, by their display names — these
 are what a pull-request run reports, and a pull-request run is what a required check evaluates:
@@ -710,29 +740,46 @@ contents. There is no `--force` in the publish path and none may be added.
 
 ### 6.3 Concurrent releases — closed
 
-`release.yml` declares `concurrency: release-${{ github.ref }}` in its string form, which means
-`cancel-in-progress: false`. A second merge queues behind a publish in flight rather than cancelling
-it mid-way through six sequential publishes.
-
-Keep it. **Do not** add `cancel-in-progress: true` to this workflow — a cancellation between the
+`release.yml` declares its concurrency in the string form, which means `cancel-in-progress: false`.
+Keep that. **Do not** add `cancel-in-progress: true` to this workflow — a cancellation between the
 third and fourth package publish leaves a partially released fixed group, which is the one state
 R3's immutability makes unrecoverable except by burning another version.
 
 `cancel-in-progress: false` does not buy a queue, though. GitHub: "At most one job or workflow run
 can be `pending` in the concurrency group. When a new job or workflow run is queued, any existing
-`pending` job or workflow run in the same group is canceled and replaced." Under a burst of merges,
-release runs are dropped.
+`pending` job or workflow run in the same group is canceled and replaced." So a group holds one run
+in flight and one waiting, and a third arrival evicts the waiting one.
 
-Under snapshots this is nearly harmless. A dropped run means one commit on `main` never gets its
-`3.0.0-main-<sha>` on the registry; the replacement run publishes the tip's snapshot, which contains
-that commit's changes. What is lost is the ability to install *that* intermediate commit by version,
-not any content. Nothing is corrupted and no stable version is affected.
+Keyed on the ref alone, every merge to `main` shares a group, and a burst of three merges silently
+drops the middle one. That is not the harmless loss it first looks like. A `push`-triggered run is
+pinned to the SHA of *its own* push event, not to whatever the tip is when it starts, so the dropped
+run was the only thing that would ever have published `3.0.0-main-<that sha>`. Re-running it later
+is possible; noticing that it needs re-running is not, because a cancelled-as-superseded run reads
+like ordinary concurrency housekeeping. R2 says every merge publishes, and this is a path where one
+quietly does not.
 
-The `main` and tag refs are separate concurrency groups (`release-refs/heads/main` versus
-`release-refs/tags/v3.0.0`), so a tag publish is never queued behind or dropped by merge traffic.
+The SHA therefore goes in the key:
 
-`queue: max` would preserve dropped runs, but each still executes against the tip it finds, so it
-changes how many run, not what any of them do.
+```yaml
+concurrency: release-${{ github.ref }}-${{ github.sha }}
+```
+
+Two different merges are now never in the same group, so neither waits and neither is evicted. Runs
+that do still share a group are runs at the same ref *and* the same SHA — re-runs — where the string
+form's `cancel-in-progress: false` still protects a publish in flight, and where evicting a third
+pending re-run costs nothing: it would recompute a version that is already on the registry and
+Changesets would skip it ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)).
+
+The `main` and tag refs remain separate groups, so a tag publish is never queued behind or dropped
+by merge traffic.
+
+What this trades away is ordering. Two merges landing close together now publish concurrently
+instead of one after the other, and the `main` dist-tag is the one piece of mutable state they
+share: if the earlier run finishes last, `@main` points at the older of the two snapshots until the
+next merge moves it. No version is overwritten — the versions are distinct and immutable, so R3 is
+untouched — and `main` is a moving pointer by definition. Buying the ordering back means a mutex or
+FIFO action wrapped around a job that holds `packages: write`, which is a worse trade than a
+dist-tag that is briefly one merge stale.
 
 ### 6.4 Deletion and re-publication — needs a policy
 
@@ -955,6 +1002,18 @@ Expected: `main` pointing at `3.0.0-main-<sha>`; every `@appliedblockchain` depe
 at that same version; the re-run green with each package reported as skipped, and no new version on
 the registry.
 
+Once enough merges have landed to have overlapped, R2's *every* merge is checkable directly — no
+release-bearing commit on `main` may be missing its snapshot:
+
+```fish
+# Every published snapshot version, and every main SHA that carried a changeset
+npm view '@appliedblockchain/giano-wallet-kit' versions --registry=https://npm.pkg.github.com
+gh run list --workflow=release.yml --branch=main --json headSha,conclusion
+```
+
+Expected: no run with conclusion `cancelled`, and a `3.0.0-main-<sha>` for each SHA whose merge
+carried a changeset.
+
 ### 9.3 The release pull request
 
 - Its diff touches only `package.json`, `CHANGELOG.md` and `.changeset/*` — never a source file.
@@ -1030,10 +1089,10 @@ copy-by-digest guarantee.
 | **R1** — six packages published to `npm.pkg.github.com` under `@appliedblockchain` | [§4.1](#41-registry-scope-and-auth) routing + auth; [§4.2](#42-the-set-is-enumerated-and-the-enumeration-is-enforced) **D2** enumeration assertion | Built; first publish is the first merge after this lands |
 | **R1** — the five private packages stay unpublished | `private: true` on all five ([§3](#3-current-state-verified)); asserted by **D2** and by the acceptance check in [§9.4](#94-post-tag--r1) | ✅ + assertion added |
 | **R1** — installable, not merely published | [§4.3](#43-what-each-package-ships) `workspace:*` exact pins (**D-a2**); [§8.1](#81-the-scope-collision) **D8** | Pins done; D8 is a one-off outside CI |
-| **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-what-every-merge-to-main-means) snapshot per merge (**D-a**); **D4** CI gates the publish; **D5** required checks | ✅ |
-| **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set, plus the snapshot config; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) the tag asserts its own version | ✅ |
+| **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-what-every-merge-to-main-means) snapshot per merge (**D-a**); **D4** CI gates the publish; per-SHA concurrency so no merge's run is evicted ([§6.3](#63-concurrent-releases--closed)) | ✅ for a merge that releases something; a merge with no pending changesets (an empty changeset, or a release pull request) publishes nothing, by design |
+| **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set, plus the snapshot config; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) the tag asserts its own version and that the gate passed at its SHA | ✅ |
 | **R3** — no override by re-run | [§6.1](#61-a-workflow-re-run-at-the-same-commit--closed) Changesets skip-if-published, plus `{commit}` making a re-run recompute the same version | ✅ |
-| **R3** — no override by rebuilt artifact | [§6.2](#62-a-rebuilt-artifact-at-the-same-version--closed-by-the-registry) registry rejection; [§6.3](#63-concurrent-releases--closed) no cancel-in-progress | ✅ |
+| **R3** — no override by rebuilt artifact | [§6.2](#62-a-rebuilt-artifact-at-the-same-version--closed-by-the-registry) registry rejection; [§6.3](#63-concurrent-releases--closed) no cancel-in-progress, and concurrent merges publish distinct versions | ✅ |
 | **R3** — no override at all | [§6.4](#64-deletion-and-re-publication--needs-a-policy) **D6** deletion policy + package admin restriction | Policy written; settings are a follow-up |
 | **R3** — containers | ECR `IMMUTABLE` + the `describe-images` skip in `docker.yml` | ✅ |
 | **R4** — six images to ECR, by the stated repositories | [§7.1](#71-verified) — `docker.yml` `merge` job, copy-by-digest, full-SHA tag, `main`-only | ✅ built and verified |
@@ -1049,7 +1108,7 @@ copy-by-digest guarantee.
 | **D1a** | Inter-package dependencies become `workspace:*` (decision **D-a2**), so a snapshot tarball pins its siblings exactly | `packages/{connector,paymaster-sdk,wallet-core,wallet-kit}/package.json` |
 | **D2** | Assert the publishable set is exactly the six R1 packages | `.github/workflows/ci.yml` |
 | **D3** | A pull request touching publishable source must carry a changeset, with `package.json` and `CHANGELOG.md` excluded so a release pull request stays mergeable | `.github/workflows/ci.yml` |
-| **D4** | `ci.yml` and `determinism.yml` drop `push: main`, gain `workflow_call`, `permissions: contents: read` and a PR-only `cancel-in-progress`; `release.yml` is rewritten into a `main` snapshot job behind `needs: [ci, determinism]` and a tag release job behind an ancestry and version assertion | `.github/workflows/{ci,determinism,release}.yml` |
+| **D4** | `ci.yml` and `determinism.yml` drop `push: main`, gain `workflow_call`, `permissions: contents: read` and a PR-only `cancel-in-progress`; `release.yml` is rewritten into a `main` snapshot job behind `needs: [ci, determinism]`, keyed per SHA so no merge's run is evicted, and a tag release job behind a gate-run, ancestry and version assertion | `.github/workflows/{ci,determinism,release}.yml` |
 | **D5** | `main`'s branch protection requires `ci.yml`'s four jobs as status checks | repository settings |
 | **D6** | The release flow, the no-mixed-changeset constraint and the no-deletion policy are written down; package admin restricted | `README.md`, package settings |
 | **D7** | ECR retention comment corrected to ten, and to what ten means | `.github/workflows/docker.yml` |

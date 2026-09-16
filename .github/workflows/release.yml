@@ -5,10 +5,14 @@ on:
     branches: [main]
     tags: ['v*']
 
-# String form, so cancel-in-progress defaults to false: a second merge queues behind a publish in
-# flight rather than cancelling it between the third and fourth of six sequential publishes, which
-# is the one state npm's immutability makes unrecoverable.
-concurrency: release-${{ github.ref }}
+# The SHA is in the group key because at most one run per group may be pending: keyed on ref alone,
+# a burst of merges leaves the middle ones cancelled before they publish, and each carries its own
+# snapshot version that nothing else will ever publish. Distinct SHAs now never share a group, so
+# nothing queues and nothing is dropped. What still shares one is a re-run at the same SHA, and the
+# string form keeps cancel-in-progress false there: a cancellation between the third and fourth of
+# six sequential publishes leaves a half-released fixed group, the one state npm's immutability
+# makes unrecoverable.
+concurrency: release-${{ github.ref }}-${{ github.sha }}
 
 permissions:
   contents: read
@@ -16,8 +20,8 @@ permissions:
 
 jobs:
   # The gate runs on the main path only. A tag points at a commit that already passed it on the
-  # way in, so the release job asserts ancestry instead of spending another ~4m proving the same
-  # tree twice.
+  # way in, so the release job asserts that it did — by ancestry and by this workflow's own run
+  # history — instead of spending another ~4m proving the same tree twice.
   ci:
     name: CI
     if: github.ref == 'refs/heads/main'
@@ -77,14 +81,30 @@ jobs:
     permissions:
       contents: write   # push the six per-package git tags changeset publish creates
       packages: write
+      actions: read     # read this workflow's own run history, to prove the gate passed
     steps:
       - uses: actions/checkout@v7
         with:
           # merge-base needs real history, not the default shallow clone
           fetch-depth: 0
+      - name: The merge gate passed at this exact commit
+        # `snapshot` needs [ci, determinism], so a successful main run of THIS workflow at this SHA
+        # is the gate having passed — one query, and no list of job names here to drift out of step
+        # with ci.yml. Without it the tag path only assumes the gate ran: required checks on main
+        # are still off (§5.5), so a red or still-running gate does not keep a commit off main, and
+        # a tag on that commit would publish six immutable versions over it.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          n=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+                -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f status=success \
+                --jq .total_count)
+          [ "${n:-0}" -gt 0 ] \
+            || { echo "no successful main run of release.yml at $GITHUB_SHA — the gate has not passed"; exit 1; }
+
       - name: This tag is on main, and names the version it publishes
-        # Ancestry stands in for re-running the gate: the commit passed CI and Determinism when it
-        # merged. What that does NOT cover is a tag pushed from somewhere else entirely.
+        # Ancestry catches what the run query cannot: a commit that was on main, passed the gate,
+        # and has since been force-pushed away.
         run: |
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
