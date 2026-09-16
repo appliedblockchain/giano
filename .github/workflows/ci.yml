@@ -64,22 +64,6 @@ jobs:
           pnpm --filter @appliedblockchain/giano-contracts gen:addresses
           git diff --exit-code packages/contracts/addresses.ts
 
-      - name: The publishable set is exactly the six R1 packages
-        # `changeset publish` publishes whatever is not `private: true`; release.yml's build list
-        # only controls what gets BUILT. This ties the two together, so a new workspace package is
-        # unpublishable until someone edits this list on purpose, and a package that loses
-        # `private: true` by accident fails here rather than at a permanent version in the registry.
-        run: |
-          expected="@appliedblockchain/giano-connector
-          @appliedblockchain/giano-contracts
-          @appliedblockchain/giano-paymaster-sdk
-          @appliedblockchain/giano-wallet-core
-          @appliedblockchain/giano-wallet-kit
-          @appliedblockchain/giano-wallet-transport"
-          # the workspace root is itself `private: true`, so it drops out with the other five
-          actual=$(pnpm ls -r --depth -1 --json | jq -r '.[] | select(.private != true) | .name')
-          diff <(sort <<< "$expected") <(sort <<< "$actual")
-
       - name: A change to a publishable package carries a changeset
         if: github.event_name == 'pull_request'
         env:

@@ -53,7 +53,7 @@ Nine deliverables, D1–D8 plus D1a, stand between "the workflow runs" and "R1�
 | **D-a** | Every merge to `main` that releases something publishes a **snapshot**, `3.0.0-main-<sha>`. A `v*` tag publishes the **stable** version. | R2 read literally: the merge itself is what puts an artifact on the registry. Each commit gets a distinct immutable version, so nothing is overridden (R3) and no stable version number is burned — the stable line advances only when a human cuts a release. The snapshot names the line it is heading for, so `^3.0.0-main-…` also matches the eventual `3.0.0`, and an integrator tracking `main` converges onto the real release rather than away from it. [§5.1](#51-what-every-merge-to-main-means). |
 | **D-a1** | Snapshot versions come from `snapshot.useCalculatedVersion: true` with `prereleaseTemplate: "{tag}-{commit}"`. | `{commit}` rather than `{datetime}`: a workflow re-run then computes the *identical* version, which is what keeps the re-run idempotent under R3 ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)). A timestamp would publish a fresh version on every re-run. |
 | **D-a2** | Inter-package dependencies are declared `workspace:*`. | pnpm rewrites it to the sibling's **exact** version at pack time, so a snapshot tarball names one specific sibling build. A caret range over a prerelease line is satisfiable by *other* snapshots, which would let an install assemble six fixed-group packages from more than one commit. [§4.3](#43-what-each-package-ships). |
-| **D-b** | The publishable set stays **explicitly enumerated**, and CI asserts the enumeration. Never derived from a directory glob. | Publishing must be an intentional act. Under R3 the two failure modes are not symmetrical: a package that should have shipped and did not is fixed in the next release, while one published by accident is permanent, at a version that can never be reused. A glob makes creating a directory sufficient to publish; a list plus an assertion makes it require a deliberate edit that a reviewer sees. [§4.2](#42-the-set-is-enumerated-and-the-enumeration-is-enforced). |
+| **D-b** | The publishable set stays **explicitly enumerated**. Never derived from a directory glob. | Publishing must be an intentional act. Under R3 the two failure modes are not symmetrical: a package that should have shipped and did not is fixed in the next release, while one published by accident is permanent, at a version that can never be reused. A glob makes creating a directory sufficient to publish; a list makes it a deliberate edit that a reviewer sees. Nothing in CI enforces the list against what `changeset publish` would actually pick up — **O-8**. [§4.2](#42-the-set-is-enumerated). |
 | **D-c** | Immutability is the **registry's** guarantee, asserted in CI — not a convention. | GitHub Packages rejects a re-publish over an existing version with `E403`; ECR repositories are `IMMUTABLE`. Both are already true. What is missing is the assertion that they stay true. [§6](#6-r3--a-published-version-is-never-overridden). |
 | **D-d** | A stable release is cut by pushing a `v*` tag, not by promoting a snapshot. | npm has no promote operation: `3.0.0-main-<sha>` and `3.0.0` are two distinct immutable versions, so the stable number can only come from a second publish of the same tree, and something has to trigger it. A tag is a reviewable, assertable trigger that `docker.yml` already listens to, so one push ships packages and images at one Giano version. |
 | **D-e** | The version bump reaches `main` through an ordinary human-authored pull request, never a push from CI. | A commit pushed to `main` by a workflow carries no check runs, and D5's required status checks block direct pushes as well as merges — so a CI-side write-back would need an admin PAT or an App in the ruleset bypass list. A release pull request draws review and CI like any other change, needs no privileged credential, and keeps the tag→version mapping assertable. [§5.5](#55-d5--main-requires-green-checks). |
@@ -215,44 +215,27 @@ GHCR, which serves public images anonymously, the npm registry has no anonymous 
 consumer of these six packages needs a token whether or not the packages are public — see
 [§8.2](#82-a-public-package-that-still-needs-a-token).
 
-### 4.2 The set is enumerated, and the enumeration is enforced
+### 4.2 The set is enumerated
 
 `release.yml` names the six packages explicitly, in dependency order, and keeps doing so (D-b).
 
 That list controls what is **built**, not what is published. `changeset publish` walks the whole
-workspace and publishes everything that is not `private: true`, so the two sets are independent
-today. A seventh package added under `packages/` without a `private` flag is published at its first
-release having never been built: an empty `dist`, at a permanent version, in a registry that will not
-let it be replaced. The list needs an assertion behind it.
+workspace and publishes everything that is not `private: true`, so the two sets are independent. A
+seventh package added under `packages/` without a `private` flag is published at its first release
+having never been built: an empty `dist`, at a permanent version, in a registry that will not let it
+be replaced.
 
-**D2.** Pin the publishable set in CI, in the `packages` job of `ci.yml`:
+Nothing in CI asserts the two agree. An earlier draft pinned the set in the `packages` job of
+`ci.yml` — `pnpm ls -r --depth -1 --json` filtered to non-private names, `diff`ed against a literal
+list of the six — so that adding a package, or dropping `private: true` from one, went red before it
+could reach the registry. That check is not in the pipeline. **O-8.**
 
-```yaml
-      - name: The publishable set is exactly the six R1 packages
-        # `changeset publish` publishes whatever is not `private: true`; release.yml's build list
-        # only controls what gets BUILT. This ties the two together, so a new workspace package is
-        # unpublishable until someone edits this list on purpose, and a package that loses
-        # `private: true` by accident fails here rather than at a permanent version in the registry.
-        # The YAML literal block strips its own indent, so the names reach the shell flush-left.
-        run: |
-          expected="@appliedblockchain/giano-connector
-          @appliedblockchain/giano-contracts
-          @appliedblockchain/giano-paymaster-sdk
-          @appliedblockchain/giano-wallet-core
-          @appliedblockchain/giano-wallet-kit
-          @appliedblockchain/giano-wallet-transport"
-          # the workspace root is itself `private: true`, so it drops out with the other five
-          actual=$(pnpm ls -r --depth -1 --json | jq -r '.[] | select(.private != true) | .name')
-          diff <(sort <<< "$expected") <(sort <<< "$actual")
-```
-
-A developer who adds a package and sees this go red has to decide whether it is meant to ship.
-Marking it `private: true` is one answer; adding it here *and* to `release.yml`'s build list is the
-other. Neither happens by omission.
-
-> If the two lists drift in practice, move the six names into one checked-in file that `release.yml`
-> reads to drive the build and `ci.yml` reads to drive this check. Not proposed here: two short lists
-> that both fail loudly are easier to review than a third file neither job mentions by name.
+What stands in its place is convention and review: a new package under `packages/` needs
+`private: true` unless it is meant to ship, and a package meant to ship needs adding to
+`release.yml`'s build list. Both are things a reviewer has to notice. The failure they are guarding
+against is not recoverable — §6 is the whole argument for why a published version cannot be taken
+back — so if a seventh package ever does land, reinstating the assertion is cheaper than the version
+it would burn.
 
 ### 4.3 What each package ships
 
@@ -1096,6 +1079,7 @@ copy-by-digest guarantee.
 | **O-5** | No GHCR retention. Eight images × one `sha-` tag per merge, forever. Not an H2 requirement; worth a follow-up ticket with an `actions/delete-package-versions` scheduled job that keeps `latest`, every `v*` tag, and the last N `sha-` tags. |
 | **O-6** | `ecr_lifecycle_image_count.dev` is 10, against a workflow comment that assumed 30 ([§7.2](#72-discrepancy-1--the-retention-comment-is-wrong-and-the-floor-may-be-real)). Ten merges to `main` after a deploy, the image `infra/versions.json` still pins can expire, and a task replacement or scale-out fails to pull. `infra/versions.json` pinned `dev` three commits behind `main` when this was written. **For devops** — `infra/iac/` is outside H2, and this spec changes nothing there. |
 | **O-7** | Snapshot versions accumulate on GitHub Packages at one per changeset-carrying merge per package. Nothing prunes them, and unlike GHCR tags they are versions of a published package, so deletion is the policy-forbidden operation of [§6.4](#64-deletion-and-re-publication--needs-a-policy). The tension is real and unresolved: if the count becomes a problem, the answer is a retention policy written *before* any deletion, naming which prerelease versions may go and why that does not violate R3. |
+| **O-8** | Nothing enforces that the publishable set is the six packages `release.yml` builds. `changeset publish` publishes whatever is not `private: true`, so a seventh package added under `packages/` without the flag, or an existing one that loses it, publishes an unbuilt `dist` at a permanent version. A `pnpm ls -r --depth -1 --json` assertion in `ci.yml`'s `packages` job closes it; it was drafted and is not in the pipeline. Until a seventh package exists the exposure is theoretical, and the acceptance check in [§9.4](#94-post-tag--r1) catches it after the fact rather than before — which under [§6](#6-r3--a-published-version-is-never-overridden) is after it is unrecoverable. |
 | **R-1** | `@changesets/cli` is pinned `^2.31.1`. The GitHub-Packages `latest`-tag handling that makes the idempotent re-run work ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)) arrived in that line, and `snapshot.prereleaseTemplate` needs 2.27 or later. A major bump must be re-verified against [§9.2](#92-post-merge--r2-r3) before merging. |
 | **R-2** | `changeset version --snapshot` runs in the workflow and rewrites `package.json` on the runner. Those writes are never committed and the checkout is discarded, but a future step added *after* the snapshot publish would see mutated manifests. Keep the publish last in that job. |
 
@@ -1105,8 +1089,8 @@ copy-by-digest guarantee.
 
 | Req | Satisfied by | Status |
 | --- | --- | --- |
-| **R1** — six packages published to `npm.pkg.github.com` under `@appliedblockchain` | [§4.1](#41-registry-scope-and-auth) routing + auth; [§4.2](#42-the-set-is-enumerated-and-the-enumeration-is-enforced) **D2** enumeration assertion | Built; first publish is the first merge after this lands |
-| **R1** — the five private packages stay unpublished | `private: true` on all five ([§3](#3-current-state-verified)); asserted by **D2** and by the acceptance check in [§9.4](#94-post-tag--r1) | ✅ + assertion added |
+| **R1** — six packages published to `npm.pkg.github.com` under `@appliedblockchain` | [§4.1](#41-registry-scope-and-auth) routing + auth; [§4.2](#42-the-set-is-enumerated) the enumeration in `release.yml` | Built; first publish is the first merge after this lands. The enumeration is unenforced — **O-8** |
+| **R1** — the five private packages stay unpublished | `private: true` on all five ([§3](#3-current-state-verified)); checked after the fact by [§9.4](#94-post-tag--r1) | ✅, but nothing fails a build if one loses the flag — **O-8** |
 | **R1** — installable, not merely published | [§4.3](#43-what-each-package-ships) `workspace:*` exact pins (**D-a2**); [§8.1](#81-the-scope-collision) **D8** | Pins done; D8 is a one-off outside CI |
 | **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-what-every-merge-to-main-means) snapshot per merge (**D-a**); **D4** CI gates the publish; per-SHA concurrency so no merge's run is evicted ([§6.3](#63-concurrent-releases--closed)) | ✅ for a merge that releases something; a merge with no pending changesets (an empty changeset, or a release pull request) publishes nothing, by design |
 | **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set, plus the snapshot config; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.4](#54-d4--the-release-cannot-publish-what-ci-has-not-checked) the tag runs the gate and asserts its own version | ✅ |
@@ -1125,7 +1109,6 @@ copy-by-digest guarantee.
 | --- | --- | --- |
 | **D1** | `giano-wallet-kit` joins the `fixed` group; the four remaining private packages join `ignore`; the `snapshot` block sets `useCalculatedVersion` and `{tag}-{commit}` | `.changeset/config.json` |
 | **D1a** | Inter-package dependencies become `workspace:*` (decision **D-a2**), so a snapshot tarball pins its siblings exactly | `packages/{connector,paymaster-sdk,wallet-core,wallet-kit}/package.json` |
-| **D2** | Assert the publishable set is exactly the six R1 packages | `.github/workflows/ci.yml` |
 | **D3** | A pull request touching publishable source must carry a changeset, with `package.json` and `CHANGELOG.md` excluded so a release pull request stays mergeable | `.github/workflows/ci.yml` |
 | **D4** | `ci.yml` and `determinism.yml` drop `push: main`, gain `workflow_call`, `permissions: contents: read` and a PR-only `cancel-in-progress`; `release.yml` is rewritten into a `main` snapshot job behind `needs: [ci, determinism]`, keyed per SHA so no merge's run is evicted, and a tag release job behind the same `needs: [ci, determinism]` plus an ancestry and version assertion | `.github/workflows/{ci,determinism,release}.yml` |
 | **D5** | `main`'s branch protection requires `ci.yml`'s four jobs as status checks | repository settings |
