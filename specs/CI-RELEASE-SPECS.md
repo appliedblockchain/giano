@@ -45,7 +45,9 @@ publishing waited on that pull request being merged, and it never was. H2 keeps 
 what was broken behind it: the publish is gated on CI, the fixed group is complete, and the version
 pull request's merge is the release.
 
-The deliverables D1–D8 plus D1a stand between "the workflow runs" and "R1–R3 hold".
+Seven deliverables — D1, D1a, D3, D4, D6, D7, D8 — stand between "the workflow runs" and
+"R1–R3 hold". D2 and D5 were specified and then dropped; [§4.2](#42-the-set-is-enumerated) and
+[§5.5](#55-d5--dropped) record what each would have covered and what stands in its place.
 
 ### 1.2 Decisions taken in this spec
 
@@ -56,8 +58,8 @@ The deliverables D1–D8 plus D1a stand between "the workflow runs" and "R1–R3
 | **D-b** | The publishable set stays **explicitly enumerated**. Never derived from a directory glob. | Publishing must be an intentional act. Under R3 the two failure modes are not symmetrical: a package that should have shipped and did not is fixed in the next release, while one published by accident is permanent, at a version that can never be reused. A glob makes creating a directory sufficient to publish; a list makes it a deliberate edit that a reviewer sees. Nothing in CI enforces the list against what `changeset publish` would actually pick up — **O-8**. [§4.2](#42-the-set-is-enumerated). |
 | **D-c** | Immutability is the **registry's** guarantee, asserted in CI — not a convention. | GitHub Packages rejects a re-publish over an existing version with `E403`; ECR repositories are `IMMUTABLE`. Both are already true. What is missing is the assertion that they stay true. [§6](#6-r3--a-published-version-is-never-overridden). |
 | **D-d** | There is one publishing path and one version line. No prereleases, no `main` dist-tag, nothing installable between releases. | A second line is a second thing to keep correct: its own version scheme, its own dist-tag, its own retention question under R3 (nothing may be deleted, so every published prerelease is permanent). Nobody outside the repository consumes `main` today. If that changes, `changeset version --snapshot` is a few lines in the release job — but it is a decision to take then, with a consumer to design for. |
-| **D-e** | The version bump reaches `main` through a pull request, opened and kept up to date by `changesets/action`, never a push straight to `main`. | The stable number has to be written back or the next release recomputes it and collides. A pull request makes that write-back reviewable and leaves the merge commit that publishes it. Authored with `GITHUB_TOKEN`, so its branch gets no CI run and required checks on `main` are off the table — see D5. [§5.1](#51-which-merge-publishes). |
-| **D-f** | There is no tag trigger. `v3.0.0` is pushed by the publish job after `changeset publish` succeeds, and `docker.yml` is dispatched at it. | A tag is a pointer at an arbitrary commit, so a tag trigger is an entry point that has to be defended — ancestry, version match, a second gate run. Pushing the tag *after* publishing makes it a record of what shipped rather than the instruction to ship. A tag pushed with `GITHUB_TOKEN` starts no workflow, which is why `docker.yml` is dispatched; `workflow_dispatch` is the documented exception. [§5.1](#51-which-merge-publishes). |
+| **D-e** | The version bump reaches `main` through a pull request, opened and kept up to date by `changesets/action`, never a push straight to `main`. | The stable number has to be written back or the next release recomputes it and collides. A pull request makes that write-back reviewable and leaves the merge commit that publishes it. Authored with `GITHUB_TOKEN`, so its branch gets no CI run and required checks on `main` are off the table ([§5.5](#55-d5--dropped)). [§5.1](#51-which-merge-publishes). |
+| **D-f** | `release.yml` has no tag trigger. `v3.0.0` is pushed by the publish job after `changeset publish` succeeds, and `docker.yml` is dispatched at it. | A tag is a pointer at an arbitrary commit, so a tag trigger is an entry point that has to be defended — ancestry, version match, a second gate run. Pushing the tag *after* publishing makes it a record of what shipped rather than the instruction to ship. A tag pushed with `GITHUB_TOKEN` starts no workflow, which is why `docker.yml` is dispatched; `workflow_dispatch` is the documented exception. [§5.1](#51-which-merge-publishes). |
 
 ### 1.3 Out of scope
 
@@ -640,13 +642,14 @@ can be `pending` in the concurrency group. When a new job or workflow run is que
 `pending` job or workflow run in the same group is canceled and replaced." So a group holds one run
 in flight and one waiting, and a third arrival evicts the waiting one.
 
-Keyed on the ref alone, every merge to `main` shares a group, and a burst of three merges silently
-drops the middle one. That is not the harmless loss it first looks like. A `push`-triggered run is
-pinned to the SHA of *its own* push event, not to whatever the tip is when it starts, so the dropped
-run was the only thing that would ever have published `3.0.0-main-<that sha>`. Re-running it later
-is possible; noticing that it needs re-running is not, because a cancelled-as-superseded run reads
-like ordinary concurrency housekeeping. R2 says every merge publishes, and this is a path where one
-quietly does not.
+Keyed on the ref alone, every merge to `main` shares one group, and a burst of three merges silently
+drops the middle one. Usually that costs nothing — most merges publish nothing. The exception is the
+merge that matters. The version pull request's merge queues like any other run, and two ordinary
+merges landing behind it evict it before it starts: the release that was supposed to happen simply
+does not, and the run that would have done it is marked cancelled, which reads like ordinary
+concurrency housekeeping rather than a missed release. A `push`-triggered run is pinned to the SHA of
+its own push event, so no later run stands in for it — the changesets are consumed on `main`, the
+version pull request closes, and nothing is on the registry.
 
 The SHA therefore goes in the key:
 
@@ -657,7 +660,7 @@ concurrency: release-${{ github.ref }}-${{ github.sha }}
 Two different merges are now never in the same group, so neither waits and neither is evicted. Runs
 that do still share a group are runs at the same ref *and* the same SHA — re-runs — where the string
 form's `cancel-in-progress: false` still protects a publish in flight, and where evicting a third
-pending re-run costs nothing: it would recompute a version that is already on the registry and
+pending re-run costs nothing: it would attempt a version that is already on the registry and
 Changesets would skip it ([§6.1](#61-a-workflow-re-run-at-the-same-commit--closed)).
 
 What this trades away is ordering, and only for the version pull request. Two merges landing close
@@ -831,7 +834,7 @@ The H2 page's version column and the `COMPATIBILITY.md` that `phase-4-version-al
 
 Run in order. Each step is the evidence for the requirement named.
 
-### 9.1 Pre-merge, on the branch carrying D1–D4
+### 9.1 Pre-merge, on the branch carrying D1, D1a, D3 and D4
 
 ```fish
 # R1 — the publishable set is exactly the six, and the fixed group matches it
@@ -902,7 +905,7 @@ re-run green with each package reported as skipped, and no new version on the re
 ### 9.4 Post-release — R1
 
 ```fish
-# Six packages resolve on GitHub Packages at the tagged version
+# Six packages resolve on GitHub Packages at the released version
 for p in giano-contracts giano-wallet-transport giano-wallet-core \
          giano-connector giano-wallet-kit giano-paymaster-sdk
     printf '%s ' $p
@@ -970,8 +973,8 @@ copy-by-digest guarantee.
 | **R1** — installable, not merely published | [§4.3](#43-what-each-package-ships) `workspace:*` exact pins (**D-a2**); [§8.1](#81-the-scope-collision) **D8** | Pins done; D8 is a one-off outside CI |
 | **R2** — every merge to `main` publishes, no manual publish step | [§5.1](#51-which-merge-publishes) the version pull request's merge publishes (**D-a**); **D4** CI gates it; per-SHA concurrency so that run cannot be evicted ([§6.3](#63-concurrent-releases--closed)) | ✅ under D-a's reading: the release is a merge, and no human runs a publish. Merges of ordinary work publish nothing |
 | **R2** — *at the correct version* | [§5.2](#52-d1--one-fixed-group-identical-to-the-publishable-set) **D1** fixed group = publishable set; [§5.3](#53-d3--a-merge-that-should-publish-but-carries-no-changeset-fails) **D3** changeset gate; [§5.6](#56-provenance-of-the-published-version) the version is what the pull request committed, not something CI computes | ✅ |
-| **R3** — no override by re-run | [§6.1](#61-a-workflow-re-run-at-the-same-commit--closed) Changesets skip-if-published, plus `{commit}` making a re-run recompute the same version | ✅ |
-| **R3** — no override by rebuilt artifact | [§6.2](#62-a-rebuilt-artifact-at-the-same-version--closed-by-the-registry) registry rejection; [§6.3](#63-concurrent-releases--closed) no cancel-in-progress, and concurrent merges publish distinct versions | ✅ |
+| **R3** — no override by re-run | [§6.1](#61-a-workflow-re-run-at-the-same-commit--closed) Changesets skip-if-published; the version comes from the checked-out `package.json`, so a re-run attempts the identical one | ✅ |
+| **R3** — no override by rebuilt artifact | [§6.2](#62-a-rebuilt-artifact-at-the-same-version--closed-by-the-registry) registry rejection; [§6.3](#63-concurrent-releases--closed) no cancel-in-progress, and only one commit ever publishes | ✅ |
 | **R3** — no override at all | [§6.4](#64-deletion-and-re-publication--needs-a-policy) **D6** deletion policy + package admin restriction | Policy written; settings are a follow-up |
 | **R3** — containers | ECR `IMMUTABLE` + the `describe-images` skip in `docker.yml` | ✅ |
 | **R4** — six images to ECR, by the stated repositories | [§7.1](#71-verified) — `docker.yml` `merge` job, copy-by-digest, full-SHA tag, `main`-only | ✅ built and verified |

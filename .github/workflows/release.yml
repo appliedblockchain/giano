@@ -85,6 +85,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v=v$(jq -r .version packages/contracts/package.json)
+          # A re-run at this commit republishes nothing, but it re-enters this step if the action
+          # still reports `published`. `git tag` on an existing name fails, which would turn an
+          # idempotent re-run red — so the remote is what decides whether there is work here.
+          if git ls-remote --exit-code --tags origin "$v" >/dev/null 2>&1; then
+            echo "$v already exists — nothing to tag"
+            exit 0
+          fi
           git tag "$v"
           git push origin "$v"
           gh workflow run docker.yml --ref "$v"

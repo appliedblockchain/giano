@@ -223,7 +223,7 @@ after the merge, and nothing publishes that CI and Determinism have not passed a
 
 - A pull request that changes publishable source under `packages/` must carry a changeset; CI fails
   it otherwise. Add one with `pnpm changeset`. A pull request touching only `package.json` and
-  `CHANGELOG.md` there — a release bump — is exempt.
+  `CHANGELOG.md` there — which is what the version pull request is — is exempt.
 - For a change that should release nothing — a comment, a test, a build tweak — use
   `pnpm changeset --empty`.
 - A single changeset may not name both a publishable package and an ignored one (the four services
