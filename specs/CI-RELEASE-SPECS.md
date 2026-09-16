@@ -529,7 +529,7 @@ costs a second, and is three separate claims:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          n=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+          n=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
                 -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f status=success \
                 --jq .total_count)
           [ "${n:-0}" -gt 0 ] \

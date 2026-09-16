@@ -93,10 +93,13 @@ jobs:
         # with ci.yml. Without it the tag path only assumes the gate ran: required checks on main
         # are still off (§5.5), so a red or still-running gate does not keep a commit off main, and
         # a tag on that commit would publish six immutable versions over it.
+        #
+        # --method GET is not optional: any -f field makes `gh api` default to POST, and there is no
+        # POST on this endpoint, so the step would 404 before it could read total_count.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          n=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+          n=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
                 -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f status=success \
                 --jq .total_count)
           [ "${n:-0}" -gt 0 ] \
