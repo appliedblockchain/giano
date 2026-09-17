@@ -40,6 +40,8 @@ export const gianoAddresses: Record<number, GianoDeployment> = {
     entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
     factory: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050',
     implementation: '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56',
+    sponsorshipPaymaster: '0xf98b56de62ce88cEb70A9155582248cDBf2D0718',
+    sponsorshipPaymasterImplementation: '0xFc6e7a0b9b5E9E27C8E2caf8961A13FD16ebd818',
   },
 };
 
