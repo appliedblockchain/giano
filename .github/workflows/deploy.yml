@@ -123,7 +123,11 @@ jobs:
                 {service: "wallet-web",       repo: "wallet-web",       init_container: ""},
                 {service: "custom-example",   repo: "example",          init_container: ""},
                 {service: "paymaster-admin",  repo: "paymaster-admin",  init_container: ""},
-                {service: "bundler",          repo: "bundler",          init_container: ""}
+                # One bundler per chain (infra/iac/ecs_services.tf local.bundlers) — same
+                # image, different ALTO_RPC_URL. Both rows share repo "bundler": one ECR
+                # repository serves both services (§14.7).
+                {service: "bundler-base-sepolia", repo: "bundler",      init_container: ""},
+                {service: "bundler-eth-sepolia",  repo: "bundler",      init_container: ""}
               ]
               + (if $byo then [
                 # custom-example and custom-example-byoui are ONE image run
