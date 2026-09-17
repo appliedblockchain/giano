@@ -66,9 +66,10 @@ resource "aws_vpc_security_group_ingress_rule" "tasks-from-alb" {
   tags                         = { Name = "${local.name_prefix}-tasks-from-alb" }
 }
 
-# The SPA origins (wallet-web, wallet-byo, custom-example, paymaster-admin) serve /api from an
-# nginx proxy_pass to wallet-api over service discovery, so task-to-task 8080 has to be open.
-# Without it the SYN is dropped and every /api call hangs until proxy_connect_timeout.
+# The SPA origins serve /api by proxying to wallet-api over service discovery — wallet-web,
+# custom-example and paymaster-admin via nginx proxy_pass, wallet-byo via its own minimal Node
+# reverse proxy (e2e/wallet-byo/serve.mjs) — so task-to-task 8080 has to be open. Without it
+# the SYN is dropped and every /api call hangs until the proxy's own connect timeout. R31.
 resource "aws_vpc_security_group_ingress_rule" "tasks-from-tasks" {
   security_group_id            = aws_security_group.tasks-sg.id
   referenced_security_group_id = aws_security_group.tasks-sg.id
