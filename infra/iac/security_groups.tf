@@ -14,7 +14,7 @@ resource "aws_security_group" "alb-sg" {
 
 resource "aws_security_group" "tasks-sg" {
   name        = "${local.name_prefix}-tasks-sg"
-  description = "every ECS task - 8080 from the ALB only"
+  description = "every ECS task - 8080 from the ALB and from other tasks"
   vpc_id      = aws_vpc.vpc.id
 
   tags = { Name = "${local.name_prefix}-tasks-sg" }
@@ -64,6 +64,18 @@ resource "aws_vpc_security_group_ingress_rule" "tasks-from-alb" {
   to_port                      = 8080
   ip_protocol                  = "tcp"
   tags                         = { Name = "${local.name_prefix}-tasks-from-alb" }
+}
+
+# The SPA origins (wallet-web, wallet-byo, custom-example, paymaster-admin) serve /api from an
+# nginx proxy_pass to wallet-api over service discovery, so task-to-task 8080 has to be open.
+# Without it the SYN is dropped and every /api call hangs until proxy_connect_timeout.
+resource "aws_vpc_security_group_ingress_rule" "tasks-from-tasks" {
+  security_group_id            = aws_security_group.tasks-sg.id
+  referenced_security_group_id = aws_security_group.tasks-sg.id
+  from_port                    = 8080
+  to_port                      = 8080
+  ip_protocol                  = "tcp"
+  tags                         = { Name = "${local.name_prefix}-tasks-from-tasks" }
 }
 
 resource "aws_vpc_security_group_egress_rule" "tasks-egress" {
