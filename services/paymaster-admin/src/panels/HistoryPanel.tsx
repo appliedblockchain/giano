@@ -1,19 +1,23 @@
 import type { BlockRange, GianoPaymasterClient, SponsorshipRecord } from '@appliedblockchain/giano-paymaster-sdk';
 import { Badge, Button, HStack, Table, Text } from '@chakra-ui/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LuChevronsDown, LuRefreshCw } from 'react-icons/lu';
 import { Copyable, SectionCard, notifyError } from '../components/ui';
 import { eth, exactEth } from '../lib/format';
 
 /**
- * Rows rendered per window read.
+ * Rows rendered from each window read.
  *
- * A budget rather than a fixed ceiling, because the ceiling made the "look further back" button do
- * nothing visible: older settlements land at the bottom of a newest-first table, so on a busy
- * deployment a fixed hundred rows were all newer than anything a second window could add. Asking
- * for another window is asking to see more, so it raises the budget too.
+ * Per window rather than across all of them, because a shared budget is one a busy window can spend
+ * by itself: settlements are shown newest first, so the newest window's rows come first, and if it
+ * has more than the budget allows then "look further back" loads an older window whose rows are all
+ * past the cut. The button would appear to do nothing. Budgeting each window separately means every
+ * window an operator asks for can put rows on the table.
  */
 const ROWS_PER_WINDOW = 100;
+
+/** One window's worth of settlements, kept separate so each gets its own share of the table. */
+type Loaded = BlockRange & { records: readonly SponsorshipRecord[] };
 
 /**
  * Settled sponsorships.
@@ -33,25 +37,19 @@ const ROWS_PER_WINDOW = 100;
  * network cost, what Giano charged, and what the contract could not observe at settlement.
  */
 export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
-  const [records, setRecords] = useState<readonly SponsorshipRecord[]>();
-  const [scanned, setScanned] = useState<BlockRange>();
+  /** Newest window first, which is also the order they are rendered in. */
+  const [loaded, setLoaded] = useState<readonly Loaded[]>();
   const [older, setOlder] = useState<BlockRange>();
-  const [windows, setWindows] = useState(1);
   const [loading, setLoading] = useState(false);
-
-  // Accumulated across "look further back", so paging never drops what earlier windows found.
-  const found = useRef<readonly SponsorshipRecord[]>([]);
 
   const read = useCallback(
     async (range: BlockRange | undefined, append: boolean) => {
       setLoading(true);
       try {
-        const page = await client.getSponsorships({ range });
-        found.current = append ? [...page.records, ...found.current] : page.records;
-        setRecords(found.current);
-        setOlder(page.older);
-        setScanned((previous) => (append && previous ? { fromBlock: page.fromBlock, toBlock: previous.toBlock } : page));
-        setWindows((previous) => (append ? previous + 1 : 1));
+        const { fromBlock, toBlock, older: previous, records } = await client.getSponsorships({ range });
+        const window = { fromBlock, toBlock, records };
+        setLoaded((existing) => (append && existing ? [...existing, window] : [window]));
+        setOlder(previous);
       } catch (error) {
         notifyError('Could not load sponsorship history', error);
       } finally {
@@ -61,17 +59,17 @@ export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
     [client],
   );
 
-  const reload = useCallback(() => {
-    found.current = [];
-    return read(undefined, false);
-  }, [read]);
+  const reload = useCallback(() => read(undefined, false), [read]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  const shown = records ? [...records].reverse().slice(0, ROWS_PER_WINDOW * windows) : [];
-  const blocks = scanned ? `blocks ${scanned.fromBlock}–${scanned.toBlock}` : '';
+  // Each window contributes its own newest rows, so asking for an older one always adds to the
+  // table. Within a window the SDK returns settlements newest last, hence the reverse.
+  const shown = useMemo(() => (loaded ?? []).flatMap((window) => [...window.records].reverse().slice(0, ROWS_PER_WINDOW)), [loaded]);
+  const total = (loaded ?? []).reduce((sum, window) => sum + window.records.length, 0);
+  const blocks = loaded?.length ? `blocks ${loaded[loaded.length - 1].fromBlock}–${loaded[0].toBlock}` : '';
 
   return (
     <SectionCard
@@ -90,8 +88,8 @@ export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
         </HStack>
       }
     >
-      {!records && loading && <Text color="fg.muted">Reading logs…</Text>}
-      {records && records.length === 0 && (
+      {!loaded && loading && <Text color="fg.muted">Reading logs…</Text>}
+      {loaded && total === 0 && (
         <Text color="fg.muted">
           Nothing settled in {blocks}. A settlement older than that is still on chain — "Look further back" reads the preceding window. To make a new one,
           the sample dApp's gasless panel is the quickest way.
@@ -147,9 +145,9 @@ export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
           </Table.Root>
         </Table.ScrollArea>
       )}
-      {records && (
+      {loaded && (
         <Text fontSize="xs" color="fg.muted" mt="2">
-          {records.length > shown.length ? `Showing the most recent ${shown.length} of ${records.length} in ${blocks}. ` : `Read ${blocks}. `}
+          {total > shown.length ? `Showing ${shown.length} of ${total} settlements in ${blocks}. ` : `Read ${blocks}. `}
           {older
             ? 'This is a window of the chain — older settlements exist below it and "Look further back" reads the preceding window.'
             : 'That reaches the first block, so this is every settlement.'}
