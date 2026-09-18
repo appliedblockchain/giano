@@ -1,6 +1,6 @@
 {
   "name": "@appliedblockchain/giano-contracts",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Giano smart wallet contracts: ABIs, deployed address registry and Solidity sources",
   "license": "MIT",
   "type": "commonjs",
