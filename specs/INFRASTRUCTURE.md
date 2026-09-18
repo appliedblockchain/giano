@@ -3248,9 +3248,9 @@ ten-thousandth. That is the part this property is really defending: when `wallet
 when the deployment has no `wallet-api` at all, an operator can still read every figure and still
 pause, fund, withdraw and re-role the paymaster.
 
-Two surfaces are not view calls, because the contract does not store what they show:
+Two pieces of information are not view calls, because the contract does not store them:
 
-| Surface | Why it needs logs |
+| | Why it needs logs |
 |---|---|
 | Tenant **slug** | emitted by `TenantRegistered` and deliberately not stored — [PAYMASTER-SPECS O1](PAYMASTER-SPECS.md), §3.4 |
 | **Sponsorship history** | the contract keeps a running balance, not a record per settlement — PAYMASTER-SPECS §3.7 |
@@ -3273,20 +3273,25 @@ walking from its deployment block in 9,000-block windows at four concurrent requ
 Sustaining that request rate against a shared endpoint invites throttling well before the arithmetic
 alone becomes unusable.
 
-**So both surfaces read one window, anchored at the head, and page backwards on request.** The
-window is a single `eth_getLogs` — whatever span the node will serve, discovered by halving rather
-than configured — which makes the cost constant in chain age forever and adds no configuration that
-can be set wrong. What it buys is bounded by construction, and the console says so on screen rather
-than presenting a window as if it were everything:
+The console's answer differs for the two, because what they are worth differs:
 
-- **History** shows the most recent window and offers an explicit step further back. The panel
-  renders a hundred rows; it has never had a use for the deep tail.
-- **Slugs** are filled from the same window and **remembered** across refreshes and reloads, keyed
-  on chain id and paymaster address. In steady state this is complete without any backfill: the
-  console polls faster than a window is wide, so it observes every `TenantRegistered` as it lands.
-  A tenant registered before this browser first opened the console shows as its `bytes16` id until
-  the operator pages back far enough to find it. The id is the tenant's real on-chain identity, so
-  nothing is unusable in that state — it is a missing label, not a missing row.
+- **The slug is not shown at all.** A label is a convenience; the tenant's `bytes16` id is its
+  actual identity, it is the same value as the `tenants.id` UUID the backend keys on (O1), and
+  every view call already carries it. Rendering the label would mean a log read on every poll — and
+  a *conditional* one, since a registration old enough to fall outside the window cannot be
+  recovered at all on a node that has pruned it. That buys a nicer column at the cost of a read
+  that gets slower with chain age and sometimes silently returns nothing. The console still
+  **writes** the slug when registering a tenant, because that event is what lets an auditor
+  reconcile the on-chain record against the backend's tenant table; reading it back is a job for
+  `giano-paymaster tenant <id>`, which can afford to page backwards with the id as an indexed
+  filter, or for a block explorer.
+- **History reads one window, anchored at the head, and pages backwards on request.** A settlement
+  record exists nowhere else, so there is nothing to fall back on — but a window is enough, because
+  what an operator wants from this panel is what happened recently. The window is a single
+  `eth_getLogs` of whatever span the node will serve, discovered by halving rather than configured,
+  which makes the cost constant in chain age and adds no setting that can be wrong. The panel names
+  the blocks it read and offers an explicit step further back, rather than presenting a window as
+  if it were everything.
 
 The property that justifies reading logs here at all survives intact. PAYMASTER-SPECS §5.6 wants a
 tenant able to *reproduce* Giano's figures rather than trust them, and reproducing a figure is a

@@ -17,10 +17,7 @@ export function App() {
   const [deployment, setDeployment] = useState(() => initialDeployment(deployments));
   const [wallet, setWallet] = useState<ConnectedWallet>();
   const [connecting, setConnecting] = useState(false);
-  const { client, overview, health, myRoles, rosterOnChain, slugsIncomplete, findOlderSlugs, loading, error, lastUpdated, refresh } = usePaymaster(
-    deployment,
-    wallet,
-  );
+  const { client, overview, health, myRoles, rosterOnChain, loading, error, lastUpdated, refresh } = usePaymaster(deployment, wallet);
 
   /**
    * Switching environments drops the connected wallet.
@@ -200,8 +197,6 @@ export function App() {
                 myRoles={myRoles}
                 connected={wallet !== undefined}
                 rosterOnChain={rosterOnChain}
-                slugsIncomplete={slugsIncomplete}
-                findOlderSlugs={findOlderSlugs}
                 refresh={refresh}
               />
             </Tabs.Content>

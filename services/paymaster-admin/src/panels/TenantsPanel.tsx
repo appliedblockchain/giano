@@ -1,7 +1,7 @@
 import type { GianoPaymasterClient, PaymasterRoleName, TenantView } from '@appliedblockchain/giano-paymaster-sdk';
 import { Alert, Button, Dialog, Field, HStack, Input, Portal, Stack, Table, Text } from '@chakra-ui/react';
 import { useState } from 'react';
-import { LuChevronsDown, LuPlus, LuWallet } from 'react-icons/lu';
+import { LuPlus, LuWallet } from 'react-icons/lu';
 import { parseEther, type Address } from 'viem';
 import { Copyable, SectionCard, TenantStatusBadge } from '../components/ui';
 import { useWrite } from '../hooks/useWrite';
@@ -14,10 +14,6 @@ type Props = {
   connected: boolean;
   /** False when the roster came from registration logs rather than the on-chain set. */
   rosterOnChain: boolean;
-  /** True while a tenant on screen has no slug, because its registration predates the window read. */
-  slugsIncomplete: boolean;
-  /** Reads one more window of registration logs, older than anything read so far. */
-  findOlderSlugs: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -29,17 +25,19 @@ type Props = {
  * proxy that predates the roster the SDK falls back to a log read, which is a weaker guarantee and
  * says so on screen rather than quietly presenting a possibly-incomplete list as complete.
  *
- * The **slug** is the one column not covered by that. It is emitted by `TenantRegistered` and never
- * stored, so it comes from a window of logs (INFRASTRUCTURE §14.6) and a tenant registered before
- * that window shows its id instead. The rows themselves are unaffected — every figure on them is a
- * view call — so this is a missing label on a complete list, which is why it is a hint under the
- * table rather than a warning over it.
+ * A tenant is identified here by the id the contract itself uses, and by nothing else. The slug
+ * captured at registration is emitted rather than stored, so displaying it would mean a log read on
+ * every poll to recover a label for rows that already carry their real identity — and one that a
+ * node may no longer serve. It is still written on registration below, because that event is what
+ * lets someone reconcile the on-chain record against the backend's tenant table (PAYMASTER-SPECS
+ * O1); reading it back is a job for `giano-paymaster tenant <id>` or an explorer, not for a console
+ * refreshing every fifteen seconds.
  *
  * Funding is offered to everyone — anyone may fund a tenant — while the administrative actions are
  * gated on TENANT_ADMIN_ROLE, and withdrawal is offered to nobody here at all, because only the
  * tenant's own registered address can perform it.
  */
-export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChain, slugsIncomplete, findOlderSlugs, refresh }: Props) {
+export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChain, refresh }: Props) {
   const { run, busy } = useWrite(refresh);
   const canAdminister = myRoles.includes('TENANT_ADMIN_ROLE');
   const canSetFees = myRoles.includes('FEE_ADMIN_ROLE');
@@ -53,7 +51,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
         title={`Tenants (${tenants.length})`}
         subtitle={
           rosterOnChain
-            ? 'Enumerated directly from the chain — the slug comes from the registration event, which is the one field not stored on-chain'
+            ? 'Enumerated directly from the chain, with every figure read from the contract rather than from a cached projection'
             : 'Reconstructed from registration events: this paymaster predates the on-chain roster'
         }
         action={
@@ -98,12 +96,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                 {tenants.map((tenant) => (
                   <Table.Row key={tenant.id}>
                     <Table.Cell>
-                      <Stack gap="0.5">
-                        <Text fontWeight="medium" color={tenant.slug ? undefined : 'fg.muted'}>
-                          {tenant.slug ?? 'unlabelled'}
-                        </Text>
-                        <Copyable value={tenant.uuid} label="Tenant id" />
-                      </Stack>
+                      <Copyable value={tenant.uuid} label="Tenant id" />
                     </Table.Cell>
                     <Table.Cell>
                       <TenantStatusBadge status={tenant.status} />
@@ -142,7 +135,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                             colorPalette={tenant.enabled ? 'orange' : 'green'}
                             disabled={busy}
                             onClick={() =>
-                              void run(`${tenant.enabled ? 'Disable' : 'Enable'} ${tenant.slug ?? tenant.uuid}`, () =>
+                              void run(`${tenant.enabled ? 'Disable' : 'Enable'} ${tenant.uuid}`, () =>
                                 client.setTenantEnabled(tenant.id, !tenant.enabled),
                               )
                             }
@@ -155,7 +148,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                             size="xs"
                             variant="ghost"
                             disabled={busy}
-                            onClick={() => void run(`Clear fee override on ${tenant.slug ?? tenant.uuid}`, () => client.setTenantFee(tenant.id, false, 0n))}
+                            onClick={() => void run(`Clear fee override on ${tenant.uuid}`, () => client.setTenantFee(tenant.id, false, 0n))}
                           >
                             Clear fee
                           </Button>
@@ -167,18 +160,6 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
               </Table.Body>
             </Table.Root>
           </Table.ScrollArea>
-        )}
-
-        {slugsIncomplete && (
-          <HStack fontSize="xs" color="fg.muted" mt="3" gap="2">
-            <Text>
-              A tenant shows as <em>unlabelled</em> when its registration event predates the blocks read so far. Its id is its real on-chain identity,
-              so every figure on the row is exact either way.
-            </Text>
-            <Button size="xs" variant="outline" onClick={() => void findOlderSlugs()} flexShrink="0">
-              <LuChevronsDown /> Look further back
-            </Button>
-          </HStack>
         )}
 
         <Text fontSize="xs" color="fg.muted" mt="3">
@@ -215,7 +196,7 @@ function FundDialog({
       return;
     }
     if (!tenant) return;
-    const done = await run(`Fund ${tenant.slug ?? tenant.uuid}`, () => client.depositFor(tenant.id, wei));
+    const done = await run(`Fund ${tenant.uuid}`, () => client.depositFor(tenant.id, wei));
     if (done) onClose();
   };
 
@@ -226,7 +207,7 @@ function FundDialog({
         <Dialog.Positioner>
           <Dialog.Content>
             <Dialog.Header>
-              <Dialog.Title>Fund {tenant?.slug ?? tenant?.uuid}</Dialog.Title>
+              <Dialog.Title>Fund {tenant?.uuid}</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
               <Stack gap="4">

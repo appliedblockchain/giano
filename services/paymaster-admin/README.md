@@ -89,20 +89,24 @@ chain's first day as on its ten-thousandth, and none of it needs a backend.
 
 Two things are not stored on chain and so cannot be view calls: a tenant's **slug**, which
 `TenantRegistered` emits and the contract deliberately does not keep, and the **sponsorship
-history**, which exists only as `Sponsored` events. Both are read from logs, and hosted RPCs cap the
-span a single `eth_getLogs` may cover — Base Sepolia refuses anything over 10,000 blocks. So both
-read **one window ending at the head** rather than everything since deployment, which would be
-hundreds of requests growing by about five a day.
+history**, which exists only as `Sponsored` events. Hosted RPCs cap the span a single `eth_getLogs`
+may cover — Base Sepolia refuses anything over 10,000 blocks — so reading either from the start of a
+deployment is hundreds of requests, growing by about five a day.
 
-What that means in the console:
+The console answers the two differently:
 
-- **Sponsorships** shows the settlements in the blocks it has read, and says which blocks those are.
-  *Look further back* reads the preceding window and adds to the table.
-- **Tenants** is always the complete roster, because the roster is a view call. A tenant registered
-  before the window shows as *unlabelled* with its id; *Look further back* finds the label. What is
-  found is remembered in `localStorage`, per chain and paymaster, so the walk is paid once per
-  browser — and in steady state it is never paid at all, since the console polls far faster than a
-  window is wide and sees each registration as it lands.
+- **Sponsorships** reads one window ending at the head and says which blocks those are. *Look
+  further back* reads the preceding window and adds to the table. A settlement record exists
+  nowhere else, so a window is the affordable version of a read that has no substitute.
+- **Tenants** shows no slug at all — a tenant is identified by the id the contract uses, which is
+  the same value as its `tenants.id` UUID and which every view call already carries. The panel is
+  therefore entirely view calls: complete, exact, and the same cost on a chain's first day as on its
+  ten-thousandth.
+
+Registering a tenant still **writes** a slug, because that event is what lets an auditor reconcile
+the on-chain record against the backend's tenant table. To read one back, use
+`giano-paymaster tenant <id>` — it pages backwards with the tenant id as an indexed filter, which a
+console refreshing every fifteen seconds cannot afford to do — or a block explorer.
 
 INFRASTRUCTURE §14.6 has the reasoning and the numbers.
 
