@@ -2,6 +2,7 @@ import { gianoPaymasterAbi, getGianoDeployment, iEntryPointAbi } from '@appliedb
 import type { Account, Address, Chain, Hash, Hex, PublicClient, Transport, WalletClient } from 'viem';
 import { SignerRequiredError, PaymasterSdkError, translateContractError } from './errors';
 import { assessHealth } from './health';
+import { DEFAULT_LOG_WINDOW, readWindow, resolveWindow, type BlockRange, type Page } from './log-window';
 import { DEFAULT_ADMIN_ROLE, PAYMASTER_ROLES, PAYMASTER_ROLE_NAMES, roleName, type PaymasterRoleName } from './roles';
 import { toTenantId, toTenantUuid } from './tenant-id';
 import type {
@@ -39,6 +40,27 @@ export type PaymasterClientConfig = {
   publicClient: PaymasterPublicClient;
   /** Omit for a read-only client. Every write throws {@link SignerRequiredError} without it. */
   walletClient?: PaymasterWalletClient;
+  /**
+   * Blocks one log read covers, ending at the head unless the caller names a range.
+   *
+   * Log-backed reads are a *window*, never the whole history — see {@link getSponsorships}. The
+   * default is a little under the 10,000 that the common public endpoints allow; a node with a
+   * tighter cap narrows this on its own at the first refusal, so this is worth setting only to
+   * skip that one discovery round trip.
+   */
+  logWindow?: bigint;
+};
+
+/**
+ * How a caller asks for slugs alongside the roster.
+ *
+ * Convenience only. A caller that needs to know *which blocks* the labels came from — to say so on
+ * screen, or to page back for the ones that predate them — should call {@link
+ * GianoPaymasterClient.getTenantSlugs} itself and merge, since that returns the window and this
+ * cannot.
+ */
+export type TenantListOptions = {
+  withSlugs?: boolean;
 };
 
 /** How many tenants to pull per `getTenants` page. */
@@ -62,11 +84,17 @@ export class GianoPaymasterClient {
   readonly walletClient?: PaymasterWalletClient;
 
   private entryPointAddress?: Address;
+  /**
+   * The span this node has actually served. Starts at the configured window and only ever narrows,
+   * so a provider with a tighter cap is discovered once rather than at every read.
+   */
+  private logWindow: bigint;
 
   constructor(config: PaymasterClientConfig) {
     this.address = config.address;
     this.publicClient = config.publicClient;
     this.walletClient = config.walletClient;
+    this.logWindow = config.logWindow ?? DEFAULT_LOG_WINDOW;
   }
 
   /**
@@ -92,7 +120,7 @@ export class GianoPaymasterClient {
 
   /** A copy of this client bound to a different (or a newly connected) wallet. */
   withWallet(walletClient: PaymasterWalletClient): GianoPaymasterClient {
-    return new GianoPaymasterClient({ address: this.address, publicClient: this.publicClient, walletClient });
+    return new GianoPaymasterClient({ address: this.address, publicClient: this.publicClient, walletClient, logWindow: this.logWindow });
   }
 
   // -------------------------------------------------------------------------------------------
@@ -227,7 +255,7 @@ export class GianoPaymasterClient {
    * roster and an unbounded read eventually exceeds the node's response limit. The paging is an
    * implementation detail — callers get the complete list.
    */
-  async listTenants(options: { withSlugs?: boolean } = {}): Promise<readonly TenantView[]> {
+  async listTenants(options: TenantListOptions = {}): Promise<readonly TenantView[]> {
     const defaultFeeWei = await this.read<bigint>('defaultFeeWei');
 
     let views: TenantView[];
@@ -252,13 +280,23 @@ export class GianoPaymasterClient {
 
     if (!options.withSlugs) return views;
 
-    const slugs = await this.getTenantSlugs();
+    // Slugs come from a window of logs, so some tenants will have none — see {@link getTenantSlugs}.
+    // A view without a slug still carries the tenant's id, which is its real on-chain identity, so
+    // the roster is complete either way and it is the label that is best-effort.
+    const { slugs } = await this.getTenantSlugs();
     return views.map((view) => ({ ...view, slug: slugs.get(view.id) }));
   }
 
-  /** Roster reconstruction for a paymaster predating the on-chain roster. See {@link listTenants}. */
+  /**
+   * Roster reconstruction for a paymaster predating the on-chain roster. See {@link listTenants}.
+   *
+   * This path enumerates from the same windowed log read, so on a legacy proxy the roster it
+   * returns covers that window and not the whole history — which is why {@link hasOnChainRoster}
+   * exists for a caller to surface. Registration logs were never a reliable enumeration anyway: a
+   * node is free to prune history a caller has no way to ask for.
+   */
   private async listTenantsFromLogs(defaultFeeWei: bigint): Promise<TenantView[]> {
-    const ids = [...(await this.getTenantSlugs()).keys()];
+    const ids = [...(await this.getTenantSlugs()).slugs.keys()];
     const records = await Promise.all(ids.map((id) => this.read<Tenant>('getTenant', [id])));
 
     return ids
@@ -268,27 +306,54 @@ export class GianoPaymasterClient {
   }
 
   /**
-   * Tenant slugs, recovered from `TenantRegistered`.
+   * Tenant slugs registered within one window of blocks, and the window that was read.
    *
    * The slug is emitted and deliberately not stored — it exists so the on-chain record can be read
    * against the backend's tenant table without a side channel — so this is the one piece of tenant
    * data that needs a log query rather than a view call.
+   *
+   * Like {@link getSponsorships}, this reads a window rather than all history, and for the same
+   * reason. It matters more here, because a registration happens once and never again: a tenant
+   * registered before the window is simply not in the answer. Two things make that workable —
+   * a caller polling faster than a window is wide observes every registration as it lands, and
+   * `result.older` pages backwards for the ones that predate it.
+   *
+   * `tenantId` filters on the indexed topic, so hunting one known tenant's label is the node
+   * skipping windows rather than the caller downloading and discarding them.
    */
-  async getTenantSlugs(fromBlock: bigint | 'earliest' = 'earliest'): Promise<Map<Hex, string>> {
-    const logs = await this.publicClient.getContractEvents({
-      address: this.address,
-      abi: gianoPaymasterAbi,
-      eventName: 'TenantRegistered',
-      fromBlock,
-      toBlock: 'latest',
-    });
+  async getTenantSlugs(options: { tenantId?: string; range?: Partial<BlockRange> } = {}): Promise<Page & { slugs: Map<Hex, string> }> {
+    const { logs, ...page } = await this.readEvents<{ args: { tenantId?: Hex; slug?: string } }>(
+      'TenantRegistered',
+      options.range,
+      options.tenantId ? { tenantId: toTenantId(options.tenantId) } : undefined,
+    );
 
     const slugs = new Map<Hex, string>();
-    for (const log of logs) {
-      const args = log.args as { tenantId?: Hex; slug?: string };
+    for (const { args } of logs) {
       if (args.tenantId && args.slug !== undefined) slugs.set(args.tenantId, args.slug);
     }
-    return slugs;
+    return { ...page, slugs };
+  }
+
+  /** One event's logs over one window, with the node's real span discovered on refusal. */
+  private readEvents<T>(eventName: string, range: Partial<BlockRange> | undefined, args?: Record<string, unknown>) {
+    return resolveWindow(this.publicClient, range, this.logWindow).then((resolved) =>
+      readWindow<T>(
+        resolved,
+        ({ fromBlock, toBlock }) =>
+          this.publicClient.getContractEvents({
+            address: this.address,
+            abi: gianoPaymasterAbi,
+            eventName,
+            args,
+            fromBlock,
+            toBlock,
+          } as never) as unknown as Promise<readonly T[]>,
+        (narrowed) => {
+          this.logWindow = narrowed;
+        },
+      ),
+    );
   }
 
   // -------------------------------------------------------------------------------------------
@@ -365,12 +430,12 @@ export class GianoPaymasterClient {
    * One call so a dashboard renders a single consistent picture rather than a screen that fills in
    * piecemeal and briefly shows a solvency figure computed from a half-loaded roster.
    */
-  async getOverview(options: { withSlugs?: boolean } = {}): Promise<PaymasterOverview> {
+  async getOverview(options: TenantListOptions = {}): Promise<PaymasterOverview> {
     const [chainId, config, stake, tenants, signers, roles] = await Promise.all([
       this.publicClient.getChainId(),
       this.getConfig(),
       this.getStakeInfo(),
-      this.listTenants({ withSlugs: options.withSlugs ?? true }),
+      this.listTenants({ ...options, withSlugs: options.withSlugs ?? true }),
       this.getSigners(),
       this.getRoleHolders(),
     ]);
@@ -395,24 +460,34 @@ export class GianoPaymasterClient {
   // -------------------------------------------------------------------------------------------
 
   /**
-   * Settled sponsorships, newest last.
+   * Settled sponsorships from one window of blocks, newest last, with the window that was read.
    *
-   * `tenantId` filters on the indexed topic, so the node does the filtering rather than the
-   * caller pulling every sponsorship on the contract and discarding most of it.
+   * **This is a window, not the whole history**, and the returned range says which one. A hosted
+   * RPC caps the span a single `eth_getLogs` may cover, so "every sponsorship ever" is not one
+   * query but a walk that lengthens every day the chain runs — a read that works this month and
+   * times out in six. A window costs the same forever. Step further back with `result.older`:
+   *
+   * ```ts
+   * let page = await paymaster.getSponsorships();
+   * let records = [...page.records];
+   * while (records.length < 100 && page.older) {
+   *   page = await paymaster.getSponsorships({ range: page.older });
+   *   records = [...page.records, ...records]; // older first: the result stays newest-last
+   * }
+   * ```
+   *
+   * `tenantId` filters on the indexed topic, so the node does the filtering rather than the caller
+   * pulling every sponsorship in the window and discarding most of it. That makes paging back for
+   * one tenant's history cheap enough to be worth doing.
    */
-  async getSponsorships(options: { tenantId?: string; fromBlock?: bigint | 'earliest'; toBlock?: bigint | 'latest' } = {}): Promise<
-    readonly SponsorshipRecord[]
-  > {
-    const logs = (await this.publicClient.getContractEvents({
-      address: this.address,
-      abi: gianoPaymasterAbi,
-      eventName: 'Sponsored',
-      args: options.tenantId ? { tenantId: toTenantId(options.tenantId) } : undefined,
-      fromBlock: options.fromBlock ?? 'earliest',
-      toBlock: options.toBlock ?? 'latest',
-    } as never)) as unknown as readonly SponsoredLog[];
+  async getSponsorships(options: { tenantId?: string; range?: Partial<BlockRange> } = {}): Promise<Page & { records: readonly SponsorshipRecord[] }> {
+    const { logs, ...page } = await this.readEvents<SponsoredLog>(
+      'Sponsored',
+      options.range,
+      options.tenantId ? { tenantId: toTenantId(options.tenantId) } : undefined,
+    );
 
-    return logs.map(toSponsorshipRecord);
+    return { ...page, records: logs.map(toSponsorshipRecord) };
   }
 
   /**

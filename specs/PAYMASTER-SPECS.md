@@ -1062,6 +1062,31 @@ same chain, or a tenant since removed, will produce events for tenant ids with n
 Ingestion skips them rather than failing, because one such event must not stall the pass for
 everybody else.
 
+**A pass is bounded by what the RPC will serve, not by how far behind the cursor is.** "Poll from a
+persisted cursor" above says where a pass starts and says nothing about how wide it may get, and
+the difference is the whole failure mode. Hosted providers cap the span one `eth_getLogs` may cover
+— Base and Ethereum Sepolia at 10,000 blocks — and refuse anything wider outright rather than
+truncating it. A watcher resuming from a cursor further behind than that asks for the entire gap in
+one query, is refused, and **is refused identically on every poll afterwards**: nothing is ingested,
+so the cursor never advances, so the next pass asks for a gap one poll wider. The backlog is
+self-sustaining and grows without bound, and the §8.1 degradation story — "authorisation keeps
+working against a slightly stale balance until it catches up" — quietly stops being true, because
+it never catches up.
+
+On a two-second chain the cursor falls that far behind after about six hours, so this is reachable
+by an ordinary outage rather than by an exotic one.
+
+Each pass is therefore clamped to a span under the cap and advances its cursor by what it actually
+ingested. The same outage then resolves as a catch-up over successive polls instead of a permanent
+stall, at the cost of a lag metric that stays elevated for a few poll intervals — which is exactly
+what `giano_paymaster_watcher_lag_blocks` (§8.5) exists to show. Nothing about idempotency changes:
+a clamped pass is the same pass, narrower.
+
+The clamp is a *ceiling* and not the cold-start lookback; the two bound different things. A cold
+start looks back a bounded distance because this section's opening paragraph makes balances
+converge from the contract rather than from replayed events. The clamp exists so that a *resume*
+cannot ask for more than one query's worth, however far behind it is.
+
 ### 8.3 Reconciliation
 
 On a slower interval (R-26): read `EntryPoint.balanceOf(paymaster)` and the contract's `treasury`,
