@@ -19,17 +19,23 @@ explicitly:
 
 ```ts
 let page = await paymaster.getSponsorships();
-while (page.records.length < 100 && page.older) {
+let records = [...page.records];
+while (records.length < 100 && page.older) {
   page = await paymaster.getSponsorships({ range: page.older });
+  records = [...page.records, ...records]; // older first: the result stays newest-last
 }
 ```
 
 The span narrows on its own when a node's cap is tighter than the default 9,000, and the client
 keeps the span that worked, so `logWindow` only ever saves a discovery round trip.
 
+`getTenantSlugs` also takes a `tenantId`, filtered on the indexed topic, so hunting one known
+tenant's label backwards is the node skipping windows rather than the caller downloading and
+discarding them.
+
 **Breaking:** `getSponsorships()` returns `{ fromBlock, toBlock, older?, records }` rather than an
 array, and `getTenantSlugs()` returns `{ fromBlock, toBlock, older?, slugs }` rather than a `Map`.
-Both took `fromBlock`/`toBlock` options and now take a single `range`. `listTenants` and
-`getOverview` accept `slugs`, a map of labels the caller already knows, which take precedence over
-the window's — the seam a long-lived caller needs so a tenant registered before the current window
-keeps its label across refreshes.
+Both took `fromBlock`/`toBlock` options and now take a single `range` inside an options object.
+`listTenants({ withSlugs: true })` still folds labels in, but a caller that needs to know *which*
+blocks they came from — to say so on screen, or to page back for the ones that predate them — has
+to call `getTenantSlugs` itself, since only that returns the window.

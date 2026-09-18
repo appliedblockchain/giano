@@ -68,8 +68,23 @@ describe('getTenantSlugs', () => {
     const first = await paymaster.getTenantSlugs();
     expect(first.slugs.size).toBe(0);
 
-    const second = await paymaster.getTenantSlugs(first.older);
+    const second = await paymaster.getTenantSlugs({ range: first.older });
     expect([...second.slugs.values()]).toEqual(['ancient']);
+  });
+
+  it('filters on the indexed tenant id so the node skips the windows, not the caller', async () => {
+    const filters: unknown[] = [];
+    const { client } = publicClient(HEAD, []);
+    const original = client.getContractEvents;
+    client.getContractEvents = ((options: { args?: unknown }) => {
+      filters.push(options.args);
+      return original(options as never);
+    }) as typeof client.getContractEvents;
+
+    const wanted = tenantId('wanted');
+    await new GianoPaymasterClient({ address: ADDRESS, publicClient: client }).getTenantSlugs({ tenantId: wanted });
+
+    expect(filters).toEqual([{ tenantId: wanted }]);
   });
 
   it('narrows to a tighter node cap once and keeps the narrowed span', async () => {

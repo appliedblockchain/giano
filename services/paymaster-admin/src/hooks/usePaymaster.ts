@@ -67,6 +67,14 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
   const slugs = useRef<ReadonlyMap<Hex, string>>(new Map());
   /** The oldest window of registrations read so far, so "look further back" knows where to resume. */
   const slugFloor = useRef<{ fromBlock: bigint; toBlock: bigint } | undefined>(undefined);
+  /**
+   * Bumped whenever the deployment changes.
+   *
+   * A log read can take seconds, which is long enough for an operator to switch deployments while
+   * one is in flight. Without this, the reply would write another paymaster's labels into the
+   * roster now on screen, under tenant ids that mean something different there.
+   */
+  const epoch = useRef(0);
 
   // Resolving the address may need a round-trip (the registry lookup), so the client is built once
   // and then rebound whenever the wallet changes — rebinding is cheap and needs no network.
@@ -105,6 +113,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     verified.current = false;
     // Another deployment's labels must not appear under this one's tenant ids, so the remembered
     // map is reloaded for the deployment now on screen rather than carried across.
+    epoch.current += 1;
     slugs.current = client ? loadSlugs(deployment.chainId, client.address) : new Map();
     slugFloor.current = undefined;
     setOverview(undefined);
@@ -187,9 +196,12 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
    */
   const findOlderSlugs = useCallback(async () => {
     if (!client || !slugFloor.current) return;
+    const reading = epoch.current;
     setLoading(true);
     try {
-      const page = await client.getTenantSlugs(slugFloor.current);
+      const page = await client.getTenantSlugs({ range: slugFloor.current });
+      if (epoch.current !== reading) return;
+
       slugFloor.current = page.older;
       slugs.current = rememberSlugs(deployment.chainId, client.address, slugs.current, page.slugs);
 
@@ -198,9 +210,9 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
       );
       setError(undefined);
     } catch (cause) {
-      setError(describeError(cause));
+      if (epoch.current === reading) setError(describeError(cause));
     } finally {
-      setLoading(false);
+      if (epoch.current === reading) setLoading(false);
     }
   }, [client, deployment.chainId]);
 

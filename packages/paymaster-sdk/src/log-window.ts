@@ -84,16 +84,23 @@ function flatten(error: unknown): string {
 /**
  * Resolves the range a read should cover: the caller's, or `window` blocks ending at the head.
  *
- * Clamped to the head, so a caller paging forward past the tip gets the tip rather than an empty
- * answer for blocks that do not exist yet.
+ * `toBlock` is clamped to the head, so a caller paging forward past the tip reads the tip rather
+ * than asking for blocks that do not exist yet. That clamp can leave `fromBlock` above `toBlock`
+ * when the caller named a range entirely in the future; the range is returned inverted and
+ * {@link readWindow} answers it as empty, which is the truthful answer — no block in it has been
+ * mined — rather than an error about arithmetic the caller never did.
  */
 export async function resolveWindow(
   publicClient: PaymasterPublicClient,
   range: Partial<BlockRange> | undefined,
   window: bigint,
 ): Promise<BlockRange> {
+  // A non-positive window is a misconfiguration, not a range: it would put `fromBlock` above
+  // `toBlock` on the *default* path, where the caller named nothing and so has nothing to debug.
+  if (window <= 0n) throw new RangeError(`a log window must span at least one block, got ${window}`);
+
   const head = await publicClient.getBlockNumber();
-  const toBlock = range?.toBlock === undefined ? head : range.toBlock > head ? head : range.toBlock;
+  const toBlock = range?.toBlock === undefined || range.toBlock > head ? head : range.toBlock;
   const fromBlock = range?.fromBlock ?? (toBlock >= window ? toBlock - window + 1n : 0n);
   return { fromBlock: fromBlock < 0n ? 0n : fromBlock, toBlock };
 }
@@ -114,6 +121,10 @@ export async function readWindow<T>(
 ): Promise<Windowed<T>> {
   let { fromBlock } = range;
   const { toBlock } = range;
+
+  // An empty range holds no logs by definition, so answering it costs nothing and sending it to a
+  // node would only earn an error about a request this library built.
+  if (fromBlock > toBlock) return { fromBlock, toBlock, logs: [] };
 
   for (;;) {
     try {

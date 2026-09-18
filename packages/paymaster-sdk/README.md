@@ -74,19 +74,27 @@ for (let p = page; all.length < 100 && p.older; ) {
 }
 ```
 
-This is not a limitation to work around; it is the only shape that keeps working. Hosted RPCs cap
-the span one query may cover — Base Sepolia answers anything wider with `eth_getLogs is limited to a
-10,000 range` — so reading a contract's whole history means walking it a window at a time, and that
-walk lengthens by about five windows a day on a two-second chain. A reader built that way works for
-a month. A window costs the same forever.
+Hosted RPCs cap the span one query may cover — Base Sepolia answers anything wider with
+`eth_getLogs is limited to a 10,000 range` — so reading a contract's whole history means walking it
+a window at a time, and that walk lengthens by about five windows a day on a two-second chain. A
+reader built that way takes 2s against a week-old deployment, 43s at six months, and is refused
+outright before two years. A window costs the same forever.
 
 The span narrows on its own if your node's cap is tighter than the default, and the client keeps
 what worked, so `logWindow` is worth setting only to skip that one discovery round trip.
 
 For slugs specifically, remember what you find. Registrations are append-only and a slug is never
-revised, so a caller polling faster than a window is wide observes every registration as it lands —
-and `listTenants({ slugs })` takes the accumulated map back, so a tenant registered before the
-current window keeps its label instead of reverting to a bare id on every refresh.
+revised, so a long-lived caller that polls faster than a window is wide observes every registration
+as it lands and can keep its own accumulated map — which is what stops a tenant registered before
+the current window from losing its label on every refresh.
+
+```ts
+const { slugs, older } = await paymaster.getTenantSlugs();          // this window's registrations
+const one = await paymaster.getTenantSlugs({ tenantId, range: older }); // hunt one, filtered by the node
+```
+
+`listTenants({ withSlugs: true })` folds labels in for you, but it cannot tell you which blocks they
+came from — call `getTenantSlugs` yourself when that matters.
 
 ## What you can write
 

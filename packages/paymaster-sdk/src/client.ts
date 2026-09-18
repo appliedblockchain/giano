@@ -316,12 +316,17 @@ export class GianoPaymasterClient {
    * reason. It matters more here, because a registration happens once and never again: a tenant
    * registered before the window is simply not in the answer. Two things make that workable —
    * a caller polling faster than a window is wide observes every registration as it lands, and
-   * `result.older` pages backwards for the ones that predate it. A caller that wants the label for
-   * a specific known tenant is better served by paging back with a `tenantId` filter than by
-   * widening the window.
+   * `result.older` pages backwards for the ones that predate it.
+   *
+   * `tenantId` filters on the indexed topic, so hunting one known tenant's label is the node
+   * skipping windows rather than the caller downloading and discarding them.
    */
-  async getTenantSlugs(range?: Partial<BlockRange>): Promise<Page & { slugs: Map<Hex, string> }> {
-    const { logs, ...page } = await this.readEvents<{ args: { tenantId?: Hex; slug?: string } }>('TenantRegistered', range);
+  async getTenantSlugs(options: { tenantId?: string; range?: Partial<BlockRange> } = {}): Promise<Page & { slugs: Map<Hex, string> }> {
+    const { logs, ...page } = await this.readEvents<{ args: { tenantId?: Hex; slug?: string } }>(
+      'TenantRegistered',
+      options.range,
+      options.tenantId ? { tenantId: toTenantId(options.tenantId) } : undefined,
+    );
 
     const slugs = new Map<Hex, string>();
     for (const { args } of logs) {
@@ -464,8 +469,10 @@ export class GianoPaymasterClient {
    *
    * ```ts
    * let page = await paymaster.getSponsorships();
-   * while (page.records.length < 100 && page.older) {
+   * let records = [...page.records];
+   * while (records.length < 100 && page.older) {
    *   page = await paymaster.getSponsorships({ range: page.older });
+   *   records = [...page.records, ...records]; // older first: the result stays newest-last
    * }
    * ```
    *

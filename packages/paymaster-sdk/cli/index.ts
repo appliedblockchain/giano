@@ -134,6 +134,40 @@ async function submit(context: Context, action: string, send: () => Promise<Writ
   emit({ action, hash: result.hash, blockNumber: receipt.blockNumber, status: receipt.status });
 }
 
+/**
+ * A positive whole number from a flag, or the default when it is absent.
+ *
+ * `Number(undefined)` is `NaN` and so is `Number('five')`, and both would slip past a plain
+ * comparison — every `n >= NaN` is false, so a loop bounded by one would run until it hit a
+ * different stop condition. Which for the log-paging loops here means walking toward genesis a
+ * window at a time because someone mistyped a flag.
+ */
+function count(flag: string | undefined, fallback: number, name: string): number {
+  if (flag === undefined) return fallback;
+  const value = Number(flag);
+  if (!Number.isSafeInteger(value) || value < 1) throw new PaymasterSdkError(`${name} must be a positive whole number, got "${flag}"`);
+  return value;
+}
+
+/**
+ * One tenant's slug, hunted backwards a window at a time.
+ *
+ * A slug is emitted once, at registration, and log reads cover a window (see the SDK's
+ * `getTenantSlugs`) — so the label for a tenant registered long ago is not in the window at the
+ * head. Filtering on the indexed tenant id makes the hunt the node skipping windows rather than
+ * this process downloading and discarding them, which is what makes paging back affordable.
+ */
+async function findSlug(paymaster: GianoPaymasterClient, tenantId: Hex, maxWindows: number): Promise<string | undefined> {
+  let page = await paymaster.getTenantSlugs({ tenantId });
+
+  for (let window = 1; window < maxWindows; window++) {
+    const slug = page.slugs.get(tenantId);
+    if (slug !== undefined || !page.older) return slug;
+    page = await paymaster.getTenantSlugs({ tenantId, range: page.older });
+  }
+  return page.slugs.get(tenantId);
+}
+
 // --- commands ----------------------------------------------------------------------------------
 
 type Context = {
@@ -249,16 +283,16 @@ const commands: Record<string, Command> = {
   },
 
   tenant: {
-    usage: 'tenant <id>',
+    usage: 'tenant <id> [--windows <n>]',
     summary: 'show one tenant in full',
     run: async ({ paymaster, args }) => {
       const id = args.positional[0];
       if (!id) throw new PaymasterSdkError('missing <id>: a tenant UUID or 16-byte hex id');
       const tenant = await paymaster.getTenant(id);
-      const slugs = await paymaster.getTenantSlugs();
-      emit({ ...tenant, slug: slugs.get(tenant.id) });
+      const slug = await findSlug(paymaster, tenant.id, count(args.flags.windows, 5, '--windows'));
+      emit({ ...tenant, slug });
 
-      heading(`Tenant ${slugs.get(tenant.id) ?? tenant.uuid}`);
+      heading(`Tenant ${slug ?? tenant.uuid}`);
       bullet(`uuid              ${tenant.uuid}`);
       bullet(`bytes16           ${tenant.id}`);
       bullet(`status            ${tenant.status}`);
@@ -550,8 +584,8 @@ const commands: Record<string, Command> = {
     // window. --windows caps how far: without it, a paymaster with no recent activity would walk
     // toward genesis looking for rows that are not there.
     run: async ({ paymaster, args }) => {
-      const limit = Number(args.flags.limit ?? 20);
-      const maxWindows = Number(args.flags.windows ?? 5);
+      const limit = count(args.flags.limit, 20, '--limit');
+      const maxWindows = count(args.flags.windows, 5, '--windows');
 
       const records: SponsorshipRecord[] = [];
       let page = await paymaster.getSponsorships({ tenantId: args.flags.tenant });

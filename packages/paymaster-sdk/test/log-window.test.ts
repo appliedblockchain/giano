@@ -49,6 +49,11 @@ describe('resolveWindow', () => {
     expect(await resolveWindow(at(120n), undefined, 9_000n)).toEqual({ fromBlock: 0n, toBlock: 120n });
   });
 
+  it('refuses a window that cannot span a block', async () => {
+    await expect(resolveWindow(at(1_000n), undefined, 0n)).rejects.toThrow(RangeError);
+    await expect(resolveWindow(at(1_000n), undefined, -5n)).rejects.toThrow(/at least one block/);
+  });
+
   it('honours an explicit range', async () => {
     expect(await resolveWindow(at(46_979_411n), { fromBlock: 100n, toBlock: 200n }, 9_000n)).toEqual({
       fromBlock: 100n,
@@ -58,6 +63,11 @@ describe('resolveWindow', () => {
 
   it('clamps a range asking past the head', async () => {
     expect(await resolveWindow(at(1_000n), { toBlock: 9_999_999n }, 100n)).toEqual({ fromBlock: 901n, toBlock: 1_000n });
+  });
+
+  it('leaves a range entirely in the future inverted, for readWindow to answer as empty', async () => {
+    const range = await resolveWindow(at(1_000n), { fromBlock: 5_000n, toBlock: 6_000n }, 100n);
+    expect(range.fromBlock).toBeGreaterThan(range.toBlock);
   });
 });
 
@@ -118,6 +128,14 @@ describe('readWindow', () => {
   it('does not let the oldest window reach below genesis', async () => {
     const page = await readWindow({ fromBlock: 500n, toBlock: 9_499n }, node(10_000n).query);
     expect(page.older).toEqual({ fromBlock: 0n, toBlock: 499n });
+  });
+
+  it('answers an empty range without troubling the node', async () => {
+    const rpc = node(10_000n);
+    const page = await readWindow({ fromBlock: 101n, toBlock: 100n }, rpc.query);
+
+    expect(page.logs).toEqual([]);
+    expect(rpc.seen).toHaveLength(0);
   });
 
   it('rethrows a failure that is not about the range', async () => {

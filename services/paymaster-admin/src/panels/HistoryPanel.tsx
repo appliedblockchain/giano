@@ -5,8 +5,15 @@ import { LuChevronsDown, LuRefreshCw } from 'react-icons/lu';
 import { Copyable, SectionCard, notifyError } from '../components/ui';
 import { eth, exactEth } from '../lib/format';
 
-/** Rows rendered. Beyond this an operator is reading a database, not a console. */
-const MAX_ROWS = 100;
+/**
+ * Rows rendered per window read.
+ *
+ * A budget rather than a fixed ceiling, because the ceiling made the "look further back" button do
+ * nothing visible: older settlements land at the bottom of a newest-first table, so on a busy
+ * deployment a fixed hundred rows were all newer than anything a second window could add. Asking
+ * for another window is asking to see more, so it raises the budget too.
+ */
+const ROWS_PER_WINDOW = 100;
 
 /**
  * Settled sponsorships.
@@ -29,6 +36,7 @@ export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
   const [records, setRecords] = useState<readonly SponsorshipRecord[]>();
   const [scanned, setScanned] = useState<BlockRange>();
   const [older, setOlder] = useState<BlockRange>();
+  const [windows, setWindows] = useState(1);
   const [loading, setLoading] = useState(false);
 
   // Accumulated across "look further back", so paging never drops what earlier windows found.
@@ -43,6 +51,7 @@ export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
         setRecords(found.current);
         setOlder(page.older);
         setScanned((previous) => (append && previous ? { fromBlock: page.fromBlock, toBlock: previous.toBlock } : page));
+        setWindows((previous) => (append ? previous + 1 : 1));
       } catch (error) {
         notifyError('Could not load sponsorship history', error);
       } finally {
@@ -61,7 +70,7 @@ export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
     void reload();
   }, [reload]);
 
-  const shown = records ? [...records].reverse().slice(0, MAX_ROWS) : [];
+  const shown = records ? [...records].reverse().slice(0, ROWS_PER_WINDOW * windows) : [];
   const blocks = scanned ? `blocks ${scanned.fromBlock}–${scanned.toBlock}` : '';
 
   return (
