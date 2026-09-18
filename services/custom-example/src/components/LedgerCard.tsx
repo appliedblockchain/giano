@@ -92,7 +92,7 @@ export function LedgerCard() {
               {entries.map((entry) => (
                 <Fragment key={entry.id}>
                   <Table.Row onClick={() => setExpanded((current) => (current === entry.id ? null : entry.id))} cursor="pointer" data-testid="ledger-row" data-status={entry.status}>
-                    <Table.Cell>
+                    <Table.Cell whiteSpace="nowrap">
                       <Mono muted>{formatTime(entry.at)}</Mono>
                     </Table.Cell>
                     <Table.Cell>{entry.section}</Table.Cell>

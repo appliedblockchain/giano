@@ -91,7 +91,7 @@ export type Demo = {
   connect: (chainId?: number) => Promise<RunOutcome<string[]>>;
   disconnect: (chainId?: number) => Promise<void>;
   revoke: (chainId?: number) => Promise<void>;
-  addAdHocChain: (chainId: number, rpcUrl: string, name?: string) => void;
+  addAdHocChain: (chainId: number, rpcUrl: string, name?: string, options?: { select?: boolean }) => void;
   setProviderOptions: (chainId: number, options: ProviderOptions) => void;
   recordViolation: (section: Section, title: string, detail: string, chainId?: number) => void;
   dismissViolation: (id: string) => void;
@@ -286,10 +286,11 @@ export function DemoProvider({ config, children }: { config: RuntimeConfig; chil
       connect,
       disconnect,
       revoke,
-      addAdHocChain: (chainId, rpcUrl, name) => {
+      addAdHocChain: (chainId, rpcUrl, name, options) => {
         registry.addAdHocChain(chainId, rpcUrl, name);
         dispatch({ type: 'registry-changed' });
-        dispatch({ type: 'select', chainId });
+        // The Chain card selects what the user just added; the failure lab must not move the selection.
+        if (options?.select !== false) dispatch({ type: 'select', chainId });
       },
       setProviderOptions: (chainId, options) => {
         registry.setOptions(chainId, options);

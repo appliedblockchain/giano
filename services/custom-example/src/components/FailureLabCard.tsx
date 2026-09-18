@@ -35,7 +35,7 @@ export function FailureLabCard() {
   /** A chain the wallet does not serve: refused in the handshake with 4902, before any passkey prompt. */
   const unserved = wrap('unserved', async () => {
     const chainId = 99_999;
-    if (!registry.get(chainId)) addAdHocChain(chainId, config.chains[0].rpcUrl, 'unserved (99999)');
+    if (!registry.get(chainId)) addAdHocChain(chainId, config.chains[0].rpcUrl, 'unserved (99999)', { select: false });
     await run({ section: 'failure-lab', label: 'Connect on chain 99999 (4902 expected)', method: 'eth_requestAccounts', chainId, expected: true, noBalances: true }, async (api) => {
       const accounts = await api.provider.request<string[]>({ method: 'eth_requestAccounts' });
       recordViolation('failure-lab', 'the wallet granted an unserved chain', `chain 99999 connected: ${JSON.stringify(accounts)}`, chainId);

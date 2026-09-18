@@ -30,6 +30,16 @@ defect in one of them. Requirements and decisions: [`specs/DEMO-REQUIREMENTS.md`
 Under the header: the **preflight verdict** in one line, and a **jump bar** to every card. A 4900
 `disconnect` raises a reconnect prompt in the header.
 
+## Screenshots
+
+| Home | Setup checks and chain | Transactions |
+| --- | --- | --- |
+| ![Home](docs/screenshots/01-home.png) | ![Setup](docs/screenshots/02-setup.png) | ![Transactions](docs/screenshots/03-transactions.png) |
+
+| Tokens | One address on every chain | Failure lab | Ledger |
+| --- | --- | --- | --- |
+| ![Tokens](docs/screenshots/04-tokens.png) | ![Identity](docs/screenshots/05-wallet-identity.png) | ![Failure lab](docs/screenshots/06-failure-lab.png) | ![Ledger](docs/screenshots/07-ledger.png) |
+
 ## Run it
 
 The wallet stack must be running. Bring up the E2E stack (two tenants, two chains, wallet origins,
