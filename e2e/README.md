@@ -125,6 +125,7 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
 | `portless:port80` | brings up the `portless-port80` relay on its own |
 | `portless:proxy` | runs the proxy on port 80 directly; needs `sudo`, and then the relay is unnecessary |
 | `portless:down` | removes the routes and stops the proxy |
+| `test:demo` | opt-in smoke test of the reference dApp (`services/custom-example`) on `http://demo.localhost`; `DEMO=1` adds the project and starts the demo's dev server (`tests/demo/`) |
 | `portless:list` | shows the active routes |
 
 ## Where the names live

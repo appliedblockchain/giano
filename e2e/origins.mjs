@@ -58,6 +58,11 @@ export const PORTLESS_LISTEN_PORT = 1355;
 export const ROUTES = [
   { name: 'app', port: 4400, kind: 'fixture', what: "tenant stock's demo dApp (thin SDK only)" },
   { name: 'app-byo', port: 4401, kind: 'fixture', what: "tenant byo's demo dApp (same fixture, other wallet)" },
+  // The reference dApp (services/custom-example) has its OWN names, distinct from the fixture's:
+  // the two used to share 4400/4401, and Playwright's `reuseExistingServer` would silently adopt
+  // the demo instead of the fixture. Started by `pnpm demo:stock` / `pnpm demo:byo` at the root.
+  { name: 'demo', port: 4410, kind: 'fixture', what: "tenant stock's reference dApp (services/custom-example)" },
+  { name: 'demo-byo', port: 4411, kind: 'fixture', what: "tenant byo's reference dApp (same image, other wallet)" },
   { name: 'wallet-byo', port: 8082, kind: 'fixture', what: "tenant byo's wallet origin (BYO UI + /api proxy)" },
   { name: 'wallet', port: 8081, kind: 'compose', what: "tenant stock's wallet-web" },
   { name: 'paymaster', port: 8083, kind: 'compose', what: 'paymaster admin console (read-only without a wallet)' },
@@ -98,6 +103,8 @@ export const loopbackOf = (name) => `http://127.0.0.1:${portOf(name)}`;
 export const ORIGINS = {
   dapp: originOf('app'),
   dappByo: originOf('app-byo'),
+  demo: originOf('demo'),
+  demoByo: originOf('demo-byo'),
   wallet: originOf('wallet'),
   walletByo: originOf('wallet-byo'),
   api: originOf('api'),

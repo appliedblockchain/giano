@@ -182,8 +182,8 @@ services:
             "walletOrigin": "http://wallet.localhost",
             "rpId": "wallet.localhost",
             "rpName": "Giano E2E",
-            "allowedDappOrigins": ["http://app.localhost"],
-            "corsOrigins": ["http://app.localhost"],
+            "allowedDappOrigins": ["http://app.localhost", "http://demo.localhost"],
+            "corsOrigins": ["http://app.localhost", "http://demo.localhost"],
             "openRegistration": true,
             "adminKeys": ["e2e-admin-key-stock"],
             "id": "11111111-1111-4111-8111-111111111111"
@@ -193,8 +193,8 @@ services:
             "walletOrigin": "http://wallet-byo.localhost",
             "rpId": "wallet-byo.localhost",
             "rpName": "BYO Wallet E2E",
-            "allowedDappOrigins": ["http://app-byo.localhost"],
-            "corsOrigins": ["http://app-byo.localhost"],
+            "allowedDappOrigins": ["http://app-byo.localhost", "http://demo-byo.localhost"],
+            "corsOrigins": ["http://app-byo.localhost", "http://demo-byo.localhost"],
             "openRegistration": true,
             "adminKeys": ["e2e-admin-key-byo00"],
             "id": "22222222-2222-4222-8222-222222222222"
@@ -230,7 +230,8 @@ services:
         ]
       # wallet-api base URL nginx proxies /api and /.well-known/webauthn to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
-      GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost"]'
+      # The e2e fixture AND the reference dApp (services/custom-example, on its own names).
+      GIANO_ALLOWED_DAPP_ORIGINS: '["http://app.localhost", "http://demo.localhost"]'
       GIANO_RP_ID: wallet.localhost
       GIANO_BRAND_NAME: Giano E2E
 
