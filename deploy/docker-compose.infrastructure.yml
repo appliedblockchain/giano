@@ -417,8 +417,12 @@ services:
       GIANO_CHAINS: |
         [
           { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" },
-          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" }
+          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "off" }
         ]
+      # Chain B is deliberately UNSPONSORED here (sponsorship "off"): the reference dApp must be
+      # able to reach both the sponsored and the self-paid path (R12), and a wallet origin's
+      # sponsorship mode is per chain and not something a dApp can request. Chain A stays sponsored.
+      # The e2e stack keeps both chains sponsored; its tests depend on that.
       # wallet-api base URL nginx proxies /api and /.well-known/webauthn to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # A set of ONE, not a union — see the warning above. Empty fails CLOSED, which is the
@@ -488,35 +492,33 @@ services:
       context: ..
       dockerfile: services/custom-example/Dockerfile
     restart: unless-stopped
-    # nginx resolves GIANO_RPC_UPSTREAM at config load and will not start if the name does
-    # not resolve — see the note on wallet-web.
     depends_on:
       - anvil
     environment:
       # Browser-facing, and the only cross-origin endpoints the dApp dials: balances, token
       # metadata and allowances are read dApp-side. anvil answers CORS preflights and sends
-      # `access-control-allow-origin: *`, so these work directly; the entrypoint puts both
-      # RPC origins and the wallet origin into the CSP `connect-src` for us.
+      # `access-control-allow-origin: *`, so these work directly; the entrypoint puts every
+      # RPC origin and both wallet origins into the CSP `connect-src` for us.
       #
-      # On a real chain, prefer the same-origin posture: GIANO_RPC_URL=/rpc with the keyed URL
-      # in GIANO_RPC_UPSTREAM, which keeps the API key server-side. The nginx template already
-      # proxies `= /rpc` for exactly that.
-      GIANO_CHAIN_ID: '31337'
-      GIANO_CHAIN_NAME: Devnet A
-      GIANO_RPC_URL: http://rpc.giano.localhost
-      GIANO_CHAIN_B_ID: '31338'
-      GIANO_CHAIN_B_NAME: Devnet B
-      GIANO_RPC_B_URL: http://rpc-b.giano.localhost
-      # A resolvable name, because nginx resolves it at start-up whether or not /rpc is used.
-      GIANO_RPC_UPSTREAM: http://anvil:8545
+      # On a real chain, prefer the same-origin posture: a chain's rpcUrl set to `/rpc/<chainId>`
+      # with the keyed URL in GIANO_RPC_UPSTREAM_<chainId>, which keeps the API key server-side.
+      # nginx renders one proxy location per such variable at start (docker/entrypoint.sh).
+      # The chains this dApp can address, with the demo ERC-20 baked into the devnet state as each
+      # chain's default token (the only contract the sponsorship rules allow-list). Chain B is
+      # served UNSPONSORED by wallet-web above, so the demo's self-paid path is reachable there.
+      GIANO_CHAINS: |
+        [
+          { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" },
+          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" }
+        ]
       # ⚠ The TENANT's wallet hostname. Pointing this at the shared `wallet.giano.localhost`
       # is the one-character mistake that binds a tenant's passkeys to infrastructure,
       # irreversibly: the popup's address bar must read the tenant's own host.
       GIANO_WALLET_URL: http://wallet.stock.giano.localhost
+      # The OTHER tenant's wallet origin, which does not allow-list this dApp: the failure lab's
+      # "disallowed origin" control expects HandshakeRefusedError origin-not-allowed from it.
+      GIANO_OTHER_WALLET_URL: http://wallet.byo.giano.localhost
       GIANO_APP_LABEL: tenant stock — the stock wallet UI
-      # The demo ERC-20 baked into the devnet state, and the only contract the sponsorship
-      # rules allow-list. It prefills the token panel.
-      GIANO_TEST_ERC20: '0x9967bDf929856643e92EF65eefdE1fF8250774D8'
 
   custom-example-byo:
     build:
@@ -526,17 +528,15 @@ services:
     depends_on:
       - anvil
     environment:
-      GIANO_CHAIN_ID: '31337'
-      GIANO_CHAIN_NAME: Devnet A
-      GIANO_RPC_URL: http://rpc.giano.localhost
-      GIANO_CHAIN_B_ID: '31338'
-      GIANO_CHAIN_B_NAME: Devnet B
-      GIANO_RPC_B_URL: http://rpc-b.giano.localhost
-      GIANO_RPC_UPSTREAM: http://anvil:8545
-      # The two values that differ. Everything else is identical to custom-example above.
+      GIANO_CHAINS: |
+        [
+          { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" },
+          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" }
+        ]
+      # The values that differ. Everything else is identical to custom-example above.
       GIANO_WALLET_URL: http://wallet.byo.giano.localhost
+      GIANO_OTHER_WALLET_URL: http://wallet.stock.giano.localhost
       GIANO_APP_LABEL: tenant byo — a tenant-built wallet UI
-      GIANO_TEST_ERC20: '0x9967bDf929856643e92EF65eefdE1fF8250774D8'
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # paymaster-admin — the operator's view of the same paymaster the wallets sponsor through.
