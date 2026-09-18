@@ -47,12 +47,46 @@ replay**:
 | `getStakeInfo()` | deposit, stake, unstake delay, unlock time |
 | `getSigners()`, `getRoleHolders()`, `getRolesOf(account)` | authority |
 | `getHealth()` | the checks `giano-doctor` runs, same thresholds |
-| `getSponsorships()`, `watchSponsorships()` | settled sponsorships |
+| `getSponsorships()`, `watchSponsorships()` | settled sponsorships in a window of blocks — see below |
 | `getTenantSlugs()` | the one field that needs logs — slugs are emitted, not stored |
 | `assertDeployed()` | catches a wrong address or a wrong chain, in a sentence |
 
 `getHealth()` is a pure function of an overview (`assessHealth`), so a UI can re-evaluate it
 against data it already has, and it cannot disagree with the deployment gate.
+
+### The two reads that are windows
+
+`getSponsorships()` and `getTenantSlugs()` are the exceptions. A settlement is only ever an event,
+and a slug is emitted rather than stored, so neither can be a view call. Both therefore read **one
+`eth_getLogs` over a window of blocks ending at the head** — not the whole history — and both return
+the window they read:
+
+```ts
+const page = await paymaster.getSponsorships();
+page.records;                      // settlements in [page.fromBlock, page.toBlock]
+page.older;                        // the window before it, or undefined at genesis
+
+// step further back until you have enough
+let all = [...page.records];
+for (let p = page; all.length < 100 && p.older; ) {
+  p = await paymaster.getSponsorships({ range: p.older });
+  all = [...p.records, ...all];
+}
+```
+
+This is not a limitation to work around; it is the only shape that keeps working. Hosted RPCs cap
+the span one query may cover — Base Sepolia answers anything wider with `eth_getLogs is limited to a
+10,000 range` — so reading a contract's whole history means walking it a window at a time, and that
+walk lengthens by about five windows a day on a two-second chain. A reader built that way works for
+a month. A window costs the same forever.
+
+The span narrows on its own if your node's cap is tighter than the default, and the client keeps
+what worked, so `logWindow` is worth setting only to skip that one discovery round trip.
+
+For slugs specifically, remember what you find. Registrations are append-only and a slug is never
+revised, so a caller polling faster than a window is wide observes every registration as it lands —
+and `listTenants({ slugs })` takes the accumulated map back, so a tenant registered before the
+current window keeps its label instead of reverting to a bare id on every refresh.
 
 ## What you can write
 

@@ -6,10 +6,11 @@ import {
   type HealthReport,
 } from '@appliedblockchain/giano-paymaster-sdk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Address } from 'viem';
+import type { Address, Hex } from 'viem';
 import type { Deployment } from '../config';
 import { createReadClient, type ConnectedWallet } from '../lib/chain';
 import { describeError } from '../lib/format';
+import { loadSlugs, rememberSlugs } from '../lib/slug-store';
 
 /**
  * Owns the SDK client and the overview it renders from.
@@ -27,10 +28,21 @@ export type PaymasterState = {
   myRoles: readonly PaymasterRoleName[];
   /**
    * False on a proxy predating the on-chain tenant roster, where the list was reconstructed from
-   * registration logs instead. Surfaced rather than hidden: the log path cannot see a tenant whose
-   * registration is outside the node's retained history, so the roster may be incomplete.
+   * registration logs instead. Surfaced rather than hidden: that path enumerates from one window of
+   * logs, so the roster may be incomplete.
    */
   rosterOnChain: boolean;
+  /**
+   * True while some tenant on screen has no label yet.
+   *
+   * Slugs come from a window of registration logs, so a tenant registered before this browser first
+   * opened the console shows its `bytes16` id until {@link PaymasterState.findOlderSlugs} reaches
+   * back far enough. The id is the tenant's real on-chain identity, so nothing is unusable — it is a
+   * missing label, not a missing row.
+   */
+  slugsIncomplete: boolean;
+  /** Reads one more window of registrations, older than anything read so far. */
+  findOlderSlugs: () => Promise<void>;
   loading: boolean;
   /** Set when the last refresh failed. The previous overview stays on screen underneath it. */
   error: string | undefined;
@@ -48,6 +60,13 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
   const [error, setError] = useState<string>();
   const [lastUpdated, setLastUpdated] = useState<Date>();
   const [rosterOnChain, setRosterOnChain] = useState(true);
+
+  // Slugs accumulate across refreshes and across reloads rather than being re-read each time — see
+  // `lib/slug-store`. A ref rather than state because `refresh` reads and writes it on every poll
+  // and must not change identity when it does; what renders is the slug already on each TenantView.
+  const slugs = useRef<ReadonlyMap<Hex, string>>(new Map());
+  /** The oldest window of registrations read so far, so "look further back" knows where to resume. */
+  const slugFloor = useRef<{ fromBlock: bigint; toBlock: bigint } | undefined>(undefined);
 
   // Resolving the address may need a round-trip (the registry lookup), so the client is built once
   // and then rebound whenever the wallet changes — rebinding is cheap and needs no network.
@@ -84,12 +103,16 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
   // whole per-environment labelling exists to prevent.
   useEffect(() => {
     verified.current = false;
+    // Another deployment's labels must not appear under this one's tenant ids, so the remembered
+    // map is reloaded for the deployment now on screen rather than carried across.
+    slugs.current = client ? loadSlugs(deployment.chainId, client.address) : new Map();
+    slugFloor.current = undefined;
     setOverview(undefined);
     setMyRoles([]);
     setError(undefined);
     setLastUpdated(undefined);
     setLoading(true);
-  }, [client]);
+  }, [client, deployment.chainId]);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -107,8 +130,20 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
         verified.current = true;
       }
 
-      const next = await client.getOverview({ withSlugs: true });
+      // The roster and the labels are read separately, in parallel, rather than through
+      // `getOverview({ withSlugs: true })`. Same number of requests, and it is the only way to learn
+      // *which blocks* the labels came from — which this panel has to say on screen, and which
+      // `findOlderSlugs` needs in order to step past.
+      const [next, registered] = await Promise.all([client.getOverview({ withSlugs: false }), client.getTenantSlugs()]);
       if (generation.current !== current) return;
+
+      // The poll interval is far shorter than a window is wide, so in steady state every
+      // registration is observed as it lands and the remembered map converges on complete without
+      // anyone paging back for it.
+      slugs.current = rememberSlugs(deployment.chainId, client.address, slugs.current, registered.slugs);
+      slugFloor.current ??= registered.older;
+
+      next.tenants = next.tenants.map((tenant) => ({ ...tenant, slug: slugs.current.get(tenant.id) }));
 
       setOverview(next);
       setError(undefined);
@@ -130,7 +165,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     } finally {
       if (generation.current === current) setLoading(false);
     }
-  }, [client, wallet]);
+  }, [client, wallet, deployment.chainId]);
 
   useEffect(() => {
     void refresh();
@@ -143,9 +178,42 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     return () => clearInterval(timer);
   }, [client, deployment.refreshSeconds, refresh]);
 
-  const health = useMemo(() => (overview ? assessHealth(overview) : undefined), [overview]);
+  /**
+   * Steps one window further into the past looking for registrations.
+   *
+   * Explicit rather than automatic: walking back to a deployment's first block is what this whole
+   * design exists to avoid, and an operator asking for one more window at a time is the bounded
+   * version of that. What it finds is remembered, so the walk is paid once per browser.
+   */
+  const findOlderSlugs = useCallback(async () => {
+    if (!client || !slugFloor.current) return;
+    setLoading(true);
+    try {
+      const page = await client.getTenantSlugs(slugFloor.current);
+      slugFloor.current = page.older;
+      slugs.current = rememberSlugs(deployment.chainId, client.address, slugs.current, page.slugs);
 
-  return { client, overview, health, myRoles, rosterOnChain, loading, error, lastUpdated, refresh };
+      setOverview((previous) =>
+        previous ? { ...previous, tenants: previous.tenants.map((tenant) => ({ ...tenant, slug: slugs.current.get(tenant.id) })) } : previous,
+      );
+      setError(undefined);
+    } catch (cause) {
+      setError(describeError(cause));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, deployment.chainId]);
+
+  const health = useMemo(() => (overview ? assessHealth(overview) : undefined), [overview]);
+  // Only actionable while there are older blocks left to read: at genesis an unlabelled tenant is
+  // one whose registration is not on this chain at all, and offering to look further back would be
+  // a button that cannot help.
+  const slugsIncomplete = useMemo(
+    () => (overview?.tenants ?? []).some((tenant) => !tenant.slug) && slugFloor.current !== undefined,
+    [overview],
+  );
+
+  return { client, overview, health, myRoles, rosterOnChain, slugsIncomplete, findOlderSlugs, loading, error, lastUpdated, refresh };
 }
 
 /** True when the connected wallet may perform an action gated by `role`. */

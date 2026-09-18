@@ -1,7 +1,7 @@
 import type { GianoPaymasterClient, PaymasterRoleName, TenantView } from '@appliedblockchain/giano-paymaster-sdk';
 import { Alert, Button, Dialog, Field, HStack, Input, Portal, Stack, Table, Text } from '@chakra-ui/react';
 import { useState } from 'react';
-import { LuPlus, LuWallet } from 'react-icons/lu';
+import { LuChevronsDown, LuPlus, LuWallet } from 'react-icons/lu';
 import { parseEther, type Address } from 'viem';
 import { Copyable, SectionCard, TenantStatusBadge } from '../components/ui';
 import { useWrite } from '../hooks/useWrite';
@@ -14,6 +14,10 @@ type Props = {
   connected: boolean;
   /** False when the roster came from registration logs rather than the on-chain set. */
   rosterOnChain: boolean;
+  /** True while a tenant on screen has no slug, because its registration predates the window read. */
+  slugsIncomplete: boolean;
+  /** Reads one more window of registration logs, older than anything read so far. */
+  findOlderSlugs: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -22,14 +26,20 @@ type Props = {
  *
  * On an upgraded paymaster this is a single on-chain read, because the roster is an enumerable
  * set — no backend, and the balances are the chain's own rather than a cached projection. On a
- * proxy that predates the roster the SDK falls back to a log scan, which is a weaker guarantee and
+ * proxy that predates the roster the SDK falls back to a log read, which is a weaker guarantee and
  * says so on screen rather than quietly presenting a possibly-incomplete list as complete.
+ *
+ * The **slug** is the one column not covered by that. It is emitted by `TenantRegistered` and never
+ * stored, so it comes from a window of logs (INFRASTRUCTURE §14.6) and a tenant registered before
+ * that window shows its id instead. The rows themselves are unaffected — every figure on them is a
+ * view call — so this is a missing label on a complete list, which is why it is a hint under the
+ * table rather than a warning over it.
  *
  * Funding is offered to everyone — anyone may fund a tenant — while the administrative actions are
  * gated on TENANT_ADMIN_ROLE, and withdrawal is offered to nobody here at all, because only the
  * tenant's own registered address can perform it.
  */
-export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChain, refresh }: Props) {
+export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChain, slugsIncomplete, findOlderSlugs, refresh }: Props) {
   const { run, busy } = useWrite(refresh);
   const canAdminister = myRoles.includes('TENANT_ADMIN_ROLE');
   const canSetFees = myRoles.includes('FEE_ADMIN_ROLE');
@@ -59,8 +69,8 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Description>
-                This list came from a log scan, because the proxy has not been upgraded to the version that keeps the roster on-chain. A tenant whose
-                registration has fallen outside the node's retained log history would be missing from it.
+                This list came from registration logs, because the proxy has not been upgraded to the version that keeps the roster on-chain. Those are
+                read a window at a time, so a tenant registered before the window would be missing from it entirely — not just unlabelled.
               </Alert.Description>
             </Alert.Content>
           </Alert.Root>
@@ -89,7 +99,9 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                   <Table.Row key={tenant.id}>
                     <Table.Cell>
                       <Stack gap="0.5">
-                        <Text fontWeight="medium">{tenant.slug ?? '(no slug)'}</Text>
+                        <Text fontWeight="medium" color={tenant.slug ? undefined : 'fg.muted'}>
+                          {tenant.slug ?? 'unlabelled'}
+                        </Text>
                         <Copyable value={tenant.uuid} label="Tenant id" />
                       </Stack>
                     </Table.Cell>
@@ -155,6 +167,18 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
               </Table.Body>
             </Table.Root>
           </Table.ScrollArea>
+        )}
+
+        {slugsIncomplete && (
+          <HStack fontSize="xs" color="fg.muted" mt="3" gap="2">
+            <Text>
+              A tenant shows as <em>unlabelled</em> when its registration event predates the blocks read so far. Its id is its real on-chain identity,
+              so every figure on the row is exact either way.
+            </Text>
+            <Button size="xs" variant="outline" onClick={() => void findOlderSlugs()} flexShrink="0">
+              <LuChevronsDown /> Look further back
+            </Button>
+          </HStack>
         )}
 
         <Text fontSize="xs" color="fg.muted" mt="3">

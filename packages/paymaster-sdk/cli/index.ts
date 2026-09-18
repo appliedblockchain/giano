@@ -32,6 +32,7 @@ import {
   ROLE_DESCRIPTIONS,
   toTenantId,
   type PaymasterRoleName,
+  type SponsorshipRecord,
   type WriteResult,
 } from '../src/index';
 import { createPublicClient, createWalletClient, defineChain, formatEther, http, parseEther, type Address, type Chain, type Hex } from 'viem';
@@ -543,22 +544,39 @@ const commands: Record<string, Command> = {
   },
 
   history: {
-    usage: 'history [--tenant <id>] [--limit <n>]',
+    usage: 'history [--tenant <id>] [--limit <n>] [--windows <n>]',
     summary: 'settled sponsorships, newest last',
+    // A log read covers one window of blocks, so filling a --limit means stepping back window by
+    // window. --windows caps how far: without it, a paymaster with no recent activity would walk
+    // toward genesis looking for rows that are not there.
     run: async ({ paymaster, args }) => {
-      const records = await paymaster.getSponsorships({ tenantId: args.flags.tenant });
       const limit = Number(args.flags.limit ?? 20);
-      const shown = records.slice(-limit);
-      emit(shown);
+      const maxWindows = Number(args.flags.windows ?? 5);
 
-      heading(`Sponsorships (${records.length} total, showing ${shown.length})`);
+      const records: SponsorshipRecord[] = [];
+      let page = await paymaster.getSponsorships({ tenantId: args.flags.tenant });
+      let oldest = page.fromBlock;
+      const newest = page.toBlock;
+
+      for (let window = 1; ; window++) {
+        records.unshift(...page.records);
+        oldest = page.fromBlock;
+        if (records.length >= limit || !page.older || window >= maxWindows) break;
+        page = await paymaster.getSponsorships({ tenantId: args.flags.tenant, range: page.older });
+      }
+
+      const shown = records.slice(-limit);
+      emit({ fromBlock: oldest, toBlock: newest, records: shown });
+
+      heading(`Sponsorships in blocks ${oldest}–${newest} (${records.length} found, showing ${shown.length})`);
       if (records.length === 0) {
-        bullet('none settled yet');
+        bullet(`none settled in the last ${newest - oldest + 1n} blocks — raise --windows to look further back`);
         return;
       }
       for (const record of shown) {
         out(`  ${pad(String(record.blockNumber), 10)}${pad(record.uuid, 38)}${record.success ? 'ok  ' : 'fail'}  gas ${pad(eth(record.gasCostWei), 22)}fee ${eth(record.feeWei)}`);
       }
+      if (page.older) bullet(`older sponsorships may exist below block ${oldest} — raise --windows to reach them`);
     },
   },
 

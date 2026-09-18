@@ -81,6 +81,31 @@ either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-dep
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
 `GIANO_REFRESH_SECONDS`.
 
+## What is a view call, and what is a window
+
+Almost everything on screen is an `eth_call` — the roster, balances, deficits, fees, solvency,
+stake, roles, health. Each reads a bounded amount of contract state, so it costs the same on a
+chain's first day as on its ten-thousandth, and none of it needs a backend.
+
+Two things are not stored on chain and so cannot be view calls: a tenant's **slug**, which
+`TenantRegistered` emits and the contract deliberately does not keep, and the **sponsorship
+history**, which exists only as `Sponsored` events. Both are read from logs, and hosted RPCs cap the
+span a single `eth_getLogs` may cover — Base Sepolia refuses anything over 10,000 blocks. So both
+read **one window ending at the head** rather than everything since deployment, which would be
+hundreds of requests growing by about five a day.
+
+What that means in the console:
+
+- **Sponsorships** shows the settlements in the blocks it has read, and says which blocks those are.
+  *Look further back* reads the preceding window and adds to the table.
+- **Tenants** is always the complete roster, because the roster is a view call. A tenant registered
+  before the window shows as *unlabelled* with its id; *Look further back* finds the label. What is
+  found is remembered in `localStorage`, per chain and paymaster, so the walk is paid once per
+  browser — and in steady state it is never paid at all, since the console polls far faster than a
+  window is wide and sees each registration as it lands.
+
+INFRASTRUCTURE §14.6 has the reasoning and the numbers.
+
 ## Addresses
 
 Addresses and other on-chain identifiers are **never abbreviated**, and **clicking one copies it**.
