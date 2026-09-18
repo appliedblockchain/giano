@@ -57,6 +57,33 @@ const WATCHER_LOCK_NAME = 'giano.paymaster.watcher';
 /** Blocks to look back on a cold start, so a brief outage does not need a manual backfill. */
 const COLD_START_LOOKBACK = 5_000n;
 
+/**
+ * Blocks one pass may cover.
+ *
+ * Hosted RPCs cap `eth_getLogs` at a span — Base and Ethereum Sepolia at 10,000 blocks — and
+ * reject anything wider outright. A watcher resuming after an outage longer than that would ask
+ * for the whole gap in one query, be refused, and be refused identically on every poll after: the
+ * cursor never advances, so the backlog only grows. Clamping the pass makes the same outage a
+ * catch-up over several polls instead. Under the cap rather than at it, because several endpoints
+ * count the span inclusively.
+ */
+const MAX_POLL_RANGE = 9_000n;
+
+/**
+ * The block range one pass ingests.
+ *
+ * Separate from the pass itself because the interesting cases — a cold start, a resume, a backlog
+ * wider than the RPC will serve, a chain shallower than the confirmation depth — are arithmetic,
+ * and testing them against a database and a chain would say less about them than this does.
+ */
+export function pollRange(args: { head: bigint; confirmations: number; cursor: bigint | null }): { from: bigint; to: bigint } {
+  const confirmations = BigInt(args.confirmations);
+  const confirmed = args.head > confirmations ? args.head - confirmations : 0n;
+  const from = args.cursor === null ? (confirmed > COLD_START_LOOKBACK ? confirmed - COLD_START_LOOKBACK : 0n) : args.cursor + 1n;
+  const to = confirmed - from >= MAX_POLL_RANGE ? from + MAX_POLL_RANGE - 1n : confirmed;
+  return { from, to };
+}
+
 const EVENTS = {
   sponsored: parseAbiItem(
     'event Sponsored(bytes16 indexed tenantId, address indexed sender, bytes32 indexed userOpHash, uint256 gasCostWei, uint256 feeWei, uint256 overheadWei, uint256 newBalance, bool success)',
@@ -194,9 +221,7 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
   return {
     async pollOnce() {
       const head = await client.getBlockNumber();
-      const to = head > BigInt(options.confirmations) ? head - BigInt(options.confirmations) : 0n;
-      const stored = await cursor();
-      const from = stored === null ? (to > COLD_START_LOOKBACK ? to - COLD_START_LOOKBACK : 0n) : stored + 1n;
+      const { from, to } = pollRange({ head, confirmations: options.confirmations, cursor: await cursor() });
 
       if (to < from) {
         options.metrics?.setLag(0n, 0);

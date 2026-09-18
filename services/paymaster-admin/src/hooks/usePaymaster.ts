@@ -56,9 +56,10 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
 
     const build = async () => {
       try {
+        const { deploymentBlock } = deployment;
         const resolved = deployment.paymasterAddress
-          ? new GianoPaymasterClient({ address: deployment.paymasterAddress, publicClient, walletClient: wallet?.walletClient })
-          : await GianoPaymasterClient.fromRegistry({ publicClient, walletClient: wallet?.walletClient });
+          ? new GianoPaymasterClient({ address: deployment.paymasterAddress, publicClient, walletClient: wallet?.walletClient, deploymentBlock })
+          : await GianoPaymasterClient.fromRegistry({ publicClient, walletClient: wallet?.walletClient, deploymentBlock });
         if (!cancelled) setClient(resolved);
       } catch (cause) {
         if (!cancelled) {
@@ -72,7 +73,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     return () => {
       cancelled = true;
     };
-  }, [deployment.paymasterAddress, publicClient, wallet?.walletClient]);
+  }, [deployment.paymasterAddress, deployment.deploymentBlock, publicClient, wallet?.walletClient]);
 
   // A refresh in flight when another is requested would race; the ref lets a later one win.
   const generation = useRef(0);

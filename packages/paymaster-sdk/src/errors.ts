@@ -147,6 +147,30 @@ export class PaymasterPausedError extends PaymasterSdkError {
   }
 }
 
+/**
+ * A log query was asked to cover more of the chain than it can in a sane number of requests.
+ *
+ * Raised before any request is sent. No hosted RPC will serve `earliest`..`latest` for a contract
+ * on a chain tens of millions of blocks deep, and walking it in 9,000-block windows would be
+ * thousands of round trips — so the scan says what it needs rather than starting something that
+ * cannot finish. What it needs is the block the paymaster was deployed at: nothing before that can
+ * hold one of its logs, and it turns the scan from chain-sized into deployment-sized.
+ */
+export class LogRangeUnboundedError extends PaymasterSdkError {
+  constructor(
+    public readonly subject: string,
+    public readonly fromBlock: bigint,
+    public readonly toBlock: bigint,
+    public readonly maxRange: bigint,
+  ) {
+    super(
+      `reading ${subject} would scan blocks ${fromBlock}–${toBlock}, which no RPC will serve in one query and which ` +
+        `needs ${(toBlock - fromBlock + 1n) / maxRange} windows of ${maxRange} blocks to walk. ` +
+        'Construct the client with `deploymentBlock` set to the block the paymaster proxy was deployed at.',
+    );
+  }
+}
+
 /** A revert the SDK recognised but has no dedicated class for. */
 export class PaymasterRevertError extends PaymasterSdkError {
   constructor(

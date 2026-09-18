@@ -20,8 +20,16 @@ if [ -z "${GIANO_DEPLOYMENTS:-}" ]; then
   GIANO_ENVIRONMENT_LABEL="${GIANO_ENVIRONMENT_LABEL:-chain ${GIANO_CHAIN_ID}}"
   GIANO_REFRESH_SECONDS="${GIANO_REFRESH_SECONDS:-15}"
 
-  GIANO_DEPLOYMENTS=$(printf '[{"label":"%s","chainId":%s,"rpcUrl":"%s","paymasterAddress":"%s","refreshSeconds":%s}]' \
-    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_REFRESH_SECONDS")
+  # Where the tenant roster's and the history panel's log reads start. Hosted RPCs cap a single
+  # eth_getLogs at a few thousand blocks, so the console walks the range a window at a time and the
+  # deployment block is what keeps that a few dozen requests instead of thousands. Empty on a local
+  # devnet, which is short enough to scan whole; on a public chain it must be set or those two
+  # reads refuse to run.
+  GIANO_PAYMASTER_DEPLOYMENT_BLOCK="${GIANO_PAYMASTER_DEPLOYMENT_BLOCK:-}"
+
+  GIANO_DEPLOYMENTS=$(printf '[{"label":"%s","chainId":%s,"rpcUrl":"%s","paymasterAddress":"%s","deploymentBlock":"%s","refreshSeconds":%s}]' \
+    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" \
+    "$GIANO_PAYMASTER_DEPLOYMENT_BLOCK" "$GIANO_REFRESH_SECONDS")
 fi
 export GIANO_DEPLOYMENTS
 

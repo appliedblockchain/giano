@@ -2,6 +2,7 @@ import { gianoPaymasterAbi, getGianoDeployment, iEntryPointAbi } from '@appliedb
 import type { Account, Address, Chain, Hash, Hex, PublicClient, Transport, WalletClient } from 'viem';
 import { SignerRequiredError, PaymasterSdkError, translateContractError } from './errors';
 import { assessHealth } from './health';
+import { scanLogs } from './log-scan';
 import { DEFAULT_ADMIN_ROLE, PAYMASTER_ROLES, PAYMASTER_ROLE_NAMES, roleName, type PaymasterRoleName } from './roles';
 import { toTenantId, toTenantUuid } from './tenant-id';
 import type {
@@ -39,6 +40,24 @@ export type PaymasterClientConfig = {
   publicClient: PaymasterPublicClient;
   /** Omit for a read-only client. Every write throws {@link SignerRequiredError} without it. */
   walletClient?: PaymasterWalletClient;
+  /**
+   * The block the proxy at {@link PaymasterClientConfig.address} was deployed at.
+   *
+   * Every log read starts here. Nothing before it can hold one of this paymaster's logs, so it
+   * costs nothing in completeness and it is the difference between scanning a deployment and
+   * scanning a chain: hosted RPCs cap `eth_getLogs` at a few thousand blocks a query, so a scan
+   * from genesis on a chain tens of millions of blocks deep is thousands of round trips.
+   *
+   * Without it, log reads throw {@link LogRangeUnboundedError} rather than attempt that. It is not
+   * derivable — `eth_getCode` at a historical block needs archive state, which the endpoints that
+   * impose the range cap are the least likely to serve — so it is configuration.
+   */
+  deploymentBlock?: bigint;
+  /**
+   * The node's `eth_getLogs` span cap, when it is known. Narrowed automatically on rejection, so
+   * this only saves the first discovery round trip.
+   */
+  maxLogRange?: bigint;
 };
 
 /** How many tenants to pull per `getTenants` page. */
@@ -60,13 +79,26 @@ export class GianoPaymasterClient {
   readonly address: Address;
   readonly publicClient: PaymasterPublicClient;
   readonly walletClient?: PaymasterWalletClient;
+  /** See {@link PaymasterClientConfig.deploymentBlock}. */
+  readonly deploymentBlock?: bigint;
+  readonly maxLogRange?: bigint;
 
   private entryPointAddress?: Address;
+  /**
+   * Registrations already scanned, and the block up to which they are complete.
+   *
+   * `TenantRegistered` is append-only — a slug is emitted once and never revised — so a scan that
+   * reached block N never has to look below N again. Without this, a console polling the overview
+   * every fifteen seconds re-walks the deployment's whole history each time.
+   */
+  private slugCache?: { slugs: Map<Hex, string>; scannedTo: bigint };
 
   constructor(config: PaymasterClientConfig) {
     this.address = config.address;
     this.publicClient = config.publicClient;
     this.walletClient = config.walletClient;
+    this.deploymentBlock = config.deploymentBlock;
+    this.maxLogRange = config.maxLogRange;
   }
 
   /**
@@ -92,7 +124,13 @@ export class GianoPaymasterClient {
 
   /** A copy of this client bound to a different (or a newly connected) wallet. */
   withWallet(walletClient: PaymasterWalletClient): GianoPaymasterClient {
-    return new GianoPaymasterClient({ address: this.address, publicClient: this.publicClient, walletClient });
+    return new GianoPaymasterClient({
+      address: this.address,
+      publicClient: this.publicClient,
+      walletClient,
+      deploymentBlock: this.deploymentBlock,
+      maxLogRange: this.maxLogRange,
+    });
   }
 
   // -------------------------------------------------------------------------------------------
@@ -273,22 +311,59 @@ export class GianoPaymasterClient {
    * The slug is emitted and deliberately not stored — it exists so the on-chain record can be read
    * against the backend's tenant table without a side channel — so this is the one piece of tenant
    * data that needs a log query rather than a view call.
+   *
+   * The scan runs from {@link PaymasterClientConfig.deploymentBlock} to the head in whatever window
+   * the node will serve, and remembers what it found: registrations are append-only, so a later
+   * call only reads the blocks added since. Pass `fromBlock` to scan a narrower range instead —
+   * which answers a different question and neither reads nor fills that cache.
    */
-  async getTenantSlugs(fromBlock: bigint | 'earliest' = 'earliest'): Promise<Map<Hex, string>> {
-    const logs = await this.publicClient.getContractEvents({
-      address: this.address,
-      abi: gianoPaymasterAbi,
-      eventName: 'TenantRegistered',
-      fromBlock,
-      toBlock: 'latest',
-    });
+  async getTenantSlugs(fromBlock?: bigint | 'earliest'): Promise<Map<Hex, string>> {
+    const head = await this.publicClient.getBlockNumber();
+    const floor = fromBlock === 'earliest' ? undefined : fromBlock;
 
-    const slugs = new Map<Hex, string>();
-    for (const log of logs) {
+    // An explicit floor is a different question from "every slug", so it bypasses the cache in
+    // both directions: it neither reads a map built from a lower floor nor writes one back.
+    const cached = floor === undefined ? this.slugCache : undefined;
+    const from = floor ?? (cached ? cached.scannedTo + 1n : this.logFloor());
+
+    const slugs = new Map<Hex, string>(cached?.slugs);
+    for (const log of await this.scanEvents('TenantRegistered', 'the tenant roster', from, head)) {
       const args = log.args as { tenantId?: Hex; slug?: string };
       if (args.tenantId && args.slug !== undefined) slugs.set(args.tenantId, args.slug);
     }
-    return slugs;
+
+    if (floor === undefined) this.slugCache = { slugs, scannedTo: head };
+    return new Map(slugs);
+  }
+
+  /** Where a log read starts when the caller names no floor. See {@link PaymasterClientConfig.deploymentBlock}. */
+  private logFloor(): bigint {
+    return this.deploymentBlock ?? 0n;
+  }
+
+  /** One event's logs over a block range, windowed to whatever span the node will serve. */
+  private scanEvents(
+    eventName: string,
+    subject: string,
+    fromBlock: bigint,
+    toBlock: bigint,
+    args?: Record<string, unknown>,
+  ): Promise<Array<{ args: unknown }>> {
+    return scanLogs({
+      fromBlock,
+      toBlock,
+      maxRange: this.maxLogRange,
+      subject,
+      query: (from, to) =>
+        this.publicClient.getContractEvents({
+          address: this.address,
+          abi: gianoPaymasterAbi,
+          eventName,
+          args,
+          fromBlock: from,
+          toBlock: to,
+        } as never) as Promise<Array<{ args: unknown }>>,
+    });
   }
 
   // -------------------------------------------------------------------------------------------
@@ -403,14 +478,16 @@ export class GianoPaymasterClient {
   async getSponsorships(options: { tenantId?: string; fromBlock?: bigint | 'earliest'; toBlock?: bigint | 'latest' } = {}): Promise<
     readonly SponsorshipRecord[]
   > {
-    const logs = (await this.publicClient.getContractEvents({
-      address: this.address,
-      abi: gianoPaymasterAbi,
-      eventName: 'Sponsored',
-      args: options.tenantId ? { tenantId: toTenantId(options.tenantId) } : undefined,
-      fromBlock: options.fromBlock ?? 'earliest',
-      toBlock: options.toBlock ?? 'latest',
-    } as never)) as unknown as readonly SponsoredLog[];
+    const toBlock = options.toBlock === undefined || options.toBlock === 'latest' ? await this.publicClient.getBlockNumber() : options.toBlock;
+    const fromBlock = options.fromBlock === undefined || options.fromBlock === 'earliest' ? this.logFloor() : options.fromBlock;
+
+    const logs = (await this.scanEvents(
+      'Sponsored',
+      'sponsorship history',
+      fromBlock,
+      toBlock,
+      options.tenantId ? { tenantId: toTenantId(options.tenantId) } : undefined,
+    )) as unknown as readonly SponsoredLog[];
 
     return logs.map(toSponsorshipRecord);
   }

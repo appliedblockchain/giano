@@ -54,6 +54,30 @@ replay**:
 `getHealth()` is a pure function of an overview (`assessHealth`), so a UI can re-evaluate it
 against data it already has, and it cannot disagree with the deployment gate.
 
+### The two reads that walk logs
+
+`getTenantSlugs()` and `getSponsorships()` are the exceptions — a slug is emitted rather than
+stored, and a settlement is only ever an event — and hosted RPCs cap a single `eth_getLogs` at a
+few thousand blocks (Base Sepolia: `eth_getLogs is limited to a 10,000 range`). Both walk the range
+a window at a time, starting at 9,000 blocks and halving on rejection, so a node with a tighter cap
+is discovered rather than configured.
+
+Where the walk **starts** is yours to supply:
+
+```ts
+const paymaster = new GianoPaymasterClient({ address, publicClient, deploymentBlock: 46_634_819n });
+```
+
+Nothing below that block can hold one of this paymaster's logs, so it costs nothing in completeness
+and it is the difference between scanning a deployment and scanning a chain. It is not derivable —
+finding it needs `eth_getCode` at a historical block, and the endpoints that impose the range cap
+are the least likely to serve archive state — so without it these two calls throw
+`LogRangeUnboundedError` rather than issue thousands of requests. Every other read is a view call
+and needs none of this. A local devnet is short enough to scan whole, so omit it there.
+
+Registrations are cached between calls: a scan that reached block N only reads above N next time,
+which is what keeps a console polling every fifteen seconds from re-walking the whole history.
+
 ## What you can write
 
 Every write is **simulated before it is signed**, which is where the legible failure comes from: a

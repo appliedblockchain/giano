@@ -27,6 +27,17 @@ export type Deployment = {
    * Leaving it out fails loudly rather than silently reading the wrong contract.
    */
   paymasterAddress?: `0x${string}`;
+  /**
+   * The block the paymaster proxy was deployed at.
+   *
+   * Where the tenant roster's and the history panel's log reads start. Hosted RPCs cap a single
+   * `eth_getLogs` at a few thousand blocks, so on a public chain the console has to walk the range
+   * a window at a time — and walking it from genesis is thousands of requests rather than a few
+   * dozen. Without it the SDK refuses those reads instead of trying.
+   *
+   * Optional because a local devnet is short enough that scanning from genesis is free.
+   */
+  deploymentBlock?: bigint;
   /** Seconds between automatic refreshes. 0 disables polling. */
   refreshSeconds: number;
 };
@@ -47,6 +58,7 @@ type RawDeployment = {
   chainId?: number | string;
   rpcUrl?: string;
   paymasterAddress?: string;
+  deploymentBlock?: number | string;
   refreshSeconds?: number | string;
 };
 
@@ -65,11 +77,20 @@ function toDeployment(raw: RawDeployment, fallbackLabel: string, index: number):
   if (!chainId || Number.isNaN(chainId)) throw new Error(`deployment ${index + 1} (${raw.label ?? fallbackLabel}) has no chainId`);
   if (!raw.rpcUrl) throw new Error(`deployment ${index + 1} (${raw.label ?? fallbackLabel}) has no rpcUrl`);
 
+  // A block number, not a quantity to default: an unset variable substitutes to "" and a wrong
+  // floor silently hides tenants registered below it, so anything that is not a plain number is a
+  // configuration error rather than a zero.
+  const rawBlock = raw.deploymentBlock === undefined || raw.deploymentBlock === '' ? undefined : String(raw.deploymentBlock);
+  if (rawBlock !== undefined && !/^\d+$/.test(rawBlock)) {
+    throw new Error(`deployment ${index + 1} (${raw.label ?? fallbackLabel}) has a deploymentBlock that is not a block number: ${rawBlock}`);
+  }
+
   return {
     label: raw.label || fallbackLabel || `chain ${chainId}`,
     chainId,
     rpcUrl: raw.rpcUrl,
     paymasterAddress: raw.paymasterAddress ? (raw.paymasterAddress as `0x${string}`) : undefined,
+    deploymentBlock: rawBlock === undefined ? undefined : BigInt(rawBlock),
     refreshSeconds: raw.refreshSeconds === undefined || raw.refreshSeconds === '' ? DEFAULT_REFRESH_SECONDS : Number(raw.refreshSeconds),
   };
 }

@@ -349,10 +349,11 @@ module "svc-paymaster-admin" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAIN_ID          = var.chain_id
-    GIANO_PAYMASTER_ADDRESS = var.paymaster_address # the registry has no entry — must be set
-    GIANO_ENVIRONMENT_LABEL = "dev (Base Sepolia)"
-    GIANO_REFRESH_SECONDS   = "15"
+    GIANO_CHAIN_ID                   = var.chain_id
+    GIANO_PAYMASTER_ADDRESS          = var.paymaster_address # the registry has no entry — must be set
+    GIANO_PAYMASTER_DEPLOYMENT_BLOCK = var.paymaster_deployment_block
+    GIANO_ENVIRONMENT_LABEL          = "dev (Base Sepolia)"
+    GIANO_REFRESH_SECONDS            = "15"
   }
   secret_arns = {
     # Single-chain deliberately — the console has no chain switcher (§14.6).

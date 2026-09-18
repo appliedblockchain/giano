@@ -67,6 +67,17 @@ variable "paymaster_address" {
   default     = "0xf98b56de62ce88cEb70A9155582248cDBf2D0718"
 }
 
+# The block the proxy above was created in. paymaster-admin reads the tenant roster's slugs and the
+# sponsorship history from logs, and Base Sepolia's RPC caps eth_getLogs at a 10,000-block span —
+# so those reads are walked a window at a time, and this is what bounds the walk to the
+# deployment's history rather than the chain's. Wrong-but-lower only costs requests; wrong-and-
+# higher hides every tenant registered below it, so it must match the proxy, not the factory.
+variable "paymaster_deployment_block" {
+  description = "block the GianoPaymaster proxy was deployed in — where paymaster-admin's log reads start"
+  type        = string
+  default     = "46634819"
+}
+
 # ⚠ REQUIRED for wallet-byo only (§14.5) — its bundle has no registry dependency, unlike
 # wallet-api and wallet-web which default correctly from the contracts registry.
 variable "factory_address" {

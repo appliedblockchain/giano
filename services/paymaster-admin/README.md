@@ -50,7 +50,7 @@ console at an arbitrary chain by typing into it.
 ```json
 {
   "deployments": [
-    { "label": "base sepolia", "chainId": 84532, "rpcUrl": "https://…", "paymasterAddress": "0x…", "refreshSeconds": 30 },
+    { "label": "base sepolia", "chainId": 84532, "rpcUrl": "https://…", "paymasterAddress": "0x…", "deploymentBlock": 46634819, "refreshSeconds": 30 },
     { "label": "local devnet", "chainId": 31337, "rpcUrl": "http://localhost:8545", "paymasterAddress": "0x…", "refreshSeconds": 10 }
   ]
 }
@@ -62,6 +62,7 @@ console at an arbitrary chain by typing into it.
 | `chainId` | required |
 | `rpcUrl` | required; `/rpc` uses the container's same-origin proxy |
 | `paymasterAddress` | the proxy. See the caveat below — set it |
+| `deploymentBlock` | the block that proxy was deployed in. See the caveat below — set it on a public chain |
 | `refreshSeconds` | poll interval; `0` disables polling |
 
 With more than one entry the header shows a **picker**; with one it shows the label as a badge. The
@@ -76,10 +77,23 @@ deployment now on screen. Reconnecting is one click.
 > SDK to resolve the address from the contracts registry, and no chain in `packages/contracts/addresses.ts`
 > currently declares a `sponsorshipPaymaster`. Omit it and the console fails to start, loudly.
 
+> **`deploymentBlock` is optional in the schema and required on any chain but a devnet.** Two panels
+> read from logs — tenant slugs, which are emitted rather than stored, and the sponsorship history —
+> and hosted RPCs cap a single `eth_getLogs` at a few thousand blocks. Base Sepolia answers anything
+> wider with `eth_getLogs is limited to a 10,000 range`. So the console walks the range a window at a
+> time, and this is where the walk starts: from the deployment it is a few dozen requests, from
+> genesis it is thousands. Set it and those two panels load; omit it and they refuse with a
+> `LogRangeUnboundedError` naming this key, while every other panel keeps working. A local devnet is
+> short enough to scan whole, so leave it out there.
+>
+> Find it with the transaction that created the proxy, or by bisecting `eth_getCode` against an
+> archive endpoint. Too low only costs requests. **Too high silently hides every tenant registered
+> below it**, so it has to be the block of the proxy, not of the implementation or the factory.
+
 `public/config.json` is the dev copy. The container renders `docker/config.json.template` from
 either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-deployment shorthand
-`GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
-`GIANO_REFRESH_SECONDS`.
+`GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_PAYMASTER_DEPLOYMENT_BLOCK` /
+`GIANO_ENVIRONMENT_LABEL` / `GIANO_REFRESH_SECONDS`.
 
 ## Addresses
 

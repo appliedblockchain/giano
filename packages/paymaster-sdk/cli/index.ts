@@ -18,6 +18,7 @@
  * Global flags (each with an env fallback):
  *   --rpc <url>           RPC_URL, default http://localhost:8545
  *   --paymaster <0x..>    SPONSORSHIP_PAYMASTER_ADDRESS, else the contracts registry for the chain
+ *   --deployment-block <n> SPONSORSHIP_PAYMASTER_DEPLOYMENT_BLOCK — where log reads start
  *   --private-key <0x..>  PAYMASTER_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY, else anvil key 0 on 31337
  *   --json                machine-readable output (implies --yes for reads)
  *   --yes                 skip the confirmation prompt on state-changing commands
@@ -605,6 +606,7 @@ const commands: Record<string, Command> = {
       out('\x1b[1mGlobal flags\x1b[0m');
       out('  --rpc <url>           RPC_URL, default http://localhost:8545');
       out('  --paymaster <0x..>    SPONSORSHIP_PAYMASTER_ADDRESS, else the contracts registry');
+      out('  --deployment-block <n> SPONSORSHIP_PAYMASTER_DEPLOYMENT_BLOCK — where log reads start');
       out('  --private-key <0x..>  PAYMASTER_PRIVATE_KEY, else anvil key 0 on chain 31337');
       out('  --json                machine-readable output');
       out('  --yes                 skip the confirmation prompt');
@@ -671,9 +673,19 @@ async function main(): Promise<void> {
   }
 
   const address = (args.flags.paymaster ?? process.env.SPONSORSHIP_PAYMASTER_ADDRESS) as Address | undefined;
+
+  // Reads that walk logs — `tenants`, `history` — need somewhere to start. A hosted RPC caps
+  // `eth_getLogs` at a few thousand blocks a query, so on a public chain scanning from genesis is
+  // thousands of round trips. Local anvil is short enough not to need it.
+  const rawDeploymentBlock = args.flags['deployment-block'] ?? process.env.SPONSORSHIP_PAYMASTER_DEPLOYMENT_BLOCK;
+  if (rawDeploymentBlock !== undefined && !/^\d+$/.test(rawDeploymentBlock)) {
+    throw new PaymasterSdkError('--deployment-block must be a block number');
+  }
+  const deploymentBlock = rawDeploymentBlock === undefined ? undefined : BigInt(rawDeploymentBlock);
+
   const paymaster = address
-    ? new GianoPaymasterClient({ address, publicClient, walletClient })
-    : await GianoPaymasterClient.fromRegistry({ publicClient, walletClient });
+    ? new GianoPaymasterClient({ address, publicClient, walletClient, deploymentBlock })
+    : await GianoPaymasterClient.fromRegistry({ publicClient, walletClient, deploymentBlock });
 
   await command.run({
     paymaster,
