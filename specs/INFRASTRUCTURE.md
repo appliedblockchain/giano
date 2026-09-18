@@ -3237,6 +3237,68 @@ It reads the chain directly and needs neither the database nor `wallet-api`. Not
 *writes* through an injected browser wallet, so whoever holds the role-admin key from §13.1 is the
 only person who can change anything through it.
 
+#### What "reads the chain directly" costs, and the window that bounds it
+
+This section originally treated "reads the chain" as one thing. It is two, and they age differently.
+
+Almost everything the console shows is a **view call** — the roster, balances, deficits, effective
+fees, solvency, stake, role holders, health, and the deployment check. Each is one `eth_call`
+against a bounded amount of state, so it costs the same on a chain's first day as on its
+ten-thousandth. That is the part this property is really defending: when `wallet-api` is down, or
+when the deployment has no `wallet-api` at all, an operator can still read every figure and still
+pause, fund, withdraw and re-role the paymaster.
+
+Two pieces of information are not view calls, because the contract does not store them:
+
+| | Why it needs logs |
+|---|---|
+| Tenant **slug** | emitted by `TenantRegistered` and deliberately not stored — [PAYMASTER-SPECS O1](PAYMASTER-SPECS.md), §3.4 |
+| **Sponsorship history** | the contract keeps a running balance, not a record per settlement — PAYMASTER-SPECS §3.7 |
+
+Reconstructing either from genesis is `O(chain age)`, and a third-party RPC will not serve it.
+Every hosted provider caps the span one `eth_getLogs` may cover — Base Sepolia answers anything
+wider with `eth_getLogs is limited to a 10,000 range` — so a full history read becomes hundreds of
+round trips, growing by about five more every day on a two-second chain.
+
+A console built that way has an expiry date. Measured against the §13.1 paymaster on Base Sepolia,
+walking from its deployment block in 9,000-block windows at four concurrent requests:
+
+| age of the deployment | windows | first load |
+|---|---|---|
+| 1 week | 37 | 2s |
+| 3 months | 438 | 22s |
+| 6 months | 877 | 43s |
+| 12 months | 1,753 | 86s |
+
+Sustaining that request rate against a shared endpoint invites throttling well before the arithmetic
+alone becomes unusable.
+
+The console's answer differs for the two, because what they are worth differs:
+
+- **The slug is not shown at all.** A label is a convenience; the tenant's `bytes16` id is its
+  actual identity, it is the same value as the `tenants.id` UUID the backend keys on (O1), and
+  every view call already carries it. Rendering the label would mean a log read on every poll — and
+  a *conditional* one, since a registration old enough to fall outside the window cannot be
+  recovered at all on a node that has pruned it. That buys a nicer column at the cost of a read
+  that gets slower with chain age and sometimes silently returns nothing. The console still
+  **writes** the slug when registering a tenant, because that event is what lets an auditor
+  reconcile the on-chain record against the backend's tenant table; reading it back is a job for
+  `giano-paymaster tenant <id>`, which can afford to page backwards with the id as an indexed
+  filter, or for a block explorer.
+- **History reads one window, anchored at the head, and pages backwards on request.** A settlement
+  record exists nowhere else, so there is nothing to fall back on — but a window is enough, because
+  what an operator wants from this panel is what happened recently. The window is a single
+  `eth_getLogs` of whatever span the node will serve, discovered by halving rather than configured,
+  which makes the cost constant in chain age and adds no setting that can be wrong. The panel names
+  the blocks it read and offers an explicit step further back, rather than presenting a window as
+  if it were everything.
+
+The property that justifies reading logs here at all survives intact. PAYMASTER-SPECS §5.6 wants a
+tenant able to *reproduce* Giano's figures rather than trust them, and reproducing a figure is a
+point query: take a settlement's block and userop hash, fetch that block's `Sponsored` events,
+compare. It was never a scan of everything since deployment; that was the shape of the first
+implementation, not of the requirement.
+
 ### 14.7 `bundler`
 
 Two services, `bundler-base-sepolia` and `bundler-eth-sepolia` — the same image

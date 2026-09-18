@@ -81,6 +81,35 @@ either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-dep
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
 `GIANO_REFRESH_SECONDS`.
 
+## What is a view call, and what is a window
+
+Almost everything on screen is an `eth_call` — the roster, balances, deficits, fees, solvency,
+stake, roles, health. Each reads a bounded amount of contract state, so it costs the same on a
+chain's first day as on its ten-thousandth, and none of it needs a backend.
+
+Two things are not stored on chain and so cannot be view calls: a tenant's **slug**, which
+`TenantRegistered` emits and the contract deliberately does not keep, and the **sponsorship
+history**, which exists only as `Sponsored` events. Hosted RPCs cap the span a single `eth_getLogs`
+may cover — Base Sepolia refuses anything over 10,000 blocks — so reading either from the start of a
+deployment is hundreds of requests, growing by about five a day.
+
+The console answers the two differently:
+
+- **Sponsorships** reads one window ending at the head and says which blocks those are. *Look
+  further back* reads the preceding window and adds to the table. A settlement record exists
+  nowhere else, so a window is the affordable version of a read that has no substitute.
+- **Tenants** shows no slug at all — a tenant is identified by the id the contract uses, which is
+  the same value as its `tenants.id` UUID and which every view call already carries. The panel is
+  therefore entirely view calls: complete, exact, and the same cost on a chain's first day as on its
+  ten-thousandth.
+
+Registering a tenant still **writes** a slug, because that event is what lets an auditor reconcile
+the on-chain record against the backend's tenant table. To read one back, use
+`giano-paymaster tenant <id>` — it pages backwards with the tenant id as an indexed filter, which a
+console refreshing every fifteen seconds cannot afford to do — or a block explorer.
+
+INFRASTRUCTURE §14.6 has the reasoning and the numbers.
+
 ## Addresses
 
 Addresses and other on-chain identifiers are **never abbreviated**, and **clicking one copies it**.
