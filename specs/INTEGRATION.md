@@ -257,15 +257,20 @@ upgrade controls. We would rather say that than let the shorter version stand.
 ## 9. SDK snippet (dApp)
 
 ```ts
-import { createGianoWalletProvider, createGianoConnector } from '@appliedblockchain/giano-connector';
-import { baseSepolia } from 'wagmi/chains';
+import { createGianoWalletProvider, createGianoConnector, giano } from '@appliedblockchain/giano-connector';
+import { http } from 'viem';
+import { baseSepolia } from 'viem/chains';
 
-const provider = createGianoWalletProvider({ walletUrl: 'https://wallet.yourapp.com', chain: baseSepolia });
-const connector = createGianoConnector({ provider });
-// use `connector` with wagmi, or `giano({ provider })` with RainbowKit
+// One provider per chain, bound for its life; the read path is answered dApp-side.
+const provider = createGianoWalletProvider({ walletUrl: 'https://wallet.yourapp.com', chain: baseSepolia, transport: http() });
+const connector = createGianoConnector({ provider }); // wagmi
+const wallet = giano({ provider });                   // RainbowKit, inside connectorsForWallets(...)
 ```
 
-See `packages/connector/README.md` for the full API and the 0.x → 1.x migration guide.
+See `packages/connector/README.md` for the full API and the 0.x → 1.x migration guide. The reference
+integration is `services/custom-example`: every method above is reachable from its UI, every
+failure path is a control, and every outcome is recorded with its receipt — its `Adapters` card is
+exactly the wagmi + RainbowKit wiring shown here.
 
 ### Chains: how a dApp names one, and what a refusal means
 
@@ -306,7 +311,8 @@ implements no credential handling, no ceremony, and no owner-set construction of
 // From a user gesture (it opens the wallet popup). Takes NO arguments and resolves with
 // NOTHING: the app cannot pre-fill the form, preselect a credential, or learn the owner set —
 // its whole power is showing the user their own wallet's management screen (WM-39, WM-40).
-await provider.openWalletManagement();
+const returned = await provider.openWalletManagement();
+// The reference dApp treats anything other than `undefined` here as a violation and records it.
 ```
 
 It follows the `giano_`-namespaced transport convention, so no standard EIP-1193 method changes
