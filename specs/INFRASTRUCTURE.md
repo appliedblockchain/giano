@@ -3396,8 +3396,9 @@ GHCR pushes stay: they are the distribution channel ([§11](#11-ecr)).
 
 ## 16. Repository changes this requires
 
-Six changes to this repository that are code, not infrastructure. None is large. Three block
-bring-up (§16.1–§16.3); §16.5 blocks tenant `byoui` specifically; §16.4 blocks the second
+Six changes to this repository that are code, not infrastructure. None is large. §16.1 blocks
+bring-up (§16.2 has landed; §16.3's code has, and now waits on task-definition variables);
+§16.5 blocks tenant `byoui` specifically; §16.4 blocks the second
 *stock-UI* tenant, which is a different and more dangerous kind of deadline — it is the one that
 looks fine in dev and is a cross-tenant hole in staging; and §16.6 blocks nothing but is the
 cheapest thing on the list.
@@ -3436,11 +3437,30 @@ own schema on boot ([§9.6](#96-migrations-run-on-boot)).
 
 ### 16.3 A deployable sponsorship provisioner
 
-`e2e/devnet/provision-sponsorship.mjs` hardcodes the e2e tenants' admin keys and reads
-`e2e/devnet/addresses.json`. The dev environment needs the same thing driven entirely by
-environment: tenant slug, admin key and chain id in, a `PUT /v1/admin/sponsorship` out. Either
-generalise that script or use `packages/paymaster-sdk`'s CLI, which already speaks to the same
-endpoints.
+`services/wallet-api/src/provision-sponsorship.ts`, built as `dist/provision-sponsorship.js` and
+run by the one-shot task ([§9.7](#97-one-shot-tasks)). Driven entirely by environment:
+`TENANT_SLUG`, `CHAIN_ID` (a list — rules are per (tenant, chain) and never inherited, so both
+chains are written in one run), `SPONSORSHIP_CONFIG` and the `TENANTS_SEED` secret the admin key
+is looked up in, out to a `PUT /v1/admin/sponsorship` per chain.
+
+It validates the rules against the same schema the API applies before it writes anything, reads
+the configuration back rather than trusting the write, and checks the tenant's registration and
+balance against the paymaster. `SPONSORSHIP_REQUIRE_FUNDED` decides whether an unfunded tenant is
+a warning or a failed task.
+
+**The task definition still needs two things before this can run**, neither of them code:
+
+| | |
+|---|---|
+| `SPONSORSHIP_CONFIG` | the rule set to write, as JSON. Not currently in `ecs_tasks_oneshot.tf`, and the task exits 1 without it |
+| `CHAIN_ID` | currently `var.chain_id` alone, so chain B is left unconfigured after an otherwise successful run. Rules are per (tenant, chain) and never inherited (MC-67); the script takes a comma-separated list, so `"${var.chain_id},${var.chain_b_id}"` writes both |
+
+`SPONSORSHIP_REQUIRE_FUNDED` defaults to `true`. A first bring-up provisions rules before the
+paymaster console has been used to fund anything, so §18 step 8 wants `"false"` in the task
+definition until dev is funded.
+
+`e2e/devnet/provision-sponsorship.mjs` stays as it is: it hardcodes the e2e tenants' admin keys
+and reads `e2e/devnet/addresses.json`, which is right for a stack whose addresses are baked.
 
 ### 16.4 A Host-resolved tenant-config endpoint
 
