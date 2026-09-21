@@ -3241,18 +3241,18 @@ there is one authored list, and adding a chain to the deployment adds it to the 
 | `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
 | `GIANO_RPC_UPSTREAM` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) — the same-origin `/rpc` proxy only, which no descriptor points at |
 
-The two shapes are not identical, so the entrypoint maps one onto the other before writing
-`/config.json`: `name` becomes the picker's `label`, `sponsorshipPaymaster` becomes
-`paymasterAddress`, and `refreshSeconds` defaults to 15. The mapping is idempotent, so an array
-already in the console's own shape — a compose file's, or the one the shorthand just built — passes
-through untouched.
+Nothing is translated on the way in. The console names its fields `chainId`, `name`, `rpcUrl` and
+`sponsorshipPaymaster` — the spelling `packages/contracts/chains.ts` uses — so a descriptor *is* a
+deployment. `refreshSeconds` is the one field it adds, because how often a console polls is not a
+property of a chain, and it defaults to 15 rather than being required of an array authored for
+`wallet-api`.
 
-It is a **projection**, not a rename: a chain descriptor also carries `bundlerUrl`, `entryPoint`,
-`factory` and `policy`, and `/config.json` is served to the browser. Naming the four fields the
-console reads keeps the internal Cloud Map bundler hostnames out of a file anyone who can open the
-console can read. What does reach the browser is each chain's `rpcUrl`, QuickNode key included —
-unchanged from the single-chain configuration, and the reason `wallet-web` was moved off direct RPC
-entirely (R3).
+The entrypoint still **projects**: it keeps those five fields and drops the rest. A descriptor also
+carries `bundlerUrl`, `entryPoint`, `factory` and `policy`, and `/config.json` is served to the
+browser, so naming what is kept is what stops the internal Cloud Map bundler hostnames — and
+whatever field a descriptor grows next — from being published to everyone who can open the console.
+What does reach the browser is each chain's `rpcUrl`, QuickNode key included: unchanged from the
+single-chain configuration, and the reason `wallet-web` was moved off direct RPC entirely (R3).
 
 `GIANO_CSP_CONNECT_SRC` is **derived** from that array rather than configured beside it: one origin
 per `rpcUrl`, because the browser dials each chain directly. Configuring it separately is the kind

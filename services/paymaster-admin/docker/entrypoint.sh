@@ -4,13 +4,13 @@ set -eu
 # Runtime config injection: one published image serves every deployment, so nothing about which
 # chains or which paymasters this console administers is baked in at build time.
 #
-# Three ways to say it. `GIANO_DEPLOYMENTS` is a JSON array and is the general form — several
-# environments in one console, which is what the deployment picker switches between. That array may
-# equally be `wallet-api`'s own `GIANO_CHAINS` value, handed over verbatim, so that a deployment
-# serving both has ONE authored chain list rather than two that drift. The `GIANO_CHAIN_ID` /
-# `GIANO_RPC_URL` / … variables are the single-deployment shorthand, kept because most deployments
-# administer one chain and because it is what a simple compose block or Helm values file naturally
-# produces.
+# Two ways to say it. `GIANO_DEPLOYMENTS` is a JSON array and is the general form — several
+# environments in one console, which is what the deployment picker switches between. Its entries
+# are chain descriptors, spelled as `packages/contracts/chains.ts` spells them, so a deployment
+# that also runs wallet-api passes that service's own `GIANO_CHAINS` value straight through and
+# the chain list is authored once. The `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / … variables are the
+# single-deployment shorthand, kept because most deployments administer one chain and because it is
+# what a simple compose block or Helm values file naturally produces.
 
 if [ -z "${GIANO_DEPLOYMENTS:-}" ]; then
   : "${GIANO_CHAIN_ID:?set GIANO_DEPLOYMENTS (a JSON array) or GIANO_CHAIN_ID + GIANO_RPC_URL}"
@@ -22,30 +22,24 @@ if [ -z "${GIANO_DEPLOYMENTS:-}" ]; then
   GIANO_ENVIRONMENT_LABEL="${GIANO_ENVIRONMENT_LABEL:-chain ${GIANO_CHAIN_ID}}"
   GIANO_REFRESH_SECONDS="${GIANO_REFRESH_SECONDS:-15}"
 
-  GIANO_DEPLOYMENTS=$(printf '[{"label":"%s","chainId":%s,"rpcUrl":"%s","paymasterAddress":"%s","refreshSeconds":%s}]' \
+  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","sponsorshipPaymaster":"%s","refreshSeconds":%s}]' \
     "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_REFRESH_SECONDS")
 fi
 
-# Accept a wallet-api chain descriptor wherever a deployment is expected: `name` is the label there
-# and `sponsorshipPaymaster` the address this console administers. Reusing that value is what keeps
-# the two services from each carrying their own copy of the chain list — one authored array, one
-# secret, no reconciliation.
+# Keep the four fields the console reads and drop the rest.
 #
-# The projection matters as much as the renaming: a descriptor also carries `bundlerUrl`, `policy`
-# and `entryPoint`, and /config.json is served to the browser. Naming the four fields the console
-# reads means the rest is dropped here rather than published. Idempotent, so an array already in
-# the console's own shape — including the one the shorthand just built — passes through unchanged.
+# A deployment serving both hands this variable the same array wallet-api reads as GIANO_CHAINS,
+# which is what keeps the chain list authored once. The console spells its fields as that
+# descriptor spells them, so nothing is renamed here — but a descriptor also carries bundlerUrl,
+# entryPoint, factory and policy, and /config.json is served to the browser. Naming what is kept
+# means a field added to a descriptor later is not published to every console user by default.
 #
 # Malformed JSON stops the container here, with jq naming the defect in the logs. That is the
 # intended failure: the alternative is nginx serving a /config.json the SPA refuses to parse, which
 # presents as a blank console with nothing to read.
 GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
   [ .[]
-    | { label:            (.label // .name),
-        chainId:          .chainId,
-        rpcUrl:           .rpcUrl,
-        paymasterAddress: (.paymasterAddress // .sponsorshipPaymaster),
-        refreshSeconds:   (.refreshSeconds // 15) }
+    | { name, chainId, rpcUrl, sponsorshipPaymaster, refreshSeconds: (.refreshSeconds // 15) }
     | with_entries(select(.value != null)) ]')
 export GIANO_DEPLOYMENTS
 

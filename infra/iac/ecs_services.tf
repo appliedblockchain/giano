@@ -354,10 +354,10 @@ module "svc-paymaster-admin" {
   # them here would be four variables that read as configuration and change nothing.
   secret_arns = {
     # The SAME secret wallet-api reads as GIANO_CHAINS — one authored chain list for the
-    # deployment, not a second copy to keep in step (§14.6). The container maps each descriptor's
-    # `name` and `sponsorshipPaymaster` onto the console's own fields and drops the rest, so
-    # nothing here has to agree with anything: the list the API serves IS the list the console
-    # administers. Both chains carry the paymaster, so both belong in the picker.
+    # deployment, not a second copy to keep in step (§14.6). The console names its fields as a
+    # chain descriptor names them, so the value needs no translation; the container drops the
+    # fields it does not read before serving /config.json to a browser. Nothing here has to agree
+    # with anything: the list the API serves IS the list the console administers.
     GIANO_DEPLOYMENTS = module.asm-app.secret_arns["chains"]
 
     # connect-src is derived from that array by the container, so there is no per-chain CSP

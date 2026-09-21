@@ -87,7 +87,7 @@ export function App() {
                   >
                     {deployments.map((candidate) => (
                       <option key={deploymentKey(candidate)} value={deploymentKey(candidate)}>
-                        {candidate.label} — chain {candidate.chainId}
+                        {candidate.name} — chain {candidate.chainId}
                       </option>
                     ))}
                   </NativeSelect.Field>
@@ -95,7 +95,7 @@ export function App() {
                 </NativeSelect.Root>
               ) : (
                 <Badge colorPalette="brand" variant="subtle">
-                  {deployment.label}
+                  {deployment.name}
                 </Badge>
               )}
               <Badge variant="outline">chain {deployment.chainId}</Badge>
