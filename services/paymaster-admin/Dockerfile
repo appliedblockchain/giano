@@ -18,7 +18,7 @@ RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-paymaster-admin build
 
 FROM nginx:1.27-alpine
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl jq
 COPY --from=build /repo/services/paymaster-admin/dist /usr/share/nginx/html
 COPY services/paymaster-admin/docker/nginx.conf.template /etc/giano/nginx.conf.template
 COPY services/paymaster-admin/docker/config.json.template /etc/giano/config.json.template

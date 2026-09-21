@@ -353,18 +353,15 @@ module "svc-paymaster-admin" {
   # skipped entirely, so each of those now lives in its own descriptor inside the array. Leaving
   # them here would be four variables that read as configuration and change nothing.
   secret_arns = {
-    # Both chains, one composed secret — the array the console's deployment picker switches
-    # between (§14.6). Composed rather than assembled by Terraform because each descriptor's
-    # rpcUrl embeds that chain's QuickNode key, and an ECS `secrets` entry can only substitute a
-    # WHOLE variable from a single ARN; the same constraint that makes wallet-api's `chains` a
-    # hand-authored secret (§7.3). Its paymasterAddress must agree with var.paymaster_address and
-    # with `chains` — nothing enforces that, so check all three when any one moves.
-    GIANO_DEPLOYMENTS = module.asm-app.secret_arns["paymaster-admin-deployments"]
+    # The SAME secret wallet-api reads as GIANO_CHAINS — one authored chain list for the
+    # deployment, not a second copy to keep in step (§14.6). The container maps each descriptor's
+    # `name` and `sponsorshipPaymaster` onto the console's own fields and drops the rest, so
+    # nothing here has to agree with anything: the list the API serves IS the list the console
+    # administers. Both chains carry the paymaster, so both belong in the picker.
+    GIANO_DEPLOYMENTS = module.asm-app.secret_arns["chains"]
 
-    # connect-src for the console's CSP: one origin per chain, space-separated, because the browser
-    # dials each chain's RPC directly. The container defaults this to GIANO_RPC_URL alone, which
-    # with two deployments blocks chain B's calls with nothing in the UI to explain it.
-    GIANO_CSP_CONNECT_SRC = module.asm-app.secret_arns["paymaster-admin-csp-connect-src"]
+    # connect-src is derived from that array by the container, so there is no per-chain CSP
+    # variable to forget when a chain is added.
 
     # Feeds the same-origin /rpc proxy only, which exists for nodes that send no CORS headers. No
     # descriptor points at it here (QuickNode sends them), and one proxy cannot serve two chains

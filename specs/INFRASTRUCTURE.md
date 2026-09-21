@@ -1652,10 +1652,8 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 |---|---|---|
 | `database-password` | RDS master password | RDS itself ([§8.3](#83-the-master-password)), and `database-url` |
 | `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin (`/rpc` proxy only), custom-example, custom-example-byoui, bundler-base-sepolia |
-| `paymaster-admin-deployments` | the full `GIANO_DEPLOYMENTS` JSON array — both chain descriptors, RPC URLs embedded (§14.6) | paymaster-admin |
-| `paymaster-admin-csp-connect-src` | both RPC origins, space-separated, for the console's CSP | paymaster-admin |
 | `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui, bundler-eth-sepolia |
-| `chains` | the full `GIANO_CHAINS` JSON for wallet-api — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api |
+| `chains` | the full `GIANO_CHAINS` JSON — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api, paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
 | `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)) | bundler-base-sepolia, bundler-eth-sepolia |
 | `alto-utility-key` | 32-byte hex — likewise shared, needs no funding | bundler-base-sepolia, bundler-eth-sepolia |
@@ -1671,10 +1669,8 @@ the middle of a larger JSON string Terraform composes. So the whole array is han
 1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys` alongside
 otherwise-literal tenant fields).
 
-`paymaster-admin-deployments` is composed for exactly the same reason, and
-`paymaster-admin-csp-connect-src` because it is derived from those same URLs.
-
-There is only the one composed `GIANO_CHAINS` secret, for `wallet-api` alone. `wallet-web` also sets
+There is only the one composed `GIANO_CHAINS` secret, and `paymaster-admin` reads that same value
+rather than a second one of its own ([§14.6](#146-paymaster-admin)). `wallet-web` also sets
 `GIANO_CHAINS`, but as a **literal** — `[{ "chainId": 84532 }, { "chainId": 11155111 }]`, no
 `rpcUrl` — so no secret is needed for it at all: every browser-facing chain descriptor defaults to
 wallet-api's relay ([§14.3](#143-wallet-web)). An earlier revision gave `wallet-web` its own
@@ -3234,33 +3230,39 @@ or the `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / … shorthand it wraps into a one-el
 deployment uses the array, so **the shorthand variables are not set and would be ignored if they
 were** — per-chain values live in the descriptors instead.
 
+**The array is `chains`** — the very secret `wallet-api` reads as `GIANO_CHAINS`
+([§14.2](#142-wallet-api)), handed over unchanged. A chain list authored twice is a chain list that
+disagrees with itself eventually, and the failure is quiet: a console reading one paymaster while
+the API sponsors through another shows a healthy deployment that refuses every transaction. So
+there is one authored list, and adding a chain to the deployment adds it to the console.
+
 | Variable | Value |
 |---|---|
-| `GIANO_DEPLOYMENTS` | both descriptors, below (**ASM** `giano-dev-paymaster-admin-deployments`, composed — embeds both RPC URLs) |
-| `GIANO_CSP_CONNECT_SRC` | both RPC origins, space-separated (**ASM** `giano-dev-paymaster-admin-csp-connect-src`) |
+| `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
 | `GIANO_RPC_UPSTREAM` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) — the same-origin `/rpc` proxy only, which no descriptor points at |
 
-```json
-[
-  {
-    "label": "dev (Base Sepolia)", "chainId": 84532,
-    "rpcUrl": "<base sepolia quicknode endpoint>",
-    "paymasterAddress": "<the §13.1 proxy>", "refreshSeconds": 15
-  },
-  {
-    "label": "dev (Ethereum Sepolia)", "chainId": 11155111,
-    "rpcUrl": "<eth sepolia quicknode endpoint>",
-    "paymasterAddress": "<the §13.1 proxy>", "refreshSeconds": 15
-  }
-]
-```
+The two shapes are not identical, so the entrypoint maps one onto the other before writing
+`/config.json`: `name` becomes the picker's `label`, `sponsorshipPaymaster` becomes
+`paymasterAddress`, and `refreshSeconds` defaults to 15. The mapping is idempotent, so an array
+already in the console's own shape — a compose file's, or the one the shorthand just built — passes
+through untouched.
 
-Two things this shape gets wrong quietly, both worth checking when either is edited. Each
-descriptor's `paymasterAddress` is hand-typed here as well as in `var.paymaster_address` and in
-`chains` ([§14.2](#142-wallet-api)), and nothing reconciles the three. And `connect-src` has to
-carry **both** origins: it defaults to `GIANO_RPC_URL` alone, so a second chain added to the array
-without a matching CSP entry has every call blocked by the browser with nothing in the UI saying
-so.
+It is a **projection**, not a rename: a chain descriptor also carries `bundlerUrl`, `entryPoint`,
+`factory` and `policy`, and `/config.json` is served to the browser. Naming the four fields the
+console reads keeps the internal Cloud Map bundler hostnames out of a file anyone who can open the
+console can read. What does reach the browser is each chain's `rpcUrl`, QuickNode key included —
+unchanged from the single-chain configuration, and the reason `wallet-web` was moved off direct RPC
+entirely (R3).
+
+`GIANO_CSP_CONNECT_SRC` is **derived** from that array rather than configured beside it: one origin
+per `rpcUrl`, because the browser dials each chain directly. Configuring it separately is the kind
+of thing that is correct on the day it is written and wrong the first time a chain is added, and
+the symptom — every call to the new chain blocked by the CSP, nothing in the UI explaining it —
+does not point at the variable that caused it. It stays overridable for a deployment that fronts
+its nodes with something the array cannot describe.
+
+Malformed JSON stops the container at boot with jq naming the defect, rather than letting nginx
+serve a `/config.json` the SPA refuses to parse — which presents as a blank console.
 
 It reads the chain directly and needs neither the database nor `wallet-api`. Note that the console
 *writes* through an injected browser wallet, so whoever holds the role-admin key from §13.1 is the
