@@ -3239,7 +3239,7 @@ there is one authored list, and adding a chain to the deployment adds it to the 
 | Variable | Value |
 |---|---|
 | `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
-| `GIANO_RPC_UPSTREAM` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) — the same-origin `/rpc` proxy only, which no descriptor points at |
+| `GIANO_RPC_PROXY` | `true` — every chain is reached through this origin, so no provider token reaches a browser |
 
 Nothing is translated on the way in. The console names its fields `chainId`, `name`, `rpcUrl` and
 `sponsorshipPaymaster` — the spelling `packages/contracts/chains.ts` uses — so a descriptor *is* a
@@ -3254,12 +3254,36 @@ whatever field a descriptor grows next — from being published to everyone who 
 What does reach the browser is each chain's `rpcUrl`, QuickNode key included: unchanged from the
 single-chain configuration, and the reason `wallet-web` was moved off direct RPC entirely (R3).
 
-`GIANO_CSP_CONNECT_SRC` is **derived** from that array rather than configured beside it: one origin
-per `rpcUrl`, because the browser dials each chain directly. Configuring it separately is the kind
-of thing that is correct on the day it is written and wrong the first time a chain is added, and
-the symptom — every call to the new chain blocked by the CSP, nothing in the UI explaining it —
-does not point at the variable that caused it. It stays overridable for a deployment that fronts
-its nodes with something the array cannot describe.
+#### The tokens stay server-side
+
+A descriptor's `rpcUrl` is browser-facing by default: it is written into `/config.json` and dialled
+by the SPA. Each of this environment's is a QuickNode endpoint with its token in the path, so
+handing them over as-is publishes both tokens to everyone who can open the console — and they stay
+usable until someone rotates them. `wallet-web` was moved off direct RPC for this reason (R3); the
+console was left behind, and was serving both tokens in `/config.json` and naming one of them in
+its own CSP header.
+
+`GIANO_RPC_PROXY=true` closes it. The entrypoint emits one nginx location per chain —
+`/rpc/<chainId>`, proxying to that chain's keyed URL — and rewrites each descriptor's `rpcUrl` to
+that path before writing `/config.json`. nginx holds the keyed URL; the browser never sees it.
+
+A location per chain, each with a literal upstream, rather than one location and a variable:
+nginx then resolves every upstream host at config load, so a name that does not resolve stops the
+container at boot instead of failing the first call an operator makes. A variable `proxy_pass`
+would need a `resolver` directive, which means knowing the DNS server's address — one more thing
+to be wrong per environment.
+
+It is off by default. A deployment that already fronts its nodes — both compose stacks point
+`rpcUrl` at their own `/rpc` with the node in `GIANO_RPC_UPSTREAM` — would otherwise be proxied
+twice, through itself. That single legacy location is still emitted when `GIANO_RPC_UPSTREAM` is
+set, and only then.
+
+`GIANO_CSP_CONNECT_SRC` is **derived** from the array rather than configured beside it: one origin
+per `rpcUrl`, and with the proxy on there are none left, so `connect-src` collapses to `'self'`.
+Configuring it separately is the kind of thing that is correct on the day it is written and wrong
+the first time a chain is added, and the symptom — every call to the new chain blocked by the CSP,
+nothing in the UI explaining it — does not point at the variable that caused it. It stays
+overridable for a deployment that fronts its nodes with something the array cannot describe.
 
 Malformed JSON stops the container at boot with jq naming the defect, rather than letting nginx
 serve a `/config.json` the SPA refuses to parse — which presents as a blank console.

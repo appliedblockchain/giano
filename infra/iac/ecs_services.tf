@@ -348,10 +348,18 @@ module "svc-paymaster-admin" {
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
 
-  # No plain environment: with GIANO_DEPLOYMENTS set, the container's single-deployment shorthand
-  # (GIANO_CHAIN_ID / GIANO_PAYMASTER_ADDRESS / GIANO_ENVIRONMENT_LABEL / GIANO_REFRESH_SECONDS) is
-  # skipped entirely, so each of those now lives in its own descriptor inside the array. Leaving
-  # them here would be four variables that read as configuration and change nothing.
+  # The single-deployment shorthand (GIANO_CHAIN_ID / GIANO_PAYMASTER_ADDRESS /
+  # GIANO_ENVIRONMENT_LABEL / GIANO_REFRESH_SECONDS) is deliberately absent: with
+  # GIANO_DEPLOYMENTS set the container skips that branch, so each of those lives in its own
+  # descriptor instead. Leaving them here would be four variables that read as configuration and
+  # change nothing.
+  environment = {
+    # Both chains are reached through this origin, not dialled directly by the browser. Each
+    # descriptor's rpcUrl embeds a QuickNode token, and /config.json is served to whoever opens the
+    # console — so without this the token is readable by every one of them, and usable until it is
+    # rotated. nginx keeps the keyed URL and the SPA sees /rpc/<chainId> (§14.6).
+    GIANO_RPC_PROXY = "true"
+  }
   secret_arns = {
     # The SAME secret wallet-api reads as GIANO_CHAINS — one authored chain list for the
     # deployment, not a second copy to keep in step (§14.6). The console names its fields as a
@@ -360,13 +368,9 @@ module "svc-paymaster-admin" {
     # with anything: the list the API serves IS the list the console administers.
     GIANO_DEPLOYMENTS = module.asm-app.secret_arns["chains"]
 
-    # connect-src is derived from that array by the container, so there is no per-chain CSP
-    # variable to forget when a chain is added.
-
-    # Feeds the same-origin /rpc proxy only, which exists for nodes that send no CORS headers. No
-    # descriptor points at it here (QuickNode sends them), and one proxy cannot serve two chains
-    # anyway — set so the location resolves to a real upstream rather than the 127.0.0.1 fallback.
-    GIANO_RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    # No GIANO_CSP_CONNECT_SRC and no GIANO_RPC_UPSTREAM: connect-src is derived from the array
+    # (and collapses to 'self' once every rpcUrl is proxied), and the single legacy /rpc location
+    # is for stacks that front one node by hand — this one proxies per chain instead.
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
