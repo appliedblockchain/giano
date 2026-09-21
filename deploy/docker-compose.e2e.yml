@@ -248,16 +248,18 @@ services:
     ports:
       - '8083:8080'
     environment:
-      GIANO_CHAIN_ID: '31337'
-      # The node itself. The console proxies it through its own origin (/rpc/31337), so the
-      # browser never dials anvil directly — which also means anvil's missing CORS headers do
-      # not matter here.
-      GIANO_RPC_URL: http://anvil:8545
-      # The devnet has no contracts-registry entry, so the address is passed explicitly. It is the
-      # same deterministic address wallet-api sponsors through, above.
-      GIANO_PAYMASTER_ADDRESS: '0xf98b56de62ce88cEb70A9155582248cDBf2D0718'
-      GIANO_ENVIRONMENT_LABEL: e2e devnet
-      GIANO_REFRESH_SECONDS: '5'
+      # Both chains, so the header carries a picker. Each rpcUrl is the node itself: the console
+      # proxies it through its own origin (/rpc/<chainId>), so the browser never dials anvil
+      # directly — which also means anvil's missing CORS headers do not matter here.
+      #
+      # sponsorshipPaymaster is explicit because the devnet has no contracts-registry entry. Both
+      # chains load the same baked state, so it is the same address on each, and the one
+      # wallet-api sponsors through above.
+      GIANO_DEPLOYMENTS: >-
+        [{"name":"e2e devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
+          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5},
+         {"name":"e2e devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
+          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5}]
 
   # Installs each demo tenant's sponsorship rules through the real admin API, then verifies its own
   # work. A dependency of readiness rather than fire-and-forget: wallet-web will not start until this
