@@ -348,15 +348,28 @@ module "svc-paymaster-admin" {
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
 
-  environment = {
-    GIANO_CHAIN_ID          = var.chain_id
-    GIANO_PAYMASTER_ADDRESS = var.paymaster_address # the registry has no entry — must be set
-    GIANO_ENVIRONMENT_LABEL = "dev (Base Sepolia)"
-    GIANO_REFRESH_SECONDS   = "15"
-  }
+  # No plain environment: with GIANO_DEPLOYMENTS set, the container's single-deployment shorthand
+  # (GIANO_CHAIN_ID / GIANO_PAYMASTER_ADDRESS / GIANO_ENVIRONMENT_LABEL / GIANO_REFRESH_SECONDS) is
+  # skipped entirely, so each of those now lives in its own descriptor inside the array. Leaving
+  # them here would be four variables that read as configuration and change nothing.
   secret_arns = {
-    # Single-chain deliberately — the console has no chain switcher (§14.6).
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    # Both chains, one composed secret — the array the console's deployment picker switches
+    # between (§14.6). Composed rather than assembled by Terraform because each descriptor's
+    # rpcUrl embeds that chain's QuickNode key, and an ECS `secrets` entry can only substitute a
+    # WHOLE variable from a single ARN; the same constraint that makes wallet-api's `chains` a
+    # hand-authored secret (§7.3). Its paymasterAddress must agree with var.paymaster_address and
+    # with `chains` — nothing enforces that, so check all three when any one moves.
+    GIANO_DEPLOYMENTS = module.asm-app.secret_arns["paymaster-admin-deployments"]
+
+    # connect-src for the console's CSP: one origin per chain, space-separated, because the browser
+    # dials each chain's RPC directly. The container defaults this to GIANO_RPC_URL alone, which
+    # with two deployments blocks chain B's calls with nothing in the UI to explain it.
+    GIANO_CSP_CONNECT_SRC = module.asm-app.secret_arns["paymaster-admin-csp-connect-src"]
+
+    # Feeds the same-origin /rpc proxy only, which exists for nodes that send no CORS headers. No
+    # descriptor points at it here (QuickNode sends them), and one proxy cannot serve two chains
+    # anyway — set so the location resolves to a real upstream rather than the 127.0.0.1 fallback.
+    GIANO_RPC_UPSTREAM = module.asm-app.secret_arns["rpc-url-base-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

@@ -1651,7 +1651,9 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | Secret (`giano-dev-…`) | Contents | Consumed by |
 |---|---|---|
 | `database-password` | RDS master password | RDS itself ([§8.3](#83-the-master-password)), and `database-url` |
-| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin, custom-example, custom-example-byoui, bundler-base-sepolia |
+| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin (`/rpc` proxy only), custom-example, custom-example-byoui, bundler-base-sepolia |
+| `paymaster-admin-deployments` | the full `GIANO_DEPLOYMENTS` JSON array — both chain descriptors, RPC URLs embedded (§14.6) | paymaster-admin |
+| `paymaster-admin-csp-connect-src` | both RPC origins, space-separated, for the console's CSP | paymaster-admin |
 | `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui, bundler-eth-sepolia |
 | `chains` | the full `GIANO_CHAINS` JSON for wallet-api — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
@@ -1668,6 +1670,9 @@ descriptor's `rpcUrl` embeds a QuickNode API key, and the ECS `secrets` block ca
 the middle of a larger JSON string Terraform composes. So the whole array is hand-typed into
 1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys` alongside
 otherwise-literal tenant fields).
+
+`paymaster-admin-deployments` is composed for exactly the same reason, and
+`paymaster-admin-csp-connect-src` because it is derived from those same URLs.
 
 There is only the one composed `GIANO_CHAINS` secret, for `wallet-api` alone. `wallet-web` also sets
 `GIANO_CHAINS`, but as a **literal** — `[{ "chainId": 84532 }, { "chainId": 11155111 }]`, no
@@ -3217,21 +3222,45 @@ confirms `/bundler` does not answer JSON-RPC.
 
 ### 14.6 `paymaster-admin`
 
-Single-chain, deliberately, unlike every other service in this deployment: the console has no
-multi-chain shape to pour two chains into (`services/paymaster-admin` takes one `GIANO_CHAIN_ID`,
-full stop), and neither reference compose file runs a second instance for it. Base Sepolia is the
-chain shown — an operator who needs to inspect the Ethereum Sepolia paymaster deposit today does so
-directly against that chain's explorer, not through this console. A second instance pointed at
-`GIANO_CHAIN_ID=11155111` would be a one-line change if that stops being acceptable; nothing here
-blocks it.
+Both chains, like every other service in this deployment. The console declares a *list* of
+deployments in `/config.json` and renders a picker between them when there is more than one
+(`services/paymaster-admin/src/App.tsx`); one is on screen at a time, and the operator's choice is
+remembered against chain id plus paymaster address rather than against the label. That list is the
+whole of what the console can reach — an operator switches between environments someone
+deliberately configured and cannot point it at an arbitrary chain by typing into it.
+
+The container takes the list two ways (`docker/entrypoint.sh`): `GIANO_DEPLOYMENTS`, a JSON array,
+or the `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / … shorthand it wraps into a one-element array. This
+deployment uses the array, so **the shorthand variables are not set and would be ignored if they
+were** — per-chain values live in the descriptors instead.
 
 | Variable | Value |
 |---|---|
-| `GIANO_CHAIN_ID` | `84532` |
-| `GIANO_RPC_URL` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) |
-| `GIANO_PAYMASTER_ADDRESS` | the §13.1 proxy — must be set; the registry has no entry |
-| `GIANO_ENVIRONMENT_LABEL` | `dev (Base Sepolia)` |
-| `GIANO_REFRESH_SECONDS` | `15` |
+| `GIANO_DEPLOYMENTS` | both descriptors, below (**ASM** `giano-dev-paymaster-admin-deployments`, composed — embeds both RPC URLs) |
+| `GIANO_CSP_CONNECT_SRC` | both RPC origins, space-separated (**ASM** `giano-dev-paymaster-admin-csp-connect-src`) |
+| `GIANO_RPC_UPSTREAM` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) — the same-origin `/rpc` proxy only, which no descriptor points at |
+
+```json
+[
+  {
+    "label": "dev (Base Sepolia)", "chainId": 84532,
+    "rpcUrl": "<base sepolia quicknode endpoint>",
+    "paymasterAddress": "<the §13.1 proxy>", "refreshSeconds": 15
+  },
+  {
+    "label": "dev (Ethereum Sepolia)", "chainId": 11155111,
+    "rpcUrl": "<eth sepolia quicknode endpoint>",
+    "paymasterAddress": "<the §13.1 proxy>", "refreshSeconds": 15
+  }
+]
+```
+
+Two things this shape gets wrong quietly, both worth checking when either is edited. Each
+descriptor's `paymasterAddress` is hand-typed here as well as in `var.paymaster_address` and in
+`chains` ([§14.2](#142-wallet-api)), and nothing reconciles the three. And `connect-src` has to
+carry **both** origins: it defaults to `GIANO_RPC_URL` alone, so a second chain added to the array
+without a matching CSP entry has every call blocked by the browser with nothing in the UI saying
+so.
 
 It reads the chain directly and needs neither the database nor `wallet-api`. Note that the console
 *writes* through an injected browser wallet, so whoever holds the role-admin key from §13.1 is the
