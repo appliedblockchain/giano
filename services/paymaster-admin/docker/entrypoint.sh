@@ -67,7 +67,10 @@ if [ "$GIANO_RPC_PROXY" = "true" ]; then
     .[]
     | select(.rpcUrl | test("^https?://"))
     | "    location = /rpc/\(.chainId) {\n" +
-      "        proxy_pass \(.rpcUrl);\n" +
+      # A proxy_pass with no URI part forwards the request URI unchanged, so the upstream would
+      # be asked for /rpc/<chainId>; one with a URI replaces the matched location. Always give
+      # it a URI, even when the endpoint is a bare host:port as a devnet node is.
+      "        proxy_pass \(if (.rpcUrl | test("^https?://[^/]+$")) then .rpcUrl + "/" else .rpcUrl end);\n" +
       "        proxy_http_version 1.1;\n" +
       "        proxy_ssl_server_name on;\n" +
       "        proxy_set_header Host $proxy_host;\n" +
