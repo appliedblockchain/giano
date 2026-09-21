@@ -353,13 +353,6 @@ module "svc-paymaster-admin" {
   # GIANO_DEPLOYMENTS set the container skips that branch, so each of those lives in its own
   # descriptor instead. Leaving them here would be four variables that read as configuration and
   # change nothing.
-  environment = {
-    # Both chains are reached through this origin, not dialled directly by the browser. Each
-    # descriptor's rpcUrl embeds a QuickNode token, and /config.json is served to whoever opens the
-    # console — so without this the token is readable by every one of them, and usable until it is
-    # rotated. nginx keeps the keyed URL and the SPA sees /rpc/<chainId> (§14.6).
-    GIANO_RPC_PROXY = "true"
-  }
   secret_arns = {
     # The SAME secret wallet-api reads as GIANO_CHAINS — one authored chain list for the
     # deployment, not a second copy to keep in step (§14.6). The console names its fields as a
@@ -368,9 +361,9 @@ module "svc-paymaster-admin" {
     # with anything: the list the API serves IS the list the console administers.
     GIANO_DEPLOYMENTS = module.asm-app.secret_arns["chains"]
 
-    # No GIANO_CSP_CONNECT_SRC and no GIANO_RPC_UPSTREAM: connect-src is derived from the array
-    # (and collapses to 'self' once every rpcUrl is proxied), and the single legacy /rpc location
-    # is for stacks that front one node by hand — this one proxies per chain instead.
+    # Nothing else. Each chain is proxied through the console's own origin by default, so the
+    # QuickNode tokens in this secret never reach a browser and connect-src derives to 'self'
+    # (§14.6) — GIANO_RPC_PROXY=false would undo both.
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

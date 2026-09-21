@@ -249,10 +249,10 @@ services:
       - '8083:8080'
     environment:
       GIANO_CHAIN_ID: '31337'
-      # Same-origin proxy: anvil sets no CORS headers, so the browser talks to this origin and
-      # nginx forwards to the container.
-      GIANO_RPC_URL: http://paymaster.localhost/rpc
-      GIANO_RPC_UPSTREAM: http://anvil:8545
+      # The node itself. The console proxies it through its own origin (/rpc/31337), so the
+      # browser never dials anvil directly — which also means anvil's missing CORS headers do
+      # not matter here.
+      GIANO_RPC_URL: http://anvil:8545
       # The devnet has no contracts-registry entry, so the address is passed explicitly. It is the
       # same deterministic address wallet-api sponsors through, above.
       GIANO_PAYMASTER_ADDRESS: '0xf98b56de62ce88cEb70A9155582248cDBf2D0718'

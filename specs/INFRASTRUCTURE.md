@@ -3239,7 +3239,7 @@ there is one authored list, and adding a chain to the deployment adds it to the 
 | Variable | Value |
 |---|---|
 | `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
-| `GIANO_RPC_PROXY` | `true` — every chain is reached through this origin, so no provider token reaches a browser |
+| *(nothing else)* | the proxy, the CSP and the picker all derive from the array — see below |
 
 Nothing is translated on the way in. The console names its fields `chainId`, `name`, `rpcUrl` and
 `sponsorshipPaymaster` — the spelling `packages/contracts/chains.ts` uses — so a descriptor *is* a
@@ -3273,10 +3273,11 @@ container at boot instead of failing the first call an operator makes. A variabl
 would need a `resolver` directive, which means knowing the DNS server's address — one more thing
 to be wrong per environment.
 
-It is off by default. A deployment that already fronts its nodes — both compose stacks point
-`rpcUrl` at their own `/rpc` with the node in `GIANO_RPC_UPSTREAM` — would otherwise be proxied
-twice, through itself. That single legacy location is still emitted when `GIANO_RPC_UPSTREAM` is
-set, and only then.
+It is on by default, and `GIANO_RPC_PROXY=false` opts out — for a node that must be dialled from
+the browser directly, or an upstream nginx cannot reach from where it runs. A console that leaks
+its provider credentials unless someone remembers a variable is the wrong shape for something an
+operator stands up quickly; where the proxy is not needed it costs one hop inside the container.
+A relative `rpcUrl` is already same-origin and passes through untouched.
 
 `GIANO_CSP_CONNECT_SRC` is **derived** from the array rather than configured beside it: one origin
 per `rpcUrl`, and with the proxy on there are none left, so `connect-src` collapses to `'self'`.

@@ -47,15 +47,19 @@ export GIANO_DEPLOYMENTS
 #
 # A deployment descriptor's rpcUrl is browser-facing: it is written into /config.json and dialled
 # by the SPA, so a keyed endpoint handed over as-is is readable by everyone who can open the
-# console, and usable by them for as long as it takes to rotate the key. With GIANO_RPC_PROXY on,
-# each chain is proxied through this origin instead — nginx holds the keyed URL, the browser sees
-# only /rpc/<chainId>, and connect-src collapses to 'self'.
+# console, and usable by them until the key is rotated. So every absolute rpcUrl is proxied through
+# this origin instead — nginx holds the keyed URL, the browser sees only /rpc/<chainId>, and
+# connect-src collapses to 'self'. A relative rpcUrl is already same-origin and passes through.
+#
+# On by default. A console that leaks its provider credentials by default is the wrong shape for
+# something an operator stands up quickly, and the cost of the proxy where it is not needed is one
+# hop inside the same container. GIANO_RPC_PROXY=false opts out — for a node that must be dialled
+# from the browser directly, or an upstream nginx cannot reach from where it runs.
 #
 # One generated location per chain, each with a literal upstream, so nginx resolves every host at
 # config load: a name that does not resolve stops the container here rather than failing the first
-# call. Off by default, because a deployment already fronting its nodes — the compose stacks point
-# rpcUrl at their own /rpc — would otherwise be proxied twice, through itself.
-GIANO_RPC_PROXY="${GIANO_RPC_PROXY:-false}"
+# call an operator makes.
+GIANO_RPC_PROXY="${GIANO_RPC_PROXY:-true}"
 GIANO_RPC_LOCATIONS=""
 
 if [ "$GIANO_RPC_PROXY" = "true" ]; then
@@ -74,24 +78,12 @@ if [ "$GIANO_RPC_PROXY" = "true" ]; then
   export GIANO_DEPLOYMENTS
 fi
 
-# The single legacy proxy, kept for the stacks that point rpcUrl at a bare /rpc — a node with no
-# CORS headers (anvil), or a keyed URL an operator moved server-side by hand. Emitted only when it
-# is set, so nothing dangles at 127.0.0.1 in a deployment that does not use it.
-if [ -n "${GIANO_RPC_UPSTREAM:-}" ]; then
-  GIANO_RPC_LOCATIONS="${GIANO_RPC_LOCATIONS}
-    location = /rpc {
-        proxy_pass ${GIANO_RPC_UPSTREAM}/;
-        proxy_set_header Host \$host;
-    }
-"
-fi
-
 # Where the browser may talk to. The console reads over JSON-RPC and writes through an injected
 # wallet extension, so 'self' plus whatever RPC origins remain is the whole of it.
 #
 # Derived from the array rather than configured alongside it: a chain added without a matching
 # connect-src entry has every call blocked by the CSP, with nothing in the UI to say why. With the
-# proxy on, every rpcUrl is relative and this resolves to nothing at all — which is the point.
+# proxy on there are no origins left to name, and this resolves to nothing at all.
 GIANO_CSP_CONNECT_SRC="${GIANO_CSP_CONNECT_SRC:-$(
   printf '%s' "$GIANO_DEPLOYMENTS" |
     jq -r '[ .[].rpcUrl // empty | capture("^(?<origin>[a-z]+://[^/]+)").origin ] | unique | join(" ")'
