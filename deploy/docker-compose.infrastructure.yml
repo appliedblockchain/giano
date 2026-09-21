@@ -489,7 +489,7 @@ services:
       dockerfile: services/custom-example/Dockerfile
     restart: unless-stopped
     # nginx resolves GIANO_RPC_UPSTREAM at config load and will not start if the name does
-    # not resolve — see the note on wallet-web.
+    # not resolve, so anvil has to be up first.
     depends_on:
       - anvil
     environment:
