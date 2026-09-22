@@ -237,7 +237,9 @@ malformed input (invalid address, invalid hex). Each SHALL record the typed erro
 Every action SHALL append a ledger entry containing: timestamp, section, method, params as sent, chain id and name,
 wallet origin, declared payer, outcome status, userOp hash, transaction hash, receipt, balances before and after, error
 (name, code, message, data), and duration. Entries SHALL persist across reloads in browser storage, SHALL be exportable
-as JSON and copyable individually, and SHALL never be removed except by an explicit Clear control.
+as JSON and copyable individually, and SHALL never be removed except by an explicit Clear control or by the retention
+cap: the ledger keeps at most 500 entries, evicts the oldest beyond that, shows the eviction count, and exports only
+retained entries.
 
 #### Scenario: Reload keeps the record
 - **WHEN** the page reloads

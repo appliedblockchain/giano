@@ -3,7 +3,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { LuChevronDown, LuChevronRight } from 'react-icons/lu';
 import { formatDuration, formatEth, hexToBigInt, shortHex, toJson } from '../lib/format';
 import type { EntryStatus, LedgerEntry } from '../lib/ledger';
-import { ClipboardIconButton, ClipboardRoot } from './ui/clipboard';
+import { ClipboardButton, ClipboardIconButton, ClipboardRoot } from './ui/clipboard';
 
 /**
  * The shared UI vocabulary (design.md D8 UX rules): status is a dot plus text, never a stack of
@@ -222,12 +222,11 @@ export function EntryDetails({ entry }: { entry: LedgerEntry }) {
           />
           <HStack>
             <ClipboardRoot value={json}>
-              <Button size="xs" variant="outline" asChild>
-                <span>
-                  <ClipboardIconButton aria-label="Copy entry" variant="ghost" size="2xs" /> Copy entry as JSON
-                </span>
-              </Button>
+              <ClipboardButton size="xs" variant="outline" />
             </ClipboardRoot>
+            <Text fontSize="xs" color="fg.muted">
+              copies this entry as JSON
+            </Text>
           </HStack>
         </Stack>
       </Disclosure>

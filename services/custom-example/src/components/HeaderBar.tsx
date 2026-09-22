@@ -3,7 +3,7 @@ import { LuWallet } from 'react-icons/lu';
 import { shortHex } from '../lib/format';
 import { useDemo } from '../state/store';
 import { Mono, StatusText } from './primitives';
-import { ClipboardIconButton, ClipboardRoot } from './ui/clipboard';
+import { ClipboardButton, ClipboardIconButton, ClipboardRoot } from './ui/clipboard';
 import { ColorModeButton } from './ui/color-mode';
 
 /** Brand, tenant label, wallet origin, connector version, session state, connect/disconnect. */
@@ -106,11 +106,7 @@ function ViolationBanner({ id, title, detail }: { id: string; title: string; det
         </Alert.Description>
         <HStack pt="2">
           <ClipboardRoot value={`${title}\n${detail}`}>
-            <Button size="xs" colorPalette="red" asChild>
-              <span>
-                <ClipboardIconButton aria-label="Copy report" variant="ghost" size="2xs" /> Copy report
-              </span>
-            </Button>
+            <ClipboardButton size="xs" colorPalette="red" variant="solid" />
           </ClipboardRoot>
           <Button size="xs" variant="outline" colorPalette="red" onClick={() => dismissViolation(id)}>
             Dismiss

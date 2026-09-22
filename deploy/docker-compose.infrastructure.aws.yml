@@ -514,12 +514,14 @@ services:
       # until task 8 deploys it to the testnets (the ERC-20 card then opens empty for that chain).
       GIANO_CHAINS: |
         [
-          { "chainId": ${CHAIN_ID:-84532}, "name": "${CHAIN_NAME:-Base Sepolia}", "rpcUrl": "/rpc/${CHAIN_ID:-84532}"${TEST_ERC20_FIELD:-} },
-          { "chainId": ${CHAIN_B_ID:-11155111}, "name": "${CHAIN_B_NAME:-Ethereum Sepolia}", "rpcUrl": "/rpc/${CHAIN_B_ID:-11155111}"${TEST_ERC20_FIELD:-} }
+          { "chainId": 84532, "name": "${CHAIN_NAME:-Base Sepolia}", "rpcUrl": "/rpc/84532"${TEST_ERC20_FIELD:-} },
+          { "chainId": 11155111, "name": "${CHAIN_B_NAME:-Ethereum Sepolia}", "rpcUrl": "/rpc/11155111"${TEST_ERC20_FIELD:-} }
         ]
       # [ASM] giano-<env>-rpc-url-* — keyed provider URLs, server-side only, one per chain.
-      # Compose does not interpolate variable NAMES, so the two chain ids are literal here — this
-      # transcription is Base Sepolia + Ethereum Sepolia by construction (infra/iac defaults).
+      # The chain ids are literal in BOTH the list above and the proxy keys below, on purpose: Compose
+      # cannot interpolate a variable NAME, so an overridable CHAIN_ID would leave a chain with no
+      # proxy location. This transcription is Base Sepolia + Ethereum Sepolia by construction
+      # (infra/iac defaults); change both places together.
       GIANO_RPC_UPSTREAM_84532: ${RPC_URL:?set RPC_URL}
       GIANO_RPC_UPSTREAM_11155111: ${RPC_B_URL:?set RPC_B_URL}
       # ⚠ [literal] The TENANT's wallet hostname. Pointing this at Giano's own serving
@@ -564,11 +566,13 @@ services:
     environment:
       GIANO_CHAINS: |
         [
-          { "chainId": ${CHAIN_ID:-84532}, "name": "${CHAIN_NAME:-Base Sepolia}", "rpcUrl": "/rpc/${CHAIN_ID:-84532}"${TEST_ERC20_FIELD:-} },
-          { "chainId": ${CHAIN_B_ID:-11155111}, "name": "${CHAIN_B_NAME:-Ethereum Sepolia}", "rpcUrl": "/rpc/${CHAIN_B_ID:-11155111}"${TEST_ERC20_FIELD:-} }
+          { "chainId": 84532, "name": "${CHAIN_NAME:-Base Sepolia}", "rpcUrl": "/rpc/84532"${TEST_ERC20_FIELD:-} },
+          { "chainId": 11155111, "name": "${CHAIN_B_NAME:-Ethereum Sepolia}", "rpcUrl": "/rpc/11155111"${TEST_ERC20_FIELD:-} }
         ]
-      # Compose does not interpolate variable NAMES, so the two chain ids are literal here — this
-      # transcription is Base Sepolia + Ethereum Sepolia by construction (infra/iac defaults).
+      # The chain ids are literal in BOTH the list above and the proxy keys below, on purpose: Compose
+      # cannot interpolate a variable NAME, so an overridable CHAIN_ID would leave a chain with no
+      # proxy location. This transcription is Base Sepolia + Ethereum Sepolia by construction
+      # (infra/iac defaults); change both places together.
       GIANO_RPC_UPSTREAM_84532: ${RPC_URL:?set RPC_URL}
       GIANO_RPC_UPSTREAM_11155111: ${RPC_B_URL:?set RPC_B_URL}
       # The values that differ. Everything else is identical to custom-example.

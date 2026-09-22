@@ -33,8 +33,13 @@ For one release it SHALL also accept the scalar pair `GIANO_CHAIN_ID` / `GIANO_C
 - **THEN** the demo behaves as with an equivalent `GIANO_CHAINS` and the start-up log says the scalars are deprecated
 
 #### Scenario: Invalid configuration
-- **WHEN** `GIANO_CHAINS` is malformed or a chain lacks `rpcUrl`
-- **THEN** the container exits non-zero with the field named, before serving anything
+- **WHEN** `GIANO_CHAINS` is not a JSON array, or both it and the scalar pair are set
+- **THEN** the container exits non-zero with the problem named, before serving anything
+
+#### Scenario: Incomplete chain entry
+- **WHEN** `GIANO_CHAINS` is a JSON array but a chain lacks `rpcUrl` or has an invalid field
+- **THEN** the container serves the page and the browser renders the configuration-error screen naming the field
+  (the container has no JSON parser; field validation is the browser's)
 
 ### Requirement: Optional disallowed-origin probe target
 The container SHALL accept `GIANO_OTHER_WALLET_URL`, an optional wallet origin that does not allow-list this dApp, and
@@ -68,8 +73,8 @@ or into response headers.
 - **THEN** neither is found
 
 ### Requirement: Security headers
-Responses SHALL carry `X-Frame-Options: DENY`, a Content-Security-Policy whose `connect-src` lists exactly the chain RPC
-origins and the wallet origin, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. The container SHALL
+Responses SHALL carry `X-Frame-Options: DENY`, a Content-Security-Policy whose `connect-src` is exactly `'self'`, the chain
+RPC origins and the wallet origins (the same-origin `/rpc/<chainId>` proxies are covered by `'self'`), `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. The container SHALL
 NOT send `Cross-Origin-Opener-Policy: same-origin`.
 
 #### Scenario: Receipt polling allowed

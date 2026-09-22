@@ -1,5 +1,5 @@
 import { Button, HStack, Stack, Steps, Text } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LuKeyRound, LuSend } from 'react-icons/lu';
 import { encodeFunctionData } from 'viem';
 import { testErc20Abi } from '../lib/erc20';
@@ -20,6 +20,18 @@ export function RawUserOpCard() {
   const [signed, setSigned] = useState<Record<string, unknown> | null>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** The account and chain the pipeline was prepared for: a prepared operation is only valid for those. */
+  const [origin, setOrigin] = useState<{ account: string; chainId: number } | null>(null);
+  const contextKey = `${selected.chainId}:${account ?? ''}`;
+  useEffect(() => {
+    if (origin && (origin.chainId !== selected.chainId || origin.account !== account)) {
+      setPrepared(null);
+      setSigned(null);
+      setHash(null);
+      setOrigin(null);
+    }
+    // Depends on the context key only: `origin` is what this effect resets, not what it reacts to.
+  }, [contextKey]);
   const disabled = !account || isChainDisabled(selected.chainId);
   const step = hash ? 3 : signed ? 2 : prepared ? 1 : 0;
 
@@ -31,8 +43,10 @@ export function RawUserOpCard() {
       api.provider.request<Record<string, unknown>>({ method: 'eth_prepareUserOperation', params: [calls, {}] }),
     );
     setBusy(null);
-    if (outcome.result) {
+    // Discard a result that arrived after the account or chain changed underneath it.
+    if (outcome.result && contextKey === `${selected.chainId}:${account}`) {
       setPrepared(outcome.result);
+      setOrigin({ account, chainId: selected.chainId });
       setSigned(null);
       setHash(null);
     }
@@ -45,7 +59,7 @@ export function RawUserOpCard() {
       api.provider.request<string>({ method: 'eth_signUserOperation', params: [prepared] }),
     );
     setBusy(null);
-    if (outcome.result) setSigned({ ...prepared, signature: outcome.result });
+    if (outcome.result && origin && origin.account === account && origin.chainId === selected.chainId) setSigned({ ...prepared, signature: outcome.result });
   };
 
   const send = async () => {

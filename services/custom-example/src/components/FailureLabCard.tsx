@@ -1,7 +1,8 @@
 import { Button, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { useState } from 'react';
 import { LuFlaskConical } from 'react-icons/lu';
-import type { Address } from '../lib/format';
+import type { Address, Hex } from '../lib/format';
+import { submitTransaction } from '../lib/run';
 import { useDemo, useSectionEntries } from '../state/store';
 import { Outcomes, SectionCard } from './primitives';
 
@@ -9,6 +10,10 @@ import { Outcomes, SectionCard } from './primitives';
  * R7: each control provokes one failure path on purpose and records the typed error — class, code,
  * message, data — with what it means and what to do about it.
  */
+/** A contract no tenant allow-lists, and a valid-looking transfer selector: reaches the paymaster's allow-list rule and is refused by it. */
+const UNLISTED: Address = '0x000000000000000000000000000000000000dEaD';
+const TRANSFER_SELECTOR: Hex = '0xa9059cbb';
+
 export function FailureLabCard() {
   const { config, registry, selected, account, run, revoke, addAdHocChain, recordViolation, isChainDisabled } = useDemo();
   const entries = useSectionEntries('failure-lab', 6);
@@ -79,6 +84,26 @@ export function FailureLabCard() {
     ),
   );
 
+  /** A contract no tenant allow-lists, called with valid calldata and sponsorship expected: refused in the wallet before approval. */
+  const unlistedContract = wrap('unlisted', () =>
+    run(
+      { section: 'failure-lab', label: 'Call an unlisted contract, sponsored (refusal expected)', method: 'eth_sendTransaction', params: [{ to: UNLISTED, value: '0x0', data: TRANSFER_SELECTOR }], chainId: selected.chainId, account, declaredPayer: 'sponsored', sponsoredSend: true, expected: true },
+      (api) => submitTransaction(api, { to: UNLISTED, value: '0x0', data: TRANSFER_SELECTOR }),
+    ),
+  );
+
+  /**
+   * Self-paid with no balance. Only demonstrable on a chain the wallet serves unsponsored: there the
+   * EntryPoint refuses with AA21. On a sponsored chain the wallet sponsors anyway and the entry is
+   * flagged as "payer differs from declaration" instead — the dApp cannot opt out (finding G1).
+   */
+  const selfPaidNoBalance = wrap('selfpaid', () =>
+    run(
+      { section: 'failure-lab', label: 'Send 0 ETH to self, declared self-paid (AA21 expected with no balance)', method: 'eth_sendTransaction', params: [{ to: account, value: '0x0' }], chainId: selected.chainId, account, declaredPayer: 'self-paid', expected: true },
+      (api) => submitTransaction(api, { to: account!, value: '0x0' }),
+    ),
+  );
+
   const disabled = isChainDisabled(selected.chainId);
   const controls: Array<{ key: string; title: string; description: string; label: string; onClick: () => Promise<void>; needsAccount?: boolean; hidden?: boolean }> = [
     { key: 'popup', title: 'Popup blocked', description: 'Issues the wallet call 1.5 s after the click, once the user gesture has expired.', label: 'Delayed connect', onClick: popupBlocked },
@@ -92,6 +117,15 @@ export function FailureLabCard() {
       hidden: !config.otherWalletUrl,
     },
     { key: 'reject', title: 'User rejection', description: 'Send 0 ETH, then choose Reject in the wallet: 4001.', label: 'Send and reject', onClick: rejectInWallet, needsAccount: true },
+    { key: 'unlisted', title: 'Sponsorship refused', description: 'Calls a contract no tenant allow-lists, sponsored. The wallet refuses before the passkey prompt; closing it returns 4001 here.', label: 'Call unlisted contract', onClick: unlistedContract, needsAccount: true },
+    {
+      key: 'selfpaid',
+      title: 'Self-paid, no balance',
+      description: 'Declares the account as payer with an empty balance. On an unsponsored chain the EntryPoint refuses (AA21); on a sponsored chain the wallet pays anyway and the entry is flagged.',
+      label: 'Send self-paid',
+      onClick: selfPaidNoBalance,
+      needsAccount: true,
+    },
     { key: 'revoke', title: 'Revoke, then read', description: 'wallet_revokePermissions followed by eth_accounts, which must answer [].', label: 'Revoke + eth_accounts', onClick: wrap('revoke', () => revoke()), needsAccount: true },
     { key: 'addr', title: 'Invalid address', description: 'eth_sendTransaction to 0x1234.', label: 'Send to 0x1234', onClick: invalidAddress, needsAccount: true },
     { key: 'hex', title: 'Invalid calldata', description: 'eth_sendTransaction with data "hello".', label: 'Send bad hex', onClick: invalidHex, needsAccount: true },

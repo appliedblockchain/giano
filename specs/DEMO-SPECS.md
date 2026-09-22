@@ -105,7 +105,8 @@ type LedgerEntry = {
 };
 ```
 
-Persisted under `giano-demo:ledger:<walletOrigin>`; capped at 500 with the eviction count shown;
+Persisted under `giano-demo:ledger:<walletOrigin>`; capped at 500 — the oldest entries are evicted beyond the cap, the
+eviction count is shown, and exports contain retained entries only (the one removal path besides Clear);
 entries still pending at unload are marked `timed-out`. Export = entries + events + runtime config +
 connector version + user agent + dApp origin. Provider events (`connect`, `accountsChanged`,
 `chainChanged`, `disconnect`) are a parallel list.

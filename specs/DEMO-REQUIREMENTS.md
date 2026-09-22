@@ -68,7 +68,7 @@ a balances/history product, tenant onboarding, or a design system.
 | K4 | **Chain selection is provider selection.** One provider per chain over one wallet origin; a switch is a refusal to demonstrate, not a feature to hide. | That is Giano's real mechanism (MC-01); the demo shows it rather than papering over it (R10). |
 | K5 | **Identity is asserted, not assumed.** Every chain's granted account is compared with the first; disagreement is a persistent violation. | The dApp cannot compute the address; agreement of grants is the observable proof (R11). |
 | K6 | **Gas payer is declared by the user and attributed from the receipt.** | The dApp cannot request self-payment (G1); declaring the expectation and flagging the disagreement is what a client can actually do (R12). |
-| K7 | **A setup preflight runs at load.** Six checks replace the timeouts a misconfiguration otherwise produces. | R7 and R16 applied to setup rather than only to actions. |
+| K7 | **A setup preflight runs at load.** Targeted checks (one per concern, plus one per configured chain and default token) replace the timeouts a misconfiguration otherwise produces. | R7 and R16 applied to setup rather than only to actions. |
 | K8 | **Build once, deploy anywhere, with runtime injection.** `/config.js` rendered at container start from `GIANO_*`, validated in the browser; no secrets in the bundle. | One image, both tenant shapes, by environment alone (R16, R17). Baanx's pattern. |
 | K9 | **The demo gets its own local origins** (`demo.localhost`, `demo-byo.localhost`). | The fixture and the demo used to share ports and Playwright silently adopted the wrong one. |
 

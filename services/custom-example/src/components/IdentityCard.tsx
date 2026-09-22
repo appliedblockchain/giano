@@ -12,15 +12,18 @@ import { HexWithCopy, Mono, SectionCard, StatusText } from './primitives';
 export function IdentityCard() {
   const { registry, state, referenceAccount, connect, recordViolation, isChainDisabled } = useDemo();
   const chains = useMemo(() => registry.list(), [registry, state.registryVersion]);
-  const reported = useRef(new Set<number>());
+  /** Mismatches already reported, keyed by chain + the exact account pair, so a later, different mismatch is reported again. */
+  const reported = useRef(new Set<string>());
 
   useEffect(() => {
     if (!referenceAccount) return;
     for (const [chainIdText, session] of Object.entries(state.sessions)) {
       const chainId = Number(chainIdText);
-      if (!session.account || reported.current.has(chainId)) continue;
+      if (!session.account) continue;
+      const key = `${chainId}:${session.account.toLowerCase()}:${referenceAccount.toLowerCase()}`;
+      if (reported.current.has(key)) continue;
       if (session.account.toLowerCase() !== referenceAccount.toLowerCase()) {
-        reported.current.add(chainId);
+        reported.current.add(key);
         recordViolation(
           'identity',
           'Address differs across chains',

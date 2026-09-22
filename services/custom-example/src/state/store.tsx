@@ -127,7 +127,8 @@ export function DemoProvider({ config, children }: { config: RuntimeConfig; chil
 
   // Subscribe to every provider the registry builds: events go to the events log, accounts to sessions.
   useEffect(() => {
-    return registry.onProvider((chainId: number, provider: GianoWalletProvider) => {
+    const attached: Array<() => void> = [];
+    const unsubscribe = registry.onProvider((chainId: number, provider: GianoWalletProvider) => {
       const record = (event: string) => (payload: unknown) => {
         ledgerDispatch({ type: 'event', event: { id: newId(), at: new Date().toISOString(), chainId, event, payload } });
         if (event === 'accountsChanged') {
@@ -143,8 +144,16 @@ export function DemoProvider({ config, children }: { config: RuntimeConfig; chil
           }
         }
       };
-      for (const event of ['connect', 'accountsChanged', 'chainChanged', 'disconnect']) provider.on(event, record(event));
+      for (const event of ['connect', 'accountsChanged', 'chainChanged', 'disconnect']) {
+        const listener = record(event);
+        provider.on(event, listener);
+        attached.push(() => provider.removeListener(event, listener));
+      }
     });
+    return () => {
+      unsubscribe();
+      for (const detach of attached) detach();
+    };
   }, [registry, ledgerDispatch]);
 
   // Session resume: eth_accounts answers from the cached session without a popup.

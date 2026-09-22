@@ -58,7 +58,7 @@ export function PreflightCard() {
     <SectionCard
       id="preflight"
       title="Setup checks"
-      description="Six checks that answer in under a second what a 15 s handshake timeout or a 120 s receipt timeout would otherwise answer. Nothing here blocks the page; a failed row disables or warns on the controls it invalidates."
+      description="Setup checks that answer in under a second what a 15 s handshake timeout or a 120 s receipt timeout would otherwise answer: one per concern, plus one per configured chain and default token. Nothing here blocks the page; a failed row disables or warns on the controls it invalidates."
       sdk={[
         ['GET {walletUrl}/api/v1/version', 'the wallet origin\'s public version endpoint — reachability, CORS for this origin, wallet-api version'],
         ['publicClient.getChainId / getCode', 'viem reads against each configured RPC — no wallet involved'],

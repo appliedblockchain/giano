@@ -1,6 +1,6 @@
-import { Box, Button, HStack, SegmentGroup, Stack, Table, Text } from '@chakra-ui/react';
+import { Box, Button, HStack, IconButton, SegmentGroup, Stack, Table, Text } from '@chakra-ui/react';
 import { Fragment, useMemo, useState } from 'react';
-import { LuDownload, LuTrash2 } from 'react-icons/lu';
+import { LuChevronDown, LuChevronRight, LuDownload, LuTrash2 } from 'react-icons/lu';
 import { CONNECTOR_VERSION } from '../config';
 import { formatDuration, formatTime, shortHex, toJson } from '../lib/format';
 import { exportLedger, LEDGER_CAP, type LedgerEntry } from '../lib/ledger';
@@ -93,7 +93,23 @@ export function LedgerCard() {
                 <Fragment key={entry.id}>
                   <Table.Row onClick={() => setExpanded((current) => (current === entry.id ? null : entry.id))} cursor="pointer" data-testid="ledger-row" data-status={entry.status}>
                     <Table.Cell whiteSpace="nowrap">
-                      <Mono muted>{formatTime(entry.at)}</Mono>
+                      <HStack gap="1">
+                        <IconButton
+                          size="2xs"
+                          variant="ghost"
+                          colorPalette="gray"
+                          aria-label={expanded === entry.id ? 'Collapse entry' : 'Expand entry'}
+                          aria-expanded={expanded === entry.id}
+                          aria-controls={`ledger-details-${entry.id}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpanded((current) => (current === entry.id ? null : entry.id));
+                          }}
+                        >
+                          {expanded === entry.id ? <LuChevronDown /> : <LuChevronRight />}
+                        </IconButton>
+                        <Mono muted>{formatTime(entry.at)}</Mono>
+                      </HStack>
                     </Table.Cell>
                     <Table.Cell>{entry.section}</Table.Cell>
                     <Table.Cell>
@@ -120,7 +136,7 @@ export function LedgerCard() {
                   </Table.Row>
                   {expanded === entry.id && (
                     <Table.Row>
-                      <Table.Cell colSpan={8} bg="bg.subtle">
+                      <Table.Cell colSpan={8} bg="bg.subtle" id={`ledger-details-${entry.id}`}>
                         <EntryDetails entry={entry} />
                       </Table.Cell>
                     </Table.Row>
@@ -138,8 +154,12 @@ export function LedgerCard() {
   );
 }
 
+const EVENTS_PAGE = 50;
+
 export function EventsCard() {
   const { state } = useDemo();
+  const [showAll, setShowAll] = useState(false);
+  const events = showAll ? state.ledger.events : state.ledger.events.slice(0, EVENTS_PAGE);
   return (
     <SectionCard id="events" title="Provider events" description="What the provider emitted, as it emitted it." sdk={[['provider.on(event, listener)', 'connect, accountsChanged, chainChanged and disconnect, per chain']]}>
       {state.ledger.events.length === 0 ? (
@@ -148,7 +168,7 @@ export function EventsCard() {
         </Text>
       ) : (
         <Stack gap="1" data-testid="events">
-          {state.ledger.events.slice(0, 50).map((event) => (
+          {events.map((event) => (
             <HStack key={event.id} gap="3" flexWrap="wrap">
               <Mono muted>{formatTime(event.at)}</Mono>
               <Mono muted>{event.chainId}</Mono>
@@ -158,6 +178,11 @@ export function EventsCard() {
               <Mono>{toJson(event.payload, 0)}</Mono>
             </HStack>
           ))}
+          {state.ledger.events.length > EVENTS_PAGE && (
+            <Button size="xs" variant="ghost" colorPalette="gray" alignSelf="flex-start" onClick={() => setShowAll((value) => !value)}>
+              {showAll ? `Show the latest ${EVENTS_PAGE}` : `Show all ${state.ledger.events.length} events`}
+            </Button>
+          )}
         </Stack>
       )}
     </SectionCard>

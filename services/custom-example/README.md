@@ -14,7 +14,7 @@ defect in one of them. Requirements and decisions: [`specs/DEMO-REQUIREMENTS.md`
 
 | Card | Exercises | How to make it fail on purpose |
 | --- | --- | --- |
-| **Preflight** | Six load-time checks: wallet origin reachable + CORS, this page's COOP header, RPC `eth_chainId` per chain, default token code, browser storage, connector vs wallet-api version | Point a chain's `rpcUrl` at the other chain's node; serve the page with `Cross-Origin-Opener-Policy: same-origin`; leave the dApp origin out of the tenant's `corsOrigins` |
+| **Preflight** | Load-time checks (one per concern, plus one per chain and default token): wallet origin reachable + CORS, this page's COOP header, RPC `eth_chainId` per chain, default token code, browser storage, connector vs wallet-api version | Point a chain's `rpcUrl` at the other chain's node; serve the page with `Cross-Origin-Opener-Policy: same-origin`; leave the dApp origin out of the tenant's `corsOrigins` |
 | **Chain** | Chain selection = provider selection (`createGianoWalletProvider` per chain), `supportedChainIds`, `chainId`, `eth_chainId`, `wallet_switchEthereumChain` / `wallet_addEthereumChain` (4200 expected), provider options `walletApiPath` / `storage` / `sdkVersion` | Add a chain the wallet does not serve (4902); set a served chain whose node is down (4901); set `walletApiPath` to something wrong |
 | **Identity** | One passkey, one address on every served chain, asserted from what each provider grants | Connect on two chains served by deployments with different factory addresses — the banner and a `violation` ledger row appear |
 | **Transactions** | `eth_sendTransaction` → `waitForUserOperationReceipt`; declared vs actual gas payer from the receipt's `paymaster`; native balance deltas; "keep waiting" on receipt timeout | Declare *paid by this account* with no balance (AA21); call the unlisted contract (refused in the wallet, arrives as 4001 — see G5); declare self-paid on a sponsored chain (payer mismatch flag) |
@@ -24,7 +24,7 @@ defect in one of them. Requirements and decisions: [`specs/DEMO-REQUIREMENTS.md`
 | **Wallet management** | `openWalletManagement()` — the app passes nothing and learns nothing | Any returned data is a violation |
 | **Adapters** | wagmi `createGianoConnector` (connect, `switchChain` → `UnsupportedChainSwitchError`, send + `waitForUserOperationReceipt`) and RainbowKit `giano()` | `switchChain` succeeding would be the finding |
 | **Failure lab** | Popup blocked (call after the gesture expired), unserved chain, disallowed origin (`origin-not-allowed` against the other tenant), user rejection, revoke then `eth_accounts`, invalid address, invalid calldata | These are the failures |
-| **Ledger** | Every action with method, params, chain, wallet origin, hashes, receipt, balances, typed error, duration. Persists across reloads (per wallet origin, capped at 500). Export JSON copies everything a bug report needs | `Clear` is the only way out |
+| **Ledger** | Every action with method, params, chain, wallet origin, hashes, receipt, balances, typed error, duration. Persists across reloads (per wallet origin). Capped at 500 entries: past the cap the oldest are evicted and the eviction count is shown. Export JSON copies everything a bug report needs | `Clear` is the only other way out |
 | **Events** | `connect`, `accountsChanged`, `chainChanged`, `disconnect` as the provider emitted them | |
 
 Under the header: the **preflight verdict** in one line, and a **jump bar** to every card. A 4900

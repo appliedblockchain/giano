@@ -4,7 +4,8 @@ import type { Attribution, Payer, UserOpReceipt } from './receipt';
 
 /**
  * The outcome ledger (design.md D7, demo-dapp spec "Outcome ledger"): every action is an entry,
- * every entry carries the evidence a bug report needs, and nothing leaves the list except by Clear.
+ * every entry carries the evidence a bug report needs, and nothing leaves the list except by Clear or by
+ * the retention cap (the oldest entries beyond LEDGER_CAP, with the eviction count kept).
  */
 export type Section =
   | 'preflight'
@@ -94,8 +95,13 @@ export function loadLedger(walletOrigin: string): LedgerState {
   try {
     const raw = localStorage.getItem(ledgerStorageKey(walletOrigin));
     if (!raw) return emptyLedger;
-    const parsed = JSON.parse(raw) as Partial<LedgerState>;
-    return { entries: parsed.entries ?? [], events: parsed.events ?? [], evicted: parsed.evicted ?? 0 };
+    // Persisted JSON is not trusted: a corrupted field must not take the ledger tab down before Clear renders.
+    const parsed = JSON.parse(raw) as Partial<Record<keyof LedgerState, unknown>>;
+    return {
+      entries: Array.isArray(parsed.entries) ? (parsed.entries as LedgerEntry[]) : [],
+      events: Array.isArray(parsed.events) ? (parsed.events as ProviderEvent[]) : [],
+      evicted: typeof parsed.evicted === 'number' && Number.isFinite(parsed.evicted) ? parsed.evicted : 0,
+    };
   } catch {
     return emptyLedger;
   }

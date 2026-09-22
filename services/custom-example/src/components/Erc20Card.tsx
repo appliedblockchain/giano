@@ -35,6 +35,7 @@ export function Erc20Card() {
   const [allowance, setAllowance] = useState<bigint | undefined>();
   const [op, setOp] = useState<Op>('mint');
   const [destination, setDestination] = useState('');
+  const [destinationEdited, setDestinationEdited] = useState(false);
   const [amount, setAmount] = useState('100');
   const [busy, setBusy] = useState(false);
   const [payer, setPayer] = useState<Payer>('sponsored');
@@ -44,9 +45,10 @@ export function Erc20Card() {
     setToken(null);
     setMeta(null);
   }, [defaultToken, selected.chainId]);
+  // The destination defaults to the user's own account and follows it across reconnects until the user edits it.
   useEffect(() => {
-    if (account && !destination) setDestination(account);
-  }, [account, destination]);
+    if (account && !destinationEdited) setDestination(account);
+  }, [account, destinationEdited]);
 
   const refresh = useCallback(async () => {
     if (!entry || !token || !account) return;
@@ -90,7 +92,16 @@ export function Erc20Card() {
 
   const execute = async () => {
     if (!account || !token || !meta) return;
-    const units = parseUnits(amount || '0', meta.decimals);
+    let units: bigint;
+    try {
+      units = parseUnits(amount || '0', meta.decimals);
+    } catch (error) {
+      // Recorded like every other refusal: a malformed or over-precise amount never reaches the wallet.
+      await run({ section: 'erc20', label: `${op} (invalid amount)`, method: 'eth_sendTransaction', params: { amount, decimals: meta.decimals }, account, noBalances: true }, async () => {
+        throw new Error(`"${amount}" is not a valid ${meta.symbol} amount (${meta.decimals} decimals): ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
+      });
+      return;
+    }
     setBusy(true);
     try {
       if (op === 'mint') {
@@ -197,7 +208,15 @@ export function Erc20Card() {
           </HStack>
           <HStack gap="3" align="flex-end" flexWrap="wrap">
             <Field label="Destination / spender" helperText="Defaults to your own account." flex="2" minW="64">
-              <Input fontFamily="mono" value={destination} onChange={(event) => setDestination(event.target.value)} disabled={op === 'mint'} />
+              <Input
+                fontFamily="mono"
+                value={destination}
+                onChange={(event) => {
+                  setDestination(event.target.value);
+                  setDestinationEdited(event.target.value.trim() !== '');
+                }}
+                disabled={op === 'mint'}
+              />
             </Field>
             <Field label={`Amount (${meta.symbol})`} w="32">
               <Input fontFamily="mono" value={amount} onChange={(event) => setAmount(event.target.value)} />

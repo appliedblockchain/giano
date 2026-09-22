@@ -2,7 +2,8 @@ import type { ChainConfig, RuntimeConfig } from '../config';
 import type { ChainRegistry } from './chains';
 
 /**
- * Setup preflight (design.md D14). Six checks that answer in under a second what a 15 s handshake
+ * Setup preflight (design.md D14). Targeted checks — one per concern, plus one per configured chain and
+ * default token — that answer in under a second what a 15 s handshake
  * timeout or a 120 s receipt timeout would otherwise answer — each with the operator action that fixes
  * it. Nothing here blocks the page; a failed row disables the write controls it invalidates or attaches
  * a warning to them.
@@ -188,7 +189,8 @@ export async function runPreflight(config: RuntimeConfig, registry: ChainRegistr
   const walletApiPath = registry.optionsFor(config.chains[0].chainId).walletApiPath;
   const [wallet, coop, ...chains] = await Promise.all([checkWalletOrigin(config.walletUrl, walletApiPath, connectorVersion), checkCoop(), ...config.chains.map((chain) => checkChain(registry, chain))]);
   const chainChecks = chains.flat();
-  const checks: PreflightCheck[] = [wallet.checks[0], coop, ...chainChecks, checkStorage(), wallet.checks[1]];
+  const [walletCheck, ...walletExtras] = wallet.checks;
+  const checks: PreflightCheck[] = [walletCheck, coop, ...chainChecks, checkStorage(), ...walletExtras];
   return {
     at: new Date().toISOString(),
     durationMs: Date.now() - started,

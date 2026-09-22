@@ -63,7 +63,16 @@ export function TransactionsCard() {
       });
       return;
     }
-    const tx = { to: getAddress(to), value: toHex(parseEther(value || '0')), ...(data ? { data: data as Hex } : {}) };
+    let wei: bigint;
+    try {
+      wei = parseEther(value || '0');
+    } catch (error) {
+      await run({ section: 'transactions', label: 'Send (invalid amount)', method: 'eth_sendTransaction', params: [{ to, value }], account, noBalances: true }, async () => {
+        throw new Error(`"${value}" is not a valid ETH amount — refused before reaching the wallet: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`);
+      });
+      return;
+    }
+    const tx = { to: getAddress(to), value: toHex(wei), ...(data ? { data: data as Hex } : {}) };
     setBusy(true);
     try {
       await run(
