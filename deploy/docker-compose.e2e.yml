@@ -255,10 +255,15 @@ services:
       # sponsorshipPaymaster is explicit because the devnet has no contracts-registry entry. Both
       # chains load the same baked state, so it is the same address on each, and the one
       # wallet-api sponsors through above.
+      #
+      # walletRpcUrl is where a WALLET reaches the same node — the host ports anvil publishes,
+      # spelled as localhost because that and HTTPS are the only forms MetaMask will add.
       GIANO_DEPLOYMENTS: >-
         [{"name":"e2e devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
+          "walletRpcUrl":"http://localhost:8545",
           "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5},
          {"name":"e2e devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
+          "walletRpcUrl":"http://localhost:8546",
           "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5}]
 
   # Installs each demo tenant's sponsorship rules through the real admin API, then verifies its own

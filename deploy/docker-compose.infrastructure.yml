@@ -572,11 +572,19 @@ services:
       # (/rpc/<chainId>), so the browser never dials anvil directly — which also means anvil's
       # missing CORS headers do not matter here.
       #
+      # walletRpcUrl is where a WALLET reaches the same node, and has to be different: `anvil:8545`
+      # is a name on this compose network, and the proxy path is a route on the console's origin —
+      # a wallet extension can dial neither. These are the host ports the anvil services publish.
+      # MetaMask also refuses any RPC URL that is not HTTPS or literal localhost, which rules out
+      # rpc.giano.localhost as well, so `localhost:<port>` is the only spelling that works here.
+      #
       # sponsorshipPaymaster is explicit because the devnet has no contracts-registry entry. It
       # is the same deterministic address on both chains, and the one wallet-api sponsors
       # through — a fixed CREATE2 salt puts it there.
       GIANO_DEPLOYMENTS: >-
         [{"name":"local devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
+          "walletRpcUrl":"http://localhost:8545",
           "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5},
          {"name":"local devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
+          "walletRpcUrl":"http://localhost:8546",
           "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5}]

@@ -36,6 +36,20 @@ export type Deployment = {
    */
   sponsorshipPaymaster?: `0x${string}`;
   /**
+   * Where a *wallet* should reach this chain, when that is not where the console reads.
+   *
+   * The console reads through its own origin — `rpcUrl` is normally `/rpc/<chainId>`, a proxy that
+   * keeps a keyed provider endpoint server-side. A wallet asked to add the network has to dial it
+   * itself, from outside this page, and cannot use either a path on this origin or, in MetaMask's
+   * case, anything that is not HTTPS or literal localhost. So the address to hand a wallet is
+   * stated rather than derived: deriving it from `rpcUrl` would mean publishing the keyed endpoint
+   * to every operator's wallet, which is the thing the proxy exists to prevent.
+   *
+   * Optional, and only used when the wallet does not already know the chain. Unset, the console
+   * offers `rpcUrl` and reports what the wallet says if it refuses.
+   */
+  walletRpcUrl?: string;
+  /**
    * Seconds between automatic refreshes. 0 disables polling.
    *
    * The one field a chain descriptor has no opinion about — how often a console polls is not a
@@ -60,6 +74,7 @@ type RawDeployment = {
   name?: string;
   chainId?: number | string;
   rpcUrl?: string;
+  walletRpcUrl?: string;
   sponsorshipPaymaster?: string;
   refreshSeconds?: number | string;
 };
@@ -83,6 +98,7 @@ function toDeployment(raw: RawDeployment, fallbackName: string, index: number): 
     name: raw.name || fallbackName || `chain ${chainId}`,
     chainId,
     rpcUrl: raw.rpcUrl,
+    walletRpcUrl: raw.walletRpcUrl || undefined,
     sponsorshipPaymaster: raw.sponsorshipPaymaster ? (raw.sponsorshipPaymaster as `0x${string}`) : undefined,
     refreshSeconds: raw.refreshSeconds === undefined || raw.refreshSeconds === '' ? DEFAULT_REFRESH_SECONDS : Number(raw.refreshSeconds),
   };
