@@ -1651,9 +1651,9 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | Secret (`giano-dev-…`) | Contents | Consumed by |
 |---|---|---|
 | `database-password` | RDS master password | RDS itself ([§8.3](#83-the-master-password)), and `database-url` |
-| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin, custom-example, custom-example-byoui, bundler-base-sepolia |
+| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin (`/rpc` proxy only), custom-example, custom-example-byoui, bundler-base-sepolia |
 | `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui, bundler-eth-sepolia |
-| `chains` | the full `GIANO_CHAINS` JSON for wallet-api — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api |
+| `chains` | the full `GIANO_CHAINS` JSON — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api, paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
 | `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)) | bundler-base-sepolia, bundler-eth-sepolia |
 | `alto-utility-key` | 32-byte hex — likewise shared, needs no funding | bundler-base-sepolia, bundler-eth-sepolia |
@@ -1669,7 +1669,8 @@ the middle of a larger JSON string Terraform composes. So the whole array is han
 1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys` alongside
 otherwise-literal tenant fields).
 
-There is only the one composed `GIANO_CHAINS` secret, for `wallet-api` alone. `wallet-web` also sets
+There is only the one composed `GIANO_CHAINS` secret, and `paymaster-admin` reads that same value
+rather than a second one of its own ([§14.6](#146-paymaster-admin)). `wallet-web` also sets
 `GIANO_CHAINS`, but as a **literal** — `[{ "chainId": 84532 }, { "chainId": 11155111 }]`, no
 `rpcUrl` — so no secret is needed for it at all: every browser-facing chain descriptor defaults to
 wallet-api's relay ([§14.3](#143-wallet-web)). An earlier revision gave `wallet-web` its own
@@ -3217,21 +3218,76 @@ confirms `/bundler` does not answer JSON-RPC.
 
 ### 14.6 `paymaster-admin`
 
-Single-chain, deliberately, unlike every other service in this deployment: the console has no
-multi-chain shape to pour two chains into (`services/paymaster-admin` takes one `GIANO_CHAIN_ID`,
-full stop), and neither reference compose file runs a second instance for it. Base Sepolia is the
-chain shown — an operator who needs to inspect the Ethereum Sepolia paymaster deposit today does so
-directly against that chain's explorer, not through this console. A second instance pointed at
-`GIANO_CHAIN_ID=11155111` would be a one-line change if that stops being acceptable; nothing here
-blocks it.
+Both chains, like every other service in this deployment. The console declares a *list* of
+deployments in `/config.json` and renders a picker between them when there is more than one
+(`services/paymaster-admin/src/App.tsx`); one is on screen at a time, and the operator's choice is
+remembered against chain id plus paymaster address rather than against the label. That list is the
+whole of what the console can reach — an operator switches between environments someone
+deliberately configured and cannot point it at an arbitrary chain by typing into it.
+
+The container takes the list two ways (`docker/entrypoint.sh`): `GIANO_DEPLOYMENTS`, a JSON array,
+or the `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / … shorthand it wraps into a one-element array. This
+deployment uses the array, so **the shorthand variables are not set and would be ignored if they
+were** — per-chain values live in the descriptors instead.
+
+**The array is `chains`** — the very secret `wallet-api` reads as `GIANO_CHAINS`
+([§14.2](#142-wallet-api)), handed over unchanged. A chain list authored twice is a chain list that
+disagrees with itself eventually, and the failure is quiet: a console reading one paymaster while
+the API sponsors through another shows a healthy deployment that refuses every transaction. So
+there is one authored list, and adding a chain to the deployment adds it to the console.
 
 | Variable | Value |
 |---|---|
-| `GIANO_CHAIN_ID` | `84532` |
-| `GIANO_RPC_URL` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) |
-| `GIANO_PAYMASTER_ADDRESS` | the §13.1 proxy — must be set; the registry has no entry |
-| `GIANO_ENVIRONMENT_LABEL` | `dev (Base Sepolia)` |
-| `GIANO_REFRESH_SECONDS` | `15` |
+| `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
+| *(nothing else)* | the proxy, the CSP and the picker all derive from the array — see below |
+
+Nothing is translated on the way in. The console names its fields `chainId`, `name`, `rpcUrl` and
+`sponsorshipPaymaster` — the spelling `packages/contracts/chains.ts` uses — so a descriptor *is* a
+deployment. `refreshSeconds` is the one field it adds, because how often a console polls is not a
+property of a chain, and it defaults to 15 rather than being required of an array authored for
+`wallet-api`.
+
+The entrypoint still **projects**: it keeps those five fields and drops the rest. A descriptor also
+carries `bundlerUrl`, `entryPoint`, `factory` and `policy`, and `/config.json` is served to the
+browser, so naming what is kept is what stops the internal Cloud Map bundler hostnames — and
+whatever field a descriptor grows next — from being published to everyone who can open the console.
+What does reach the browser is each chain's `rpcUrl`, QuickNode key included: unchanged from the
+single-chain configuration, and the reason `wallet-web` was moved off direct RPC entirely (R3).
+
+#### The tokens stay server-side
+
+A descriptor's `rpcUrl` is browser-facing by default: it is written into `/config.json` and dialled
+by the SPA. Each of this environment's is a QuickNode endpoint with its token in the path, so
+handing them over as-is publishes both tokens to everyone who can open the console — and they stay
+usable until someone rotates them. `wallet-web` was moved off direct RPC for this reason (R3); the
+console was left behind, and was serving both tokens in `/config.json` and naming one of them in
+its own CSP header.
+
+`GIANO_RPC_PROXY=true` closes it. The entrypoint emits one nginx location per chain —
+`/rpc/<chainId>`, proxying to that chain's keyed URL — and rewrites each descriptor's `rpcUrl` to
+that path before writing `/config.json`. nginx holds the keyed URL; the browser never sees it.
+
+A location per chain, each with a literal upstream, rather than one location and a variable:
+nginx then resolves every upstream host at config load, so a name that does not resolve stops the
+container at boot instead of failing the first call an operator makes. A variable `proxy_pass`
+would need a `resolver` directive, which means knowing the DNS server's address — one more thing
+to be wrong per environment.
+
+It is on by default, and `GIANO_RPC_PROXY=false` opts out — for a node that must be dialled from
+the browser directly, or an upstream nginx cannot reach from where it runs. A console that leaks
+its provider credentials unless someone remembers a variable is the wrong shape for something an
+operator stands up quickly; where the proxy is not needed it costs one hop inside the container.
+A relative `rpcUrl` is already same-origin and passes through untouched.
+
+`GIANO_CSP_CONNECT_SRC` is **derived** from the array rather than configured beside it: one origin
+per `rpcUrl`, and with the proxy on there are none left, so `connect-src` collapses to `'self'`.
+Configuring it separately is the kind of thing that is correct on the day it is written and wrong
+the first time a chain is added, and the symptom — every call to the new chain blocked by the CSP,
+nothing in the UI explaining it — does not point at the variable that caused it. It stays
+overridable for a deployment that fronts its nodes with something the array cannot describe.
+
+Malformed JSON stops the container at boot with jq naming the defect, rather than letting nginx
+serve a `/config.json` the SPA refuses to parse — which presents as a blank console.
 
 It reads the chain directly and needs neither the database nor `wallet-api`. Note that the console
 *writes* through an injected browser wallet, so whoever holds the role-admin key from §13.1 is the
@@ -4645,6 +4701,7 @@ third is the guarantee everything else in §12 rests on.
 | R29 | **`datadog_enabled` can be, and was, wired to only one of the four things it has to move together.** An earlier revision gated the execution role's `datadog-api-key` grant ([§10.2](#102-what-each-role-gets)) on the variable but never gated the sidecar containers, the log driver, or the CloudWatch group name — so flipping it dropped IAM access to a secret a still-present `datadog-agent` container still declared in its `secrets` block. | Every task fails at placement, silently — `apply` reports success, the plan showed only an IAM policy change, and nothing says why tasks stopped starting until the ECS events are read | Closed: all four now move together ([§17.3.7](#1737-turning-datadog-off)) — the sidecars are conditionally excluded from `container_definitions`, `logConfiguration` switches `awsfirelens`/`awslogs`, `dependsOn` on `log_router` is conditional with it, and the log group's name (and therefore its identity) changes with it. The signal that they have come apart again is the same one that caught this: a plan touching the IAM policy alone. |
 | R30 | **RDS's parameter group family ships `rds.force_ssl = 1` as a system default, and `database-url`'s DSN never requested SSL.** Nothing in this module set `rds.force_ssl` — it was never disabled, just never accounted for — so Postgres rejected `wallet-api`'s plaintext connection outright: `no pg_hba.conf entry ... no encryption`. Fixing that alone traded it for a second, independent failure: plain `sslmode=require` is an alias for `verify-full` on recent `pg-connection-string`, and RDS's certificate chains to Amazon's own RDS CA, not Node's trust store, so the driver then failed with `self-signed certificate in certificate chain` — encrypted, but chain-unverifiable. | `wallet-api` crash-loops on every boot with database errors that read like networking or credentials problems, not a missing query parameter — and `wallet-web`/`custom-example-byoui` cascade from it, since their nginx upstreams (`wallet-api.giano-dev.local`, `bundler.giano-dev.local`) never register in Cloud Map while the service they front never stabilises | Closed: the DSN carries `?sslmode=require&uselibpqcompat=true` ([§7.4](#74-the-derived-secrets)) — the second parameter restores classic libpq semantics, where `require` means encrypt-only, accepted here because the instance is already private-subnet and security-group isolated (§5.6). Required a second, separate fix to actually reach a running task: `secret_string_wo` is never read back, so `secret_string_wo_version` is the only change signal, and it was tied purely to `database-password`'s own 1Password version — a code-only DSN format change moved nothing. Now combined with `local.database_url_format_version`, bumped by hand on every format change (currently `3`), so either trigger rotates the secret. |
 | R31 | **`tasks-sg` only ever allowed 8080 from `alb-sg`, but the SPA origins reach `wallet-api` task-to-task.** `wallet-web`, `custom-example` and `paymaster-admin` each serve `/api` from an nginx `proxy_pass` to `wallet-api` over service discovery; `wallet-byo` does the same through its own minimal Node reverse proxy (`e2e/wallet-byo/serve.mjs`) rather than nginx. Either way it is a hop the ALB is never on the path for, since the ALB only ever targets the SPA's own container, not `wallet-api`'s. | Every `/api` call through any SPA origin hangs until the proxy's own connect timeout and the browser gives up — nginx logs a `499`, `wallet-api` never sees the request — which reads as an application timeout rather than a dropped SYN at the security group | Closed for connectivity: `tasks-from-tasks`, a self-referencing ingress rule on `tasks-sg` for 8080 ([§5.6](#56-security-groups)). The instinct to scope this to "SPA origins → wallet-api only" doesn't fit the security-group model — a self-reference is symmetric by construction — so the rule is task-to-task on 8080 in general, no narrower than the ALB's own grant already was. **Not closed for the `description` string**: `tasks-sg`'s `description` was updated to say so in words too, and that is accepted as-is rather than reverted, on the reasoning that an accurate description is worth more than a cosmetic mismatch. The cost: `aws_security_group.description` has no update API at all, so this edit forces `-/+` replacement of a group referenced by three other groups' rules and attached to every running task's ENI — AWS refuses `DeleteSecurityGroup` with a live ENI attached (`DependencyViolation`), so the replace half of that plan cannot complete while anything is running. Applying this needs a coordinated cutover (drain or replace every task before the destroy step runs), not a plain `terraform apply` — a plain apply will get partway through and fail on the delete. Any future edit to `alb-sg`'s, `bundler-sg`'s or `app-db-sg`'s `description` carries the identical trap. |
+| R32 | **`paymaster-admin` published its QuickNode RPC tokens to every visitor.** A chain descriptor's `rpcUrl` is browser-facing — written into `/config.json` and dialled by the SPA — and both dev endpoints embed their key in the URL path, so the console served both tokens outright and named one of them in its own CSP `connect-src` header. | Anyone who opened `paymaster.dev.giano.appliedblockchain.dev` had two working, unrotated provider endpoints, usable until someone rotated them | Closed: every absolute `rpcUrl` is proxied through the console's own origin by default (`GIANO_RPC_PROXY=true`, opt-out for a node that must be dialled from the browser or an upstream nginx cannot reach) — nginx holds the keyed URL behind a per-chain `/rpc/<chainId>` location, the browser gets a relative path, and `connect-src` derives to `'self'` from the same array ([§14.6](#146-paymaster-admin)). `wallet-web` was moved off direct RPC for the identical reason (R3); this closes the same gap for `paymaster-admin`, which had been left behind. The two already-exposed tokens are **not** being rotated — accepted for `dev`, where the QuickNode endpoints carry no cost worth the coordination of rotating them across every consumer (`custom-example`, `custom-example-byoui`, both bundlers, `wallet-api` via `chains`). Revisit this acceptance before treating any higher environment's tokens the same way. |
 
 ---
 

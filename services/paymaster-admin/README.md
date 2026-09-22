@@ -50,19 +50,26 @@ console at an arbitrary chain by typing into it.
 ```json
 {
   "deployments": [
-    { "label": "base sepolia", "chainId": 84532, "rpcUrl": "https://…", "paymasterAddress": "0x…", "refreshSeconds": 30 },
-    { "label": "local devnet", "chainId": 31337, "rpcUrl": "http://localhost:8545", "paymasterAddress": "0x…", "refreshSeconds": 10 }
+    { "name": "base sepolia", "chainId": 84532, "rpcUrl": "https://…", "sponsorshipPaymaster": "0x…", "refreshSeconds": 30 },
+    { "name": "local devnet", "chainId": 31337, "rpcUrl": "http://localhost:8545", "sponsorshipPaymaster": "0x…", "refreshSeconds": 10 }
   ]
 }
 ```
 
 | Key | |
 | --- | --- |
-| `label` | how an operator tells this environment apart; shown in the header |
+| `name` | how an operator tells this environment apart; shown in the header |
 | `chainId` | required |
-| `rpcUrl` | required; `/rpc` uses the container's same-origin proxy |
-| `paymasterAddress` | the proxy. See the caveat below — set it |
+| `rpcUrl` | required; proxied through this origin unless `GIANO_RPC_PROXY=false` |
+| `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
 | `refreshSeconds` | poll interval; `0` disables polling |
+
+Every key but `refreshSeconds` is spelled as a chain descriptor spells it
+(`packages/contracts/chains.ts`), so a deployment that also runs `wallet-api` can hand
+`GIANO_DEPLOYMENTS` that service's own `GIANO_CHAINS` value and have one authored chain list
+instead of two. The container keeps the five keys above and drops the rest of a descriptor —
+`bundlerUrl`, `entryPoint`, `factory`, `policy` — rather than publishing them in a file served to
+the browser.
 
 With more than one entry the header shows a **picker**; with one it shows the label as a badge. The
 choice is remembered in `localStorage`, keyed on chain and address rather than on the label, so
@@ -72,7 +79,7 @@ Switching deployments **drops the connected wallet**. It was bound to the old ch
 were read from the old paymaster, so keeping it would offer actions the account may not hold on the
 deployment now on screen. Reconnecting is one click.
 
-> **`paymasterAddress` is optional in the schema but required in practice.** Leaving it out asks the
+> **`sponsorshipPaymaster` is optional in the schema but required in practice.** Leaving it out asks the
 > SDK to resolve the address from the contracts registry, and no chain in `packages/contracts/addresses.ts`
 > currently declares a `sponsorshipPaymaster`. Omit it and the console fails to start, loudly.
 
@@ -80,6 +87,18 @@ deployment now on screen. Reconnecting is one click.
 either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-deployment shorthand
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
 `GIANO_REFRESH_SECONDS`.
+
+### The provider key does not reach the browser
+
+`rpcUrl` is dialled by the SPA, so a keyed endpoint written into `config.json` is readable by
+everyone who can open the console and usable by them until it is rotated. So the container proxies
+every absolute `rpcUrl` through its own origin: one nginx location per chain, `/rpc/<chainId>`,
+with the keyed URL server-side and `/rpc/<chainId>` in the file. `connect-src` is derived from the
+result, and collapses to `'self'`.
+
+`GIANO_RPC_PROXY=false` opts out, for a node that must be dialled directly or an upstream nginx
+cannot reach from where it runs — and then the URL, key and all, is what every visitor receives. A
+relative `rpcUrl` is already same-origin and passes through either way.
 
 ## What is a view call, and what is a window
 
