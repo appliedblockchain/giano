@@ -138,7 +138,7 @@ async function openConsole(page: Page) {
   await expect(page.getByRole('tab', { name: /Overview/ })).toBeVisible();
 }
 
-test('connect moves the wallet to the console"s chain on its own, with nothing to click', async ({ page }) => {
+test("connect moves the wallet to the console's chain on its own, with nothing to click", async ({ page }) => {
   await installWallet(page, { known: [CHAINS.a.chainId] });
   await openConsole(page);
   await chooseDeployment(page, CHAINS.a.chainId);
