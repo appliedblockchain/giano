@@ -100,7 +100,17 @@ export function FailureLabCard() {
   const selfPaidNoBalance = wrap('selfpaid', () =>
     run(
       { section: 'failure-lab', label: 'Send 0 ETH to self, declared self-paid (AA21 expected with no balance)', method: 'eth_sendTransaction', params: [{ to: account, value: '0x0' }], chainId: selected.chainId, account, declaredPayer: 'self-paid', expected: true },
-      (api) => submitTransaction(api, { to: account!, value: '0x0' }),
+      async (api) => {
+        // Precondition the dApp CAN check: the account must hold nothing on this chain, or the
+        // operation would simply be paid for. The one it cannot check — whether the wallet serves
+        // this chain unsponsored (G1) — is attributed from the receipt afterwards instead.
+        const balance = await api.entry.publicClient.getBalance({ address: account! });
+        if (balance > 0n) {
+          api.update({ note: `precondition not met: the account holds ${balance.toString()} wei on ${selected.config.name}; nothing was submitted. Use a fresh account or an empty one to reproduce AA21.` });
+          throw new Error(`account balance is ${balance.toString()} wei, not zero — the self-paid failure needs an empty account`);
+        }
+        return submitTransaction(api, { to: account!, value: '0x0' });
+      },
     ),
   );
 
@@ -121,7 +131,7 @@ export function FailureLabCard() {
     {
       key: 'selfpaid',
       title: 'Self-paid, no balance',
-      description: 'Declares the account as payer with an empty balance. On an unsponsored chain the EntryPoint refuses (AA21); on a sponsored chain the wallet pays anyway and the entry is flagged.',
+      description: 'Requires an empty account (checked first; nothing is sent otherwise). On an unsponsored chain the EntryPoint refuses (AA21); on a sponsored chain the wallet pays anyway and the entry is flagged as a payer mismatch — the dApp cannot tell in advance (G1).',
       label: 'Send self-paid',
       onClick: selfPaidNoBalance,
       needsAccount: true,

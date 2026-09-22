@@ -1,5 +1,5 @@
 import { Button, HStack, Stack, Steps, Text } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LuKeyRound, LuSend } from 'react-icons/lu';
 import { encodeFunctionData } from 'viem';
 import { testErc20Abi } from '../lib/erc20';
@@ -23,6 +23,11 @@ export function RawUserOpCard() {
   /** The account and chain the pipeline was prepared for: a prepared operation is only valid for those. */
   const [origin, setOrigin] = useState<{ account: string; chainId: number } | null>(null);
   const contextKey = `${selected.chainId}:${account ?? ''}`;
+  // The CURRENT context, readable after an await: a closure's `account`/`selected` are frozen at render time,
+  // so every state update that follows an await compares against this ref, not against the closure.
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+  const stillCurrent = (key: string) => contextRef.current === key;
   useEffect(() => {
     if (origin && (origin.chainId !== selected.chainId || origin.account !== account)) {
       setPrepared(null);
@@ -37,6 +42,7 @@ export function RawUserOpCard() {
 
   const prepare = async () => {
     if (!account) return;
+    const startedIn = contextRef.current;
     setBusy('prepare');
     const calls = [{ to: account, value: '0x0', data: '0x' }];
     const outcome = await run({ section: 'raw-userop', label: 'Prepare user operation', method: 'eth_prepareUserOperation', params: [calls, {}], account, noBalances: true }, (api) =>
@@ -44,7 +50,7 @@ export function RawUserOpCard() {
     );
     setBusy(null);
     // Discard a result that arrived after the account or chain changed underneath it.
-    if (outcome.result && contextKey === `${selected.chainId}:${account}`) {
+    if (outcome.result && stillCurrent(startedIn)) {
       setPrepared(outcome.result);
       setOrigin({ account, chainId: selected.chainId });
       setSigned(null);
@@ -54,28 +60,30 @@ export function RawUserOpCard() {
 
   const sign = async () => {
     if (!account || !prepared) return;
+    const startedIn = contextRef.current;
     setBusy('sign');
     const outcome = await run({ section: 'raw-userop', label: 'Sign user operation', method: 'eth_signUserOperation', params: [prepared], account, noBalances: true }, (api) =>
       api.provider.request<string>({ method: 'eth_signUserOperation', params: [prepared] }),
     );
     setBusy(null);
-    if (outcome.result && origin && origin.account === account && origin.chainId === selected.chainId) setSigned({ ...prepared, signature: outcome.result });
+    if (outcome.result && stillCurrent(startedIn) && origin && origin.account === account && origin.chainId === selected.chainId) setSigned({ ...prepared, signature: outcome.result });
   };
 
   const send = async () => {
     if (!account || !signed) return;
+    const startedIn = contextRef.current;
     setBusy('send');
     const outcome = await run(
       { section: 'raw-userop', label: 'Send signed user operation', method: 'eth_sendSignedUserOperation', params: [signed], account, declaredPayer: prepared?.paymaster ? 'sponsored' : 'self-paid' },
       async (api) => {
         const opHash = await api.provider.request<string>({ method: 'eth_sendSignedUserOperation', params: [signed] });
         api.update({ userOpHash: opHash, status: 'submitted' });
-        setHash(opHash);
+        if (stillCurrent(startedIn)) setHash(opHash);
         return waitForReceipt(api, opHash);
       },
     );
     setBusy(null);
-    if (outcome.error) setHash(null);
+    if (outcome.error && stillCurrent(startedIn)) setHash(null);
   };
 
   const signedCall = async () => {
