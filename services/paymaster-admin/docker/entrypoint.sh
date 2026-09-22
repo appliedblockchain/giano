@@ -48,7 +48,12 @@ fi
 GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
   [ .[]
     | { name, chainId, rpcUrl, walletRpcUrl, sponsorshipPaymaster, refreshSeconds: (.refreshSeconds // 15) }
-    | with_entries(select(.value != null and .value != "")) ]')
+    # Only walletRpcUrl is dropped when empty. Every other field keeps an empty string on purpose:
+    # the proxy step below asks whether rpcUrl looks absolute, and a missing key would make that
+    # `null | test(...)`, which stops the container with a jq message instead of letting the SPA
+    # report "deployment N has no rpcUrl".
+    | if (.walletRpcUrl // "") == "" then del(.walletRpcUrl) else . end
+    | with_entries(select(.value != null)) ]')
 export GIANO_DEPLOYMENTS
 
 # Keep the provider keys server-side.

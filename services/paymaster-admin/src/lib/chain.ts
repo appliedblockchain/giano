@@ -1,7 +1,7 @@
 import type { PaymasterWalletClient } from '@appliedblockchain/giano-paymaster-sdk';
 import { createPublicClient, createWalletClient, custom, defineChain, http, type Address, type Chain, type EIP1193Provider } from 'viem';
 import type { Deployment } from '../config';
-import { describeError } from './errors';
+import { describeError } from './format';
 
 /**
  * Chain wiring.

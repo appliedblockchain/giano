@@ -230,13 +230,20 @@ test('a write is signed by the connected wallet and lands on the chain', async (
 
   // A value no earlier run would leave behind, so a stale read cannot pass for a fresh write.
   const fee = `0.000${Math.floor(Math.random() * 900) + 100}`;
-  await setFee(fee);
 
-  await expect(page.getByText('Set default fee confirmed')).toBeVisible({ timeout: 60_000 });
-  expect(await walletCalls(page)).toContain('eth_sendTransaction');
-  // The console says it landed; the chain is what settles it.
-  await expect.poll(feeOnChain, { timeout: 30_000 }).toBe(parseEther(fee));
+  try {
+    await setFee(fee);
 
-  await setFee(formatEther(before));
-  await expect.poll(feeOnChain, { timeout: 60_000 }).toBe(before);
+    await expect(page.getByText('Set default fee confirmed')).toBeVisible({ timeout: 60_000 });
+    expect(await walletCalls(page)).toContain('eth_sendTransaction');
+    // The console says it landed; the chain is what settles it.
+    await expect.poll(feeOnChain, { timeout: 30_000 }).toBe(parseEther(fee));
+  } finally {
+    // Even on a failed assertion. This suite runs one worker in file order, so a fee left behind
+    // here is a fee the sponsorship tests would do their arithmetic against.
+    if ((await feeOnChain()) !== before) {
+      await setFee(formatEther(before));
+      await expect.poll(feeOnChain, { timeout: 60_000 }).toBe(before);
+    }
+  }
 });

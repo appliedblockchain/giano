@@ -16,7 +16,7 @@ import {
   createToaster,
 } from '@chakra-ui/react';
 import { useState, type ReactNode } from 'react';
-import { describeError } from '../lib/errors';
+import { describeError } from '../lib/format';
 import { system } from '../theme';
 
 /**
