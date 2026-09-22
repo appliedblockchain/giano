@@ -508,16 +508,22 @@ services:
       # → ALB target group, rule 20, host `example.<apex>`.
       - '${EXAMPLE_DAPP_PORT:-4400}:8080'
     environment:
-      # config.json field names, per §14.4: chainId, chainName, rpcUrl, chainBId, walletUrl,
-      # appLabel, testErc20.
-      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      GIANO_CHAIN_NAME: ${CHAIN_NAME:-Base Sepolia}
-      # [literal] 0 disables the second chain. This deployment is single-chain and the
-      # config explicitly supports saying so.
-      GIANO_CHAIN_B_ID: '0'
-      # [ASM] giano-<env>-rpc-url — browser-facing here too; the same key-exposure note as
-      # wallet-web's GIANO_RPC_URL applies.
-      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # The chains this dApp can address (src/config.ts). Each rpcUrl is `/rpc/<chainId>`, a
+      # same-origin path nginx proxies to the keyed upstream below — the API key never reaches
+      # the browser (R17). `defaultToken` is Giano's test ERC-20 at its CREATE2 address; unset
+      # until task 8 deploys it to the testnets (the ERC-20 card then opens empty for that chain).
+      GIANO_CHAINS: |
+        [
+          { "chainId": 84532, "name": "${CHAIN_NAME:-Base Sepolia}", "rpcUrl": "/rpc/84532"${TEST_ERC20_FIELD:-} },
+          { "chainId": 11155111, "name": "${CHAIN_B_NAME:-Ethereum Sepolia}", "rpcUrl": "/rpc/11155111"${TEST_ERC20_FIELD:-} }
+        ]
+      # [ASM] giano-<env>-rpc-url-* — keyed provider URLs, server-side only, one per chain.
+      # The chain ids are literal in BOTH the list above and the proxy keys below, on purpose: Compose
+      # cannot interpolate a variable NAME, so an overridable CHAIN_ID would leave a chain with no
+      # proxy location. This transcription is Base Sepolia + Ethereum Sepolia by construction
+      # (infra/iac defaults); change both places together.
+      GIANO_RPC_UPSTREAM_84532: ${RPC_URL:?set RPC_URL}
+      GIANO_RPC_UPSTREAM_11155111: ${RPC_B_URL:?set RPC_B_URL}
       # ⚠ [literal] The TENANT's wallet hostname. Pointing this at Giano's own serving
       # hostname `wallet.<apex>` is the one-character mistake that binds this tenant's
       # passkeys to infrastructure — irreversibly. Runbook §18 step 10 exists to catch it:
@@ -526,7 +532,8 @@ services:
       # is what makes the popup's origin check mean anything.
       GIANO_WALLET_URL: ${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}
       GIANO_APP_LABEL: ${EXAMPLE_BRAND_NAME:-Giano Example}
-      # GIANO_TEST_ERC20 unset: the devnet default address is meaningless on a real chain.
+      # The other tenant's wallet origin, for the failure lab's disallowed-origin control.
+      GIANO_OTHER_WALLET_URL: ${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:-}
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
       interval: 15s
@@ -557,12 +564,20 @@ services:
       # → ALB target group, rule 25, host `byoui.<apex>`.
       - '${BYOUI_DAPP_PORT:-4401}:8080'
     environment:
-      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      GIANO_CHAIN_NAME: ${CHAIN_NAME:-Base Sepolia}
-      GIANO_CHAIN_B_ID: '0'
-      GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
-      # The two values that differ. Everything else is identical to custom-example.
+      GIANO_CHAINS: |
+        [
+          { "chainId": 84532, "name": "${CHAIN_NAME:-Base Sepolia}", "rpcUrl": "/rpc/84532"${TEST_ERC20_FIELD:-} },
+          { "chainId": 11155111, "name": "${CHAIN_B_NAME:-Ethereum Sepolia}", "rpcUrl": "/rpc/11155111"${TEST_ERC20_FIELD:-} }
+        ]
+      # The chain ids are literal in BOTH the list above and the proxy keys below, on purpose: Compose
+      # cannot interpolate a variable NAME, so an overridable CHAIN_ID would leave a chain with no
+      # proxy location. This transcription is Base Sepolia + Ethereum Sepolia by construction
+      # (infra/iac defaults); change both places together.
+      GIANO_RPC_UPSTREAM_84532: ${RPC_URL:?set RPC_URL}
+      GIANO_RPC_UPSTREAM_11155111: ${RPC_B_URL:?set RPC_B_URL}
+      # The values that differ. Everything else is identical to custom-example.
       GIANO_WALLET_URL: ${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:?set BYOUI_WALLET_HOST}
+      GIANO_OTHER_WALLET_URL: ${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}
       GIANO_APP_LABEL: ${BYOUI_BRAND_NAME:-Giano Example (BYO UI)}
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
