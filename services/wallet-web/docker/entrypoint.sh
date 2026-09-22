@@ -53,7 +53,15 @@ else
   envsubst < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
 fi
 
-envsubst '${GIANO_WALLET_API_UPSTREAM} ${GIANO_CSP_CONNECT_SRC}' \
+# The nameserver nginx re-resolves the wallet-api upstream through — per request, not once at config
+# load (nginx.conf.template). The VPC resolver under ECS, Docker's embedded DNS under compose;
+# either way the container is handed one, so there is nothing to configure. First match only: the
+# directive takes one address.
+GIANO_RESOLVER=$(awk '/^nameserver/ && $2 ~ /^[0-9.]+$/ { print $2; exit }' /etc/resolv.conf)
+: "${GIANO_RESOLVER:?/etc/resolv.conf names no IPv4 nameserver}"
+export GIANO_RESOLVER
+
+envsubst '${GIANO_WALLET_API_UPSTREAM} ${GIANO_CSP_CONNECT_SRC} ${GIANO_RESOLVER}' \
   < /etc/giano/nginx.conf.template > /etc/nginx/conf.d/default.conf
 
 exec nginx -g 'daemon off;'

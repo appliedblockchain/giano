@@ -50,7 +50,7 @@
     }
   },
   "dependencies": {
-    "@appliedblockchain/giano-wallet-transport": "workspace:^"
+    "@appliedblockchain/giano-wallet-transport": "workspace:*"
   },
   "devDependencies": {
     "@rainbow-me/rainbowkit": "^2.2.4",

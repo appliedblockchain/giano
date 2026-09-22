@@ -1,14 +1,26 @@
 name: Determinism
 
 on:
-  push:
-    branches: [main]
   pull_request:
     paths:
       - 'packages/contracts/src/**'
       - 'packages/contracts/hardhat.config.ts'
       - 'packages/contracts/foundry.toml'
       - '.github/workflows/determinism.yml'
+  # `paths:` lives under `pull_request` only and is ignored by `workflow_call`, so both jobs
+  # below run on every release — which is what a gate has to do.
+  workflow_call:
+
+# A called workflow that declares none inherits the caller's token; release.yml holds
+# `packages: write` and nothing here needs it.
+permissions:
+  contents: read
+
+concurrency:
+  # The prefix must differ from release.yml's group, or the caller would queue behind its own
+  # callee and deadlock.
+  group: determinism-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   create2:

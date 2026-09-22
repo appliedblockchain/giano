@@ -42,7 +42,7 @@
     "viem": "^2.31.0"
   },
   "dependencies": {
-    "@appliedblockchain/giano-contracts": "workspace:^",
+    "@appliedblockchain/giano-contracts": "workspace:*",
     "ox": "^0.7.1",
     "uuid": "^11.1.0"
   },

@@ -689,10 +689,10 @@ services:
       - '${PAYMASTER_ADMIN_PORT:-8083}:8080'
     environment:
       GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      # [ASM] giano-<env>-rpc-url. Browser-facing (it becomes `rpcUrl` in config.json) and
-      # also the default for GIANO_RPC_UPSTREAM, so the same key-exposure note applies. To
-      # keep the key server-side, set this to `<scheme>://<paymaster host>/rpc` and put the
-      # keyed URL in GIANO_RPC_UPSTREAM — the nginx template proxies `= /rpc`.
+      # [ASM] giano-<env>-rpc-url. The keyed endpoint, and it stays server-side: the console
+      # proxies each chain through its own origin, so what reaches config.json is /rpc/<chainId>.
+      # GIANO_RPC_PROXY=false opts out, and then this URL — key and all — is what every browser
+      # that opens the console receives.
       GIANO_RPC_URL: ${RPC_URL:?set RPC_URL}
       # ⚠ [tfvar] MUST be set explicitly. The contracts registry has no paymaster entry for
       # this chain, so an unset value leaves the SDK resolving nothing and the console shows

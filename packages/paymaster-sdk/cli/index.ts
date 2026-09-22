@@ -32,6 +32,7 @@ import {
   ROLE_DESCRIPTIONS,
   toTenantId,
   type PaymasterRoleName,
+  type SponsorshipRecord,
   type WriteResult,
 } from '../src/index';
 import { createPublicClient, createWalletClient, defineChain, formatEther, http, parseEther, type Address, type Chain, type Hex } from 'viem';
@@ -131,6 +132,40 @@ async function submit(context: Context, action: string, send: () => Promise<Writ
   const receipt = await result.wait();
   ok(`${action} — confirmed in block ${receipt.blockNumber} (${receipt.status})`);
   emit({ action, hash: result.hash, blockNumber: receipt.blockNumber, status: receipt.status });
+}
+
+/**
+ * A positive whole number from a flag, or the default when it is absent.
+ *
+ * `Number(undefined)` is `NaN` and so is `Number('five')`, and both would slip past a plain
+ * comparison — every `n >= NaN` is false, so a loop bounded by one would run until it hit a
+ * different stop condition. Which for the log-paging loops here means walking toward genesis a
+ * window at a time because someone mistyped a flag.
+ */
+function count(flag: string | undefined, fallback: number, name: string): number {
+  if (flag === undefined) return fallback;
+  const value = Number(flag);
+  if (!Number.isSafeInteger(value) || value < 1) throw new PaymasterSdkError(`${name} must be a positive whole number, got "${flag}"`);
+  return value;
+}
+
+/**
+ * One tenant's slug, hunted backwards a window at a time.
+ *
+ * A slug is emitted once, at registration, and log reads cover a window (see the SDK's
+ * `getTenantSlugs`) — so the label for a tenant registered long ago is not in the window at the
+ * head. Filtering on the indexed tenant id makes the hunt the node skipping windows rather than
+ * this process downloading and discarding them, which is what makes paging back affordable.
+ */
+async function findSlug(paymaster: GianoPaymasterClient, tenantId: Hex, maxWindows: number): Promise<string | undefined> {
+  let page = await paymaster.getTenantSlugs({ tenantId });
+
+  for (let window = 1; window < maxWindows; window++) {
+    const slug = page.slugs.get(tenantId);
+    if (slug !== undefined || !page.older) return slug;
+    page = await paymaster.getTenantSlugs({ tenantId, range: page.older });
+  }
+  return page.slugs.get(tenantId);
 }
 
 // --- commands ----------------------------------------------------------------------------------
@@ -248,16 +283,16 @@ const commands: Record<string, Command> = {
   },
 
   tenant: {
-    usage: 'tenant <id>',
+    usage: 'tenant <id> [--windows <n>]',
     summary: 'show one tenant in full',
     run: async ({ paymaster, args }) => {
       const id = args.positional[0];
       if (!id) throw new PaymasterSdkError('missing <id>: a tenant UUID or 16-byte hex id');
       const tenant = await paymaster.getTenant(id);
-      const slugs = await paymaster.getTenantSlugs();
-      emit({ ...tenant, slug: slugs.get(tenant.id) });
+      const slug = await findSlug(paymaster, tenant.id, count(args.flags.windows, 5, '--windows'));
+      emit({ ...tenant, slug });
 
-      heading(`Tenant ${slugs.get(tenant.id) ?? tenant.uuid}`);
+      heading(`Tenant ${slug ?? tenant.uuid}`);
       bullet(`uuid              ${tenant.uuid}`);
       bullet(`bytes16           ${tenant.id}`);
       bullet(`status            ${tenant.status}`);
@@ -543,22 +578,39 @@ const commands: Record<string, Command> = {
   },
 
   history: {
-    usage: 'history [--tenant <id>] [--limit <n>]',
+    usage: 'history [--tenant <id>] [--limit <n>] [--windows <n>]',
     summary: 'settled sponsorships, newest last',
+    // A log read covers one window of blocks, so filling a --limit means stepping back window by
+    // window. --windows caps how far: without it, a paymaster with no recent activity would walk
+    // toward genesis looking for rows that are not there.
     run: async ({ paymaster, args }) => {
-      const records = await paymaster.getSponsorships({ tenantId: args.flags.tenant });
-      const limit = Number(args.flags.limit ?? 20);
-      const shown = records.slice(-limit);
-      emit(shown);
+      const limit = count(args.flags.limit, 20, '--limit');
+      const maxWindows = count(args.flags.windows, 5, '--windows');
 
-      heading(`Sponsorships (${records.length} total, showing ${shown.length})`);
+      const records: SponsorshipRecord[] = [];
+      let page = await paymaster.getSponsorships({ tenantId: args.flags.tenant });
+      let oldest = page.fromBlock;
+      const newest = page.toBlock;
+
+      for (let window = 1; ; window++) {
+        records.unshift(...page.records);
+        oldest = page.fromBlock;
+        if (records.length >= limit || !page.older || window >= maxWindows) break;
+        page = await paymaster.getSponsorships({ tenantId: args.flags.tenant, range: page.older });
+      }
+
+      const shown = records.slice(-limit);
+      emit({ fromBlock: oldest, toBlock: newest, records: shown });
+
+      heading(`Sponsorships in blocks ${oldest}–${newest} (${records.length} found, showing ${shown.length})`);
       if (records.length === 0) {
-        bullet('none settled yet');
+        bullet(`none settled in the last ${newest - oldest + 1n} blocks — raise --windows to look further back`);
         return;
       }
       for (const record of shown) {
         out(`  ${pad(String(record.blockNumber), 10)}${pad(record.uuid, 38)}${record.success ? 'ok  ' : 'fail'}  gas ${pad(eth(record.gasCostWei), 22)}fee ${eth(record.feeWei)}`);
       }
+      if (page.older) bullet(`older sponsorships may exist below block ${oldest} — raise --windows to reach them`);
     },
   },
 

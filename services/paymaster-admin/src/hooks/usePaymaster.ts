@@ -27,8 +27,8 @@ export type PaymasterState = {
   myRoles: readonly PaymasterRoleName[];
   /**
    * False on a proxy predating the on-chain tenant roster, where the list was reconstructed from
-   * registration logs instead. Surfaced rather than hidden: the log path cannot see a tenant whose
-   * registration is outside the node's retained history, so the roster may be incomplete.
+   * registration logs instead. Surfaced rather than hidden: that path enumerates from one window of
+   * logs, so the roster may be incomplete.
    */
   rosterOnChain: boolean;
   loading: boolean;
@@ -56,8 +56,8 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
 
     const build = async () => {
       try {
-        const resolved = deployment.paymasterAddress
-          ? new GianoPaymasterClient({ address: deployment.paymasterAddress, publicClient, walletClient: wallet?.walletClient })
+        const resolved = deployment.sponsorshipPaymaster
+          ? new GianoPaymasterClient({ address: deployment.sponsorshipPaymaster, publicClient, walletClient: wallet?.walletClient })
           : await GianoPaymasterClient.fromRegistry({ publicClient, walletClient: wallet?.walletClient });
         if (!cancelled) setClient(resolved);
       } catch (cause) {
@@ -72,7 +72,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     return () => {
       cancelled = true;
     };
-  }, [deployment.paymasterAddress, publicClient, wallet?.walletClient]);
+  }, [deployment.sponsorshipPaymaster, publicClient, wallet?.walletClient]);
 
   // A refresh in flight when another is requested would race; the ref lets a later one win.
   const generation = useRef(0);
@@ -89,7 +89,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     setError(undefined);
     setLastUpdated(undefined);
     setLoading(true);
-  }, [client]);
+  }, [client, deployment.chainId]);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -107,7 +107,10 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
         verified.current = true;
       }
 
-      const next = await client.getOverview({ withSlugs: true });
+      // `withSlugs: false` deliberately: a slug exists only in a registration event, so asking for
+      // one would cost a log read on every poll. The console identifies a tenant by the id the
+      // contract itself uses, which every view call already carries.
+      const next = await client.getOverview({ withSlugs: false });
       if (generation.current !== current) return;
 
       setOverview(next);
@@ -130,7 +133,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     } finally {
       if (generation.current === current) setLoading(false);
     }
-  }, [client, wallet]);
+  }, [client, wallet, deployment.chainId]);
 
   useEffect(() => {
     void refresh();
@@ -142,6 +145,7 @@ export function usePaymaster(deployment: Deployment, wallet: ConnectedWallet | u
     const timer = setInterval(() => void refresh(), deployment.refreshSeconds * 1000);
     return () => clearInterval(timer);
   }, [client, deployment.refreshSeconds, refresh]);
+
 
   const health = useMemo(() => (overview ? assessHealth(overview) : undefined), [overview]);
 

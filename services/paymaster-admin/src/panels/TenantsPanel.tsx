@@ -22,8 +22,16 @@ type Props = {
  *
  * On an upgraded paymaster this is a single on-chain read, because the roster is an enumerable
  * set — no backend, and the balances are the chain's own rather than a cached projection. On a
- * proxy that predates the roster the SDK falls back to a log scan, which is a weaker guarantee and
+ * proxy that predates the roster the SDK falls back to a log read, which is a weaker guarantee and
  * says so on screen rather than quietly presenting a possibly-incomplete list as complete.
+ *
+ * A tenant is identified here by the id the contract itself uses, and by nothing else. The slug
+ * captured at registration is emitted rather than stored, so displaying it would mean a log read on
+ * every poll to recover a label for rows that already carry their real identity — and one that a
+ * node may no longer serve. It is still written on registration below, because that event is what
+ * lets someone reconcile the on-chain record against the backend's tenant table (PAYMASTER-SPECS
+ * O1); reading it back is a job for `giano-paymaster tenant <id>` or an explorer, not for a console
+ * refreshing every fifteen seconds.
  *
  * Funding is offered to everyone — anyone may fund a tenant — while the administrative actions are
  * gated on TENANT_ADMIN_ROLE, and withdrawal is offered to nobody here at all, because only the
@@ -43,7 +51,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
         title={`Tenants (${tenants.length})`}
         subtitle={
           rosterOnChain
-            ? 'Enumerated directly from the chain — the slug comes from the registration event, which is the one field not stored on-chain'
+            ? 'Enumerated directly from the chain, with every figure read from the contract rather than from a cached projection'
             : 'Reconstructed from registration events: this paymaster predates the on-chain roster'
         }
         action={
@@ -59,8 +67,8 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Description>
-                This list came from a log scan, because the proxy has not been upgraded to the version that keeps the roster on-chain. A tenant whose
-                registration has fallen outside the node's retained log history would be missing from it.
+                This list came from registration logs, because the proxy has not been upgraded to the version that keeps the roster on-chain. Those are
+                read a window at a time, so a tenant registered before the window would be missing from it entirely — not just unlabelled.
               </Alert.Description>
             </Alert.Content>
           </Alert.Root>
@@ -88,10 +96,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                 {tenants.map((tenant) => (
                   <Table.Row key={tenant.id}>
                     <Table.Cell>
-                      <Stack gap="0.5">
-                        <Text fontWeight="medium">{tenant.slug ?? '(no slug)'}</Text>
-                        <Copyable value={tenant.uuid} label="Tenant id" />
-                      </Stack>
+                      <Copyable value={tenant.uuid} label="Tenant id" />
                     </Table.Cell>
                     <Table.Cell>
                       <TenantStatusBadge status={tenant.status} />
@@ -130,7 +135,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                             colorPalette={tenant.enabled ? 'orange' : 'green'}
                             disabled={busy}
                             onClick={() =>
-                              void run(`${tenant.enabled ? 'Disable' : 'Enable'} ${tenant.slug ?? tenant.uuid}`, () =>
+                              void run(`${tenant.enabled ? 'Disable' : 'Enable'} ${tenant.uuid}`, () =>
                                 client.setTenantEnabled(tenant.id, !tenant.enabled),
                               )
                             }
@@ -143,7 +148,7 @@ export function TenantsPanel({ client, tenants, myRoles, connected, rosterOnChai
                             size="xs"
                             variant="ghost"
                             disabled={busy}
-                            onClick={() => void run(`Clear fee override on ${tenant.slug ?? tenant.uuid}`, () => client.setTenantFee(tenant.id, false, 0n))}
+                            onClick={() => void run(`Clear fee override on ${tenant.uuid}`, () => client.setTenantFee(tenant.id, false, 0n))}
                           >
                             Clear fee
                           </Button>
@@ -191,7 +196,7 @@ function FundDialog({
       return;
     }
     if (!tenant) return;
-    const done = await run(`Fund ${tenant.slug ?? tenant.uuid}`, () => client.depositFor(tenant.id, wei));
+    const done = await run(`Fund ${tenant.uuid}`, () => client.depositFor(tenant.id, wei));
     if (done) onClose();
   };
 
@@ -202,7 +207,7 @@ function FundDialog({
         <Dialog.Positioner>
           <Dialog.Content>
             <Dialog.Header>
-              <Dialog.Title>Fund {tenant?.slug ?? tenant?.uuid}</Dialog.Title>
+              <Dialog.Title>Fund {tenant?.uuid}</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
               <Stack gap="4">

@@ -347,15 +347,22 @@ module "svc-paymaster-admin" {
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
 
-  environment = {
-    GIANO_CHAIN_ID          = var.chain_id
-    GIANO_PAYMASTER_ADDRESS = var.paymaster_address # the registry has no entry — must be set
-    GIANO_ENVIRONMENT_LABEL = "dev (Base Sepolia)"
-    GIANO_REFRESH_SECONDS   = "15"
-  }
+  # The single-deployment shorthand (GIANO_CHAIN_ID / GIANO_PAYMASTER_ADDRESS /
+  # GIANO_ENVIRONMENT_LABEL / GIANO_REFRESH_SECONDS) is deliberately absent: with
+  # GIANO_DEPLOYMENTS set the container skips that branch, so each of those lives in its own
+  # descriptor instead. Leaving them here would be four variables that read as configuration and
+  # change nothing.
   secret_arns = {
-    # Single-chain deliberately — the console has no chain switcher (§14.6).
-    GIANO_RPC_URL = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    # The SAME secret wallet-api reads as GIANO_CHAINS — one authored chain list for the
+    # deployment, not a second copy to keep in step (§14.6). The console names its fields as a
+    # chain descriptor names them, so the value needs no translation; the container drops the
+    # fields it does not read before serving /config.json to a browser. Nothing here has to agree
+    # with anything: the list the API serves IS the list the console administers.
+    GIANO_DEPLOYMENTS = module.asm-app.secret_arns["chains"]
+
+    # Nothing else. Each chain is proxied through the console's own origin by default, so the
+    # QuickNode tokens in this secret never reach a browser and connect-src derives to 'self'
+    # (§14.6) — GIANO_RPC_PROXY=false would undo both.
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

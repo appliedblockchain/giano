@@ -560,13 +560,23 @@ services:
         condition: service_completed_successfully
       anvil:
         condition: service_started
+      anvil-b:
+        condition: service_started
     environment:
-      GIANO_CHAIN_ID: '31337'
-      # Same-origin proxy through this console's own nginx.
-      GIANO_RPC_URL: http://paymaster.giano.localhost/rpc
-      GIANO_RPC_UPSTREAM: http://anvil:8545
-      # The devnet has no contracts-registry entry, so the address is passed explicitly. It is
-      # the same deterministic address wallet-api sponsors through.
-      GIANO_PAYMASTER_ADDRESS: '0xf98b56de62ce88cEb70A9155582248cDBf2D0718'
-      GIANO_ENVIRONMENT_LABEL: local devnet
-      GIANO_REFRESH_SECONDS: '5'
+      # Both chains, so the header carries a picker — this stack runs two, and a console that
+      # showed one of them would misreport half the platform as absent. The descriptors are
+      # spelled as `packages/contracts/chains.ts` spells them, the same shape wallet-api's
+      # GIANO_CHAINS takes, so the two can be kept in step by eye.
+      #
+      # Each rpcUrl is the node itself: the console proxies it through its own origin
+      # (/rpc/<chainId>), so the browser never dials anvil directly — which also means anvil's
+      # missing CORS headers do not matter here.
+      #
+      # sponsorshipPaymaster is explicit because the devnet has no contracts-registry entry. It
+      # is the same deterministic address on both chains, and the one wallet-api sponsors
+      # through — a fixed CREATE2 salt puts it there.
+      GIANO_DEPLOYMENTS: >-
+        [{"name":"local devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
+          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5},
+         {"name":"local devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
+          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5}]

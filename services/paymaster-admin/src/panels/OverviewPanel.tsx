@@ -50,7 +50,7 @@ export function OverviewPanel({ overview }: { overview: PaymasterOverview }) {
               {inDeficit.length} tenant{inDeficit.length === 1 ? '' : 's'} in deficit
             </Alert.Title>
             <Alert.Description>
-              {inDeficit.map((tenant) => tenant.slug ?? tenant.uuid).join(', ')} cannot transact until funded. Funding clears the deficit first, then
+              {inDeficit.map((tenant) => tenant.uuid).join(', ')} cannot transact until funded. Funding clears the deficit first, then
               credits the remainder.
             </Alert.Description>
           </Alert.Content>
