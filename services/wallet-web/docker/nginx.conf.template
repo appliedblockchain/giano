@@ -11,11 +11,25 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "no-referrer" always;
 
+    # Cloud Map re-registers wallet-api on every rollout, so its address changes under us. nginx
+    # resolves a literal proxy_pass host once, at config load, and holds it for the life of the
+    # worker — which strands this origin on a torn-down ENI, 502 on every /api call, while / keeps
+    # serving from disk and the ALB health check on / calls the task healthy.
+    resolver ${GIANO_RESOLVER} valid=10s ipv6=off;
+    resolver_timeout 5s;
+
+    # A variable anywhere in a proxy_pass value is what defers the lookup to request time. Both
+    # proxies below need one; inlining the upstream in either goes back to resolving once.
+    set $giano_wallet_api ${GIANO_WALLET_API_UPSTREAM};
+
     # Same-origin proxy to wallet-api: no CORS, no third-party cookies. Everything chain-bound
     # goes through it too — /api/v1/rpc/:chainId for reads, /api/v1/bundler/:chainId for the
     # bundler — so this origin holds no node or bundler URL.
-    location /api/ {
-        proxy_pass ${GIANO_WALLET_API_UPSTREAM}/;
+    #
+    # Regex, not prefix: a proxy_pass carrying a variable does no URI rewrite, so the /api/ prefix
+    # `proxy_pass …/` used to strip is captured and re-appended here. /api/v1/x → <upstream>/v1/x.
+    location ~ ^/api/(?<giano_api_path>.*)$ {
+        proxy_pass $giano_wallet_api/$giano_api_path$is_args$args;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -24,7 +38,7 @@ server {
 
     # Related Origin Requests document must live on the wallet origin
     location = /.well-known/webauthn {
-        proxy_pass ${GIANO_WALLET_API_UPSTREAM}/.well-known/webauthn;
+        proxy_pass $giano_wallet_api/.well-known/webauthn;
         proxy_set_header Host $host;
     }
 
