@@ -27,6 +27,12 @@ export type WalletChainConfig = {
   paymasterServiceUrl: string;
   /** Permissive testing paymaster. Only ever used when `sponsorship` is 'test-paymaster'. */
   testPaymasterAddress?: `0x${string}`;
+  /**
+   * What `value` is denominated in on this chain — named on the review screen so a transfer on
+   * a non-ETH chain is never labelled "ETH". `resolveWalletConfig` always fills it (ETH, 18 decimals
+   * by default); a config built by hand may leave it out and gets the same default.
+   */
+  nativeCurrency?: { symbol: string; decimals: number; name?: string };
 };
 
 export type WalletConfig = {
@@ -51,6 +57,7 @@ export type RawChainEntry = {
   sponsorship?: unknown;
   paymasterServiceUrl?: string;
   testPaymasterAddress?: `0x${string}`;
+  nativeCurrency?: unknown;
 };
 
 export type RawWalletConfig = RawChainEntry & {
@@ -155,6 +162,32 @@ function resolveChain(entry: RawChainEntry, raw: RawWalletConfig, walletApiUrl: 
     sponsorship,
     paymasterServiceUrl: entry.paymasterServiceUrl || `${walletApiUrl}/v1/paymaster`,
     testPaymasterAddress,
+    nativeCurrency: resolveNativeCurrency(entry),
+  };
+}
+
+const DEFAULT_NATIVE_CURRENCY = { symbol: 'ETH', decimals: 18, name: 'Ether' };
+
+/** Absent means ETH; present must be well-formed, because a wrong symbol or decimals misstates every amount shown. */
+function resolveNativeCurrency(entry: RawChainEntry): WalletChainConfig['nativeCurrency'] {
+  const raw = entry.nativeCurrency;
+  if (raw === undefined || raw === null) return DEFAULT_NATIVE_CURRENCY;
+  const candidate = raw as { symbol?: unknown; decimals?: unknown; name?: unknown };
+  if (
+    typeof raw !== 'object' ||
+    typeof candidate.symbol !== 'string' ||
+    candidate.symbol.trim() === '' ||
+    typeof candidate.decimals !== 'number' ||
+    !Number.isInteger(candidate.decimals) ||
+    candidate.decimals < 0 ||
+    candidate.decimals > 36
+  ) {
+    throw new Error(`wallet config: chain ${entry.chainId} nativeCurrency must be { symbol: string, decimals: integer 0..36 }`);
+  }
+  return {
+    symbol: candidate.symbol.trim(),
+    decimals: candidate.decimals,
+    ...(typeof candidate.name === 'string' && candidate.name.trim() ? { name: candidate.name.trim() } : {}),
   };
 }
 

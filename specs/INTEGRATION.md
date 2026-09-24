@@ -341,6 +341,17 @@ The full request/response shapes are in the OpenAPI document (`/docs`), and
 In practice you rarely drive these endpoints by hand: the wallet SDK below packages the whole
 management flow as a headless controller, and both Giano wallet UIs are built on it.
 
+### Transaction descriptions on the review screen
+
+The wallet explains a transaction in words before asking for a passkey — "Send 10.5 USDC to
+0x1234…abcd" — from the **transaction display mappings** your tenant publishes: one ERC-7730
+descriptor per contract, through the admin API (`PUT /v1/admin/tx-mappings/:contract?chainId=`, full
+replace, validated on write; `GET`, `DELETE`, `/history` alongside). Publish one for every contract
+your dApp calls; without it the wallet falls back to a generic ERC-20 / ERC-721 reading when the
+selector matches (visibly flagged as unverified), and otherwise tells the user plainly that it cannot
+explain the call and shows the raw data. The full how-to, a worked descriptor and the validation
+error shape are in [`DEVELOPER-GUIDE.md` §5.8](./DEVELOPER-GUIDE.md#58-transaction-display-mappings-what-users-read-before-they-sign).
+
 ### Building your own wallet interface: the wallet SDK
 
 `@appliedblockchain/giano-wallet-kit` is the package a **wallet origin** is built from — Giano's
@@ -353,7 +364,7 @@ copy and the framework choice stay yours. The full API contract with usage examp
 | Surface | What it gives you |
 |---|---|
 | `loadWalletConfig()` / `resolveWalletConfig({ raw })` | Validated `WalletConfig` — fatal, field-named errors; the single-chain shorthand and the `chains` list both accepted; the permissive test paymaster refused in production builds unless opted in (WK-05, WK-06) |
-| `createWalletRuntimes(config)` | Per-chain runtimes (read client, bundler, fee estimation, paymaster hooks, provider, `checkSponsorship` pre-flight), built lazily, memoised, over **one** shared wallet-api session (WK-01…WK-05) |
+| `createWalletRuntimes(config)` | Per-chain runtimes (read client, bundler, fee estimation, paymaster hooks, provider, `checkSponsorship` pre-flight, `describeTransaction` human-readable summary), built lazily, memoised, over **one** shared wallet-api session (WK-01…WK-05) |
 | `createWalletHost({ runtimes, config, walletVersion })` | The popup transport wired with origin pinning, chain negotiation and the consent gate; the pending request is subscribable state with `approve()`/`reject()` — a rejection becomes EIP-1193 `4001` (WK-08…WK-12) |
 | `createManagementController({ runtimes, config })` | The whole of wallet management as a headless state machine: the owner set read from the chain, rename, add (this device / second device / EOA), remove, claim — every ordering invariant held inside (WK-16…WK-21) |
 | `@appliedblockchain/giano-wallet-kit/react` | `WalletHostProvider`, `usePendingRequest()`, `useManagement()` — the same core as hooks; optional, the core is framework-free (WK-22, WK-23) |
@@ -371,7 +382,7 @@ const host     = createWalletHost({ runtimes, config, walletVersion: '1.0.0' });
 host.requests.subscribe((pending) => {
   if (!pending)                       return renderIdle();
   if (pending.kind === 'connect')     return renderConnect(pending);      // → pending.approve() / .reject()
-  if (pending.kind === 'transaction') return renderReview(pending);       // gate approval on pending.runtime.checkSponsorship(tx)
+  if (pending.kind === 'transaction') return renderReview(pending);       // gate approval on runtime.describeTransaction(tx) AND runtime.checkSponsorship(tx)
   if (pending.kind === 'sign')        return renderSign(pending);
   if (pending.kind === 'manage')      return renderManagement(pending);   // mount createManagementController(...)
 });
