@@ -1,4 +1,4 @@
-import type { PendingRequest, SponsorshipPreflight, SponsorshipRefusalReason } from '@appliedblockchain/giano-wallet-kit';
+import type { PendingRequest, SponsorshipPreflight, SponsorshipRefusalReason, TransactionDescription } from '@appliedblockchain/giano-wallet-kit';
 import { hexToString, isHex } from 'viem';
 
 /**
@@ -40,9 +40,32 @@ function describeSignPayload(method: string, params: unknown): string {
   return typeof raw === 'string' ? raw : JSON.stringify(raw);
 }
 
-function describeTransaction(params: unknown): string {
+function rawTransaction(params: unknown): string {
   const tx = (Array.isArray(params) ? params[0] : params) as { to?: string; value?: string; data?: string } | undefined;
   return [`to:    ${tx?.to ?? '(contract creation)'}`, `value: ${tx?.value ?? '0x0'}`, `data:  ${tx?.data ?? '0x'}`].join('\n');
+}
+
+/**
+ * The transaction, in the BYO UI's own words, from the kit's description (WK-30: the same
+ * `describeTransaction` the stock wallet uses, rendered differently). The raw dump survives only
+ * for the `unknown` case — raw data is what is left when nothing readable exists, not a default.
+ */
+function transactionSummary(pending: PendingRequest, description: TransactionDescription | null): HTMLElement[] {
+  if (description === null) {
+    return [el('div', { className: 'idle', dataset: { testid: 'byo-tx-describing' } }, 'Working out what this does…')];
+  }
+  if (description.kind === 'unknown') {
+    return [
+      el('div', { className: 'notice', dataset: { testid: 'byo-tx-unknown', reason: description.reason } }, 'This wallet cannot work out what this call does. Raw request follows.'),
+      el('pre', { className: 'payload', dataset: { testid: 'byo-tx-raw' } }, rawTransaction(pending.params)),
+    ];
+  }
+  const nodes = [el('div', { className: 'intent', dataset: { testid: 'byo-tx-intent', source: description.source } }, description.intent)];
+  for (const field of description.fields) nodes.push(el('div', { className: 'field' }, `${field.label}: ${field.value}`));
+  if (description.source === 'generic') {
+    nodes.push(el('div', { className: 'notice', dataset: { testid: 'byo-tx-generic' } }, 'Read as a standard token action; the app has not described this contract.'));
+  }
+  return nodes;
 }
 
 /**
@@ -98,6 +121,7 @@ export function render(
   pending: PendingRequest | null,
   busy: boolean,
   preflight: SponsorshipPreflight | null = { state: 'not-applicable' },
+  description: TransactionDescription | null = null,
 ): void {
   root.replaceChildren();
 
@@ -130,11 +154,13 @@ export function render(
       el('h2', { dataset: { testid: 'byo-tx' } }, 'Confirm transaction'),
       originBadge(pending.dappOrigin),
       chainBadge(pending.chainName),
-      el('pre', { className: 'payload' }, describeTransaction(pending.params)),
+      ...transactionSummary(pending, description),
     );
 
-    if (preflight === null) {
-      root.append(el('div', { className: 'idle', dataset: { testid: 'byo-sponsorship-checking' } }, 'Checking fee coverage…'));
+    // Nothing is approvable until the user has been shown what this is (or told that the wallet
+    // cannot say) AND the pre-flight has answered.
+    if (preflight === null || description === null) {
+      if (preflight === null) root.append(el('div', { className: 'idle', dataset: { testid: 'byo-sponsorship-checking' } }, 'Checking fee coverage…'));
       root.append(el('div', { className: 'row' }, el('button', { className: 'secondary', textContent: 'Decline', onclick: () => pending.reject() })));
       return;
     }

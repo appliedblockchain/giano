@@ -23,6 +23,19 @@ export {
 // ── runtimes (WK-01…WK-05) ──
 export { createWalletRuntimes, type SponsorshipPreflight, type TransactionRequest, type WalletRuntime, type WalletRuntimes } from './runtimes';
 
+// ── transaction descriptions (the review screen's account of a request) ──
+export { createTransactionDescriber, type CreateTransactionDescriberOptions } from './describe';
+export type {
+  DescribedTransaction,
+  DescriptionField,
+  DescriptionSource,
+  DescriptionWarning,
+  DescriptionWarningCode,
+  TransactionDescription,
+  UnknownReason,
+  UnknownTransaction,
+} from '@appliedblockchain/giano-tx-describe';
+
 // ── the host and consent (WK-08…WK-12) ──
 export { createWalletHost, type CreateWalletHostOptions, type WalletHost } from './host';
 export { toRpcError, type PendingRequest, type RequestStore } from './requests';

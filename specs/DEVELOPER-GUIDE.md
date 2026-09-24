@@ -431,7 +431,10 @@ wallet-web's nginx serves the SPA + `GET /config.json` and same-origin-proxies `
 `/api/v1/rpc/<chainId>` relay and bundler calls through `/api/v1/bundler/<chainId>`, so the wallet
 origin holds no node or bundler URL. Env: `GIANO_CHAIN_ID`, `GIANO_WALLET_API_UPSTREAM`,
 `GIANO_RP_ID`, `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array), `GIANO_FACTORY_ADDRESS` /
-`GIANO_PAYMASTER_ADDRESS` (default from the registry), `GIANO_BRAND_NAME`. `GIANO_RPC_URL` /
+`GIANO_PAYMASTER_ADDRESS` (default from the registry), `GIANO_BRAND_NAME`,
+`GIANO_NATIVE_CURRENCY_SYMBOL` / `GIANO_NATIVE_CURRENCY_DECIMALS` (what `value` is denominated in on
+this chain, named on the review screen; default `ETH` / `18` — in the `GIANO_CHAINS` shape set
+`nativeCurrency: { symbol, decimals }` on the descriptor instead). `GIANO_RPC_URL` /
 `GIANO_BUNDLER_URL` exist only to dial a node or bundler directly in development.
 
 - Give each tenant's wallet its **own TLS host** — that host is the tenant's RP ID and must match
@@ -709,6 +712,84 @@ the upgrade controls. Anything stronger would be a claim the architecture does n
   contracts-deployer pre-install Job, ingress. Secrets come from `secrets.existingSecret` (a k8s
   Secret with at least `DATABASE_URL`, `TENANTS_SEED` (it carries tenant admin keys), and `ALTO_EXECUTOR_PRIVATE_KEYS` if the
   bundler is enabled). `serviceMonitor.enabled=true` for Prometheus scraping.
+
+### 5.8 Transaction display mappings (what users read before they sign)
+
+The wallet's review screen explains a transaction in words — "Send 10.5 USDC to 0x1234…abcd" — and
+shows raw calldata **only** when it cannot. What it can explain is decided by *mappings*: one
+[ERC-7730 clear-signing descriptor](https://eips.ethereum.org/EIPS/eip-7730) per contract, published
+by the tenant through its admin key. One descriptor covers every call of a function on that contract,
+so a tenant writes one entry per contract, not per transaction.
+
+Without any mapping the wallet still describes native transfers, and calls whose selector matches a
+standard ERC-20 / ERC-721 function — flagged as *generic*, because a selector proves nothing about
+the contract. Anything else is shown as "this wallet cannot explain this transaction", with the
+selector, the contract and the raw data, and no guessed function name.
+
+**Publish a mapping** (per chain, per contract, full replace, validated on write):
+
+```bash
+curl -X PUT "$API/v1/admin/tx-mappings/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913?chainId=8453" \
+  -H "authorization: Bearer $ADMIN_KEY" -H "content-type: application/json" \
+  --data @usdc.erc7730.json
+```
+
+A complete `usdc.erc7730.json` (the ABI **must** be inline — the service fetches nothing):
+
+```json
+{
+  "$schema": "https://eips.ethereum.org/assets/eip-7730/erc7730-v1.schema.json",
+  "context": {
+    "contract": {
+      "deployments": [{ "chainId": 8453, "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" }],
+      "abi": [
+        { "type": "function", "name": "transfer", "stateMutability": "nonpayable",
+          "inputs": [{ "name": "to", "type": "address" }, { "name": "value", "type": "uint256" }],
+          "outputs": [{ "name": "", "type": "bool" }] }
+      ]
+    }
+  },
+  "metadata": { "owner": "Circle", "contractName": "USD Coin" },
+  "display": {
+    "formats": {
+      "transfer(address to, uint256 value)": {
+        "intent": "Send USDC",
+        "interpolatedIntent": "Send {value} to {to}",
+        "fields": [
+          { "path": "value", "label": "Amount", "format": "tokenAmount", "params": { "tokenPath": "@.to" } },
+          { "path": "to", "label": "Recipient", "format": "addressName" }
+        ]
+      }
+    }
+  }
+}
+```
+
+Function keys are human-readable signatures or raw selectors (`"0xa9059cbb"`); field paths name the
+function's inputs, the call container (`@.to`, `@.value`) or metadata (`$.metadata.…`); formats are
+`raw`, `amount`, `tokenAmount`, `addressName`, `date`, `duration`, `unit`, `enum`, `chainId`,
+`nftName`, `tokenTicker`. The [public registry](https://github.com/ethereum/clear-signing-erc7730-registry)
+holds descriptors for common tokens and protocols; inline their ABI and they publish unchanged.
+
+**What a rejection looks like** — one issue per violation, each with its JSON path, and nothing
+stored:
+
+```json
+{ "error": "validation", "message": "transaction mapping is not valid",
+  "issues": [{ "path": "display.formats.transfer(address to, uint256 value).fields[1].path",
+               "message": "\"recipient\" does not name an input of transfer(address,uint256) (inputs: to, value)" }] }
+```
+
+The descriptor's `deployments` must include the `(chainId, contract)` it is stored under; bodies
+over 64 KiB are refused. The rest of the surface: `GET /v1/admin/tx-mappings?chainId=` (list, with a
+`valid` flag per row — a stored descriptor that no longer passes validation is flagged here and **not
+served**), `GET|DELETE /v1/admin/tx-mappings/:contract`, `GET /v1/admin/tx-mappings/history` (who
+changed what, by admin-key hash). The wallet reads `GET /v1/tx-mappings?chainId=` by Origin, no
+session, cached for a minute.
+
+The formatting itself is `@appliedblockchain/giano-tx-describe`, a library with no dependency on any
+other Giano package, so a bring-your-own wallet, a back-office tool or a test can produce the same
+description from the same descriptor (see its README).
 
 ---
 

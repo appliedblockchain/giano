@@ -8,6 +8,7 @@
       "@appliedblockchain/giano-wallet-core",
       "@appliedblockchain/giano-wallet-transport",
       "@appliedblockchain/giano-connector",
+      "@appliedblockchain/giano-tx-describe",
       "@appliedblockchain/giano-wallet-kit",
       "@appliedblockchain/giano-paymaster-sdk"
     ]

@@ -199,6 +199,28 @@ importers:
         specifier: ^3.1.2
         version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(supports-color@8.1.1)(tsx@4.19.4)(yaml@2.8.0)
 
+  packages/tx-describe:
+    dependencies:
+      '@ethereum-sourcify/clear-signing':
+        specifier: 0.2.2
+        version: 0.2.2
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
+      zod:
+        specifier: 3.24.4
+        version: 3.24.4
+    devDependencies:
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.0(@swc/core@1.11.24)(jiti@1.21.7)(postcss@8.5.21)(supports-color@8.1.1)(tsx@4.19.4)(typescript@5.5.4)(yaml@2.8.0)
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
+      vitest:
+        specifier: ^3.1.2
+        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.7.5)(happy-dom@17.6.3)(jiti@1.21.7)(supports-color@8.1.1)(tsx@4.19.4)(yaml@2.8.0)
+
   packages/wallet-core:
     dependencies:
       '@appliedblockchain/giano-contracts':
@@ -232,6 +254,9 @@ importers:
       '@appliedblockchain/giano-contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@appliedblockchain/giano-tx-describe':
+        specifier: workspace:*
+        version: link:../tx-describe
       '@appliedblockchain/giano-wallet-core':
         specifier: workspace:*
         version: link:../wallet-core
@@ -380,6 +405,9 @@ importers:
       '@appliedblockchain/giano-contracts':
         specifier: workspace:^
         version: link:../../packages/contracts
+      '@appliedblockchain/giano-tx-describe':
+        specifier: workspace:^
+        version: link:../../packages/tx-describe
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0
@@ -450,9 +478,6 @@ importers:
 
   services/wallet-web:
     dependencies:
-      '@appliedblockchain/giano-contracts':
-        specifier: workspace:^
-        version: link:../../packages/contracts
       '@appliedblockchain/giano-wallet-kit':
         specifier: workspace:^
         version: link:../../packages/wallet-kit
@@ -868,6 +893,10 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@ethereum-sourcify/clear-signing@0.2.2':
+    resolution: {integrity: sha512-iSgdIp6FB0T6UegIM4PlWozlePc2bAy80T4ly1zAvilGgnEAiKhkRJICiLwdhY5mdnQ7rnVYhcOClFFTBrcZtw==}
+    engines: {node: '>=22.0.0'}
 
   '@ethereumjs/common@3.2.0':
     resolution: {integrity: sha512-pksvzI0VyLgmuEF2FA/JR/4/y6hcPq8OUail3/AvycBaW1d5VSauOZzqGvJ3RTmR4MU35lWE8KseKOsEhrFRBA==}
@@ -6788,6 +6817,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.4':
     optional: true
+
+  '@ethereum-sourcify/clear-signing@0.2.2':
+    dependencies:
+      '@noble/hashes': 1.8.0
 
   '@ethereumjs/common@3.2.0':
     dependencies:

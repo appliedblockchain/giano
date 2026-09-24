@@ -392,3 +392,47 @@ export const paymasterState = pgTable('paymaster_state', {
   invariantSlackWei: numeric('invariant_slack_wei', { precision: 78, scale: 0 }),
   checkedAt: timestamp('checked_at', { withTimezone: true }),
 });
+
+// ── Transaction display mappings ───────────────────────────────────────────────
+//
+// ERC-7730 descriptors a tenant publishes so the wallet can explain calls to its contracts
+// (migration 0006). One row per (tenant, chain, contract); the tenant's own data, written only
+// through its admin key, validated on write by @appliedblockchain/giano-tx-describe and
+// re-validated when served.
+
+export const tenantTxMappings = pgTable(
+  'tenant_tx_mappings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    /** Lowercase 0x address; the descriptor's deployments must include (chainId, contract). */
+    contract: text('contract').notNull(),
+    descriptor: jsonb('descriptor').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** sha256 of the admin key that wrote it — who changed the mapping, without storing the key. */
+    updatedByKeyHash: text('updated_by_key_hash'),
+  },
+  (t) => [unique('tenant_tx_mappings_tenant_id_chain_id_contract_key').on(t.tenantId, t.chainId, t.contract)],
+);
+
+export const tenantTxMappingsHistory = pgTable(
+  'tenant_tx_mappings_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    contract: text('contract').notNull(),
+    /** 'put' | 'delete' */
+    action: text('action').notNull(),
+    /** The descriptor written; null for a delete. */
+    descriptor: jsonb('descriptor'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByKeyHash: text('created_by_key_hash'),
+  },
+  (t) => [index('tenant_tx_mappings_history_tenant_idx').on(t.tenantId, t.chainId, t.createdAt)],
+);

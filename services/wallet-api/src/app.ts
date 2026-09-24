@@ -13,6 +13,8 @@ import metricsPlugin from './plugins/metrics.js';
 import tenantPlugin from './plugins/tenant.js';
 import adminRoutes from './routes/admin.js';
 import adminSponsorshipRoutes from './routes/admin-sponsorship.js';
+import adminTxMappingRoutes from './routes/admin-tx-mappings.js';
+import txMappingRoutes from './routes/tx-mappings.js';
 import bundlerRelayRoutes from './routes/bundler-relay.js';
 import paymasterRoutes from './routes/paymaster.js';
 import rpcRelayRoutes from './routes/rpc-relay.js';
@@ -169,6 +171,8 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   await app.register(wellKnownRoutes, { db });
   await app.register(adminRoutes, { db });
   await app.register(adminSponsorshipRoutes, { db, config, ledger, registry });
+  await app.register(adminTxMappingRoutes, { db });
+  await app.register(txMappingRoutes, { db });
   if (sponsoringChains.length > 0) {
     await app.register(paymasterRoutes, { config, registry });
   }

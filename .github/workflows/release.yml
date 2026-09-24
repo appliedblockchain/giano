@@ -53,6 +53,7 @@ jobs:
           pnpm --filter @appliedblockchain/giano-wallet-transport build
           pnpm --filter @appliedblockchain/giano-wallet-core build
           pnpm --filter @appliedblockchain/giano-connector build
+          pnpm --filter @appliedblockchain/giano-tx-describe build
           pnpm --filter @appliedblockchain/giano-wallet-kit build
           pnpm --filter @appliedblockchain/giano-paymaster-sdk build
       - name: Configure GitHub Packages auth
