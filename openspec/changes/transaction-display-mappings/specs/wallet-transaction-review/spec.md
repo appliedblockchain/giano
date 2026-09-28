@@ -65,12 +65,16 @@ The approve control SHALL NOT be rendered until both the description has settled
 - **THEN** the approve control appears
 
 ### Requirement: The end-to-end suite proves the description path
-The Playwright suite SHALL assert, for the demo ERC-20 transfer sent through the stock wallet, that the review shows an intent sentence naming a transfer and no raw calldata by default; and, for the bring-your-own wallet, that its own rendering of the intent appears.
+The e2e stack SHALL publish the demo ERC-20's mapping for every demo tenant on every chain at bring-up, through the admin API, so the demo never shows raw calldata for its own token. The Playwright suite SHALL assert, for the demo ERC-20 transfer, that the stock wallet's review shows a tenant-sourced intent sentence naming a transfer and no raw calldata by default, and that the bring-your-own wallet shows the same tenant-sourced intent in its own rendering; and, for a call nothing describes, that the raw data appears under the warning.
 
 #### Scenario: Stock wallet
 - **WHEN** the e2e dApp sends the demo ERC-20 transfer
-- **THEN** the stock wallet's review shows a transfer intent and the raw-calldata element is absent
+- **THEN** the stock wallet's review shows a transfer intent sourced from the tenant's mapping and the raw-calldata element is absent
 
 #### Scenario: BYO wallet
 - **WHEN** the same transfer is reviewed in the bring-your-own wallet origin
-- **THEN** its intent element is present and non-empty
+- **THEN** its intent element is present, sourced from that tenant's mapping, and no generic-reading note is shown
+
+#### Scenario: Unmapped call
+- **WHEN** the e2e dApp sends a call no mapping describes
+- **THEN** the stock wallet shows the cannot-explain warning with the raw data and no intent
