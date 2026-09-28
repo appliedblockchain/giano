@@ -168,17 +168,18 @@ module "svc-custom-example" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAIN_ID     = var.chain_id
-    GIANO_CHAIN_NAME   = var.chain_name
-    GIANO_CHAIN_B_ID   = var.chain_b_id
-    GIANO_CHAIN_B_NAME = var.chain_b_name
-    GIANO_WALLET_URL   = "https://${local.tenant_hosts.example.wallet}"
-    GIANO_APP_LABEL    = var.example_brand_name
-    # GIANO_TEST_ERC20 unset — the devnet default address is meaningless on a real chain
+    # The chains the dApp can address (services/custom-example/src/config.ts). Each rpcUrl is the
+    # same-origin `/rpc/<chainId>` path nginx proxies to the keyed upstream in secret_arns below,
+    # so the provider API key never reaches the browser (R17). `defaultToken` joins each entry
+    # once task 8 of the demo rebuild has deployed Giano's test ERC-20 to both testnets.
+    GIANO_CHAINS           = local.example_dapp_chains
+    GIANO_WALLET_URL       = "https://${local.tenant_hosts.example.wallet}"
+    GIANO_OTHER_WALLET_URL = var.byo_wallet_enabled[terraform.workspace] ? "https://${local.tenant_hosts.byoui.wallet}" : ""
+    GIANO_APP_LABEL        = var.example_brand_name
   }
   secret_arns = {
-    GIANO_RPC_URL   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
-    GIANO_RPC_B_URL = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
+    "GIANO_RPC_UPSTREAM_${var.chain_id}"   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    "GIANO_RPC_UPSTREAM_${var.chain_b_id}" = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
@@ -228,16 +229,14 @@ module "svc-custom-example-byoui" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAIN_ID     = var.chain_id
-    GIANO_CHAIN_NAME   = var.chain_name
-    GIANO_CHAIN_B_ID   = var.chain_b_id
-    GIANO_CHAIN_B_NAME = var.chain_b_name
-    GIANO_WALLET_URL   = "https://${local.tenant_hosts.byoui.wallet}" # the whole difference from custom-example
-    GIANO_APP_LABEL    = var.byoui_brand_name
+    GIANO_CHAINS           = local.example_dapp_chains
+    GIANO_WALLET_URL       = "https://${local.tenant_hosts.byoui.wallet}" # the whole difference from custom-example
+    GIANO_OTHER_WALLET_URL = "https://${local.tenant_hosts.example.wallet}"
+    GIANO_APP_LABEL        = var.byoui_brand_name
   }
   secret_arns = {
-    GIANO_RPC_URL   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
-    GIANO_RPC_B_URL = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
+    "GIANO_RPC_UPSTREAM_${var.chain_id}"   = module.asm-app.secret_arns["rpc-url-base-sepolia"]
+    "GIANO_RPC_UPSTREAM_${var.chain_b_id}" = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

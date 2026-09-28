@@ -230,9 +230,14 @@ DAPP_PORT=4401 WALLET_URL=http://wallet-byo.localhost \
 it: 4401 is the target of `app-byo.localhost` (see `e2e/origins.mjs`).
 
 Open **http://app-byo.localhost** and repeat the flow — same backend, different wallet
-origin, different UI, cryptographically separate passkeys. For a richer dApp on the `stock`
-tenant (wallet basics + an ERC-20 panel), run the Chakra sample instead: `pnpm demo:dev` (also
-`http://app.localhost`). Tear down with
+origin, different UI, cryptographically separate passkeys.
+
+The **reference dApp** (`services/custom-example`, the code this Part B describes) runs on its own
+names so it never collides with the fixture: `pnpm demo:stock` → **http://demo.localhost** (tenant
+`stock`) and `pnpm demo:byo` → **http://demo-byo.localhost** (tenant `byo`). It reaches every SDK
+method, provokes every failure path from a *Failure lab* card, and records every outcome in a
+persistent ledger you can export as JSON — see its [README](../services/custom-example/README.md).
+Tear down with
 `docker compose --profile portless -f deploy/docker-compose.e2e.yml down` and
 `pnpm -F @appliedblockchain/giano-e2e portless:down`.
 
@@ -259,16 +264,25 @@ npm install wagmi @rainbow-me/rainbowkit
 
 ### 4.2 Create the provider
 
-`createGianoWalletProvider` returns an EIP-1193 provider pointed at your wallet origin.
+`createGianoWalletProvider` returns an EIP-1193 provider pointed at your wallet origin. **One
+provider per chain**: a provider is bound to one chain for its life, so addressing another chain
+means constructing another provider over the same wallet origin — never a switch. The reference
+dApp keeps them in a registry (`services/custom-example/src/lib/chains.ts`):
 
 ```ts
 import { createGianoWalletProvider } from '@appliedblockchain/giano-connector';
-import { baseSepolia } from 'viem/chains';
+import { createPublicClient, defineChain, http } from 'viem';
+
+const chain = defineChain({ id: 84532, name: 'Base Sepolia', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: ['https://…'] } } });
 
 const provider = createGianoWalletProvider({
-  walletUrl: 'https://wallet.yourapp.com', // your deployed wallet origin
-  chain: baseSepolia,
+  walletUrl: 'https://wallet.yourapp.com', // your deployed wallet origin (its origin is what matters)
+  chain,
+  transport: http(chain.rpcUrls.default.http[0]), // the read path: answered dApp-side, no popup
+  walletApiPath: '/api', // where the wallet origin proxies wallet-api (nginx default)
 });
+// Reads that need no wallet — balances, code, token metadata — go through a plain viem client:
+const publicClient = createPublicClient({ chain, transport: http(chain.rpcUrls.default.http[0]) });
 ```
 
 | Option | Type | Default | Meaning |
@@ -335,26 +349,52 @@ provider.on('disconnect', () => { /* … */ });
 provider.disconnect();
 ```
 
-(A complete, framework-free reference is `e2e/dapp/main.ts`.)
+The connect flow as the reference dApp runs it (`services/custom-example/src/state/store.tsx`): after
+`eth_requestAccounts`, read back `eth_chainId` and compare it with the chain you constructed the
+provider for, and read `provider.supportedChainIds` to learn which chains the wallet serves:
+
+```ts
+const accounts = await provider.request<string[]>({ method: 'eth_requestAccounts' });
+const granted = await provider.request<string>({ method: 'eth_chainId' });
+if (Number.parseInt(granted, 16) !== provider.chainId) throw new Error('granted chain differs from the configured chain');
+const served = provider.supportedChainIds; // e.g. [84532, 11155111]
+```
+
+(A complete, framework-free reference is `e2e/dapp/main.ts`; the full reference integration is
+`services/custom-example`.)
 
 ### 4.5 Error handling & popup requirements
 
 ```ts
-import { TransportError, TransportRpcError, RPC_ERRORS } from '@appliedblockchain/giano-connector';
+import { HandshakeRefusedError, RPC_ERRORS, TransportError, TransportRpcError, UnsupportedChainError } from '@appliedblockchain/giano-connector';
 
 try {
   await provider.request({ method: 'eth_requestAccounts' });
 } catch (err) {
-  if (err instanceof TransportRpcError && err.code === 4001) {/* user rejected */}
-  else if (err instanceof TransportError && err.code === 'POPUP_BLOCKED') {/* not a user gesture, or COOP */}
+  if (err instanceof UnsupportedChainError) {/* 4902: the wallet does not serve this chain — err.requestedChainId, err.supportedChainIds */}
+  else if (err instanceof HandshakeRefusedError && err.reason === 'origin-not-allowed') {/* this dApp origin is not in the tenant's allowedDappOrigins */}
+  else if (err instanceof TransportRpcError && err.code === RPC_ERRORS.USER_REJECTED) {/* 4001: rejected — or refused in the wallet before approval (sponsorship); the dApp cannot tell which */}
+  else if (err instanceof TransportRpcError && err.code === RPC_ERRORS.DISCONNECTED) {/* 4900: the wallet ended the session — reconnect */}
+  else if (err instanceof TransportError && err.code === 'POPUP_BLOCKED') {/* not a user gesture, or COOP same-origin */}
+  else if (err instanceof TransportError && err.code === 'REQUEST_TIMEOUT') {/* e.g. no receipt within 120 s — poll again by hash */}
 }
 ```
+
+The reference dApp turns each of these into a ledger entry with the class, code, message and data
+(`services/custom-example/src/lib/errors.ts`), and its *Failure lab* card provokes every one of them
+on purpose.
 
 - **Call wallet methods from a user gesture** (a click handler). Safari blocks popups otherwise.
 - **Do not send `Cross-Origin-Opener-Policy: same-origin` from the dApp** — it severs
   `window.opener` and the handshake times out. Use `same-origin-allow-popups` or no COOP header.
 - User rejection → `TransportRpcError` code `4001`; blocked popup → `TransportError` `POPUP_BLOCKED`;
   lost session → `disconnect` event (reconnect via `eth_requestAccounts`).
+- **Check your setup before the first popup.** Three deployment mistakes surface only as timeouts
+  otherwise: your dApp origin missing from the tenant's `corsOrigins` (receipts unreadable), a COOP
+  `same-origin` header on your page, and an RPC that serves a different network than the chain you
+  configured. The reference dApp's *Preflight* card (`services/custom-example/src/lib/preflight.ts`)
+  fetches `${walletUrl}/api/v1/version` (reachability, CORS and the wallet-api version), re-fetches its
+  own page to read the COOP header, and compares each RPC's `eth_chainId` with its configuration.
 
 ---
 

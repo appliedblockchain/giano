@@ -1,97 +1,143 @@
-import { defineChain, type Chain } from 'viem';
+import { z } from 'zod';
 
 /**
- * Runtime config, injected by the container at start as `window.__GIANO_CONFIG__`
- * (docker/config.js.template, rendered by docker/entrypoint.sh from GIANO_* environment
- * variables). One published image therefore serves every deployment and both demo tenants —
- * §16.1 of specs/INFRASTRUCTURE.md.
+ * Runtime configuration (demo-deployment spec).
  *
- * The `VITE_*` variables below survive as BUILD-time fallbacks for `pnpm dev` and
- * `pnpm preview`, where there is no container to render a config. Under `pnpm dev`
- * public/config.js sets the runtime config to null and every value falls through to them.
+ * The container renders `window.__GIANO_CONFIG__` into /config.js at START from GIANO_* environment
+ * variables (docker/entrypoint.sh) — never at build time — so one image serves every deployment and
+ * both tenant shapes (R16). It is read synchronously because index.html loads /config.js ahead of the
+ * bundle. Under `pnpm dev` the placeholder in public/config.js is null and every value falls back to
+ * `import.meta.env.GIANO_*` (vite.config.ts exposes the GIANO_ prefix), read from .env.development and
+ * .env.local — the same names as the container, so a developer's env file and a deployment's environment
+ * are the same document.
  *
- * Read synchronously rather than fetched, deliberately: `chain`, `chainB` and `demoChains`
- * below are module-level constants, and src/giano.ts builds its provider and public client at
- * module level from them. index.html loads /config.js ahead of the bundle so this is already
- * populated by the time the module graph evaluates. See the comment in config.js.template.
+ * Validation happens here, in the browser, because the nginx image has no runtime to validate JSON in:
+ * the entrypoint checks presence and shape at the edges, this schema checks everything, and App.tsx
+ * renders a configuration-error screen instead of constructing any provider when it fails.
  */
-type RuntimeConfig = {
-  chainId?: number;
-  chainName?: string;
-  rpcUrl?: string;
-  chainBId?: number;
-  chainBName?: string;
-  rpcBUrl?: string;
-  walletUrl?: string;
-  appLabel?: string;
-  testErc20?: string;
-};
+
+const address = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/, 'must be a 0x-prefixed 20-byte address')
+  .transform((value) => value as `0x${string}`);
+
+const rpcUrl = z.string().refine((value) => /^https?:\/\/[^\s]+$/.test(value) || /^\/rpc\/\d+$/.test(value), {
+  message: 'must be an absolute http(s) URL or a same-origin /rpc/<chainId> path',
+});
+
+export const chainSchema = z.object({
+  chainId: z.number().int().positive('must be a positive integer'),
+  name: z.string().min(1),
+  rpcUrl,
+  explorerUrl: z.string().url().optional(),
+  /** The default ERC-20 for this chain's token card — Giano's test token at its CREATE2 address. */
+  defaultToken: address.optional(),
+});
+
+export const runtimeConfigSchema = z.object({
+  /** The TENANT's wallet origin. Each dApp is pinned to exactly one. */
+  walletUrl: z.string().url('required — the tenant wallet origin, e.g. https://wallet.example.dev'),
+  /** A wallet origin that does NOT allow-list this dApp, for the disallowed-origin control. Optional. */
+  otherWalletUrl: z.string().url().optional(),
+  /** Free-text tag beside the title, to tell two instances of this image apart. */
+  appLabel: z.string().optional(),
+  chains: z.array(chainSchema).min(1, 'at least one chain is required'),
+});
+
+export type ChainConfig = z.infer<typeof chainSchema>;
+export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
+
+export type ConfigIssue = { path: string; message: string };
+export type ConfigResult = { ok: true; config: RuntimeConfig; source: 'container' | 'dev-env' } | { ok: false; issues: ConfigIssue[]; source: 'container' | 'dev-env' | 'none' };
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- global augmentation must be an interface
   interface Window {
-    __GIANO_CONFIG__?: RuntimeConfig | null;
+    __GIANO_CONFIG__?: unknown;
   }
 }
 
-const runtime: RuntimeConfig = (typeof window !== 'undefined' && window.__GIANO_CONFIG__) || {};
-
-/** envsubst renders an unset variable as an empty string, which means "unset", not "". */
-const str = (value: string | undefined): string | undefined => {
-  const trimmed = value?.trim();
+/** envsubst renders an unset variable as an empty string, which means "unset". */
+const str = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
 };
 
-// Defaults target the local e2e stack (deploy/docker-compose.e2e.yml), addressed by the names
-// portless serves rather than by port (see e2e/origins.mjs):
-// - wallet origin (wallet-web) on http://wallet.localhost
-// - anvil devnet RPC on http://rpc.localhost (chain A, 31337) and http://rpc-b.localhost (chain B, 31338)
-// - devnet PrivateERC20 baked into the devnet state, used to prefill the ERC-20 panel
-// Deployments override these with GIANO_* on the container; `pnpm dev` with VITE_* at build.
-const RPC_URL = str(runtime.rpcUrl) ?? str(import.meta.env.VITE_RPC_URL) ?? 'http://rpc.localhost';
-const CHAIN_ID = Number(runtime.chainId ?? import.meta.env.VITE_CHAIN_ID ?? '31337');
-const CHAIN_NAME = str(runtime.chainName) ?? str(import.meta.env.VITE_CHAIN_NAME) ?? 'Devnet A';
-const RPC_B_URL = str(runtime.rpcBUrl) ?? str(import.meta.env.VITE_RPC_B_URL) ?? 'http://rpc-b.localhost';
-const CHAIN_B_ID = Number(runtime.chainBId ?? import.meta.env.VITE_CHAIN_B_ID ?? '31338');
-const CHAIN_B_NAME = str(runtime.chainBName) ?? str(import.meta.env.VITE_CHAIN_B_NAME) ?? 'Devnet B';
-const WALLET_URL = str(runtime.walletUrl) ?? str(import.meta.env.VITE_WALLET_URL) ?? 'http://wallet.localhost';
-const DEFAULT_TOKEN = (str(runtime.testErc20) ?? str(import.meta.env.VITE_TEST_ERC20) ?? '0x9967bDf929856643e92EF65eefdE1fF8250774D8') as `0x${string}`;
-// Optional free-text tag shown next to the demo's title. Useful when several instances of
-// this dApp run side by side against different wallet origins (e.g. one per tenant in the
-// two-tenant e2e topology, or custom-example / custom-example-byoui) and are otherwise
-// visually identical.
-const APP_LABEL = str(runtime.appLabel) ?? str(import.meta.env.VITE_APP_LABEL);
+/** Development fallbacks: the same GIANO_* names, from .env.development/.env.local, inlined by Vite for `pnpm dev` only. */
+function fromDevEnv(): unknown {
+  const env = import.meta.env as Record<string, string | undefined>;
+  const walletUrl = str(env.GIANO_WALLET_URL);
+  const chainsRaw = str(env.GIANO_CHAINS);
+  if (!walletUrl && !chainsRaw) return undefined;
+  let chains: unknown = undefined;
+  if (chainsRaw) {
+    try {
+      chains = JSON.parse(chainsRaw);
+    } catch {
+      chains = chainsRaw; // let the schema report it
+    }
+  }
+  return {
+    walletUrl,
+    otherWalletUrl: str(env.GIANO_OTHER_WALLET_URL),
+    appLabel: str(env.GIANO_APP_LABEL),
+    chains,
+  };
+}
 
-export const chain = defineChain({
-  id: CHAIN_ID,
-  name: CHAIN_NAME,
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-});
+function normalise(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const record = raw as Record<string, unknown>;
+  return {
+    ...record,
+    walletUrl: str(record.walletUrl),
+    otherWalletUrl: str(record.otherWalletUrl),
+    appLabel: str(record.appLabel),
+    chains: Array.isArray(record.chains)
+      ? record.chains.map((chain) =>
+          chain && typeof chain === 'object'
+            ? {
+                ...(chain as Record<string, unknown>),
+                explorerUrl: str((chain as Record<string, unknown>).explorerUrl),
+                defaultToken: str((chain as Record<string, unknown>).defaultToken),
+              }
+            : chain,
+        )
+      : record.chains,
+  };
+}
 
-export const chainB = defineChain({
-  id: CHAIN_B_ID,
-  name: CHAIN_B_NAME,
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [RPC_B_URL] } },
-});
+export function loadRuntimeConfig(): ConfigResult {
+  const injected = typeof window !== 'undefined' ? window.__GIANO_CONFIG__ : undefined;
+  const raw = injected ?? fromDevEnv();
+  if (raw === undefined || raw === null) {
+    return {
+      ok: false,
+      source: 'none',
+      issues: [
+        { path: 'walletUrl', message: 'required — no runtime configuration was injected and no GIANO_WALLET_URL is set for development (.env.development)' },
+        { path: 'chains', message: 'required — set GIANO_CHAINS to a JSON array of { chainId, name, rpcUrl }' },
+      ],
+    };
+  }
+  const source: 'container' | 'dev-env' = injected ? 'container' : 'dev-env';
+  const parsed = runtimeConfigSchema.safeParse(normalise(raw));
+  if (!parsed.success) {
+    return {
+      ok: false,
+      source,
+      issues: parsed.error.issues.map((issue) => ({ path: issue.path.join('.') || '(root)', message: issue.message })),
+    };
+  }
+  const ids = parsed.data.chains.map((chain) => chain.chainId);
+  const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (duplicates.length) {
+    return { ok: false, source, issues: duplicates.map((id) => ({ path: 'chains', message: `chain ${id} is listed more than once` })) };
+  }
+  return { ok: true, source, config: parsed.data };
+}
 
-export type DemoChain = { chain: Chain; chainId: number; name: string; rpcUrl: string };
-
-/**
- * The chains the demo can submit to. One passkey controls the SAME account address on
- * every one of them (MC-16); the cross-chain panel makes that visible (MC-124, MC-125).
- * Set GIANO_CHAIN_B_ID (or VITE_CHAIN_B_ID) to 0 to run the demo single-chain, which is what
- * a single-chain deployment does.
- */
-export const demoChains: DemoChain[] = [
-  { chain, chainId: CHAIN_ID, name: CHAIN_NAME, rpcUrl: RPC_URL },
-  ...(CHAIN_B_ID > 0 ? [{ chain: chainB, chainId: CHAIN_B_ID, name: CHAIN_B_NAME, rpcUrl: RPC_B_URL }] : []),
-];
-
-export const config = {
-  walletUrl: WALLET_URL,
-  rpcUrl: RPC_URL,
-  chainId: CHAIN_ID,
-  defaultTokenAddress: DEFAULT_TOKEN,
-  appLabel: APP_LABEL,
-};
+/** The connector version this build was made against — inlined by vite.config.ts from the installed package. */
+declare const __GIANO_CONNECTOR_VERSION__: string;
+export const CONNECTOR_VERSION: string = typeof __GIANO_CONNECTOR_VERSION__ === 'string' ? __GIANO_CONNECTOR_VERSION__ : 'unknown';

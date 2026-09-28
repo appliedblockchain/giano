@@ -1,34 +1,43 @@
 {
   "name": "@appliedblockchain/giano-example",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Giano sample dApp: a thin-SDK (two-origin) demo built with Vite + React + Chakra UI",
+  "description": "Giano reference dApp: the thin two-origin SDK, every method reachable, every outcome recorded. Vite + React + Chakra UI.",
   "scripts": {
-    "dev": "vite --host --port 4400",
-    "dev:stock": "env VITE_WALLET_URL=http://wallet.localhost VITE_APP_LABEL='tenant: stock' vite --host --port 4400 --strictPort",
-    "dev:byo": "env VITE_WALLET_URL=http://wallet-byo.localhost VITE_APP_LABEL='tenant: byo' vite --host --port 4401 --strictPort",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 4400",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite --host --port 4410 --strictPort",
+    "dev:stock": "env GIANO_WALLET_URL=http://wallet.localhost GIANO_OTHER_WALLET_URL=http://wallet-byo.localhost GIANO_APP_LABEL='tenant: stock' vite --host --port 4410 --strictPort",
+    "dev:byo": "env GIANO_WALLET_URL=http://wallet-byo.localhost GIANO_OTHER_WALLET_URL=http://wallet.localhost GIANO_APP_LABEL='tenant: byo' vite --host --port 4411 --strictPort",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm lint && tsc --noEmit && vite build && node scripts/scan-bundle.mjs",
+    "preview": "vite preview --port 4410"
   },
   "dependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",
-    "@appliedblockchain/giano-contracts": "workspace:",
-    "@chakra-ui/react": "^3.2.0",
+    "@chakra-ui/react": "~3.36.1",
     "@emotion/react": "^11.11.4",
+    "@rainbow-me/rainbowkit": "^2.2.5",
+    "@tanstack/react-query": "^5.76.1",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.7.0",
-    "viem": "2.31.6"
+    "viem": "2.31.6",
+    "wagmi": "2.15.6",
+    "zod": "^3.25.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.30.0",
     "@types/node": "^20.14.8",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.4.1",
+    "eslint": "^9.30.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^16.0.0",
     "typescript": "5.5.4",
+    "typescript-eslint": "^8.35.0",
     "vite": "^6.3.5"
   }
 }

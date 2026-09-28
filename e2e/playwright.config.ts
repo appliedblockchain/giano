@@ -2,6 +2,9 @@ import { defineConfig } from '@playwright/test';
 
 import { ORIGINS, loopbackOf, portOf } from './origins.mjs';
 
+/** `DEMO=1` adds the reference dApp's project and dev server (see `pnpm test:demo`). */
+const DEMO = process.env.DEMO === '1';
+
 /**
  * Two-tenant, four-origin topology against ONE shared backend stack
  * (deploy/docker-compose.e2e.yml):
@@ -29,7 +32,20 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { browserName: 'chromium' },
+      // The reference dApp's smoke spec lives under tests/demo and runs only in the opt-in project below.
+      testIgnore: /tests\/demo\//,
     },
+    // Opt-in (`pnpm test:demo`, DEMO=1): drives the reference dApp (services/custom-example) on its own
+    // origin. Defined only when asked for, so `pnpm test` neither starts the demo nor depends on it.
+    ...(DEMO
+      ? [
+          {
+            name: 'demo',
+            use: { browserName: 'chromium' as const, baseURL: ORIGINS.demo },
+            testMatch: /tests\/demo\/.*\.spec\.ts/,
+          },
+        ]
+      : []),
   ],
   // The fixtures listen on fixed loopback ports and portless publishes each one under a
   // name; `url` below is deliberately the loopback address rather than the name, so that
@@ -58,5 +74,17 @@ export default defineConfig({
       url: loopbackOf('wallet-byo'),
       reuseExistingServer: true,
     },
+    ...(DEMO
+      ? [
+          {
+            // the reference dApp, tenant stock, on its own name (http://demo.localhost)
+            command: 'pnpm -F @appliedblockchain/giano-example dev:stock',
+            cwd: '..',
+            url: loopbackOf('demo'),
+            reuseExistingServer: true,
+            timeout: 120_000,
+          },
+        ]
+      : []),
   ],
 });
