@@ -16,6 +16,7 @@ import {
   createToaster,
 } from '@chakra-ui/react';
 import { useState, type ReactNode } from 'react';
+import { describeError } from '../lib/format';
 import { system } from '../theme';
 
 /**
@@ -64,7 +65,7 @@ export function notifySuccess(title: string, description?: string): void {
 }
 
 export function notifyError(title: string, error: unknown): string {
-  const description = error instanceof Error ? error.message : String(error);
+  const description = describeError(error);
   toaster.create({ type: 'error', title, description, duration: 12_000 });
   // eslint-disable-next-line no-console
   console.error(`[paymaster-admin] ${title}`, error);

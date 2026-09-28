@@ -22,11 +22,15 @@ if [ -z "${GIANO_DEPLOYMENTS:-}" ]; then
   GIANO_ENVIRONMENT_LABEL="${GIANO_ENVIRONMENT_LABEL:-chain ${GIANO_CHAIN_ID}}"
   GIANO_REFRESH_SECONDS="${GIANO_REFRESH_SECONDS:-15}"
 
-  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","sponsorshipPaymaster":"%s","refreshSeconds":%s}]' \
-    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_REFRESH_SECONDS")
+  # Optional. The address a wallet should dial when it has to add this network itself, for the
+  # common case where GIANO_RPC_URL is keyed or otherwise not for publication.
+  GIANO_WALLET_RPC_URL="${GIANO_WALLET_RPC_URL:-}"
+
+  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","walletRpcUrl":"%s","sponsorshipPaymaster":"%s","refreshSeconds":%s}]' \
+    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_WALLET_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_REFRESH_SECONDS")
 fi
 
-# Keep the four fields the console reads and drop the rest.
+# Keep the fields the console reads and drop the rest.
 #
 # A deployment serving both hands this variable the same array wallet-api reads as GIANO_CHAINS,
 # which is what keeps the chain list authored once. The console spells its fields as that
@@ -37,9 +41,18 @@ fi
 # Malformed JSON stops the container here, with jq naming the defect in the logs. That is the
 # intended failure: the alternative is nginx serving a /config.json the SPA refuses to parse, which
 # presents as a blank console with nothing to read.
+#
+# `walletRpcUrl` is the one field here a chain descriptor does not carry — it is a property of how
+# this console is published rather than of the chain — and, unlike rpcUrl, it is left exactly as
+# written: it is meant to be dialled from outside this page, so proxying it would defeat it.
 GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
   [ .[]
-    | { name, chainId, rpcUrl, sponsorshipPaymaster, refreshSeconds: (.refreshSeconds // 15) }
+    | { name, chainId, rpcUrl, walletRpcUrl, sponsorshipPaymaster, refreshSeconds: (.refreshSeconds // 15) }
+    # Only walletRpcUrl is dropped when empty. Every other field keeps an empty string on purpose:
+    # the proxy step below asks whether rpcUrl looks absolute, and a missing key would make that
+    # `null | test(...)`, which stops the container with a jq message instead of letting the SPA
+    # report "deployment N has no rpcUrl".
+    | if (.walletRpcUrl // "") == "" then del(.walletRpcUrl) else . end
     | with_entries(select(.value != null)) ]')
 export GIANO_DEPLOYMENTS
 
@@ -87,6 +100,9 @@ fi
 # Derived from the array rather than configured alongside it: a chain added without a matching
 # connect-src entry has every call blocked by the CSP, with nothing in the UI to say why. With the
 # proxy on there are no origins left to name, and this resolves to nothing at all.
+#
+# walletRpcUrl is deliberately not among them. The page never dials it — it is handed to a wallet
+# extension, which makes that call from its own context, outside this document's CSP.
 GIANO_CSP_CONNECT_SRC="${GIANO_CSP_CONNECT_SRC:-$(
   printf '%s' "$GIANO_DEPLOYMENTS" |
     jq -r '[ .[].rpcUrl // empty | capture("^(?<origin>[a-z]+://[^/]+)").origin ] | unique | join(" ")'

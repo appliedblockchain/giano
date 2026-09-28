@@ -29,9 +29,28 @@ export const exactEth = (wei: bigint): string => `${formatEther(wei)} ETH`;
  * full value and copies it on click.
  */
 
-/** Turns any thrown value into something worth showing a person. */
+/**
+ * Turns any thrown value into something worth showing a person.
+ *
+ * Wallets are why this is more than `error.message`. What a browser wallet rejects with has
+ * crossed a process boundary and arrives as a serialised JSON-RPC error — `{ code, message, data }`,
+ * a plain object and not an `Error` — so an `instanceof` test alone prints `[object Object]` over
+ * the one sentence the operator needed. Some wallets, and some nodes behind them, put the useful
+ * half another level down under `data`.
+ */
 export function describeError(error: unknown): string {
-  if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
+  if (error instanceof Error && error.message) return error.message;
+
+  if (error && typeof error === 'object') {
+    const { message, data } = error as { message?: unknown; data?: unknown };
+    if (typeof message === 'string' && message) return message;
+
+    if (data && typeof data === 'object') {
+      const nested = (data as { message?: unknown; originalError?: { message?: unknown } }).message ?? (data as { originalError?: { message?: unknown } }).originalError?.message;
+      if (typeof nested === 'string' && nested) return nested;
+    }
+  }
+
   return 'Unknown error';
 }
