@@ -38,14 +38,23 @@ chains** — the property `tests/multichain.spec.ts` exists to verify.
 
 To run the stack with a **single chain** (the on-premises profile, MC-88): comment out the
 `anvil-b` and `alto-b` services in `deploy/docker-compose.e2e.yml`, drop the second entry from
-each `GIANO_CHAINS` list (wallet-api and wallet-web), and set `SPONSOR_CHAIN_IDS=31337` on the
-`sponsorship-provisioner`. The single-chain wallet flows pass unmodified against the two-chain
-stack, so this is only needed when specifically exercising the single-chain shape.
+each `GIANO_CHAINS` list (wallet-api and wallet-web), and set `SPONSOR_CHAIN_IDS=31337` on both
+the `sponsorship-provisioner` and the `tx-mapping-provisioner`. The single-chain wallet flows pass
+unmodified against the two-chain stack, so this is only needed when specifically exercising the
+single-chain shape.
 
 To regenerate the baked state with the pinned anvil: `pnpm -F @appliedblockchain/giano-e2e
 devnet:generate` (chain A; also writes `devnet/addresses.json`). `devnet:generate:b` produces a
 `state-31338.json` and asserts its addresses are identical to chain A's — a divergent pair is
 refused rather than committed (MC-119).
+
+Sponsorship is not the only thing provisioned at bring-up. `tx-mapping-provisioner`
+(`devnet/provision-tx-mappings.mjs`) publishes the demo ERC-20's **ERC-7730 transaction-display
+mapping** for both tenants on both chains, through the same admin API a real tenant would use, so
+a token transfer reviewed in the wallet reads "Send demo tokens" with a scaled amount and a named
+recipient rather than raw calldata. Like the sponsorship rules it lives in Postgres rather than in
+the baked devnet state — a `down -v` drops it, and bringing the stack back up puts it back.
+`wallet-web` waits on it, so `up --wait` cannot return before the mappings are in.
 
 The paymaster console is the operator's side of the same sponsorship the dApps are using: open it
 next to http://app.localhost and a sponsored send shows up as a falling tenant balance and a new

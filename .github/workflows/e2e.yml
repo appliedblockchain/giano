@@ -105,6 +105,7 @@ jobs:
         run: |
           docker compose -f deploy/docker-compose.e2e.yml logs wallet-api --tail 200
           docker compose -f deploy/docker-compose.e2e.yml logs sponsorship-provisioner --tail 100
+          docker compose -f deploy/docker-compose.e2e.yml logs tx-mapping-provisioner --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs --tail 200
       # A sponsorship failure is usually an accounting failure, and the numbers are the diagnosis.
       # Collecting them here means a CI failure is explicable without reproducing it locally.
