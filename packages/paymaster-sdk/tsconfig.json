@@ -3,5 +3,5 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src", "test", "demo"]
+  "include": ["src", "test", "demo", "cli"]
 }

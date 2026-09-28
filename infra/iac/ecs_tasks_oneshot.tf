@@ -111,7 +111,7 @@ resource "aws_ecs_task_definition" "provision-sponsorship" {
 
   container_definitions = jsonencode([{
     name      = "provision-sponsorship" # the runbook's --overrides addresses it by this name — §18
-    image     = "${module.ecr["wallet-api"].repository_url}:${var.image_tag}"
+    image     = "${module.ecr["wallet-api"].repository_url}:${local.image_tag}"
     command   = ["node", "dist/provision-sponsorship.js"] # ⚠ §16.3 — not a build entry yet
     essential = true
 

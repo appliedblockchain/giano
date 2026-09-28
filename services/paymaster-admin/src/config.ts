@@ -13,10 +13,18 @@
  * by accident is what must stay impossible.
  */
 
-/** One paymaster deployment the console can administer. */
+/**
+ * One paymaster deployment the console can administer.
+ *
+ * `chainId`, `name`, `rpcUrl` and `sponsorshipPaymaster` are spelled exactly as the chain
+ * descriptor in `packages/contracts/chains.ts` spells them, which is what lets a deployment hand
+ * this file the same array `wallet-api` reads as `GIANO_CHAINS` rather than authoring a second one
+ * that has to be kept in step. A descriptor's remaining fields are for submitting operations, not
+ * administering a paymaster, and are dropped before they reach the browser (§14.6).
+ */
 export type Deployment = {
   /** How an operator tells this environment apart. Shown in the header. */
-  label: string;
+  name: string;
   chainId: number;
   rpcUrl: string;
   /**
@@ -26,8 +34,14 @@ export type Deployment = {
    * in that registry currently declares a `sponsorshipPaymaster`, so in practice this must be set.
    * Leaving it out fails loudly rather than silently reading the wrong contract.
    */
-  paymasterAddress?: `0x${string}`;
-  /** Seconds between automatic refreshes. 0 disables polling. */
+  sponsorshipPaymaster?: `0x${string}`;
+  /**
+   * Seconds between automatic refreshes. 0 disables polling.
+   *
+   * The one field a chain descriptor has no opinion about — how often a console polls is not a
+   * property of the chain — so it defaults rather than being required of an array authored for
+   * `wallet-api`.
+   */
   refreshSeconds: number;
 };
 
@@ -43,10 +57,10 @@ export type AdminConfig = {
  * let those empty strings through as real addresses.
  */
 type RawDeployment = {
-  label?: string;
+  name?: string;
   chainId?: number | string;
   rpcUrl?: string;
-  paymasterAddress?: string;
+  sponsorshipPaymaster?: string;
   refreshSeconds?: number | string;
 };
 
@@ -60,16 +74,16 @@ let config: AdminConfig | undefined;
 
 const DEFAULT_REFRESH_SECONDS = 15;
 
-function toDeployment(raw: RawDeployment, fallbackLabel: string, index: number): Deployment {
+function toDeployment(raw: RawDeployment, fallbackName: string, index: number): Deployment {
   const chainId = Number(raw.chainId);
-  if (!chainId || Number.isNaN(chainId)) throw new Error(`deployment ${index + 1} (${raw.label ?? fallbackLabel}) has no chainId`);
-  if (!raw.rpcUrl) throw new Error(`deployment ${index + 1} (${raw.label ?? fallbackLabel}) has no rpcUrl`);
+  if (!chainId || Number.isNaN(chainId)) throw new Error(`deployment ${index + 1} (${raw.name ?? fallbackName}) has no chainId`);
+  if (!raw.rpcUrl) throw new Error(`deployment ${index + 1} (${raw.name ?? fallbackName}) has no rpcUrl`);
 
   return {
-    label: raw.label || fallbackLabel || `chain ${chainId}`,
+    name: raw.name || fallbackName || `chain ${chainId}`,
     chainId,
     rpcUrl: raw.rpcUrl,
-    paymasterAddress: raw.paymasterAddress ? (raw.paymasterAddress as `0x${string}`) : undefined,
+    sponsorshipPaymaster: raw.sponsorshipPaymaster ? (raw.sponsorshipPaymaster as `0x${string}`) : undefined,
     refreshSeconds: raw.refreshSeconds === undefined || raw.refreshSeconds === '' ? DEFAULT_REFRESH_SECONDS : Number(raw.refreshSeconds),
   };
 }
@@ -84,9 +98,9 @@ export async function loadAdminConfig(): Promise<AdminConfig> {
   // Two accepted shapes. The single-deployment one is kept because it is what a container
   // rendering one set of environment variables produces, and because most deployments really do
   // administer one chain — making them declare a one-element array would be ceremony.
-  const rawDeployments = raw.deployments && raw.deployments.length > 0 ? raw.deployments : [{ ...raw, label: raw.label ?? raw.environmentLabel }];
+  const rawDeployments = raw.deployments && raw.deployments.length > 0 ? raw.deployments : [{ ...raw, name: raw.name ?? raw.environmentLabel }];
 
-  const deployments = rawDeployments.map((entry, index) => toDeployment(entry, entry.label ?? '', index));
+  const deployments = rawDeployments.map((entry, index) => toDeployment(entry, entry.name ?? '', index));
 
   const seen = new Set<string>();
   for (const deployment of deployments) {
@@ -108,12 +122,12 @@ export function getAdminConfig(): AdminConfig {
 /**
  * A stable identity for a deployment, used to remember the operator's choice.
  *
- * Keyed on chain and address rather than on the label: a label is prose and gets reworded, and a
+ * Keyed on chain and address rather than on the name: a name is prose and gets reworded, and a
  * remembered selection that silently moved to a different environment because someone fixed a typo
  * would be worse than not remembering it at all.
  */
 export function deploymentKey(deployment: Deployment): string {
-  return `${deployment.chainId}:${deployment.paymasterAddress?.toLowerCase() ?? 'registry'}`;
+  return `${deployment.chainId}:${deployment.sponsorshipPaymaster?.toLowerCase() ?? 'registry'}`;
 }
 
 const STORAGE_KEY = 'giano:paymaster-admin:deployment';

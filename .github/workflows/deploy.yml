@@ -115,15 +115,18 @@ jobs:
 
             rows=$(jq -n --arg env "$env" --arg tag "$tag" --argjson byo "$has_byo" '
               [
-                # wallet-api ALONE has a second container on the same image: the
-                # `migrate` init container (§9.6). Both must be swapped, or new
-                # application code runs against the old migrator — silently,
-                # because the task still starts.
-                {service: "wallet-api",       repo: "wallet-api",       init_container: "migrate"},
+                # wallet-api has no init container — RUN_MIGRATIONS=true runs migrations
+                # in-process before it starts listening (§9.6). One container, like every
+                # other service below.
+                {service: "wallet-api",       repo: "wallet-api",       init_container: ""},
                 {service: "wallet-web",       repo: "wallet-web",       init_container: ""},
                 {service: "custom-example",   repo: "example",          init_container: ""},
                 {service: "paymaster-admin",  repo: "paymaster-admin",  init_container: ""},
-                {service: "bundler",          repo: "bundler",          init_container: ""}
+                # One bundler per chain (infra/iac/ecs_services.tf local.bundlers) — same
+                # image, different ALTO_RPC_URL. Both rows share repo "bundler": one ECR
+                # repository serves both services (§14.7).
+                {service: "bundler-base-sepolia", repo: "bundler",      init_container: ""},
+                {service: "bundler-eth-sepolia",  repo: "bundler",      init_container: ""}
               ]
               + (if $byo then [
                 # custom-example and custom-example-byoui are ONE image run
@@ -228,9 +231,9 @@ jobs:
 
       # wait-for-service-stability is what preserves the property
       # `ecs_wait_for_steady_state` gave the operator's apply: a crash-looping
-      # container — or a `migrate` init container exiting non-zero (§9.6) — fails
-      # this workflow instead of passing it. The deployment circuit breaker rolls
-      # the service back; the reason is in Datadog, not in this log. R21.
+      # container — including one crashing because RUN_MIGRATIONS failed (§9.6) —
+      # fails this workflow instead of passing it. The deployment circuit breaker
+      # rolls the service back; the reason is in Datadog, not in this log. R21.
       - name: Deploy
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:

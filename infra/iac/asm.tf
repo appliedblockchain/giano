@@ -16,7 +16,7 @@ data "external" "secret_inventory" {
 }
 
 locals {
-  # { "database-password" = { version = 1 }, "rpc-url" = { version = 1 }, … }
+  # { "database-password" = { version = 1 }, "rpc-url-base-sepolia" = { version = 1 }, … }
   secret_inventory = {
     for name, version in data.external.secret_inventory.result :
     name => { version = tonumber(version) }
@@ -68,8 +68,21 @@ resource "aws_secretsmanager_secret_version" "database-url" {
 
   # derived from an ephemeral value, so implicitly ephemeral itself. urlencode() on the
   # password is not optional: a #, / or @ silently truncates the DSN.
+  #
+  # sslmode=require is not optional either: rds.force_ssl = 1 is the system default on this
+  # parameter group's family (not something this module's parameter_group block set — it was
+  # never disabled), so RDS rejects a plaintext connection outright with "no pg_hba.conf entry
+  # ... no encryption". A DSN without it fails at the driver's first connection, every time.
+  #
+  # uselibpqcompat=true is also required: recent pg-connection-string versions treat plain
+  # sslmode=require as an ALIAS for verify-full — full CA-chain validation — and RDS's
+  # certificate chains to Amazon's own RDS CA, which is not in Node's default trust store, so
+  # the connection fails with "self-signed certificate in certificate chain" instead of
+  # connecting. uselibpqcompat restores classic libpq semantics, where require means encrypt
+  # only. Accepted here because the instance is already private-subnet and security-group
+  # isolated (§5.6) — the connection is encrypted, just not chain-verified.
   secret_string_wo = format(
-    "postgres://%s:%s@%s:%d/%s",
+    "postgres://%s:%s@%s:%d/%s?sslmode=require&uselibpqcompat=true",
     var.db_username[terraform.workspace],
     urlencode(local.secret_values["database-password"]),
     module.app-db.address,
@@ -77,8 +90,12 @@ resource "aws_secretsmanager_secret_version" "database-url" {
     local.app_db_name,
   )
 
-  # rotates with the password it embeds
-  secret_string_wo_version = local.secret_inventory["database-password"].version
+  # Rotates with the password it embeds — AND with the DSN's own format. secret_string_wo is
+  # never read back, so a version bump is the ONLY signal Terraform has that the value changed;
+  # tying this purely to the password's 1Password version would mean a code-only change to the
+  # format() string (like adding ?sslmode=require just now) never reaches Secrets Manager at
+  # all, because the version number wouldn't move. Combined so either trigger works.
+  secret_string_wo_version = local.secret_inventory["database-password"].version * 100 + local.database_url_format_version
 }
 
 # datadog-api-key: mirrored OUT of the shared DevOps vault — the Agent sidecar and FireLens

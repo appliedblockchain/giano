@@ -15,7 +15,7 @@ import type { Deployment } from '../config';
 export function toChain(deployment: Deployment): Chain {
   return defineChain({
     id: deployment.chainId,
-    name: deployment.label ?? `chain-${deployment.chainId}`,
+    name: deployment.name ?? `chain-${deployment.chainId}`,
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     rpcUrls: { default: { http: [deployment.rpcUrl] } },
   });

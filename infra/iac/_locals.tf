@@ -47,4 +47,35 @@ locals {
   # every stock-UI tenant wallet host, plus Giano's own wallet host — ALB rule 40 (§5.7) and
   # the wildcard-exempt SNI certificates (§6.3).
   stock_ui_wallet_hosts = concat([local.hosts.wallet], var.tenant_wallet_hosts[terraform.workspace])
+
+  # --- Delivery. §15.1 -------------------------------------------------
+  # The version this environment runs, DECLARED in infra/versions.json and merged to main to
+  # deploy. A JSON file rather than a Terraform variable because it has two readers, and the
+  # second is the deploy workflow, which must parse it with `jq` and without Terraform — a
+  # `.tf` variable would have to be grepped out of HCL.
+  #
+  # Two writers register task definitions against the same services — `terraform apply` and
+  # deploy.yml — and this is what keeps them from disagreeing: both read this one declared
+  # value, so each renders an equivalent task definition and an apply converges on whatever
+  # deploy.yml already rolled out rather than reverting it (§15.1). NEVER a literal "latest":
+  # every ECR repo has IMMUTABLE tags and CI never pushes that tag (§11), so a task definition
+  # built from it can never actually pull.
+  #
+  # lookup() with an empty-string fallback rather than a bare index, so a missing workspace key
+  # reaches the task definition's precondition (which names the file to edit) instead of
+  # `terraform validate` failing on the `default` workspace with an opaque "key does not
+  # identify an element" error.
+  image_tag = lookup(jsondecode(file("${path.module}/../versions.json")), terraform.workspace, "")
+
+  # Bump by hand whenever asm.tf's database-url format() string itself changes — a new query
+  # param, a different scheme — independent of database-password's own rotation count in
+  # 1Password. secret_string_wo is never read back, so combining the two into one
+  # secret_string_wo_version (asm.tf) is what makes EITHER a password rotation or a
+  # code-only DSN format change actually reach Secrets Manager on the next apply.
+  # v2: added ?sslmode=require — RDS's parameter group ships rds.force_ssl = 1 by default and a
+  # plaintext connection is rejected outright, not degraded.
+  # v3: added &uselibpqcompat=true — sslmode=require alone is an alias for verify-full on
+  # recent pg-connection-string, and RDS's cert chains to Amazon's own CA, not Node's trust
+  # store, so v2 alone still failed with "self-signed certificate in certificate chain".
+  database_url_format_version = 3
 }

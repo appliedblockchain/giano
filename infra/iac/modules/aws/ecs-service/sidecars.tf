@@ -4,7 +4,7 @@
 # a task worth keeping alive, and the failure is otherwise silent).
 
 locals {
-  datadog_agent_container = {
+  datadog_agent_container = merge(local.container_defaults, {
     name   = "datadog-agent"
     image  = "public.ecr.aws/datadog/agent:latest"
     cpu    = 0
@@ -34,13 +34,19 @@ locals {
       retries     = 3
       startPeriod = 15
     }
-  }
+  })
 
-  firelens_container = {
+  firelens_container = merge(local.container_defaults, {
     name              = "log_router"
     image             = "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable"
     essential         = true
     memoryReservation = 100
+
+    # ECS's FireLens integration echoes this back regardless of what we send — unlike
+    # mountPoints/volumesFrom/systemControls/portMappings/environment, this one is specific to
+    # the log_router container, not a universal container default, so it lives here rather than
+    # in container_defaults.
+    user = "0"
 
     firelensConfiguration = {
       type    = "fluentbit"
@@ -56,5 +62,5 @@ locals {
         "awslogs-stream-prefix" = "ecs"
       }
     }
-  }
+  })
 }

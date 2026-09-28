@@ -41,6 +41,11 @@ export const gianoAddresses: Record<number, GianoDeployment> = {
     factory: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050',
     implementation: '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56',
   },
+  11155111: {
+    entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
+    factory: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050',
+    implementation: '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56',
+  },
 };
 
 /** Returns the Giano deployment for a chain, throwing a descriptive error for unknown chains. */

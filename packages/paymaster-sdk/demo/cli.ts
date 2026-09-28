@@ -474,20 +474,23 @@ await paymaster.withdrawStake(to);      // only after it elapses`);
       note('A shortfall that the balance could not cover is emitted as a deficit rather than');
       note('reverting — by then the network has already been paid, so refusing would revert work');
       note('that was genuinely done.');
-      code(`const history = await paymaster.getSponsorships({ tenantId });
+      note('The read covers one window of blocks, not the whole chain — `older` steps back a window.');
+      code(`const page = await paymaster.getSponsorships({ tenantId });
+// page.records, and page.older to step further back
 const unwatch = paymaster.watchSponsorships((record) => { /* live updates */ });`);
 
-      const history = await paymaster.getSponsorships();
-      if (history.length === 0) {
-        note('no sponsorships settled on this chain yet — send a sponsored operation and re-run.');
+      const page = await paymaster.getSponsorships();
+      note(`read blocks ${page.fromBlock}–${page.toBlock}`);
+      if (page.records.length === 0) {
+        note('no sponsorships settled in this window — send a sponsored operation and re-run.');
         return;
       }
-      for (const record of history.slice(-5)) {
+      for (const record of page.records.slice(-5)) {
         ok(`${record.uuid} — ${record.success ? 'succeeded' : 'reverted'} in block ${record.blockNumber}`);
         note(`    gas ${eth(record.gasCostWei)}, fee ${eth(record.feeWei)}, overhead ${eth(record.overheadWei)}`);
         note(`    balance after ${eth(record.newBalanceWei)}`);
       }
-      note(`${history.length} sponsorship(s) total`);
+      note(`${page.records.length} sponsorship(s) in this window`);
     },
   },
 

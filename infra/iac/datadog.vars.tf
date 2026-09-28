@@ -9,7 +9,7 @@ variable "datadog_site" {
 variable "datadog_enabled" {
   description = "gates the provider's `validate`, the sidecars, and the monitors"
   type        = map(bool)
-  default     = { dev = true, stg = true, prd = true }
+  default     = { dev = false, stg = true, prd = true }
 }
 
 # R24 — the Datadog API key has no rotation trigger of its own; it lives in a shared DevOps

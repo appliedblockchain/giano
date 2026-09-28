@@ -49,7 +49,7 @@ importers:
   packages/connector:
     dependencies:
       '@appliedblockchain/giano-wallet-transport':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../wallet-transport
     devDependencies:
       '@rainbow-me/rainbowkit':
@@ -177,7 +177,7 @@ importers:
   packages/paymaster-sdk:
     dependencies:
       '@appliedblockchain/giano-contracts':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../contracts
     devDependencies:
       '@vitest/coverage-v8':
@@ -202,7 +202,7 @@ importers:
   packages/wallet-core:
     dependencies:
       '@appliedblockchain/giano-contracts':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../contracts
       ox:
         specifier: ^0.7.1
@@ -230,13 +230,13 @@ importers:
   packages/wallet-kit:
     dependencies:
       '@appliedblockchain/giano-contracts':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../contracts
       '@appliedblockchain/giano-wallet-core':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../wallet-core
       '@appliedblockchain/giano-wallet-transport':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../wallet-transport
     devDependencies:
       '@types/react':

@@ -58,9 +58,9 @@
     }
   },
   "dependencies": {
-    "@appliedblockchain/giano-contracts": "workspace:^",
-    "@appliedblockchain/giano-wallet-core": "workspace:^",
-    "@appliedblockchain/giano-wallet-transport": "workspace:^"
+    "@appliedblockchain/giano-contracts": "workspace:*",
+    "@appliedblockchain/giano-wallet-core": "workspace:*",
+    "@appliedblockchain/giano-wallet-transport": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.0.6",

@@ -1,60 +1,57 @@
-# task definition (3 or 4 containers), service, service-discovery registration — §9.3, §9.4,
-# §9.6
+# task definition (3 containers), service, service-discovery registration — §9.3, §9.4
 
 locals {
-  app_container = {
+  # ECS's DescribeTaskDefinition ALWAYS echoes these back, whether or not we declare them —
+  # they are not optional-and-omittable, they are optional-and-defaulted. Since
+  # container_definitions is a single jsonencode()'d string, Terraform's diff on it is a plain
+  # text comparison: leaving these out doesn't mean "AWS assumes empty," it means "every future
+  # plan shows a spurious replace," forever, even with zero real changes. Merged into every
+  # container shape below.
+  container_defaults = {
+    mountPoints    = []
+    volumesFrom    = []
+    systemControls = []
+    portMappings   = [] # any container that actually listens overrides this in its own block
+    environment    = [] # ditto — every container below that has real env vars overrides this
+  }
+
+  app_container = merge(local.container_defaults, {
     name      = var.service
     image     = var.image
     essential = true
     memory    = var.app_memory
     cpu       = 0
 
+    # hostPort is REQUIRED here for the same reason as container_defaults above: in awsvpc
+    # network mode hostPort must equal containerPort, and ECS's API always returns it
+    # explicitly even if we don't send it — omitting it is diff noise, not a no-op.
     portMappings = [
-      { containerPort = var.container_port, protocol = "tcp" },
+      { containerPort = var.container_port, hostPort = var.container_port, protocol = "tcp" },
     ]
 
     environment = [for k, v in var.environment : { name = k, value = v }]
     secrets     = [for k, v in var.secret_arns : { name = k, valueFrom = v }]
 
-    # `SUCCESS` is the whole mechanism (§9.6): COMPLETE would accept any exit code, START
-    # would not wait at all. dependsOn requires platform version >= 1.3.0, which LATEST
-    # satisfies.
-    dependsOn = concat(
-      [{ containerName = "log_router", condition = "START" }],
-      var.init_container == null ? [] : [
-        { containerName = var.init_container.name, condition = "SUCCESS" }
-      ],
-    )
+    # No init container to depend on — wallet-api runs its own migrations on boot,
+    # RUN_MIGRATIONS=true, serialised by a Postgres advisory lock (§9.6). log_router only
+    # exists when Datadog is on — depending on a container that was never added to
+    # container_definitions is a task-placement failure, not a no-op.
+    dependsOn = var.datadog_enabled ? [{ containerName = "log_router", condition = "START" }] : []
 
     logConfiguration = local.firelens_log_configuration
-  }
+  })
 
-  init_container_def = var.init_container == null ? null : {
-    name    = var.init_container.name
-    image   = var.image # the SAME image as the app — one artefact, two commands
-    command = var.init_container.command
-
-    # MANDATORY. An essential container exiting — even with 0 — stops the whole task, so an
-    # init container that is essential turns every successful migration into a failed
-    # deployment.
-    essential = false
-
-    # no hard memory limit: it runs before the application container, so it can use the
-    # task's headroom, and its reservation is released the moment it exits.
-    memoryReservation = 256
-
-    secrets     = [for k, v in var.init_container.secrets : { name = k, valueFrom = v }]
-    environment = [{ name = "LOG_LEVEL", value = "info" }]
-
-    dependsOn        = [{ containerName = "log_router", condition = "START" }]
-    logConfiguration = local.firelens_log_configuration
-  }
-
+  # datadog_agent_container and firelens_container exist ONLY when Datadog is on. This is the
+  # actual toggle — var.datadog_enabled gating the execution role's secret access (iam.tf)
+  # without this would leave a still-present datadog-agent container referencing a secret the
+  # role can no longer read, which fails at task launch, not at apply.
   container_definitions = concat(
     [local.app_container],
-    var.init_container == null ? [] : [local.init_container_def],
-    [local.datadog_agent_container],
-    [local.firelens_container],
+    # slice(), not a ternary between two differently-sized tuple literals: [a, b] and [] infer
+    # as distinct fixed-length tuple types and HCL's conditional requires both branches of a
+    # ternary to unify to one type ("Inconsistent conditional result types"). slice() keeps one
+    # element type and only the length varies, which unifies fine.
+    slice([local.datadog_agent_container, local.firelens_container], 0, var.datadog_enabled ? 2 : 0),
   )
 }
 
@@ -75,6 +72,18 @@ resource "aws_ecs_task_definition" "svc" {
   container_definitions = jsonencode(local.container_definitions)
 
   tags = merge(local.tags, { Name = local.name })
+
+  lifecycle {
+    # var.image_tag comes from local.image_tag at the root (infra/versions.json, §15.1). Every
+    # ECR repo is IMMUTABLE and CI only ever pushes the full commit SHA, never "latest" — so a
+    # malformed or missing tag here is not a typo that resolves to something wrong, it is an
+    # image that can never be pulled, and the failure would otherwise surface as a task stuck
+    # in CannotPullContainerError long after `apply` reported success. Fail the plan instead.
+    precondition {
+      condition     = can(regex("^[0-9a-f]{40}$", var.image_tag))
+      error_message = "image_tag must be a full 40-character lowercase commit SHA — set this workspace's entry in infra/versions.json. Got: \"${var.image_tag}\"."
+    }
+  }
 }
 
 # Cloud Map — §9.4. `wallet-api` reaches the bundler at
@@ -138,14 +147,17 @@ resource "aws_ecs_service" "svc" {
 
   enable_execute_command = var.enable_execute_command
 
-  # Two things outside Terraform legitimately own a field here (§9.3): the out-of-hours
-  # scheduler (§17.2) owns desired_count between applies, and CI owns WHICH task definition
-  # revision is actually deployed. Terraform still registers a new aws_ecs_task_definition
-  # revision whenever its content changes — it just never rolls the service onto it. Moving
-  # the service to the latest revision is `aws ecs update-service --task-definition ...`, run
-  # by the deploy workflow (§15), not `terraform apply`.
+  # desired_count is the one field another owner legitimately holds between applies: the
+  # out-of-hours scheduler (§17.2) scales it directly. task_definition is deliberately NOT
+  # ignored — deploy.yml and Terraform both read the same declared tag from
+  # infra/versions.json and render equivalent task definitions, so an apply converges on
+  # whatever deploy.yml already rolled out instead of fighting it (§15.1). Ignoring it here
+  # would leave Terraform owning the task definition's CONTENT — env, secrets, cpu, sidecars —
+  # while owning nothing about which revision is actually live: an apply that rotated a secret
+  # or changed an env var would register a new revision the running service silently ignores,
+  # and report success.
   lifecycle {
-    ignore_changes = [desired_count, task_definition]
+    ignore_changes = [desired_count]
   }
 
   tags = merge(local.tags, { Name = local.name })
