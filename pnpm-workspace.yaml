@@ -27,6 +27,42 @@ overrides:
   # GHSA-vrm6-8vpv-qv8q et al. (11 advisories) — hardhat, hardhat-verify and testcontainers ask for
   # undici 5; no fixed 5.x release exists.
   "undici@>=5.0.0 <6.28.0": "^6.28.0"
+  # GHSA-qj3p-xc97-xw74 — via @wagmi/connectors 5.8; 0.33.1 is what @wagmi/connectors 5.11 pins.
+  "@metamask/sdk@>=0.16.0 <0.33.1": "0.33.1"
+  "@metamask/sdk-communication-layer@>=0.16.0 <0.33.1": "0.33.1"
+  # GHSA-q6x5-8v7m-xcrf
+  "@protobufjs/utf8@<1.1.1": "^1.1.1"
+  # GHSA-2g4f-4pwh-qvx6
+  "ajv@>=8.0.0 <8.18.0": "^8.18.0"
+  # GHSA-378v-28hj-76wf
+  "bn.js@<4.12.3": "^4.12.3"
+  "bn.js@>=5.0.0 <5.2.3": "^5.2.3"
+  # follow-redirects advisory — solc and axios
+  "follow-redirects@<1.16.0": "^1.16.0"
+  # h3 advisories (moderate + high) — unstorage via WalletConnect
+  "h3@>=1.0.0 <1.15.9": "^1.15.9"
+  # js-yaml advisories (moderate + high)
+  "js-yaml@>=3.0.0 <3.15.2": "^3.15.2"
+  "js-yaml@>=4.0.0 <4.3.2": "^4.3.2"
+  # lodash advisories (moderate + high)
+  "lodash@<4.18.0": "^4.18.0"
+  # picomatch advisories (moderate + high)
+  "picomatch@>=2.0.0 <2.3.2": "^2.3.2"
+  "picomatch@>=3.0.0 <3.0.2": "^3.0.2"
+  # postcss advisory — tsup, vite
+  "postcss@>=8.0.0 <8.5.23": "^8.5.23"
+  # protobufjs advisories (critical + high + moderate) — @grpc/proto-loader, dockerode (testcontainers)
+  "protobufjs@>=7.0.0 <7.6.3": "^7.6.3"
+  # serialize-javascript advisories (moderate + high) — mocha (hardhat test); no fixed 6.x release.
+  "serialize-javascript@<7.0.5": "^7.0.5"
+  # uuid advisory — hardhat, @metamask/*, dockerode ask for 8–10; no fixed release on those lines.
+  "uuid@<11.1.1": "^11.1.1"
+  # ws advisories (moderate + high)
+  "ws@>=7.0.0 <7.5.11": "^7.5.11"
+  "ws@>=8.0.0 <8.21.0": "^8.21.0"
+  # yaml advisory
+  "yaml@>=1.0.0 <1.10.3": "^1.10.3"
+  "yaml@>=2.0.0 <2.8.3": "^2.8.3"
 
 # Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
 minimumReleaseAge: 1440
