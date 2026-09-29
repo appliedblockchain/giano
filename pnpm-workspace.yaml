@@ -6,6 +6,27 @@ packages:
 overrides:
   human-id: "4.1.1"
   zod-to-json-schema: "3.24.6"
+  # Security floors for transitive deps (dependency audit, 2026-09). Each selector lifts only the
+  # vulnerable range of one version line; drop an entry once its parents resolve past it.
+  # Remove when hardhat-gas-reporter/eth-gas-reporter ship a fixed axios (GHSA-4hjh-wcwx-xvwj et al.).
+  "axios@>=1.0.0 <1.18.0": "^1.18.0"
+  # GHSA-v6h2-p8h4-qcjw, GHSA-f886-m6hf-6m8v, GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895
+  "brace-expansion@>=1.0.0 <1.1.18": "^1.1.18"
+  "brace-expansion@>=2.0.0 <2.1.4": "^2.1.4"
+  # GHSA-pxg6-pf52-xh8x — @sentry/node (hardhat) pins 0.4.x; no fixed 0.4 release.
+  "cookie@<0.7.0": "^0.7.0"
+  # GHSA-73rr-hh4g-fpgx
+  "diff@>=4.0.0 <4.0.4": "^4.0.4"
+  "diff@>=5.0.0 <5.2.2": "^5.2.2"
+  # GHSA-2w6w-674q-4c4q (critical) and seven more — solidity-coverage via sc-istanbul.
+  "handlebars@>=4.0.0 <4.7.9": "^4.7.9"
+  # GHSA-w7fw-mjwx-w883, GHSA-6rw7-vpxm-498p, GHSA-q8mj-m7cp-5q26, GHSA-4mjr-xmp4-gh2g
+  "qs@>=6.0.0 <6.16.0": "^6.16.0"
+  # GHSA-52f5-9888-hmc6, GHSA-ph9p-34f9-6g65 — solc pins tmp 0.0.33; no fixed 0.0.x release.
+  "tmp@<0.2.6": "^0.2.6"
+  # GHSA-vrm6-8vpv-qv8q et al. (11 advisories) — hardhat, hardhat-verify and testcontainers ask for
+  # undici 5; no fixed 5.x release exists.
+  "undici@>=5.0.0 <6.28.0": "^6.28.0"
 
 # Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
 minimumReleaseAge: 1440
