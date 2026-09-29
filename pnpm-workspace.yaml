@@ -84,6 +84,9 @@ overrides:
   "preact@>=10.0.0 <10.26.10": "^10.26.10"
   # socket.io-parser — @metamask/sdk via wagmi connectors
   "socket.io-parser@>=4.0.0 <4.2.7": "^4.2.7"
+  # Critical — ethereum-cryptography (hardhat), create-hash/create-hmac and @coinbase/wallet-sdk.
+  "pbkdf2@>=3.0.0 <3.1.3": "^3.1.3"
+  "sha.js@>=2.0.0 <2.4.12": "^2.4.12"
 
 # Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
 minimumReleaseAge: 1440

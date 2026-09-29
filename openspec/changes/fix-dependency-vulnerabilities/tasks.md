@@ -37,8 +37,8 @@
 
 ## 6. Critical severity
 
-- [ ] 6.1 Clear `pbkdf2` and `sha.js` (ethereum-cryptography, create-hash/hmac, @coinbase/wallet-sdk) with scoped overrides
-- [ ] 6.2 `pnpm install`; run the per-level gates; fix regressions
+- [x] 6.1 Clear `pbkdf2` and `sha.js` (ethereum-cryptography, create-hash/hmac, @coinbase/wallet-sdk) with scoped overrides
+- [x] 6.2 `pnpm install`; run the per-level gates; fix regressions
 
 ## 7. Verification
 
