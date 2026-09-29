@@ -4,7 +4,7 @@
       "name": "local devnet",
       "chainId": 31337,
       "rpcUrl": "http://localhost:8545",
-      "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+      "sponsorshipPaymaster": "0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8",
       "refreshSeconds": 10
     }
   ]

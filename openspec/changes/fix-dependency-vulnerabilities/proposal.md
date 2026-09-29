@@ -15,11 +15,12 @@ workspace's pnpm dependencies and fix them — so this change turns that into a 
 - Resolve transitive advisories by bumping the parent where possible, otherwise by pinned entries in the
   `pnpm-workspace.yaml` `overrides` block (the existing mechanism, today carrying `human-id` and `zod-to-json-schema`).
 - **BREAKING (contract addresses)**: bump `@openzeppelin/contracts` and `@openzeppelin/contracts-upgradeable`
-  5.3.0 → ≥5.4.0. OZ is compiled into `GianoPaymaster`, `GianoPaymasterDeployer` and `PrivateERC20`, so their bytecode —
-  and therefore their CREATE2 addresses — change. This produces a new canonical freeze for the paymaster trio
-  (`CANONICAL_SPONSORSHIP_PAYMASTER`, `…_IMPLEMENTATION`, `CANONICAL_PAYMASTER_DEPLOYER`) and a new test ERC-20 address.
-  The smart-account factory and implementation do not import OZ, so **user account addresses do not move**. Approved by
-  the product owner on 2026-09-29 ("it's ok to change the addresses right now").
+  5.3.0 → 5.4.0. OZ 5.4 emits `mcopy`, so the canonical EVM target moves from `paris` to `cancun`, which changes the
+  bytecode of **every** Giano contract. That makes a new canonical freeze for all of them: wallet factory and
+  implementation (so user account addresses move), the paymaster trio, the test paymaster and the test ERC-20. Approved
+  by the product owner on 2026-09-29: Giano is not live, and every chain will be redeployed ("we can redeploy
+  everything, that's why we should update everything now that it's not live yet"). Dev and local environments must
+  keep working throughout.
 - Keep the supply-chain cooldown (`minimumReleaseAge: 1440`). A fixed version younger than 24h is either waited out or
   added to `minimumReleaseAgeExclude` per package, decided case by case — never by lowering the threshold.
 - Ship one PR whose description is the command's final report: packages changed (each paired with its advisory),
@@ -42,10 +43,11 @@ workspace's pnpm dependencies and fix them — so this change turns that into a 
   `pnpm-workspace.yaml` `overrides` / `minimumReleaseAgeExclude` extended.
 - **Out of scope**: the `package-lock.json` / `yarn.lock` files inside git submodules (`packages/contracts/lib/*`,
   `vendor/account-abstraction`) — upstream code we pin by commit, not install from.
-- **Contracts**: `packages/contracts/canonical.ts`, `addresses.ts` (test ERC-20 per chain), `generated.ts`, e2e devnet
-  `addresses.json` / `state.json`, and every place the old paymaster address is hard-coded (`deploy/docker-compose.*.yml`,
-  `infra/iac/ecs_services.vars.tf`, `services/paymaster-admin/public/config.json`, `docs/E2E-DEV-KEYS.md`,
-  `packages/paymaster-sdk/test/client-logs.test.ts`). The committed test ERC-20 on chain 381185 goes stale and needs an
-  operator redeploy; no committed chain carries a paymaster deployment yet.
+- **Contracts**: `hardhat.config.ts` / `foundry.toml` (`evmVersion: cancun`), `canonical.ts`, `address-overrides.json`
+  (new `pendingDeployment` list for Base, Base Sepolia and Sepolia, honoured by `scripts/generate-addresses.ts` and the
+  `determinism` workflow), `addresses.ts`, `generated.ts`, e2e devnet `addresses.json` / `state.json`, and every config,
+  doc and fixture that names an old address (compose files, `infra/iac`, paymaster-admin and custom-example configs,
+  e2e and paymaster-sdk tests, developer and infrastructure specs). Operators redeploy Base, Base Sepolia, Sepolia and
+  381185 before launch; the superseded journals stay committed as history until then.
 - **Tests**: vitest 4 and happy-dom 20 may require test-config or test-code adjustments in the six vitest packages.
 - **CI**: no workflow changes; the existing `ci`, `determinism` and `e2e` workflows are the regression gates.

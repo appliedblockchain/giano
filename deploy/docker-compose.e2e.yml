@@ -140,17 +140,17 @@ services:
             "chainId": 31337, "name": "Devnet A",
             "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+            "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
+            "sponsorshipPaymaster": "0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8",
+            "policy": { "allowedPaymasters": ["0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8"] }
           },
           {
             "chainId": 31338, "name": "Devnet B",
             "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+            "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
+            "sponsorshipPaymaster": "0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8",
+            "policy": { "allowedPaymasters": ["0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8"] }
           }
         ]
       LOG_LEVEL: info
@@ -230,8 +230,8 @@ services:
       # anvil and alto are dialled by wallet-api only. Sponsorship via the production paymaster.
       GIANO_CHAINS: |
         [
-          { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" },
-          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" }
+          { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x072aF5D2f787533C5114020D50bf847aB6146bE9", "sponsorship": "service" },
+          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x072aF5D2f787533C5114020D50bf847aB6146bE9", "sponsorship": "service" }
         ]
       # wallet-api base URL nginx proxies /api and /.well-known/webauthn to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
@@ -267,10 +267,10 @@ services:
       GIANO_DEPLOYMENTS: >-
         [{"name":"e2e devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
           "walletRpcUrl":"http://localhost:8545",
-          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5},
+          "sponsorshipPaymaster":"0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8","refreshSeconds":5},
          {"name":"e2e devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
           "walletRpcUrl":"http://localhost:8546",
-          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5}]
+          "sponsorshipPaymaster":"0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8","refreshSeconds":5}]
 
   # Installs each demo tenant's sponsorship rules through the real admin API, then verifies its own
   # work. A dependency of readiness rather than fire-and-forget: wallet-web will not start until this

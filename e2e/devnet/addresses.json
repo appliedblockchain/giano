@@ -1,15 +1,15 @@
 {
   "chainId": 31337,
   "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-  "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-  "implementation": "0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56",
-  "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-  "sponsorshipPaymasterImplementation": "0xFc6e7a0b9b5E9E27C8E2caf8961A13FD16ebd818",
+  "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
+  "implementation": "0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72",
+  "sponsorshipPaymaster": "0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8",
+  "sponsorshipPaymasterImplementation": "0xA37b6d278Db64F92855724076458853B2c5B0d80",
   "sponsorshipSigner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   "sponsorshipSignerKey": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
   "paymasterRoleAdmin": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "testPaymaster": "0xCbc040482c1dd07D533800874DC37De7b18c8092",
-  "testErc20": "0x9967bDf929856643e92EF65eefdE1fF8250774D8",
+  "testPaymaster": "0x6656757955aB8a4D86aCAD8D8bDc76cCa678d57c",
+  "testErc20": "0x8C32168E75533c7981BB8F287B6426A37fC39CbA",
   "tenants": [
     {
       "slug": "stock",

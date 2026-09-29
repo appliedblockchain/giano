@@ -67,19 +67,25 @@ each such exclusion decided per package and listed in the final report.
 - **THEN** it states whether a minimum release age is configured and names every package excluded from it
 
 ### Requirement: Address-moving bumps produce a new canonical freeze
-A dependency bump that changes the bytecode of a CREATE2-deployed contract SHALL be carried through as a new canonical
-freeze in the same change: the frozen canonical constants, the contracts address registry, the generated ABIs, the local
-devnet state and every configuration that names an affected address SHALL all agree with a fresh deterministic
-deployment. The smart-account factory and implementation addresses SHALL NOT change as a side effect of such a bump.
+A dependency bump that changes the bytecode of a CREATE2-deployed contract — including a change to the compiler
+identity it forces, such as the EVM target — SHALL be carried through as a new canonical freeze in the same change: the
+frozen canonical constants, the contracts address registry, the generated ABIs, the local devnet state and every
+configuration, document and test fixture that names an affected address SHALL all agree with a fresh deterministic
+deployment. Such a freeze is acceptable only while no chain is live.
 
 #### Scenario: Determinism check after the bump
 - **WHEN** the contracts are recompiled with the canonical compiler settings and redeployed on a fresh local chain
 - **THEN** every deployed CREATE2 address matches its committed canonical constant and registry entry
 
-#### Scenario: User account addresses are stable
-- **WHEN** a passkey that resolved to a smart-account address before the change is resolved after it
-- **THEN** it resolves to the same address
+#### Scenario: The local environment keeps working
+- **WHEN** the local devnet and end-to-end stacks are brought up from the committed state after the freeze
+- **THEN** they deploy nothing new, resolve every contract at its new canonical address, and the end-to-end suite passes
 
-#### Scenario: A committed chain goes stale
-- **WHEN** a committed chain's registry entry names a contract whose canonical address moved
-- **THEN** the final report lists that chain and contract as needing an operator redeploy
+#### Scenario: A served chain is not yet redeployed
+- **WHEN** a chain the registry serves still has only a journal from the superseded build
+- **THEN** it is recorded as pending canonical deployment with a reason, the registry names the new canonical
+  addresses for it, the determinism check skips it, and the final report lists it as needing an operator redeploy
+
+#### Scenario: A pending chain is redeployed
+- **WHEN** a canonical journal is committed for a chain still recorded as pending
+- **THEN** regenerating the registry fails until the pending entry is removed

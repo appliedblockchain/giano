@@ -61,7 +61,8 @@ jobs:
           # committed registry chain — not just one reference chain, which could itself be wrong
           # (salt 0xAB…AB, identical bytecode ⇒ identical CREATE2 address on every chain, MC-27).
           # Chains recorded as nonCanonical in address-overrides.json are excluded, each with a
-          # reason — exclusion is a decision, not an omission (MC-28).
+          # reason — exclusion is a decision, not an omission (MC-28). Chains under pendingDeployment
+          # (not yet redeployed since the latest freeze) are skipped the same way.
           node --input-type=module -e "
             import fs from 'node:fs';
             const KEYS = { 'GianoAccountFactory#GianoSmartWalletFactory': 'CANONICAL_FACTORY', 'GianoAccountFactory#GianoSmartWallet': 'CANONICAL_IMPLEMENTATION' };
@@ -82,6 +83,7 @@ jobs:
             }));
             const overrides = JSON.parse(fs.readFileSync('address-overrides.json', 'utf8'));
             const nonCanonical = overrides.nonCanonical ?? {};
+            const pending = overrides.pendingDeployment ?? {};
             const local = JSON.parse(fs.readFileSync('ignition/deployments/chain-31337/deployed_addresses.json','utf8'));
             for (const [key, name] of Object.entries(ALL_KEYS)) {
               if (!local[key]) { console.error('DETERMINISM FAILURE:', key, 'missing from the fresh deployment'); process.exit(1); }
@@ -95,6 +97,7 @@ jobs:
               const match = /^chain-(\d+)\$/.exec(dir);
               if (!match || match[1] === '31337') continue;
               if (nonCanonical[match[1]]) { console.log('SKIP chain', match[1], '(non-canonical):', nonCanonical[match[1]].slice(0, 80) + '…'); continue; }
+              if (pending[match[1]]) { console.log('SKIP chain', match[1], '(pending canonical deployment):', pending[match[1]].slice(0, 80) + '…'); continue; }
               const committed = JSON.parse(fs.readFileSync('ignition/deployments/' + dir + '/deployed_addresses.json','utf8'));
               for (const [key, name] of Object.entries(ALL_KEYS)) {
                 // A committed chain must carry the wallet pair; the paymaster keys are checked

@@ -64,7 +64,7 @@ variable "entrypoint_address" {
 variable "paymaster_address" {
   description = "the deployed GianoPaymaster proxy address for this chain — §13.1, deploy it BEFORE the first apply that enables sponsorship"
   type        = string
-  default     = "0xf98b56de62ce88cEb70A9155582248cDBf2D0718"
+  default     = "0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8"
 }
 
 # ⚠ REQUIRED for wallet-byo only (§14.5) — its bundle has no registry dependency, unlike
@@ -72,7 +72,7 @@ variable "paymaster_address" {
 variable "factory_address" {
   description = "GianoSmartWalletFactory address — required by wallet-byo's serve.mjs, which has no contracts-registry dependency"
   type        = string
-  default     = "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050"
+  default     = "0x072aF5D2f787533C5114020D50bf847aB6146bE9"
 }
 
 # rpc_origin / rpc_b_origin (wallet-web's CSP connect-src for direct browser RPC) are gone: the

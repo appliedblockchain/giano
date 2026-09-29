@@ -61,14 +61,24 @@ determinism recompute after the OZ level, and the Playwright e2e suite once on t
 the gates run on the unmodified branch. A gate that already fails there is recorded as pre-existing and never blamed on
 a bump.
 
-**D5 — The OZ re-freeze happens in the level where OZ is bumped, as one commit.**
-Sequence: bump both OZ packages to the same ≥5.4.0 version (the upgradeable package is pinned exactly today; keep it
-exact) → `hh:compile` → run the determinism workflow's local deploy on a fresh anvil → write the new paymaster trio into
-`canonical.ts` and the new test ERC-20 into `addresses.ts` → regenerate `e2e/devnet/addresses.json` / `state.json` with
-`generate-state.mjs` → replace the old literals everywhere `git grep` finds them (compose files, `infra/iac` vars,
-paymaster-admin `config.json`, `docs/E2E-DEV-KEYS.md`, the paymaster-sdk test fixture). Update the freeze comment in
-`canonical.ts` to say which build it was frozen from. Doing all of this in one commit keeps `git bisect` on a tree
-whose addresses are consistent.
+**D5 — The OZ re-freeze happens in the level where OZ is bumped, and covers the whole contract set.**
+OZ 5.4's `SignatureChecker` imports `Bytes.sol`, which uses `mcopy`, so it can't compile for `paris`. The EVM target
+moves to `cancun` in both Hardhat (canonical) and Foundry (tests), and both OZ packages are pinned exactly to 5.4.0, so a
+later install can't drift the bytecode. Sequence: compile → run the determinism deploy on a fresh anvil → write every
+new address into `canonical.ts` (with a freeze comment naming this build) → regenerate the e2e devnet state with the
+pinned anvil (`devnet:generate`) → replace the old literals wherever `git grep` finds them, except in the historical
+ignition journals and analysis docs. *Alternative rejected*: keeping OZ 5.3.0 as an unreachable residual (the
+vulnerable `Bytes.lastIndexOf` isn't compiled into any Giano contract on 5.3.0). The product owner chose to re-freeze
+while nothing is live.
+
+**D5a — Pending chains stay in the registry at their new canonical addresses.** Base, Base Sepolia and Sepolia carry
+journals from the superseded build. Marking them `nonCanonical` would drop them from the registry and break every config
+and tool that defaults to them (wallet-api `openapi:check`, the MC-46 multichain test, compose and AWS env defaults). A
+new `pendingDeployment` list in `address-overrides.json` instead has the generator emit the canonical factory and
+implementation for those chains while ignoring their stale journal, and the determinism workflow skips them. The
+generator refuses once a canonical journal lands for a pending chain, so the entry can't outlive the redeploy.
+*Alternative rejected*: rewriting the committed journals to the new addresses, which would record deployments that
+don't exist.
 
 **D6 — Changesets.**
 The published packages whose shipped constants or dependency ranges change (`giano-contracts` for the new canonical
@@ -99,14 +109,14 @@ moved constant and the chains needing an operator redeploy.
 
 ## Migration Plan
 
-1. Merge the PR (a regular squash or merge; nothing needs ordering against other services).
-2. Operators redeploy `PrivateERC20` on chain 381185, the only committed chain with a test ERC-20, and update its
-   ignition record. No committed chain has a paymaster deployment, so there's nothing to redeploy for the paymaster.
-3. Environments that set the paymaster address through env/Terraform vars pick up the new value on their next
-   deploy.
+1. Merge the PR. Local and e2e stacks come up on the regenerated devnet state with no extra steps.
+2. Before launch, operators deploy the frozen canonical build (`hh:deploy`, plus the paymaster module where sponsorship
+   is served) to Base, Base Sepolia and Sepolia, commit each new journal, and remove the chain from `pendingDeployment`.
+   381185 stays `nonCanonical` until it is redeployed the same way.
+3. Environments that set the paymaster address through env or Terraform vars pick up the new value on their next deploy.
 
-Rollback: revert the PR. The old addresses come back with it, and nothing on-chain depends on the new ones until step 2.
+Rollback: revert the PR. Nothing on-chain depends on the new addresses until step 2.
 
 ## Open Questions
 
-- Who owns the operator redeploy on chain 381185? This can be settled at PR review; it doesn't change the work.
+- Who runs the pre-launch redeploys (Base, Base Sepolia, Sepolia, 381185)? This can be settled at PR review; it doesn't change the work.

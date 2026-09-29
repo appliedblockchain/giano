@@ -72,12 +72,12 @@ Deterministic: baked into `e2e/devnet/state.json` and mirrored in `e2e/devnet/ad
 | Contract | Address |
 | --- | --- |
 | EntryPoint v0.7 (canonical, all chains) | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` |
-| `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` |
-| **`GianoPaymaster` (proxy)** | `0xf98b56de62ce88cEb70A9155582248cDBf2D0718` |
-| `GianoPaymaster` implementation | `0xFc6e7a0b9b5E9E27C8E2caf8961A13FD16ebd818` |
-| `PermissivePaymaster` (test only) | `0xCbc040482c1dd07D533800874DC37De7b18c8092` |
-| Test ERC-20 | `0x9967bDf929856643e92EF65eefdE1fF8250774D8` |
+| `GianoSmartWalletFactory` | `0x072aF5D2f787533C5114020D50bf847aB6146bE9` |
+| `GianoSmartWallet` implementation | `0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72` |
+| **`GianoPaymaster` (proxy)** | `0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8` |
+| `GianoPaymaster` implementation | `0xA37b6d278Db64F92855724076458853B2c5B0d80` |
+| `PermissivePaymaster` (test only) | `0x6656757955aB8a4D86aCAD8D8bDc76cCa678d57c` |
+| Test ERC-20 | `0x8C32168E75533c7981BB8F287B6426A37fC39CbA` |
 
 The **proxy** address is what tenants fund and what the admin console and `USEROP_ALLOWED_PAYMASTERS`
 point at. The implementation address changes on every upgrade; the proxy must not.

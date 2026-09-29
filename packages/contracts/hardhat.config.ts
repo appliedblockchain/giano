@@ -25,6 +25,9 @@ const config: HardhatUserConfig = {
             runs: 200,
           },
           viaIR: true,
+          // Part of the canonical compiler identity (canonical.ts). Cancun because OpenZeppelin ≥5.4
+          // emits `mcopy`; changing it moves every CREATE2 address.
+          evmVersion: 'cancun',
         },
       },
     ],

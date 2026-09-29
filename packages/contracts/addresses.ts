@@ -33,18 +33,18 @@ export type GianoDeployment = {
 export const gianoAddresses: Record<number, GianoDeployment> = {
   8453: {
     entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-    factory: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050',
-    implementation: '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56',
+    factory: '0x072aF5D2f787533C5114020D50bf847aB6146bE9',
+    implementation: '0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72',
   },
   84532: {
     entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-    factory: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050',
-    implementation: '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56',
+    factory: '0x072aF5D2f787533C5114020D50bf847aB6146bE9',
+    implementation: '0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72',
   },
   11155111: {
     entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-    factory: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050',
-    implementation: '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56',
+    factory: '0x072aF5D2f787533C5114020D50bf847aB6146bE9',
+    implementation: '0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72',
   },
 };
 
