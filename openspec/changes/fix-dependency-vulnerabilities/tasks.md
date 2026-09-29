@@ -42,13 +42,13 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `pnpm install --frozen-lockfile` succeeds with no lockfile change
-- [ ] 7.2 Re-run `pnpm audit` and diff against the baseline: zero critical/high unless listed as accepted residuals with reasons
-- [ ] 7.3 Bring up the e2e stack from the committed devnet state and run the full Playwright suite (proves the local environment works on the new addresses)
-- [ ] 7.4 Add changesets per D6: `giano-contracts` for the new canonical addresses (flagged breaking for anyone who hard-coded paymaster addresses), plus any published package whose runtime dependency ranges moved
+- [x] 7.1 `pnpm install --frozen-lockfile` succeeds with no lockfile change
+- [x] 7.2 Re-run `pnpm audit` and diff against the baseline: zero critical/high unless listed as accepted residuals with reasons
+- [x] 7.3 Bring up the e2e stack from the committed devnet state and run the full Playwright suite (proves the local environment works on the new addresses)
+- [x] 7.4 Add changesets per D6: `giano-contracts` for the new canonical addresses (flagged breaking for anyone who hard-coded paymaster addresses), plus any published package whose runtime dependency ranges moved
 
 ## 8. PR
 
-- [ ] 8.1 Let the command open one draft PR via `ae-open-pr`, with its final report as the body (packages changed with advisories, accepted residuals, cooldown status and exclusions, Jira skipped), plus a "Contract addresses" section (old → new; chain 381185 test ERC-20 needs an operator redeploy)
-- [ ] 8.2 Confirm the `ci`, `determinism` and `e2e` workflows are green on the PR
+- [x] 8.1 Let the command open one draft PR via `ae-open-pr`, with its final report as the body (packages changed with advisories, accepted residuals, cooldown status and exclusions, Jira skipped), plus a "Contract addresses" section (old → new; chain 381185 test ERC-20 needs an operator redeploy)
+- [x] 8.2 Confirm the `ci`, `determinism` and `e2e` workflows are green on the PR
 - [ ] 8.3 Announce in `#giano-dev`
