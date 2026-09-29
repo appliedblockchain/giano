@@ -31,15 +31,14 @@
 
 ## 5. High severity
 
-- [ ] 5.1 Fix the high packages: `drizzle-orm` → ≥0.45.2 in wallet-api, plus transitive `glob`, `minimatch`, `brace-expansion`, `preact`, `socket.io-parser`, `defu`, `immutable`, `@grpc/grpc-js`, `form-data`, `adm-zip`, `fast-uri`, `find-my-way`, `@fastify/static`, `nanoid`, `browserslist`, and any others not already cleared at a lower level
-- [ ] 5.2 Check drizzle migrations and queries still match (wallet-api tests, `openapi:check`)
-- [ ] 5.3 `pnpm install`; run the per-level gates; fix regressions before moving on
+- [x] 5.1 Fix the high packages: `drizzle-orm` → ^0.45.2 in wallet-api and `happy-dom` → ^20.8.9 in wallet-kit and wallet-transport (its lowest advisory is high, per D3), plus scoped overrides for `@grpc/grpc-js`, `adm-zip`, `brace-expansion` 5, `browserslist`, `fast-uri` 3/4, `find-my-way`, `form-data` 2, `glob` 10, `immutable`, `minimatch` 3/5/9, `preact`, `socket.io-parser`
+- [x] 5.2 drizzle ≥0.44 wraps driver errors in `DrizzleQueryError`: the ledger's unique-violation check now follows `cause`, so a duplicate reservation is refused again rather than thrown
+- [x] 5.3 `pnpm install`; run the per-level gates; fix regressions before moving on
 
 ## 6. Critical severity
 
-- [ ] 6.1 Bump `happy-dom` → ≥20.8.9 wherever it is a direct devDependency (wallet-kit, wallet-transport, and any other vitest package) and fix the test environment where needed
-- [ ] 6.2 Clear the remaining critical transitive packages: `pbkdf2`, `sha.js`, `form-data`, `handlebars`, `protobufjs` (scoped overrides per D2 if no parent fix)
-- [ ] 6.3 `pnpm install`; run the per-level gates; fix regressions
+- [ ] 6.1 Clear `pbkdf2` and `sha.js` (ethereum-cryptography, create-hash/hmac, @coinbase/wallet-sdk) with scoped overrides
+- [ ] 6.2 `pnpm install`; run the per-level gates; fix regressions
 
 ## 7. Verification
 
