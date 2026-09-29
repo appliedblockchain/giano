@@ -3,6 +3,7 @@ import {
   createWalletRuntimes,
   type PendingRequest,
   type SponsorshipPreflight,
+  type TransactionDescription,
   type TransactionRequest,
 } from '@appliedblockchain/giano-wallet-kit';
 import { walletConfig } from './config';
@@ -26,11 +27,13 @@ let busy = false;
 let managing = false;
 /** null while the sponsorship pre-flight is still in the air; nothing is approvable until then. */
 let preflight: SponsorshipPreflight | null = { state: 'not-applicable' };
+/** null while the kit is still describing the transaction; nothing is approvable until then either. */
+let description: TransactionDescription | null = null;
 
 const rerender = () => {
   if (managing) return; // the management view owns the root while it is open
   const pending = host.requests.current;
-  render(root, pending && withBusy(pending), busy, preflight);
+  render(root, pending && withBusy(pending), busy, preflight, description);
 };
 
 /** Marks the popup busy after approval, while the provider runs the ceremony. */
@@ -70,6 +73,18 @@ async function runSponsorshipPreflight(pending: PendingRequest): Promise<void> {
   rerender();
 }
 
+/** Asks the kit what the transaction does; the BYO UI only renders the answer (WK-30). */
+async function runDescription(pending: PendingRequest): Promise<void> {
+  const tx = (Array.isArray(pending.params) ? pending.params[0] : pending.params) as TransactionRequest | undefined;
+  description = null;
+  rerender();
+  const result = await pending.runtime.describeTransaction(tx ?? {});
+  if (host.requests.current !== pending) return;
+  description = result;
+  if (result.kind === 'unknown') console.warn('[giano-byo] transaction not described', { reason: result.reason, selector: result.selector });
+  rerender();
+}
+
 function openManage(onClose?: () => void) {
   managing = true;
   renderManage(root, {
@@ -96,7 +111,11 @@ host.requests.subscribe((pending) => {
     return;
   }
   preflight = { state: 'not-applicable' };
-  if (pending?.kind === 'transaction') void runSponsorshipPreflight(pending);
+  description = null;
+  if (pending?.kind === 'transaction') {
+    void runSponsorshipPreflight(pending);
+    void runDescription(pending);
+  }
   rerender();
 });
 

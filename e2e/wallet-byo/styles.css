@@ -84,3 +84,8 @@ button.secondary {
   color: #a08d78;
   font-size: 13px;
 }
+
+/* transaction description (kit describeTransaction) */
+.intent { font-size: 17px; font-weight: 700; margin: 10px 0 6px; overflow-wrap: anywhere; }
+.field { font-family: ui-monospace, monospace; font-size: 12.5px; margin: 2px 0; overflow-wrap: anywhere; }
+.notice { margin: 8px 0; padding: 8px 10px; border: 1px dashed currentColor; border-radius: 6px; font-size: 12.5px; }

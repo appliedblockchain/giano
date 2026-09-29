@@ -23,7 +23,23 @@ export const chainDescriptorSchema = z.object({
   name: z.string().min(1),
   /** Read path. */
   rpcUrl: z.string().url(),
+  /**
+   * What `value` is denominated in on this chain, for anything that shows an amount to a user.
+   * Optional: absent means ETH with 18 decimals, which is what every chain Giano ships with uses.
+   */
+  nativeCurrency: z
+    .object({
+      symbol: z.string().min(1),
+      decimals: z.number().int().min(0).max(36),
+      name: z.string().min(1).optional(),
+    })
+    .optional(),
 });
+
+export type NativeCurrency = NonNullable<ChainDescriptor['nativeCurrency']>;
+
+/** The default when a descriptor names no native currency. */
+export const DEFAULT_NATIVE_CURRENCY = { symbol: 'ETH', decimals: 18, name: 'Ether' } as const;
 
 export type ChainDescriptor = z.infer<typeof chainDescriptorSchema>;
 

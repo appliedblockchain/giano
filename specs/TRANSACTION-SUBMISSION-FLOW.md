@@ -100,7 +100,11 @@ sequenceDiagram
         API-->>GP: { x, y }  (scoped to session.userId)
         Note over GP,Acct: rebuild smart account from stored<br/>pubkey — NO passkey prompt here
     end
-    Host->>User: Show ReviewTransaction<br/>(to, token, amount, pinned dApp origin)
+    Host->>API: GET /api/v1/tx-mappings?chainId=<br/>(Origin ⇒ tenant, no session; cached 60 s)
+    API-->>Host: tenant's ERC-7730 mappings
+    Note over Host: runtime.describeTransaction(tx):<br/>tenant mapping → built-in ERC-20/721 → unknown<br/>token symbol/decimals read via the chain client
+    Host->>User: Show ReviewTransaction<br/>intent "Send 10.5 USDC to 0x1234…abcd", fields, network,<br/>pinned dApp origin — raw calldata ONLY when unknown
+    Note over Host,User: Approve appears only once the description<br/>AND the sponsorship pre-flight have settled
     User-->>Host: Approve
     Host->>GP: request eth_sendTransaction
 

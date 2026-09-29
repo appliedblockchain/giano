@@ -217,6 +217,11 @@ services:
       # come up, rather than coming up with a wallet that refuses every transaction.
       sponsorship-provisioner:
         condition: service_completed_successfully
+      # Same gate, same reasoning: the wallet is what renders a transaction description, so a
+      # wallet reachable before its tenant's mappings are published would show raw calldata for
+      # as long as the race lasted.
+      tx-mapping-provisioner:
+        condition: service_completed_successfully
     ports:
       - '8081:8080'
     environment:
@@ -282,4 +287,22 @@ services:
     environment:
       WALLET_API_URL: http://wallet-api:8080
     command: ['node', 'provision-sponsorship.mjs']
+    restart: 'no'
+
+  # Publishes each demo tenant's ERC-7730 transaction-display mappings through the real admin API,
+  # then reads them back. Gated into readiness the same way the sponsorship provisioner is, and for
+  # the same reason: the mappings live in the database rather than in the baked devnet state, so a
+  # stack brought up without this step shows raw calldata in the review screen — which reads as a
+  # broken feature rather than an unconfigured one.
+  tx-mapping-provisioner:
+    image: node:22-alpine
+    depends_on:
+      wallet-api:
+        condition: service_healthy
+    volumes:
+      - ../e2e/devnet:/provision:ro
+    working_dir: /provision
+    environment:
+      WALLET_API_URL: http://wallet-api:8080
+    command: ['node', 'provision-tx-mappings.mjs']
     restart: 'no'

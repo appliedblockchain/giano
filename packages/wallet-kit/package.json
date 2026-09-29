@@ -59,6 +59,7 @@
   },
   "dependencies": {
     "@appliedblockchain/giano-contracts": "workspace:*",
+    "@appliedblockchain/giano-tx-describe": "workspace:*",
     "@appliedblockchain/giano-wallet-core": "workspace:*",
     "@appliedblockchain/giano-wallet-transport": "workspace:*"
   },

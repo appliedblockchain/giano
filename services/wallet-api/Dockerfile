@@ -7,12 +7,15 @@ RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/tx-describe/package.json packages/tx-describe/package.json
 COPY services/wallet-api/package.json services/wallet-api/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-wallet-api...
 COPY packages/contracts packages/contracts
+COPY packages/tx-describe packages/tx-describe
 COPY services/wallet-api services/wallet-api
 # contracts: committed generated.ts/addresses.ts -> tsup only, no solc
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
+ && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-api build \
  && pnpm --filter @appliedblockchain/giano-wallet-api --legacy deploy --prod /out
 

@@ -22,6 +22,7 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/wallet-core/package.json packages/wallet-core/package.json
 COPY packages/wallet-transport/package.json packages/wallet-transport/package.json
 COPY packages/wallet-kit/package.json packages/wallet-kit/package.json
+COPY packages/tx-describe/package.json packages/tx-describe/package.json
 COPY packages/connector/package.json packages/connector/package.json
 COPY e2e/package.json e2e/package.json
 # The SPA's dependencies (esbuild, viem, wallet-core, wallet-transport, wallet-kit) are all
@@ -30,6 +31,7 @@ RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-e2e...
 COPY packages/contracts packages/contracts
 COPY packages/wallet-core packages/wallet-core
 COPY packages/wallet-transport packages/wallet-transport
+COPY packages/tx-describe packages/tx-describe
 COPY packages/wallet-kit packages/wallet-kit
 COPY packages/connector packages/connector
 COPY e2e/wallet-byo e2e/wallet-byo
@@ -39,6 +41,7 @@ COPY e2e/wallet-byo e2e/wallet-byo
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-wallet-transport build \
  && pnpm --filter @appliedblockchain/giano-wallet-core build \
+ && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-kit build
 
 FROM node:22-alpine

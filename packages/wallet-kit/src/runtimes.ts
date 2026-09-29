@@ -10,7 +10,9 @@ import {
 } from '@appliedblockchain/giano-wallet-core';
 import { createPublicClient, defineChain, http, type Chain, type PublicClient } from 'viem';
 import { createBundlerClient } from 'viem/account-abstraction';
+import type { TransactionDescription } from '@appliedblockchain/giano-tx-describe';
 import type { WalletChainConfig, WalletConfig } from './config';
+import { createTransactionDescriber } from './describe';
 
 const USER_ID_KEY = 'giano:external-user-id';
 const SESSION_KEY = 'giano:session-token';
@@ -63,6 +65,14 @@ export type WalletRuntime = {
    * for THIS chain, by this chain's runtime; the answer is never reused across chains (MC-71).
    */
   checkSponsorship: (tx: TransactionRequest) => Promise<SponsorshipPreflight>;
+  /** What `value` is denominated in on this chain; the review screen names it, never "ETH" by assumption. */
+  nativeCurrency: WalletChainConfig['nativeCurrency'];
+  /**
+   * A human-readable account of a transaction request, from the tenant's published mappings and
+   * the library's built-ins, with token symbols and decimals read from this chain. Never rejects:
+   * anything that fails degrades to a warning or an explicit `unknown` result.
+   */
+  describeTransaction: (tx: TransactionRequest) => Promise<TransactionDescription>;
 };
 
 export type WalletRuntimes = {
@@ -197,7 +207,7 @@ export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
   const runtimeFor = (chainId: number): WalletRuntime => {
     const existing = runtimes.get(chainId);
     if (existing) return existing;
-    const runtime = buildRuntime(descriptorFor(chainId), injection, externalUserId);
+    const runtime = buildRuntime(descriptorFor(chainId), injection, externalUserId, config.walletApiUrl);
     runtimes.set(chainId, runtime);
     return runtime;
   };
@@ -205,11 +215,13 @@ export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
   return { runtimeFor, servedChainIds: config.chains.map((chain) => chain.chainId), descriptorFor };
 }
 
-function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInjection, externalUserId: string): WalletRuntime {
+function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInjection, externalUserId: string, walletApiUrl: string): WalletRuntime {
+  // Older callers built a WalletChainConfig by hand without nativeCurrency; ETH is what they meant.
+  const nativeCurrency = chainConfig.nativeCurrency ?? { symbol: 'ETH', decimals: 18, name: 'Ether' };
   const chain = defineChain({
     id: chainConfig.chainId,
     name: chainConfig.name,
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    nativeCurrency: { name: nativeCurrency.name ?? nativeCurrency.symbol, symbol: nativeCurrency.symbol, decimals: nativeCurrency.decimals },
     rpcUrls: { default: { http: [chainConfig.rpcUrl] } },
   });
 
@@ -292,6 +304,13 @@ function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInject
     return !!code && code !== '0x';
   };
 
+  const describeTransaction = createTransactionDescriber({
+    chainId: chainConfig.chainId,
+    walletApiUrl,
+    publicClient: publicClient as PublicClient,
+    nativeCurrency,
+  });
+
   return {
     provider: gianoProvider,
     injection,
@@ -302,6 +321,8 @@ function buildRuntime(chainConfig: WalletChainConfig, injection: WalletApiInject
     factoryAddress: chainConfig.factoryAddress,
     isAccountDeployed,
     checkSponsorship,
+    nativeCurrency,
+    describeTransaction,
   };
 }
 

@@ -7,6 +7,7 @@
   "sponsorship": "${GIANO_SPONSORSHIP_MODE}",
   "paymasterServiceUrl": "${GIANO_PAYMASTER_SERVICE_URL}",
   "testPaymasterAddress": "${GIANO_PAYMASTER_ADDRESS}",
+  "nativeCurrency": { "symbol": "${GIANO_NATIVE_CURRENCY_SYMBOL}", "decimals": ${GIANO_NATIVE_CURRENCY_DECIMALS} },
   "allowedDappOrigins": ${GIANO_ALLOWED_DAPP_ORIGINS},
   "rpId": "${GIANO_RP_ID}",
   "branding": {

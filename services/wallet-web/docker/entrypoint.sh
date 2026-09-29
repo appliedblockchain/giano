@@ -49,6 +49,10 @@ else
   fi
   export GIANO_PAYMASTER_ADDRESS="${GIANO_PAYMASTER_ADDRESS:-}"
   export GIANO_PAYMASTER_SERVICE_URL="${GIANO_PAYMASTER_SERVICE_URL:-${GIANO_WALLET_API_URL}/v1/paymaster}"
+  # what `value` is denominated in on this chain; the review screen names it (defaults: ETH, 18).
+  # In the GIANO_CHAINS shape, set "nativeCurrency": { "symbol", "decimals" } on the descriptor instead.
+  export GIANO_NATIVE_CURRENCY_SYMBOL="${GIANO_NATIVE_CURRENCY_SYMBOL:-ETH}"
+  export GIANO_NATIVE_CURRENCY_DECIMALS="${GIANO_NATIVE_CURRENCY_DECIMALS:-18}"
 
   envsubst < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
 fi

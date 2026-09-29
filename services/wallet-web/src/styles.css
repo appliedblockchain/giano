@@ -68,6 +68,16 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
   word-break: break-all;
 }
 
+.intent { font-size: 16px; font-weight: 600; color: var(--fg); margin: 8px 0 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.note { border-left: 3px solid var(--border); padding-left: 10px; }
+.warning-card { border-color: var(--danger); }
+.warning-card h2 { color: var(--danger); }
+.technical { margin-top: 10px; font-size: 13px; }
+.technical summary { color: var(--muted); cursor: pointer; font-size: 12.5px; }
+.technical .data-box { margin-top: 8px; }
+.addr { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; word-break: break-all; text-align: right; }
+.addr:hover, .addr:focus-visible { text-decoration-color: var(--accent); outline: none; }
+
 .actions { display: flex; gap: 10px; margin-top: auto; padding-top: 16px; }
 button {
   flex: 1;

@@ -47,6 +47,11 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-wallet-transport test
       - name: Build connector
         run: pnpm --filter @appliedblockchain/giano-connector build
+      - name: Build tx-describe
+        # wallet-kit's dts build resolves this via its dist/ types — must precede it
+        run: pnpm --filter @appliedblockchain/giano-tx-describe build
+      - name: tx-describe unit tests (incl. the R1 independence check)
+        run: pnpm --filter @appliedblockchain/giano-tx-describe test
       - name: Build wallet-kit
         # wallet-web and the BYO reference both build on it (WK-30/WK-31)
         run: pnpm --filter @appliedblockchain/giano-wallet-kit build
@@ -92,6 +97,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build contracts TS surface
         run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Build tx-describe (mapping validation)
+        run: pnpm --filter @appliedblockchain/giano-tx-describe build
       - name: Typecheck
         run: pnpm --filter @appliedblockchain/giano-wallet-api typecheck
       - name: Vitest (unit + testcontainers integration)

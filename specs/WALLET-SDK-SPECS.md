@@ -79,6 +79,7 @@ interface WalletChainConfig {
   sponsorship: 'service' | 'test-paymaster' | 'off'
   paymasterServiceUrl?: string      // defaults to `${walletApiUrl}/v1/paymaster`
   testPaymasterAddress?: `0x${string}`
+  nativeCurrency?: { symbol: string; decimals: number; name?: string }  // what `value` is in; default ETH / 18
 }
 ```
 
@@ -137,6 +138,10 @@ interface WalletRuntime {
   isAccountDeployed(address: `0x${string}`): Promise<boolean>
   /** Answered before any approve button or passkey prompt is offered. */
   checkSponsorship(tx: { to?: `0x${string}`; value?: bigint; data?: `0x${string}` }): Promise<SponsorshipPreflight>
+  /** What `value` is denominated in on this chain (from the chain config; ETH / 18 by default). */
+  readonly nativeCurrency: { symbol: string; decimals: number; name?: string }
+  /** A human-readable account of a request — see §3.1. Never rejects. */
+  describeTransaction(tx: { to?: `0x${string}`; value?: bigint | `0x${string}`; data?: `0x${string}` }): Promise<TransactionDescription>
 }
 ```
 
@@ -151,6 +156,46 @@ const runtime = runtimes.runtimeFor(8453)       // built here, reused next time
 const token = runtime.injection.getSessionToken()   // null when signed out
 const deployed = await runtime.isAccountDeployed('0x1234…')
 ```
+
+### 3.1 Transaction descriptions
+
+`describeTransaction` is what the review screen renders **before** it offers approval: the
+application's own explanation of the call, or an honest "cannot explain". The runtime fetches the
+tenant's transaction display mappings from wallet-api (`GET /v1/tx-mappings?chainId=`, tenant by
+Origin, cached 60 s, stale-on-failure), merges them with the library's built-in generic ERC-20 /
+ERC-721 mappings, resolves token symbols and decimals through its own chain client (bounded, cached),
+names native amounts in `nativeCurrency`, and hands all of it to
+`@appliedblockchain/giano-tx-describe` — a library that depends on nothing else in Giano and does no
+I/O of its own.
+
+```ts
+import type { TransactionDescription } from '@appliedblockchain/giano-wallet-kit'
+
+type TransactionDescription =
+  | {
+      kind: 'described'
+      intent: string                                  // "Send 10.5 USDC to 0x1234…abcd"
+      fields: { label: string; value: string; kind: 'address' | 'amount' | 'token-amount' | 'text'; address?: string }[]
+      source: 'mapping' | 'generic' | 'native'        // tenant mapping / built-in by selector / value transfer
+      contract: string; functionSignature: string | null; selector: string | null
+      metadata?: { contractName?: string; owner?: string }
+      warnings: { code: 'generic-interface' | 'token-unresolved' | 'mappings-unavailable' | 'interpolation-failed' | 'engine'; message: string }[]
+      raw: { to: string | null; value: string; data: string }
+    }
+  | {
+      kind: 'unknown'
+      reason: 'no-mapping' | 'decode-failed' | 'contract-creation'
+      selector: string | null; contract: string | null
+      warnings: …; raw: { to: string | null; value: string; data: string }
+    }
+```
+
+What a wallet UI owes the user, and what the stock wallet does: lead with `intent` and `fields`;
+flag `source: 'generic'` as an unverified reading; show `raw.data` **only** for `kind: 'unknown'`,
+under a warning that says so; and render no approve control until this has settled *and* the
+sponsorship pre-flight has answered (§6). Nothing on this path rejects — a mapping fetch that fails
+leaves the built-ins with a `mappings-unavailable` warning, a token read that fails leaves an
+unscaled amount with `token-unresolved`.
 
 ---
 
@@ -203,7 +248,7 @@ host.requests.subscribe((pending) => {
   if (!pending) return renderIdle()
   switch (pending.kind) {
     case 'connect':     return renderConnect(pending)      // "Connect your wallet" → pending.approve()
-    case 'transaction': return renderReview(pending)       // show tx + sponsorship pre-flight
+    case 'transaction': return renderReview(pending)       // describeTransaction (§3.1) + sponsorship pre-flight (§6)
     case 'sign':        return renderSign(pending)         // show the payload
     case 'manage':      return renderManagement(pending)   // mount the management controller (§5)
   }
