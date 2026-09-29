@@ -30,7 +30,15 @@ test('stock wallet: a described transfer leads with the intent and shows no raw 
   // "Send 0 <symbol> to 0x1234…abcd": the demo transfer is to self, for nothing.
   await expect(intent).toContainText(/^Send 0 /);
   await expect(intent).toContainText(`${address.slice(0, 6)}…${address.slice(-4)}`);
-  await expect(popup.getByTestId('tx-field').filter({ hasText: 'Recipient' })).toBeVisible();
+  const recipient = popup.getByTestId('tx-field').filter({ hasText: 'Recipient' });
+  await expect(recipient).toBeVisible();
+  // Short by default, full on demand: the whole checksummed address is one click away.
+  const toggle = recipient.getByTestId('tx-address');
+  await expect(toggle).toHaveText(`${address.slice(0, 6)}…${address.slice(-4)}`);
+  await toggle.click();
+  await expect(toggle).toHaveText(new RegExp(`^${address}$`, 'i'));
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('data-expanded', 'false');
 
   await expect(popup.getByTestId('tx-raw')).toHaveCount(0);
   await expect(popup.getByTestId('tx-unknown')).toHaveCount(0);
@@ -86,6 +94,8 @@ test('BYO wallet: the same transfer is described from its tenant\'s mapping, in 
   await expect(intent).toHaveAttribute('data-source', 'mapping');
   await expect(intent).toContainText(/^Send 0 /);
   await expect(intent).toContainText(`${address.slice(0, 6)}…${address.slice(-4)}`);
+  // The BYO rendering shows the recipient in full.
+  await expect(popup.getByText(new RegExp(`Recipient: ${address}`, 'i'))).toBeVisible();
   await expect(popup.getByTestId('byo-tx-generic')).toHaveCount(0);
   await expect(popup.getByTestId('byo-tx-raw')).toHaveCount(0);
   await expect(popup.getByRole('button', { name: tenant.ui.approveTx })).toBeVisible();

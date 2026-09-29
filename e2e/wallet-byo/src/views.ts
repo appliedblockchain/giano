@@ -61,7 +61,8 @@ function transactionSummary(pending: PendingRequest, description: TransactionDes
     ];
   }
   const nodes = [el('div', { className: 'intent', dataset: { testid: 'byo-tx-intent', source: description.source } }, description.intent)];
-  for (const field of description.fields) nodes.push(el('div', { className: 'field' }, `${field.label}: ${field.value}`));
+  // A tenant UI decides its own trade-off; this one shows every address in full, always.
+  for (const field of description.fields) nodes.push(el('div', { className: 'field' }, `${field.label}: ${field.address ?? field.value}`));
   if (description.source === 'generic') {
     nodes.push(el('div', { className: 'notice', dataset: { testid: 'byo-tx-generic' } }, 'Read as a standard token action; the app has not described this contract.'));
   }

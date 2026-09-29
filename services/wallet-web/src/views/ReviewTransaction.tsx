@@ -157,9 +157,7 @@ export function ReviewTransaction({ request, runtime }: { request: PendingReques
 function Described({ description }: { description: Extract<TransactionDescription, { kind: 'described' }> }) {
   const generic = description.source === 'generic';
   const notes = description.warnings.filter((w) => w.code !== 'generic-interface' && w.code !== 'engine');
-  const contractLabel = description.metadata?.contractName
-    ? `${description.metadata.contractName} · ${shorten(description.contract)}`
-    : shorten(description.contract);
+  const addresses = description.fields.filter((field) => field.address);
 
   return (
     <>
@@ -170,17 +168,16 @@ function Described({ description }: { description: Extract<TransactionDescriptio
       {description.fields.map((field, index) => (
         <div className="kv" key={`${field.label}-${index}`} data-testid="tx-field" data-label={field.label}>
           <span className="k">{field.label}</span>
-          <span className="v" title={field.address}>
-            {field.value}
-          </span>
+          <span className="v">{field.address ? <Address full={field.address} short={field.value} /> : field.value}</span>
         </div>
       ))}
 
       {description.source !== 'native' ? (
         <div className="kv">
           <span className="k">Contract</span>
-          <span className="v" title={description.contract}>
-            {contractLabel}
+          <span className="v">
+            {description.metadata?.contractName ? `${description.metadata.contractName} · ` : ''}
+            <Address full={description.contract} short={shorten(description.contract)} />
           </span>
         </div>
       ) : null}
@@ -210,10 +207,37 @@ function Described({ description }: { description: Extract<TransactionDescriptio
             <span className="k">Function</span>
             <span className="v">{description.functionSignature}</span>
           </div>
+          {addresses.map((field, index) => (
+            <div className="kv" key={`${field.label}-${index}`}>
+              <span className="k">{field.label}</span>
+              <span className="v">{field.address}</span>
+            </div>
+          ))}
           <div className="data-box">{description.raw.data}</div>
         </details>
       ) : null}
     </>
+  );
+}
+
+/**
+ * An address, short by default and full on demand. Shortening is what makes the intent readable;
+ * the full checksummed value is what lets a careful user compare it character by character, and a
+ * click is the only thing between the two — no hover, so it works on touch as well.
+ */
+function Address({ full, short }: { full: string; short: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <button
+      type="button"
+      className="addr"
+      data-testid="tx-address"
+      data-expanded={expanded}
+      title={expanded ? 'Show short form' : 'Show full address'}
+      onClick={() => setExpanded((v) => !v)}
+    >
+      {expanded ? full : short}
+    </button>
   );
 }
 

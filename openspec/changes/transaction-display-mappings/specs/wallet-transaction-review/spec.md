@@ -38,6 +38,10 @@ When the description is not unknown, the stock wallet's transaction review SHALL
 - **WHEN** the description's source is a built-in generic mapping
 - **THEN** the screen shows the intent and a visible note that the wallet assumed a standard token interface for this contract and the application did not confirm it
 
+#### Scenario: Full address on demand
+- **WHEN** the user activates an address shown in short form
+- **THEN** the full checksummed address replaces it, and activating it again restores the short form; the technical details also list every address field in full
+
 #### Scenario: Native currency per chain
 - **WHEN** the session's chain configures a native currency other than ETH
 - **THEN** value fields use that currency's symbol, and "ETH" appears nowhere on the screen
