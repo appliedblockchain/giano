@@ -44,13 +44,13 @@
   "dependencies": {
     "@appliedblockchain/giano-contracts": "workspace:*",
     "ox": "^0.7.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^3.1.2",
+    "@vitest/coverage-v8": "^4.1.11",
     "tsup": "^8.3.5",
     "typescript": "5.5.4",
     "viem": "2.31.6",
-    "vitest": "^3.1.2"
+    "vitest": "^4.1.11"
   }
 }

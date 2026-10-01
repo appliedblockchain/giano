@@ -2870,8 +2870,8 @@ by the same CREATE2 salt on each — at the **same addresses** on both:
 | Contract | Address | On 84532? | On 11155111? |
 |---|---|---|---|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | yes (canonical, everywhere) | yes |
-| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` | **yes** — `ignition/deployments/chain-84532` | **yes** — on chain; deployment record reconstructed, see below |
-| `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` | **yes** — same | **yes** — same |
+| `GianoSmartWalletFactory` | `0x072aF5D2f787533C5114020D50bf847aB6146bE9` | **yes** — `ignition/deployments/chain-84532` | **yes** — on chain; deployment record reconstructed, see below |
+| `GianoSmartWallet` implementation | `0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72` | **yes** — same | **yes** — same |
 | `GianoPaymaster` proxy | *not frozen; CREATE2 from the fixed salt* | **no** | **no** |
 
 ⚠ The 11155111 deployment was made outside this repo and its Ignition journal was never committed to
@@ -3001,7 +3001,7 @@ own Cloud Map hostname ([§9.4](#94-service-discovery)):
     "rpcUrl": "<base sepolia quicknode endpoint>",
     "bundlerUrl": "http://bundler-base-sepolia.giano-dev.local:4337",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+    "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
     "sponsorshipPaymaster": "<the §13.1 proxy>",
     "policy": { "allowedPaymasters": ["<the §13.1 proxy>"] }
   },
@@ -3010,7 +3010,7 @@ own Cloud Map hostname ([§9.4](#94-service-discovery)):
     "rpcUrl": "<eth sepolia quicknode endpoint>",
     "bundlerUrl": "http://bundler-eth-sepolia.giano-dev.local:4337",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+    "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
     "sponsorshipPaymaster": "<the §13.1 proxy>",
     "policy": { "allowedPaymasters": ["<the §13.1 proxy>"] }
   }
@@ -3185,7 +3185,7 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 | `CHAIN_NAME` | `Base Sepolia` (tfvar `var.chain_name` — the same one `custom-example`'s `GIANO_CHAIN_NAME` already reads, [§14.4](#144-custom-example)) — **not currently wired**, see below |
 | `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
 | `CHAIN_B_NAME` | `Ethereum Sepolia` (tfvar `var.chain_b_name`) — **not currently wired**, see below |
-| `FACTORY_ADDRESS` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
+| `FACTORY_ADDRESS` | `0x072aF5D2f787533C5114020D50bf847aB6146bE9` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
 | `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
 | `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
 | `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.appliedblockchain.dev"]` — this tenant's own allowlist, which is why R9 does not reach it |

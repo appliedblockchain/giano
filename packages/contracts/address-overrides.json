@@ -1,9 +1,14 @@
 {
-  "$comment": "Per-chain overrides merged into the generated address registry (addresses.ts). Ignition deployments do not include contracts Giano does not deploy itself (e.g. the canonical EntryPoint), so they are declared here. Keys are chain ids; 'default' applies to every chain unless overridden. 'nonCanonical' lists chains whose committed deployment predates the canonical freeze (canonical.ts): they are EXCLUDED from the generated registry and from the determinism check, each with a recorded reason — exclusion is a decision, not an omission (MC-28).",
+  "$comment": "Per-chain overrides merged into the generated address registry (addresses.ts). Ignition deployments do not include contracts Giano does not deploy itself (e.g. the canonical EntryPoint), so they are declared here. Keys are chain ids; 'default' applies to every chain unless overridden. 'nonCanonical' lists chains whose committed deployment predates the canonical freeze (canonical.ts): they are EXCLUDED from the generated registry and from the determinism check, each with a recorded reason — exclusion is a decision, not an omission (MC-28). 'pendingDeployment' lists chains that will carry the canonical build but have not been redeployed since the latest freeze: the registry names the canonical factory/implementation for them and ignores their stale journal, and the determinism check skips them. Pre-launch only; remove each entry once its canonical journal is committed.",
   "default": {
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
   },
   "nonCanonical": {
     "381185": "pre-freeze deployment built against a non-canonical EntryPoint (0xB10F0BF2...); the implementation hardcodes entryPoint(), so its factory (0x3451C877...) and every address downstream diverge from the canonical build. No production accounts exist under it. Redeploy the frozen canonical build and remove this entry before serving this chain."
+  },
+  "pendingDeployment": {
+    "8453": "not live; the committed journal is the superseded paris build (factory 0x26dCd293…). Redeploy the canonical cancun build (2026-09 freeze in canonical.ts), commit its journal, and remove this entry.",
+    "84532": "not live; the committed journal is the superseded paris build (factory 0x26dCd293…). Redeploy the canonical cancun build (2026-09 freeze in canonical.ts), commit its journal, and remove this entry.",
+    "11155111": "not live; the committed journal is the superseded paris build (factory 0x26dCd293…). Redeploy the canonical cancun build (2026-09 freeze in canonical.ts), commit its journal, and remove this entry."
   }
 }

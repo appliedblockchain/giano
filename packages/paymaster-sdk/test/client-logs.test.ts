@@ -2,7 +2,7 @@ import { keccak256, toBytes, type Hex } from 'viem';
 import { describe, expect, it } from 'vitest';
 import { GianoPaymasterClient, type PaymasterPublicClient } from '../src/client';
 
-const ADDRESS = '0xf98b56de62ce88cEb70A9155582248cDBf2D0718' as const;
+const ADDRESS = '0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8' as const;
 /** Deep enough that a genesis-anchored read would be refused; the point is that it is not. */
 const HEAD = 46_979_411n;
 

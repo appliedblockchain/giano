@@ -6,6 +6,87 @@ packages:
 overrides:
   human-id: "4.1.1"
   zod-to-json-schema: "3.24.6"
+  # Security floors for transitive deps (dependency audit, 2026-09). Each selector lifts only the
+  # vulnerable range of one version line; drop an entry once its parents resolve past it.
+  # Remove when hardhat-gas-reporter/eth-gas-reporter ship a fixed axios (GHSA-4hjh-wcwx-xvwj et al.).
+  "axios@>=1.0.0 <1.18.0": "^1.18.0"
+  # GHSA-v6h2-p8h4-qcjw, GHSA-f886-m6hf-6m8v, GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895
+  "brace-expansion@>=1.0.0 <1.1.18": "^1.1.18"
+  "brace-expansion@>=2.0.0 <2.1.4": "^2.1.4"
+  # GHSA-pxg6-pf52-xh8x — @sentry/node (hardhat) pins 0.4.x; no fixed 0.4 release.
+  "cookie@<0.7.0": "^0.7.0"
+  # GHSA-73rr-hh4g-fpgx
+  "diff@>=4.0.0 <4.0.4": "^4.0.4"
+  "diff@>=5.0.0 <5.2.2": "^5.2.2"
+  # GHSA-2w6w-674q-4c4q (critical) and seven more — solidity-coverage via sc-istanbul.
+  "handlebars@>=4.0.0 <4.7.9": "^4.7.9"
+  # GHSA-w7fw-mjwx-w883, GHSA-6rw7-vpxm-498p, GHSA-q8mj-m7cp-5q26, GHSA-4mjr-xmp4-gh2g
+  "qs@>=6.0.0 <6.16.0": "^6.16.0"
+  # GHSA-52f5-9888-hmc6, GHSA-ph9p-34f9-6g65 — solc pins tmp 0.0.33; no fixed 0.0.x release.
+  "tmp@<0.2.6": "^0.2.6"
+  # GHSA-vrm6-8vpv-qv8q et al. (11 advisories) — hardhat, hardhat-verify and testcontainers ask for
+  # undici 5; no fixed 5.x release exists.
+  "undici@>=5.0.0 <6.28.0": "^6.28.0"
+  # GHSA-qj3p-xc97-xw74 — via @wagmi/connectors 5.8; 0.33.1 is what @wagmi/connectors 5.11 pins.
+  "@metamask/sdk@>=0.16.0 <0.33.1": "0.33.1"
+  "@metamask/sdk-communication-layer@>=0.16.0 <0.33.1": "0.33.1"
+  # GHSA-q6x5-8v7m-xcrf
+  "@protobufjs/utf8@<1.1.1": "^1.1.1"
+  # GHSA-2g4f-4pwh-qvx6
+  "ajv@>=8.0.0 <8.18.0": "^8.18.0"
+  # GHSA-378v-28hj-76wf
+  "bn.js@<4.12.3": "^4.12.3"
+  "bn.js@>=5.0.0 <5.2.3": "^5.2.3"
+  # follow-redirects advisory — solc and axios
+  "follow-redirects@<1.16.0": "^1.16.0"
+  # h3 advisories (moderate + high) — unstorage via WalletConnect
+  "h3@>=1.0.0 <1.15.9": "^1.15.9"
+  # js-yaml advisories (moderate + high)
+  "js-yaml@>=3.0.0 <3.15.2": "^3.15.2"
+  "js-yaml@>=4.0.0 <4.3.2": "^4.3.2"
+  # lodash advisories (moderate + high)
+  "lodash@<4.18.0": "^4.18.0"
+  # picomatch advisories (moderate + high)
+  "picomatch@>=2.0.0 <2.3.2": "^2.3.2"
+  "picomatch@>=3.0.0 <3.0.2": "^3.0.2"
+  # postcss advisory — tsup, vite
+  "postcss@>=8.0.0 <8.5.23": "^8.5.23"
+  # protobufjs advisories (critical + high + moderate) — @grpc/proto-loader, dockerode (testcontainers)
+  "protobufjs@>=7.0.0 <7.6.3": "^7.6.3"
+  # serialize-javascript advisories (moderate + high) — mocha (hardhat test); no fixed 6.x release.
+  "serialize-javascript@<7.0.5": "^7.0.5"
+  # uuid advisory — hardhat, @metamask/*, dockerode ask for 8–10; no fixed release on those lines.
+  "uuid@<11.1.1": "^11.1.1"
+  # ws advisories (moderate + high)
+  "ws@>=7.0.0 <7.5.11": "^7.5.11"
+  "ws@>=8.0.0 <8.21.0": "^8.21.0"
+  # yaml advisory
+  "yaml@>=1.0.0 <1.10.3": "^1.10.3"
+  "yaml@>=2.0.0 <2.8.3": "^2.8.3"
+  # High-severity lines (lowest advisory on each is high).
+  # @grpc/grpc-js — dockerode via testcontainers (wallet-api tests)
+  "@grpc/grpc-js@>=1.13.0 <1.13.5": "^1.13.5"
+  # adm-zip — hardhat, used only on the Windows solc download path; no fixed 0.4.x release.
+  "adm-zip@<0.6.1": "^0.6.1"
+  "brace-expansion@>=5.0.0 <5.0.9": "^5.0.9"
+  "browserslist@>=4.0.0 <4.28.7": "^4.28.7"
+  "fast-uri@>=3.0.0 <3.1.7": "^3.1.7"
+  "fast-uri@>=4.0.0 <4.1.4": "^4.1.4"
+  "find-my-way@>=9.0.0 <9.7.0": "^9.7.0"
+  # form-data (critical + high) — then-request via hardhat-gas-reporter
+  "form-data@>=2.0.0 <2.5.6": "^2.5.6"
+  "glob@>=10.0.0 <10.5.0": "^10.5.0"
+  "immutable@>=4.0.0 <4.3.9": "^4.3.9"
+  "minimatch@>=3.0.0 <3.1.4": "^3.1.4"
+  "minimatch@>=5.0.0 <5.1.8": "^5.1.8"
+  "minimatch@>=9.0.0 <9.0.7": "^9.0.7"
+  # preact — @coinbase/wallet-sdk via wagmi connectors
+  "preact@>=10.0.0 <10.26.10": "^10.26.10"
+  # socket.io-parser — @metamask/sdk via wagmi connectors
+  "socket.io-parser@>=4.0.0 <4.2.7": "^4.2.7"
+  # Critical — ethereum-cryptography (hardhat), create-hash/create-hmac and @coinbase/wallet-sdk.
+  "pbkdf2@>=3.0.0 <3.1.3": "^3.1.3"
+  "sha.js@>=2.0.0 <2.4.12": "^2.4.12"
 
 # Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
 minimumReleaseAge: 1440

@@ -39,6 +39,12 @@ function main(): void {
   // registry (MC-28), each with a recorded reason in address-overrides.json.
   const nonCanonical: Record<string, string> = (overrides.nonCanonical as Record<string, string>) ?? {};
   delete overrides.nonCanonical;
+  // Chains that will carry the canonical build but have not been (re)deployed since the freeze:
+  // the registry names the frozen canonical addresses for them and ignores any stale journal, so
+  // tooling and configs keep resolving the chain. Pre-launch only — each entry carries a reason and
+  // is removed once the real deployment is committed.
+  const pendingDeployment: Record<string, string> = (overrides.pendingDeployment as Record<string, string>) ?? {};
+  delete overrides.pendingDeployment;
 
   const chains: Record<number, Record<string, string>> = {};
 
@@ -55,6 +61,15 @@ function main(): void {
     const deployedPath = path.join(deploymentsDir, entry, 'deployed_addresses.json');
     if (!fs.existsSync(deployedPath)) continue;
     const deployed: Record<string, string> = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+    if (pendingDeployment[String(chainId)]) {
+      if (deployed['GianoAccountFactory#GianoSmartWalletFactory']?.toLowerCase() === CANONICAL_FACTORY.toLowerCase()) {
+        throw new Error(
+          `chain ${chainId}: the committed deployment is canonical now — remove it from "pendingDeployment" in address-overrides.json.`,
+        );
+      }
+      console.warn(`chain ${chainId}: stale journal ignored, pending canonical deployment: ${pendingDeployment[String(chainId)]}`);
+      continue;
+    }
 
     const record: Record<string, string> = {};
     for (const [futureId, address] of Object.entries(deployed)) {
@@ -71,6 +86,11 @@ function main(): void {
     }
 
     chains[chainId] = record;
+  }
+
+  for (const chainId of Object.keys(pendingDeployment)) {
+    if (nonCanonical[chainId]) throw new Error(`chain ${chainId}: listed as both "nonCanonical" and "pendingDeployment"`);
+    chains[Number(chainId)] = { factory: CANONICAL_FACTORY, implementation: CANONICAL_IMPLEMENTATION };
   }
 
   const defaults = overrides.default ?? {};

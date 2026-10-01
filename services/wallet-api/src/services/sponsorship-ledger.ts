@@ -247,6 +247,9 @@ export function createLedgerService(db: Db): LedgerService {
   };
 }
 
+// drizzle-orm ≥0.44 wraps the driver error in a DrizzleQueryError and keeps the pg error as `cause`.
 function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
+  if (typeof error !== 'object' || error === null) return false;
+  if ((error as { code?: string }).code === '23505') return true;
+  return isUniqueViolation((error as { cause?: unknown }).cause);
 }
