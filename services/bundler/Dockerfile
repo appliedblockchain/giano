@@ -3,6 +3,8 @@
 #   docker build -f services/bundler/Dockerfile -t ghcr.io/appliedblockchain/giano-bundler .
 FROM node:22-alpine
 RUN apk add --no-cache curl tini && npm i -g @pimlico/alto@0.0.18
+COPY services/bundler/patch-alto-precompile.cjs /patch-alto-precompile.cjs
+RUN node /patch-alto-precompile.cjs /usr/local/lib/node_modules/@pimlico/alto
 COPY services/bundler/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 4337
