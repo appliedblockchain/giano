@@ -4,6 +4,19 @@ Giano smart wallet contracts. The published npm package ships the wagmi-generate
 (`generated.ts`), the per-chain deployed address registry (`addresses.ts`) and the Solidity
 sources — consumers never need solc, Hardhat or the Foundry submodules.
 
+## Paymaster signer verification and upgrades
+
+`addSigner` records whether the signer is an ECDSA account or an ERC-1271 contract. Validation
+uses that recorded type without checking the signer's bytecode: safe-mode ERC-4337 bundlers
+reject `EXTCODESIZE` against an account with no code. Invalid ECDSA signatures, including
+estimation stubs, return signature-validation failure without calling the signer.
+
+The signer-type mapping is appended to the paymaster's storage namespace. When upgrading an
+existing proxy, existing keys default to ECDSA. Any existing ERC-1271 signer must be removed
+and re-added by `SIGNER_ADMIN_ROLE` to record its contract type. Remove and re-add a signer
+whenever its intended verification type changes. Upgrade the existing proxy through UUPS;
+deploying a replacement proxy would strand its tenant balances and funding address.
+
 ```ts
 import { gianoSmartWalletAbi, gianoSmartWalletFactoryAbi, getGianoDeployment, ENTRYPOINT_V07_ADDRESS } from '@appliedblockchain/giano-contracts';
 

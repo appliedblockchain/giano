@@ -82,6 +82,12 @@ export function trackResidentCredentials(cdp: CDPSession): VirtualCredential[] {
 
 /** Injects previously-captured resident credentials into a popup's virtual authenticator. */
 export async function seedCredentials(cdp: CDPSession, authenticatorId: string, credentials: VirtualCredential[]): Promise<void> {
+  // Each popup has a new virtual authenticator. Carry assertion counters forward
+  // so reconnecting behaves like a shared physical authenticator.
+  cdp.on('WebAuthn.credentialAsserted' as never, ((event: { credential: VirtualCredential }) => {
+    const index = credentials.findIndex((credential) => credential.credentialId === event.credential.credentialId);
+    if (index !== -1) credentials[index] = event.credential;
+  }) as never);
   for (const credential of credentials) {
     await cdp.send('WebAuthn.addCredential' as never, { authenticatorId, credential } as never);
   }

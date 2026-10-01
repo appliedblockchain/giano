@@ -3,7 +3,8 @@ import type { WalletConfig } from './config';
 import { createRequestStore, toRpcError, type RequestStore } from './requests';
 import type { WalletRuntime, WalletRuntimes } from './runtimes';
 
-const CONSENT_METHODS = new Set(['eth_sendTransaction', 'personal_sign', 'eth_sign', 'eth_signTypedData_v4']);
+const CONSENT_METHODS = new Set(['eth_sendTransaction', 'personal_sign', 'eth_sign', 'eth_signTypedData_v4', 'eth_signUserOperation', 'signed_eth_call']);
+const ACCOUNT_METHODS = new Set([...CONSENT_METHODS, 'eth_prepareUserOperation', 'eth_sendSignedUserOperation']);
 
 export type WalletHost = {
   /** Attach transport listeners and announce readiness to the opener. */
@@ -87,7 +88,7 @@ export function createHostRequestHandler({
     // single ceremony still happens when the operation is actually signed. If it
     // can't be restored, the provider will surface "Giano not connected" and the
     // dApp must reconnect via eth_requestAccounts.
-    if (CONSENT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
+    if (ACCOUNT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
       await runtime.provider.request({ method: 'giano_restoreAccount' } as never).catch(() => undefined);
     }
     if (needsConsent) {

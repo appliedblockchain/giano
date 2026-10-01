@@ -314,6 +314,8 @@ describe('transactions & user operations', () => {
     await connect(provider);
     const op = await provider.request({ method: 'eth_prepareUserOperation', params: [[{ to: '0x1111111111111111111111111111111111111111', value: 0n, data: '0x' }]] as never });
     expect(op).toMatchObject({ sender: expect.any(String) });
+    expect(op).not.toHaveProperty('account');
+    expect(() => structuredClone(op)).not.toThrow();
   });
 
   it('eth_signUserOperation and eth_sendSignedUserOperation', async () => {
@@ -322,8 +324,28 @@ describe('transactions & user operations', () => {
     const prepared = await provider.request({ method: 'eth_prepareUserOperation', params: [[{ to: '0x1111111111111111111111111111111111111111', value: 0n, data: '0x' }]] as never });
     const signature = await provider.request({ method: 'eth_signUserOperation', params: [prepared] as never });
     expect(signature).toMatch(/^0x/);
-    const hash = await provider.request({ method: 'eth_sendSignedUserOperation', params: [prepared] as never });
+    const hash = await provider.request({ method: 'eth_sendSignedUserOperation', params: [{ ...prepared, signature }] as never });
     expect(hash).toMatch(/^0x/);
+  });
+
+  it('submits a raw signed operation unchanged without preparing or signing again', async () => {
+    const { bundler } = createMockBundler();
+    const prepare = vi.spyOn(bundler, 'prepareUserOperation');
+    const submitUserOperation = vi.fn(async () => `0x${'ab'.repeat(32)}` as `0x${string}`);
+    const { provider } = buildProvider(mock.authenticator, {
+      bundler,
+      injection: createMockInjection(mock.authenticator, { submitUserOperation }),
+    });
+    await connect(provider);
+    const prepared = await provider.request({ method: 'eth_prepareUserOperation', params: [[{ to: WALLET_ADDRESS, value: 0n, data: '0x' }]] as never });
+    const signature = await provider.request({ method: 'eth_signUserOperation', params: [prepared] as never });
+    const signed = { ...prepared, signature };
+    prepare.mockClear();
+    await provider.request({ method: 'eth_sendSignedUserOperation', params: [signed] as never });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(submitUserOperation).toHaveBeenCalledWith(expect.objectContaining(signed), TEST_CHAIN_ID);
+    await expect(provider.request({ method: 'eth_sendSignedUserOperation', params: [{ ...signed, sender: '0x1111111111111111111111111111111111111111' }] as never })).rejects.toThrow('Address mismatch');
+    expect(submitUserOperation).toHaveBeenCalledOnce();
   });
 
   it('waitForUserOperationReceipt delegates to the bundler', async () => {

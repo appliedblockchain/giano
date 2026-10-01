@@ -13,6 +13,7 @@ import {UUPSUpgradeable} from '@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {EIP712Upgradeable} from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
 import {PausableUpgradeable} from '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
 import {SignatureChecker} from '@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol';
+import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import {SafeCast} from '@openzeppelin/contracts/utils/math/SafeCast.sol';
 import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
@@ -161,11 +162,15 @@ contract GianoPaymaster is
         uint16 penaltyBps;
         EnumerableSet.AddressSet signers;
         // The set of every registered tenant id, so the roster is enumerable directly from the
-        // chain rather than only reconstructable from `TenantRegistered` logs. Appended last:
+        // chain rather than only reconstructable from `TenantRegistered` logs. Appended after signers:
         // the ERC-7201 namespace makes adding a trailing field upgrade-safe (see storage-layout.mjs).
         // `bytes16` tenant ids are widened to `bytes32` for storage, since EnumerableSet has no
         // native `bytes16` set; the widening is left-aligned and round-trips losslessly.
         EnumerableSet.Bytes32Set tenantIds;
+        // Classify at registration, outside ERC-4337 validation: EXTCODESIZE on an EOA
+        // is forbidden by safe-mode bundlers. Existing signers default to ECDSA;
+        // existing ERC-1271 signers must be removed and re-added during an upgrade.
+        mapping(address signer => bool) contractSigners;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("giano.storage.Paymaster")) - 1)) & ~bytes32(uint256(0xff))
@@ -509,12 +514,16 @@ contract GianoPaymaster is
 
     function addSigner(address signer) external onlyRole(SIGNER_ADMIN_ROLE) {
         if (signer == address(0)) revert ZeroAddress();
-        if (!_s().signers.add(signer)) revert AlreadySigner(signer);
+        PaymasterStorage storage $ = _s();
+        if (!$.signers.add(signer)) revert AlreadySigner(signer);
+        $.contractSigners[signer] = signer.code.length != 0;
         emit SignerAdded(signer);
     }
 
     function removeSigner(address signer) external onlyRole(SIGNER_ADMIN_ROLE) {
-        if (!_s().signers.remove(signer)) revert NotASigner(signer);
+        PaymasterStorage storage $ = _s();
+        if (!$.signers.remove(signer)) revert NotASigner(signer);
+        delete $.contractSigners[signer];
         emit SignerRemoved(signer);
     }
 
@@ -579,7 +588,16 @@ contract GianoPaymaster is
         // The cheap set lookup first: a revoked key never reaches the cryptography.
         if (!$.signers.contains(auth.signer)) revert UnauthorisedSigner(auth.signer);
 
-        if (!SignatureChecker.isValidSignatureNow(auth.signer, _authorisationDigest(userOp, auth), pmData[OFFSET_SIGNATURE:])) {
+        bytes32 digest = _authorisationDigest(userOp, auth);
+        bytes memory signature = pmData[OFFSET_SIGNATURE:];
+        bool validSignature;
+        if ($.contractSigners[auth.signer]) {
+            validSignature = SignatureChecker.isValidERC1271SignatureNow(auth.signer, digest, signature);
+        } else {
+            (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, signature);
+            validSignature = err == ECDSA.RecoverError.NoError && recovered == auth.signer;
+        }
+        if (!validSignature) {
             // A bad signature is the one condition the bundler must read as an invalid operation
             // rather than a paymaster fault, so it is returned rather than reverted.
             return ('', SIG_VALIDATION_FAILED);

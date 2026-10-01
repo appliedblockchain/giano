@@ -130,19 +130,36 @@ async function allPositions(): Promise<Position[]> {
 }
 
 /**
- * Waits until nothing is outstanding for this tenant, so a balance read is a stable baseline.
+ * Waits until this tenant's ledger has gone quiet, so a balance read is a stable baseline.
  *
  * The ledger converges rather than updating synchronously: a settlement lands when the watcher sees
- * the event, and a reservation is released then too. Reading a balance while either is in flight
- * measures a moment, not a state.
+ * the event. Reading a balance while one is in flight measures a moment, not a state.
+ *
+ * Quiet is defined as the balance and the settlement count both holding still, because a settlement
+ * is the only thing that moves a balance. An outstanding *reservation* is a poor proxy for it: a
+ * reservation clears when its operation settles or when its TTL runs out, and
+ * SPONSORSHIP_RESERVATION_TTL_SECONDS is 300 in this stack — so an authorisation that was signed and
+ * then abandoned, which any popup closed between `pm_getPaymasterData` and submission leaves behind,
+ * keeps a tenant's reserved total above zero for five minutes while nothing at all is in flight.
  */
-async function settleAllPending(tenant: Tenant, timeoutMs = 30_000): Promise<void> {
+async function settleAllPending(tenant: Tenant, quietMs = 2_000, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  const sample = async () => `${(await getPosition(tenant)).balanceWei}/${(await getSpend(tenant)).totals.count}`;
+
+  let last = await sample();
+  let quietSince = Date.now();
+
   while (Date.now() < deadline) {
-    if (BigInt((await getPosition(tenant)).reservedWei) === 0n) return;
     await new Promise((resolve) => setTimeout(resolve, 500));
+    const current = await sample();
+    if (current !== last) {
+      last = current;
+      quietSince = Date.now();
+      continue;
+    }
+    if (Date.now() - quietSince >= quietMs) return;
   }
-  throw new Error('reservations were still outstanding after waiting — the watcher may be stalled');
+  throw new Error(`the tenant's balance was still moving after ${timeoutMs}ms — the watcher may be stalled`);
 }
 
 /** Waits for the watcher to observe a settlement — the ledger converges, it is not synchronous. */

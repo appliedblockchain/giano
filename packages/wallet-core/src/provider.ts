@@ -622,10 +622,17 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         throw new Error('Giano not connected');
       }
 
-      return await submitUserOperation({
-        account: smartAccount,
-        ...signedUserOp
-      });
+      // Submit the exact operation the caller already signed. Preparing or signing it
+      // again changes its paymaster authorisation and breaks the raw three-step flow.
+      const sender = await smartAccount.getAddress();
+      if (signedUserOp.sender.toLowerCase() !== sender.toLowerCase()) throw new Error('Address mismatch');
+      if (injection.submitUserOperation) {
+        return injection.submitUserOperation({
+          ...signedUserOp,
+          account: { entryPoint: { address: GianoEntryPointAddress } },
+        } as Parameters<NonNullable<typeof injection.submitUserOperation>>[0], chain!.id);
+      }
+      return bundler!.sendUserOperation({ ...signedUserOp, account: smartAccount });
     },
     eth_prepareUserOperation: async ([calls, options = {}]) => {
       logger.debug('eth_prepareUserOperation', { calls, options });
@@ -638,21 +645,20 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         ...options,
       };
 
-      const estimate = await bundler!.estimateUserOperationGas({ account: smartAccount, ...op });
-      if (!estimate) {
-        throw new Error('Could not estimate user operation');
-      }
-
+      const fees = resolveUserOpFees(options, {}, await estimateFeesPerGas(chain!.id));
       const prepared = await bundler!.prepareUserOperation({
         account: smartAccount,
         ...op,
-        ...estimate,
+        ...fees,
       });
 
+      // viem echoes its account object, including signing functions. Only the
+      // operation can cross the popup's postMessage boundary.
+      const { account: _account, ...operation } = prepared;
       return {
-        ...prepared,
+        ...operation,
         preVerificationGas: prepared.preVerificationGas,
-        ...resolveUserOpFees(options, prepared, await estimateFeesPerGas(chain!.id)),
+        ...fees,
       };
     },
   } satisfies GianoProviderMethodsMap

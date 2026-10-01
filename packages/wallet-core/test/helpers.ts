@@ -126,6 +126,7 @@ export function createMockBundler(options: MockBundlerOptions = {}) {
     },
     async prepareUserOperation(userOp: Record<string, unknown>) {
       return {
+        account: userOp.account,
         sender: (userOp.sender as Address) ?? WALLET_ADDRESS,
         nonce: 0n,
         callData: (userOp.callData as Hex) ?? '0x',
