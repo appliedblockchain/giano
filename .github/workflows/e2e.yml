@@ -11,8 +11,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The stack builds wallet-api, wallet-web and paymaster-admin from their Dockerfiles, which build
+  # on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous pulls. Without the credential —
+  # a fork PR, or before the repository secret is provisioned — the suite is SKIPPED, visibly,
+  # rather than failing at the first FROM. Decided in its own job because a job-level `if` cannot
+  # read secrets.
+  dhi:
+    name: Hardened-image registry access
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not available to this run (fork PR, or not provisioned) — the DHI bases cannot be pulled, so the e2e suite is skipped'
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
+
   playwright:
     name: Two-tenant Playwright suite (Chromium + virtual authenticator)
+    needs: dhi
+    if: needs.dhi.outputs.available == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -34,6 +58,20 @@ jobs:
       # `--wait` blocks on the sponsorship provisioner, which installs each demo tenant's rules
       # through the real admin API and then verifies its own work. A stack that cannot sponsor must
       # fail to come up rather than come up broken and take the failure out on a Playwright test.
+      - uses: docker/login-action@v4
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Docker's signature on every DHI base the stack builds on, before compose builds anything
+      # (scripts/verify-dhi-bases.mjs, as docker.yml does per image).
+      - uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Verify the DHI base signatures
+        run: |
+          node scripts/verify-dhi-bases.mjs \
+            services/wallet-api/Dockerfile services/wallet-web/Dockerfile services/paymaster-admin/Dockerfile
       - name: Start stack
         run: docker compose -f deploy/docker-compose.e2e.yml up --build -d --wait --wait-timeout 300
       # The demo's origins are names on port 80 (http://app.localhost, http://wallet.localhost,
