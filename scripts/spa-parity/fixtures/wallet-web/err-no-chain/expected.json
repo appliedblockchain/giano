@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 2,
+  "stderr": "/entrypoint.sh: line 37: GIANO_CHAIN_ID: GIANO_CHAIN_ID is required (or set GIANO_CHAINS)\n",
+  "config": null,
+  "conf": null
+}

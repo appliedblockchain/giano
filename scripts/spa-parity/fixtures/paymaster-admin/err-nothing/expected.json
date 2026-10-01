@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 2,
+  "stderr": "/entrypoint.sh: line 16: GIANO_CHAIN_ID: set GIANO_DEPLOYMENTS (a JSON array) or GIANO_CHAIN_ID + GIANO_RPC_URL\n",
+  "config": null,
+  "conf": null
+}

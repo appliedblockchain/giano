@@ -1,0 +1,4 @@
+# Test tooling for scripts/spa-parity — never published, not in docker.yml. Reproduces the
+# runtime the pre-ABIP-2 SPA entrypoints ran in (nginx:1.27-alpine; jq as paymaster-admin had it).
+FROM nginx:1.27-alpine
+RUN apk add --no-cache jq
