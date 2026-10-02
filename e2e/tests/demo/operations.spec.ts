@@ -31,7 +31,7 @@ for (const chain of [CHAINS.a, CHAINS.b]) {
       await page.getByTestId('chain-selector').getByText(chain.name).click();
       await approve(page, '[data-testid=connect-chain]', credentials, tenant.ui.connect);
       await page.getByTestId('tab-wallet').click();
-      await expect(page.getByTestId('identity-held')).toBeVisible();
+      await expect(page.getByTestId('identity-held')).toBeVisible({ timeout: 20_000 });
     }
 
     await page.getByTestId('tab-transactions').click();

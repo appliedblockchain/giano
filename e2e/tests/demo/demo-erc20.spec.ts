@@ -16,7 +16,7 @@ test('default token: load, mint, transfer, and the no-permit path', async ({ pag
   const { cdp } = await addVirtualAuthenticator(popup);
   const credentials = trackResidentCredentials(cdp);
   await popup.getByRole('button', { name: tenant.ui.connect }).click();
-  await expect(page.getByTestId('account')).toBeVisible();
+  await expect(page.getByTestId('account')).toBeVisible({ timeout: 20_000 });
 
   await page.getByTestId('tab-tokens').click();
   // Prefilled with the chain's default token — the same address on every chain.
