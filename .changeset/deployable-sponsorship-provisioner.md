@@ -5,8 +5,9 @@
 A deployable sponsorship provisioner: `src/provision-sponsorship.ts`, built as
 `dist/provision-sponsorship.js`, which is the command the one-shot ECS task in
 `infra/iac/ecs_tasks_oneshot.tf` has always named and the image has never contained. Everything
-comes from the environment — `TENANT_SLUG`, `CHAIN_ID` (a comma-separated list, because rules are
-per (tenant, chain) and never inherited), `SPONSORSHIP_CONFIG`, and the `TENANTS_SEED` secret the
+comes from the environment — `WALLET_API_URL` (an HTTPS endpoint), `TENANT_SLUG`, `CHAIN_ID`
+(a comma-separated list, because rules are per (tenant, chain) and never inherited),
+`SPONSORSHIP_CONFIG`, and the `TENANTS_SEED` secret the
 tenant's admin key is looked up in — and the rules go in the way a tenant would put them in, a
 `PUT /v1/admin/sponsorship` with that tenant's own key, so there is no seeding path that would
 have to be disabled in production.
@@ -16,8 +17,11 @@ rather than trusted, and checked against the tenant's registration and balance o
 `SPONSORSHIP_REQUIRE_FUNDED=false` turns an unfunded tenant from a failed task into a warning, for
 the bring-up case where rules are provisioned before there is a balance to check them against.
 
-The task definition is not changed here: it still needs `SPONSORSHIP_CONFIG`, and a `CHAIN_ID`
-naming both chains rather than chain A alone.
+The task definition is not changed here: it still needs an authenticated TLS endpoint for
+`WALLET_API_URL` in place of the current HTTP service-discovery URL, `SPONSORSHIP_CONFIG`, and a
+`CHAIN_ID` naming both chains rather than chain A alone. Non-HTTPS URLs and redirects are rejected.
+Requests and response-body reads time out after 10 seconds; a failed chain is reported while
+later chains continue, including when HTTP errors contain plaintext or HTML.
 
 A tenant with no rules is refused every transaction with `sponsorship-disabled`, which looks
 exactly like a broken wallet rather than an unprovisioned environment — hence a task that fails

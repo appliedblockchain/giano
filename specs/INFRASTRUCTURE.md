@@ -3439,8 +3439,9 @@ own schema on boot ([§9.6](#96-migrations-run-on-boot)).
 
 `services/wallet-api/src/provision-sponsorship.ts`, built as `dist/provision-sponsorship.js` and
 run by the one-shot task ([§9.7](#97-one-shot-tasks)). Driven entirely by environment:
-`TENANT_SLUG`, `CHAIN_ID` (a list — rules are per (tenant, chain) and never inherited, so both
-chains are written in one run), `SPONSORSHIP_CONFIG` and the `TENANTS_SEED` secret the admin key
+`WALLET_API_URL` (an HTTPS endpoint), `TENANT_SLUG`, `CHAIN_ID` (a list — rules are per
+(tenant, chain) and never inherited, so both chains are written in one run), `SPONSORSHIP_CONFIG`
+and the `TENANTS_SEED` secret the admin key
 is looked up in, out to a `PUT /v1/admin/sponsorship` per chain.
 
 It validates the rules against the same schema the API applies before it writes anything, reads
@@ -3448,10 +3449,11 @@ the configuration back rather than trusting the write, and checks the tenant's r
 balance against the paymaster. `SPONSORSHIP_REQUIRE_FUNDED` decides whether an unfunded tenant is
 a warning or a failed task.
 
-**The task definition still needs two things before this can run**, neither of them code:
+**The task definition still needs three things before this can run**, neither of them code:
 
 | | |
 |---|---|
+| `WALLET_API_URL` | replace the current HTTP service-discovery URL with an authenticated TLS endpoint reachable from the task; the provisioner rejects non-HTTPS URLs and redirects |
 | `SPONSORSHIP_CONFIG` | the rule set to write, as JSON. Not currently in `ecs_tasks_oneshot.tf`, and the task exits 1 without it |
 | `CHAIN_ID` | currently `var.chain_id` alone, so chain B is left unconfigured after an otherwise successful run. Rules are per (tenant, chain) and never inherited (MC-67); the script takes a comma-separated list, so `"${var.chain_id},${var.chain_b_id}"` writes both |
 

@@ -28,7 +28,17 @@ const fail = (message: string): never => {
 
 const required = (name: string): string => process.env[name] ?? fail(`${name} is required`);
 
-const apiUrl = required('WALLET_API_URL').replace(/\/$/, '');
+const apiUrl = (() => {
+  const raw = required('WALLET_API_URL');
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return fail('WALLET_API_URL must be a valid HTTPS URL');
+  }
+  if (url.protocol !== 'https:') fail('WALLET_API_URL must use HTTPS');
+  return url.toString().replace(/\/$/, '');
+})();
 const tenantSlug = required('TENANT_SLUG');
 
 /**
@@ -116,11 +126,16 @@ const requireFunded = (process.env.SPONSORSHIP_REQUIRE_FUNDED ?? 'true') !== 'fa
 
 const authorized = { authorization: `Bearer ${adminKey}` };
 
+/** Bound requests and response-body reads; redirects must not bypass HTTPS validation. */
+const request = (url: string, init: RequestInit = {}): Promise<Response> =>
+  fetch(url, { ...init, signal: AbortSignal.timeout(10_000), redirect: 'error' });
+
+/** Poll readiness with bounded requests, reporting the last failure if the API never becomes ready. */
 async function waitForReady(attempts = 120): Promise<{ status: string; sponsorship?: string }> {
   let last = '';
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const response = await fetch(`${apiUrl}/readyz`);
+      const response = await request(`${apiUrl}/readyz`);
       if (response.ok) return (await response.json()) as { status: string; sponsorship?: string };
       last = `${response.status} ${await response.text()}`;
       // A persistent 503 is a real failure, not a not-yet: report it rather than spin for a minute.
@@ -145,8 +160,13 @@ if (ready.sponsorship !== 'ok') {
 const errorBody = z.object({ error: z.string().optional(), message: z.string().optional() }).passthrough();
 const describe = async (response: Response) => {
   const text = await response.text();
-  const parsed = errorBody.safeParse(JSON.parse(text || '{}'));
-  return parsed.success && parsed.data.message ? `${response.status} ${parsed.data.message}` : `${response.status} ${text}`;
+  try {
+    const parsed = errorBody.safeParse(JSON.parse(text || '{}'));
+    if (parsed.success && parsed.data.message) return `${response.status} ${parsed.data.message}`;
+  } catch {
+    // Intermediaries may return HTML or plaintext rather than the API's JSON error body.
+  }
+  return `${response.status} ${text}`;
 };
 
 let failures = 0;
@@ -156,70 +176,74 @@ const failChain = (chainId: number, message: string) => {
 };
 
 for (const chainId of chainIds) {
-  const write = await fetch(`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json', ...authorized },
-    body: JSON.stringify(config),
-  });
-  if (!write.ok) {
-    failChain(chainId, `PUT /v1/admin/sponsorship returned ${await describe(write)}`);
-    continue;
-  }
-  console.log(`  ✓ ${tenantSlug}@${chainId}: sponsorship rules installed`);
+  try {
+    const write = await request(`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authorized },
+      body: JSON.stringify(config),
+    });
+    if (!write.ok) {
+      failChain(chainId, `PUT /v1/admin/sponsorship returned ${await describe(write)}`);
+      continue;
+    }
+    console.log(`  ✓ ${tenantSlug}@${chainId}: sponsorship rules installed`);
 
-  // Read back rather than trusting the write: the stored value is re-validated on read, and a row
-  // that no longer parses means no sponsorship — exactly the silent failure this step prevents.
-  const readBack = await fetch(`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`, { headers: authorized });
-  if (!readBack.ok) {
-    failChain(chainId, `GET /v1/admin/sponsorship returned ${await describe(readBack)}`);
-    continue;
-  }
-  const stored = (await readBack.json()) as { configured: boolean; valid: boolean; config: { enabled?: boolean } };
-  if (!stored.configured || !stored.valid || stored.config.enabled !== config.enabled) {
-    failChain(chainId, `read-back says configured=${stored.configured} valid=${stored.valid} enabled=${stored.config.enabled}`);
-    continue;
-  }
+    // Read back rather than trusting the write: the stored value is re-validated on read, and a row
+    // that no longer parses means no sponsorship — exactly the silent failure this step prevents.
+    const readBack = await request(`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`, { headers: authorized });
+    if (!readBack.ok) {
+      failChain(chainId, `GET /v1/admin/sponsorship returned ${await describe(readBack)}`);
+      continue;
+    }
+    const stored = (await readBack.json()) as { configured: boolean; valid: boolean; config: { enabled?: boolean } };
+    if (!stored.configured || !stored.valid || stored.config.enabled !== config.enabled) {
+      failChain(chainId, `read-back says configured=${stored.configured} valid=${stored.valid} enabled=${stored.config.enabled}`);
+      continue;
+    }
 
-  const balance = await fetch(`${apiUrl}/v1/admin/sponsorship/balance?chainId=${chainId}`, { headers: authorized });
-  if (!balance.ok) {
-    failChain(chainId, `GET /v1/admin/sponsorship/balance returned ${await describe(balance)}`);
-    continue;
-  }
-  const position = (await balance.json()) as {
-    paymasterAddress: string;
-    registered: boolean;
-    balanceWei: string;
-    availableWei: string;
-    feeWei: string;
-    fundingInstructions: { to: string; call: string };
-  };
+    const balance = await request(`${apiUrl}/v1/admin/sponsorship/balance?chainId=${chainId}`, { headers: authorized });
+    if (!balance.ok) {
+      failChain(chainId, `GET /v1/admin/sponsorship/balance returned ${await describe(balance)}`);
+      continue;
+    }
+    const position = (await balance.json()) as {
+      paymasterAddress: string;
+      registered: boolean;
+      balanceWei: string;
+      availableWei: string;
+      feeWei: string;
+      fundingInstructions: { to: string; call: string };
+    };
 
-  if (expectedPaymaster && position.paymasterAddress.toLowerCase() !== expectedPaymaster) {
-    failChain(
-      chainId,
-      `the API sponsors through ${position.paymasterAddress} but SPONSORSHIP_PAYMASTER_ADDRESS says ${expectedPaymaster} — ` +
-        'one of the two is pointed at the wrong contract, and funding the wrong one loses the money',
+    if (expectedPaymaster && position.paymasterAddress.toLowerCase() !== expectedPaymaster) {
+      failChain(
+        chainId,
+        `the API sponsors through ${position.paymasterAddress} but SPONSORSHIP_PAYMASTER_ADDRESS says ${expectedPaymaster} — ` +
+          'one of the two is pointed at the wrong contract, and funding the wrong one loses the money',
+      );
+      continue;
+    }
+
+    const funding = `${position.fundingInstructions.call} on ${position.fundingInstructions.to}`;
+    if (!position.registered) {
+      const message = `not registered on the paymaster at ${position.paymasterAddress} — register it, then ${funding}`;
+      if (requireFunded) failChain(chainId, message);
+      else console.warn(`  ! ${tenantSlug}@${chainId}: ${message}`);
+      continue;
+    }
+    if (BigInt(position.availableWei) === 0n) {
+      const message = `registered but holds no available balance — nothing can be sponsored until ${funding}`;
+      if (requireFunded) failChain(chainId, message);
+      else console.warn(`  ! ${tenantSlug}@${chainId}: ${message}`);
+      continue;
+    }
+
+    console.log(
+      `    balance ${position.balanceWei} wei, available ${position.availableWei} wei, fee ${position.feeWei} wei`,
     );
-    continue;
+  } catch (error) {
+    failChain(chainId, `request or response failed: ${(error as Error).message}`);
   }
-
-  const funding = `${position.fundingInstructions.call} on ${position.fundingInstructions.to}`;
-  if (!position.registered) {
-    const message = `not registered on the paymaster at ${position.paymasterAddress} — register it, then ${funding}`;
-    if (requireFunded) failChain(chainId, message);
-    else console.warn(`  ! ${tenantSlug}@${chainId}: ${message}`);
-    continue;
-  }
-  if (BigInt(position.availableWei) === 0n) {
-    const message = `registered but holds no available balance — nothing can be sponsored until ${funding}`;
-    if (requireFunded) failChain(chainId, message);
-    else console.warn(`  ! ${tenantSlug}@${chainId}: ${message}`);
-    continue;
-  }
-
-  console.log(
-    `    balance ${position.balanceWei} wei, available ${position.availableWei} wei, fee ${position.feeWei} wei`,
-  );
 }
 
 if (failures > 0) {
