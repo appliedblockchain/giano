@@ -88,6 +88,9 @@ jobs:
       - name: Run E2E
         working-directory: e2e
         run: pnpm test
+      - name: Run reference demo operations with bundler safe mode
+        working-directory: e2e
+        run: pnpm test:demo
       - name: Upload traces
         if: failure()
         uses: actions/upload-artifact@v7

@@ -28,7 +28,7 @@ test('preflight, connect, sponsored send, identity across chains', async ({ page
   const { cdp } = await addVirtualAuthenticator(popup);
   const credentials = trackResidentCredentials(cdp);
   await popup.getByRole('button', { name: tenant.ui.connect }).click();
-  await expect(page.getByTestId('account')).toBeVisible();
+  await expect(page.getByTestId('account')).toBeVisible({ timeout: 20_000 });
   const shortAddress = (await page.getByTestId('account').textContent()) ?? '';
   expect(shortAddress).toMatch(/^0x[0-9a-fA-F]{4}…[0-9a-fA-F]{4}$/);
 
@@ -51,6 +51,6 @@ test('preflight, connect, sponsored send, identity across chains', async ({ page
   await expect(connectB.getByTestId('consent-chain')).toHaveText(CHAINS.b.name);
   await connectB.getByRole('button', { name: tenant.ui.connect }).click();
   await page.getByTestId('tab-wallet').click();
-  await expect(page.getByTestId('identity-held')).toBeVisible();
+  await expect(page.getByTestId('identity-held')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('[data-testid=violation]')).toHaveCount(0);
 });

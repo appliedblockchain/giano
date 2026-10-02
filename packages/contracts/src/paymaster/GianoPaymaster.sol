@@ -12,7 +12,7 @@ import {Initializable} from '@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
 import {EIP712Upgradeable} from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
 import {PausableUpgradeable} from '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
-import {SignatureChecker} from '@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol';
+import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import {SafeCast} from '@openzeppelin/contracts/utils/math/SafeCast.sol';
 import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
@@ -88,9 +88,8 @@ contract GianoPaymaster is
     uint256 internal constant OFFSET_SIGNER = 45;
     uint256 internal constant OFFSET_SIGNATURE = 65;
 
-    /// @dev Minimum `paymasterData` length: the fixed header plus a 65-byte ECDSA signature. A
-    ///      longer tail is accepted so that an ERC-1271 signer (D2's future per-tenant key held in
-    ///      a contract) needs no change here.
+    /// @dev Minimum `paymasterData` length: the fixed header plus a 65-byte ECDSA signature.
+    ///      Longer signatures fail ECDSA validation; contract signatures are not supported.
     uint256 internal constant MIN_PAYMASTER_DATA_LENGTH = OFFSET_SIGNATURE + 65;
 
     /// @dev EIP-712 type hash for the authorisation the Giano backend signs.
@@ -161,7 +160,7 @@ contract GianoPaymaster is
         uint16 penaltyBps;
         EnumerableSet.AddressSet signers;
         // The set of every registered tenant id, so the roster is enumerable directly from the
-        // chain rather than only reconstructable from `TenantRegistered` logs. Appended last:
+        // chain rather than only reconstructable from `TenantRegistered` logs. Appended after signers:
         // the ERC-7201 namespace makes adding a trailing field upgrade-safe (see storage-layout.mjs).
         // `bytes16` tenant ids are widened to `bytes32` for storage, since EnumerableSet has no
         // native `bytes16` set; the widening is left-aligned and round-trips losslessly.
@@ -579,7 +578,12 @@ contract GianoPaymaster is
         // The cheap set lookup first: a revoked key never reaches the cryptography.
         if (!$.signers.contains(auth.signer)) revert UnauthorisedSigner(auth.signer);
 
-        if (!SignatureChecker.isValidSignatureNow(auth.signer, _authorisationDigest(userOp, auth), pmData[OFFSET_SIGNATURE:])) {
+        bytes32 digest = _authorisationDigest(userOp, auth);
+        bytes memory signature = pmData[OFFSET_SIGNATURE:];
+        // Sponsorship authorisations are ECDSA-only. Never inspect or call the signer:
+        // safe-mode bundlers forbid accessing an address without deployed code.
+        (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, signature);
+        if (err != ECDSA.RecoverError.NoError || recovered != auth.signer) {
             // A bad signature is the one condition the bundler must read as an invalid operation
             // rather than a paymaster fault, so it is returned rather than reverted.
             return ('', SIG_VALIDATION_FAILED);

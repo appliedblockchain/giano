@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { createPublicClient, getAbiItem, http, type Address } from 'viem';
+import { entryPoint07Abi } from 'viem/account-abstraction';
 import { ORIGINS } from '../origins.mjs';
 import { connectWallet, expectOutContains, openActionPopup, TENANTS, type Tenant, type VirtualCredential } from './helpers';
 
@@ -19,6 +21,7 @@ import { connectWallet, expectOutContains, openActionPopup, TENANTS, type Tenant
 
 const devnetDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'devnet');
 const ADDRESSES = JSON.parse(fs.readFileSync(path.join(devnetDir, 'addresses.json'), 'utf8')) as {
+  entryPoint: Address;
   testErc20: string;
   sponsorshipPaymaster: string;
   tenants: Array<{ slug: string; id: string }>;
@@ -129,32 +132,33 @@ async function allPositions(): Promise<Position[]> {
   return positions;
 }
 
-/**
- * Waits until nothing is outstanding for this tenant, so a balance read is a stable baseline.
- *
- * The ledger converges rather than updating synchronously: a settlement lands when the watcher sees
- * the event, and a reservation is released then too. Reading a balance while either is in flight
- * measures a moment, not a state.
- */
-async function settleAllPending(tenant: Tenant, timeoutMs = 30_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (BigInt((await getPosition(tenant)).reservedWei) === 0n) return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error('reservations were still outstanding after waiting — the watcher may be stalled');
+/** Wait for the connected wallet's mined deployment, ignoring abandoned authorisations. */
+async function waitForDeploymentSettlement(tenant: Tenant, address: string): Promise<void> {
+  const client = createPublicClient({ transport: http(process.env.RPC_URL ?? ORIGINS.rpc) });
+  const getDeploymentLogs = () => client.getLogs({
+    address: ADDRESSES.entryPoint,
+    event: getAbiItem({ abi: entryPoint07Abi, name: 'UserOperationEvent' }),
+    args: { sender: address as Address, paymaster: ADDRESSES.sponsorshipPaymaster as Address },
+    fromBlock: 0n,
+    toBlock: 'latest',
+    strict: true,
+  });
+  let logs: Awaited<ReturnType<typeof getDeploymentLogs>> = [];
+  await expect.poll(async () => {
+    logs = await getDeploymentLogs();
+    return logs.length;
+  }, { timeout: 30_000, intervals: [500], message: 'the connected wallet has no mined sponsored deployment' }).toBeGreaterThan(0);
+  await waitForSettlements(tenant, logs.map((log) => log.args.userOpHash!));
 }
 
-/** Waits for the watcher to observe a settlement — the ledger converges, it is not synchronous. */
-async function waitForSettlement(tenant: Tenant, count: number, timeoutMs = 30_000): Promise<Awaited<ReturnType<typeof getSpend>>> {
-  const deadline = Date.now() + timeoutMs;
-  let last = await getSpend(tenant);
-  while (last.totals.count < count && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    last = await getSpend(tenant);
-  }
-  expect(last.totals.count, 'the watcher never observed the settlement').toBeGreaterThanOrEqual(count);
-  return last;
+/** Poll actual submitted hashes so another operation cannot satisfy the wait. */
+async function waitForSettlements(tenant: Tenant, hashes: string[], timeoutMs = 30_000): Promise<Awaited<ReturnType<typeof getSpend>>> {
+  let spend = await getSpend(tenant);
+  await expect.poll(async () => {
+    spend = await getSpend(tenant);
+    return hashes.every((hash) => spend.settlements.some((settlement) => settlement.useropHash.toLowerCase() === hash.toLowerCase()));
+  }, { timeout: timeoutMs, intervals: [500], message: `the watcher never observed settlements ${hashes.join(', ')}` }).toBe(true);
+  return spend;
 }
 
 // ── console capture ───────────────────────────────────────────────────────────
@@ -182,12 +186,11 @@ for (const slug of ['stock', 'byo'] as const) {
       // Connecting deploys the smart account, and that deployment is itself a sponsored operation
       // — so a baseline taken before it would span two settlements while the assertions below
       // account for one. Reading after isolates the transaction actually under test.
-      const { credentials } = await connectWallet(page, tenant);
-      await settleAllPending(tenant);
+      const { credentials, address } = await connectWallet(page, tenant);
+      await waitForDeploymentSettlement(tenant, address);
 
       const before = await getPosition(tenant);
       const treasuryBefore = await treasuryWei();
-      const spendBefore = await getSpend(tenant);
 
       const popup = await openActionPopup(page, '#send-erc20', credentials);
 
@@ -198,8 +201,11 @@ for (const slug of ['stock', 'byo'] as const) {
 
       await expectOutContains(page, 'receipt:success: true');
 
-      const spend = await waitForSettlement(tenant, spendBefore.totals.count + 1);
-      const settlement = spend.settlements[0];
+      const output = await page.getByTestId('out').textContent();
+      const hash = output?.match(/userOpHash: (0x[0-9a-fA-F]{64})/)?.[1];
+      expect(hash, 'the dApp did not report its submitted operation hash').toBeDefined();
+      const spend = await waitForSettlements(tenant, [hash!]);
+      const settlement = spend.settlements.find((entry) => entry.useropHash.toLowerCase() === hash!.toLowerCase())!;
 
       // Every component separately visible: what was gas, what was Giano's margin, what was overhead.
       expect(BigInt(settlement.gasCostWei)).toBeGreaterThan(0n);
@@ -271,8 +277,8 @@ for (const slug of ['stock', 'byo'] as const) {
     test('refuses a contract that is not allow-listed', async ({ page }) => {
       // Baseline after connecting: the account deployment is itself sponsored, so it must not sit
       // inside the window this test is measuring.
-      const { credentials } = await connectWallet(page, tenant);
-      await settleAllPending(tenant);
+      const { credentials, address } = await connectWallet(page, tenant);
+      await waitForDeploymentSettlement(tenant, address);
       const before = await getPosition(tenant);
 
       await expectRefusedBeforeApproval(page, '#send-unlisted', 'contract-not-allowed', credentials);

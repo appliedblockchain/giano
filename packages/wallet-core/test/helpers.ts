@@ -116,6 +116,12 @@ export function createMockBundler(options: MockBundlerOptions = {}) {
   const sent: unknown[] = [];
 
   const bundler = {
+    async request({ method, params }: { method: string; params: [unknown, unknown] }) {
+      if (method !== 'eth_sendUserOperation') throw new Error(`mock bundler: unhandled method ${method}`);
+      sent.push(params[0]);
+      onSend?.(params[0]);
+      return userOpHash;
+    },
     async sendUserOperation(userOp: unknown) {
       sent.push(userOp);
       onSend?.(userOp);
@@ -126,6 +132,7 @@ export function createMockBundler(options: MockBundlerOptions = {}) {
     },
     async prepareUserOperation(userOp: Record<string, unknown>) {
       return {
+        account: userOp.account,
         sender: (userOp.sender as Address) ?? WALLET_ADDRESS,
         nonce: 0n,
         callData: (userOp.callData as Hex) ?? '0x',

@@ -49,14 +49,16 @@ export const CANONICAL_ACCOUNT_NONCE = 0n;
  * through UUPS keeps the address; re-deploying a modified build from genesis does not, and is a
  * new canonical freeze.
  */
-export const CANONICAL_SPONSORSHIP_PAYMASTER = '0xf98b56de62ce88cEb70A9155582248cDBf2D0718' as const;
+// Fresh-deployment freeze for the ECDSA-only signer-validation build. Existing proxies
+// (including the baked devnet's 0xf98b…0718) retain their addresses when upgraded through UUPS.
+export const CANONICAL_SPONSORSHIP_PAYMASTER = '0xbD95de95b018697D72A9A3B6B2Ef565093C2B294' as const;
 
 /**
  * The `GianoPaymaster` implementation {@link CANONICAL_SPONSORSHIP_PAYMASTER} delegates to at
  * the freeze. Unlike the proxy, this is expected to change on every upgrade — it is frozen so
  * that a *fresh* deployment can be checked against the build this freeze came from.
  */
-export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0xFc6e7a0b9b5E9E27C8E2caf8961A13FD16ebd818' as const;
+export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0xeC7BFA2E5A8d6029C210B986a957aB58E7C70434' as const;
 
 /**
  * `GianoPaymasterDeployer`, the CREATE2 deployer the paymaster proxy hangs off. Recorded because

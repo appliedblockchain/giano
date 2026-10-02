@@ -31,6 +31,18 @@ are provisioned identically for sponsorship at bring-up (`devnet/provision-spons
 explicit PUT per tenant per chain). One wallet-api, one wallet origin, one Postgres, two chains —
 the topology the standalone profile actually uses.
 
+Both bundlers run the production bundler image with `ALTO_SAFE_MODE=true`, including its
+RIP-7212 tracer patch for the P-256 precompile at `0x100`. Run `pnpm test:demo` to exercise
+the reference demo's transactions, token calls, signatures, raw user operations, authenticated
+reads and refusal paths on this stack.
+
+To update the baked paymaster implementation while keeping its proxy and funded tenants,
+run `pnpm devnet:upgrade:paymaster` in this package. It loads the committed fixture into a
+fresh pinned Anvil on port 18545, performs the UUPS upgrade while preserving the signer
+allowlist, and saves the upgraded fixture. Restart both Anvil containers and wallet-api
+afterwards so they load the new state, then restart both bundlers so they re-deploy their
+simulation contracts into the reloaded chains.
+
 The dApp fixture holds two thin-SDK providers over the same wallet origin, one per chain
 (`#send-chain-b` and friends), and reports the chain and the account of every send in its output,
 so tests assert both directly. The same passkey produces the **same account address on both
@@ -134,7 +146,7 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
 | `portless:port80` | brings up the `portless-port80` relay on its own |
 | `portless:proxy` | runs the proxy on port 80 directly; needs `sudo`, and then the relay is unnecessary |
 | `portless:down` | removes the routes and stops the proxy |
-| `test:demo` | opt-in smoke test of the reference dApp (`services/custom-example`) on `http://demo.localhost`; `DEMO=1` adds the project and starts the demo's dev server (`tests/demo/`) |
+| `test:demo` | reference dApp operations on both chains, signing, raw user operations, failure cases, adapters and ledger export on `http://demo.localhost`; `DEMO=1` adds the project and starts the demo's dev server (`tests/demo/`) |
 | `portless:list` | shows the active routes |
 
 ## Where the names live
@@ -213,7 +225,8 @@ pnpm -F @appliedblockchain/giano-e2e exec playwright install chromium
 pnpm -F @appliedblockchain/giano-e2e test
 ```
 
-39 tests across four files: the stock wallet flow, the BYO wallet flow, tenant isolation (distinct
-RP IDs, cross-tenant token rejection, Host-scoped `/.well-known/webauthn`), and gas sponsorship
-(accounting, pre-approval refusals, invariants). WebAuthn uses the CDP virtual authenticator on the
+63 tests across eight files: the stock and BYO wallet flows, tenant isolation (distinct
+RP IDs, cross-tenant token rejection, Host-scoped `/.well-known/webauthn`), gas sponsorship
+(accounting, pre-approval refusals, invariants), multichain identity, passkey and owner management,
+and account claims. The opt-in demo project adds six tests. WebAuthn uses the CDP virtual authenticator on the
 popup page, so the suite is Chromium-only and never prompts for a real passkey.
