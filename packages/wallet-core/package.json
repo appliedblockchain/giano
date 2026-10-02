@@ -1,6 +1,6 @@
 {
   "name": "@appliedblockchain/giano-wallet-core",
-  "version": "0.1.0",
+  "version": "3.0.0",
   "description": "Giano wallet core: EIP-1193 provider, passkey smart account (viem), provider injection seam",
   "license": "MIT",
   "repository": {
