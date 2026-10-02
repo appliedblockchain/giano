@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { createPublicClient, getAbiItem, http, type Address } from 'viem';
+import { entryPoint07Abi } from 'viem/account-abstraction';
 import { ORIGINS } from '../origins.mjs';
 import { connectWallet, expectOutContains, openActionPopup, TENANTS, type Tenant, type VirtualCredential } from './helpers';
 
@@ -19,6 +21,7 @@ import { connectWallet, expectOutContains, openActionPopup, TENANTS, type Tenant
 
 const devnetDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'devnet');
 const ADDRESSES = JSON.parse(fs.readFileSync(path.join(devnetDir, 'addresses.json'), 'utf8')) as {
+  entryPoint: Address;
   testErc20: string;
   sponsorshipPaymaster: string;
   tenants: Array<{ slug: string; id: string }>;
@@ -129,49 +132,29 @@ async function allPositions(): Promise<Position[]> {
   return positions;
 }
 
-/**
- * Waits until this tenant's ledger has gone quiet, so a balance read is a stable baseline.
- *
- * The ledger converges rather than updating synchronously: a settlement lands when the watcher sees
- * the event. Reading a balance while one is in flight measures a moment, not a state.
- *
- * Quiet is defined as the balance and the settlement count both holding still, because a settlement
- * is the only thing that moves a balance. An outstanding *reservation* is a poor proxy for it: a
- * reservation clears when its operation settles or when its TTL runs out, and
- * SPONSORSHIP_RESERVATION_TTL_SECONDS is 300 in this stack — so an authorisation that was signed and
- * then abandoned, which any popup closed between `pm_getPaymasterData` and submission leaves behind,
- * keeps a tenant's reserved total above zero for five minutes while nothing at all is in flight.
- */
-async function settleAllPending(tenant: Tenant, quietMs = 2_000, timeoutMs = 30_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  const sample = async () => `${(await getPosition(tenant)).balanceWei}/${(await getSpend(tenant)).totals.count}`;
-
-  let last = await sample();
-  let quietSince = Date.now();
-
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const current = await sample();
-    if (current !== last) {
-      last = current;
-      quietSince = Date.now();
-      continue;
-    }
-    if (Date.now() - quietSince >= quietMs) return;
-  }
-  throw new Error(`the tenant's balance was still moving after ${timeoutMs}ms — the watcher may be stalled`);
+/** Wait for the connected wallet's mined deployment, ignoring abandoned authorisations. */
+async function waitForDeploymentSettlement(tenant: Tenant, address: string): Promise<void> {
+  const client = createPublicClient({ transport: http(process.env.RPC_URL ?? ORIGINS.rpc) });
+  const logs = await client.getLogs({
+    address: ADDRESSES.entryPoint,
+    event: getAbiItem({ abi: entryPoint07Abi, name: 'UserOperationEvent' }),
+    args: { sender: address as Address, paymaster: ADDRESSES.sponsorshipPaymaster as Address },
+    fromBlock: 0n,
+    toBlock: 'latest',
+    strict: true,
+  });
+  expect(logs.length, 'the connected wallet has no mined sponsored deployment').toBeGreaterThan(0);
+  await waitForSettlements(tenant, logs.map((log) => log.args.userOpHash!));
 }
 
-/** Waits for the watcher to observe a settlement — the ledger converges, it is not synchronous. */
-async function waitForSettlement(tenant: Tenant, count: number, timeoutMs = 30_000): Promise<Awaited<ReturnType<typeof getSpend>>> {
-  const deadline = Date.now() + timeoutMs;
-  let last = await getSpend(tenant);
-  while (last.totals.count < count && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    last = await getSpend(tenant);
-  }
-  expect(last.totals.count, 'the watcher never observed the settlement').toBeGreaterThanOrEqual(count);
-  return last;
+/** Poll actual submitted hashes so another operation cannot satisfy the wait. */
+async function waitForSettlements(tenant: Tenant, hashes: string[], timeoutMs = 30_000): Promise<Awaited<ReturnType<typeof getSpend>>> {
+  let spend = await getSpend(tenant);
+  await expect.poll(async () => {
+    spend = await getSpend(tenant);
+    return hashes.every((hash) => spend.settlements.some((settlement) => settlement.useropHash.toLowerCase() === hash.toLowerCase()));
+  }, { timeout: timeoutMs, intervals: [500], message: `the watcher never observed settlements ${hashes.join(', ')}` }).toBe(true);
+  return spend;
 }
 
 // ── console capture ───────────────────────────────────────────────────────────
@@ -199,12 +182,11 @@ for (const slug of ['stock', 'byo'] as const) {
       // Connecting deploys the smart account, and that deployment is itself a sponsored operation
       // — so a baseline taken before it would span two settlements while the assertions below
       // account for one. Reading after isolates the transaction actually under test.
-      const { credentials } = await connectWallet(page, tenant);
-      await settleAllPending(tenant);
+      const { credentials, address } = await connectWallet(page, tenant);
+      await waitForDeploymentSettlement(tenant, address);
 
       const before = await getPosition(tenant);
       const treasuryBefore = await treasuryWei();
-      const spendBefore = await getSpend(tenant);
 
       const popup = await openActionPopup(page, '#send-erc20', credentials);
 
@@ -215,8 +197,11 @@ for (const slug of ['stock', 'byo'] as const) {
 
       await expectOutContains(page, 'receipt:success: true');
 
-      const spend = await waitForSettlement(tenant, spendBefore.totals.count + 1);
-      const settlement = spend.settlements[0];
+      const output = await page.getByTestId('out').textContent();
+      const hash = output?.match(/userOpHash: (0x[0-9a-fA-F]{64})/)?.[1];
+      expect(hash, 'the dApp did not report its submitted operation hash').toBeDefined();
+      const spend = await waitForSettlements(tenant, [hash!]);
+      const settlement = spend.settlements.find((entry) => entry.useropHash.toLowerCase() === hash!.toLowerCase())!;
 
       // Every component separately visible: what was gas, what was Giano's margin, what was overhead.
       expect(BigInt(settlement.gasCostWei)).toBeGreaterThan(0n);
@@ -288,8 +273,8 @@ for (const slug of ['stock', 'byo'] as const) {
     test('refuses a contract that is not allow-listed', async ({ page }) => {
       // Baseline after connecting: the account deployment is itself sponsored, so it must not sit
       // inside the window this test is measuring.
-      const { credentials } = await connectWallet(page, tenant);
-      await settleAllPending(tenant);
+      const { credentials, address } = await connectWallet(page, tenant);
+      await waitForDeploymentSettlement(tenant, address);
       const before = await getPosition(tenant);
 
       await expectRefusedBeforeApproval(page, '#send-unlisted', 'contract-not-allowed', credentials);

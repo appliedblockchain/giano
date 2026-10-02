@@ -19,7 +19,7 @@ import type {
   UserOperation,
   UserOperationReceipt,
 } from 'viem/account-abstraction';
-import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
+import { createWebAuthnCredential, sendUserOperation, toWebAuthnAccount } from 'viem/account-abstraction';
 import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn, EIP1474Methods } from 'viem';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
@@ -632,7 +632,12 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
           account: { entryPoint: { address: GianoEntryPointAddress } },
         } as Parameters<NonNullable<typeof injection.submitUserOperation>>[0], chain!.id);
       }
-      return bundler!.sendUserOperation({ ...signedUserOp, account: smartAccount });
+      // viem prepares again when either the request or client supplies an account.
+      return sendUserOperation({ ...bundler!, account: undefined }, {
+        ...signedUserOp,
+        account: undefined,
+        entryPointAddress: GianoEntryPointAddress,
+      });
     },
     eth_prepareUserOperation: async ([calls, options = {}]) => {
       logger.debug('eth_prepareUserOperation', { calls, options });

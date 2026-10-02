@@ -1,4 +1,5 @@
-import { parseGwei, toHex } from 'viem';
+import { custom, parseGwei, toHex } from 'viem';
+import { createBundlerClient, entryPoint07Address } from 'viem/account-abstraction';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ChainType,
@@ -346,6 +347,43 @@ describe('transactions & user operations', () => {
     expect(submitUserOperation).toHaveBeenCalledWith(expect.objectContaining(signed), TEST_CHAIN_ID);
     await expect(provider.request({ method: 'eth_sendSignedUserOperation', params: [{ ...signed, sender: '0x1111111111111111111111111111111111111111' }] as never })).rejects.toThrow('Address mismatch');
     expect(submitUserOperation).toHaveBeenCalledOnce();
+  });
+
+  it('uses the real viem action without account hooks or paymaster refresh for signed operations', async () => {
+    const request = vi.fn(async ({ method }: { method: string }) => {
+      if (method !== 'eth_sendUserOperation') throw new Error(`unexpected RPC: ${method}`);
+      return `0x${'ab'.repeat(32)}`;
+    });
+    const bundler = createBundlerClient({ chain: testChain, transport: custom({ request }, { retryCount: 0 }) });
+    const prepare = vi.spyOn(bundler, 'prepareUserOperation');
+    const { provider } = buildProvider(mock.authenticator, { bundler });
+    const sender = await connect(provider);
+    const account = provider.getSmartAccount()!;
+    const sign = vi.spyOn(account, 'signUserOperation');
+    // Defend against an account attached to either the injected client or caller's payload.
+    Object.assign(bundler, { account });
+    const signed = {
+      sender, nonce: 7n, callData: '0xabcd', callGasLimit: 100_000n,
+      verificationGasLimit: 900_000n, preVerificationGas: 50_000n,
+      maxFeePerGas: 9n, maxPriorityFeePerGas: 2n, signature: '0x1234',
+      paymaster: '0x1111111111111111111111111111111111111111',
+      paymasterVerificationGasLimit: 30_000n, paymasterPostOpGasLimit: 20_000n,
+      paymasterData: '0x5678', account,
+    };
+    await expect(provider.request({ method: 'eth_sendSignedUserOperation', params: [signed] as never })).resolves.toBe(`0x${'ab'.repeat(32)}`);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(sign).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledOnce();
+    expect(request.mock.calls[0][0]).toEqual({
+      method: 'eth_sendUserOperation',
+      params: [{
+        sender, nonce: '0x7', callData: '0xabcd', callGasLimit: '0x186a0',
+        verificationGasLimit: '0xdbba0', preVerificationGas: '0xc350',
+        maxFeePerGas: '0x9', maxPriorityFeePerGas: '0x2', signature: '0x1234',
+        paymaster: signed.paymaster, paymasterVerificationGasLimit: '0x7530',
+        paymasterPostOpGasLimit: '0x4e20', paymasterData: '0x5678',
+      }, entryPoint07Address],
+    });
   });
 
   it('waitForUserOperationReceipt delegates to the bundler', async () => {
