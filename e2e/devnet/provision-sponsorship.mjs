@@ -26,7 +26,22 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 // Compose sets WALLET_API_URL to the container address; the default is for host-side runs,
 // where the wallet-api answers to the name portless publishes (see e2e/origins.mjs).
 const apiUrl = (process.env.WALLET_API_URL ?? 'http://api.localhost').replace(/\/$/, '');
-const addresses = JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
+
+/**
+ * Stacks other than the e2e devnet supply their tenants and demo ERC-20 through the environment
+ * instead of `addresses.json`, which is a devnet artefact. `SPONSOR_TENANTS` is a JSON array of
+ * `{ slug, adminKey }`; the Sepolia demo (deploy/sepolia/provision-sponsorship.sh) passes both.
+ *
+ * The point of the override is that this stays the *single* implementation of "install a tenant's
+ * rules through the real admin API". A per-stack copy would drift, and the drift would show up as
+ * a stack that comes up fine and silently refuses every sponsorship.
+ */
+const tenantsOverride = process.env.SPONSOR_TENANTS ? JSON.parse(process.env.SPONSOR_TENANTS) : undefined;
+const erc20Override = process.env.SPONSOR_ERC20;
+const addresses =
+  tenantsOverride && erc20Override
+    ? { tenants: tenantsOverride, testErc20: erc20Override }
+    : JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
 
 /**
  * Every chain the stack sponsors on, provisioned identically (MC-117) so a sponsored
@@ -98,7 +113,7 @@ let failures = 0;
 
 for (const chainId of CHAIN_IDS) {
 for (const tenant of addresses.tenants) {
-  const adminKey = TENANT_ADMIN_KEYS[tenant.slug];
+  const adminKey = tenant.adminKey ?? TENANT_ADMIN_KEYS[tenant.slug];
   if (!adminKey) {
     console.error(`  ✗ ${tenant.slug}: no admin key known for this tenant`);
     failures += 1;
