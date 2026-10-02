@@ -62,6 +62,9 @@ describe('pure helpers', () => {
     expect(resolveUserOpFees({ maxFeePerGas: 1n, maxPriorityFeePerGas: 2n }, {}, fallback)).toEqual({ maxFeePerGas: 1n, maxPriorityFeePerGas: 2n });
     expect(resolveUserOpFees({}, { maxFeePerGas: 3n, maxPriorityFeePerGas: 4n }, fallback)).toEqual({ maxFeePerGas: 3n, maxPriorityFeePerGas: 4n });
     expect(resolveUserOpFees({}, {}, fallback)).toEqual(fallback);
+    expect(resolveUserOpFees({ maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }, { maxFeePerGas: 3n, maxPriorityFeePerGas: 4n }, fallback)).toEqual({ maxFeePerGas: 0n, maxPriorityFeePerGas: 0n });
+    expect(resolveUserOpFees({}, { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }, fallback)).toEqual({ maxFeePerGas: 0n, maxPriorityFeePerGas: 0n });
+    expect(resolveUserOpFees({ maxPriorityFeePerGas: 0n }, { maxFeePerGas: 3n }, fallback)).toEqual({ maxFeePerGas: 3n, maxPriorityFeePerGas: 0n });
   });
 
   it('isChainType / ChainType', () => {

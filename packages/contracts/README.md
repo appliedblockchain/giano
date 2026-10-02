@@ -39,8 +39,12 @@ pnpm hh:upgrade:paymaster --network base-sepolia \
 
 The module deploys only the implementation and calls `upgradeToAndCall(implementation, "0x")`
 on the supplied proxy. It checks the proxy's EntryPoint before deploying and requires an
-`Upgraded` event. No initializer runs and the proxy address stays unchanged. Use a new deployment
-ID for a later implementation upgrade; reuse the same ID to resume an interrupted deployment.
+`Upgraded` event. No initializer runs and the proxy address stays unchanged.
+The EntryPoint check verifies the interface; the upgrade preserves the proxy's configured
+EntryPoint, including a custom deployment. Confirm that the supplied proxy belongs to the
+intended dev environment before running the command.
+Use a new deployment ID for a later implementation upgrade; reuse the same ID to resume an
+interrupted deployment.
 If a Safe or timelock holds `UPGRADER_ROLE`, it must execute the upgrade transaction; this module
 requires the configured transaction sender to hold that role directly.
 

@@ -177,8 +177,8 @@ export function resolveUserOpFees(
   fallback: FeeValues,
 ): FeeValues {
   return {
-    maxFeePerGas: requested.maxFeePerGas || prepared.maxFeePerGas || fallback.maxFeePerGas,
-    maxPriorityFeePerGas: requested.maxPriorityFeePerGas || prepared.maxPriorityFeePerGas || fallback.maxPriorityFeePerGas,
+    maxFeePerGas: requested.maxFeePerGas ?? prepared.maxFeePerGas ?? fallback.maxFeePerGas,
+    maxPriorityFeePerGas: requested.maxPriorityFeePerGas ?? prepared.maxPriorityFeePerGas ?? fallback.maxPriorityFeePerGas,
   };
 }
 

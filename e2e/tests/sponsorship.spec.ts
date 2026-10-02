@@ -135,7 +135,7 @@ async function allPositions(): Promise<Position[]> {
 /** Wait for the connected wallet's mined deployment, ignoring abandoned authorisations. */
 async function waitForDeploymentSettlement(tenant: Tenant, address: string): Promise<void> {
   const client = createPublicClient({ transport: http(process.env.RPC_URL ?? ORIGINS.rpc) });
-  const logs = await client.getLogs({
+  const getDeploymentLogs = () => client.getLogs({
     address: ADDRESSES.entryPoint,
     event: getAbiItem({ abi: entryPoint07Abi, name: 'UserOperationEvent' }),
     args: { sender: address as Address, paymaster: ADDRESSES.sponsorshipPaymaster as Address },
@@ -143,7 +143,11 @@ async function waitForDeploymentSettlement(tenant: Tenant, address: string): Pro
     toBlock: 'latest',
     strict: true,
   });
-  expect(logs.length, 'the connected wallet has no mined sponsored deployment').toBeGreaterThan(0);
+  let logs: Awaited<ReturnType<typeof getDeploymentLogs>> = [];
+  await expect.poll(async () => {
+    logs = await getDeploymentLogs();
+    return logs.length;
+  }, { timeout: 30_000, intervals: [500], message: 'the connected wallet has no mined sponsored deployment' }).toBeGreaterThan(0);
   await waitForSettlements(tenant, logs.map((log) => log.args.userOpHash!));
 }
 
