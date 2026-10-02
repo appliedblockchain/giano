@@ -7,16 +7,8 @@ import {PaymasterTestBase} from './PaymasterTestBase.sol';
 import {GianoPaymaster} from '../../src/paymaster/GianoPaymaster.sol';
 
 contract PaymasterContractSigner {
-    bytes32 public expectedDigest;
-    bool public enabled = true;
-
-    function configure(bytes32 digest, bool accept) external {
-        expectedDigest = digest;
-        enabled = accept;
-    }
-
-    function isValidSignature(bytes32 digest, bytes memory) external view returns (bytes4) {
-        return enabled && digest == expectedDigest ? bytes4(0x1626ba7e) : bytes4(0xffffffff);
+    function isValidSignature(bytes32, bytes memory) external pure returns (bytes4) {
+        return 0x1626ba7e;
     }
 }
 
@@ -62,10 +54,10 @@ contract ValidationTest is PaymasterTestBase {
         assertEq(vd, (uint256(validUntil) << 160));
     }
 
-    function test_validate_usesRegisteredECDSATypeWithoutInspectingSignerCode() public {
+    function test_validate_usesECDSAWithoutInspectingSignerCode() public {
         PackedUserOperation memory op = _validOp();
-        // Registration already classified this key as ECDSA. Changing code afterwards
-        // must not introduce EXTCODESIZE or a call to the signer during validation.
+        // ECDSA recovery must not introduce EXTCODESIZE or a call to the signer,
+        // even if the signer address happens to have code.
         vm.etch(sponsor, hex'60006000fd');
         (, uint256 vd) = _validate(op, 0.001 ether);
         assertTrue(vd != SIG_FAILED);
@@ -81,30 +73,28 @@ contract ValidationTest is PaymasterTestBase {
         assertEq(ctx.length, 0);
     }
 
-    function test_validate_registeredContractSignerHonoursERC1271Revocation() public {
+    function test_validate_rejectsERC1271EvenWhenRegisteredContractAcceptsSignature() public {
         PaymasterContractSigner signer = new PaymasterContractSigner();
         vm.prank(signerAdmin);
         paymaster.addSigner(address(signer));
-        OpParams memory p = _defaultOpParams(wallet);
-        uint48 validUntil = uint48(block.timestamp + 120);
-        PackedUserOperation memory op = _bareOp(p);
-        op.paymasterAndData = abi.encodePacked(
-            _paymasterPrefix(p),
-            _authorisationHeader(TENANT_A, validUntil, 0, DEFAULT_FEE_WEI, address(signer)),
-            new bytes(65)
-        );
-        bytes32 digest = _authorisationDigest(op, p, TENANT_A, validUntil, 0, DEFAULT_FEE_WEI);
-        signer.configure(digest, true);
-        (, uint256 vd) = _validate(op, 0.001 ether);
-        assertTrue(vd != SIG_FAILED);
-        signer.configure(digest, false);
-        (, vd) = _validate(op, 0.001 ether);
+        PackedUserOperation memory op = _validOp();
+        bytes20 contractSigner = bytes20(address(signer));
+        for (uint256 i = 0; i < 20; i++) {
+            op.paymasterAndData[52 + 45 + i] = contractSigner[i];
+        }
+        // The ERC-1271 contract accepts everything, but ECDSA recovery returns the
+        // backend key rather than this contract. There must be no ERC-1271 fallback.
+        (bytes memory ctx, uint256 vd) = _validate(op, 0.001 ether);
         assertEq(vd, SIG_FAILED);
+        assertEq(ctx.length, 0);
+    }
 
-        vm.prank(signerAdmin);
-        paymaster.removeSigner(address(signer));
-        vm.expectRevert(abi.encodeWithSelector(GianoPaymaster.UnauthorisedSigner.selector, address(signer)));
-        _validate(op, 0.001 ether);
+    function test_validate_rejectsLongSignaturesWithoutERC1271Fallback() public {
+        PackedUserOperation memory op = _validOp();
+        op.paymasterAndData = abi.encodePacked(op.paymasterAndData, hex'00');
+        (bytes memory ctx, uint256 vd) = _validate(op, 0.001 ether);
+        assertEq(vd, SIG_FAILED);
+        assertEq(ctx.length, 0);
     }
 
     function test_validate_pinsTheValidityWindow() public {

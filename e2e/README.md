@@ -38,9 +38,10 @@ reads and refusal paths on this stack.
 
 To update the baked paymaster implementation while keeping its proxy and funded tenants,
 run `pnpm devnet:upgrade:paymaster` in this package. It loads the committed fixture into a
-fresh pinned Anvil on port 18545, performs the UUPS upgrade, re-registers the signers to
-classify their verification types, and saves the upgraded fixture. Restart both Anvil
-containers and wallet-api afterwards so they load the new state.
+fresh pinned Anvil on port 18545, performs the UUPS upgrade while preserving the signer
+allowlist, and saves the upgraded fixture. Restart both Anvil containers and wallet-api
+afterwards so they load the new state, then restart both bundlers so they re-deploy their
+simulation contracts into the reloaded chains.
 
 The dApp fixture holds two thin-SDK providers over the same wallet origin, one per chain
 (`#send-chain-b` and friends), and reports the chain and the account of every send in its output,

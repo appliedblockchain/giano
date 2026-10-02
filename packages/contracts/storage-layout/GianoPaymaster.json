@@ -38,13 +38,6 @@
       "numberOfBytes": "20",
       "encoding": "inplace"
     },
-    "t_mapping(t_address,t_bool)": {
-      "label": "mapping(address => bool)",
-      "numberOfBytes": "32",
-      "encoding": "mapping",
-      "key": "t_address",
-      "value": "t_bool"
-    },
     "t_mapping(t_bytes16,t_struct(Tenant)_storage)": {
       "label": "mapping(bytes16 => struct GianoPaymaster.Tenant)",
       "numberOfBytes": "32",
@@ -87,7 +80,7 @@
     },
     "t_struct(PaymasterStorage)_storage": {
       "label": "struct GianoPaymaster.PaymasterStorage",
-      "numberOfBytes": "288",
+      "numberOfBytes": "256",
       "encoding": "inplace",
       "members": [
         {
@@ -137,12 +130,6 @@
           "slot": "6",
           "offset": 0,
           "type": "t_struct(Bytes32Set)_storage"
-        },
-        {
-          "label": "contractSigners",
-          "slot": "8",
-          "offset": 0,
-          "type": "t_mapping(t_address,t_bool)"
         }
       ]
     },

@@ -12,7 +12,6 @@ import {Initializable} from '@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
 import {EIP712Upgradeable} from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
 import {PausableUpgradeable} from '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
-import {SignatureChecker} from '@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol';
 import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import {SafeCast} from '@openzeppelin/contracts/utils/math/SafeCast.sol';
 import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
@@ -89,9 +88,8 @@ contract GianoPaymaster is
     uint256 internal constant OFFSET_SIGNER = 45;
     uint256 internal constant OFFSET_SIGNATURE = 65;
 
-    /// @dev Minimum `paymasterData` length: the fixed header plus a 65-byte ECDSA signature. A
-    ///      longer tail is accepted so that an ERC-1271 signer (D2's future per-tenant key held in
-    ///      a contract) needs no change here.
+    /// @dev Minimum `paymasterData` length: the fixed header plus a 65-byte ECDSA signature.
+    ///      Longer signatures fail ECDSA validation; contract signatures are not supported.
     uint256 internal constant MIN_PAYMASTER_DATA_LENGTH = OFFSET_SIGNATURE + 65;
 
     /// @dev EIP-712 type hash for the authorisation the Giano backend signs.
@@ -167,10 +165,6 @@ contract GianoPaymaster is
         // `bytes16` tenant ids are widened to `bytes32` for storage, since EnumerableSet has no
         // native `bytes16` set; the widening is left-aligned and round-trips losslessly.
         EnumerableSet.Bytes32Set tenantIds;
-        // Classify at registration, outside ERC-4337 validation: EXTCODESIZE on an EOA
-        // is forbidden by safe-mode bundlers. Existing signers default to ECDSA;
-        // existing ERC-1271 signers must be removed and re-added during an upgrade.
-        mapping(address signer => bool) contractSigners;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("giano.storage.Paymaster")) - 1)) & ~bytes32(uint256(0xff))
@@ -514,16 +508,12 @@ contract GianoPaymaster is
 
     function addSigner(address signer) external onlyRole(SIGNER_ADMIN_ROLE) {
         if (signer == address(0)) revert ZeroAddress();
-        PaymasterStorage storage $ = _s();
-        if (!$.signers.add(signer)) revert AlreadySigner(signer);
-        $.contractSigners[signer] = signer.code.length != 0;
+        if (!_s().signers.add(signer)) revert AlreadySigner(signer);
         emit SignerAdded(signer);
     }
 
     function removeSigner(address signer) external onlyRole(SIGNER_ADMIN_ROLE) {
-        PaymasterStorage storage $ = _s();
-        if (!$.signers.remove(signer)) revert NotASigner(signer);
-        delete $.contractSigners[signer];
+        if (!_s().signers.remove(signer)) revert NotASigner(signer);
         emit SignerRemoved(signer);
     }
 
@@ -590,14 +580,10 @@ contract GianoPaymaster is
 
         bytes32 digest = _authorisationDigest(userOp, auth);
         bytes memory signature = pmData[OFFSET_SIGNATURE:];
-        bool validSignature;
-        if ($.contractSigners[auth.signer]) {
-            validSignature = SignatureChecker.isValidERC1271SignatureNow(auth.signer, digest, signature);
-        } else {
-            (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, signature);
-            validSignature = err == ECDSA.RecoverError.NoError && recovered == auth.signer;
-        }
-        if (!validSignature) {
+        // Sponsorship authorisations are ECDSA-only. Never inspect or call the signer:
+        // safe-mode bundlers forbid accessing an address without deployed code.
+        (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, signature);
+        if (err != ECDSA.RecoverError.NoError || recovered != auth.signer) {
             // A bad signature is the one condition the bundler must read as an invalid operation
             // rather than a paymaster fault, so it is returned rather than reverted.
             return ('', SIG_VALIDATION_FAILED);
