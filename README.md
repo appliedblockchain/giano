@@ -22,6 +22,10 @@ A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives 
   The E2E demo needs **Node 24**, because [portless](https://github.com/vercel-labs/portless) — which
   serves the demo's `*.localhost` addresses — requires it.
 - **Docker** (Compose) — for the local stacks, wallet-api integration tests, and E2E.
+- **`docker login dhi.io`** — every image builds on a [Docker Hardened Image](docs/abip-compliance.md)
+  (ABIP-2), and `dhi.io` refuses anonymous pulls. Log in once with a Docker Hub account, which can be free; an
+  account created through Google or GitHub sign-in has no password, so use a personal access token
+  (Docker Hub → Account settings → Personal access tokens, read-only) as the password.
 - **Foundry** (`curl -L https://foundry.paradigm.xyz | bash`) and **git submodules** (`pnpm git:init`) — only needed to compile contracts or run `forge test`; the published-package build path needs neither.
 
 ```sh

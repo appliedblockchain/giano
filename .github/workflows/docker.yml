@@ -57,7 +57,23 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       images: ${{ steps.list.outputs.images }}
+      dhi: ${{ steps.dhi.outputs.available }}
     steps:
+      # Every image builds on a Docker Hardened Image (ABIP-2, docs/abip-compliance.md), and dhi.io
+      # refuses anonymous pulls. Without the credential — a fork PR, or before the repository secret
+      # is provisioned — `build` is SKIPPED, visibly, rather than failing at the first FROM or, worse,
+      # passing without having built anything. Decided here because a job-level `if` cannot read
+      # secrets, and a skipped step inside `build` would still report the job green.
+      - id: dhi
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not available to this run (fork PR, or not provisioned) — the DHI bases cannot be pulled, so image builds are skipped'
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
       - id: list
         # `ecr` is the repository under ${ECR_NAMESPACE}, or '' for an image this deployment
         # does not run. Six repositories, deliberately not eight — infra/iac/ecr.vars.tf.
@@ -108,6 +124,7 @@ jobs:
   build:
     name: Build ${{ matrix.image.name }} (${{ matrix.platform.arch }})
     needs: setup
+    if: needs.setup.outputs.dhi == 'true'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -136,6 +153,23 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Pull access to the hardened bases, on every event: a PR build pulls them too.
+      - uses: docker/login-action@v4
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Docker's signature on every DHI base the Dockerfile pins, checked before a layer is built
+      # (scripts/verify-dhi-bases.mjs; the ABIP-2 migration guide requires it). Same parser as the
+      # policy check, so what is verified is exactly what is pinned.
+      - uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Verify the DHI base signatures
+        run: node scripts/verify-dhi-bases.mjs '${{ matrix.image.dockerfile }}'
 
       - uses: docker/build-push-action@v7
         id: build
@@ -147,12 +181,14 @@ jobs:
           # expression is empty, so the image is built and discarded — the Dockerfile is
           # still exercised on both arches, which is the whole point of building on a PR.
           outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.GHCR_NAMESPACE, matrix.image.name) || '' }}
-          # No provenance attestation. It publishes an extra untagged attestation manifest
-          # per image, and the ECR lifecycle policy expires on `tagStatus: any` past
-          # var.ecr_lifecycle_image_count images — 10 in dev (infra/iac/ecr.vars.tf,
-          # modules/aws/ecr/ecr.tf) — so attestations would spend a retention budget that is
-          # a floor for the pinned var.image_tag, not just a cost setting.
-          provenance: false
+          # SBOM and minimal provenance on every published image (ABIP-2). Each adds an
+          # attestation manifest to the per-arch index; `merge` carries them into the list and
+          # ECR receives the same list, so the bytes stay identical in both registries. ECR's
+          # lifecycle policy expires on `tagStatus: any`, so these spend retention budget —
+          # which is why var.ecr_lifecycle_image_count is 30, not 10 (infra/iac/ecr.vars.tf):
+          # about six ECR images per commit now, against three before.
+          provenance: mode=min
+          sbom: true
           # Scoped per image AND per arch. The default scope is shared by every build in the
           # repository, so sixteen jobs would evict each other's layers on every run and each
           # would then read back a cache written by a different image.
@@ -230,6 +266,19 @@ jobs:
           echo "resolved $ref -> $list"
           echo "digest=$list" >> "$GITHUB_OUTPUT"
 
+      # Keyless Sigstore signature on the published list, bound to this workflow's GitHub OIDC
+      # identity (id-token: write, above). Signed by digest, so it covers exactly what was built.
+      - uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Sign the GHCR manifest list
+        run: |
+          image="$GHCR_NAMESPACE/${{ matrix.image.name }}@${{ steps.ghcr.outputs.digest }}"
+          cosign sign --yes "$image"
+          cosign verify "$image" \
+            --certificate-identity-regexp '^https://github\.com/appliedblockchain/giano/\.github/workflows/docker\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+
       # --- ECR ------------------------------------------------------------------------
       # Gated on the REF, not the event. `giano-dev-gha-deploy` trusts
       # `repo:appliedblockchain/giano:ref:refs/heads/main` and nothing else
@@ -281,3 +330,13 @@ jobs:
           docker buildx imagetools create \
             --tag "$ECR_REGISTRY/$ECR_NAMESPACE/${{ matrix.image.ecr }}:$GITHUB_SHA" \
             "$GHCR_NAMESPACE/${{ matrix.image.name }}@${{ steps.ghcr.outputs.digest }}"
+      # The same digest, signed by the same workflow identity, so a consumer of the ECR copy
+      # verifies it exactly as they would the GHCR one.
+      - name: Sign the ECR copy
+        if: steps.ecr.outputs.push == 'true'
+        run: |
+          image="$ECR_REGISTRY/$ECR_NAMESPACE/${{ matrix.image.ecr }}@${{ steps.ghcr.outputs.digest }}"
+          cosign sign --yes "$image"
+          cosign verify "$image" \
+            --certificate-identity-regexp '^https://github\.com/appliedblockchain/giano/\.github/workflows/docker\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null

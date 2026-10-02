@@ -6,14 +6,16 @@
 // synchronously so the page can decide, before any provider exists, whether the configuration is
 // usable (a configuration-error screen otherwise). index.html loads this file ahead of the bundle.
 //
-// `chains` is emitted as a JSON literal — the entrypoint checks it is a JSON array; the browser
-// (src/config.ts, zod) validates every field and names the ones that are wrong.
+// Every value is emitted as a JSON literal, which is also a valid JavaScript literal: the strings are
+// JSON-encoded by jq (`@json`) in the entrypoint, so a quote, backslash or `$` round-trips unchanged,
+// and `chains` is the array the entrypoint has checked parses. The browser (src/config.ts, zod)
+// validates every field and names the ones that are wrong.
 window.__GIANO_CONFIG__ = {
   // The TENANT's wallet origin, and each dApp is pinned to exactly one of them.
-  walletUrl: '${GIANO_WALLET_URL}',
+  walletUrl: ${GIANO_WALLET_URL_JS},
   // Optional: a wallet origin that does NOT allow-list this dApp (failure lab, origin-not-allowed).
-  otherWalletUrl: '${GIANO_OTHER_WALLET_URL}',
+  otherWalletUrl: ${GIANO_OTHER_WALLET_URL_JS},
   // Empty strings are treated as unset by src/config.ts.
-  appLabel: '${GIANO_APP_LABEL}',
+  appLabel: ${GIANO_APP_LABEL_JS},
   chains: ${GIANO_CHAINS},
 };

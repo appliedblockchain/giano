@@ -63,8 +63,7 @@ Seven deliverables — D1, D1a, D3, D4, D6, D7, D8 — stand between "the workfl
 
 ### 1.3 Out of scope
 
-Staging and production ECR namespaces (`giano-stg/*`, `giano-prd/*`), container signing/attestation,
-and the rollout workflow (`deploy.yml`, which reads `infra/versions.json` and is specified in
+Staging and production ECR namespaces (`giano-stg/*`, `giano-prd/*`), and the rollout workflow (`deploy.yml`, which reads `infra/versions.json` and is specified in
 [`specs/INFRASTRUCTURE.md`](./INFRASTRUCTURE.md) §15).
 
 **`infra/iac/` is devops territory and this spec changes nothing in it.** Terraform is read here as
@@ -734,6 +733,13 @@ floor under the pinned tag, not a cost setting. That file is H2's.
 `infra/iac/` is not. Raising `ecr_lifecycle_image_count.dev` is a devops change and is recorded here
 as **O-6** for whoever owns that module, with the reasoning above: the count has to clear the merge
 rate between deploys, and 30 is the figure the workflow comment has been assuming.
+
+
+> **Superseded by ABIP-2.** Container signing and attestation were out of scope here (§1.3), but they are now in
+> place: `docker.yml` publishes SBOM and `mode=min` provenance attestations and a keyless cosign signature. It also
+> verifies Docker's signature on every hardened base before building. Each published commit now costs about six ECR
+> images rather than three, and `ecr_lifecycle_image_count` is 30 in every environment, so the floor described here
+> is about five commits. See [`docs/abip-compliance.md`](../docs/abip-compliance.md).
 
 ### 7.3 Discrepancy 2 — nothing prunes GHCR
 

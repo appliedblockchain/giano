@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 2,
+  "stderr": "/entrypoint.sh: line 17: GIANO_WALLET_API_UPSTREAM: GIANO_WALLET_API_UPSTREAM is required (e.g. http://wallet-api:8080)\n",
+  "config": null,
+  "conf": null
+}

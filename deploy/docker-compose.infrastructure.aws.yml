@@ -341,7 +341,8 @@ services:
       #   /readyz   pings the database, requires at least one chain `ready`, and checks the
       #             sponsorship signer. Richer, but an unreachable RPC would then take the
       #             target group down, so the ALB deliberately does not use it.
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/healthz || exit 1']
+      # Exec form calling node: the hardened runtime has no shell and no curl (ABIP-2).
+      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:8080/healthz",{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))']
       interval: 15s
       timeout: 3s
       start_period: 20s
@@ -387,13 +388,16 @@ services:
       # devnet key and a real chain.
     healthcheck:
       # The image's own probe, and note it is a JSON-RPC POST, not a GET on a path — there is
-      # no HTTP health endpoint to point an ALB at even if it had a target group.
+      # no HTTP health endpoint to point an ALB at even if it had a target group. Exec form
+      # calling node: the hardened runtime has no shell and no curl (ABIP-2).
       test:
-        - 'CMD-SHELL'
+        - 'CMD'
+        - 'node'
+        - '-e'
         - >-
-          curl -fsS -X POST -H 'content-type: application/json'
-          -d '{"jsonrpc":"2.0","id":1,"method":"eth_supportedEntryPoints","params":[]}'
-          http://127.0.0.1:4337 || exit 1
+          fetch('http://127.0.0.1:4337',{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_supportedEntryPoints',params:[]}),
+          signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))
       interval: 15s
       timeout: 3s
       start_period: 15s
@@ -474,8 +478,10 @@ services:
       # GIANO_CSP_CONNECT_SRC unset: everything the SPA dials is same-origin now.
       # ⚠ GIANO_RP_ID: intentionally absent. See the block comment above before adding it.
     healthcheck:
-      # Matches the image, and matches the ALB's `health_check_path = "/"` for this service.
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      # Matches the image. The hardened nginx runtime has no HTTP client (ABIP-2), so this is a
+      # liveness check from shell built-ins — nginx is up and the config was rendered; the HTTP
+      # check on / is the ALB's `health_check_path = "/"`.
+      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -535,7 +541,7 @@ services:
       # The other tenant's wallet origin, for the failure lab's disallowed-origin control.
       GIANO_OTHER_WALLET_URL: ${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:-}
     healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.js']
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -580,7 +586,7 @@ services:
       GIANO_OTHER_WALLET_URL: ${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}
       GIANO_APP_LABEL: ${BYOUI_BRAND_NAME:-Giano Example (BYO UI)}
     healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.js']
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -659,7 +665,7 @@ services:
       # The server has no health endpoint of its own; ECS uses `health_check_path = "/"`.
       # CI probes the tenant origin instead, which is the more meaningful check:
       #   curl -fsS -H 'Host: wallet.byoui.<apex>' http://127.0.0.1:8080/.well-known/webauthn
-      test: ['CMD-SHELL', 'wget -q -O- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1']
+      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:8080/",{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))']
       interval: 15s
       timeout: 3s
       start_period: 15s
@@ -701,7 +707,7 @@ services:
       GIANO_ENVIRONMENT_LABEL: ${GIANO_ENVIRONMENT_LABEL:-dev (Base Sepolia)}
       GIANO_REFRESH_SECONDS: '15'
     healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8080/ || exit 1']
+      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']
       interval: 15s
       timeout: 3s
       start_period: 10s
