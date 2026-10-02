@@ -52,6 +52,7 @@
     "hh:deploy:mapper": "hardhat ignition deploy ignition/modules/index.ts --strategy create2",
     "hh:deploy:testing": "hardhat ignition deploy ignition/modules/Testing.ts --strategy create2",
     "hh:deploy:paymaster": "hardhat ignition deploy ignition/modules/GianoPaymaster.ts --strategy create2",
+    "hh:upgrade:paymaster": "hardhat ignition deploy ignition/modules/UpgradePaymaster.ts --strategy create2",
     "provision:paymaster": "ts-node scripts/provision-paymaster.ts",
     "storage": "node scripts/storage-layout.mjs",
     "storage:check": "node scripts/storage-layout.mjs --check",

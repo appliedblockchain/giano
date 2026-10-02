@@ -17,6 +17,33 @@ upgrade. Replace any existing ERC-1271 sponsorship signer with an ECDSA key thro
 `SIGNER_ADMIN_ROLE`. Upgrade the existing proxy through UUPS; deploying a replacement proxy
 would strand its tenant balances and funding address.
 
+To upgrade dev on Base Sepolia, use the current PR's compiled contracts and an account holding
+`UPGRADER_ROLE` on the existing proxy. Set `BASE_SEPOLIA_RPC_URL` and `BASE_PRIVATE_KEY` in your
+deployment environment, then create a parameters file (for example `upgrade-dev.json`):
+
+```json
+{
+  "UpgradePaymaster": {
+    "proxyAddress": "<existing dev paymaster proxy address>"
+  }
+}
+```
+
+Run from `packages/contracts`:
+
+```bash
+pnpm hh:compile
+pnpm hh:upgrade:paymaster --network base-sepolia \
+  --parameters upgrade-dev.json --deployment-id dev-paymaster-ecdsa-upgrade
+```
+
+The module deploys only the implementation and calls `upgradeToAndCall(implementation, "0x")`
+on the supplied proxy. It checks the proxy's EntryPoint before deploying and requires an
+`Upgraded` event. No initializer runs and the proxy address stays unchanged. Use a new deployment
+ID for a later implementation upgrade; reuse the same ID to resume an interrupted deployment.
+If a Safe or timelock holds `UPGRADER_ROLE`, it must execute the upgrade transaction; this module
+requires the configured transaction sender to hold that role directly.
+
 ```ts
 import { gianoSmartWalletAbi, gianoSmartWalletFactoryAbi, getGianoDeployment, ENTRYPOINT_V07_ADDRESS } from '@appliedblockchain/giano-contracts';
 
