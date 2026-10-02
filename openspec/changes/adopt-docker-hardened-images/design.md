@@ -144,6 +144,8 @@ existing CSP, proxy and `resolver` behaviour, so the serving contract does not h
     `NODE_ENV=production` behaviour) is verified by running the image in the e2e stack, not by inspection.
 - **`giano-bundler`.**
   - In the `-dev` stage, `npm install --prefix /app @pimlico/alto@0.0.18`, replacing today's global install as root.
+  - The RIP-7212 tracer patch from #120 (`patch-alto-precompile.cjs`) runs in that same `-dev` stage, against
+    `/app/node_modules/@pimlico/alto`. The runtime gets the patched tree and needs no `RUN`.
   - `services/bundler/entrypoint.mjs` ports the variable checks and the refusal to run with the Anvil key outside dev
     mode, keeping the wording. It then starts alto in-process (`import` of its CLI entry, with `process.argv` set) or,
     if that is not supported, with `spawn(process.execPath, [altoBin, …], { shell: false })` and signal forwarding.

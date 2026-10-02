@@ -8,6 +8,10 @@
 FROM dhi.io/node:22-alpine3.23-dev@sha256:d3e27128c752bc57454dbb824f8ba770ecf211cc8098a471a8fbd68185dd053f AS build
 WORKDIR /app
 RUN npm install --prefix /app --no-audit --no-fund --omit=dev @pimlico/alto@0.0.18
+# Alto 0.0.18's safe-mode tracer predates RIP-7212; teach it the P-256 precompile at 0x100
+# (patch-alto-precompile.cjs). Patched here, at build, so the runtime stage stays RUN-free.
+COPY services/bundler/patch-alto-precompile.cjs /tmp/patch-alto-precompile.cjs
+RUN node /tmp/patch-alto-precompile.cjs /app/node_modules/@pimlico/alto
 COPY services/bundler/entrypoint.mjs /app/entrypoint.mjs
 
 FROM dhi.io/node:22-alpine3.23@sha256:920a7460ab7ac19ce6a9a38fb23b244bcfed1cf78705f7fe117195c58b307f4d
