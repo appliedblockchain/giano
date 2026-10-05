@@ -1,0 +1,25 @@
+{
+  "rev": "main",
+  "exit": 0,
+  "stderr": "",
+  "config": {
+    "walletUrl": "http://wallet.stock.giano.localhost",
+    "otherWalletUrl": "http://wallet.byo.giano.localhost",
+    "appLabel": "tenant stock — the stock wallet UI",
+    "chains": [
+      {
+        "chainId": 31337,
+        "name": "Devnet A",
+        "rpcUrl": "http://rpc.giano.localhost",
+        "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8"
+      },
+      {
+        "chainId": 31338,
+        "name": "Devnet B",
+        "rpcUrl": "http://rpc-b.giano.localhost",
+        "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8"
+      }
+    ]
+  },
+  "conf": "server {\nlisten 8080;\nserver_name _;\nroot /usr/share/nginx/html;\nindex index.html;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' http://wallet.stock.giano.localhost http://wallet.byo.giano.localhost http://rpc.giano.localhost http://rpc-b.giano.localhost; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\nlocation = /config.js {\nadd_header Cache-Control \"no-store\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' http://wallet.stock.giano.localhost http://wallet.byo.giano.localhost http://rpc.giano.localhost http://rpc-b.giano.localhost; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\n}\nlocation /assets/ {\nadd_header Cache-Control \"public, max-age=31536000, immutable\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' http://wallet.stock.giano.localhost http://wallet.byo.giano.localhost http://rpc.giano.localhost http://rpc-b.giano.localhost; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\n}\nlocation / {\nexpires epoch;\nadd_header Cache-Control \"no-cache\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' http://wallet.stock.giano.localhost http://wallet.byo.giano.localhost http://rpc.giano.localhost http://rpc-b.giano.localhost; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\ntry_files $uri $uri/ /index.html;\n}\n}"
+}

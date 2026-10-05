@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 2,
+  "stderr": "/entrypoint.sh: line 25: GIANO_WALLET_URL: set GIANO_WALLET_URL — the TENANT wallet origin, e.g. https://wallet.example.dev.giano.appliedblockchain.dev\n",
+  "config": null,
+  "conf": null
+}

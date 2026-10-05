@@ -84,6 +84,22 @@ jobs:
           fi
           pnpm changeset status --since="origin/$BASE_REF"
 
+  dockerfile-policy:
+    # ABIP-2 (docs/abip-compliance.md): every published image on a digest-pinned Docker Hardened
+    # Image, -dev only in non-final stages, no RUN or USER in a final stage. Reads Dockerfiles and
+    # docker.yml only — no registry access, no secrets — so it runs on fork PRs as well.
+    name: Dockerfile policy (ABIP-2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Policy check unit tests
+        run: node --test scripts/check-dockerfiles.test.mjs
+      - name: Check every published Dockerfile
+        run: node scripts/check-dockerfiles.mjs
+
   wallet-api:
     name: wallet-api tests + OpenAPI drift
     runs-on: ubuntu-latest

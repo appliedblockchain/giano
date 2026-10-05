@@ -1,0 +1,11 @@
+# Test tooling for scripts/spa-parity — never published, not in docker.yml. Stands in for the
+# DHI nginx runtime with the SPA tool allow-list (design D2): Debian trixie's dash, envsubst and
+# jq, and render.mjs runs it with PATH=/tools, so nothing else is reachable by name.
+FROM debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends jq gettext-base \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir /tools \
+ && ln -s /bin/dash /tools/sh \
+ && ln -s /usr/bin/envsubst /tools/envsubst \
+ && ln -s /usr/bin/jq /tools/jq \
+ && ln -sf /bin/dash /bin/sh
