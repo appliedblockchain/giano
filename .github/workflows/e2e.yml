@@ -12,31 +12,26 @@ concurrency:
 
 jobs:
   # The stack builds wallet-api, wallet-web and paymaster-admin from their Dockerfiles, which build
-  # on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous pulls. Without the credential —
-  # a fork PR, or before the repository secret is provisioned — the suite is SKIPPED, visibly,
-  # rather than failing at the first FROM. Decided in its own job because a job-level `if` cannot
-  # read secrets.
+  # on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous pulls. Without the credential
+  # the run FAILS here, up front and by name — the suite is never skipped and reported green. That
+  # includes fork PRs, which get no secrets.
   dhi:
     name: Hardened-image registry access
     runs-on: ubuntu-latest
-    outputs:
-      available: ${{ steps.check.outputs.available }}
     steps:
-      - id: check
+      - name: Require Docker Hub credentials for dhi.io
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [ -n "$DOCKERHUB_USERNAME" ]; then
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-          else
-            echo '::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not available to this run (fork PR, or not provisioned) — the DHI bases cannot be pulled, so the e2e suite is skipped'
-            echo 'available=false' >> "$GITHUB_OUTPUT"
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo '::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must both be set: the e2e stack builds on dhi.io bases and dhi.io refuses anonymous pulls'
+            exit 1
           fi
 
   playwright:
     name: Two-tenant Playwright suite (Chromium + virtual authenticator)
     needs: dhi
-    if: needs.dhi.outputs.available == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

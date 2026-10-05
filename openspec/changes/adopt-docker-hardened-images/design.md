@@ -234,8 +234,8 @@ own writable paths come from the base. Nothing is `chmod`ed or `chown`ed by `RUN
   is Docker's documented setting: DHI signatures are not written to the public Rekor log. Verification is offline, by
   key. `docker scout attest get --verify --skip-tlog` also works, but took about 4 minutes against cosign's seconds.
 
-  A failure fails the job before any build. The verification needs the same `dhi.io` login, so it is skipped alongside
-  the build when the secret is absent.
+  A failure fails the job before any build. The verification needs the same `dhi.io` login, so a run without the
+  secret fails up front (`setup`) rather than skipping the build.
 - **Attestations.** In `build`, `provenance: false` becomes `provenance: mode=min` plus `sbom: true`, matching ABIP-2's
   `--attest type=provenance,mode=min` and `--sbom=true`. `push-by-digest` pushes, per architecture, an index that
   holds the image and its attestation. `imagetools create` in `merge` combines the two per-architecture indexes and

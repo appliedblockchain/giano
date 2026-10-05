@@ -143,9 +143,9 @@ image) and is exempted as a whole file.
 
 ### Requirement: Images build only with authenticated access to the hardened registry
 CI jobs that build images SHALL authenticate to `dhi.io` before building. A build that cannot authenticate, such as a
-pull request from a fork without secrets, SHALL be reported as skipped with a notice and SHALL NOT be reported as a
-pass.
+pull request from a fork without secrets, SHALL fail, naming the missing credential. It SHALL NOT be skipped and SHALL NOT
+be reported as a pass.
 
 #### Scenario: Fork pull request
 - **WHEN** a pull request from a fork triggers `docker.yml`
-- **THEN** the image build jobs are skipped with a notice naming the missing credential, rather than failing at `FROM`
+- **THEN** the run fails up front with an error naming the missing credential, and no build job is skipped as if it had passed

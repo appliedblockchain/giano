@@ -57,22 +57,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       images: ${{ steps.list.outputs.images }}
-      dhi: ${{ steps.dhi.outputs.available }}
     steps:
       # Every image builds on a Docker Hardened Image (ABIP-2, docs/abip-compliance.md), and dhi.io
-      # refuses anonymous pulls. Without the credential — a fork PR, or before the repository secret
-      # is provisioned — `build` is SKIPPED, visibly, rather than failing at the first FROM or, worse,
-      # passing without having built anything. Decided here because a job-level `if` cannot read
-      # secrets, and a skipped step inside `build` would still report the job green.
-      - id: dhi
+      # refuses anonymous pulls. Without the credential the run FAILS here, up front and by name, never
+      # skipping the build and reporting green. That includes fork PRs, which get no secrets.
+      - name: Require Docker Hub credentials for dhi.io
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [ -n "$DOCKERHUB_USERNAME" ]; then
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-          else
-            echo '::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not available to this run (fork PR, or not provisioned) — the DHI bases cannot be pulled, so image builds are skipped'
-            echo 'available=false' >> "$GITHUB_OUTPUT"
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo '::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must both be set: every image builds on a dhi.io base and dhi.io refuses anonymous pulls'
+            exit 1
           fi
       - id: list
         # `ecr` is the repository under ${ECR_NAMESPACE}, or '' for an image this deployment
@@ -124,7 +120,6 @@ jobs:
   build:
     name: Build ${{ matrix.image.name }} (${{ matrix.platform.arch }})
     needs: setup
-    if: needs.setup.outputs.dhi == 'true'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
