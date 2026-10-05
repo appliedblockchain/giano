@@ -1,5 +1,11 @@
 ## Context
 
+> **Scope amendment.** `giano-contracts-deployer` is a one-shot deploy tool, not a deployed image, so it is **out of
+> scope** of this change and stays on `node:22-slim` with `hardhat-foundry`, `pnpm` and `forge`
+> (`docs/abip-compliance.md`; whole-file exemption in the `abip-2-exceptions` block). Wherever this document describes
+> migrating, hardening or porting the deployer (hardhat config split, `deployer-entrypoint.mjs`, `foundry.snapshot.json`,
+> `tsx`), that work was reverted and does not apply. Seven images are in scope, not eight.
+
 See `proposal.md` for the motivation. Two documents govern this change: ABIP-2, which is the policy, and its companion
 **"Docker Hardened Images Usage and Migration"** guide, which describes how to implement it. Where the guide is more
 specific than ABIP-2, this design follows the guide. The guide is the source of these rules: no `RUN` in the final

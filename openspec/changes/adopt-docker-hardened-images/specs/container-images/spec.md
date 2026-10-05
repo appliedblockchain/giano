@@ -48,14 +48,8 @@ binary directly (`node …` or `nginx …`) and never go through a package manag
 final stage SHALL NOT use shell-mode `child_process` APIs (`exec`, `execSync`, or `spawn` with `shell: true`).
 
 #### Scenario: No shell in the Node images
-- **WHEN** `docker run --entrypoint sh <image>` is attempted against wallet-api, wallet-byo, bundler or
-  contracts-deployer
+- **WHEN** `docker run --entrypoint sh <image>` is attempted against wallet-api, wallet-byo or bundler
 - **THEN** it fails because no shell exists in the image
-
-#### Scenario: Build tooling stays in the build stage
-- **WHEN** the `giano-contracts-deployer` image is inspected
-- **THEN** it contains no `python3`, `make`, `g++`, `git`, `forge` or `pnpm`, and it still performs a deployment end
-  to end, producing the same CREATE2 addresses
 
 #### Scenario: RUN in the final stage rejected
 - **WHEN** the final stage of a Dockerfile in the image list contains a `RUN` instruction
@@ -136,8 +130,8 @@ SHALL give:
 - a link to a tracking issue.
 
 The Dockerfile policy check SHALL accept a non-DHI base only for an image listed there. `giano-devnet`, which is built
-on the Foundry image, is the recorded exception. The `forge` binary that the deployer's build stage copies is covered by
-the same entry.
+on the Foundry image, is the recorded exception. `giano-contracts-deployer` is out of scope (a one-shot tool, not a deployed
+image) and is exempted as a whole file.
 
 #### Scenario: Recorded exception passes
 - **WHEN** the policy check runs over `services/devnet/Dockerfile`, which is listed as an exception

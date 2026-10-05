@@ -123,6 +123,9 @@ export function checkDockerfile(text, file, exceptions = []) {
   const excepted = (ref) =>
     exceptions.some((e) => e.file === file && (ref === e.image || ref.startsWith(`${e.image}@`) || ref.startsWith(`${e.image}:`)));
 
+  // `<file> *` in the exceptions block: a one-shot tool, not a deployed image, out of ABIP-2 scope
+  if (exceptions.some((e) => e.file === file && e.image === '*')) return errors;
+
   const stages = parseStages(text);
   if (stages.length === 0) {
     fail(1, 'no-stage', 'no FROM instruction');

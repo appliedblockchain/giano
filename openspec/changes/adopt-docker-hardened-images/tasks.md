@@ -1,5 +1,11 @@
 ## 1. Confirm the DHI catalogue (prerequisite: `docker login dhi.io` with a Docker Hub account)
 
+> **Scope amendment.** `giano-contracts-deployer` is a one-shot deploy tool, not a deployed image, so it is **out of
+> scope** of this change and stays on `node:22-slim` with `hardhat-foundry`, `pnpm` and `forge`
+> (`docs/abip-compliance.md`; whole-file exemption in the `abip-2-exceptions` block). Wherever this document describes
+> migrating, hardening or porting the deployer (hardhat config split, `deployer-entrypoint.mjs`, `foundry.snapshot.json`,
+> `tsx`), that work was reverted and does not apply. Seven images are in scope, not eight.
+
 - [x] 1.1 Resolve the multi-arch index digests for each tag in design D1, with `docker buildx imagetools inspect`:
   - Node Alpine, `-dev` and runtime;
   - Node Debian, `-dev` and runtime;

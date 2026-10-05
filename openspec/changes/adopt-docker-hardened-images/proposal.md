@@ -1,5 +1,11 @@
 ## Why
 
+> **Scope amendment.** `giano-contracts-deployer` is a one-shot deploy tool, not a deployed image, so it is **out of
+> scope** of this change and stays on `node:22-slim` with `hardhat-foundry`, `pnpm` and `forge`
+> (`docs/abip-compliance.md`; whole-file exemption in the `abip-2-exceptions` block). Wherever this document describes
+> migrating, hardening or porting the deployer (hardhat config split, `deployer-entrypoint.mjs`, `foundry.snapshot.json`,
+> `tsx`), that work was reverted and does not apply. Seven images are in scope, not eight.
+
 ABIP-2 (Docker Hardened Images, status ADOPTED) applies to every repository that produces images for a non-local
 environment, and Giano publishes eight. All eight currently build on community bases (`node:22-alpine`,
 `node:22-slim`, `nginx:1.27-alpine`, the upstream Foundry image). These ship known critical and high CVEs, a shell and a

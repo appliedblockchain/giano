@@ -96,7 +96,6 @@
     "solidity-coverage": "^0.8.5",
     "ts-node": "^10.9.1",
     "tsup": "^8.3.5",
-    "tsx": "^4.19.4",
     "typechain": "^8.3.2",
     "typescript": "5.5.4"
   }

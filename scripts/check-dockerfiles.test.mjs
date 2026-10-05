@@ -76,6 +76,12 @@ CMD ["node", "dist/index.js"]
     assert.deepEqual(rules(`FROM ${FOUNDRY}\n`, 'other/Dockerfile', EXC), ['dhi-base']);
   });
 
+  it('exempts a whole file recorded with *, and only that file', () => {
+    const exc = [{ file: 'svc/Dockerfile', image: '*' }];
+    assert.deepEqual(rules('FROM node:22-slim\nRUN echo hi\nUSER root\n', 'svc/Dockerfile', exc), []);
+    assert.deepEqual(rules('FROM node:22-slim\n', 'other/Dockerfile', exc), ['dhi-base']);
+  });
+
   it('lists only external references', () => {
     const refs = externalRefs(`FROM ${DEV} AS build\nFROM ${RT}\nCOPY --from=build /a /b\nCOPY --from=0 /a /b\n`);
     assert.deepEqual(refs.map((r) => r.ref), [DEV, RT]);

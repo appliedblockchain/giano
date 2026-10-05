@@ -2,38 +2,29 @@
 # address registry JSON. Idempotent via the Ignition journal.
 #   docker build -f packages/contracts/Dockerfile.deployer -t ghcr.io/appliedblockchain/giano-contracts-deployer .
 # Ships as a Helm pre-install hook / compose `profiles: [deploy]` job.
-#
-# ABIP-2: digest-pinned Docker Hardened Images. Debian, not Alpine, because the forge binary copied
-# from the Foundry image is glibc. Compilation — solc, forge, python3/make/g++ for native modules —
-# happens in the -dev build stage only; the runtime has no shell, no forge, no pnpm and runs as node
-# (1000:1000). It deploys with hardhat.deploy.config.ts, which replays the Foundry remappings the
-# build stage snapshotted, because hardhat-foundry shells out to forge (docs/abip-compliance.md).
-FROM dhi.io/node:22-debian13-dev@sha256:51ae6c5d6ff23cd86f789a4d6e0694e0bfb4926a13b9f3a2653d8a33863a704d AS build
-RUN corepack enable && apt-get update && apt-get install -y --no-install-recommends git python3 make g++ \
- && rm -rf /var/lib/apt/lists/*
+FROM node:22-slim AS build
+RUN corepack enable && apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-contracts
 COPY packages/contracts packages/contracts
-# hardhat.config.ts loads @nomicfoundation/hardhat-foundry, which shells out to `forge` when the
-# config loads. Same pinned digest as services/devnet and determinism.yml (forge 1.7.1); one foundry
-# version in the repo, not two. The image is Ubuntu 22.04 (glibc 2.35), so the binary runs on trixie.
-# Dropping the plugin from the COMPILE would change hardhat's remappings, hence the bytecode, hence
-# the CREATE2 addresses — so it compiles with the plugin, and the snapshot carries its remappings
-# to a runtime that cannot run it.
+# hardhat.config.ts loads @nomicfoundation/hardhat-foundry, which shells out to `forge` when
+# the CONFIG loads — so every hardhat invocation needs it, at build time here and at deploy time
+# in the runtime stage below. Same pinned digest as services/devnet and determinism.yml (forge
+# 1.7.1); one foundry version in the repo, not two. The image is Ubuntu 22.04 (glibc 2.35), so
+# the binary runs on bookworm. Dropping the plugin instead would change hardhat's remappings,
+# hence the bytecode, hence the CREATE2 addresses.
 COPY --from=ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd /usr/local/bin/forge /usr/local/bin/forge
-RUN pnpm --filter @appliedblockchain/giano-contracts hh:compile \
- && cd packages/contracts && node scripts/snapshot-foundry.cjs \
- && mkdir -p /staging/out && chown -R 1000:1000 /staging
+RUN pnpm --filter @appliedblockchain/giano-contracts hh:compile
 
-FROM dhi.io/node:22-debian13@sha256:abf07952b2687f656f4e2ee7823138718a1e587a9a1b6bbda28f11fe8f1b74d2
-# The whole tree: Hardhat, Ignition and tsx are this job's runtime, and the deploy-time compile
-# needs the sources and cache to find the build stage's artefacts current. Build tooling is OS
-# packages in the build stage and does not come along.
-COPY --from=build --chown=1000:1000 /repo /repo
-# /out, created and owned by the runtime user so the registry JSON can be written without root
-COPY --from=build /staging/ /
+FROM node:22-slim
+RUN corepack enable
 WORKDIR /repo/packages/contracts
+COPY --from=build /repo /repo
+# forge again: deployer-entrypoint.sh runs `pnpm hh:deploy`, which loads the same config
+COPY --from=ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd /usr/local/bin/forge /usr/local/bin/forge
+COPY packages/contracts/scripts/deployer-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 VOLUME /out
-ENTRYPOINT ["node", "scripts/deployer-entrypoint.mjs"]
+ENTRYPOINT ["/entrypoint.sh"]

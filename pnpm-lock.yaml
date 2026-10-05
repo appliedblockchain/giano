@@ -167,9 +167,6 @@ importers:
       tsup:
         specifier: ^8.3.5
         version: 8.5.0(@swc/core@1.11.24)(jiti@1.21.7)(postcss@8.5.21)(supports-color@8.1.1)(tsx@4.19.4)(typescript@5.5.4)(yaml@2.8.0)
-      tsx:
-        specifier: ^4.19.4
-        version: 4.19.4
       typechain:
         specifier: ^8.3.2
         version: 8.3.2(supports-color@8.1.1)(typescript@5.5.4)

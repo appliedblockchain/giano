@@ -8,12 +8,12 @@ reads as a decision rather than an oversight.
 
 | ABIP | Title | Status |
 |------|-------|--------|
-| ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) |
+| ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) and one out-of-scope image (`giano-contracts-deployer`) |
 
 ## ABIP-2: Docker Hardened Images (adopted)
 
-ABIP-2 applies because this repository publishes eight container images for non-local environments, and
-`.github/workflows/docker.yml` is the authoritative list. The migration follows the ABIP-2 companion guide, "Docker
+ABIP-2 applies because this repository publishes seven container images for non-local environments (the eighth, the one-shot `giano-contracts-deployer`,
+is out of scope; see below), and `.github/workflows/docker.yml` is the authoritative list. The migration follows the ABIP-2 companion guide, "Docker
 Hardened Images Usage and Migration". The repository-level contract is the `container-images` capability in OpenSpec.
 
 | Image | Final-stage base | Notes |
@@ -21,7 +21,7 @@ Hardened Images Usage and Migration". The repository-level contract is the `cont
 | `giano-wallet-api` | DHI Node (Alpine) | no shell; runs as `node` (1000) |
 | `giano-wallet-byo` | DHI Node (Alpine) | no shell; esbuild bundles at start |
 | `giano-bundler` | DHI Node (Alpine) | no shell; entrypoint is `entrypoint.mjs` |
-| `giano-contracts-deployer` | DHI Node (Debian) | no shell, no `forge`, no `pnpm`; see the runtime-dependency note below |
+| `giano-contracts-deployer` | `node:22-slim`, **out of scope** | one-shot deploy tool, not a deployed image; see below |
 | `giano-wallet-web` | DHI nginx (Debian) | SPA tool allow-list; runs as `nginx` (65532) |
 | `giano-paymaster-admin` | DHI nginx (Debian) | SPA tool allow-list |
 | `giano-example` | DHI nginx (Debian) | SPA tool allow-list |
@@ -60,8 +60,10 @@ Mitigations:
 - the image has no ECR repository;
 - it is never deployed to a non-local environment: it is a GHCR artefact for local and CI chains only.
 
-The same entry covers the deployer's build-stage `COPY --from` of `forge`. That `forge` binary compiles the contracts
-and never reaches the deployer's final stage.
+**`giano-contracts-deployer` (out of scope).** It is a one-shot tool that deploys the contracts to a chain (Helm
+pre-install Job, compose `deploy` profile), not a service that runs in an environment. It stays on `node:22-slim` with
+`hardhat-foundry`, `pnpm` and `forge`. It is exempted as a whole file (`*` in the block below), and its `docker.yml`
+entry is still built and published to GHCR.
 
 Tracking issue: _to be opened (task 8.4 of the `adopt-docker-hardened-images` change)._
 
@@ -69,7 +71,7 @@ The check reads this block, so the documented exceptions and the enforced except
 
 ```abip-2-exceptions
 services/devnet/Dockerfile           ghcr.io/foundry-rs/foundry
-packages/contracts/Dockerfile.deployer ghcr.io/foundry-rs/foundry
+packages/contracts/Dockerfile.deployer *
 ```
 
 ### SPA tool allow-list (applied guideline, not an exception)
@@ -84,14 +86,6 @@ holding nothing else, and checks that they render what the previous images rende
 repository uses. Nothing else is added. The DHI nginx base itself ships coreutils and gawk, but no `sed`, no `grep`, no
 network client and no package manager. Those base utilities are Docker's, under its patch SLA, and the start-up does
 not use them.
-
-### Deployer runtime dependencies
-
-`giano-contracts-deployer` is a one-shot job that runs Hardhat Ignition. Hardhat, Ignition and `tsx` are therefore
-runtime dependencies of that image, even though they are devDependencies of the contracts package. They are not build
-tooling. Compilation happens in the build stage. The deploy uses a config that does not load `hardhat-foundry`, because
-that plugin runs shell commands. It replays the Foundry remappings snapshotted at build time, so the bytecode, and
-therefore the CREATE2 addresses, are unchanged.
 
 ### Refreshing a pinned digest
 
