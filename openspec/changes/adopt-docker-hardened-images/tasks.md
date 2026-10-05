@@ -169,8 +169,8 @@
   ECR in the task 1.4 mode. Verify both registries with `cosign verify`.
 - [x] 7.3 Change `e2e.yml`: add the `dhi.io` login and base verification before `compose up --build`, with the same
   notice-and-skip.
-- [x] 7.4 Change `infra/iac/ecr.vars.tf`: raise `ecr_lifecycle_image_count` to 30 for dev, stg and prd, with the
-  reasoning in the description. Run `terraform fmt` and validate. Do not apply.
+- [x] 7.4 ~~Change `infra/iac/ecr.vars.tf`~~ Reverted: `ecr_lifecycle_image_count` stays at 10 (see the design's ECR
+  budget note); no Terraform change in this change.
 
 ## 8. Local end-to-end verification
 

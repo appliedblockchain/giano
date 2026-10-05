@@ -738,8 +738,8 @@ rate between deploys, and 30 is the figure the workflow comment has been assumin
 > **Superseded by ABIP-2.** Container signing and attestation were out of scope here (§1.3), but they are now in
 > place: `docker.yml` publishes SBOM and `mode=min` provenance attestations and a keyless cosign signature. It also
 > verifies Docker's signature on every hardened base before building. Each published commit now costs about six ECR
-> images rather than three, and `ecr_lifecycle_image_count` is 30 in every environment, so the floor described here
-> is about five commits. See [`docs/abip-compliance.md`](../docs/abip-compliance.md).
+> images rather than three, while `ecr_lifecycle_image_count` stays 10, so the floor described here is about one to two
+> commits, not three. See [`docs/abip-compliance.md`](../docs/abip-compliance.md).
 
 ### 7.3 Discrepancy 2 — nothing prunes GHCR
 

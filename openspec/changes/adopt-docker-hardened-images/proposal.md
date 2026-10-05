@@ -39,8 +39,8 @@ stage of every image in `.github/workflows/docker.yml` to move to DHI. The migra
   - **verifies the DHI base-image signatures** before building;
   - attaches SBOM and `mode=min` provenance attestations;
   - **signs published images with keyless cosign**, carrying the signature to ECR on the same digest;
-  - raises the ECR lifecycle budget (`var.ecr_lifecycle_image_count`, from 10 to 30) so the extra artefacts do not
-    evict deployable commits.
+  - leaves the ECR lifecycle budget (`var.ecr_lifecycle_image_count`) at 10, so the extra artefacts shorten retention
+    to about 1 to 2 commits; raising it is a follow-up for devops.
 - A dependency-free repository check fails CI on any of the following:
   - a stage not based on `dhi.io/…@sha256:…`;
   - a `-dev` final stage;
@@ -100,8 +100,8 @@ unchanged. The rewritten entrypoint must still satisfy them, and the tasks verif
 - **Compose:** healthchecks in `deploy/docker-compose.{e2e,infrastructure,infrastructure.aws,dev,reference,sepolia}.yml`.
   Helm probes (`httpGet`) and ECS (ALB checks, `node dist/migrate.js`) need no change. Every port is already 1024 or
   above.
-- **Terraform:** the `ecr_lifecycle_image_count` default in `infra/iac/ecr.vars.tf`. Editing it is part of this
-  change; applying it is part of the deferred deployment group.
+- **Terraform:** none. `ecr_lifecycle_image_count` in `infra/iac/ecr.vars.tf` stays at 10; see the ECR budget note in
+  the design.
 - **Docs and specs:**
   - `docs/abip-compliance.md` (new);
   - `specs/INFRASTRUCTURE.md` and `specs/CI-RELEASE-SPECS.md`;

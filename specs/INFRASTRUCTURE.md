@@ -3554,7 +3554,7 @@ convention CI is trusted to keep:
 |---|---|
 | The role trusts `ref:refs/heads/main` only ([§10.5](#105-the-github-actions-oidc-role)) | The ECR steps are gated on the **ref**, not the event. A PR (`refs/pull/N/merge`) and a `v*` tag push (`refs/tags/v*`) skip ECR and still publish to GHCR — a release tag stays green |
 | Tags are `IMMUTABLE` ([§11](#11-ecr)) | No `latest` to ECR, so ECR gets a tag set of its own; and a re-run at an already-published commit drops just the ECR tag instead of failing on `PutImage` |
-| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | Attestations spend retention meant for deployable commits. Before ABIP-2 this was `provenance: false`. Since ABIP-2, each published image carries SBOM and `mode=min` provenance plus a cosign signature, about six ECR images per commit, and `var.ecr_lifecycle_image_count` is 30 so that retention still covers about five commits |
+| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | Attestations spend retention meant for deployable commits. Before ABIP-2 this was `provenance: false`. Since ABIP-2, each published image carries SBOM and `mode=min` provenance plus a cosign signature, about six ECR images per commit, and `var.ecr_lifecycle_image_count` stays 10, so retention covers only about one to two commits and the pinned tag must be watched |
 
 **Hardened images (ABIP-2).** Every image `docker.yml` publishes builds on a digest-pinned Docker Hardened Image, with
 two exceptions: `giano-devnet`, a recorded exception, and the deployer's build-stage `forge`. The disposition,

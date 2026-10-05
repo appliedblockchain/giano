@@ -248,9 +248,10 @@ own writable paths come from the base. Nothing is `chmod`ed or `chown`ed by `RUN
     (task 1.4 picks the mode). It verifies with the same identity.
   - PRs sign nothing.
 - **ECR budget.** Each published commit was 3 ECR images (one index plus two platform manifests). It becomes about 6:
-  two attestation manifests and one signature are added. `ecr_lifecycle_image_count` is raised from 10 to 30 in each
-  environment, which keeps retention at about 5 commits, no worse than today's 3. Task 9.4 checks the real count with
-  `aws ecr describe-images`. The edit is made in this change; `terraform apply` is deferred.
+  two attestation manifests and one signature are added. `ecr_lifecycle_image_count` is **left at 10** (a decision made
+  in review: no change to `infra/iac/ecr.vars.tf`), so retention falls from about 3 commits to about 1 to 2. The risk
+  is that the pinned `var.image_tag` is expired; raise the count before relying on it. Task 9.4 checks the real count
+  with `aws ecr describe-images`.
 - **Policy check.** `scripts/check-dockerfiles.mjs` has no dependencies and reads the image list from `docker.yml`. For
   each Dockerfile it parses the stages and asserts the `container-images` rules:
   - the `dhi.io` host and an `@sha256:` digest;
