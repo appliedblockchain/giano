@@ -1,2 +1,2 @@
+openzeppelin-contracts/contracts/utils/Base64.sol=vendor/openzeppelin-contracts-5.3.0/utils/Base64.sol
 openzeppelin-contracts/=node_modules/@openzeppelin
-

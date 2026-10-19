@@ -21,6 +21,11 @@
 // neither the sender nor the zero address, which is the shape of 0xAB…AB — no chain id and no
 // deployer EOA enter the address. That is what makes these constants chain- and
 // operator-independent rather than merely "the same so far".
+//
+// The wallet pair stays on the v1.1.0 freeze although OpenZeppelin is now 5.4.0: the one OpenZeppelin
+// file the wallet compiles, `utils/Base64.sol`, is pinned to its 5.3.0 bytes in
+// `vendor/openzeppelin-contracts-5.3.0/` (see its README) because solc embeds every source file's
+// hash in the bytecode. Dropping that pin is a new freeze of these two addresses.
 
 /** GianoSmartWalletFactory at its canonical CREATE2 address. */
 export const CANONICAL_FACTORY = '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050' as const;
@@ -49,16 +54,17 @@ export const CANONICAL_ACCOUNT_NONCE = 0n;
  * through UUPS keeps the address; re-deploying a modified build from genesis does not, and is a
  * new canonical freeze.
  */
-// Fresh-deployment freeze for the ECDSA-only signer-validation build. Existing proxies
-// (including the baked devnet's 0xf98b…0718) retain their addresses when upgraded through UUPS.
-export const CANONICAL_SPONSORSHIP_PAYMASTER = '0xbD95de95b018697D72A9A3B6B2Ef565093C2B294' as const;
+// Fresh-deployment freeze for the ECDSA-only signer-validation build compiled against OpenZeppelin
+// 5.4.0. Existing proxies (including the baked devnet's and the testnets' 0xf98b…0718) retain their
+// addresses when upgraded through UUPS.
+export const CANONICAL_SPONSORSHIP_PAYMASTER = '0x5Eaf2d3b813f227D2E8c0cFcD1e5D111Ade1d489' as const;
 
 /**
  * The `GianoPaymaster` implementation {@link CANONICAL_SPONSORSHIP_PAYMASTER} delegates to at
  * the freeze. Unlike the proxy, this is expected to change on every upgrade — it is frozen so
  * that a *fresh* deployment can be checked against the build this freeze came from.
  */
-export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0xeC7BFA2E5A8d6029C210B986a957aB58E7C70434' as const;
+export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0x40465E7c728cE8887958FA2fBe620924aebbC873' as const;
 
 /**
  * `GianoPaymasterDeployer`, the CREATE2 deployer the paymaster proxy hangs off. Recorded because
@@ -66,4 +72,4 @@ export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0xeC7BFA2E5A8d602
  * can recompute {@link CANONICAL_SPONSORSHIP_PAYMASTER} from these three without trusting a
  * deployment journal.
  */
-export const CANONICAL_PAYMASTER_DEPLOYER = '0xD90a7Ec5724DA9f30D3224Eb68d39B2790b36b09' as const;
+export const CANONICAL_PAYMASTER_DEPLOYER = '0x2bB91D45b12F2cF59fd1dC1D331B5850104FFed5' as const;

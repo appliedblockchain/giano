@@ -75,7 +75,7 @@ Deterministic: baked into `e2e/devnet/state.json` and mirrored in `e2e/devnet/ad
 | `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` |
 | `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` |
 | **`GianoPaymaster` (proxy)** | `0xf98b56de62ce88cEb70A9155582248cDBf2D0718` |
-| `GianoPaymaster` implementation | `0xc5a5C42992dECbae36851359345FE25997F5C42d` |
+| `GianoPaymaster` implementation | `0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E` |
 | `PermissivePaymaster` (test only) | `0xCbc040482c1dd07D533800874DC37De7b18c8092` |
 | Test ERC-20 | `0x9967bDf929856643e92EF65eefdE1fF8250774D8` |
 
@@ -85,8 +85,8 @@ point at. The implementation address changes on every upgrade; the proxy must no
 Wallet addresses match the frozen canonical build on every chain. The baked paymaster keeps its
 original proxy address and is upgraded through UUPS; its current implementation is recorded in
 `e2e/devnet/addresses.json`. A fresh deployment of the ECDSA-only paymaster instead uses proxy
-`0xbD95de95b018697D72A9A3B6B2Ef565093C2B294` and implementation
-`0xeC7BFA2E5A8d6029C210B986a957aB58E7C70434`, frozen in `packages/contracts/canonical.ts`.
+`0x5Eaf2d3b813f227D2E8c0cFcD1e5D111Ade1d489` and implementation
+`0x40465E7c728cE8887958FA2fBe620924aebbC873`, frozen in `packages/contracts/canonical.ts`.
 The Determinism workflow checks those fresh-deployment addresses and operator independence.
 After changing paymaster bytecode, re-freeze deliberately and use `devnet:upgrade:paymaster`
 to update an existing baked proxy without replacing its funding address.
