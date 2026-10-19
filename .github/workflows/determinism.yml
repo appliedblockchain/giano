@@ -6,6 +6,12 @@ on:
       - 'packages/contracts/src/**'
       - 'packages/contracts/hardhat.config.ts'
       - 'packages/contracts/foundry.toml'
+      # Inputs that change bytecode or the frozen constants without touching src/: the remapped
+      # (vendored) sources, the Solidity dependency versions, and the freeze itself.
+      - 'packages/contracts/remappings.txt'
+      - 'packages/contracts/vendor/**'
+      - 'packages/contracts/package.json'
+      - 'packages/contracts/canonical.ts'
       - '.github/workflows/determinism.yml'
   # `paths:` lives under `pull_request` only and is ignored by `workflow_call`, so both jobs
   # below run on every release — which is what a gate has to do.
