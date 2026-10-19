@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 1,
+  "stderr": "DEPRECATED: GIANO_CHAIN_ID/GIANO_CHAIN_B_ID are converted to GIANO_CHAINS; they will be removed in the next release.\nFATAL: GIANO_CHAIN_B_ID=31338 but GIANO_RPC_B_URL is unset.\n",
+  "config": null,
+  "conf": null
+}

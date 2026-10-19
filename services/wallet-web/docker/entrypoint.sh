@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Runs in the DHI nginx runtime, which carries exactly sh, envsubst and jq (docs/abip-compliance.md,
+# SPA tool allow-list). Shell built-ins and those three only — no awk, sed, cat or grep exists here.
+
 # Runtime config injection: one published image serves every deployment (MC-41).
 #
 # Two shapes, mutually exclusive (§3.4):
@@ -61,7 +64,16 @@ fi
 # load (nginx.conf.template). The VPC resolver under ECS, Docker's embedded DNS under compose;
 # either way the container is handed one, so there is nothing to configure. First match only: the
 # directive takes one address.
-GIANO_RESOLVER=$(awk '/^nameserver/ && $2 ~ /^[0-9.]+$/ { print $2; exit }' /etc/resolv.conf)
+GIANO_RESOLVER=""
+while read -r key value _ || [ -n "${key:-}" ]; do
+  if [ "$key" = nameserver ]; then
+    case "$value" in
+      '' | *[!0-9.]*) ;;
+      *) GIANO_RESOLVER=$value; break ;;
+    esac
+  fi
+  key=""
+done < /etc/resolv.conf
 : "${GIANO_RESOLVER:?/etc/resolv.conf names no IPv4 nameserver}"
 export GIANO_RESOLVER
 

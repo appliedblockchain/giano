@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Runs in the DHI nginx runtime, which carries exactly sh, envsubst and jq (docs/abip-compliance.md,
+# SPA tool allow-list). Shell built-ins and those three only.
+
 # Runtime config injection: one published image serves every deployment, so nothing about which
 # chains or which paymasters this console administers is baked in at build time.
 #
@@ -38,13 +41,17 @@ fi
 # entryPoint, factory and policy, and /config.json is served to the browser. Naming what is kept
 # means a field added to a descriptor later is not published to every console user by default.
 #
-# Malformed JSON stops the container here, with jq naming the defect in the logs. That is the
-# intended failure: the alternative is nginx serving a /config.json the SPA refuses to parse, which
-# presents as a blank console with nothing to read.
+# Malformed JSON stops the container here, naming the variable and then letting jq name the defect.
+# That is the intended failure: the alternative is nginx serving a /config.json the SPA refuses to
+# parse, which presents as a blank console with nothing to read.
 #
 # `walletRpcUrl` is the one field here a chain descriptor does not carry — it is a property of how
 # this console is published rather than of the chain — and, unlike rpcUrl, it is left exactly as
 # written: it is meant to be dialled from outside this page, so proxying it would defeat it.
+if ! printf '%s' "$GIANO_DEPLOYMENTS" | jq -e 'type == "array"' > /dev/null; then
+  echo "FATAL: GIANO_DEPLOYMENTS must be a JSON array of deployment descriptors" >&2
+  exit 1
+fi
 GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
   [ .[]
     | { name, chainId, rpcUrl, walletRpcUrl, sponsorshipPaymaster, refreshSeconds: (.refreshSeconds // 15) }

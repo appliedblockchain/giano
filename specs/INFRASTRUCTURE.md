@@ -3555,7 +3555,21 @@ convention CI is trusted to keep:
 |---|---|
 | The role trusts `ref:refs/heads/main` only ([§10.5](#105-the-github-actions-oidc-role)) | The ECR steps are gated on the **ref**, not the event. A PR (`refs/pull/N/merge`) and a `v*` tag push (`refs/tags/v*`) skip ECR and still publish to GHCR — a release tag stays green |
 | Tags are `IMMUTABLE` ([§11](#11-ecr)) | No `latest` to ECR, so ECR gets a tag set of its own; and a re-run at an already-published commit drops just the ECR tag instead of failing on `PutImage` |
-| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | `provenance: false` — an attestation manifest per image would spend retention meant for deployable commits |
+| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | Attestations spend retention meant for deployable commits. Before ABIP-2 this was `provenance: false`. Since ABIP-2, each published image carries SBOM and `mode=min` provenance plus a cosign signature, about six ECR images per commit, and `var.ecr_lifecycle_image_count` stays 10, so retention covers only about one to two commits and the pinned tag must be watched |
+
+**Hardened images (ABIP-2).** Every image `docker.yml` publishes builds on a digest-pinned Docker Hardened Image, with
+two exceptions: `giano-devnet`, a recorded exception, and the deployer's build-stage `forge`. The disposition,
+exceptions, SPA tool allow-list and digest-refresh procedure are in [`docs/abip-compliance.md`](../docs/abip-compliance.md).
+
+What changes for operators:
+- **No shell in the Node runtimes.** wallet-api, wallet-byo, the bundler and the deployer have none. Start commands
+  and probes call `node` directly. `docker exec … sh` no longer works; use the image's own commands, or a debug
+  sidecar.
+- **The SPA images** (wallet-web, paymaster-admin, giano-example) run DHI nginx as UID 65532, with only `sh`,
+  `envsubst` and `jq` added for the start-up script. Their in-image healthcheck is a liveness check from shell
+  built-ins: the PID file and the rendered config. The HTTP check remains the ALB's.
+- **Builds need a `docker login dhi.io`.** CI uses `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`, and it verifies Docker's
+  signature on each base before building.
 
 Not included: the `update-service` sequence — that is `deploy.yml`'s job, on its own trigger
 ([§15.1](#151-the-deployed-version-is-declared)). No migration step either: `wallet-api` applies its

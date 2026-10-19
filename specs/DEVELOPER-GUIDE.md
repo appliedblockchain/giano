@@ -169,6 +169,9 @@ wallet-web UI, tenant `byo` serves an independently built ("bring your own") wal
 
 ```sh
 pnpm install
+# once per machine: the images build on Docker Hardened Images, and dhi.io needs a Docker Hub login
+# (an account made with Google/GitHub sign-in uses a personal access token as the password)
+docker login dhi.io
 # --profile portless adds the container that lends the stack port 80
 docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 
