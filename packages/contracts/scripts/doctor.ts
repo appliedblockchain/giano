@@ -4,13 +4,21 @@
  * Usage (run from the repo root):
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- chain \
  *     --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..] \
- *     [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]
+ *     [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] \
+ *     [--executor 0x..]
  *
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- wallet \
  *     --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]
  *
+ * The sponsorship paymaster is always reported on: its checks (stake, deposit, tenant roster,
+ * accounting invariant, role topology) need an address, and when none resolves the report says so
+ * rather than falling silent. `--require-paymaster` makes that absence critical, which is what an
+ * environment that is meant to sponsor should gate on. The tenant roster is read from the
+ * paymaster, so `--tenants` is only needed for a deployment that predates it.
+ *
  * Flags fall back to env: RPC_URL, CHAIN_ID, FACTORY_ADDRESS, ENTRYPOINT_ADDRESS,
- * SPONSORSHIP_PAYMASTER_ADDRESS, PAYMASTER_TENANT_IDS, PAYMASTER_ROLE_ADMIN, SPONSORSHIP_SIGNERS.
+ * SPONSORSHIP_PAYMASTER_ADDRESS, PAYMASTER_TENANT_IDS, PAYMASTER_ROLE_ADMIN, SPONSORSHIP_SIGNERS,
+ * GIANO_REQUIRE_PAYMASTER.
  * For registry chains (8453 / 84532 / 381185) the addresses default from the contracts registry.
  *
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
@@ -29,10 +37,18 @@ const RIP7212_PRECOMPILE = '0x0000000000000000000000000000000000000100';
 const P256_VERIFIER = '0xc2b78104907F722DABAc4C69f826a522B2754De4';
 /** Chains on which a permissive test paymaster is a deployment failure, not a convenience. */
 const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111];
-/** Below this, sponsored operations start failing in ways that look like client bugs. */
+/**
+ * Below this, sponsored operations start failing in ways that look like client bugs.
+ *
+ * This and {@link MIN_STAKE_WEI} are duplicated from `packages/paymaster-sdk/src/health.ts`, which
+ * applies the same verdicts to the admin console. They are duplicated rather than imported because
+ * the SDK depends on this package — importing it back would close a workspace cycle. Change both.
+ */
 const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n; // 0.02 ETH
 /** A validating paymaster needs a stake before bundlers will accept its operations at all. */
 const MIN_STAKE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
+/** Tenants per `getTenants` page — the roster is read in pages so a large one cannot blow the call. */
+const TENANT_PAGE_SIZE = 50;
 
 /** Arachnid deterministic-deployment proxy (CREATE2 factory). */
 const CREATE2_FACTORY = '0x4e59b44847b379578588920ca78fbf26c0b4956c';
@@ -111,6 +127,76 @@ function resolveDeployment(chainId: number, flags: Record<string, string>): Part
 }
 
 /**
+ * Normalises a tenant id to the contract's `bytes16` spelling, accepting the UUID form used
+ * everywhere off-chain.
+ *
+ * Mirrors `toTenantId` in `packages/paymaster-sdk/src/tenant-id.ts`; see {@link LOW_DEPOSIT_WEI}
+ * for why this package cannot import it. Rejects anything else loudly — an id that parsed by
+ * accident would address a different tenant, and the contract reports that only as `UnknownTenant`.
+ */
+function toTenantId(id: string): string {
+  const trimmed = id.trim().toLowerCase();
+  if (/^0x[0-9a-f]{32}$/.test(trimmed)) return trimmed;
+  const undashed = trimmed.replace(/-/g, '');
+  if (/^[0-9a-f]{32}$/.test(undashed)) return `0x${undashed}`;
+  throw new Error(`"${id}" is not a tenant id: expected a UUID or a 16-byte hex string (0x + 32 hex characters)`);
+}
+
+/** Renders a `bytes16` tenant id as the UUID it is in the tenant table and in support tickets. */
+function toTenantUuid(id: string): string {
+  const body = id.trim().toLowerCase().replace(/^0x/, '');
+  return `${body.slice(0, 8)}-${body.slice(8, 12)}-${body.slice(12, 16)}-${body.slice(16, 20)}-${body.slice(20)}`;
+}
+
+type TenantRow = { id: string; registered: boolean; enabled: boolean; balance: bigint; deficit: bigint };
+
+/**
+ * The tenant roster, read from the paymaster itself.
+ *
+ * Reading it on-chain is what lets the accounting invariant be checked with no flags at all: the
+ * check that detects an insolvency must not depend on an operator remembering to pass `--tenants`.
+ * Deployments that predate the enumerable roster expose no `tenantCount`, so the flag/env list
+ * remains as the fallback rather than the primary source.
+ */
+async function readTenantRoster(
+  paymaster: Contract,
+  flags: Record<string, string>,
+): Promise<{ rows: TenantRow[]; source: 'chain' | 'flags' | 'none' }> {
+  const toRow = (id: string, record: { registered: boolean; enabled: boolean; balance: bigint; deficit: bigint }): TenantRow => ({
+    id,
+    registered: record.registered,
+    enabled: record.enabled,
+    balance: record.balance,
+    deficit: record.deficit,
+  });
+
+  try {
+    const count: bigint = await paymaster.tenantCount();
+    const rows: TenantRow[] = [];
+    for (let start = 0n; start < count; start += BigInt(TENANT_PAGE_SIZE)) {
+      const remaining = count - start;
+      const span = remaining < BigInt(TENANT_PAGE_SIZE) ? remaining : BigInt(TENANT_PAGE_SIZE);
+      const page = await paymaster.getTenants(start, span);
+      const ids: string[] = page.ids ?? page[0];
+      const records = page.records ?? page[1];
+      ids.forEach((id, i) => rows.push(toRow(id, records[i])));
+    }
+    return { rows, source: 'chain' };
+  } catch {
+    // Pre-roster deployment (no tenantCount) — fall back to the ids the caller named.
+    const ids = (flags['tenants'] ?? process.env.PAYMASTER_TENANT_IDS ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map(toTenantId);
+    if (ids.length === 0) return { rows: [], source: 'none' };
+    const rows: TenantRow[] = [];
+    for (const id of ids) rows.push(toRow(id, await paymaster.getTenant(id)));
+    return { rows, source: 'flags' };
+  }
+}
+
+/**
  * The production paymaster's deployment-completeness checks (R-24), accounting invariant (R-34)
  * and role topology (R-55).
  *
@@ -120,18 +206,46 @@ function resolveDeployment(chainId: number, flags: Record<string, string>): Part
  */
 async function checkSponsorshipPaymaster(
   provider: JsonRpcProvider,
-  address: `0x${string}`,
+  address: `0x${string}` | undefined,
   deployment: Partial<GianoDeployment>,
   entryPoint: string,
   flags: Record<string, string>,
+  chainId: number,
 ): Promise<void> {
   section('Sponsorship paymaster (production)');
+
+  // An unresolvable address used to skip this section in silence, which reads exactly like a
+  // deployment that passed — the one thing a pre-flight gate must never do. Say it instead, and
+  // let `--require-paymaster` turn it into a failure for an environment that is meant to sponsor.
+  if (!address) {
+    const required = (flags['require-paymaster'] ?? process.env.GIANO_REQUIRE_PAYMASTER) === 'true';
+    report(required ? 'fail' : 'warn', 'no sponsorship paymaster address', `none in the registry for chain ${chainId}, and none was passed`);
+    report('info', 'NOT verified', 'stake, EntryPoint deposit, the accounting invariant, the tenant roster and the role topology were all skipped');
+    report('info', 'fix', 'pass --sponsorship-paymaster 0x.. (or set SPONSORSHIP_PAYMASTER_ADDRESS); add --require-paymaster to make its absence critical');
+    return;
+  }
+
   const pmHasCode = await hasCode(provider, address);
   report(pmHasCode ? 'ok' : 'fail', 'sponsorship paymaster proxy deployed', address);
   if (!pmHasCode) return;
 
   const paymaster = new Contract(address, gianoPaymasterAbi, provider);
   const ep = new Contract(entryPoint, iEntryPointAbi, provider);
+
+  // --- bound to the EntryPoint everything else was checked against -------------------------
+  // A paymaster wired to a different EntryPoint passes every address and balance check on this
+  // list while sponsoring nothing this chain's wallets can use.
+  try {
+    const bound: string = await paymaster.entryPoint();
+    const matches = getAddress(bound) === getAddress(entryPoint);
+    report(
+      matches ? 'ok' : 'fail',
+      'bound to the expected EntryPoint',
+      matches ? bound : `${bound} — expected ${getAddress(entryPoint)}; this paymaster cannot sponsor operations on that EntryPoint`,
+    );
+  } catch (error) {
+    report('warn', 'read paymaster.entryPoint()', (error as Error).message);
+  }
 
   // --- implementation matches the registry -------------------------------------------------
   try {
@@ -168,31 +282,49 @@ async function checkSponsorshipPaymaster(
     report('fail', 'read stake and deposit', (error as Error).message);
   }
 
-  // --- the accounting invariant (R-34) -------------------------------------------------------
-  const tenantIds = (flags['tenants'] ?? process.env.PAYMASTER_TENANT_IDS ?? '')
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
-
+  // --- the tenant roster and the accounting invariant (R-34) ---------------------------------
   try {
     const deposit: bigint = await ep.balanceOf(address);
     const treasury: bigint = await paymaster.treasury();
+    const { rows, source } = await readTenantRoster(paymaster, flags);
+
+    if (source === 'none') {
+      report('fail', 'tenant roster', 'unreadable: the paymaster exposes no tenantCount and no --tenants list was given');
+      report('info', 'fix', 'pass --tenants <uuid,uuid> (or set PAYMASTER_TENANT_IDS) for a deployment that predates the enumerable roster');
+    } else {
+      // Zero tenants is a warning, not a failure: tenant onboarding is a separate step from
+      // deploying the paymaster, so a freshly provisioned one legitimately has an empty roster.
+      // Registered-but-unfunded further down stays critical — that is a stalled onboarding.
+      report(
+        rows.length > 0 ? 'ok' : 'warn',
+        'tenants registered',
+        rows.length > 0
+          ? `${rows.length}${source === 'flags' ? ' (from --tenants; roster not enumerable on-chain)' : ''}`
+          : 'none — nothing can be sponsored until a tenant is registered and funded',
+      );
+    }
 
     let tenantTotal = 0n;
     let anyFunded = false;
-    for (const id of tenantIds) {
-      const tenant = await paymaster.getTenant(id);
-      const balance: bigint = tenant.balance;
-      tenantTotal += balance;
-      if (balance > 0n) anyFunded = true;
-      if (tenant.deficit > 0n) {
-        report('fail', `tenant ${id} carries a deficit`, `${formatEther(tenant.deficit)} ETH — that tenant cannot transact`);
+    for (const row of rows) {
+      const uuid = toTenantUuid(row.id);
+      tenantTotal += row.balance;
+      if (row.balance > 0n) anyFunded = true;
+
+      if (!row.registered) {
+        report('fail', `tenant ${uuid} is not registered`, 'it holds no record on this paymaster — wrong id, or wrong chain');
+        continue;
+      }
+      if (row.deficit > 0n) {
+        report('fail', `tenant ${uuid} carries a deficit`, `${formatEther(row.deficit)} ETH — that tenant cannot transact until it is funded`);
+      } else if (!row.enabled) {
+        report('warn', `tenant ${uuid} is disabled`, `${formatEther(row.balance)} ETH balance, but its operations are refused`);
+      } else {
+        report(row.balance > 0n ? 'ok' : 'warn', `tenant ${uuid}`, `${formatEther(row.balance)} ETH${row.balance > 0n ? '' : ' — enabled but unfunded'}`);
       }
     }
 
-    if (tenantIds.length === 0) {
-      report('info', 'tenant balances', 'pass --tenants <id,id> to check per-tenant balances and the invariant');
-    } else {
+    if (rows.length > 0) {
       const claims = tenantTotal + treasury;
       report(
         claims <= deposit ? 'ok' : 'fail',
@@ -201,16 +333,17 @@ async function checkSponsorshipPaymaster(
       );
       if (claims > deposit) {
         report('info', 'this is an insolvency', 'claims exceed the deposit — stop issuing sponsorships and investigate');
+      } else {
+        report('info', 'unattributed slack', `${formatEther(deposit - claims)} ETH (expected, and monitored for growth)`);
       }
       report(
         anyFunded ? 'ok' : 'fail',
         'at least one tenant balance is funded',
-        anyFunded ? `${formatEther(tenantTotal)} ETH across ${tenantIds.length} tenants` : 'none of the listed tenants holds a balance',
+        anyFunded ? `${formatEther(tenantTotal)} ETH across ${rows.length} tenant(s)` : 'no tenant holds a balance — nothing can be sponsored',
       );
-      report('info', 'unattributed slack', `${formatEther(deposit - claims)} ETH (expected, and monitored for growth)`);
     }
   } catch (error) {
-    report('fail', 'read the accounting invariant', (error as Error).message);
+    report('fail', 'read the tenant roster and accounting invariant', (error as Error).message);
   }
 
   // --- roles (R-55) --------------------------------------------------------------------------
@@ -399,10 +532,10 @@ async function doctorChain(flags: Record<string, string>) {
     }
   }
 
-  const sponsorshipPaymaster = deployment.sponsorshipPaymaster ?? undefined;
-  if (sponsorshipPaymaster) {
-    await checkSponsorshipPaymaster(provider, requireAddress(sponsorshipPaymaster, 'sponsorship-paymaster'), deployment, entryPoint, flags);
-  }
+  const sponsorshipPaymaster = deployment.sponsorshipPaymaster
+    ? requireAddress(deployment.sponsorshipPaymaster, 'sponsorship-paymaster')
+    : undefined;
+  await checkSponsorshipPaymaster(provider, sponsorshipPaymaster, deployment, entryPoint, flags, chainId);
 
   const executor = flags.executor ?? process.env.ALTO_EXECUTOR_ADDRESS;
   if (executor) {
@@ -513,7 +646,8 @@ async function main() {
         '',
         'Usage:',
         '  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..]',
-        '                [--tenants <id,id>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]',
+        '                [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..]',
+        '                [--signers 0x..,0x..] [--executor 0x..]',
         '  doctor wallet --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]',
       ].join('\n'),
     );
