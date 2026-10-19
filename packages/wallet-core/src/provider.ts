@@ -19,7 +19,7 @@ import type {
   UserOperation,
   UserOperationReceipt,
 } from 'viem/account-abstraction';
-import { createWebAuthnCredential, toWebAuthnAccount } from 'viem/account-abstraction';
+import { createWebAuthnCredential, sendUserOperation, toWebAuthnAccount } from 'viem/account-abstraction';
 import type { EIP1193EventMap, EIP1193Parameters, EIP1193RequestFn, EIP1474Methods } from 'viem';
 import type { GianoSmartAccountImplementation } from './account';
 import { toGianoSmartAccount } from './account';
@@ -177,8 +177,8 @@ export function resolveUserOpFees(
   fallback: FeeValues,
 ): FeeValues {
   return {
-    maxFeePerGas: requested.maxFeePerGas || prepared.maxFeePerGas || fallback.maxFeePerGas,
-    maxPriorityFeePerGas: requested.maxPriorityFeePerGas || prepared.maxPriorityFeePerGas || fallback.maxPriorityFeePerGas,
+    maxFeePerGas: requested.maxFeePerGas ?? prepared.maxFeePerGas ?? fallback.maxFeePerGas,
+    maxPriorityFeePerGas: requested.maxPriorityFeePerGas ?? prepared.maxPriorityFeePerGas ?? fallback.maxPriorityFeePerGas,
   };
 }
 
@@ -622,9 +622,21 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         throw new Error('Giano not connected');
       }
 
-      return await submitUserOperation({
-        account: smartAccount,
-        ...signedUserOp
+      // Submit the exact operation the caller already signed. Preparing or signing it
+      // again changes its paymaster authorisation and breaks the raw three-step flow.
+      const sender = await smartAccount.getAddress();
+      if (signedUserOp.sender.toLowerCase() !== sender.toLowerCase()) throw new Error('Address mismatch');
+      if (injection.submitUserOperation) {
+        return injection.submitUserOperation({
+          ...signedUserOp,
+          account: { entryPoint: { address: GianoEntryPointAddress } },
+        } as Parameters<NonNullable<typeof injection.submitUserOperation>>[0], chain!.id);
+      }
+      // viem prepares again when either the request or client supplies an account.
+      return sendUserOperation({ ...bundler!, account: undefined }, {
+        ...signedUserOp,
+        account: undefined,
+        entryPointAddress: GianoEntryPointAddress,
       });
     },
     eth_prepareUserOperation: async ([calls, options = {}]) => {
@@ -638,21 +650,20 @@ export const createGianoProvider = (options: CreateGianoProviderParams) => {
         ...options,
       };
 
-      const estimate = await bundler!.estimateUserOperationGas({ account: smartAccount, ...op });
-      if (!estimate) {
-        throw new Error('Could not estimate user operation');
-      }
-
+      const fees = resolveUserOpFees(options, {}, await estimateFeesPerGas(chain!.id));
       const prepared = await bundler!.prepareUserOperation({
         account: smartAccount,
         ...op,
-        ...estimate,
+        ...fees,
       });
 
+      // viem echoes its account object, including signing functions. Only the
+      // operation can cross the popup's postMessage boundary.
+      const { account: _account, ...operation } = prepared;
       return {
-        ...prepared,
+        ...operation,
         preVerificationGas: prepared.preVerificationGas,
-        ...resolveUserOpFees(options, prepared, await estimateFeesPerGas(chain!.id)),
+        ...fees,
       };
     },
   } satisfies GianoProviderMethodsMap

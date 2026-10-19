@@ -1,0 +1,23 @@
+{
+  "rev": "main",
+  "exit": 0,
+  "stderr": "",
+  "config": {
+    "walletUrl": "https://w.example/it's",
+    "otherWalletUrl": "https://other.example",
+    "appLabel": "O'Brien's $HOME \\ \"demo\"",
+    "chains": [
+      {
+        "chainId": 1,
+        "name": "One",
+        "rpcUrl": "/rpc/1"
+      },
+      {
+        "chainId": 2,
+        "name": "Two",
+        "rpcUrl": "https://two.example/path?key=1"
+      }
+    ]
+  },
+  "conf": "server {\nlisten 8080;\nserver_name _;\nroot /usr/share/nginx/html;\nindex index.html;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example https://other.example https://two.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\nlocation = /rpc/1 {\nproxy_pass https://keyed.example/v2/SECRET;\nproxy_set_header Host $proxy_host;\nproxy_ssl_server_name on;\n}\nlocation = /config.js {\nadd_header Cache-Control \"no-store\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example https://other.example https://two.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\n}\nlocation /assets/ {\nadd_header Cache-Control \"public, max-age=31536000, immutable\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example https://other.example https://two.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\n}\nlocation / {\nexpires epoch;\nadd_header Cache-Control \"no-cache\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example https://other.example https://two.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\ntry_files $uri $uri/ /index.html;\n}\n}"
+}

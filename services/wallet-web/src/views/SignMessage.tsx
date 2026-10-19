@@ -3,6 +3,12 @@ import type { PendingRequest } from '@appliedblockchain/giano-wallet-kit';
 
 function renderPayload(request: PendingRequest): { title: string; body: string; domainChainId?: number } {
   const params = (request.params as unknown[]) ?? [];
+  if (request.method === 'eth_signUserOperation' || request.method === 'signed_eth_call') {
+    return {
+      title: request.method === 'eth_signUserOperation' ? 'Sign user operation' : 'Authorise contract read',
+      body: JSON.stringify(params[0], (_, value) => typeof value === 'bigint' ? value.toString() : value, 2),
+    };
+  }
   if (request.method === 'eth_signTypedData_v4') {
     const [, typedData] = params as [string, string];
     try {

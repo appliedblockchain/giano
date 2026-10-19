@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 5,
+  "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 9\n",
+  "config": null,
+  "conf": null
+}

@@ -66,26 +66,25 @@ each such exclusion decided per package and listed in the final report.
 - **WHEN** the final report is written
 - **THEN** it states whether a minimum release age is configured and names every package excluded from it
 
-### Requirement: Address-moving bumps produce a new canonical freeze
-A dependency bump that changes the bytecode of a CREATE2-deployed contract — including a change to the compiler
-identity it forces, such as the EVM target — SHALL be carried through as a new canonical freeze in the same change: the
-frozen canonical constants, the contracts address registry, the generated ABIs, the local devnet state and every
-configuration, document and test fixture that names an affected address SHALL all agree with a fresh deterministic
-deployment. Such a freeze is acceptable only while no chain is live.
+### Requirement: Dependency bumps preserve frozen addresses where the source allows
+A dependency bump that would change the bytecode of a CREATE2-deployed contract SHALL first be checked for whether
+the change reaching that contract is substantive. Where a contract compiles a dependency file whose only change is
+non-functional, that file SHALL be pinned to its previous bytes, so the frozen address is kept. Where the change is
+substantive, the bump SHALL be carried through as a new canonical freeze in the same change: the frozen constants,
+generated ABIs, local devnet state and every document naming an affected address SHALL agree with a fresh
+deterministic deployment. A live upgradeable proxy SHALL keep its address and be upgraded in place.
 
 #### Scenario: Determinism check after the bump
 - **WHEN** the contracts are recompiled with the canonical compiler settings and redeployed on a fresh local chain
-- **THEN** every deployed CREATE2 address matches its committed canonical constant and registry entry
+- **THEN** every deployed CREATE2 address matches its committed canonical constant and every committed chain's
+  registry entry
 
-#### Scenario: The local environment keeps working
-- **WHEN** the local devnet and end-to-end stacks are brought up from the committed state after the freeze
-- **THEN** they deploy nothing new, resolve every contract at its new canonical address, and the end-to-end suite passes
+#### Scenario: Account addresses are preserved
+- **WHEN** a passkey that resolved to a smart-account address before the change is resolved after it
+- **THEN** it resolves to the same address, because the wallet factory and implementation keep their canonical
+  addresses
 
-#### Scenario: A served chain is not yet redeployed
-- **WHEN** a chain the registry serves still has only a journal from the superseded build
-- **THEN** it is recorded as pending canonical deployment with a reason, the registry names the new canonical
-  addresses for it, the determinism check skips it, and the final report lists it as needing an operator redeploy
-
-#### Scenario: A pending chain is redeployed
-- **WHEN** a canonical journal is committed for a chain still recorded as pending
-- **THEN** regenerating the registry fails until the pending entry is removed
+#### Scenario: Existing paymaster proxies keep their funding address
+- **WHEN** the paymaster's bytecode changes
+- **THEN** the fresh-deployment constants are re-frozen, and existing proxies — the baked devnet's and any live
+  chain's — are upgraded in place and keep their proxy address

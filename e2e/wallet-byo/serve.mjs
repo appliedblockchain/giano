@@ -160,7 +160,7 @@ function proxy(req, res, upstreamBase, upstreamPath) {
   req.pipe(proxyReq);
 }
 
-http
+const server = http
   .createServer((req, res) => {
     const url = req.url ?? '/';
     if (url.startsWith('/api/') || url === '/api') {
@@ -185,3 +185,15 @@ http
     const chains = chainBId ? `${chainId},${chainBId}` : String(chainId);
     console.log(`BYO wallet on :${port} (chains ${chains}, api→${walletApiUpstream}; rpc and bundler via wallet-api /api/v1/{rpc,bundler})`);
   });
+
+// The image runs this as PID 1 with no init process (ABIP-2 hardened runtime: no tini), and Node as
+// PID 1 has no default action for SIGTERM — without this, ECS waits out the stop timeout and sends
+// SIGKILL. Stop accepting, let in-flight requests finish, and exit; the timer bounds a keep-alive
+// connection that never closes.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => {
+    server.close(() => process.exit(0));
+    server.closeIdleConnections();
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}

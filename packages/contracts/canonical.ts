@@ -7,9 +7,8 @@
 // not be admitted to a deployment's served list. Deployments verify this at configuration
 // load (fatal), and repeatably via `giano-doctor chain`.
 //
-// Frozen from the 2026-09 dependency-audit build — OpenZeppelin 5.4.0, which emits `mcopy` and so
-// moved the target from "paris" to "cancun"; the earlier v1.1.0 paris freeze is superseded (solc
-// 0.8.28, optimizer runs 200, viaIR, evm "cancun", CREATE2 salt 0xAB…AB through CreateX at 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed
+// Frozen from the v1.1.0 contracts build (solc 0.8.28, optimizer runs 200, viaIR, evm
+// "paris", CREATE2 salt 0xAB…AB through CreateX at 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed
 // — the factory Hardhat Ignition's `create2` strategy uses; NOT the Arachnid
 // deterministic-deployment proxy, which this repo uses only for the P-256 verifier
 // (scripts/p256_deploy.ts) — and EntryPoint v0.7 at its canonical address: the wallet
@@ -22,12 +21,17 @@
 // neither the sender nor the zero address, which is the shape of 0xAB…AB — no chain id and no
 // deployer EOA enter the address. That is what makes these constants chain- and
 // operator-independent rather than merely "the same so far".
+//
+// The wallet pair stays on the v1.1.0 freeze although OpenZeppelin is now 5.4.0: the one OpenZeppelin
+// file the wallet compiles, `utils/Base64.sol`, is pinned to its 5.3.0 bytes in
+// `vendor/openzeppelin-contracts-5.3.0/` (see its README) because solc embeds every source file's
+// hash in the bytecode. Dropping that pin is a new freeze of these two addresses.
 
 /** GianoSmartWalletFactory at its canonical CREATE2 address. */
-export const CANONICAL_FACTORY = '0x072aF5D2f787533C5114020D50bf847aB6146bE9' as const;
+export const CANONICAL_FACTORY = '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050' as const;
 
 /** GianoSmartWallet implementation the canonical factory clones. */
-export const CANONICAL_IMPLEMENTATION = '0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72' as const;
+export const CANONICAL_IMPLEMENTATION = '0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56' as const;
 
 /**
  * The account nonce Giano derives every user's address with. Part of the CREATE2 salt, so
@@ -50,14 +54,17 @@ export const CANONICAL_ACCOUNT_NONCE = 0n;
  * through UUPS keeps the address; re-deploying a modified build from genesis does not, and is a
  * new canonical freeze.
  */
-export const CANONICAL_SPONSORSHIP_PAYMASTER = '0x737870Df331E2b78d9d4429eF94e187E1b1DE6D8' as const;
+// Fresh-deployment freeze for the ECDSA-only signer-validation build compiled against OpenZeppelin
+// 5.4.0. Existing proxies (including the baked devnet's and the testnets' 0xf98b…0718) retain their
+// addresses when upgraded through UUPS.
+export const CANONICAL_SPONSORSHIP_PAYMASTER = '0x5Eaf2d3b813f227D2E8c0cFcD1e5D111Ade1d489' as const;
 
 /**
  * The `GianoPaymaster` implementation {@link CANONICAL_SPONSORSHIP_PAYMASTER} delegates to at
  * the freeze. Unlike the proxy, this is expected to change on every upgrade — it is frozen so
  * that a *fresh* deployment can be checked against the build this freeze came from.
  */
-export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0xA37b6d278Db64F92855724076458853B2c5B0d80' as const;
+export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0x40465E7c728cE8887958FA2fBe620924aebbC873' as const;
 
 /**
  * `GianoPaymasterDeployer`, the CREATE2 deployer the paymaster proxy hangs off. Recorded because
@@ -65,4 +72,4 @@ export const CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION = '0xA37b6d278Db64F9
  * can recompute {@link CANONICAL_SPONSORSHIP_PAYMASTER} from these three without trusting a
  * deployment journal.
  */
-export const CANONICAL_PAYMASTER_DEPLOYER = '0xaFd669c6D0BD987FdE71B005027250E1C89Fbb4e' as const;
+export const CANONICAL_PAYMASTER_DEPLOYER = '0x2bB91D45b12F2cF59fd1dC1D331B5850104FFed5' as const;

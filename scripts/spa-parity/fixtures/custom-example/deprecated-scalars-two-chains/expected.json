@@ -1,0 +1,25 @@
+{
+  "rev": "main",
+  "exit": 0,
+  "stderr": "DEPRECATED: GIANO_CHAIN_ID/GIANO_CHAIN_B_ID are converted to GIANO_CHAINS; they will be removed in the next release.\n",
+  "config": {
+    "walletUrl": "https://w.example",
+    "otherWalletUrl": "",
+    "appLabel": "",
+    "chains": [
+      {
+        "chainId": 31337,
+        "name": "chain 31337",
+        "rpcUrl": "http://rpc-a.example",
+        "defaultToken": "0x00000000000000000000000000000000000000cc"
+      },
+      {
+        "chainId": 31338,
+        "name": "Devnet \"B\"",
+        "rpcUrl": "http://rpc-b.example",
+        "defaultToken": "0x00000000000000000000000000000000000000cc"
+      }
+    ]
+  },
+  "conf": "server {\nlisten 8080;\nserver_name _;\nroot /usr/share/nginx/html;\nindex index.html;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example http://rpc-a.example http://rpc-b.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\nlocation = /rpc/31337 {\nproxy_pass https://keyed.example/abc;\nproxy_set_header Host $proxy_host;\nproxy_ssl_server_name on;\n}\nlocation = /config.js {\nadd_header Cache-Control \"no-store\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example http://rpc-a.example http://rpc-b.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\n}\nlocation /assets/ {\nadd_header Cache-Control \"public, max-age=31536000, immutable\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example http://rpc-a.example http://rpc-b.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\n}\nlocation / {\nexpires epoch;\nadd_header Cache-Control \"no-cache\" always;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https://w.example http://rpc-a.example http://rpc-b.example; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\ntry_files $uri $uri/ /index.html;\n}\n}"
+}

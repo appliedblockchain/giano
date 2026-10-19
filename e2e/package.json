@@ -21,7 +21,8 @@
     "devnet:provision": "node devnet/provision-sponsorship.mjs",
     "devnet:provision:mappings": "node devnet/provision-tx-mappings.mjs",
     "devnet:generate:b": "ANVIL_CHAIN_ID=31338 CHAIN_ID=31338 node devnet/with-pinned-anvil.mjs node devnet/generate-state.mjs",
-    "devnet:generate:all": "pnpm devnet:generate && pnpm devnet:generate:b"
+    "devnet:generate:all": "pnpm devnet:generate && pnpm devnet:generate:b",
+    "devnet:upgrade:paymaster": "pnpm --filter @appliedblockchain/giano-contracts hh:compile && ANVIL_PORT=18545 node devnet/with-pinned-anvil.mjs node devnet/upgrade-paymaster.mjs"
   },
   "devDependencies": {
     "@appliedblockchain/giano-connector": "workspace:^",

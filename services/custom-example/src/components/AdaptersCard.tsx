@@ -30,6 +30,9 @@ export default function AdaptersCard() {
       transports: Object.fromEntries([entry, ...chains.filter((chain) => chain.config.chainId !== selected.chainId)].map((chain) => [chain.config.chainId, custom(chain.config.chainId === selected.chainId ? provider : { request: chain.publicClient.request })])),
       connectors: [createGianoConnector({ provider }), ...connectors],
       multiInjectedProviderDiscovery: false,
+      // The raw provider owns session persistence. With reconnectOnMount=false,
+      // wagmi 2.15's hydration clears persisted connections on every render.
+      storage: null,
     });
     return { config, queryClient: new QueryClient() };
   }, [registry, chains, selected.chainId]);

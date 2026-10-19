@@ -4,6 +4,50 @@ Giano smart wallet contracts. The published npm package ships the wagmi-generate
 (`generated.ts`), the per-chain deployed address registry (`addresses.ts`) and the Solidity
 sources — consumers never need solc, Hardhat or the Foundry submodules.
 
+## Paymaster signer verification and upgrades
+
+Paymaster sponsorship authorisations support ECDSA signatures only; ERC-1271 contract signers
+are not supported. Validation recovers the signing address and checks it against the signer
+allowlist without inspecting or calling the signer. Safe-mode ERC-4337 bundlers reject
+`EXTCODESIZE` against an account with no code. Invalid signatures, including estimation stubs,
+return signature-validation failure.
+
+This change adds no storage fields. Existing ECDSA signers need no re-registration after an
+upgrade. Replace any existing ERC-1271 sponsorship signer with an ECDSA key through
+`SIGNER_ADMIN_ROLE`. Upgrade the existing proxy through UUPS; deploying a replacement proxy
+would strand its tenant balances and funding address.
+
+To upgrade dev on Base Sepolia, use the current PR's compiled contracts and an account holding
+`UPGRADER_ROLE` on the existing proxy. Set `BASE_SEPOLIA_RPC_URL` and `BASE_PRIVATE_KEY` in your
+deployment environment, then create a parameters file (for example `upgrade-dev.json`):
+
+```json
+{
+  "UpgradePaymaster": {
+    "proxyAddress": "<existing dev paymaster proxy address>"
+  }
+}
+```
+
+Run from `packages/contracts`:
+
+```bash
+pnpm hh:compile
+pnpm hh:upgrade:paymaster --network base-sepolia \
+  --parameters upgrade-dev.json --deployment-id dev-paymaster-ecdsa-upgrade
+```
+
+The module deploys only the implementation and calls `upgradeToAndCall(implementation, "0x")`
+on the supplied proxy. It checks the proxy's EntryPoint before deploying and requires an
+`Upgraded` event. No initializer runs and the proxy address stays unchanged.
+The EntryPoint check verifies the interface; the upgrade preserves the proxy's configured
+EntryPoint, including a custom deployment. Confirm that the supplied proxy belongs to the
+intended dev environment before running the command.
+Use a new deployment ID for a later implementation upgrade; reuse the same ID to resume an
+interrupted deployment.
+If a Safe or timelock holds `UPGRADER_ROLE`, it must execute the upgrade transaction; this module
+requires the configured transaction sender to hold that role directly.
+
 ```ts
 import { gianoSmartWalletAbi, gianoSmartWalletFactoryAbi, getGianoDeployment, ENTRYPOINT_V07_ADDRESS } from '@appliedblockchain/giano-contracts';
 

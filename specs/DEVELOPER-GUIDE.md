@@ -169,6 +169,9 @@ wallet-web UI, tenant `byo` serves an independently built ("bring your own") wal
 
 ```sh
 pnpm install
+# once per machine: the images build on Docker Hardened Images, and dhi.io needs a Docker Hub login
+# (an account made with Google/GitHub sign-in uses a personal access token as the password)
+docker login dhi.io
 # --profile portless adds the container that lends the stack port 80
 docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 
@@ -245,8 +248,8 @@ Confirm the deployment on-chain any time:
 
 ```sh
 pnpm run doctor chain --rpc http://rpc.localhost --chain-id 31337 \
-  --factory 0x072aF5D2f787533C5114020D50bf847aB6146bE9 \
-  --paymaster 0x6656757955aB8a4D86aCAD8D8bDc76cCa678d57c
+  --factory 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050 \
+  --paymaster 0xCbc040482c1dd07D533800874DC37De7b18c8092
 ```
 
 ---
@@ -867,8 +870,8 @@ output:
 ```
 Contracts
   ✓ EntryPoint v0.7 deployed: 0x0000000071727De22E5E9d8BAf0edAc6f37da032
-  ✓ GianoSmartWalletFactory deployed: 0x072aF5D2f787533C5114020D50bf847aB6146bE9
-  ✓ GianoSmartWallet implementation deployed: 0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72
+  ✓ GianoSmartWalletFactory deployed: 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050
+  ✓ GianoSmartWallet implementation deployed: 0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56
 Passkey (P-256) verification support
   ✓ P-256 via RIP-7212 precompile: cheap on-chain verification (0x100)
 doctor: all critical checks passed

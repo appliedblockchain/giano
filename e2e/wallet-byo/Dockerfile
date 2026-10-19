@@ -13,8 +13,12 @@
 # It is also the only service in the deployment Giano would not run in a real environment: a
 # real BYO tenant hosts its own UI. It exists here so the BYO serving contract is exercised
 # rather than described (D17).
+#
+# ABIP-2: digest-pinned Docker Hardened Images, -dev to build and the runtime variant to run. The
+# runtime has no shell, no tini and no curl; it runs as node (1000:1000), and serve.mjs handles
+# SIGTERM itself — which is all tini was for.
 
-FROM node:22-alpine AS build
+FROM dhi.io/node:22-alpine3.23-dev@sha256:d3e27128c752bc57454dbb824f8ba770ecf211cc8098a471a8fbd68185dd053f AS build
 RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
@@ -44,13 +48,11 @@ RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-kit build
 
-FROM node:22-alpine
-RUN apk add --no-cache curl tini
+FROM dhi.io/node:22-alpine3.23@sha256:920a7460ab7ac19ce6a9a38fb23b244bcfed1cf78705f7fe117195c58b307f4d
 # The whole tree, so pnpm's symlinks into node_modules/.pnpm stay internally consistent. The
 # pnpm store itself lives outside /repo and is left behind here.
-COPY --from=build /repo /repo
+COPY --from=build --chown=1000:1000 /repo /repo
 WORKDIR /repo/e2e/wallet-byo
-USER node
 # Matches var.container_port, and means the image runs correctly with no environment at all
 # beyond the endpoints it cannot guess.
 ENV BYO_WALLET_PORT=8080
@@ -59,7 +61,6 @@ EXPOSE 8080
 # e2e/origins.mjs. serve.mjs used to read both unconditionally at start-up and crashed without
 # them; they are devnet artefacts with no business in a deployed image. Absent, every value
 # they used to default becomes a required environment variable that fails loudly.
-HEALTHCHECK --interval=15s --timeout=3s --start-period=15s --retries=5 CMD curl -fsS http://127.0.0.1:8080/ > /dev/null || exit 1
-# tini so SIGTERM reaches the process and ECS gets a clean stop rather than waiting out the
-# timeout and issuing SIGKILL. Node as PID 1 would ignore it.
-ENTRYPOINT ["/sbin/tini", "--", "node", "serve.mjs"]
+HEALTHCHECK --interval=15s --timeout=3s --start-period=15s --retries=5 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/',{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+ENTRYPOINT ["node", "serve.mjs"]

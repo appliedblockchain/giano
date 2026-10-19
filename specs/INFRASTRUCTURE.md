@@ -2870,8 +2870,8 @@ by the same CREATE2 salt on each — at the **same addresses** on both:
 | Contract | Address | On 84532? | On 11155111? |
 |---|---|---|---|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | yes (canonical, everywhere) | yes |
-| `GianoSmartWalletFactory` | `0x072aF5D2f787533C5114020D50bf847aB6146bE9` | **yes** — `ignition/deployments/chain-84532` | **yes** — on chain; deployment record reconstructed, see below |
-| `GianoSmartWallet` implementation | `0x8BA285D7Aff26D42DCCc9CE202112aa3d058Ac72` | **yes** — same | **yes** — same |
+| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` | **yes** — `ignition/deployments/chain-84532` | **yes** — on chain; deployment record reconstructed, see below |
+| `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` | **yes** — same | **yes** — same |
 | `GianoPaymaster` proxy | *not frozen; CREATE2 from the fixed salt* | **no** | **no** |
 
 ⚠ The 11155111 deployment was made outside this repo and its Ignition journal was never committed to
@@ -3001,7 +3001,7 @@ own Cloud Map hostname ([§9.4](#94-service-discovery)):
     "rpcUrl": "<base sepolia quicknode endpoint>",
     "bundlerUrl": "http://bundler-base-sepolia.giano-dev.local:4337",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
+    "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
     "sponsorshipPaymaster": "<the §13.1 proxy>",
     "policy": { "allowedPaymasters": ["<the §13.1 proxy>"] }
   },
@@ -3010,7 +3010,7 @@ own Cloud Map hostname ([§9.4](#94-service-discovery)):
     "rpcUrl": "<eth sepolia quicknode endpoint>",
     "bundlerUrl": "http://bundler-eth-sepolia.giano-dev.local:4337",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "factory": "0x072aF5D2f787533C5114020D50bf847aB6146bE9",
+    "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
     "sponsorshipPaymaster": "<the §13.1 proxy>",
     "policy": { "allowedPaymasters": ["<the §13.1 proxy>"] }
   }
@@ -3185,7 +3185,7 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 | `CHAIN_NAME` | `Base Sepolia` (tfvar `var.chain_name` — the same one `custom-example`'s `GIANO_CHAIN_NAME` already reads, [§14.4](#144-custom-example)) — **not currently wired**, see below |
 | `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
 | `CHAIN_B_NAME` | `Ethereum Sepolia` (tfvar `var.chain_b_name`) — **not currently wired**, see below |
-| `FACTORY_ADDRESS` | `0x072aF5D2f787533C5114020D50bf847aB6146bE9` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
+| `FACTORY_ADDRESS` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
 | `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
 | `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
 | `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.appliedblockchain.dev"]` — this tenant's own allowlist, which is why R9 does not reach it |
@@ -3522,8 +3522,9 @@ GHCR pushes stay: they are the distribution channel ([§11](#11-ecr)).
 
 ## 16. Repository changes this requires
 
-Six changes to this repository that are code, not infrastructure. None is large. Three block
-bring-up (§16.1–§16.3); §16.5 blocks tenant `byoui` specifically; §16.4 blocks the second
+Six changes to this repository that are code, not infrastructure. None is large. §16.1 blocks
+bring-up (§16.2 has landed; §16.3's code has, and now waits on task-definition variables);
+§16.5 blocks tenant `byoui` specifically; §16.4 blocks the second
 *stock-UI* tenant, which is a different and more dangerous kind of deadline — it is the one that
 looks fine in dev and is a cross-tenant hole in staging; and §16.6 blocks nothing but is the
 cheapest thing on the list.
@@ -3554,7 +3555,21 @@ convention CI is trusted to keep:
 |---|---|
 | The role trusts `ref:refs/heads/main` only ([§10.5](#105-the-github-actions-oidc-role)) | The ECR steps are gated on the **ref**, not the event. A PR (`refs/pull/N/merge`) and a `v*` tag push (`refs/tags/v*`) skip ECR and still publish to GHCR — a release tag stays green |
 | Tags are `IMMUTABLE` ([§11](#11-ecr)) | No `latest` to ECR, so ECR gets a tag set of its own; and a re-run at an already-published commit drops just the ECR tag instead of failing on `PutImage` |
-| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | `provenance: false` — an attestation manifest per image would spend retention meant for deployable commits |
+| The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | Attestations spend retention meant for deployable commits. Before ABIP-2 this was `provenance: false`. Since ABIP-2, each published image carries SBOM and `mode=min` provenance plus a cosign signature, about six ECR images per commit, and `var.ecr_lifecycle_image_count` stays 10, so retention covers only about one to two commits and the pinned tag must be watched |
+
+**Hardened images (ABIP-2).** Every image `docker.yml` publishes builds on a digest-pinned Docker Hardened Image, with
+two exceptions: `giano-devnet`, a recorded exception, and the deployer's build-stage `forge`. The disposition,
+exceptions, SPA tool allow-list and digest-refresh procedure are in [`docs/abip-compliance.md`](../docs/abip-compliance.md).
+
+What changes for operators:
+- **No shell in the Node runtimes.** wallet-api, wallet-byo, the bundler and the deployer have none. Start commands
+  and probes call `node` directly. `docker exec … sh` no longer works; use the image's own commands, or a debug
+  sidecar.
+- **The SPA images** (wallet-web, paymaster-admin, giano-example) run DHI nginx as UID 65532, with only `sh`,
+  `envsubst` and `jq` added for the start-up script. Their in-image healthcheck is a liveness check from shell
+  built-ins: the PID file and the rendered config. The HTTP check remains the ALB's.
+- **Builds need a `docker login dhi.io`.** CI uses `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`, and it verifies Docker's
+  signature on each base before building.
 
 Not included: the `update-service` sequence — that is `deploy.yml`'s job, on its own trigger
 ([§15.1](#151-the-deployed-version-is-declared)). No migration step either: `wallet-api` applies its
@@ -3562,11 +3577,32 @@ own schema on boot ([§9.6](#96-migrations-run-on-boot)).
 
 ### 16.3 A deployable sponsorship provisioner
 
-`e2e/devnet/provision-sponsorship.mjs` hardcodes the e2e tenants' admin keys and reads
-`e2e/devnet/addresses.json`. The dev environment needs the same thing driven entirely by
-environment: tenant slug, admin key and chain id in, a `PUT /v1/admin/sponsorship` out. Either
-generalise that script or use `packages/paymaster-sdk`'s CLI, which already speaks to the same
-endpoints.
+`services/wallet-api/src/provision-sponsorship.ts`, built as `dist/provision-sponsorship.js` and
+run by the one-shot task ([§9.7](#97-one-shot-tasks)). Driven entirely by environment:
+`WALLET_API_URL` (an HTTPS endpoint), `TENANT_SLUG`, `CHAIN_ID` (a list — rules are per
+(tenant, chain) and never inherited, so both chains are written in one run), `SPONSORSHIP_CONFIG`
+and the `TENANTS_SEED` secret the admin key
+is looked up in, out to a `PUT /v1/admin/sponsorship` per chain.
+
+It validates the rules against the same schema the API applies before it writes anything, reads
+the configuration back rather than trusting the write, and checks the tenant's registration and
+balance against the paymaster. `SPONSORSHIP_REQUIRE_FUNDED` decides whether an unfunded tenant is
+a warning or a failed task.
+
+**The task definition still needs three things before this can run**, neither of them code:
+
+| | |
+|---|---|
+| `WALLET_API_URL` | replace the current HTTP service-discovery URL with an authenticated TLS endpoint reachable from the task; the provisioner rejects non-HTTPS URLs and redirects |
+| `SPONSORSHIP_CONFIG` | the rule set to write, as JSON. Not currently in `ecs_tasks_oneshot.tf`, and the task exits 1 without it |
+| `CHAIN_ID` | currently `var.chain_id` alone, so chain B is left unconfigured after an otherwise successful run. Rules are per (tenant, chain) and never inherited (MC-67); the script takes a comma-separated list, so `"${var.chain_id},${var.chain_b_id}"` writes both |
+
+`SPONSORSHIP_REQUIRE_FUNDED` defaults to `true`. A first bring-up provisions rules before the
+paymaster console has been used to fund anything, so §18 step 8 wants `"false"` in the task
+definition until dev is funded.
+
+`e2e/devnet/provision-sponsorship.mjs` stays as it is: it hardcodes the e2e tenants' admin keys
+and reads `e2e/devnet/addresses.json`, which is right for a stack whose addresses are baked.
 
 ### 16.4 A Host-resolved tenant-config endpoint
 

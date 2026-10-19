@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 2,
+  "stderr": "/entrypoint.sh: line 39: GIANO_CHAIN_ID: set GIANO_CHAINS (a JSON array of chains) — or, deprecated, GIANO_CHAIN_ID\n",
+  "config": null,
+  "conf": null
+}

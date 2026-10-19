@@ -85,6 +85,24 @@ describe('the host request handler (WK-08…WK-12)', () => {
     await expect(call).resolves.toBe('result:personal_sign');
   });
 
+  it.each(['eth_signUserOperation', 'signed_eth_call'])('restores and asks consent for %s', async (method) => {
+    const { handler, requests, calls, context } = harness(31337, { account: false });
+    const call = handler(method, [{}], context);
+    await vi.waitFor(() => expect(requests.current).not.toBeNull());
+    expect(calls[0]).toMatchObject({ method: 'giano_restoreAccount' });
+    expect(requests.current).toMatchObject({ kind: 'sign', method });
+    requests.current!.reject();
+    await expect(call).rejects.toMatchObject({ code: RPC_ERRORS.USER_REJECTED });
+    expect(calls.map((entry) => entry.method)).not.toContain(method);
+  });
+
+  it.each(['eth_prepareUserOperation', 'eth_sendSignedUserOperation'])('restores the account for %s without asking for another signature', async (method) => {
+    const { handler, requests, calls, context } = harness(31337, { account: false });
+    await expect(handler(method, [{}], context)).resolves.toBe(`result:${method}`);
+    expect(calls.map((entry) => entry.method)).toEqual(['giano_restoreAccount', method]);
+    expect(requests.current).toBeNull();
+  });
+
   describe('giano_openWalletManagement (WM-54, WM-55)', () => {
     it('refuses parameters from the application (WM-39)', async () => {
       const { handler, context } = harness();

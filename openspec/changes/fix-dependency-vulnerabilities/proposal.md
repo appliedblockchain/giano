@@ -14,13 +14,13 @@ workspace's pnpm dependencies and fix them — so this change turns that into a 
   `drizzle-orm` 0.43 → ≥0.45.2, `fastify` 5.10 → ≥5.12.1, `uuid` → ≥11.1.1 in `wallet-core`.
 - Resolve transitive advisories by bumping the parent where possible, otherwise by pinned entries in the
   `pnpm-workspace.yaml` `overrides` block (the existing mechanism, today carrying `human-id` and `zod-to-json-schema`).
-- **BREAKING (contract addresses)**: bump `@openzeppelin/contracts` and `@openzeppelin/contracts-upgradeable`
-  5.3.0 → 5.4.0. OZ 5.4 emits `mcopy`, so the canonical EVM target moves from `paris` to `cancun`, which changes the
-  bytecode of **every** Giano contract. That makes a new canonical freeze for all of them: wallet factory and
-  implementation (so user account addresses move), the paymaster trio, the test paymaster and the test ERC-20. Approved
-  by the product owner on 2026-09-29: Giano is not live, and every chain will be redeployed ("we can redeploy
-  everything, that's why we should update everything now that it's not live yet"). Dev and local environments must
-  keep working throughout.
+- Bump `@openzeppelin/contracts` and `@openzeppelin/contracts-upgradeable` 5.3.0 → 5.4.0 without moving any account
+  address. The one OZ file the wallet compiles, `utils/Base64.sol`, changed only cosmetically in 5.4.0, but solc embeds
+  every source file's hash in the bytecode. It is pinned to its 5.3.0 bytes in `vendor/openzeppelin-contracts-5.3.0/`, so
+  the wallet factory and implementation keep their canonical addresses on every chain. The paymaster is rebuilt
+  against 5.4.0: its fresh-deployment freeze moves, and existing proxies are upgraded in place through UUPS. (An earlier
+  revision moved the EVM target to Cancun and re-froze everything; that became unnecessary once #122 replaced
+  `SignatureChecker`, the import that pulled in the `mcopy`-using `Bytes.sol`.)
 - Keep the supply-chain cooldown (`minimumReleaseAge: 1440`). A fixed version younger than 24h is either waited out or
   added to `minimumReleaseAgeExclude` per package, decided case by case — never by lowering the threshold.
 - Ship one PR whose description is the command's final report: packages changed (each paired with its advisory),
@@ -43,11 +43,9 @@ workspace's pnpm dependencies and fix them — so this change turns that into a 
   `pnpm-workspace.yaml` `overrides` / `minimumReleaseAgeExclude` extended.
 - **Out of scope**: the `package-lock.json` / `yarn.lock` files inside git submodules (`packages/contracts/lib/*`,
   `vendor/account-abstraction`) — upstream code we pin by commit, not install from.
-- **Contracts**: `hardhat.config.ts` / `foundry.toml` (`evmVersion: cancun`), `canonical.ts`, `address-overrides.json`
-  (new `pendingDeployment` list for Base, Base Sepolia and Sepolia, honoured by `scripts/generate-addresses.ts` and the
-  `determinism` workflow), `addresses.ts`, `generated.ts`, e2e devnet `addresses.json` / `state.json`, and every config,
-  doc and fixture that names an old address (compose files, `infra/iac`, paymaster-admin and custom-example configs,
-  e2e and paymaster-sdk tests, developer and infrastructure specs). Operators redeploy Base, Base Sepolia, Sepolia and
-  381185 before launch; the superseded journals stay committed as history until then.
+- **Contracts**: `remappings.txt` (pins `openzeppelin-contracts/contracts/utils/Base64.sol`), the vendored file (also
+  published via `files`), `canonical.ts` (paymaster trio only), `generated.ts`, and the baked devnet `state.json` /
+  `addresses.json`, upgraded in place with `devnet:upgrade:paymaster`. Live testnet paymaster proxies need an
+  `hh:upgrade:paymaster` run to pick up the OZ 5.4 build; they keep their address.
 - **Tests**: vitest 4 and happy-dom 20 may require test-config or test-code adjustments in the six vitest packages.
 - **CI**: no workflow changes; the existing `ci`, `determinism` and `e2e` workflows are the regression gates.

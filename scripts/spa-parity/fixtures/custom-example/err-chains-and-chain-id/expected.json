@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 1,
+  "stderr": "FATAL: GIANO_CHAINS and GIANO_CHAIN_ID are both set — supply one, not both.\n",
+  "config": null,
+  "conf": null
+}

@@ -26,8 +26,8 @@ contract GianoSmartWalletFactoryTest is Test {
     }
 
     function test_constructor_setsImplementation(address implementation) public {
-        // avoid precompiles in fuzz runs
-        vm.assume(uint160(implementation) > 100);
+        // vm.etch cannot overwrite core precompiles or P256VERIFY at 0x100.
+        vm.assume(uint160(implementation) > 0x100);
 
         // set bytecode if not already set
         if (implementation.code.length == 0) {

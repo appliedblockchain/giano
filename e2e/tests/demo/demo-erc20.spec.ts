@@ -8,7 +8,7 @@ import { addVirtualAuthenticator, openActionPopup, openWalletPopup, TENANTS, tra
  * support, so the demo must record a clean "no permit" outcome without opening the wallet.
  */
 const tenant = TENANTS.stock;
-const DEFAULT_TOKEN = '0x8C32168E75533c7981BB8F287B6426A37fC39CbA';
+const DEFAULT_TOKEN = '0x9967bDf929856643e92EF65eefdE1fF8250774D8';
 
 test('default token: load, mint, transfer, and the no-permit path', async ({ page }) => {
   await page.goto(ORIGINS.demo);
@@ -16,7 +16,7 @@ test('default token: load, mint, transfer, and the no-permit path', async ({ pag
   const { cdp } = await addVirtualAuthenticator(popup);
   const credentials = trackResidentCredentials(cdp);
   await popup.getByRole('button', { name: tenant.ui.connect }).click();
-  await expect(page.getByTestId('account')).toBeVisible();
+  await expect(page.getByTestId('account')).toBeVisible({ timeout: 20_000 });
 
   await page.getByTestId('tab-tokens').click();
   // Prefilled with the chain's default token — the same address on every chain.

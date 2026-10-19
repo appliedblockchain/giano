@@ -7,7 +7,7 @@ See proposal.md (Why) for the numbers. What shapes the approach:
   `packages/contracts` (axios, form-data, handlebars, pbkdf2, sha.js, undici, tmp, cookie, …) and the gRPC/protobufjs
   stack under `services/wallet-api`. Direct-dependency advisories are few: `happy-dom` 17.6.3 (critical),
   `drizzle-orm` 0.43.1, `fastify` 5.10.0, `vitest` 3.2.7, `uuid` in `wallet-core`, and OZ 5.3.0.
-- **Every advisory in the baseline audit has a patched version** — none are "no fix available".
+- **Every advisory in the baseline audit had a patched version.** Advisories published while the PR was open (`braces`, `sprintf-js`) do not.
 - **Cooldown**: `minimumReleaseAge: 1440`, with `baseline-browser-mapping` and `postcss` already excluded.
 - **Contracts**: OZ is imported only by `GianoPaymaster.sol`, `GianoPaymasterDeployer.sol` and
   `testing/PrivateERC20.sol`. The wallet factory and implementation are Solady-based, so their canonical addresses stay
@@ -61,33 +61,30 @@ determinism recompute after the OZ level, and the Playwright e2e suite once on t
 the gates run on the unmodified branch. A gate that already fails there is recorded as pre-existing and never blamed on
 a bump.
 
-**D5 — The OZ re-freeze happens in the level where OZ is bumped, and covers the whole contract set.**
-OZ 5.4's `SignatureChecker` imports `Bytes.sol`, which uses `mcopy`, so it can't compile for `paris`. The EVM target
-moves to `cancun` in both Hardhat (canonical) and Foundry (tests), and both OZ packages are pinned exactly to 5.4.0, so a
-later install can't drift the bytecode. Sequence: compile → run the determinism deploy on a fresh anvil → write every
-new address into `canonical.ts` (with a freeze comment naming this build) → regenerate the e2e devnet state with the
-pinned anvil (`devnet:generate`) → replace the old literals wherever `git grep` finds them, except in the historical
-ignition journals and analysis docs. *Alternative rejected*: keeping OZ 5.3.0 as an unreachable residual (the
-vulnerable `Bytes.lastIndexOf` isn't compiled into any Giano contract on 5.3.0). The product owner chose to re-freeze
-while nothing is live.
+**D5 — Keep account addresses: pin the one non-functional OZ change the wallet compiles.**
+The wallet imports OZ only through `openzeppelin-contracts/contracts/utils/Base64.sol` (from webauthn-sol and
+`GianoSmartWallet`). 5.4.0 changed that file only cosmetically, but solc's metadata hash covers every source file, so
+the bump alone would move the factory and implementation on any EVM target. A file-level remapping serves that import
+from a byte-identical copy of the 5.3.0 file in `vendor/openzeppelin-contracts-5.3.0/`, with a README explaining it.
+Hardhat passes no remappings into solc metadata, so the wallet bytecode is unchanged, which was verified by a fresh
+deploy landing on `0x26dC…7050` / `0x15cC…ea56`. Both OZ packages are pinned exactly to 5.4.0.
+*Alternatives rejected*: moving the EVM target to Cancun and re-freezing everything (the first revision of this change,
+forced by `SignatureChecker` → `Bytes.sol` → `mcopy`; that dependency went away when #122 switched the paymaster to
+`ECDSA`); and re-freezing the wallet on `paris`, which would strand every account address for a formatting diff.
 
-**D5a — Pending chains stay in the registry at their new canonical addresses.** Base, Base Sepolia and Sepolia carry
-journals from the superseded build. Marking them `nonCanonical` would drop them from the registry and break every config
-and tool that defaults to them (wallet-api `openapi:check`, the MC-46 multichain test, compose and AWS env defaults). A
-new `pendingDeployment` list in `address-overrides.json` instead has the generator emit the canonical factory and
-implementation for those chains while ignoring their stale journal, and the determinism workflow skips them. The
-generator refuses once a canonical journal lands for a pending chain, so the entry can't outlive the redeploy.
-*Alternative rejected*: rewriting the committed journals to the new addresses, which would record deployments that
-don't exist.
+**D5a — The paymaster re-freezes for fresh deployments only.** The paymaster genuinely compiles OZ 5.4 code, so
+`CANONICAL_SPONSORSHIP_PAYMASTER`, its implementation and the deployer move (`0x5Eaf…`, `0x4046…`, `0x2bB9…`). Following
+#122, existing proxies keep their funding address: the baked devnet proxy (`0xf98b…0718`) is upgraded in place with
+`devnet:upgrade:paymaster`, and live testnet proxies get `hh:upgrade:paymaster`.
 
-**D6 — Changesets.**
+**D6 — Changesets.** `giano-contracts` gets a patch, as #122 did for its paymaster re-freeze;
 The published packages whose shipped constants or dependency ranges change (`giano-contracts` for the new canonical
 addresses, and any published package whose runtime deps move) get a changeset. The address move is described as
 breaking for anyone who hard-coded the old paymaster addresses.
 
 **D7 — PR mechanics.** One PR from `chore/dependency-vulnerability-fix`, opened as a draft via `ae-open-pr` (the command
 delegates to it). The body is the command's final report, plus a "Contract addresses" section listing old → new for each
-moved constant and the chains needing an operator redeploy.
+moved constant and the live proxies that need an in-place upgrade.
 
 ## Risks / Trade-offs
 
@@ -109,14 +106,12 @@ moved constant and the chains needing an operator redeploy.
 
 ## Migration Plan
 
-1. Merge the PR. Local and e2e stacks come up on the regenerated devnet state with no extra steps.
-2. Before launch, operators deploy the frozen canonical build (`hh:deploy`, plus the paymaster module where sponsorship
-   is served) to Base, Base Sepolia and Sepolia, commit each new journal, and remove the chain from `pendingDeployment`.
-   381185 stays `nonCanonical` until it is redeployed the same way.
-3. Environments that set the paymaster address through env or Terraform vars pick up the new value on their next deploy.
+1. Merge the PR. Local and e2e stacks come up on the upgraded devnet state with no extra steps.
+2. Upgrade the live testnet paymaster proxies (Base Sepolia, Sepolia) with `hh:upgrade:paymaster` to pick up the
+   OZ 5.4 build. The proxy address and tenant balances are unchanged.
 
-Rollback: revert the PR. Nothing on-chain depends on the new addresses until step 2.
+Rollback: revert the PR. No account or proxy address depends on it.
 
 ## Open Questions
 
-- Who runs the pre-launch redeploys (Base, Base Sepolia, Sepolia, 381185)? This can be settled at PR review; it doesn't change the work.
+- Who runs the testnet paymaster upgrades? This can be settled at PR review; it doesn't change the work.

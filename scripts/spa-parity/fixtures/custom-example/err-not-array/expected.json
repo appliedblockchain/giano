@@ -1,0 +1,7 @@
+{
+  "rev": "main",
+  "exit": 1,
+  "stderr": "FATAL: GIANO_CHAINS must be a JSON array, got: {}\n",
+  "config": null,
+  "conf": null
+}

@@ -1,0 +1,26 @@
+{
+  "rev": "main",
+  "exit": 0,
+  "stderr": "",
+  "config": {
+    "deployments": [
+      {
+        "name": "e2e devnet A",
+        "chainId": 31337,
+        "rpcUrl": "/rpc/31337",
+        "walletRpcUrl": "http://localhost:8545",
+        "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+        "refreshSeconds": 5
+      },
+      {
+        "name": "e2e devnet B",
+        "chainId": 31338,
+        "rpcUrl": "/rpc/31338",
+        "walletRpcUrl": "http://localhost:8546",
+        "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+        "refreshSeconds": 5
+      }
+    ]
+  },
+  "conf": "server {\nlisten 8080;\nserver_name _;\nroot /usr/share/nginx/html;\nindex index.html;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\nlocation = /rpc/31337 {\nproxy_pass http://anvil:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\n}\nlocation = /rpc/31338 {\nproxy_pass http://anvil-b:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\n}\nlocation = /config.json {\nadd_header Cache-Control \"no-store\" always;\n}\nlocation /assets/ {\nadd_header Cache-Control \"public, max-age=31536000, immutable\" always;\n}\nlocation / {\ntry_files $uri $uri/ /index.html;\n}\n}"
+}
