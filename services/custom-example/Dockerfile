@@ -16,20 +16,21 @@
 
 FROM dhi.io/node:22-alpine3.23-dev@sha256:d3e27128c752bc57454dbb824f8ba770ecf211cc8098a471a8fbd68185dd053f AS build
 RUN corepack enable
-WORKDIR /repo
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json .npmrc ./
-COPY services/custom-example/package.json services/custom-example/package.json
-# The connector comes from GitHub Packages, which refuses anonymous reads. The token arrives as a
-# BuildKit secret (docker.yml passes GITHUB_TOKEN; locally `--secret id=github_token,env=GITHUB_TOKEN`)
-# and is appended to the project .npmrc only for this RUN, then restored, so no layer holds it.
+WORKDIR /app
+# The demo is its own pnpm workspace (lockfile, policy, .npmrc), outside the repo's — it installs Giano
+# the way an integrator does, from GitHub Packages.
+COPY services/custom-example/package.json services/custom-example/pnpm-lock.yaml services/custom-example/pnpm-workspace.yaml services/custom-example/.npmrc ./
+# GitHub Packages refuses anonymous reads. The token arrives as a BuildKit secret (docker.yml passes
+# GITHUB_TOKEN; locally `--secret id=github_token,env=GITHUB_TOKEN`) and is appended to .npmrc only for
+# this RUN, then restored, so no layer holds it.
 RUN --mount=type=secret,id=github_token,required=true \
     cp .npmrc .npmrc.orig \
  && printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/github_token)" >> .npmrc \
- && pnpm install --frozen-lockfile --filter @appliedblockchain/giano-example... ; \
+ && pnpm install --frozen-lockfile ; \
     status=$?; mv .npmrc.orig .npmrc; exit $status
-COPY services/custom-example services/custom-example
+COPY services/custom-example ./
 # lint + typecheck + vite build + bundle scan (package.json `build`)
-RUN pnpm --filter @appliedblockchain/giano-example build
+RUN pnpm build
 
 # The SPA tool allow-list, staged at its real paths with exactly the shared libraries it links
 # beyond what the runtime already has (glibc and the loader), plus the html root owned by nginx so
@@ -44,7 +45,7 @@ FROM dhi.io/nginx:1.29-debian13@sha256:d457a278247531873df03b7fdaabd96de0b530624
 COPY --from=tools /staging/ /
 # The dist carries a placeholder public/config.js so `pnpm dev` and `pnpm preview` work; the
 # entrypoint overwrites it at start, which is why the html root is the nginx user's.
-COPY --from=build --chown=65532:65532 /repo/services/custom-example/dist /usr/share/nginx/html
+COPY --from=build --chown=65532:65532 /app/dist /usr/share/nginx/html
 COPY services/custom-example/docker/nginx.conf.template /etc/giano/nginx.conf.template
 COPY services/custom-example/docker/config.js.template /etc/giano/config.js.template
 COPY --chmod=0755 services/custom-example/docker/entrypoint.sh /entrypoint.sh

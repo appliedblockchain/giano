@@ -78,7 +78,7 @@ export default defineConfig({
       ? [
           {
             // the reference dApp, tenant stock, on its own name (http://demo.localhost)
-            command: 'pnpm -F @appliedblockchain/giano-example dev:stock',
+            command: 'pnpm -C services/custom-example dev:stock',
             cwd: '..',
             url: loopbackOf('demo'),
             reuseExistingServer: true,

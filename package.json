@@ -3,9 +3,9 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
-    "demo:dev": "pnpm -F @appliedblockchain/giano-example dev",
-    "demo:stock": "pnpm -F @appliedblockchain/giano-example dev:stock",
-    "demo:byo": "pnpm -F @appliedblockchain/giano-example dev:byo",
+    "demo:dev": "pnpm -C services/custom-example dev",
+    "demo:stock": "pnpm -C services/custom-example dev:stock",
+    "demo:byo": "pnpm -C services/custom-example dev:byo",
     "demo:admin": "pnpm -F @appliedblockchain/giano-paymaster-admin dev",
     "paymaster": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run cli --",
     "paymaster:demo": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run demo --",

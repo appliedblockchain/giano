@@ -10,7 +10,6 @@ on:
 # ACTIONS_RUNTIME_TOKEN rather than GITHUB_TOKEN.
 permissions:
   contents: read
-  packages: read # pnpm install: the reference dApp's connector comes from GitHub Packages
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -34,11 +33,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Configure GitHub Packages auth
-        # the reference dApp installs the published connector from npm.pkg.github.com
-        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: Build contracts TS surface (committed artifacts only)
         run: pnpm --filter @appliedblockchain/giano-contracts build:ts
@@ -116,11 +110,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Configure GitHub Packages auth
-        # the reference dApp installs the published connector from npm.pkg.github.com
-        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: Build contracts TS surface
         run: pnpm --filter @appliedblockchain/giano-contracts build:ts
@@ -153,11 +142,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Configure GitHub Packages auth
-        # the reference dApp installs the published connector from npm.pkg.github.com
-        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: Recompile and regenerate ABIs
         working-directory: packages/contracts
@@ -187,11 +171,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Configure GitHub Packages auth
-        # the reference dApp installs the published connector from npm.pkg.github.com
-        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: forge test
         working-directory: packages/contracts

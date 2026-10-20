@@ -1,5 +1,8 @@
 packages:
   - "services/*"
+  # Its own workspace, like an integrator's project: it installs the published connector from GitHub
+  # Packages, and in this lockfile that entry would make every install here need a token.
+  - "!services/custom-example"
   - "packages/*"
   - "e2e"
 
@@ -95,9 +98,6 @@ overrides:
 # Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
-  # Our own scope: the reference dApp pins the release this repo just published, which is always
-  # younger than the window.
-  - '@appliedblockchain/*'
   - baseline-browser-mapping
   - postcss
 # Native deps left unbuilt (matches pre-pnpm-11 behavior — none were built before).
