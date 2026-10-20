@@ -248,8 +248,8 @@ Confirm the deployment on-chain any time:
 
 ```sh
 pnpm run doctor chain --rpc http://rpc.localhost --chain-id 31337 \
-  --factory 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050 \
-  --paymaster 0xCbc040482c1dd07D533800874DC37De7b18c8092
+  --factory 0x9c01925D07527A7920031196396A9c37421715A2 \
+  --paymaster 0xE1deC1e97c1e4F4de427AFB0a5Fdbf26D3b1CcF1
 ```
 
 ---
@@ -870,8 +870,8 @@ output:
 ```
 Contracts
   ✓ EntryPoint v0.7 deployed: 0x0000000071727De22E5E9d8BAf0edAc6f37da032
-  ✓ GianoSmartWalletFactory deployed: 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050
-  ✓ GianoSmartWallet implementation deployed: 0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56
+  ✓ GianoSmartWalletFactory deployed: 0x9c01925D07527A7920031196396A9c37421715A2
+  ✓ GianoSmartWallet implementation deployed: 0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6
 Passkey (P-256) verification support
   ✓ P-256 via RIP-7212 precompile: cheap on-chain verification (0x100)
 doctor: all critical checks passed

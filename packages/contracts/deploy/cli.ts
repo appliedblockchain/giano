@@ -4,7 +4,7 @@
  *   pnpm deploy:cli addresses
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
- *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet --release vN [--execute]
+ *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *   pnpm deploy:cli p256     --rpc <url>
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
@@ -39,7 +39,7 @@ import { deployCore, deployTesting, deployUpgradeTarget, paymasterUpgradeCalldat
 import { impersonate, installCreateX, installEntryPoint } from './local';
 import { deployP256Verifier } from './p256';
 import { DEPLOYMENTS_DIR, readRecord, writeRecord } from './records';
-import { latestRelease, loadRelease } from './release';
+import { DEV_RELEASE, latestRelease, loadRelease, type Release } from './release';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -114,6 +114,15 @@ async function deployerContext(): Promise<DeployContext & { chainId: number; loc
   return { publicClient, walletClient, deployer: CANONICAL_DEPLOYER, record, log, chainId, local };
 }
 
+/** --release (default: the latest). `dev` — the working tree, unreleased — only on a local chain. */
+function release(local: boolean): Release {
+  const version = values.release ?? latestRelease();
+  if (version === DEV_RELEASE) localOnly(local, '--release dev');
+  const loaded = loadRelease(version);
+  log(`release ${loaded.version}`);
+  return loaded;
+}
+
 function save(ctx: DeployContext): void {
   log(`recorded in ${writeRecord(ctx.record, values['record-dir'] ?? DEPLOYMENTS_DIR)}`);
 }
@@ -143,9 +152,7 @@ async function main(): Promise<void> {
     }
     case 'core': {
       const ctx = await deployerContext();
-      const release = loadRelease(values.release ?? latestRelease());
-      log(`release ${release.version}`);
-      await deployCore(ctx, release, {
+      await deployCore(ctx, release(ctx.local), {
         entryPoint: address('entry-point'),
         roleAdmin: address('role-admin'),
         defaultFeeWei: BigInt(required('default-fee-wei')),
@@ -160,8 +167,7 @@ async function main(): Promise<void> {
       if ((PRODUCTION_CHAIN_IDS as readonly number[]).includes(ctx.chainId)) {
         throw new Error(`chain ${ctx.chainId} is a production chain; the test fixtures must never be deployed there (R-29)`);
       }
-      const release = loadRelease(values.release ?? latestRelease());
-      await deployTesting(ctx, release, {
+      await deployTesting(ctx, release(ctx.local), {
         holder: address('holder'),
         owner: address('owner'),
         entryPoint: address('entry-point'),
@@ -172,10 +178,9 @@ async function main(): Promise<void> {
     }
     case 'upgrade': {
       const ctx = await deployerContext();
-      const release = loadRelease(required('release'));
       const which = required('contract');
       if (which !== 'paymaster' && which !== 'wallet') throw new Error('--contract is paymaster or wallet');
-      const target = await deployUpgradeTarget(ctx, release, which === 'paymaster' ? 'paymasterImplementation' : 'walletImplementation');
+      const target = await deployUpgradeTarget(ctx, release(ctx.local), which === 'paymaster' ? 'paymasterImplementation' : 'walletImplementation');
       save(ctx);
       if (which === 'wallet') {
         log(`Accounts move to ${target.address} through their own UUPS upgrade (upgradeToAndCall, signed by an owner).`);

@@ -264,17 +264,17 @@ services:
             "chainId": 31337, "name": "Devnet A",
             "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+            "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
+            "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+            "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
           },
           {
             "chainId": 31338, "name": "Devnet B",
             "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+            "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
+            "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+            "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
           }
         ]
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -421,8 +421,8 @@ services:
       # RPC URL out of the browser.
       GIANO_CHAINS: |
         [
-          { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" },
-          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "off" }
+          { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2", "sponsorship": "service" },
+          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2", "sponsorship": "off" }
         ]
       # Chain B is deliberately UNSPONSORED here (sponsorship "off"): the reference dApp must be
       # able to reach both the sponsored and the self-paid path (R12), and a wallet origin's
@@ -470,7 +470,7 @@ services:
       CHAIN_B_NAME: Devnet B
       # Required: this image carries no contracts registry and no devnet artefacts, so the
       # factory it derives addresses from has to be supplied. Same address on both chains.
-      FACTORY_ADDRESS: '0x26dCd29390eba3B22BcCbd2143989E5994Ac7050'
+      FACTORY_ADDRESS: '0x9c01925D07527A7920031196396A9c37421715A2'
       # The real sponsorship path, through /api/v1/paymaster. `service` needs no permissive
       # paymaster fixture, so PAYMASTER_ADDRESS stays unset.
       SPONSORSHIP_MODE: service
@@ -514,8 +514,8 @@ services:
       # served UNSPONSORED by wallet-web above, so the demo's self-paid path is reachable there.
       GIANO_CHAINS: |
         [
-          { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" },
-          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" }
+          { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" },
+          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" }
         ]
       # ⚠ The TENANT's wallet hostname. Pointing this at the shared `wallet.giano.localhost`
       # is the one-character mistake that binds a tenant's passkeys to infrastructure,
@@ -537,8 +537,8 @@ services:
     environment:
       GIANO_CHAINS: |
         [
-          { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" },
-          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8" }
+          { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" },
+          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" }
         ]
       # The values that differ. Everything else is identical to custom-example above.
       GIANO_WALLET_URL: http://wallet.byo.giano.localhost
@@ -591,7 +591,7 @@ services:
       GIANO_DEPLOYMENTS: >-
         [{"name":"local devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
           "walletRpcUrl":"http://localhost:8545",
-          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5},
+          "sponsorshipPaymaster":"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96","refreshSeconds":5},
          {"name":"local devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
           "walletRpcUrl":"http://localhost:8546",
-          "sponsorshipPaymaster":"0xf98b56de62ce88cEb70A9155582248cDBf2D0718","refreshSeconds":5}]
+          "sponsorshipPaymaster":"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96","refreshSeconds":5}]

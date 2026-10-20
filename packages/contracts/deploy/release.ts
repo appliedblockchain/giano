@@ -13,6 +13,7 @@
  * Releases are immutable. A contract change is a new release; see the "Releases" section of
  * packages/contracts/README.md.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Hex } from 'viem';
@@ -53,7 +54,28 @@ export function latestRelease(): string {
   return all[all.length - 1];
 }
 
+/**
+ * `dev` is not a release: it is a fresh Foundry build of the working tree, so a local chain can run
+ * unreleased contract changes. The deploy CLI accepts it on local chains only.
+ */
+export const DEV_RELEASE = 'dev';
+
+function loadDevRelease(): Release {
+  const pkgRoot = path.resolve(RELEASES_DIR, '..');
+  execFileSync('forge', ['build', 'src'], { cwd: pkgRoot, stdio: ['ignore', 'ignore', 'inherit'] });
+  const contracts = {} as Release['contracts'];
+  for (const [name, source] of Object.entries(RELEASE_CONTRACTS) as [ReleaseContract, string][]) {
+    // forge nests an artifact under its parent directories only on a name collision, which none
+    // of these has.
+    const artifact = path.join(pkgRoot, 'out', path.basename(source), `${name}.json`);
+    const { bytecode } = JSON.parse(fs.readFileSync(artifact, 'utf8')) as { bytecode: { object: Hex } };
+    contracts[name] = { source, creationCode: bytecode.object };
+  }
+  return { version: DEV_RELEASE, compiler: { solc: 'working tree', settings: {} }, contracts };
+}
+
 export function loadRelease(version: string): Release {
+  if (version === DEV_RELEASE) return loadDevRelease();
   if (!VERSION.test(version)) throw new Error(`release versions look like v1, v2, …; got "${version}"`);
   const file = path.join(RELEASES_DIR, version, 'release.json');
   if (!fs.existsSync(file)) throw new Error(`release ${version} not found (${file}); known: ${listReleases().join(', ') || 'none'}`);

@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   const chain = defineChain({ id: chainId, name: `local-${chainId}`, nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [url] } } });
   const publicClient = createPublicClient({ chain, transport }) as PublicClient;
   const testClient = createTestClient({ chain, transport, mode: 'anvil' });
-  const release = loadRelease(process.env.RELEASE ?? latestRelease());
+  const release = loadRelease(process.env.RELEASE || latestRelease());
   log(`Local deployment on chain ${chainId} (${url}), release ${release.version}, deployer ${CANONICAL_DEPLOYER} (impersonated)`);
 
   await installCreateX(publicClient, testClient, log);

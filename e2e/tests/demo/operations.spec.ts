@@ -53,7 +53,7 @@ for (const chain of [CHAINS.a, CHAINS.b]) {
     await expect(latest(page, 'transactions')).toHaveAttribute('data-status', 'confirmed', { timeout: 90_000 });
     await page.locator('#transactions').getByLabel('Action', { exact: true }).selectOption('custom');
     await page.getByLabel('Value (ETH)', { exact: true }).fill('0');
-    await page.getByLabel('To', { exact: true }).fill('0x9967bDf929856643e92EF65eefdE1fF8250774D8');
+    await page.getByLabel('To', { exact: true }).fill('0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7');
     await page.getByLabel('Calldata (hex)', { exact: true }).fill('0xa0712d68' + '0'.repeat(63) + '1');
     await approve(page, '[data-testid=send]', credentials);
     await expect(latest(page, 'transactions')).toHaveAttribute('data-status', 'confirmed', { timeout: 90_000 });

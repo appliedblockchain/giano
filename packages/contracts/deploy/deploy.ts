@@ -24,7 +24,7 @@ import { LABELS, upgradeLabel, type LabelKey } from './config';
 import { CREATEX_ADDRESS, create3Address, create3Salt, guardedSalt } from './create3';
 import { createxAbi } from './createx';
 import type { DeployedContract, DeploymentRecord } from './records';
-import type { Release } from './release';
+import { DEV_RELEASE, type Release } from './release';
 
 export type DeployContext = {
   publicClient: PublicClient;
@@ -217,7 +217,9 @@ export async function deployUpgradeTarget(
   of: 'paymasterImplementation' | 'walletImplementation',
 ): Promise<DeployedContract> {
   const creationCode = of === 'paymasterImplementation' ? release.contracts.GianoPaymaster.creationCode : release.contracts.GianoSmartWallet.creationCode;
-  const deployed = await deployLabel(ctx, { label: upgradeLabel(LABELS[of], release.version), release: release.version, initCode: creationCode });
+  // A working-tree build changes between runs, so its label names the code rather than a version.
+  const version = release.version === DEV_RELEASE ? `${DEV_RELEASE}-${keccak256(creationCode).slice(2, 10)}` : release.version;
+  const deployed = await deployLabel(ctx, { label: upgradeLabel(LABELS[of], version), release: release.version, initCode: creationCode });
   if (!ctx.record.upgrades.some((u) => u.address === deployed.address)) ctx.record.upgrades.push({ ...deployed, of });
   return deployed;
 }

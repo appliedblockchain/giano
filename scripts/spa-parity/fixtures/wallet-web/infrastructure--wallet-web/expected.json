@@ -7,13 +7,13 @@
       {
         "chainId": 31337,
         "name": "Devnet A",
-        "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+        "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2",
         "sponsorship": "service"
       },
       {
         "chainId": 31338,
         "name": "Devnet B",
-        "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+        "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2",
         "sponsorship": "off"
       }
     ],
