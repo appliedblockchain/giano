@@ -43,6 +43,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Configure GitHub Packages auth
+        # Before the install, which fetches the reference dApp's connector from GitHub Packages; the
+        # publish below reuses it. Auth only — the publish registry comes from each package's own
+        # publishConfig.
+        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
         # Every publishable package ships only `dist` (see its `files`), so all of them must be
@@ -56,11 +63,6 @@ jobs:
           pnpm --filter @appliedblockchain/giano-tx-describe build
           pnpm --filter @appliedblockchain/giano-wallet-kit build
           pnpm --filter @appliedblockchain/giano-paymaster-sdk build
-      - name: Configure GitHub Packages auth
-        # auth only — the publish registry comes from each package's own publishConfig
-        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check every publishable package was built
         # The publish below runs with lifecycle scripts off, so it ships whatever `dist` is on disk.

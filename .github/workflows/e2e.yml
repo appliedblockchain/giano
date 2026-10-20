@@ -41,6 +41,11 @@ jobs:
           # 24, not 22: portless (the local proxy that serves the demo's names) requires it.
           node-version: 24
           cache: pnpm
+      - name: Configure GitHub Packages auth
+        # the reference dApp installs the published connector from npm.pkg.github.com
+        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: Build packages
         run: |

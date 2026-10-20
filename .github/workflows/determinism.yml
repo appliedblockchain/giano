@@ -21,6 +21,7 @@ on:
 # `packages: write` and nothing here needs it.
 permissions:
   contents: read
+  packages: read # pnpm install: the reference dApp's connector comes from GitHub Packages
 
 concurrency:
   # The prefix must differ from release.yml's group, or the caller would queue behind its own
@@ -49,6 +50,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Configure GitHub Packages auth
+        # the reference dApp installs the published connector from npm.pkg.github.com
+        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - name: Recompile with canonical settings (solc 0.8.28 / runs 200 / viaIR)
         working-directory: packages/contracts
@@ -195,6 +201,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Configure GitHub Packages auth
+        # the reference dApp installs the published connector from npm.pkg.github.com
+        run: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       # The paymaster holds customer funds, so a mis-ordered storage slot silently re-attributes
       # real money. The committed snapshot is a human-readable second opinion on top of ERC-7201

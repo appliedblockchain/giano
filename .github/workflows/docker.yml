@@ -183,6 +183,10 @@ jobs:
           # about six ECR images per commit now, against three before, while
           # var.ecr_lifecycle_image_count (infra/iac/ecr.vars.tf) stays 10 — about one to two
           # commits of retention. Raise it before the pinned var.image_tag can be expired.
+          # Read access to GitHub Packages for the images that install a published Giano package
+          # (giano-example's connector). A Dockerfile that never mounts it ignores it.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           provenance: mode=min
           sbom: true
           # Scoped per image AND per arch. The default scope is shared by every build in the

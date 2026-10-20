@@ -26,6 +26,12 @@ A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives 
   (ABIP-2), and `dhi.io` refuses anonymous pulls. Log in once with a Docker Hub account, which can be free; an
   account created through Google or GitHub sign-in has no password, so use a personal access token
   (Docker Hub → Account settings → Personal access tokens, read-only) as the password.
+- **A GitHub token with `read:packages`** in `~/.npmrc` — the example app installs the published
+  `@appliedblockchain/giano-connector` from GitHub Packages (the repo `.npmrc` routes the scope there),
+  and GitHub Packages refuses anonymous reads even for public packages:
+  `//npm.pkg.github.com/:_authToken=<token>` (`gh auth token` works once `gh auth refresh -s read:packages`
+  has added the scope). Building the `giano-example` image takes the same token as a secret:
+  `GITHUB_TOKEN=<token> docker compose … build`.
 - **Foundry** (`curl -L https://foundry.paradigm.xyz | bash`) and **git submodules** (`pnpm git:init`) — only needed to compile contracts or run `forge test`; the published-package build path needs neither.
 
 ```sh

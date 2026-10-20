@@ -1,5 +1,7 @@
 # giano-example — build from the REPO ROOT:
-#   docker build -f services/custom-example/Dockerfile -t ghcr.io/appliedblockchain/giano-example .
+#   docker build -f services/custom-example/Dockerfile --secret id=github_token,env=GITHUB_TOKEN \
+#     -t ghcr.io/appliedblockchain/giano-example .
+# GITHUB_TOKEN needs read:packages: the connector is installed from GitHub Packages, not built here.
 # Static SPA + nginx; runtime config injected at start via /config.js (envsubst, the Baanx pattern).
 #
 # ONE image serves every deployment and BOTH demo tenants: `custom-example` and `custom-example-byoui`
@@ -15,23 +17,16 @@
 FROM dhi.io/node:22-alpine3.23-dev@sha256:d3e27128c752bc57454dbb824f8ba770ecf211cc8098a471a8fbd68185dd053f AS build
 RUN corepack enable
 WORKDIR /repo
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
-# ┌─ H2 (publish to GitHub Packages) removes this block ──────────────────────────────────────────
-# │ Until the connector is installed from the registry, the demo builds its workspace dependency and
-# │ that dependency's own dependency here. The demo's source imports only the connector's public
-# │ entry point, so when H2 lands these lines go and `pnpm install` below fetches the same package
-# │ from npm.pkg.github.com — no source change.
-COPY packages/wallet-transport/package.json packages/wallet-transport/package.json
-COPY packages/connector/package.json packages/connector/package.json
-# └────────────────────────────────────────────────────────────────────────────────────────────────
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json .npmrc ./
 COPY services/custom-example/package.json services/custom-example/package.json
-RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-example...
-# ┌─ H2 removes this block too ────────────────────────────────────────────────────────────────────
-COPY packages/wallet-transport packages/wallet-transport
-COPY packages/connector packages/connector
-RUN pnpm --filter @appliedblockchain/giano-wallet-transport build \
- && pnpm --filter @appliedblockchain/giano-connector build
-# └────────────────────────────────────────────────────────────────────────────────────────────────
+# The connector comes from GitHub Packages, which refuses anonymous reads. The token arrives as a
+# BuildKit secret (docker.yml passes GITHUB_TOKEN; locally `--secret id=github_token,env=GITHUB_TOKEN`)
+# and is appended to the project .npmrc only for this RUN, then restored, so no layer holds it.
+RUN --mount=type=secret,id=github_token,required=true \
+    cp .npmrc .npmrc.orig \
+ && printf '//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/github_token)" >> .npmrc \
+ && pnpm install --frozen-lockfile --filter @appliedblockchain/giano-example... ; \
+    status=$?; mv .npmrc.orig .npmrc; exit $status
 COPY services/custom-example services/custom-example
 # lint + typecheck + vite build + bundle scan (package.json `build`)
 RUN pnpm --filter @appliedblockchain/giano-example build

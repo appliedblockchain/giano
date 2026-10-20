@@ -133,6 +133,11 @@ networks:
   # and receipts alike. Neither wallet task is here, and neither has anything to dial.
   bundler:
 
+# Read access to GitHub Packages for the giano-example build: export GITHUB_TOKEN (read:packages).
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
+
 volumes:
   pgdata:
 
@@ -516,6 +521,7 @@ services:
       # Built on every PR and pushed to GHCR by .github/workflows/docker.yml. The ECR push
       # is the part of §16.2 still missing.
       dockerfile: services/custom-example/Dockerfile
+      secrets: [github_token] # the connector is installed from GitHub Packages
     restart: unless-stopped
     networks: [tasks]
     ports:
@@ -572,6 +578,7 @@ services:
     build:
       context: ..
       dockerfile: services/custom-example/Dockerfile # same image as custom-example
+      secrets: [github_token] # the connector is installed from GitHub Packages
     restart: unless-stopped
     networks: [tasks]
     ports:
