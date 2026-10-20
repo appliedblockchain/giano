@@ -5,6 +5,8 @@
     "module": "commonjs",
     "moduleResolution": "bundler",
     "types": ["node"],
+    // ts-node emits, and TS 6+ require rootDir whenever the inferred one is not the config's dir.
+    "rootDir": ".",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
