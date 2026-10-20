@@ -6,3 +6,12 @@ find the full documentation for it [in our repository](https://github.com/change
 
 We have a quick list of common questions to get you started engaging with this project in
 [our documentation](https://github.com/changesets/changesets/blob/main/docs/common-questions.md).
+
+## Do not add changesets for ignored packages
+
+`config.json` lists the apps (`wallet-api`, `wallet-web`, `paymaster-admin`, `example`, `e2e`) under
+`ignore`. `changeset version` never consumes a changeset that names only ignored packages, so one
+stays on `main` forever. `changesets/action` sees a pending changeset and opens a version PR instead
+of publishing, and with nothing to version it fails with "No commits between main and
+changeset-release/main". Put release notes for the apps in the PR description. Use a changeset only
+for the publishable packages.
