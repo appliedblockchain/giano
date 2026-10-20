@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION } from '@appliedblockchain/giano-contracts';
+import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION, ENTRYPOINT_V07_ADDRESS, gianoAddresses } from '@appliedblockchain/giano-contracts';
 import { keccak256, type PublicClient } from 'viem';
 import { loadConfig } from '../src/config.js';
 import chainPlugin from '../src/plugins/chain.js';
@@ -40,23 +40,39 @@ describe('config: the chain list', () => {
   });
 
   it('accepts GIANO_CHAINS, resolving registry defaults per chain (MC-46)', () => {
-    const config = loadConfig({
-      ...BASE_ENV,
-      GIANO_CHAINS: JSON.stringify([
-        { chainId: 8453, name: 'Base', rpcUrl: 'http://a:8545', bundlerUrl: 'http://a:4337' },
-        {
-          chainId: 31338,
-          name: 'Devnet B',
-          rpcUrl: 'http://b:8545',
-          bundlerUrl: 'http://b:4337',
-          entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-          factory: CANONICAL_FACTORY,
-        },
-      ]),
-    });
-    expect(config.CHAINS.map((chain) => chain.chainId)).toEqual([8453, 31338]);
-    // Base's addresses default from the contracts registry — which is canonical-only now
-    expect(config.CHAINS[0].factory).toBe(CANONICAL_FACTORY);
+    // The registry holds a chain once its deployment record is committed; stand one in for Base
+    // the way gen:addresses would write it.
+    gianoAddresses[8453] = { entryPoint: ENTRYPOINT_V07_ADDRESS, factory: CANONICAL_FACTORY, implementation: CANONICAL_IMPLEMENTATION };
+    try {
+      const config = loadConfig({
+        ...BASE_ENV,
+        GIANO_CHAINS: JSON.stringify([
+          { chainId: 8453, name: 'Base', rpcUrl: 'http://a:8545', bundlerUrl: 'http://a:4337' },
+          {
+            chainId: 31338,
+            name: 'Devnet B',
+            rpcUrl: 'http://b:8545',
+            bundlerUrl: 'http://b:4337',
+            entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
+            factory: CANONICAL_FACTORY,
+          },
+        ]),
+      });
+      expect(config.CHAINS.map((chain) => chain.chainId)).toEqual([8453, 31338]);
+      // Base's addresses default from the contracts registry — which is canonical-only
+      expect(config.CHAINS[0].factory).toBe(CANONICAL_FACTORY);
+    } finally {
+      delete gianoAddresses[8453];
+    }
+  });
+
+  it('refuses a chain that is neither in the registry nor given its addresses', () => {
+    expect(() =>
+      loadConfig({
+        ...BASE_ENV,
+        GIANO_CHAINS: JSON.stringify([{ chainId: 424242, name: 'Unregistered', rpcUrl: 'http://a:8545', bundlerUrl: 'http://a:4337' }]),
+      }),
+    ).toThrow(/chain 424242: factory required — the chain is not in the giano-contracts address registry/);
   });
 
   it('refuses BOTH the shorthand and GIANO_CHAINS — never a merge (§3.4)', () => {

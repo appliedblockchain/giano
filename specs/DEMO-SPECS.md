@@ -36,7 +36,7 @@ Requirements `Rn` and findings `Gn` are defined there. Behavioural scenarios are
 | D9 | Claude Design brief and canvas: `https://claude.ai/artifact/P9yQDUV8wsi1rbJmHgZUrF`. | — |
 | D10 | Brand in `src/theme.ts` only; `colorPalette="brand"` everywhere else; system font stack. Lint forbids stylesheets, the `css` prop and `style` attributes. | Google Fonts (two CSP origins for nothing). |
 | D11 | Demo on `demo.localhost` / `demo-byo.localhost` (4410/4411); both tenants allow-list them alongside the fixture's origins. | Sharing the fixture's ports (the historic clash). |
-| D12 | Test ERC-20 deployed with the Ignition `Testing` module, `--strategy create2`, on each testnet; address recorded in the contracts registry. | A per-chain address table in the demo. |
+| D12 | Test ERC-20 deployed by the deploy CLI's `testing` command (CREATE3, label `giano.test.erc20`, so the same address on every chain) on each non-production testnet; address recorded in the contracts registry. | A per-chain address table in the demo. |
 | D13 | `DEVELOPER-GUIDE.md` §3/§4 and `INTEGRATION.md` §9 snippets are lifted from the demo and reference its files. | — |
 | D14 | Setup preflight at load (§5). | Documenting the timeouts harder. |
 

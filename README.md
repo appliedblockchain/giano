@@ -113,11 +113,12 @@ source). The chain starts empty, so deploy the contracts first and pass the fact
 
 ```sh
 # 1. start a local anvil (or use the compose one) and deploy Giano contracts
-pnpm hh:node                      # anvil on :8545 (separate terminal)
-pnpm hh:initlocal                 # EntryPoint + factory + testing contracts
+pnpm local:node                   # anvil on :8545 (separate terminal)
+pnpm local:deploy                 # CreateX, EntryPoint, P-256 verifier, factory, paymaster, fixtures
 
-# 2. bring up the API stack, pointing it at the deployed factory
-FACTORY_ADDRESS=0x… docker compose -f deploy/docker-compose.dev.yml up --build
+# 2. bring up the API stack, pointing it at the factory (its canonical address, on every chain)
+FACTORY_ADDRESS=$(pnpm -s --filter @appliedblockchain/giano-contracts deploy:cli addresses | awk '/factory /{print $2}') \
+  docker compose -f deploy/docker-compose.dev.yml up --build
 ```
 
 Swagger UI is available at the wallet-api's `/docs` outside production.
@@ -275,11 +276,14 @@ never by re-publishing the same number.
 
 - Run `pnpm build` (or `pnpm build:connector`) after changing the contracts or packages so
   dependents pick up the changes.
-- Contracts deploy with Hardhat Ignition using a `CREATE2` strategy, so addresses are identical on
-  any chain **as long as the bytecode is unchanged**. Restart anvil and re-run `hh:initlocal` after
-  changing contracts. Deployed addresses come from the committed registry in
-  `@appliedblockchain/giano-contracts` (`addresses.ts`, regenerated via `pnpm gen:addresses`); the
-  CI `determinism` job fails if the CREATE2 addresses drift.
+- Contracts deploy with CREATE3 through CreateX from a committed **release**, so every canonical
+  address is a function of the canonical deployer and a fixed label only: identical on every chain,
+  whatever the bytecode. To run unreleased contract changes locally, restart anvil and deploy the
+  working tree: `pnpm deploy:cli core --rpc http://127.0.0.1:8545 --impersonate --release dev
+  --role-admin <0x…>` (from `packages/contracts`). Deployed addresses come from the committed
+  registry in `@appliedblockchain/giano-contracts` (`addresses.ts`, built from
+  `deployments/<chainId>.json`); the CI `determinism` job fails if a release does not reproduce or
+  the canonical addresses or code drift. See `packages/contracts/README.md`.
 
 ## Troubleshooting
 
@@ -322,7 +326,6 @@ until they support 7.1's. Each one has its own exit condition:
 | Tool | Why it needs the API | Moves to TS 7 when |
 | --- | --- | --- |
 | tsup `dts` (declaration bundling, 7 published packages) | runs the compiler programmatically to emit `.d.ts` | tsup or its successor supports the TS 7.1 API, or the packages emit declarations with `isolatedDeclarations` |
-| ts-node (Hardhat config and `packages/contracts/scripts`) | compiles and typechecks through the API | Hardhat/ts-node support TS 7.1, or the scripts move to a non-typechecking loader such as tsx |
 | typescript-eslint (`services/custom-example` lint) | the parser and type-aware rules use the API | typescript-eslint supports TS 7 |
 
 vite, vitest, tsx and tsup's JavaScript output transpile with esbuild and do not use the compiler.

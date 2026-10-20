@@ -396,20 +396,25 @@ on chains A and B exactly when:
 |---|---|
 | `owners` | The same passkey produces the same 64-byte `x‖y` owner blob |
 | `nonce` | Giano always uses `0` (MC-21) |
-| factory address | Deterministic deployment with a fixed salt from a byte-identical creation code |
-| `implementation` (inside the proxy init code) | Same, and implied by the factory address matching, since the implementation address is a constructor argument baked into the factory's creation code |
+| factory address | CREATE3 through CreateX: a pure function of the canonical deployer and the fixed label `giano.factory` |
+| `implementation` (inside the proxy init code) | Same, under the fixed label `giano.wallet.impl` |
 
 The last two are the real preconditions. Each requires:
 
-1. the deterministic-deployment mechanism present **at the same address** on both chains (MC-25);
-2. the same fixed salt — `0xAB…AB`, already set in the Ignition strategy configuration;
-3. **byte-identical creation code**, which means the same compiler version, optimiser runs,
-   intermediate-representation setting, target EVM version and metadata configuration (MC-26).
+1. CreateX present **at the same address** (`0xba5Ed…ba5Ed`) on both chains (MC-25);
+2. the same canonical deployer and the same fixed labels (`packages/contracts/deploy/config.ts`).
+   The salt is CreateX's permissioned form, `deployer ‖ 0x00 ‖ keccak256(label)[0:11]`
+   (`deploy/create3.ts`).
 
-Because the implementation address is a constructor argument to the factory, a matching factory
-address *implies* a matching implementation. Checking the factory address is therefore sufficient —
-and the implementation is checked anyway, because a cheap direct check beats an implication when the
-consequence is a user's funds arriving at the wrong address.
+No bytecode enters a CREATE3 address, so compiler settings, a newer release or a different EVM target
+no longer move the factory or the implementation (MC-26 now constrains the *code* at the address,
+§4.2). Two consequences follow. A chain adopted later gets the current release under the same labels
+and therefore the same user addresses. And the permissioned salt means only the canonical deployer
+can put contracts at these addresses, so only it can adopt a chain — nobody else can occupy a
+canonical address first.
+
+Because an address no longer proves which code sits there, the factory and the implementation are
+both checked for address *and* code.
 
 ### 4.2 The admission gate
 
@@ -421,78 +426,70 @@ consequence is a user's funds arriving at the wrong address.
    in §4.5 — **not** taken from a reference chain, which would let a fleet agree unanimously on the
    wrong build (S13).
 3. `factory.implementation() === CANONICAL_IMPLEMENTATION` → `implementationAddress` check.
-4. Once, at boot, a **live cross-check**: `factory.getAddress([probeOwner], 0)` on every served chain
+4. The runtime code at the factory and at the implementation hashes to a codehash some release puts
+   there (`canonicalCodeAt`, from `CANONICAL_CODE` in `canonical.ts`); otherwise `code-not-canonical`.
+5. Once, at boot, a **live cross-check**: `factory.getAddress([probeOwner], 0)` on every served chain
    returns the same address (MC-22). The probe owner is a fixed, well-known 64-byte value that is
    never a real credential.
 
-Steps 2, 3 and 4 failing are fatal (§3.5). Step 4 is the one that would catch a factory at the right
-address running different code — the case bytecode comparison alone would miss.
+Steps 2 to 5 failing are fatal (§3.5). Steps 4 and 5 are the ones that catch a canonical address
+running different code, which an address comparison alone cannot see under CREATE3.
 
 The same cross-check runs as a periodic operational probe, feeding the alert in MC-104: a served
 chain whose factory ceases to agree is a page, not a log line.
 
 ### 4.3 Deploy pipeline
 
-`packages/contracts` changes:
+`packages/contracts` deploys only through its deploy CLI (`deploy/cli.ts`), from a committed release
+(`releases/<vN>`, never a fresh build):
 
-- **Pre-flight (MC-25).** Before deploying to a new chain, assert the deterministic-deployment
-  contract the Ignition `create2` strategy relies on is present at its expected address. If absent,
-  place it first, or fail naming the missing contract and its address. *Identifying that contract
-  and confirming its cross-chain address is a prerequisite task* — it is a property of the tooling,
-  not of Giano, and must be established per candidate chain rather than assumed.
-- **Post-deploy assertion (MC-99).** After deploying, assert the produced factory and implementation
-  addresses equal the registry's canonical pair. Fail the deployment rather than write a divergent
-  registry entry.
-- **Compiler pinning (MC-26).** The solc version, optimiser runs, `viaIR` and EVM version are already
-  fixed in the Hardhat configuration. Add a check that treats any change to them as an
-  address-breaking change: the determinism workflow must fail rather than quietly re-baseline.
+- **Pre-flight (MC-25).** Before deploying, the CLI asserts CreateX is present at
+  `0xba5Ed…ba5Ed` and fails naming it if not. On a local chain `install-createx` sends CreateX's own
+  keyless deployment; on a public chain without it, follow CreateX's instructions.
+- **Signer check.** The CLI refuses to send unless the signing account is the canonical deployer:
+  from any other sender CreateX would treat the permissioned salt as ordinary and deploy elsewhere,
+  unprotected.
+- **Post-deploy assertion (MC-99).** Every deployment cross-checks the computed address against
+  CreateX's own `computeCreate3Address`, then records address, release, codehash and transaction in
+  `deployments/<chainId>.json`. `pnpm gen:addresses` refuses any record whose factory,
+  implementation or paymaster address or codehash is not canonical.
+- **Compiler pinning (MC-26).** solc version, optimiser runs, `viaIR`, EVM version and remappings are
+  pinned in `foundry.toml`/`remappings.txt`. A release freezes the resulting creation code together
+  with its solc standard-JSON input; releases are immutable, and a contract change is a new release.
 
 ### 4.4 Determinism CI
 
-`determinism.yml` today deploys to a fresh local network and compares against the committed **Base**
-deployment only. Change it to compare against **every** chain directory under
-`ignition/deployments/` that is marked canonical (MC-27):
+`determinism.yml` ("Canonical releases, addresses and code") checks, on every contracts change and
+on every release (MC-27):
 
 ```
-for each chain-<id> in ignition/deployments/, excluding chains marked non-canonical:
-    assert deployed_addresses['GianoAccountFactory#GianoSmartWalletFactory'] == local
-    assert deployed_addresses['GianoAccountFactory#GianoSmartWallet']        == local
+for each release: plain solc on releases/<vN>/standard-input.json reproduces release.json
+canonical.ts == pnpm gen:canonical   (addresses from deployer + labels; codehashes from deploying
+                                      every release to a throwaway anvil)
+deploy CLI on a fresh anvil: every canonical contract lands at its canonical address with canonical
+                             code, and a second run deploys nothing
 ```
 
-Non-canonical chains are listed explicitly in `address-overrides.json` with a reason, so exclusion
-is a recorded decision rather than an omission (MC-28).
+Committed chains need no separate address comparison: their records are checked by
+`gen:addresses` (above), and a canonical address cannot hold anything but the canonical deployer's
+deployment.
 
-### 4.5 Freezing canonical, and the pre-freeze entries
+### 4.5 Freezing canonical
 
-The registry today holds **three generations** of the contracts, and a build from `HEAD` matches none
-of them:
+The first canonical freeze (CREATE2, salt `0xAB…AB`, from the v1.1.0 build) never reached production
+accounts and has been replaced, together with every chain deployed under it. The registry holds no
+chain until the canonical deployer redeploys; before that, `CANONICAL_DEPLOYER` in
+`deploy/config.ts` is a placeholder and the deploy CLI refuses every non-local chain.
 
-| Entry | Factory | Why it differs |
-|---|---|---|
-| 8453 / 84532 (Base) | `0x26dCd293…` | Deployed **before** the v1.1.0 contract changes. Its build compiled 21 sources; 381185's compiled 37. The `ownerIndex` → `ownerBytes` signing change landed afterwards |
-| 381185 | `0x3451C877…` | Built against a **non-canonical EntryPoint** (`0xB10F0BF2…`). The implementation hardcodes `entryPoint()`, so that one constant changes the bytecode, the implementation address and therefore the factory address |
-| `HEAD` | — | Differs from 381185 by exactly that one line, and from Base by the whole v1.1.0 change set |
+The CREATE3 freeze is meant to be the last address change: addresses depend only on the deployer and
+the labels, and later contract changes are new releases deployed under versioned upgrade labels
+(`giano.paymaster.impl@v2`, `giano.wallet.impl@v2`) that proxies and accounts move to through UUPS.
 
-Compiler settings are byte-identical across all three (0.8.28, runs 200, `viaIR`, `paris`), so none
-of this is toolchain drift. **Nothing was ever canonical**, which is the real finding — "381185 is the
-odd one out" was the wrong framing.
-
-Because no production accounts exist, the resolution is a clean freeze (Q1):
-
-1. Tag a canonical contracts build from `HEAD`.
-2. Deploy it to every chain in the fleet, including Base, asserting the produced addresses match
-   (§4.3).
-3. Export `CANONICAL_FACTORY` and `CANONICAL_IMPLEMENTATION` from `packages/contracts` as the
-   constants §4.2 compares against.
-4. **Remove** the three pre-freeze registry entries. Retaining them as "legacy" would preserve only
-   the ambiguity about which build is canonical (MC-28).
-
-**The generalisable lesson is MC-141.** The account implementation hardcodes the EntryPoint address,
-so *any* chain not carrying EntryPoint v0.7 at `0x0000000071727De2…` produces a different account
-bytecode and a different address for everything downstream. On public chains this is essentially
-always satisfied. **On a private chain it is not**, which makes it a required first step of the
-on-premises runbook and of the adoption checklist (§15.3) — not a hypothetical, since it is exactly
-what happened to 381185.
+**MC-141 still matters.** The account implementation hardcodes the EntryPoint address. Under CREATE3
+a chain without EntryPoint v0.7 at `0x0000000071727De2…` no longer gets different addresses — it gets
+the same addresses running wallets bound to nothing — and it is still a required first step of the
+on-premises runbook and of the adoption checklist (§15.3). This is what happened to the pre-freeze
+381185 deployment.
 
 ### 4.6 Lazy per-chain deployment
 
@@ -1166,7 +1163,7 @@ wallet-management op    → domain { name, version,          verifyingContract }
 ```
 
 **Why omitting `chainId` is safe here specifically.** The paymaster proxy sits at the same address on
-every chain, by the same CREATE2 determinism that fixes the factory address — so `verifyingContract`
+every chain, by the same CREATE3 label that fixes the factory address — so `verifyingContract`
 already discriminates the deployment, and only the chain id has to come out. The authorisation
 remains bound to the sender, the nonce, the gas limits and `validUntil`. Each chain's EntryPoint
 spends that nonce once. So the authorisation can be used **at most once per chain, for exactly the
@@ -1561,12 +1558,13 @@ operation and must be turnkey rather than tribal knowledge. This checklist is a 
 (MC-146), and passing it is a **gate**, not an advisory (MC-147).
 
 ```
-1.  Deterministic deployer present at its expected address?   → else deploy it first
+1.  CreateX present at 0xba5Ed…ba5Ed?                         → else deploy it first
 2.  EntryPoint v0.7 at 0x0000000071727De2…?                   → else deploy it there (MC-141)
 3.  RIP-7212 precompile present?                              → informational; drives fee tuning
-4.  Deploy canonical contracts                                → hh:deploy with the frozen build
-5.  Assert produced addresses == CANONICAL_FACTORY /
-    CANONICAL_IMPLEMENTATION                                  → else FAIL, do not register (§4.3)
+4.  Deploy canonical contracts                                → deploy:cli core, from a release,
+                                                                 signed by the canonical deployer
+5.  Assert addresses == CANONICAL_FACTORY /
+    CANONICAL_IMPLEMENTATION, code is canonical               → else FAIL, do not register (§4.3)
 6.  Fund the bundler's executor account
 7.  Deploy, stake and fund the paymaster; register tenants on this chain
 8.  giano-doctor chain --chain-id <id>                        → must be green (§3.5)
@@ -1582,7 +1580,7 @@ Steps 1, 2 and 5 are the ones that fail silently if skipped, and are the reason 
   `chain_available`, the RPC endpoint, and the watcher lag. Requests for that chain return `503`
   `chain-unavailable`, which is retryable and distinct from `400` `unsupported-chain`, which is not.
 - **Canonical address drift alert.** Treat as an incident. The chain's factory no longer matches the
-  frozen constant; a redeployment or a wrong endpoint is the likely cause. Remove the chain from the
+  canonical address or code; a wrong endpoint or a non-canonical deployment is the likely cause. Remove the chain from the
   served list until resolved — accounts on it are at risk of address confusion.
 - **Owner-set divergence alert.** Inspect `owner_sync_targets` for the account. Retry if the
   authorisation is live; otherwise the user must re-authorise (§11.4).

@@ -18,19 +18,21 @@ nothing in the stack points at it.
 > **Adoption is a gate, not a formality.** Deploying Giano to a chain means passing
 > [`specs/CHAIN-ADOPTION.md`](../../specs/CHAIN-ADOPTION.md). The scripts here implement that
 > checklist and refuse to continue when a step fails — in particular, the contracts are deployed
-> through Ignition's **create2** strategy and every produced address is asserted against the frozen
-> constants in `packages/contracts/canonical.ts`. A deployment at the wrong addresses works
-> perfectly right up to the point where a user's funds arrive at an address their passkey does not
-> control, which is why divergence aborts rather than warns.
+> by the contracts package's deploy CLI, with CREATE3 through CreateX from a committed release, so
+> every address is the canonical one in `packages/contracts/canonical.ts` by construction, and the
+> CLI checks the code at each one. Only the **canonical deployer** can deploy there: its key signs
+> the deployment, and the CLI refuses any other key.
 
 ## What you need to fund ⚠️
 
-Two EOAs need testnet ETH (throwaway keys you generate — never reuse real keys). A third key is
+Three EOAs need testnet ETH. The operator and executor are throwaway keys you generate (never reuse
+real keys); the canonical deployer is the one key that owns every canonical address. A fourth key is
 required but needs no funding:
 
 | Account | Suggested | Why |
 | --- | --- | --- |
-| **Deployer** (`DEPLOYER_PRIVATE_KEY`) | ~0.25 ETH | Deploys the contracts, stakes the paymaster (`STAKE_ETH`), funds **each** tenant's sponsorship balance (`TENANT_FUND_ETH`, spent once per entry in `PAYMASTER_TENANTS`) and seeds the test paymaster's deposit (`PAYMASTER_FUND_ETH`). |
+| **Canonical deployer** (`CANONICAL_DEPLOYER_PRIVATE_KEY`) | ~0.05 ETH | Deploys the contracts. Its address is `CANONICAL_DEPLOYER` (`packages/contracts/deploy/config.ts`), part of every canonical address; used for nothing else. |
+| **Operator** (`DEPLOYER_PRIVATE_KEY`) | ~0.25 ETH | The paymaster's `ROLE_ADMIN` on this demo. Stakes the paymaster (`STAKE_ETH`), funds **each** tenant's sponsorship balance (`TENANT_FUND_ETH`, spent once per entry in `PAYMASTER_TENANTS`) and holds the test fixtures (off production chains). |
 | **Alto executor** (`ALTO_EXECUTOR_PRIVATE_KEY`) | ~0.05 ETH | Signs and pays gas for every bundle on-chain. It's reimbursed from the paymaster deposit, but must front the ETH. |
 | **Sponsorship signer** (`SPONSORSHIP_SIGNER_KEY`) | none | The key wallet-api signs ERC-7677 sponsorships with. It authorises spending against the tenant's paymaster balance; it never pays gas. |
 
@@ -68,10 +70,12 @@ the example. The example has two independent halves — *A. contract deployment*
 aligned with the environment described in `infra/`, and *B. the local demo stack*.
 
 Set at minimum:
-- `DEPLOYER_PRIVATE_KEY` and `SPONSORSHIP_SIGNER_KEY` (half A — deployment and provisioning)
+- `CANONICAL_DEPLOYER_PRIVATE_KEY`, `DEPLOYER_PRIVATE_KEY` and `SPONSORSHIP_SIGNER_KEY` (half A —
+  deployment and provisioning)
 - `ALTO_EXECUTOR_PRIVATE_KEY`, `ALTO_UTILITY_PRIVATE_KEY` (half B — only to run the stack)
 - (optional) `DEPLOY_RPC_URL` — the **only** RPC the deployment needs. Prefer a keyed endpoint:
-  a dropped receipt mid-run is what corrupts the Ignition journal.
+  a flaky public RPC dropping a receipt mid-run is the usual cause of a failed deploy (re-running
+  is safe).
 - (optional) `RPC_URL` — the local stack's serving RPC; the keyless publicnode default is fine
 - (optional) `BUNDLER_NODE_RPC_URL` — leave blank to reuse `RPC_URL`; only needed if you enable
   Alto's safe mode (then point it at a `debug_traceCall`-capable RPC)
@@ -83,7 +87,8 @@ Set at minimum:
 ```
 
 Prints each key's address and current balance. Send Sepolia ETH from a faucet
-(e.g. https://www.alchemy.com/faucets/ethereum-sepolia) until the deployer and executor are funded.
+(e.g. https://www.alchemy.com/faucets/ethereum-sepolia) until the operator and executor are funded,
+and make sure the canonical deployer has gas for step 3.
 
 ### 3. Deploy the contracts (one-time)
 
@@ -91,21 +96,23 @@ Prints each key's address and current balance. Send Sepolia ETH from a faucet
 ./deploy/sepolia/deploy-contracts.sh
 ```
 
-Deploys, all through the create2 strategy:
+Deploys, through `pnpm --filter @appliedblockchain/giano-contracts deploy:cli` (CREATE3 via CreateX,
+from the latest release, signed with `CANONICAL_DEPLOYER_PRIVATE_KEY`):
 
-| Module | Contracts |
+| Command | Contracts |
 | --- | --- |
-| `GianoAccountFactory` | `GianoSmartWallet` (implementation) + `GianoSmartWalletFactory` |
-| `GianoPaymaster` | the sponsorship paymaster — implementation, deployer and proxy |
-| `Testing` | `PrivateERC20` (the demo token) + `PermissivePaymaster` (fixture) |
+| `core` | `GianoSmartWallet` (implementation) + `GianoSmartWalletFactory` + the sponsorship paymaster (implementation, and proxy initialised in the same transaction with the operator as `ROLE_ADMIN`) |
+| `testing` | `PrivateERC20` (the demo token) + `PermissivePaymaster` (fixture) — skipped on production chains |
 
-It then asserts all five canonical addresses and writes `FACTORY_ADDRESS`,
-`SPONSORSHIP_PAYMASTER_ADDRESS`, `TEST_PAYMASTER_ADDRESS` and `TEST_ERC20_ADDRESS` back into
-`deploy/.env`. Re-running is idempotent (Ignition resumes the existing deployment).
+It then writes `FACTORY_ADDRESS`, `SPONSORSHIP_PAYMASTER_ADDRESS`, `TEST_PAYMASTER_ADDRESS` and
+`TEST_ERC20_ADDRESS` back into `deploy/.env`, and records the deployment in
+`packages/contracts/deployments/<chainId>.json`. Re-running is idempotent: contracts already in place
+are checked and recorded, never redeployed.
 
-If it reports divergence, **stop**: do not serve the chain and do not register the addresses. The
-cause is upstream — a missing CreateX, a non-canonical EntryPoint, or a contracts build that isn't
-the frozen one.
+If the CLI fails, **stop**: do not serve the chain. The usual causes are upstream — a missing
+CreateX, a non-canonical EntryPoint, or a key that is not the canonical deployer. While
+`CANONICAL_DEPLOYER` in `deploy/config.ts` is still the placeholder, the CLI refuses every non-local
+chain.
 
 ### 4. Provision the paymaster (one-time)
 
@@ -131,7 +138,7 @@ tenant"*. The id is immutable once set; changing it orphans that tenant's on-cha
 > be sponsored for, and its balance can only be withdrawn. A new environment generates its ids
 > first, pins them in its tenants-seed, and registers those.
 
-Every role lands on the deployer EOA. That is the development shape the e2e devnet uses too, not a
+Every role lands on the operator EOA. That is the development shape the e2e devnet uses too, not a
 shortcut smuggled in: a production deployment routes every grant through the timelock, and
 `giano-doctor chain --role-admin` is what asserts that.
 
@@ -141,9 +148,9 @@ shortcut smuggled in: a production deployment routes every grant through the tim
 pnpm --filter @appliedblockchain/giano-contracts gen:addresses
 ```
 
-Commit `packages/contracts/ignition/deployments/chain-<id>/` together with the regenerated
-`addresses.ts`. `gen:addresses` fails on divergence from the canonical freeze, so this is the same
-gate as step 3 — expressed as a committed artefact rather than a one-off run. Once registered, the
+Commit `packages/contracts/deployments/<id>.json` together with the regenerated `addresses.ts`.
+`gen:addresses` fails if any recorded address or codehash is not canonical, so this is the same gate
+as step 3 — expressed as a committed artefact rather than a one-off run. Once registered, the
 chain's addresses default correctly everywhere and `FACTORY_ADDRESS` no longer has to be passed by
 hand.
 
@@ -203,14 +210,14 @@ Tear down: `docker compose --env-file deploy/.env -f deploy/docker-compose.sepol
 Set `CHAIN_ID` (and `DEPLOY_CHAIN_ID`), `RPC_URL` and `DEPLOY_RPC_URL` in `deploy/.env` — the
 deploy and provisioning scripts use `DEPLOY_RPC_URL` first, so leaving it on Sepolia deploys to
 Sepolia — then rerun steps 2–8
-(`BUNDLER_NODE_RPC_URL` only if that chain's public RPC won't serve the bundler). The deploy script
-auto-uses hardhat's `custom` network for non-Sepolia chains.
+(`BUNDLER_NODE_RPC_URL` only if that chain's public RPC won't serve the bundler). The deploy CLI
+reads the chain id from the endpoint, so no per-chain configuration is needed.
 
 Two chain prerequisites are absolute, and both fail silently if skipped — see
 [`specs/CHAIN-ADOPTION.md`](../../specs/CHAIN-ADOPTION.md) steps 1 and 2. CreateX must be present
-(the deploy script checks). EntryPoint v0.7 must be at its canonical address: the account
-implementation hardcodes it, so a chain carrying a different EntryPoint produces different bytecode
-and different addresses for everything downstream. A private chain will not have either, and both
+(the deploy CLI checks). EntryPoint v0.7 must be at its canonical address: the account
+implementation hardcodes it, so on a chain without it the canonical addresses would hold wallets
+bound to nothing. A private chain will not have either, and both
 must be deployed before any Giano contract.
 
 ## Restricting sponsorship

@@ -61,8 +61,8 @@ Mitigations:
 - it is never deployed to a non-local environment: it is a GHCR artefact for local and CI chains only.
 
 **`giano-contracts-deployer` (out of scope).** It is a one-shot tool that deploys the contracts to a chain (Helm
-pre-install Job, compose `deploy` profile), not a service that runs in an environment. It stays on `node:22-slim` with
-`hardhat-foundry`, `pnpm` and `forge`. It is exempted as a whole file (`*` in the block below), and its `docker.yml`
+pre-install Job, compose `deploy` profile), not a service that runs in an environment. It stays on `node:22-slim`
+and runs the contracts package's deploy CLI with `tsx`; it deploys committed releases, so it carries no compiler. It is exempted as a whole file (`*` in the block below), and its `docker.yml`
 entry is still built and published to GHCR.
 
 Tracking issue: _to be opened (task 8.4 of the `adopt-docker-hardened-images` change)._

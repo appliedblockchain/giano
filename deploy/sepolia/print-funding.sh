@@ -19,11 +19,14 @@ const stake = process.env.STAKE_ETH ?? '0.1';
 const tenantFund = process.env.TENANT_FUND_ETH ?? '0.02';
 const testDeposit = process.env.PAYMASTER_FUND_ETH ?? '0.01';
 const rows = [
+  // Pays for the contract deployments (deploy-contracts.sh) and, off the production chains, the
+  // test paymaster's deposit; nothing else.
+  ['Canonical deployer', process.env.CANONICAL_DEPLOYER_PRIVATE_KEY, '~0.05', `contract deployments + test deposit (${testDeposit}, testnets only)`],
   [
-    'Deployer',
+    'Operator',
     process.env.DEPLOYER_PRIVATE_KEY,
-    '~0.25',
-    `contracts + paymaster stake (${stake}) + tenant balance (${tenantFund}) + test deposit (${testDeposit}) + gas`,
+    '~0.2',
+    `paymaster stake (${stake}) + tenant balance (${tenantFund}) + provisioning gas`,
   ],
   ['Alto executor', process.env.ALTO_EXECUTOR_PRIVATE_KEY, '~0.05', 'fronts gas for every bundle (reimbursed by paymaster)'],
   // Listed so a missing key is caught here rather than three steps later, not because it needs ETH:

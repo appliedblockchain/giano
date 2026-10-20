@@ -59,9 +59,10 @@ services:
       CHAIN_ID: '31337'
       RPC_URL: http://anvil:8545
       BUNDLER_URL: http://alto:4337
-      # local chain is not in the committed registry — supply addresses from hh:initlocal
+      # local chain is not in the committed registry — `pnpm local:deploy`, then pass the canonical
+      # factory (`pnpm --filter @appliedblockchain/giano-contracts deploy:cli addresses`)
       ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
-      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run hh:initlocal and export FACTORY_ADDRESS}
+      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run pnpm local:deploy and export FACTORY_ADDRESS}
       LOG_LEVEL: debug
       # single dev tenant: the vite dev server (5173) is the wallet origin; 4000 is the
       # legacy demo origin. Tenant provisioning is declarative — edit and restart.

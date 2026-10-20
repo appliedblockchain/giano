@@ -142,7 +142,7 @@ Removing the bundler in favour of direct `EntryPoint` submission has been analys
 | `giano-connector` | The thin dApp SDK. An EIP-1193 provider plus wagmi and RainbowKit adapters; answers reads locally and sends everything requiring authority to the popup. Declares the chain and refuses a session granted on another. Contains no WebAuthn, credential or bundler code. |
 | `giano-wallet-transport` | The popup protocol: a versioned, zod-validated JSON-RPC-over-`postMessage` envelope, origin-pinned on both ends, with chain negotiation in the handshake and a first-class refusal. |
 | `giano-wallet-core` | The wallet-origin engine: the passkey smart account, per-chain provider, ERC-7677 paymaster client, and the injection seam through which it reaches `wallet-api`. |
-| `giano-contracts` | Solidity sources, generated ABIs, the chain-descriptor type, and the address registry — including the frozen `CANONICAL_FACTORY` and `CANONICAL_IMPLEMENTATION`. |
+| `giano-contracts` | Solidity sources, generated ABIs, the chain-descriptor type, and the address registry — including the canonical `CANONICAL_FACTORY` and `CANONICAL_IMPLEMENTATION` (CREATE3 addresses) and the codehash each release puts at them. |
 | `giano-paymaster-sdk` | Reads the paymaster's entire state and administers it on-chain; the caller supplies the signer, and every write is simulated first. Ships the `giano-paymaster` CLI. |
 
 **Services** — what a deployment runs.
