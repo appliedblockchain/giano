@@ -1,18 +1,11 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "experimentalDecorators": true,
-    "target": "es2020",
-    "module": "commonjs",
-    "moduleResolution": "bundler",
+    // The deploy CLI and scripts run on Node (tsx); the published surface (tsconfig.build.json) does not.
     "types": ["node"],
-    // ts-node emits, and TS 6+ require rootDir whenever the inferred one is not the config's dir.
-    "rootDir": ".",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
+    // Configs and scripts emit nothing; declaration checks belong to tsconfig.build.json.
+    "declaration": false
   },
   // The package's own TypeScript only: lib/ holds the Solidity submodules, which ship TS of their own.
-  "include": ["*.ts", "ignition/**/*.ts", "scripts/**/*.ts"]
+  "include": ["*.ts", "deploy/**/*.ts", "scripts/**/*.ts"]
 }

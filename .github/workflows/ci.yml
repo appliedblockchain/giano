@@ -136,10 +136,9 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           # Pinned to the same Foundry release the repo pins everywhere else (the anvil
-          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifted past it and broke
-          # two things at once: `forge remappings` began emitting context remappings that
-          # hardhat-foundry rejects, and gas metering moved test_gas_validation past its
-          # budget. Bump deliberately, in step with the anvil pin.
+          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifting past it once moved
+          # test_gas_validation past its gas budget. Bump deliberately, in step with the anvil
+          # pin.
           version: v1.7.1
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -149,9 +148,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Recompile and regenerate ABIs
         working-directory: packages/contracts
-        run: |
-          pnpm hh:compile
-          pnpm hh:wagmi
+        run: pnpm gen:abis
       - name: Fail on drift
         run: git diff --exit-code packages/contracts/generated.ts
 
@@ -165,10 +162,9 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           # Pinned to the same Foundry release the repo pins everywhere else (the anvil
-          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifted past it and broke
-          # two things at once: `forge remappings` began emitting context remappings that
-          # hardhat-foundry rejects, and gas metering moved test_gas_validation past its
-          # budget. Bump deliberately, in step with the anvil pin.
+          # image, e2e/devnet/with-pinned-anvil.mjs). "stable" drifting past it once moved
+          # test_gas_validation past its gas budget. Bump deliberately, in step with the anvil
+          # pin.
           version: v1.7.1
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7

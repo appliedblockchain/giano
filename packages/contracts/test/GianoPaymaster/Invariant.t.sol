@@ -6,7 +6,7 @@ import {IPaymaster} from '@account-abstraction/contracts/interfaces/IPaymaster.s
 import {IEntryPoint} from '@account-abstraction/contracts/interfaces/IEntryPoint.sol';
 
 import {GianoPaymaster} from '../../src/paymaster/GianoPaymaster.sol';
-import {GianoPaymasterDeployer} from '../../src/paymaster/GianoPaymasterDeployer.sol';
+import {CreateXFixture} from '../utils/CreateXFixture.sol';
 import {Static} from '../GianoSmartWallet/Static.sol';
 
 /// @dev Drives the paymaster through random sequences of everything that moves money.
@@ -127,7 +127,7 @@ contract PaymasterHandler is Test {
     receive() external payable {}
 }
 
-contract InvariantTest is Test {
+contract InvariantTest is CreateXFixture {
     IEntryPoint internal constant ENTRY_POINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
 
     GianoPaymaster internal paymaster;
@@ -143,12 +143,13 @@ contract InvariantTest is Test {
     function setUp() public {
         vm.etch(address(ENTRY_POINT), Static.ENTRY_POINT_BYTES);
 
+        _installCreateX();
         GianoPaymaster impl = new GianoPaymaster();
-        GianoPaymasterDeployer deployer = new GianoPaymasterDeployer();
         paymaster = GianoPaymaster(
             payable(
-                deployer.deploy(
-                    bytes32(uint256(7)),
+                _deployPaymasterProxy(
+                    makeAddr('canonicalDeployer'),
+                    'giano.paymaster.proxy',
                     address(impl),
                     abi.encodeCall(GianoPaymaster.initialize, (address(ENTRY_POINT), roleAdmin, 0.0001 ether, 40_000, 1000))
                 )

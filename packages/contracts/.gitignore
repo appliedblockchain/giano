@@ -1,7 +1,6 @@
-artifacts/
-cache/
 cache_forge/
-ignition/deployments/chain-31337
-typechain-types/
 out/
-ignition/deployments/chain-31338
+out-abi/
+# Local chains are recreated from scratch; every other chain's record is committed.
+deployments/31337.json
+deployments/31338.json

@@ -231,15 +231,14 @@ contract GianoPaymaster is
     // Construction and initialisation
     // ---------------------------------------------------------------------------------------
 
-    /// @dev The implementation takes no constructor arguments, so its bytecode — and therefore its
-    ///      CREATE2 address — is identical across deployments (D10). All configuration is set by
-    ///      `initialize`.
+    /// @dev The implementation takes no constructor arguments, so its bytecode is identical across
+    ///      deployments (D10). All configuration is set by `initialize`.
     constructor() {
         _disableInitializers();
     }
 
     /// @notice Initialises the proxy. Called once, in the same transaction as the proxy deploy, by
-    ///         `GianoPaymasterDeployer` — see §4.2 of the specification for why.
+    ///         CreateX's `deployCreate3AndInit` — see §4.2 of the specification for why.
     /// @param entryPoint_         EntryPoint this paymaster is bound to.
     /// @param roleAdmin           Sole `ROLE_ADMIN` holder. A `TimelockController` in production.
     /// @param defaultFeeWei_      Deployment-wide platform fee per sponsored operation.

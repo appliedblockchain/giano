@@ -81,7 +81,8 @@ isolated per tenant, and cross-tenant use is both structurally impossible at the
   public key becomes an owner of a `MultiOwnable` smart account. Owners can be P-256 passkeys or
   plain ECDSA addresses.
 - **Deterministic address.** `GianoSmartWalletFactory.getAddress(owners, nonce)` (CREATE2) gives the
-  same wallet address before and after deployment, and — with the canonical build — the same factory
+  same wallet address before and after deployment, and — because the factory and implementation sit
+  at canonical CREATE3 addresses (a function of the canonical deployer and fixed labels) — the same
   address on every chain.
 - **Transactions → UserOps.** The SDK repackages `eth_sendTransaction` into an ERC-4337 UserOp
   (EntryPoint v0.7). Gas is sponsorable by a paymaster.
@@ -130,7 +131,7 @@ one of them is failing are in §6.
 
 | Secret | Held by | Purpose | Funded? |
 | --- | --- | --- | --- |
-| `DEPLOYER_PRIVATE_KEY` | contracts-deployer (one-shot) | deploys contracts + seeds the paymaster deposit on a new chain | **yes** — ~0.1 test ETH; ephemeral, never mount into long-running pods |
+| `DEPLOYER_PRIVATE_KEY` | contracts-deployer (one-shot) | the **canonical deployer**'s key (`packages/contracts/deploy/config.ts`): the only key that can put the canonical contracts at their addresses on any chain | **yes** — gas for the deploy; ephemeral, never mount into long-running pods; losing it means no new chain can get the canonical addresses |
 | `ALTO_EXECUTOR_PRIVATE_KEY(S)` | bundler | signs **and pays gas** for every bundle on-chain (reimbursed by the paymaster, but fronts the ETH) | **yes** — keep topped up (~0.05+); must differ from the deployer |
 | `ALTO_UTILITY_PRIVATE_KEY` | bundler | Alto nonce/gas-price management | no — any throwaway key |
 | `DATABASE_URL` | wallet-api, migrate job | Postgres DSN (credentials, sessions, audit) | n/a |
@@ -156,7 +157,7 @@ a request.
 | **wallet-web** | `ghcr.io/appliedblockchain/giano-wallet-web` (nginx + React) | 8080 | the passkey popup origin. Every tenant needs its own TLS host (= that tenant's irreversible RP ID), but **not** its own container: one per tenant, or one shared instance every tenant `CNAME`s to — see [§5.5a](#55a-two-topologies-per-tenant-container-or-shared-ui). Tenants bringing their own UI deploy their own SPA instead (reference: `e2e/wallet-byo/`) |
 | **ERC-4337 bundler** | `ghcr.io/appliedblockchain/giano-bundler` (Pimlico Alto) | 4337 | **yes** — needs a funded executor EOA; any ERC-4337 bundler works |
 | **EVM RPC** | public or your own node | — | **yes** — a keyless public endpoint works with Alto `--safe-mode false` |
-| **Deployed contracts** | factory + implementation (+ paymaster/test-ERC20 for demos) | — | **yes** — pre-deployed on chains 8453 / 84532 / 381185; deploy per-chain elsewhere |
+| **Deployed contracts** | factory + implementation (+ paymaster/test-ERC20 for demos) | — | **yes** — deployed per chain by the canonical deployer; no public chain carries the current canonical set yet |
 
 ---
 
@@ -248,8 +249,8 @@ Confirm the deployment on-chain any time:
 
 ```sh
 pnpm run doctor chain --rpc http://rpc.localhost --chain-id 31337 \
-  --factory 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050 \
-  --paymaster 0xCbc040482c1dd07D533800874DC37De7b18c8092
+  --factory 0x9c01925D07527A7920031196396A9c37421715A2 \
+  --paymaster 0xE1deC1e97c1e4F4de427AFB0a5Fdbf26D3b1CcF1
 ```
 
 ---
@@ -409,25 +410,32 @@ chain by changing `CHAIN_ID` + `RPC_URL` + the addresses. The full runbook is
 
 ### 5.1 Contracts
 
-- **On a registry chain** (Base 8453, Base Sepolia 84532, or 381185): nothing to do — the addresses
-  ship in `@appliedblockchain/giano-contracts` (`getGianoDeployment(chainId)`).
-- **On any other chain:** deploy once. Locally:
+- **On a registry chain:** nothing to do — the addresses ship in `@appliedblockchain/giano-contracts`
+  (`getGianoDeployment(chainId)`). None is registered yet: every chain is redeployed once the real
+  canonical deployer is set (`packages/contracts/deploy/config.ts` holds a placeholder).
+- **On any other chain:** deploy once, with the canonical deployer's key. Locally:
   ```sh
   cp deploy/sepolia.env.example deploy/.env   # set DEPLOYER_PRIVATE_KEY etc.
   ./deploy/sepolia/print-funding.sh           # shows the EOAs to fund + balances + faucets
-  ./deploy/sepolia/deploy-contracts.sh        # deploys factory + impl + paymaster + test-ERC20,
-                                              # seeds the paymaster deposit, writes addresses back to .env
+  ./deploy/sepolia/deploy-contracts.sh        # deploys factory + impl + paymaster (+ test fixtures off
+                                              # production chains), writes addresses back to .env
   ```
-  In containers/CI, use the `giano-contracts-deployer` image (compose `profiles: [deploy]` or the
-  Helm pre-install hook) with `RPC_URL`, `CHAIN_ID`, `DEPLOYER_PRIVATE_KEY`.
-- **CREATE2 determinism:** `pnpm hh:deploy --strategy create2` (fixed salt) gives identical addresses
-  across chains for identical bytecode — this is why 8453 and 84532 share a factory. The
-  `deploy-contracts.sh` script uses plain CREATE (portable, no deterministic-deployer dependency), so
-  its addresses differ per chain — always read them back from `deploy/.env`.
+  It uses `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy and `DEPLOYER_PRIVATE_KEY` as the demo's
+  operator (the paymaster's `ROLE_ADMIN`). Directly: `pnpm --filter @appliedblockchain/giano-contracts
+  deploy:cli core --rpc <url> --role-admin <0x…>` with `DEPLOYER_PRIVATE_KEY` set to the canonical
+  deployer's key. In containers/CI, use the `giano-contracts-deployer` image (compose
+  `profiles: [deploy]` or the Helm pre-install hook) with `RPC_URL`, `CHAIN_ID`,
+  `DEPLOYER_PRIVATE_KEY`, `ROLE_ADMIN`.
+- **CREATE3 determinism:** every canonical contract is deployed through CreateX with a permissioned
+  salt, so its address is a pure function of the canonical deployer and a fixed label — identical on
+  every chain, whatever the release or compiler. Only the canonical deployer can deploy there; CreateX
+  must be present at `0xba5Ed…ba5Ed`. The deploy CLI records each chain in
+  `packages/contracts/deployments/<chainId>.json`; commit it and run `pnpm gen:addresses`.
 - **P-256 bootstrap:** if the chain lacks the RIP-7212 precompile *and* the FreshCryptoLib verifier,
-  passkey validation will fail. Deploy the verifier with `packages/contracts/scripts/p256_deploy.ts`
-  (it also installs the Arachnid CREATE2 factory if absent). Verify with `giano-doctor` (§6) — it
-  probes support live rather than assuming.
+  passkey validation will fail. Deploy the verifier with `pnpm --filter
+  @appliedblockchain/giano-contracts deploy:cli p256 --rpc <url>` (it also installs the Arachnid
+  CREATE2 proxy if absent). Verify with `giano-doctor` (§6) — it probes support live rather than
+  assuming.
 
 ### 5.2 Bundler
 
@@ -568,11 +576,12 @@ The full design is in [`PAYMASTER-REQUIREMENTS.md`](./PAYMASTER-REQUIREMENTS.md)
 #### Deploying it
 
 ```sh
-# 1. Deploy the implementation, the deployer helper and the proxy (initialised in one transaction).
-#    `roleAdmin` should be the TimelockController, not an operational key — see below.
+# 1. Deploy the implementation and the proxy (CreateX deploys and initialises it in one
+#    transaction), with the wallet factory and implementation. `--role-admin` should be the
+#    TimelockController, not an operational key — see below. Signed by the canonical deployer.
 cd packages/contracts
-pnpm hh:deploy:paymaster --network <network> \
-  --parameters '{"GianoPaymaster":{"roleAdmin":"0x<timelock>","defaultFeeWei":"100000000000000"}}'
+DEPLOYER_PRIVATE_KEY=0x<canonical deployer> pnpm deploy:cli core --rpc <url> \
+  --role-admin 0x<timelock> --default-fee-wei 100000000000000
 
 # 2. Grant roles, authorise the signing key, stake, register and fund tenants.
 #    On a real deployment every grant goes through the timelock; this script is for a devnet or a
@@ -870,8 +879,12 @@ output:
 ```
 Contracts
   ✓ EntryPoint v0.7 deployed: 0x0000000071727De22E5E9d8BAf0edAc6f37da032
-  ✓ GianoSmartWalletFactory deployed: 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050
-  ✓ GianoSmartWallet implementation deployed: 0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56
+  ✓ GianoSmartWalletFactory deployed: 0x9c01925D07527A7920031196396A9c37421715A2
+  ✓ factory address is canonical: 0x9c01925D07527A7920031196396A9c37421715A2
+  ✓ factory runs canonical code: release v1 (giano.factory)
+  ✓ GianoSmartWallet implementation deployed: 0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6
+  ✓ implementation is canonical: 0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6
+  ✓ implementation runs canonical code: release v1 (giano.wallet.impl)
 Passkey (P-256) verification support
   ✓ P-256 via RIP-7212 precompile: cheap on-chain verification (0x100)
 doctor: all critical checks passed
@@ -970,7 +983,7 @@ P-256 passkey).
 | wallet-api won't boot: `origin … is not valid for rpId` | every tenant `expectedOrigins` host must equal that tenant's rpId or be a subdomain of it (TENANTS_SEED) |
 | ceremony calls return `403 unknown-tenant` | the request's `Origin` header matches no tenant's `walletOrigin`/`expectedOrigins` — check the seed |
 | wallet-api won't boot: `chain … not in the registry` | set `ENTRYPOINT_ADDRESS` and `FACTORY_ADDRESS` explicitly |
-| `giano-doctor` reports P-256 unavailable | deploy the verifier with `scripts/p256_deploy.ts` (chain has no RIP-7212 and no FCL verifier) |
+| `giano-doctor` reports P-256 unavailable | deploy the verifier with `pnpm deploy:cli p256 --rpc <url>` in `packages/contracts` (chain has no RIP-7212 and no FCL verifier) |
 | Sponsored tx never lands | check `giano-doctor chain` — paymaster deposit or executor balance likely low; check `giano_userop_policy_rejections_total` and `GET /v1/userops/:hash` |
 | Wallet shows "this app does not cover fees for this contract" | the contract is not on that tenant's allowlist — `GET /v1/admin/sponsorship`, then `PUT` an updated `allowlist` |
 | Every sponsorship refused as `sponsorship-disabled` | that tenant has no configuration, which is the correct default — it must `PUT /v1/admin/sponsorship` once |
