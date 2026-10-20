@@ -1,0 +1,5 @@
+{
+  // TypeScript 7's language server. VS Code's built-in TypeScript is still 6.x; once installed this
+  // extension becomes the default ("Disable TypeScript 7 Language Server" switches back).
+  "recommendations": ["TypeScriptTeam.native-preview"]
+}
