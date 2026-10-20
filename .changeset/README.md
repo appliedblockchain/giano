@@ -9,9 +9,14 @@ We have a quick list of common questions to get you started engaging with this p
 
 ## Do not add changesets for ignored packages
 
-`config.json` lists the apps (`wallet-api`, `wallet-web`, `paymaster-admin`, `example`, `e2e`) under
-`ignore`. `changeset version` never consumes a changeset that names only ignored packages, so one
-stays on `main` forever. `changesets/action` sees a pending changeset and opens a version PR instead
-of publishing, and with nothing to version it fails with "No commits between main and
+`config.json` lists the apps (`wallet-api`, `wallet-web`, `paymaster-admin`, `e2e`) under `ignore`.
+`changeset version` never consumes a changeset that names only ignored packages, so one stays on
+`main` forever. `changesets/action` sees a pending changeset and opens a version PR instead of
+publishing, and with nothing to version it fails with "No commits between main and
 changeset-release/main". Put release notes for the apps in the PR description. Use a changeset only
 for the publishable packages.
+
+The example app (`services/custom-example`) is not in `ignore` because it is not in this workspace:
+it is its own pnpm workspace, so changesets cannot see it. Every `ignore` and `fixed` entry must name
+a workspace package, or config validation fails and `changeset publish` aborts. CI checks this on
+every pull request.
