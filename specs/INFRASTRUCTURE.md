@@ -3031,6 +3031,7 @@ The tenant seed:
 [
   {
     "slug": "example",
+    "id": "cf0d5345-0fdb-4688-b1db-9a288c9d9aed",
     "walletOrigin": "https://wallet.example.dev.giano.appliedblockchain.dev",
     "rpId": "wallet.example.dev.giano.appliedblockchain.dev",
     "rpName": "Giano Example",
@@ -3041,6 +3042,7 @@ The tenant seed:
   },
   {
     "slug": "byoui",
+    "id": "743480a4-bdc8-4792-8ddf-625e074bd6c2",
     "walletOrigin": "https://wallet.byoui.dev.giano.appliedblockchain.dev",
     "rpId": "wallet.byoui.dev.giano.appliedblockchain.dev",
     "rpName": "Giano BYO UI",
