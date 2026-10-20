@@ -1,2 +1,9 @@
-openzeppelin-contracts/contracts/utils/Base64.sol=vendor/openzeppelin-contracts-5.3.0/utils/Base64.sol
-openzeppelin-contracts/=node_modules/@openzeppelin
+@account-abstraction/=node_modules/@account-abstraction/
+@openzeppelin/=node_modules/@openzeppelin/
+openzeppelin-contracts/=node_modules/@openzeppelin/
+FreshCryptoLib/=lib/webauthn-sol/lib/FreshCryptoLib/solidity/src/
+forge-std/=lib/forge-std/src/
+p256-verifier/=lib/p256-verifier/
+safe-singleton-deployer-sol/=lib/safe-singleton-deployer-sol/
+solady/=lib/solady/src/
+webauthn-sol/=lib/webauthn-sol/src/

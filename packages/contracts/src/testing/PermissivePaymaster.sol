@@ -8,8 +8,11 @@ error OnlyEntrypoint();
 
 contract PermissivePaymaster is BasePaymaster {
 
-    constructor(address _entryPoint) BasePaymaster(IEntryPoint(_entryPoint)) {
+    /// @param owner_ Owns the paymaster (stake and deposit withdrawals). Explicit because
+    ///        `BasePaymaster` would make it `msg.sender`, which under CreateX's CREATE3 is a throwaway proxy.
+    constructor(address _entryPoint, address owner_) BasePaymaster(IEntryPoint(_entryPoint)) {
         entryPoint = IEntryPoint(_entryPoint);
+        _transferOwnership(owner_);
     }
 
     function _validatePaymasterUserOp(

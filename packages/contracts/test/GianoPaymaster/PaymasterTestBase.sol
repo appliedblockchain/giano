@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test, console2} from 'forge-std/Test.sol';
+import {console2} from 'forge-std/Test.sol';
 import {IEntryPoint} from '@account-abstraction/contracts/interfaces/IEntryPoint.sol';
 import {PackedUserOperation} from '@account-abstraction/contracts/interfaces/PackedUserOperation.sol';
 
 import {GianoPaymaster} from '../../src/paymaster/GianoPaymaster.sol';
-import {GianoPaymasterDeployer} from '../../src/paymaster/GianoPaymasterDeployer.sol';
+import {CreateXFixture} from '../utils/CreateXFixture.sol';
 import {Static} from '../GianoSmartWallet/Static.sol';
 
 /// @dev Shared fixture for the paymaster suite.
@@ -18,10 +18,12 @@ import {Static} from '../GianoSmartWallet/Static.sol';
 ///      Every role is held by its own address. That is the only way role-gating tests can say
 ///      anything: if the fixture held them all on one account, "the fee admin cannot collect fees"
 ///      would pass for the wrong reason.
-contract PaymasterTestBase is Test {
+contract PaymasterTestBase is CreateXFixture {
     IEntryPoint internal constant ENTRY_POINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
 
-    bytes32 internal constant DEPLOY_SALT = 0xAB000000000000000000000000000000000000000000000000000000000000AB;
+    /// @dev Stands in for the canonical deployer EOA; the label is the production one.
+    address internal canonicalDeployer = makeAddr('canonicalDeployer');
+    string internal constant PROXY_LABEL = 'giano.paymaster.proxy';
 
     /// @dev Mirrors the contract's own type hash. Written out again on purpose: a test that reads
     ///      the constant from the contract under test cannot catch the constant being wrong.
@@ -32,7 +34,6 @@ contract PaymasterTestBase is Test {
 
     GianoPaymaster internal paymaster;
     GianoPaymaster internal implementation;
-    GianoPaymasterDeployer internal deployer;
 
     // Role holders, one address each.
     address internal roleAdmin = makeAddr('roleAdmin');
@@ -63,13 +64,14 @@ contract PaymasterTestBase is Test {
     function setUp() public virtual {
         vm.etch(address(ENTRY_POINT), Static.ENTRY_POINT_BYTES);
 
+        _installCreateX();
         implementation = new GianoPaymaster();
-        deployer = new GianoPaymasterDeployer();
 
         paymaster = GianoPaymaster(
             payable(
-                deployer.deploy(
-                    DEPLOY_SALT,
+                _deployPaymasterProxy(
+                    canonicalDeployer,
+                    PROXY_LABEL,
                     address(implementation),
                     abi.encodeCall(
                         GianoPaymaster.initialize,

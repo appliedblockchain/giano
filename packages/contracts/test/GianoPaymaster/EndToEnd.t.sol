@@ -278,18 +278,25 @@ contract EndToEndTest is PaymasterTestBase {
         }
         op = _bareOp(p);
 
-        bytes32 digest = _authorisationDigest(op, p, tenantId, validUntil, validAfter, feeWei);
-        (uint8 av, bytes32 ar, bytes32 as_) = vm.sign(key, digest);
+        bytes memory authorisation = _signedAuthorisation(
+            _authorisationDigest(op, p, tenantId, validUntil, validAfter, feeWei),
+            key
+        );
         op.paymasterAndData = abi.encodePacked(
             _paymasterPrefix(p),
             _authorisationHeader(tenantId, validUntil, validAfter, feeWei, signerAddr),
-            ar,
-            as_,
-            av
+            authorisation
         );
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, ENTRY_POINT.getUserOpHash(op));
         op.signature = abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(owner), abi.encodePacked(r, s, v)));
+    }
+
+    /// @dev The sponsor's `r ‖ s ‖ v` over `digest`. Its own frame: under the `paris` target the
+    ///      caller above runs out of stack slots with the signature parts inline.
+    function _signedAuthorisation(bytes32 digest, uint256 key) internal pure returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     function _sponsoredEvent(

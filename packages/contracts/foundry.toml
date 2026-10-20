@@ -3,16 +3,24 @@ src = 'src'
 out = 'out'
 libs = ['node_modules', 'lib']
 test = 'test'
-cache_path  = 'cache_forge'
+script = 'script'
+cache_path = 'cache_forge'
 
-# Match the canonical Hardhat settings exactly (solc 0.8.28, optimizer 200, viaIR). Foundry is
-# still tests-only, but compiling the same bytecode Hardhat deploys is what makes a gas snapshot
-# mean anything — and GianoPaymaster does not fit the legacy code generator's stack at all.
+# The canonical build. Foundry is the only Solidity toolchain in this repo: `forge build` produces
+# what `pnpm release:cut` freezes into releases/<version>/, and the deploy CLI deploys only from a
+# release, never from a fresh build. Every setting below reaches the bytecode, so all of them are
+# pinned rather than left to Foundry's defaults:
+#   - solc and the EVM target. `paris` (no PUSH0, MCOPY or transient storage) keeps one release
+#     deployable on every chain we may adopt, including ones that lag on hardforks.
+#   - remappings. solc records them in the metadata hash appended to the bytecode, so they are
+#     listed in remappings.txt and auto-detection is off: a new package in node_modules must not be
+#     able to change the build.
+solc_version = '0.8.28'
+evm_version = 'paris'
 optimizer = true
 optimizer_runs = 200
 via_ir = true
+auto_detect_remappings = false
 
-# Foundry is used for TESTS ONLY. The canonical build/deploy toolchain is Hardhat
-# Ignition (solc 0.8.28, optimizer runs 200, viaIR) — see README.md. Deploying with
-# any other settings changes CREATE2 addresses. The old divergent [profile.deploy]
-# (solc 0.8.23, runs 999999) was removed for that reason.
+# Tests install CreateX at its canonical address from the vendored artifact (test/utils/CreateXFixture.sol).
+fs_permissions = [{ access = 'read', path = './vendor/createx' }]
