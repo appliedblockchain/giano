@@ -130,7 +130,7 @@ describe('ERC-7677 paymaster client', () => {
       const fetchImpl = vi.fn(async () => jsonResponse({ error: { code, message: 'nope' } }));
       const error = await makeClient(fetchImpl as unknown as typeof fetch)
         .getPaymasterData({ userOperation })
-        .catch((e: unknown) => e as SponsorshipRefusedError);
+        .catch((e: unknown) => e) as SponsorshipRefusedError;
 
       expect(error).toBeInstanceOf(SponsorshipRefusedError);
       expect(error.reason).toBe(reason);
@@ -143,7 +143,7 @@ describe('ERC-7677 paymaster client', () => {
       );
       const error = await makeClient(fetchImpl as unknown as typeof fetch)
         .getPaymasterData({ userOperation })
-        .catch((e: unknown) => e as SponsorshipRefusedError);
+        .catch((e: unknown) => e) as SponsorshipRefusedError;
       expect(error.reason).toBe('cost-exceeds-cap');
     });
 
@@ -157,7 +157,7 @@ describe('ERC-7677 paymaster client', () => {
       );
       const error = await makeClient(fetchImpl as unknown as typeof fetch)
         .getPaymasterData({ userOperation })
-        .catch((e: unknown) => e as SponsorshipRefusedError);
+        .catch((e: unknown) => e) as SponsorshipRefusedError;
       expect(error.ruleResults).toEqual(ruleResults);
     });
 
@@ -169,7 +169,7 @@ describe('ERC-7677 paymaster client', () => {
       });
       const error = await makeClient(fetchImpl as unknown as typeof fetch)
         .getPaymasterData({ userOperation })
-        .catch((e: unknown) => e as SponsorshipRefusedError);
+        .catch((e: unknown) => e) as SponsorshipRefusedError;
       expect(error.reason).toBe('temporarily-unavailable');
       expect(error.retryable).toBe(true);
     });
@@ -178,7 +178,7 @@ describe('ERC-7677 paymaster client', () => {
       const fetchImpl = vi.fn(async () => new Response('<html>502</html>', { status: 502 }));
       const error = await makeClient(fetchImpl as unknown as typeof fetch)
         .getPaymasterData({ userOperation })
-        .catch((e: unknown) => e as SponsorshipRefusedError);
+        .catch((e: unknown) => e) as SponsorshipRefusedError;
       expect(error.reason).toBe('temporarily-unavailable');
     });
 
@@ -186,7 +186,7 @@ describe('ERC-7677 paymaster client', () => {
       const fetchImpl = vi.fn(async () => new Response('', { status: 401 }));
       const error = await makeClient(fetchImpl as unknown as typeof fetch)
         .getPaymasterData({ userOperation })
-        .catch((e: unknown) => e as SponsorshipRefusedError);
+        .catch((e: unknown) => e) as SponsorshipRefusedError;
       expect(error.reason).toBe('not-your-wallet');
     });
   });

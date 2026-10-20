@@ -267,6 +267,9 @@ const connector = createGianoConnector({ provider }); // wagmi
 const wallet = giano({ provider });                   // RainbowKit, inside connectorsForWallets(...)
 ```
 
+The published packages' type declarations need **TypeScript 5.0.4 or later** in the consuming
+project (viem's floor); they are checked against 5.0.4, 5.5, 6.0 and 7.0.
+
 See `packages/connector/README.md` for the full API and the 0.x → 1.x migration guide. The reference
 integration is `services/custom-example`: every method above is reachable from its UI, every
 failure path is a control, and every outcome is recorded with its receipt — its `Adapters` card is

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * A narrated walkthrough of every paymaster use case, written to be read as much as run.
  *

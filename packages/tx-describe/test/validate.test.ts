@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalSignature, checksumAddress, deploymentsOf, formatUnits, functionSelector, mappingCovers, validateMapping } from '../src/index';
-import { CHAIN, USDC, usdcMapping } from './fixtures';
+import { CHAIN, USDC, usdcMapping, type ContractContext } from './fixtures';
 
 describe('validateMapping', () => {
   it('accepts a valid descriptor', () => {
@@ -15,7 +15,7 @@ describe('validateMapping', () => {
   });
 
   it('rejects a missing deployment binding with a path', () => {
-    const m = usdcMapping({ context: { contract: { deployments: [], abi: usdcMapping().context!.contract!.abi } } as never });
+    const m = usdcMapping({ context: { contract: { deployments: [], abi: (usdcMapping().context!.contract as ContractContext).abi } } as never });
     const r = validateMapping(m);
     expect(r.ok).toBe(false);
     expect(r.issues).toEqual([{ path: 'context.contract.deployments', message: 'at least one deployment binding is required' }]);

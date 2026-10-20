@@ -3,6 +3,7 @@ import { describeTransaction, type DescribedTransaction, type UnknownTransaction
 import {
   approveData,
   CHAIN,
+  type ContractContext,
   OTHER,
   RECIPIENT,
   resolveUsdc,
@@ -78,7 +79,7 @@ describe('caller-supplied mappings', () => {
         contract: {
           deployments: [{ chainId: CHAIN, address: USDC }],
           abi: [{ type: 'function', name: 'deposit', stateMutability: 'payable', inputs: [], outputs: [] }],
-        },
+        } as ContractContext,
       },
       display: {
         formats: {

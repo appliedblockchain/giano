@@ -14,6 +14,7 @@ import {
   Toast,
   Toaster as ChakraToaster,
   createToaster,
+  type CreateToasterReturn,
 } from '@chakra-ui/react';
 import { useState, type ReactNode } from 'react';
 import { describeError } from '../lib/format';
@@ -31,7 +32,7 @@ export function Provider({ children }: { children: ReactNode }) {
   return <ChakraProvider value={system}>{children}</ChakraProvider>;
 }
 
-export const toaster = createToaster({ placement: 'bottom-end', pauseOnPageIdle: true });
+export const toaster: CreateToasterReturn = createToaster({ placement: 'bottom-end', pauseOnPageIdle: true });
 
 export function Toaster() {
   return (

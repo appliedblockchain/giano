@@ -30,12 +30,14 @@ export const withValidation = <
     I & { readonly implementation: I }
   )
 
-  for (const key of Object.keys(validationHooks)) {
+  // Each hook is typed against its own key; the loop only ever pairs a key with its own hook.
+  const hooks = injection as Record<keyof GianoProviderInjection, unknown>
+  for (const key of Object.keys(validationHooks) as (keyof GianoProviderInjection)[]) {
     if (implementation[key] === undefined) {
-      injection[key] = undefined
+      hooks[key] = undefined
       continue
     }
-    injection[key] = validationHooks[key].bind(injection, key)
+    hooks[key] = (validationHooks[key] as (this: unknown, ...args: unknown[]) => unknown).bind(injection, key)
   }
   return injection
 }

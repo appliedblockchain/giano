@@ -37,7 +37,7 @@ const mapping = {
 };
 
 const okFetch = (mappings: unknown[]) =>
-  vi.fn(async () => new Response(JSON.stringify({ chainId: CHAIN, mappings, updatedAt: null }), { headers: { 'content-type': 'application/json' } }));
+  vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({ chainId: CHAIN, mappings, updatedAt: null }), { headers: { 'content-type': 'application/json' } }));
 
 const erc20Client = (overrides: Partial<{ symbol: () => Promise<unknown>; decimals: () => Promise<unknown> }> = {}) => ({
   readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
