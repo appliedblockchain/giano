@@ -330,9 +330,9 @@ vite, vitest, tsx and tsup's JavaScript output transpile with esbuild and do not
 **Consumers** of the published packages need **TypeScript 5.0.4 or later** (the same floor as
 viem). The declarations are checked with 5.0.4, 5.5, 6.0 and 7.0.
 
-**Editor:** VS Code's built-in TypeScript is not TS 7 yet. Install the recommended
-**TypeScript (Native Preview)** extension (`TypeScriptTeam.native-preview`, listed in
-`.vscode/extensions.json`); once installed it is the default, and the command palette's
+**Editor:** VS Code's built-in TypeScript is not TS 7 yet. Install the
+**TypeScript (Native Preview)** extension (`TypeScriptTeam.native-preview`); once installed it is
+the default, and the command palette's
 "Disable TypeScript 7 Language Server" switches back.
 
 ## Components
