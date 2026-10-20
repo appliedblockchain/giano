@@ -7,9 +7,9 @@
 import { concat, parseEther, zeroHash, type Account, type Address, type Chain, type PublicClient, type Transport, type WalletClient } from 'viem';
 
 /** Arachnid's deterministic-deployment proxy and the account its keyless deployment comes from. */
-const ARACHNID_PROXY: Address = '0x4e59b44847b379578588920ca78fbf26c0b4956c';
-const ARACHNID_SIGNER: Address = '0x3fab184622dc19b6109349b94811493bf2a45362';
-const ARACHNID_PRESIGNED_TX =
+export const ARACHNID_PROXY: Address = '0x4e59b44847b379578588920ca78fbf26c0b4956c';
+export const ARACHNID_SIGNER: Address = '0x3fab184622dc19b6109349b94811493bf2a45362';
+export const ARACHNID_PRESIGNED_TX =
   '0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222' as const;
 
 export const P256_VERIFIER_ADDRESS: Address = '0xc2b78104907F722DABAc4C69f826a522B2754De4';

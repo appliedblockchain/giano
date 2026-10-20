@@ -3,10 +3,11 @@
  * (CreateX, EntryPoint v0.7), and impersonating the canonical deployer so no key is needed.
  */
 import { createRequire } from 'node:module';
-import { keccak256, type Address, type Hex, type PublicClient, type TestClient } from 'viem';
+import { concat, keccak256, parseEther, type Address, type Hex, type PublicClient, type TestClient } from 'viem';
 import { ENTRY_POINT_V07 } from './config';
 import { CREATEX_ADDRESS } from './create3';
 import { presignedDeployment } from './createx';
+import { ARACHNID_PRESIGNED_TX, ARACHNID_PROXY, ARACHNID_SIGNER } from './p256';
 
 const require = createRequire(import.meta.url);
 
@@ -30,9 +31,23 @@ export async function installCreateX(publicClient: PublicClient, testClient: Tes
   log(`  + CreateX at ${CREATEX_ADDRESS}`);
 }
 
+/** The salt EntryPoint v0.7 was deployed with through the Arachnid proxy on every public chain. */
+const ENTRY_POINT_V07_SALT: Hex = '0x90d8084deab30c2a37c45e8d47f49f2f7965183cb6990a98943ef94940681de3';
+
+/** The Arachnid CREATE2 proxy, through its keyless deployment if the chain lacks it. */
+async function ensureArachnidProxy(publicClient: PublicClient, testClient: TestClient): Promise<void> {
+  const code = await publicClient.getCode({ address: ARACHNID_PROXY });
+  if (code && code !== '0x') return;
+  await testClient.setBalance({ address: ARACHNID_SIGNER, value: parseEther('0.1') });
+  const hash = await publicClient.request({ method: 'eth_sendRawTransaction', params: [ARACHNID_PRESIGNED_TX] });
+  await publicClient.waitForTransactionReceipt({ hash });
+}
+
 /**
- * EntryPoint v0.7 at its canonical address. Its runtime code has no constructor-set state, so
- * deploying it anywhere and copying the code is equivalent to the real deployment.
+ * EntryPoint v0.7 at its canonical address, deployed the way it was on every public chain: its
+ * published creation code through the Arachnid proxy with its published salt. Not a code copy —
+ * the constructor deploys the SenderCreator that account creation goes through and records its
+ * address in an immutable, so only a real deployment yields a working EntryPoint.
  */
 export async function installEntryPoint(publicClient: PublicClient, testClient: TestClient, from: Address, log: (line: string) => void): Promise<void> {
   const existing = await publicClient.getCode({ address: ENTRY_POINT_V07 });
@@ -40,12 +55,17 @@ export async function installEntryPoint(publicClient: PublicClient, testClient: 
     log(`  = EntryPoint v0.7 already at ${ENTRY_POINT_V07}`);
     return;
   }
+  await ensureArachnidProxy(publicClient, testClient);
   const artifact = require('@account-abstraction/contracts/artifacts/EntryPoint.json') as { bytecode: Hex };
-  // eth_call with no `to` runs the init code and returns the runtime code it would deploy.
-  const { data } = await publicClient.call({ account: from, data: artifact.bytecode });
-  if (!data) throw new Error('EntryPoint creation code returned no runtime code');
-  await testClient.setCode({ address: ENTRY_POINT_V07, bytecode: data });
-  log(`  + EntryPoint v0.7 at ${ENTRY_POINT_V07} (${keccak256(data).slice(0, 10)}…)`);
+  // Top up only: `from` is usually a funded anvil account, and setBalance replaces a balance.
+  if ((await publicClient.getBalance({ address: from })) < parseEther('1')) await testClient.setBalance({ address: from, value: parseEther('1') });
+  const hash = await testClient.sendUnsignedTransaction({ from, to: ARACHNID_PROXY, data: concat([ENTRY_POINT_V07_SALT, artifact.bytecode]), gas: 8_000_000n });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  const code = await publicClient.getCode({ address: ENTRY_POINT_V07 });
+  if (receipt.status !== 'success' || !code || code === '0x') {
+    throw new Error(`EntryPoint v0.7 did not land at ${ENTRY_POINT_V07} (${hash}); the @account-abstraction/contracts artifact may not be the canonical build`);
+  }
+  log(`  + EntryPoint v0.7 at ${ENTRY_POINT_V07} (${keccak256(code).slice(0, 10)}…)`);
 }
 
 /** Lets eth_sendTransaction from `address` succeed without its key, and funds it. */

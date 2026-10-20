@@ -37,7 +37,8 @@ async function main(): Promise<void> {
   log(`Local deployment on chain ${chainId} (${url}), release ${release.version}, deployer ${CANONICAL_DEPLOYER} (impersonated)`);
 
   await installCreateX(publicClient, testClient, log);
-  await installEntryPoint(publicClient, testClient, ANVIL_ACCOUNT_0, log);
+  // Sent by the impersonated deployer, so anvil account 0 (the operator) keeps a clean nonce.
+  await installEntryPoint(publicClient, testClient, CANONICAL_DEPLOYER, log);
   await impersonate(testClient, CANONICAL_DEPLOYER);
   const ctx: DeployContext = {
     publicClient,
