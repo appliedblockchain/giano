@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION } from '@appliedblockchain/giano-contracts';
-import type { PublicClient } from 'viem';
+import { keccak256, type PublicClient } from 'viem';
 import { loadConfig } from '../src/config.js';
 import chainPlugin from '../src/plugins/chain.js';
 import type { ChainRegistry, ChainServices } from '../src/services/chains.js';
@@ -221,22 +221,25 @@ const descriptor = {
   policy: { allowedTargets: [], allowedPaymasters: [] },
 };
 
+/** The fake client's default code (`0xabcd`) stands in for a release's code at every address. */
+const isFakeCanonical = (_address: string, codehash: string) => codehash === keccak256('0xabcd');
+
 describe('verifyChain', () => {
   it('passes a healthy canonical chain', async () => {
-    const result = await verifyChain(descriptor, fakeClient({}));
+    const result = await verifyChain(descriptor, fakeClient({}), isFakeCanonical);
     expect(result.failures).toEqual([]);
     expect(result.factoryAddressCanonical).toBe(true);
     expect(result.probeAddress).toBeTruthy();
   });
 
   it('an endpoint reporting a different chain id is FATAL (MC-49)', async () => {
-    const result = await verifyChain(descriptor, fakeClient({ chainId: 31338 }));
+    const result = await verifyChain(descriptor, fakeClient({ chainId: 31338 }), isFakeCanonical);
     expect(result.failures).toEqual([{ kind: 'chain-id-mismatch', declared: 31337, reported: 31338 }]);
     expect(result.failures.every(isFatalFailure)).toBe(true);
   });
 
   it('an unreachable endpoint is NOT fatal — the deployment starts and retries (MC-54, MC-92)', async () => {
-    const result = await verifyChain(descriptor, fakeClient({ chainId: new Error('connect ECONNREFUSED') }));
+    const result = await verifyChain(descriptor, fakeClient({ chainId: new Error('connect ECONNREFUSED') }), isFakeCanonical);
     expect(result.reachable).toBe(false);
     expect(result.failures).toHaveLength(1);
     expect(isFatalFailure(result.failures[0])).toBe(false);
@@ -244,20 +247,27 @@ describe('verifyChain', () => {
 
   it('a non-canonical factory address is FATAL — the admission gate (MC-19, MC-20)', async () => {
     const divergent = { ...descriptor, factory: '0x3451C87749FE28Af2995f644aBc8d5B1c61A6191' as `0x${string}` };
-    const result = await verifyChain(divergent, fakeClient({}));
+    const result = await verifyChain(divergent, fakeClient({}), isFakeCanonical);
     expect(result.failures.some((failure) => failure.kind === 'factory-not-canonical')).toBe(true);
     expect(result.failures.filter(isFatalFailure).length).toBeGreaterThan(0);
   });
 
   it('a canonical factory running DIFFERENT code fails the implementation cross-check (MC-22)', async () => {
-    const result = await verifyChain(descriptor, fakeClient({ implementation: '0x9999999999999999999999999999999999999999' }));
+    const result = await verifyChain(descriptor, fakeClient({ implementation: '0x9999999999999999999999999999999999999999' }), isFakeCanonical);
     expect(result.failures.some((failure) => failure.kind === 'implementation-mismatch')).toBe(true);
+  });
+
+  it('the canonical factory address running code no release puts there is FATAL (CREATE3 addresses do not commit to code)', async () => {
+    const result = await verifyChain(descriptor, fakeClient({ code: { [CANONICAL_FACTORY.toLowerCase()]: '0xdead' } }), isFakeCanonical);
+    expect(result.failures).toContainEqual({ kind: 'code-not-canonical', contract: 'factory', address: CANONICAL_FACTORY, codehash: keccak256('0xdead') });
+    expect(result.failures.every(isFatalFailure)).toBe(true);
   });
 
   it('a missing EntryPoint is FATAL (MC-141)', async () => {
     const result = await verifyChain(
       descriptor,
       fakeClient({ code: { [descriptor.entryPoint.toLowerCase()]: '0x' } }),
+      isFakeCanonical,
     );
     expect(result.failures.some((failure) => failure.kind === 'entrypoint-missing')).toBe(true);
   });

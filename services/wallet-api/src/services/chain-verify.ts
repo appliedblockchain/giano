@@ -1,5 +1,5 @@
-import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION, gianoSmartWalletFactoryAbi } from '@appliedblockchain/giano-contracts';
-import type { PublicClient } from 'viem';
+import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION, canonicalCodeAt, gianoSmartWalletFactoryAbi } from '@appliedblockchain/giano-contracts';
+import { keccak256, type PublicClient } from 'viem';
 import type { ResolvedChain } from '../config.js';
 
 /**
@@ -22,6 +22,7 @@ export type ChainVerificationFailure =
   | { kind: 'factory-missing'; address: `0x${string}` }
   | { kind: 'factory-not-canonical'; expected: `0x${string}`; found: `0x${string}` }
   | { kind: 'implementation-mismatch'; expected: `0x${string}`; found: `0x${string}` }
+  | { kind: 'code-not-canonical'; contract: 'factory' | 'implementation'; address: `0x${string}`; codehash: `0x${string}` }
   | { kind: 'paymaster-missing'; address: `0x${string}` };
 
 export type ChainVerification = {
@@ -50,7 +51,17 @@ export function isFatalFailure(failure: ChainVerificationFailure): boolean {
  */
 export const PROBE_OWNER = `0x${'11'.repeat(64)}` as const;
 
-export async function verifyChain(descriptor: ResolvedChain, client: PublicClient): Promise<ChainVerification> {
+/**
+ * Whether `codehash` is a release's code at `address` (canonical.ts). A parameter only so tests can
+ * stand in for code they cannot produce.
+ */
+export type CanonicalCodeCheck = (address: string, codehash: string) => unknown;
+
+export async function verifyChain(
+  descriptor: ResolvedChain,
+  client: PublicClient,
+  isCanonicalCode: CanonicalCodeCheck = canonicalCodeAt,
+): Promise<ChainVerification> {
   const result: ChainVerification = { chainId: descriptor.chainId, reachable: false, failures: [] };
 
   let reported: number;
@@ -94,9 +105,13 @@ export async function verifyChain(descriptor: ResolvedChain, client: PublicClien
     }
 
     if (result.factoryPresent) {
-      // The implementation is implied by a matching factory address (it is a constructor
-      // argument baked into the factory's creation code), and checked anyway: a cheap direct
-      // check beats an implication when the consequence is funds at the wrong address.
+      // Canonical addresses are CREATE3: they do not commit to code, so the code there must be a
+      // release's as well (canonical.ts CANONICAL_CODE).
+      const factoryHash = keccak256(factoryCode!);
+      if (!isCanonicalCode(descriptor.factory, factoryHash)) {
+        result.failures.push({ kind: 'code-not-canonical', contract: 'factory', address: descriptor.factory, codehash: factoryHash });
+      }
+
       const implementation = (await client.readContract({
         address: descriptor.factory,
         abi: gianoSmartWalletFactoryAbi,
@@ -105,6 +120,12 @@ export async function verifyChain(descriptor: ResolvedChain, client: PublicClien
       result.implementationAddress = implementation;
       if (implementation.toLowerCase() !== CANONICAL_IMPLEMENTATION.toLowerCase()) {
         result.failures.push({ kind: 'implementation-mismatch', expected: CANONICAL_IMPLEMENTATION, found: implementation });
+      } else {
+        const implementationCode = await client.getCode({ address: implementation });
+        const implementationHash = keccak256(implementationCode ?? '0x');
+        if (!isCanonicalCode(implementation, implementationHash)) {
+          result.failures.push({ kind: 'code-not-canonical', contract: 'implementation', address: implementation, codehash: implementationHash });
+        }
       }
 
       // MC-22: the live cross-check — ask the chain's own factory to derive an address for
@@ -147,6 +168,8 @@ export function describeFailure(chainId: number, failure: ChainVerificationFailu
       return `chain ${chainId}: factory ${failure.found} is not the canonical ${failure.expected} — this chain cannot be served without breaking address identity (MC-19)`;
     case 'implementation-mismatch':
       return `chain ${chainId}: implementation ${failure.found} is not the canonical ${failure.expected} — the factory at the canonical address is running a different build`;
+    case 'code-not-canonical':
+      return `chain ${chainId}: the ${failure.contract} at ${failure.address} runs code no release puts there (codehash ${failure.codehash}) — redeploy from a release (MC-19)`;
     case 'paymaster-missing':
       return `chain ${chainId}: sponsorship is configured but there is no paymaster at ${failure.address}`;
   }

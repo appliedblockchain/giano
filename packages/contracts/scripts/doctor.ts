@@ -26,9 +26,9 @@
  * Uses ethers (already a dependency of this package) — no build step required, mirrors
  * scripts/p256_deploy.ts and deploy/sepolia/print-funding.sh.
  */
-import { Contract, JsonRpcProvider, concat, formatEther, getAddress, isAddress, toBeHex } from 'ethers';
+import { Contract, JsonRpcProvider, concat, formatEther, getAddress, isAddress, keccak256, toBeHex } from 'ethers';
 import { ENTRYPOINT_V07_ADDRESS, getGianoDeployment, type GianoDeployment } from '../addresses';
-import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION } from '../canonical';
+import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION, CANONICAL_SPONSORSHIP_PAYMASTER, canonicalCodeAt } from '../canonical';
 import { gianoPaymasterAbi, gianoSmartWalletFactoryAbi, iEntryPointAbi, multiOwnableAbi } from '../generated';
 
 // --- well-known addresses (identical on every EVM chain) ---
@@ -228,6 +228,12 @@ async function checkSponsorshipPaymaster(
   const pmHasCode = await hasCode(provider, address);
   report(pmHasCode ? 'ok' : 'fail', 'sponsorship paymaster proxy deployed', address);
   if (!pmHasCode) return;
+  if (getAddress(address) === getAddress(CANONICAL_SPONSORSHIP_PAYMASTER)) {
+    report('ok', 'paymaster proxy address is canonical', address);
+    await reportCanonicalCode(provider, address, 'paymaster proxy');
+  } else {
+    report('warn', 'paymaster proxy address is not canonical', `${address} — canonical is ${CANONICAL_SPONSORSHIP_PAYMASTER}`);
+  }
 
   const paymaster = new Contract(address, gianoPaymasterAbi, provider);
   const ep = new Contract(entryPoint, iEntryPointAbi, provider);
@@ -254,6 +260,7 @@ async function checkSponsorshipPaymaster(
     const raw = await provider.getStorage(address, slot);
     const impl = getAddress(`0x${raw.slice(-40)}`);
     report('info', 'implementation', impl);
+    await reportCanonicalCode(provider, impl, 'paymaster implementation');
     if (deployment.sponsorshipPaymasterImplementation) {
       const expected = getAddress(deployment.sponsorshipPaymasterImplementation);
       report(
@@ -410,6 +417,19 @@ async function hasCode(provider: JsonRpcProvider, address: string): Promise<bool
   return code !== undefined && code !== '0x';
 }
 
+/**
+ * Under CREATE3 an address does not commit to code, so a canonical address proves nothing on its
+ * own: the code there must be a release's (CANONICAL_CODE in canonical.ts).
+ */
+async function reportCanonicalCode(provider: JsonRpcProvider, address: string, what: string): Promise<void> {
+  const code = await provider.getCode(address);
+  if (!code || code === '0x') return;
+  const codehash = keccak256(code);
+  const match = canonicalCodeAt(address, codehash);
+  if (match) report('ok', `${what} runs canonical code`, `release ${match.release} (${match.label})`);
+  else report('fail', `${what} does NOT run canonical code`, `codehash ${codehash} at ${address} matches no release (MC-19)`);
+}
+
 /** Returns 'precompile' | 'verifier' | 'none' — how (if at all) this chain can verify P-256 sigs. */
 async function checkP256(provider: JsonRpcProvider): Promise<'precompile' | 'verifier' | 'none'> {
   const input = concat([
@@ -481,6 +501,7 @@ async function doctorChain(flags: Record<string, string>) {
     // canonical address. A chain that cannot offer it must not be admitted to a served list.
     if (getAddress(factoryAddr) === getAddress(CANONICAL_FACTORY)) {
       report('ok', 'factory address is canonical', CANONICAL_FACTORY);
+      await reportCanonicalCode(provider, factoryAddr, 'factory');
     } else {
       report('fail', 'factory address is NOT canonical', `${factoryAddr} — canonical is ${CANONICAL_FACTORY}; this chain cannot join a multi-chain deployment (MC-19)`);
     }
@@ -495,6 +516,7 @@ async function doctorChain(flags: Record<string, string>) {
           report('fail', 'implementation is NOT canonical', `${impl} — canonical is ${CANONICAL_IMPLEMENTATION} (MC-19)`);
         } else {
           report('ok', 'implementation is canonical', impl);
+          await reportCanonicalCode(provider, impl, 'implementation');
         }
 
         // MC-22: the live cross-check. A factory at the right address running different code
