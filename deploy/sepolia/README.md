@@ -171,6 +171,12 @@ comes up healthy and refuses every sponsored transaction, with nothing on screen
 Rules go in the way a tenant would put them in, through `PUT /v1/admin/sponsorship` with the
 tenant's own admin key, and the script reads back what it wrote.
 
+On Sepolia the allowlist is empty: it is a production chain, so step 3 deploys no demo ERC-20
+(`TEST_ERC20_ADDRESS` stays blank). That still sponsors wallet management, which is platform
+policy rather than allowlist — and that is what the sample dApp's **Send** button is (a 0 ETH
+self-call). On a non-production chain where step 3 did deploy the fixtures, the demo ERC-20 is
+allowlisted too.
+
 ### 8. Run the sample dApp
 
 The dApp fixture bakes `CHAIN_ID`/`RPC_URL` in at build time, defaulting to the anvil devnet
@@ -184,14 +190,18 @@ RPC_URL=https://ethereum-sepolia-rpc.publicnode.com \
 pnpm --filter @appliedblockchain/giano-e2e dapp   # http://app.localhost:4400
 ```
 
-Open **http://app.localhost:4400**, create a passkey wallet, connect, and send a sponsored
-transaction. It lands on Sepolia — check the tx on https://sepolia.etherscan.io.
+Open **http://app.localhost:4400**, create a passkey wallet, connect, and press **Send** for a
+sponsored transaction. It lands on Sepolia — check the tx on https://sepolia.etherscan.io.
+(**Transfer demo ERC-20** needs the test fixtures, which Sepolia does not carry; there it is
+refused as not allowlisted.)
 
 Tear down: `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml down`
 
 ## Using a different EVM chain
 
-Set `CHAIN_ID` (and `DEPLOY_CHAIN_ID`) and `RPC_URL` in `deploy/.env`, then rerun steps 2–8
+Set `CHAIN_ID` (and `DEPLOY_CHAIN_ID`), `RPC_URL` and `DEPLOY_RPC_URL` in `deploy/.env` — the
+deploy and provisioning scripts use `DEPLOY_RPC_URL` first, so leaving it on Sepolia deploys to
+Sepolia — then rerun steps 2–8
 (`BUNDLER_NODE_RPC_URL` only if that chain's public RPC won't serve the bundler). The deploy script
 auto-uses hardhat's `custom` network for non-Sepolia chains.
 
@@ -210,6 +220,6 @@ Sponsorship is already restricted twice over, and neither layer is optional:
   only ops sponsored by it.
 - The tenant's own rules (step 7) allowlist contracts and selectors and cap the cost per
   transaction. `provision-sponsorship.sh` installs a deliberately generous demo config — the demo
-  ERC-20 in full, a 0.5 ETH cap. Narrow it through the same endpoint.
+  ERC-20 in full where the chain has one, a 0.5 ETH cap. Narrow it through the same endpoint.
 
 Sponsorship rules are per `(tenant, chain)` and are never inherited from another chain.

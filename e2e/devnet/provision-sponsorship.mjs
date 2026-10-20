@@ -30,18 +30,20 @@ const apiUrl = (process.env.WALLET_API_URL ?? 'http://api.localhost').replace(/\
 /**
  * Stacks other than the e2e devnet supply their tenants and demo ERC-20 through the environment
  * instead of `addresses.json`, which is a devnet artefact. `SPONSOR_TENANTS` is a JSON array of
- * `{ slug, adminKey }`; the Sepolia demo (deploy/sepolia/provision-sponsorship.sh) passes both.
+ * `{ slug, adminKey }`; the Sepolia demo (deploy/sepolia/provision-sponsorship.sh) passes it.
+ *
+ * `SPONSOR_ERC20` is optional alongside it: a production chain (R-29) carries no demo ERC-20, so
+ * there the allowlist is empty and only wallet management — governed by platform policy, not by
+ * the allowlist — is sponsored.
  *
  * The point of the override is that this stays the *single* implementation of "install a tenant's
  * rules through the real admin API". A per-stack copy would drift, and the drift would show up as
  * a stack that comes up fine and silently refuses every sponsorship.
  */
 const tenantsOverride = process.env.SPONSOR_TENANTS ? JSON.parse(process.env.SPONSOR_TENANTS) : undefined;
-const erc20Override = process.env.SPONSOR_ERC20;
-const addresses =
-  tenantsOverride && erc20Override
-    ? { tenants: tenantsOverride, testErc20: erc20Override }
-    : JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
+const addresses = tenantsOverride
+  ? { tenants: tenantsOverride, testErc20: process.env.SPONSOR_ERC20 || undefined }
+  : JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
 
 /**
  * Every chain the stack sponsors on, provisioned identically (MC-117) so a sponsored
@@ -69,7 +71,7 @@ function demoConfig() {
     // 0.5 ETH per transaction: far above anything the demo does, and low enough that the cap is
     // still a real rule rather than a decoration.
     maxCostPerTxWei: (5n * 10n ** 17n).toString(),
-    allowlist: [{ contract: addresses.testErc20, functions: 'all' }],
+    allowlist: addresses.testErc20 ? [{ contract: addresses.testErc20, functions: 'all' }] : [],
     // No `walletManagement` block: its absence means sponsored, which is the point. The cap comes
     // from SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI, set generously for this stack because the baked
     // devnet state leaves the base fee high (~100 gwei after the deployment blocks) and a tight cap
