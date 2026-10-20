@@ -69,13 +69,6 @@ jobs:
             test -f "packages/$p/dist/index.js" || { echo "packages/$p/dist/index.js is missing"; exit 1; }
           done
 
-      - name: Check every publishable package was built
-        # The publish below runs with lifecycle scripts off, so it ships whatever `dist` is on disk.
-        run: |
-          for p in contracts wallet-transport wallet-core connector tx-describe wallet-kit paymaster-sdk; do
-            test -f "packages/$p/dist/index.js" || { echo "packages/$p/dist/index.js is missing"; exit 1; }
-          done
-
       - name: Create the version PR, or publish what it merged
         id: changesets
         # With changesets pending, this opens or updates `changeset-release/main`. With none — which
