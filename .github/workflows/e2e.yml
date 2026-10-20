@@ -121,6 +121,15 @@ jobs:
       - name: Run E2E
         working-directory: e2e
         run: pnpm test
+      - name: Install the reference dApp
+        # Its own pnpm workspace: it installs the published connector from GitHub Packages, which
+        # refuses anonymous reads.
+        working-directory: services/custom-example
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> "$HOME/.npmrc"
+          pnpm install --frozen-lockfile
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run reference demo operations with bundler safe mode
         working-directory: e2e
         run: pnpm test:demo

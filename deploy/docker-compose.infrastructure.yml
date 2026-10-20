@@ -72,6 +72,11 @@
 # ==========================================================================================
 name: giano-infrastructure
 
+# Read access to GitHub Packages for the giano-example build: export GITHUB_TOKEN (read:packages).
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
+
 volumes:
   pgdata:
 
@@ -491,6 +496,7 @@ services:
     build:
       context: ..
       dockerfile: services/custom-example/Dockerfile
+      secrets: [github_token] # the connector is installed from GitHub Packages
     restart: unless-stopped
     depends_on:
       - anvil
@@ -524,6 +530,7 @@ services:
     build:
       context: ..
       dockerfile: services/custom-example/Dockerfile
+      secrets: [github_token] # the connector is installed from GitHub Packages
     restart: unless-stopped
     depends_on:
       - anvil

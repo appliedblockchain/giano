@@ -1,5 +1,8 @@
 packages:
   - "services/*"
+  # Its own workspace, like an integrator's project: it installs the published connector from GitHub
+  # Packages, and in this lockfile that entry would make every install here need a token.
+  - "!services/custom-example"
   - "packages/*"
   - "e2e"
 
