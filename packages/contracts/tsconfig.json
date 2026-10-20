@@ -10,5 +10,7 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-  }
+  },
+  // The package's own TypeScript only: lib/ holds the Solidity submodules, which ship TS of their own.
+  "include": ["*.ts", "ignition/**/*.ts", "scripts/**/*.ts"]
 }

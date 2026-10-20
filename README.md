@@ -307,7 +307,8 @@ still hit the limit, report it with the command that failed.
 ## TypeScript toolchain
 
 Every package typechecks with **TypeScript 7** (the native compiler): `pnpm typecheck` runs `tsc
---noEmit` in each package and service. Each package installs two aliases
+--noEmit` in each package and service. `services/custom-example` is its own pnpm workspace, so run
+`pnpm typecheck` inside it (its `build` and Docker image run it too). Each package installs two aliases
 ([Microsoft's documented setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)):
 
 | Alias | Resolves to | Used by |
