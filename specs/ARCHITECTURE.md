@@ -265,10 +265,11 @@ silently: contracts that work perfectly, at addresses the user's passkey does no
 Named here rather than left to be discovered. The requirement numbers are
 [`BUSINESS-REQUIREMENTS.md`](./BUSINESS-REQUIREMENTS.md)'s.
 
-- **Recovery (BR-33).** A user who loses the device holding their passkey loses the wallet. This is
-  the largest gap in the product, and the mechanism is still an open question.
-- **Credential management (BR-32).** A wallet is created with one credential; the user can neither
-  see the owner set nor add a second device.
+- **Recovery (BR-33).** Credential management (BR-32) lets a user add a backup passkey — on the same
+  device or another one — or an Ethereum account as a further owner, so a user who did so survives
+  losing a device. Nothing prompts them to, though: a wallet is still created with one credential,
+  and a user who loses every credential loses the wallet. This is the largest gap in the product,
+  and the mechanism is still an open question.
 - **Balances and history in the wallet UI (BR-34).** The wallet appears to ask for approval and is
   not yet somewhere a user can go and look.
 - **A tenant-onboarding interface (BR-35).** Tenants are provisioned only through `TENANTS_SEED`;
