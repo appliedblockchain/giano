@@ -7,9 +7,11 @@
 
 ## Architecture at a glance
 
-Giano ships as versioned artifacts deployed into a stack you control — either self-hosted by the
-integrator, or run by Applied Blockchain as a dedicated per-client deployment. There is no public
-multi-tenant Giano: one deployment serves one client, and `RP_ID` is fixed per deployment.
+Giano is primarily a hosted, multi-tenant service owned and run by Applied Blockchain: one
+deployment serves many client applications (tenants), each with its own passkey domain (`RP_ID`),
+allowed origins, admin key and paymaster balance. The same versioned artifacts below can also be
+deployed on-premise, into a stack the client controls; that path is supported but no client has
+used it yet.
 
 - **Packages** (npm, GitHub Packages): `giano-contracts` (ABIs + address registry), `giano-wallet-core` (provider, passkey smart account, injection seam), `giano-wallet-transport` (popup protocol), `giano-connector` (the thin dApp SDK).
 - **Services** (Docker images, GHCR): `giano-wallet-api` (Fastify + Postgres: WebAuthn ceremonies, sessions, policied userop relay), `giano-wallet-web` (the dedicated wallet origin — passkey ceremonies + consent UI), `giano-bundler`, `giano-devnet`, `giano-contracts-deployer`.

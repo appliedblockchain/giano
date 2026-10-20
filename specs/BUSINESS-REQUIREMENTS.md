@@ -298,23 +298,27 @@ application does not exhaust the capacity or the funds available to the rest.
 
 ## 5. Planned capabilities, not yet built
 
-Every requirement in this section is **not implemented**. They are stated here, and numbered with
+Every requirement in this section except BR-32 is **not implemented**. They are stated here, and numbered with
 the rest, because they are commitments the product is expected to meet rather than ideas under
 consideration — what is undecided is when and how, not whether.
 
-**BR-32** *(not implemented)* — A user MUST be able to see and control the set of credentials that
+**BR-32** *(implemented)* — A user MUST be able to see and control the set of credentials that
 can act on their wallet: to see which credentials exist, to distinguish them from one another, to
 add a further passkey on another device, and to remove one that is lost or no longer trusted.
-Today a wallet is created with a single credential and the user can neither see that set nor
-change it.
+The wallet origin's Manage view implements this as specified in
+[`WALLET-MANAGEMENT-REQUIREMENTS.md`](./WALLET-MANAGEMENT-REQUIREMENTS.md): it lists the owner set,
+names each credential, adds a passkey on this device or another one, or an Ethereum account, and
+removes any owner but the last. An owner change still applies only to chains where the wallet is
+deployed (see [`ARCHITECTURE.md` §8](./ARCHITECTURE.md)).
 
 **BR-33** *(not implemented)* — A user who loses the device holding their passkey MUST be able to
 regain control of the same wallet, at the same address. No recovery mechanism MUST allow anyone
 other than the user to take control of the wallet, and BR-02 MUST continue to hold throughout:
 recovery MUST NOT be achieved by any party other than the user holding an authority to sign.
 
-This is the most significant gap in the product today. A user who loses their device loses the
-wallet, and that is not an acceptable state for anything holding value. The mechanism is an open
+This is the most significant gap in the product today. BR-32 lets a user add a backup credential,
+and one who did survives losing a device; but nothing prompts them to, and a user who loses every
+credential loses the wallet, which is not an acceptable state for anything holding value. The mechanism is an open
 question — see [§6](#6-open-questions).
 
 **BR-34** *(not implemented)* — A user MUST be able to see what their wallet holds and what it has
@@ -341,7 +345,8 @@ threshold rule, the means to approve across people and time, and an interface fo
 options are materially different in cost, in user experience, and in what each asks a user to trust:
 
 - a **second passkey registered at wallet creation**, on a different device — simplest, and depends
-  on the user having a second device and doing it before they need it;
+  on the user having a second device and doing it before they need it (BR-32 already lets a user
+  add one at any time; what is missing is the prompt at creation);
 - **recovery mediated by the tenant**, who vouches for the user through whatever identity they
   already hold for them — easiest for the user, and creates an authority the tenant did not have
   before;
