@@ -102,7 +102,7 @@ services:
       # and the tenant gets a fresh id, whose balance is zero.
       TENANTS_SEED: >-
         [{"slug":"${TENANT_SLUG:-example}",
-        "id":"${TENANT_ID:-a1000000-0000-4000-8000-000000000001}",
+        "id":"${TENANT_ID:-cf0d5345-0fdb-4688-b1db-9a288c9d9aed}",
         "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
         "rpId":"${RP_ID:-wallet.localhost}",
         "rpName":"${RP_NAME:-Giano Example}",

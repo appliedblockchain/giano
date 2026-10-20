@@ -309,12 +309,19 @@ services:
       # the environment can create a wallet (R4). It is the first field to turn off if the
       # hostname circulates; doing so makes `adminKeys` mandatory.
       #
+      # ⚠ `id` is PINNED and immutable per tenant. The paymaster keys each tenant's on-chain
+      # balance on the 16 bytes of this UUID, on every chain, so every place that registers or
+      # funds a tenant has to use the same value. The pinned values are the ids the dev database
+      # already holds (registered on Base Sepolia under them) — seeding a DIFFERENT id for an
+      # existing slug fails boot ("id is immutable"), by design.
+      #
       # Validate the rendered JSON before trusting it:
       #   docker compose --env-file deploy/.env -f deploy/docker-compose.infrastructure.aws.yml config
       TENANTS_SEED: |
         [
           {
             "slug": "example",
+            "id": "${EXAMPLE_TENANT_ID:?set EXAMPLE_TENANT_ID — the tenant's existing database id}",
             "walletOrigin": "${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}",
             "rpId": "${EXAMPLE_WALLET_HOST}",
             "rpName": "Giano Example",
@@ -325,6 +332,7 @@ services:
           },
           {
             "slug": "byoui",
+            "id": "${BYOUI_TENANT_ID:?set BYOUI_TENANT_ID — the tenant's existing database id}",
             "walletOrigin": "${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:?set BYOUI_WALLET_HOST}",
             "rpId": "${BYOUI_WALLET_HOST}",
             "rpName": "Giano BYO UI",
@@ -747,6 +755,7 @@ services:
         [
           {
             "slug": "example",
+            "id": "${EXAMPLE_TENANT_ID}",
             "walletOrigin": "${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST}",
             "rpId": "${EXAMPLE_WALLET_HOST}",
             "rpName": "Giano Example",
@@ -754,6 +763,7 @@ services:
           },
           {
             "slug": "byoui",
+            "id": "${BYOUI_TENANT_ID}",
             "walletOrigin": "${URL_SCHEME:-https}://${BYOUI_WALLET_HOST}",
             "rpId": "${BYOUI_WALLET_HOST}",
             "rpName": "Giano BYO UI",

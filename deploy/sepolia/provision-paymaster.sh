@@ -38,7 +38,7 @@ CHAIN_ID="${CHAIN_ID:-11155111}"
 # The ids must equal the ones in that deployment's TENANTS_SEED: the paymaster keys a tenant's
 # balance on the 16 bytes of its UUID, and a tenant whose database id differs from its on-chain id
 # has every sponsorship refused as an unknown tenant.
-PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:a1000000-0000-4000-8000-000000000001,byoui:a1000000-0000-4000-8000-000000000002}"
+PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:cf0d5345-0fdb-4688-b1db-9a288c9d9aed,byoui:743480a4-bdc8-4792-8ddf-625e074bd6c2}"
 # Per-tenant balance, and the paymaster's EntryPoint stake.
 #
 # STAKE_ETH must be at least 0.1: that is MIN_STAKE_WEI in scripts/doctor.ts, and the doctor
