@@ -1,5 +1,9 @@
 import type { Hex } from 'viem';
 
+// The Buffer fallbacks below only run where btoa/atob are missing (Node before 16). This package
+// targets the browser and does not pull in @types/node, so declare just the shape used here.
+declare const Buffer: { from(data: Uint8Array | string, encoding?: string): { toString(encoding: string): string } };
+
 /** base64url without padding, as WebAuthn JSON encodes binary fields. */
 export function toBase64Url(data: ArrayBuffer | Uint8Array): string {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -9,7 +13,7 @@ export function toBase64Url(data: ArrayBuffer | Uint8Array): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function fromBase64Url(value: string): Uint8Array {
+export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
   const binary = typeof atob === 'function' ? atob(padded) : Buffer.from(padded, 'base64').toString('binary');

@@ -41,7 +41,7 @@ export function rawSignatureToDer(raw: Uint8Array): Uint8Array {
 }
 
 /** DER `SEQUENCE { INTEGER r, INTEGER s }` → raw `r || s` (64 bytes). Mirror of the above, for self-tests. */
-export function derSignatureToRaw(der: Uint8Array): Uint8Array {
+export function derSignatureToRaw(der: Uint8Array): Uint8Array<ArrayBuffer> {
   if (der[0] !== 0x30) throw new Error('not a DER sequence');
   let cursor = 2;
   const readInt = (): Uint8Array => {

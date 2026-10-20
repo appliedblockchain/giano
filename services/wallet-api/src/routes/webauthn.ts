@@ -65,7 +65,7 @@ function extractChallenge(clientDataJSONb64: string): string {
   }
 }
 
-export function coseToXY(cosePublicKey: Uint8Array): { x: Hex; y: Hex } {
+export function coseToXY(cosePublicKey: Uint8Array<ArrayBuffer>): { x: Hex; y: Hex } {
   const decoded = decodeCredentialPublicKey(cosePublicKey);
   if (!cose.isCOSEPublicKeyEC2(decoded)) {
     throw new ApiError(400, 'unsupported-key', 'only EC2 (P-256) credentials are supported');

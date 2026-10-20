@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * A software WebAuthn platform authenticator backed by *real* WebCrypto P-256
  * keys. It emulates a passkey device faithfully enough that `ox`/`viem` and a
@@ -38,7 +39,7 @@ const bytesToHex = (bytes: Uint8Array): `0x${string}` =>
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, i) => byte === b[i]);
 
-const sha256 = async (data: Uint8Array): Promise<Uint8Array> => new Uint8Array(await subtle.digest('SHA-256', data));
+const sha256 = async (data: Uint8Array<ArrayBuffer>): Promise<Uint8Array> => new Uint8Array(await subtle.digest('SHA-256', data));
 
 const randomBytes = (length: number): Uint8Array => globalThis.crypto.getRandomValues(new Uint8Array(length));
 

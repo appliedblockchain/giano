@@ -8,7 +8,7 @@ import { cborMap, decodeCbor, encodeCbor, type CborMap } from './webauthn-mock/c
 import { derSignatureToRaw, rawSignatureToDer } from './webauthn-mock/der';
 
 const subtle = globalThis.crypto.subtle;
-const bytesOf = (buffer: ArrayBuffer | Uint8Array) => (buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer));
+const bytesOf = (buffer: ArrayBuffer | Uint8Array<ArrayBuffer>) => (buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer));
 
 describe('CBOR codec', () => {
   it('round-trips positive, negative, string, bytes, arrays and maps', () => {
@@ -77,8 +77,8 @@ describe('MockAuthenticator (real crypto)', () => {
     const credIdLen = (authData[53] << 8) | authData[54];
     const [coseKey] = decodeCbor(authData, 55 + credIdLen);
     const cose = (coseKey as CborMap).__cborMap;
-    const x = cose.find(([k]) => k === -2)?.[1] as Uint8Array;
-    const y = cose.find(([k]) => k === -3)?.[1] as Uint8Array;
+    const x = cose.find(([k]) => k === -2)?.[1] as Uint8Array<ArrayBuffer>;
+    const y = cose.find(([k]) => k === -3)?.[1] as Uint8Array<ArrayBuffer>;
     expect(bytesOf(x)).toEqual(raw.slice(1, 33));
     expect(bytesOf(y)).toEqual(raw.slice(33, 65));
   });

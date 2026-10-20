@@ -39,10 +39,11 @@
     "@testcontainers/postgresql": "^10.24.2",
     "@types/node": "^22.7.5",
     "@types/pg": "^8.11.11",
+    "@typescript/native": "npm:typescript@7.0.2",
     "pino-pretty": "^13.0.0",
-    "tsup": "^8.3.5",
+    "tsup": "^9.0.0",
     "tsx": "^4.19.4",
-    "typescript": "5.5.4",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^4.1.11"
   },
   "files": [
