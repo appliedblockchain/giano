@@ -62,6 +62,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check every publishable package was built
+        # The publish below runs with lifecycle scripts off, so it ships whatever `dist` is on disk.
+        run: |
+          for p in contracts wallet-transport wallet-core connector tx-describe wallet-kit paymaster-sdk; do
+            test -f "packages/$p/dist/index.js" || { echo "packages/$p/dist/index.js is missing"; exit 1; }
+          done
+
       - name: Create the version PR, or publish what it merged
         id: changesets
         # With changesets pending, this opens or updates `changeset-release/main`. With none — which
@@ -73,6 +80,13 @@ jobs:
           commit: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Every package has `prepublishOnly: pnpm build`, and tsup runs with `clean: true`. A
+          # package's rebuild wipes its `dist` while a dependent's dts build resolves types through
+          # it, which is the likely cause of wallet-kit failing on 3.0.0 (TS2307 on
+          # giano-wallet-transport). The build step above has already built everything in dependency
+          # order, so the publish must not rebuild. pnpm 11 reads the lowercase name; the
+          # NPM_CONFIG_ form is ignored and `prepublishOnly` still runs.
+          pnpm_config_ignore_scripts: 'true'
 
       - name: Tag the release and build its images
         if: steps.changesets.outputs.published == 'true'
