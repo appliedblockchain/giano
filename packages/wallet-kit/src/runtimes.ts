@@ -8,8 +8,8 @@ import {
   type SponsorshipRuleResult,
   type WalletApiInjection,
 } from '@appliedblockchain/giano-wallet-core';
-import { createPublicClient, defineChain, http, type Chain, type PublicClient } from 'viem';
-import { createBundlerClient } from 'viem/account-abstraction';
+import { createPublicClient, defineChain, http, type Chain, type HttpTransport, type PublicClient } from 'viem';
+import { createBundlerClient, type BundlerClientConfig } from 'viem/account-abstraction';
 import type { TransactionDescription } from '@appliedblockchain/giano-tx-describe';
 import type { WalletChainConfig, WalletConfig } from './config';
 import { createTransactionDescriber } from './describe';
@@ -84,6 +84,13 @@ export type WalletRuntimes = {
 
 type FeeEstimator = () => Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }>;
 
+/** {@link bundlerOptions}' result: the fee hook is not optional, which is the point of WK-04. */
+type BundlerOptions = {
+  chain: Chain;
+  transport: HttpTransport;
+  userOperation: { estimateFeesPerGas: FeeEstimator };
+} & Pick<BundlerClientConfig, 'paymaster'>;
+
 /**
  * Chooses how gas is paid for ON ONE CHAIN — sponsorship is configured per chain (MC-65)
  * and a pre-flight answer is never reused across chains (MC-71).
@@ -94,7 +101,10 @@ type FeeEstimator = () => Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: 
  * production builds, WK-05). `service` speaks ERC-7677 to the sponsorship service, which decides
  * per transaction and bills the tenant.
  */
-function paymasterHooks(chain: WalletChainConfig, sponsorshipClient: ReturnType<typeof createErc7677PaymasterClient> | undefined) {
+function paymasterHooks(
+  chain: WalletChainConfig,
+  sponsorshipClient: ReturnType<typeof createErc7677PaymasterClient> | undefined,
+): Pick<BundlerClientConfig, 'paymaster'> {
   if (chain.sponsorship === 'off') return {};
 
   if (chain.sponsorship === 'test-paymaster') {
@@ -128,7 +138,7 @@ function paymasterHooks(chain: WalletChainConfig, sponsorshipClient: ReturnType<
  * construction: the runtime is built before the user signs in and the token changes over the
  * session's life. A bundler dialled directly ignores the header.
  */
-export function sessionHttp(url: string, getSessionToken: () => string | null) {
+export function sessionHttp(url: string, getSessionToken: () => string | null): HttpTransport {
   return http(url, {
     onFetchRequest: (_request, init) => {
       const token = getSessionToken();
@@ -156,7 +166,7 @@ export function bundlerOptions(
   estimateFeesPerGas: FeeEstimator,
   sponsorshipClient: ReturnType<typeof createErc7677PaymasterClient> | undefined,
   getSessionToken: () => string | null,
-) {
+): BundlerOptions {
   return {
     chain,
     transport: sessionHttp(chainConfig.bundlerUrl, getSessionToken),

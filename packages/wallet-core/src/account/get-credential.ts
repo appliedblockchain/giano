@@ -21,7 +21,7 @@ const getAllowCredentials = (
 
 export const getCredential = async (
   options: CredentialInfoUse | CredentialInfoUserPick,
-) => {
+): Promise<PublicKeyCredential | null> => {
   const requestOptions: CredentialRequestOptions = {
     mediation: options.mediation ?? DEFAULT_CREDENTIAL_MEDIATION_REQUIREMENT,
     publicKey: {

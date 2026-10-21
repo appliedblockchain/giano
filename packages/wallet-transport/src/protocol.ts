@@ -9,20 +9,28 @@ import { z } from 'zod';
 
 export const PROTOCOL_VERSION = 1 as const;
 
-export const rpcErrorSchema = z.object({
+// Each schema's shape is spelled out so its type can be read without inference (isolatedDeclarations);
+// zod derives the parsed and input types from the shape exactly as it would from the inferred one.
+type RpcErrorShape = { code: z.ZodNumber; message: z.ZodString; data: z.ZodOptional<z.ZodUnknown> };
+
+export const rpcErrorSchema: z.ZodObject<RpcErrorShape, 'strip'> = z.object({
   code: z.number().int(),
   message: z.string(),
   data: z.unknown().optional(),
 });
 export type RpcError = z.infer<typeof rpcErrorSchema>;
 
-const base = {
+type BaseShape = { giano: z.ZodLiteral<typeof PROTOCOL_VERSION>; id: z.ZodString };
+/** The envelope every message shares, plus its `type` and (for most) a payload. */
+type MessageShape<Type extends string, Rest extends z.ZodRawShape = {}> = BaseShape & { type: z.ZodLiteral<Type> } & Rest;
+
+const base: BaseShape = {
   giano: z.literal(PROTOCOL_VERSION),
   id: z.string().min(10).max(64),
 };
 
 /** Popup page finished loading its transport host — sent to opener before origins are pinned. */
-export const readyMessageSchema = z.object({ ...base, type: z.literal('ready') });
+export const readyMessageSchema: z.ZodObject<MessageShape<'ready'>, 'strip'> = z.object({ ...base, type: z.literal('ready') });
 
 /**
  * dApp → wallet: start a session; carries SDK version, requested capabilities and the
@@ -31,7 +39,19 @@ export const readyMessageSchema = z.object({ ...base, type: z.literal('ready') }
  * is refused with `handshake:nack { reason: 'chain-required' }` — this is a breaking
  * protocol change, affordable exactly once because nothing is deployed (MC-148).
  */
-export const handshakeMessageSchema = z.object({
+export const handshakeMessageSchema: z.ZodObject<
+  MessageShape<
+    'handshake',
+    {
+      payload: z.ZodObject<{
+        sdkVersion: z.ZodString;
+        capabilities: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        chainId: z.ZodOptional<z.ZodNumber>;
+      }, 'strip'>;
+    }
+  >,
+  'strip'
+> = z.object({
   ...base,
   type: z.literal('handshake'),
   payload: z.object({
@@ -47,7 +67,20 @@ export const handshakeMessageSchema = z.object({
  * GRANTED for this session (always equal to the requested one — a mismatch is a nack, not
  * an ack) and every chain this wallet origin serves (MC-05).
  */
-export const handshakeAckMessageSchema = z.object({
+export const handshakeAckMessageSchema: z.ZodObject<
+  MessageShape<
+    'handshake:ack',
+    {
+      payload: z.ZodObject<{
+        walletVersion: z.ZodString;
+        capabilities: z.ZodDefault<z.ZodArray<z.ZodString>>;
+        chainId: z.ZodNumber;
+        supportedChainIds: z.ZodArray<z.ZodNumber>;
+      }, 'strip'>;
+    }
+  >,
+  'strip'
+> = z.object({
   ...base,
   type: z.literal('handshake:ack'),
   payload: z.object({
@@ -64,7 +97,19 @@ export const handshakeAckMessageSchema = z.object({
  * integrator can diagnose a refusal without access to the wallet origin's configuration
  * (MC-04). There is deliberately no other endpoint enumerating served chains (MC-13).
  */
-export const handshakeNackMessageSchema = z.object({
+export const handshakeNackMessageSchema: z.ZodObject<
+  MessageShape<
+    'handshake:nack',
+    {
+      payload: z.ZodObject<{
+        reason: z.ZodEnum<['unsupported-chain', 'chain-required', 'origin-not-allowed', 'protocol-version']>;
+        message: z.ZodString;
+        supportedChainIds: z.ZodOptional<z.ZodArray<z.ZodNumber>>;
+      }, 'strip'>;
+    }
+  >,
+  'strip'
+> = z.object({
   ...base,
   type: z.literal('handshake:nack'),
   payload: z.object({
@@ -75,7 +120,10 @@ export const handshakeNackMessageSchema = z.object({
 });
 
 /** dApp → wallet: EIP-1193 request. */
-export const rpcMessageSchema = z.object({
+export const rpcMessageSchema: z.ZodObject<
+  MessageShape<'rpc', { payload: z.ZodObject<{ method: z.ZodString; params: z.ZodOptional<z.ZodUnknown> }, 'strip'> }>,
+  'strip'
+> = z.object({
   ...base,
   type: z.literal('rpc'),
   payload: z.object({
@@ -85,7 +133,10 @@ export const rpcMessageSchema = z.object({
 });
 
 /** wallet → dApp: response for the rpc message with the same id. */
-export const rpcResponseMessageSchema = z.object({
+export const rpcResponseMessageSchema: z.ZodObject<
+  MessageShape<'rpc:response', { payload: z.ZodObject<{ result: z.ZodOptional<z.ZodUnknown>; error: z.ZodOptional<typeof rpcErrorSchema> }, 'strip'> }>,
+  'strip'
+> = z.object({
   ...base,
   type: z.literal('rpc:response'),
   // NOT a union: z.unknown() makes `result` effectively optional, so an error payload
@@ -95,7 +146,10 @@ export const rpcResponseMessageSchema = z.object({
 });
 
 /** wallet → dApp: EIP-1193 event (accountsChanged, chainChanged, disconnect, …). */
-export const eventMessageSchema = z.object({
+export const eventMessageSchema: z.ZodObject<
+  MessageShape<'event', { payload: z.ZodObject<{ event: z.ZodString; data: z.ZodOptional<z.ZodUnknown> }, 'strip'> }>,
+  'strip'
+> = z.object({
   ...base,
   type: z.literal('event'),
   payload: z.object({
@@ -105,9 +159,21 @@ export const eventMessageSchema = z.object({
 });
 
 /** either direction: session teardown. */
-export const closeMessageSchema = z.object({ ...base, type: z.literal('close') });
+export const closeMessageSchema: z.ZodObject<MessageShape<'close'>, 'strip'> = z.object({ ...base, type: z.literal('close') });
 
-export const transportMessageSchema = z.discriminatedUnion('type', [
+export const transportMessageSchema: z.ZodDiscriminatedUnion<
+  'type',
+  [
+    typeof readyMessageSchema,
+    typeof handshakeMessageSchema,
+    typeof handshakeAckMessageSchema,
+    typeof handshakeNackMessageSchema,
+    typeof rpcMessageSchema,
+    typeof rpcResponseMessageSchema,
+    typeof eventMessageSchema,
+    typeof closeMessageSchema,
+  ]
+> = z.discriminatedUnion('type', [
   readyMessageSchema,
   handshakeMessageSchema,
   handshakeAckMessageSchema,

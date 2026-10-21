@@ -18,8 +18,8 @@ export default defineConfig([
     ...shared,
     entry: { index: 'src/index.ts' },
     clean: true,
-    // Declarations from source alone (isolatedDeclarations, tsconfig.json): no TypeScript compiler
-    // involved, so the build does not depend on its API.
+    // Declarations from each source file alone (isolatedDeclarations): no TypeScript compiler involved,
+    // so the build does not depend on its API. An export without explicit types fails the build.
     dts: { generator: 'oxc' },
   },
   {

@@ -159,8 +159,8 @@ submodules and no network:
 CI regenerates all three and fails on drift.
 
 ```bash
-pnpm build:ts    # tsup only — what prepublishOnly runs; needs no solc
-pnpm build       # gen:abis + gen:addresses + tsup (needs forge and the submodules)
+pnpm build:ts    # tsdown only — what prepublishOnly runs; needs no solc
+pnpm build       # gen:abis + gen:addresses + tsdown (needs forge and the submodules)
 pnpm test        # forge test (needs the submodules: pnpm git:init at the repo root)
 pnpm storage:check
 ```

@@ -3722,7 +3722,7 @@ container with `RUN_MIGRATIONS=true`, which calls `runMigrations` directly from
 `isMain` cannot affect, since `index.ts`'s own top level calls it unconditionally when the flag is
 set. Deployment no longer invokes `dist/migrate.js` as a script at all.
 
-What remains, non-blocking: `dist/migrate.js` is still built as its own entry (`tsup.config.ts`) and
+What remains, non-blocking: `dist/migrate.js` is still built as its own entry (`tsdown.config.ts`) and
 `migrate.ts`'s own docstring documents it as usable for "a one-off manual run." If `isMain` really is
 the cause, that manual path is silently broken — worth a fix (drop the guard entirely, since this
 file exists specifically to be run as a script and nothing else imports it in production; or compare

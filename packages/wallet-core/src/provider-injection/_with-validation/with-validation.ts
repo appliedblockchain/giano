@@ -21,7 +21,7 @@ import { validationHooks } from './validation-hooks'
  */
 export const withValidation = <
   I extends GianoProviderInjection = GianoProviderInjection,
->(implementation: I) => {
+>(implementation: I): I & { readonly implementation: I } => {
   if (!isGianoProviderInjection(implementation)) {
     throw new Error('Invalid Giano provider injection implementation')
   }

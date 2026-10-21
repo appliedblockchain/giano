@@ -493,7 +493,7 @@ registry" and "what the gate checked at that commit" are the same tree by constr
 #### What this gates for `giano-contracts`
 
 The package ships `.sol` sources, `generated.ts` and `addresses.ts`, and nothing in the publish path
-compiles Solidity: `prepublishOnly` is `pnpm build:ts`, which is tsup. Every Solidity guarantee comes
+compiles Solidity: `prepublishOnly` is `pnpm build:ts`, which is tsdown. Every Solidity guarantee comes
 from a CI job, so every one of them has to be in the gate:
 
 | Failure | Job that catches it | Workflow |

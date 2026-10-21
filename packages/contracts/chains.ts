@@ -8,7 +8,7 @@ import { gianoAddresses } from './addresses';
 
 const addressPattern = /^0x[0-9a-fA-F]{40}$/;
 
-export const chainAddressSchema = z
+export const chainAddressSchema: z.ZodType<`0x${string}`> = z
   .string()
   .regex(addressPattern, 'must be a 0x-prefixed 20-byte hex address') as z.ZodType<`0x${string}`>;
 
@@ -17,7 +17,16 @@ export const chainAddressSchema = z
  * default chain anywhere in the system (MC-11). A dApp always names the chain it wants,
  * and a backend request may omit it only when exactly one chain is configured (MC-53).
  */
-export const chainDescriptorSchema = z.object({
+// Each schema's shape is spelled out so its type can be read without inference (isolatedDeclarations);
+// zod derives the parsed and input types from the shape exactly as it would from the inferred one.
+type ChainDescriptorShape = {
+  chainId: z.ZodNumber;
+  name: z.ZodString;
+  rpcUrl: z.ZodString;
+  nativeCurrency: z.ZodOptional<z.ZodObject<{ symbol: z.ZodString; decimals: z.ZodNumber; name: z.ZodOptional<z.ZodString> }, 'strip'>>;
+};
+
+export const chainDescriptorSchema: z.ZodObject<ChainDescriptorShape, 'strip'> = z.object({
   chainId: z.number().int().positive(),
   /** Human-readable, shown to users and operators. Required — MC-81 forbids bare ids in the UI. */
   name: z.string().min(1),
@@ -44,7 +53,16 @@ export const DEFAULT_NATIVE_CURRENCY = { symbol: 'ETH', decimals: 18, name: 'Eth
 export type ChainDescriptor = z.infer<typeof chainDescriptorSchema>;
 
 /** Per-chain policy defaults. Address-valued fields are never inherited across chains (MC-61). */
-export const chainPolicySchema = z
+type ChainPolicyShape = {
+  maxCallGas: z.ZodOptional<z.ZodString>;
+  maxVerificationGas: z.ZodOptional<z.ZodString>;
+  maxFeePerGas: z.ZodOptional<z.ZodString>;
+  maxPriorityFeePerGas: z.ZodOptional<z.ZodString>;
+  allowedTargets: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
+  allowedPaymasters: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
+};
+
+export const chainPolicySchema: z.ZodObject<ChainPolicyShape, 'strict'> = z
   .object({
     maxCallGas: z.string().regex(/^\d+$/).optional(),
     maxVerificationGas: z.string().regex(/^\d+$/).optional(),
@@ -62,7 +80,18 @@ export type ChainPolicy = z.infer<typeof chainPolicySchema>;
  * a request. `entryPoint` / `factory` / `sponsorshipPaymaster` default from the contracts
  * registry for `chainId`; explicit values win.
  */
-export const backendChainDescriptorSchema = chainDescriptorSchema.extend({
+type BackendChainDescriptorShape = z.objectUtil.extendShape<
+  ChainDescriptorShape,
+  {
+    bundlerUrl: z.ZodString;
+    entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
+    factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
+    sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
+    policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, 'strict'>>;
+  }
+>;
+
+export const backendChainDescriptorSchema: z.ZodObject<BackendChainDescriptorShape, 'strip'> = chainDescriptorSchema.extend({
   bundlerUrl: z.string().url(),
   entryPoint: chainAddressSchema.optional(),
   factory: chainAddressSchema.optional(),
@@ -73,7 +102,18 @@ export const backendChainDescriptorSchema = chainDescriptorSchema.extend({
 export type BackendChainDescriptor = z.infer<typeof backendChainDescriptorSchema>;
 
 /** wallet-web's extension: what the browser needs; it never learns an endpoint it may not use. */
-export const walletChainDescriptorSchema = chainDescriptorSchema.extend({
+type WalletChainDescriptorShape = z.objectUtil.extendShape<
+  ChainDescriptorShape,
+  {
+    bundlerUrl: z.ZodString;
+    factoryAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
+    sponsorship: z.ZodOptional<z.ZodEnum<['service', 'test-paymaster', 'off']>>;
+    paymasterServiceUrl: z.ZodOptional<z.ZodString>;
+    testPaymasterAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
+  }
+>;
+
+export const walletChainDescriptorSchema: z.ZodObject<WalletChainDescriptorShape, 'strip'> = chainDescriptorSchema.extend({
   bundlerUrl: z.string().url(),
   factoryAddress: chainAddressSchema.optional(),
   sponsorship: z.enum(['service', 'test-paymaster', 'off']).optional(),

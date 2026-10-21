@@ -13,8 +13,8 @@ export const SPENDER = '0x3333333333333333333333333333333333333333';
 export const OTHER = '0x4444444444444444444444444444444444444444';
 
 const word = (hex: string) => hex.replace(/^0x/, '').padStart(64, '0');
-export const addressWord = (address: string) => word(address);
-export const uintWord = (n: bigint) => word(n.toString(16));
+export const addressWord = (address: string): string => word(address);
+export const uintWord = (n: bigint): string => word(n.toString(16));
 
 export const SEL = {
   transfer: '0xa9059cbb',
@@ -33,7 +33,7 @@ export const transferFromData = (from: string, to: string, amount: bigint) => `$
 export const safeTransferFromData = (from: string, to: string, id: bigint) => `${SEL.safeTransferFrom3}${addressWord(from)}${addressWord(to)}${uintWord(id)}`;
 export const setApprovalForAllData = (operator: string, approved: boolean) => `${SEL.setApprovalForAll}${addressWord(operator)}${uintWord(approved ? 1n : 0n)}`;
 
-export const erc20Abi = [
+export const erc20Abi: unknown[] = [
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] },
   { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] },
 ];
@@ -58,4 +58,4 @@ export const usdcMapping = (overrides: Partial<Mapping> = {}): Mapping => ({
   ...overrides,
 });
 
-export const resolveUsdc = async () => ({ symbol: 'USDC', decimals: 6, name: 'USD Coin' });
+export const resolveUsdc = async (): Promise<{ symbol: string; decimals: number; name: string }> => ({ symbol: 'USDC', decimals: 6, name: 'USD Coin' });

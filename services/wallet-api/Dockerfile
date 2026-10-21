@@ -18,7 +18,7 @@ RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-wallet-api.
 COPY packages/contracts packages/contracts
 COPY packages/tx-describe packages/tx-describe
 COPY services/wallet-api services/wallet-api
-# contracts: committed generated.ts/addresses.ts -> tsup only, no solc. `deploy --prod` is the prune
+# contracts: committed generated.ts/addresses.ts -> tsdown only, no solc. `deploy --prod` is the prune
 # step: /out holds dist/ and production dependencies only.
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
