@@ -151,6 +151,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build contracts TS surface (the chain document schema)
+        run: pnpm --filter @appliedblockchain/giano-contracts build:ts
       - name: Typecheck
         run: pnpm --filter @appliedblockchain/giano-bundler typecheck
       - name: Vitest (unit + anvil integration, incl. the simulation bytecode drift check)
