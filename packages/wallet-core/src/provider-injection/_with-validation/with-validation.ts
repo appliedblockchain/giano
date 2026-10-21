@@ -1,5 +1,8 @@
-import { GianoProviderInjection, isGianoProviderInjection } from "../injection"
-import { validationHooks } from './validation-hooks'
+import {
+	type GianoProviderInjection,
+	isGianoProviderInjection,
+} from "../injection";
+import { validationHooks } from "./validation-hooks";
 
 /**
  * Wraps the implementation of a Giano provider injection with validation hooks,
@@ -20,24 +23,28 @@ import { validationHooks } from './validation-hooks'
  * @returns The wrapped implementation with validation hooks
  */
 export const withValidation = <
-  I extends GianoProviderInjection = GianoProviderInjection,
->(implementation: I): I & { readonly implementation: I } => {
-  if (!isGianoProviderInjection(implementation)) {
-    throw new Error('Invalid Giano provider injection implementation')
-  }
+	I extends GianoProviderInjection = GianoProviderInjection,
+>(
+	implementation: I,
+): I & { readonly implementation: I } => {
+	if (!isGianoProviderInjection(implementation)) {
+		throw new Error("Invalid Giano provider injection implementation");
+	}
 
-  const injection = { implementation } as (
-    I & { readonly implementation: I }
-  )
+	const injection = { implementation } as I & { readonly implementation: I };
 
-  // Each hook is typed against its own key; the loop only ever pairs a key with its own hook.
-  const hooks = injection as Record<keyof GianoProviderInjection, unknown>
-  for (const key of Object.keys(validationHooks) as (keyof GianoProviderInjection)[]) {
-    if (implementation[key] === undefined) {
-      hooks[key] = undefined
-      continue
-    }
-    hooks[key] = (validationHooks[key] as (this: unknown, ...args: unknown[]) => unknown).bind(injection, key)
-  }
-  return injection
-}
+	// Each hook is typed against its own key; the loop only ever pairs a key with its own hook.
+	const hooks = injection as Record<keyof GianoProviderInjection, unknown>;
+	for (const key of Object.keys(
+		validationHooks,
+	) as (keyof GianoProviderInjection)[]) {
+		if (implementation[key] === undefined) {
+			hooks[key] = undefined;
+			continue;
+		}
+		hooks[key] = (
+			validationHooks[key] as (this: unknown, ...args: unknown[]) => unknown
+		).bind(injection, key);
+	}
+	return injection;
+};

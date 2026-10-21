@@ -1,11 +1,11 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    // The deploy CLI and scripts run on Node (tsx); the published surface (tsconfig.build.json) does not.
-    "types": ["node"],
-    // Configs and scripts emit nothing; declaration checks belong to tsconfig.build.json.
-    "declaration": false
-  },
-  // The package's own TypeScript only: lib/ holds the Solidity submodules, which ship TS of their own.
-  "include": ["*.ts", "deploy/**/*.ts", "scripts/**/*.ts"]
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		// The deploy CLI and scripts run on Node (tsx); the published surface (tsconfig.build.json) does not.
+		"types": ["node"],
+		// Configs and scripts emit nothing; declaration checks belong to tsconfig.build.json.
+		"declaration": false
+	},
+	// The package's own TypeScript only: lib/ holds the Solidity submodules, which ship TS of their own.
+	"include": ["*.ts", "deploy/**/*.ts", "scripts/**/*.ts"]
 }

@@ -1,12 +1,31 @@
-import type { CDPSession, Page } from '@playwright/test';
-import { createPublicClient, http, size, slice, type Address, type Hex } from 'viem';
+import type { CDPSession, Page } from "@playwright/test";
+import {
+	type Address,
+	createPublicClient,
+	type Hex,
+	http,
+	size,
+	slice,
+} from "viem";
 
-import { CHAINS, ORIGINS } from '../origins.mjs';
+import { CHAINS, ORIGINS } from "../origins.mjs";
 
 /** The two MultiOwnable views this suite reads — inlined to avoid a build-order dependency. */
 const OWNER_SET_ABI = [
-  { type: 'function', name: 'nextOwnerIndex', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'ownerAtIndex', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'bytes' }] },
+	{
+		type: "function",
+		name: "nextOwnerIndex",
+		stateMutability: "view",
+		inputs: [],
+		outputs: [{ type: "uint256" }],
+	},
+	{
+		type: "function",
+		name: "ownerAtIndex",
+		stateMutability: "view",
+		inputs: [{ type: "uint256" }],
+		outputs: [{ type: "bytes" }],
+	},
 ] as const;
 
 /**
@@ -15,28 +34,46 @@ const OWNER_SET_ABI = [
  * Giano's stock wallet-web; tenant B serves the BYO fixture in e2e/wallet-byo/).
  */
 export type Tenant = {
-  slug: 'stock' | 'byo';
-  walletUrl: string;
-  dappUrl: string;
-  adminKey: string;
-  ui: { connect: string; approveTx: string; rejectTx: string; sign: string; txHeading: string };
+	slug: "stock" | "byo";
+	walletUrl: string;
+	dappUrl: string;
+	adminKey: string;
+	ui: {
+		connect: string;
+		approveTx: string;
+		rejectTx: string;
+		sign: string;
+		txHeading: string;
+	};
 };
 
-export const TENANTS: Record<'stock' | 'byo', Tenant> = {
-  stock: {
-    slug: 'stock',
-    walletUrl: process.env.WALLET_URL ?? ORIGINS.wallet,
-    dappUrl: process.env.DAPP_URL ?? ORIGINS.dapp,
-    adminKey: 'e2e-admin-key-stock',
-    ui: { connect: 'Continue with passkey', approveTx: 'Approve', rejectTx: 'Reject', sign: 'Sign', txHeading: 'Review transaction' },
-  },
-  byo: {
-    slug: 'byo',
-    walletUrl: process.env.WALLET_BYO_URL ?? ORIGINS.walletByo,
-    dappUrl: process.env.DAPP_BYO_URL ?? ORIGINS.dappByo,
-    adminKey: 'e2e-admin-key-byo00',
-    ui: { connect: 'Unlock with passkey', approveTx: 'Confirm', rejectTx: 'Decline', sign: 'Sign it', txHeading: 'Confirm transaction' },
-  },
+export const TENANTS: Record<"stock" | "byo", Tenant> = {
+	stock: {
+		slug: "stock",
+		walletUrl: process.env.WALLET_URL ?? ORIGINS.wallet,
+		dappUrl: process.env.DAPP_URL ?? ORIGINS.dapp,
+		adminKey: "e2e-admin-key-stock",
+		ui: {
+			connect: "Continue with passkey",
+			approveTx: "Approve",
+			rejectTx: "Reject",
+			sign: "Sign",
+			txHeading: "Review transaction",
+		},
+	},
+	byo: {
+		slug: "byo",
+		walletUrl: process.env.WALLET_BYO_URL ?? ORIGINS.walletByo,
+		dappUrl: process.env.DAPP_BYO_URL ?? ORIGINS.dappByo,
+		adminKey: "e2e-admin-key-byo00",
+		ui: {
+			connect: "Unlock with passkey",
+			approveTx: "Confirm",
+			rejectTx: "Decline",
+			sign: "Sign it",
+			txHeading: "Confirm transaction",
+		},
+	},
 };
 
 export const WALLET_URL = TENANTS.stock.walletUrl;
@@ -48,20 +85,25 @@ export type VirtualCredential = Record<string, unknown>;
  * Attaches a CDP virtual authenticator (resident-key P-256, user-verified) to the
  * given page — used on each POPUP page, where all WebAuthn happens.
  */
-export async function addVirtualAuthenticator(page: Page): Promise<{ cdp: CDPSession; authenticatorId: string }> {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('WebAuthn.enable');
-  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
-    options: {
-      protocol: 'ctap2',
-      transport: 'internal',
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: true,
-    },
-  });
-  return { cdp, authenticatorId };
+export async function addVirtualAuthenticator(
+	page: Page,
+): Promise<{ cdp: CDPSession; authenticatorId: string }> {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send("WebAuthn.enable");
+	const { authenticatorId } = await cdp.send(
+		"WebAuthn.addVirtualAuthenticator",
+		{
+			options: {
+				protocol: "ctap2",
+				transport: "internal",
+				hasResidentKey: true,
+				hasUserVerification: true,
+				isUserVerified: true,
+				automaticPresenceSimulation: true,
+			},
+		},
+	);
+	return { cdp, authenticatorId };
 }
 
 /**
@@ -73,49 +115,84 @@ export async function addVirtualAuthenticator(page: Page): Promise<{ cdp: CDPSes
  * `credentialAdded` event the moment it is created — before the popup can close.
  */
 export function trackResidentCredentials(cdp: CDPSession): VirtualCredential[] {
-  const credentials: VirtualCredential[] = [];
-  cdp.on('WebAuthn.credentialAdded' as never, ((event: { credential: VirtualCredential }) => {
-    credentials.push(event.credential);
-  }) as never);
-  return credentials;
+	const credentials: VirtualCredential[] = [];
+	cdp.on(
+		"WebAuthn.credentialAdded" as never,
+		((event: { credential: VirtualCredential }) => {
+			credentials.push(event.credential);
+		}) as never,
+	);
+	return credentials;
 }
 
 /** Injects previously-captured resident credentials into a popup's virtual authenticator. */
-export async function seedCredentials(cdp: CDPSession, authenticatorId: string, credentials: VirtualCredential[]): Promise<void> {
-  // Each popup has a new virtual authenticator. Carry assertion counters forward
-  // so reconnecting behaves like a shared physical authenticator.
-  cdp.on('WebAuthn.credentialAsserted' as never, ((event: { credential: VirtualCredential }) => {
-    const index = credentials.findIndex((credential) => credential.credentialId === event.credential.credentialId);
-    if (index !== -1) credentials[index] = event.credential;
-  }) as never);
-  for (const credential of credentials) {
-    await cdp.send('WebAuthn.addCredential' as never, { authenticatorId, credential } as never);
-  }
+export async function seedCredentials(
+	cdp: CDPSession,
+	authenticatorId: string,
+	credentials: VirtualCredential[],
+): Promise<void> {
+	// Each popup has a new virtual authenticator. Carry assertion counters forward
+	// so reconnecting behaves like a shared physical authenticator.
+	cdp.on(
+		"WebAuthn.credentialAsserted" as never,
+		((event: { credential: VirtualCredential }) => {
+			const index = credentials.findIndex(
+				(credential) =>
+					credential.credentialId === event.credential.credentialId,
+			);
+			if (index !== -1) credentials[index] = event.credential;
+		}) as never,
+	);
+	for (const credential of credentials) {
+		await cdp.send(
+			"WebAuthn.addCredential" as never,
+			{ authenticatorId, credential } as never,
+		);
+	}
 }
 
 /** Reads the resident credentials currently stored on a virtual authenticator. */
-export async function getCredentials(cdp: CDPSession, authenticatorId: string): Promise<VirtualCredential[]> {
-  const result = (await cdp.send('WebAuthn.getCredentials' as never, { authenticatorId } as never)) as { credentials: VirtualCredential[] };
-  return result.credentials;
+export async function getCredentials(
+	cdp: CDPSession,
+	authenticatorId: string,
+): Promise<VirtualCredential[]> {
+	const result = (await cdp.send(
+		"WebAuthn.getCredentials" as never,
+		{ authenticatorId } as never,
+	)) as { credentials: VirtualCredential[] };
+	return result.credentials;
 }
 
 /** Clicks a dApp button that opens the wallet popup and resolves the popup page. */
-export async function openWalletPopup(dappPage: Page, trigger: string): Promise<Page> {
-  const [popup] = await Promise.all([dappPage.waitForEvent('popup'), dappPage.click(trigger)]);
-  await popup.waitForLoadState('domcontentloaded');
-  return popup;
+export async function openWalletPopup(
+	dappPage: Page,
+	trigger: string,
+): Promise<Page> {
+	const [popup] = await Promise.all([
+		dappPage.waitForEvent("popup"),
+		dappPage.click(trigger),
+	]);
+	await popup.waitForLoadState("domcontentloaded");
+	return popup;
 }
 
-export async function expectOutContains(dappPage: Page, text: string, timeout = 90_000): Promise<void> {
-  await dappPage.locator('[data-testid=out]').filter({ hasText: text }).waitFor({ timeout });
+export async function expectOutContains(
+	dappPage: Page,
+	text: string,
+	timeout = 90_000,
+): Promise<void> {
+	await dappPage
+		.locator("[data-testid=out]")
+		.filter({ hasText: text })
+		.waitFor({ timeout });
 }
 
 /** Extracts the connected wallet address from the dApp's output log. */
 export async function readConnectedAddress(dappPage: Page): Promise<string> {
-  const out = await dappPage.locator('[data-testid=out]').textContent();
-  const match = out?.match(/accounts: \["(0x[0-9a-fA-F]{40})"/);
-  if (!match) throw new Error(`no connected address in dApp output:\n${out}`);
-  return match[1];
+	const out = await dappPage.locator("[data-testid=out]").textContent();
+	const match = out?.match(/accounts: \["(0x[0-9a-fA-F]{40})"/);
+	if (!match) throw new Error(`no connected address in dApp output:\n${out}`);
+	return match[1];
 }
 
 /**
@@ -123,22 +200,29 @@ export async function readConnectedAddress(dappPage: Page): Promise<string> {
  * credential(s) plus the connected address. NOTE: two dApps share the hardcoded popup
  * window name 'giano-wallet' — keep tenants in separate browser contexts.
  */
-export async function connectWallet(page: Page, tenant: Tenant): Promise<{ credentials: VirtualCredential[]; address: string }> {
-  await page.goto(tenant.dappUrl);
-  const popup = await openWalletPopup(page, '#connect');
-  const { cdp } = await addVirtualAuthenticator(popup);
-  const credentials = trackResidentCredentials(cdp);
-  await popup.getByRole('button', { name: tenant.ui.connect }).click();
-  await expectOutContains(page, 'accounts: ["0x');
-  return { credentials, address: await readConnectedAddress(page) };
+export async function connectWallet(
+	page: Page,
+	tenant: Tenant,
+): Promise<{ credentials: VirtualCredential[]; address: string }> {
+	await page.goto(tenant.dappUrl);
+	const popup = await openWalletPopup(page, "#connect");
+	const { cdp } = await addVirtualAuthenticator(popup);
+	const credentials = trackResidentCredentials(cdp);
+	await popup.getByRole("button", { name: tenant.ui.connect }).click();
+	await expectOutContains(page, 'accounts: ["0x');
+	return { credentials, address: await readConnectedAddress(page) };
 }
 
 /** Opens a fresh popup for a signing/transaction action, seeding the connect credential. */
-export async function openActionPopup(page: Page, trigger: string, credentials: VirtualCredential[]): Promise<Page> {
-  const popup = await openWalletPopup(page, trigger);
-  const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
-  await seedCredentials(cdp, authenticatorId, credentials);
-  return popup;
+export async function openActionPopup(
+	page: Page,
+	trigger: string,
+	credentials: VirtualCredential[],
+): Promise<Page> {
+	const popup = await openWalletPopup(page, trigger);
+	const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
+	await seedCredentials(cdp, authenticatorId, credentials);
+	return popup;
 }
 
 /**
@@ -147,40 +231,54 @@ export async function openActionPopup(page: Page, trigger: string, credentials: 
  * Reads directly from the account contract, exactly as the interface does.
  */
 export async function readOnChainOwners(
-  walletAddress: string,
-  chain: { chainId: number; rpc: string } = CHAINS.a,
-): Promise<{ deployed: boolean; owners: { index: number; ownerBytes: Hex; kind: 'passkey' | 'address' }[] }> {
-  const client = createPublicClient({ transport: http(chain.rpc) });
-  const code = await client.getCode({ address: walletAddress as Address });
-  if (!code || code === '0x') return { deployed: false, owners: [] };
-  const nextOwnerIndex = await client.readContract({
-    address: walletAddress as Address,
-    abi: OWNER_SET_ABI,
-    functionName: 'nextOwnerIndex',
-  });
-  const owners: { index: number; ownerBytes: Hex; kind: 'passkey' | 'address' }[] = [];
-  for (let index = 0; index < Number(nextOwnerIndex); index++) {
-    const ownerBytes = (await client.readContract({
-      address: walletAddress as Address,
-      abi: OWNER_SET_ABI,
-      functionName: 'ownerAtIndex',
-      args: [BigInt(index)],
-    })) as Hex;
-    if (!ownerBytes || ownerBytes === '0x') continue;
-    owners.push({ index, ownerBytes, kind: size(ownerBytes) === 64 ? 'passkey' : 'address' });
-  }
-  return { deployed: true, owners };
+	walletAddress: string,
+	chain: { chainId: number; rpc: string } = CHAINS.a,
+): Promise<{
+	deployed: boolean;
+	owners: { index: number; ownerBytes: Hex; kind: "passkey" | "address" }[];
+}> {
+	const client = createPublicClient({ transport: http(chain.rpc) });
+	const code = await client.getCode({ address: walletAddress as Address });
+	if (!code || code === "0x") return { deployed: false, owners: [] };
+	const nextOwnerIndex = await client.readContract({
+		address: walletAddress as Address,
+		abi: OWNER_SET_ABI,
+		functionName: "nextOwnerIndex",
+	});
+	const owners: {
+		index: number;
+		ownerBytes: Hex;
+		kind: "passkey" | "address";
+	}[] = [];
+	for (let index = 0; index < Number(nextOwnerIndex); index++) {
+		const ownerBytes = (await client.readContract({
+			address: walletAddress as Address,
+			abi: OWNER_SET_ABI,
+			functionName: "ownerAtIndex",
+			args: [BigInt(index)],
+		})) as Hex;
+		if (!ownerBytes || ownerBytes === "0x") continue;
+		owners.push({
+			index,
+			ownerBytes,
+			kind: size(ownerBytes) === 64 ? "passkey" : "address",
+		});
+	}
+	return { deployed: true, owners };
 }
 
 /** Extracts an Ethereum-address owner (32-byte encoding) as a checksummed hex slice. */
 export function ownerAddress(ownerBytes: Hex): string {
-  return slice(ownerBytes, 12, 32);
+	return slice(ownerBytes, 12, 32);
 }
 
 /** Opens the management interface via the dApp's SDK button and returns the popup page. */
-export async function openManagePopup(page: Page, credentials: VirtualCredential[]): Promise<Page> {
-  const popup = await openWalletPopup(page, '#manage');
-  const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
-  await seedCredentials(cdp, authenticatorId, credentials);
-  return popup;
+export async function openManagePopup(
+	page: Page,
+	credentials: VirtualCredential[],
+): Promise<Page> {
+	const popup = await openWalletPopup(page, "#manage");
+	const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
+	await seedCredentials(cdp, authenticatorId, credentials);
+	return popup;
 }

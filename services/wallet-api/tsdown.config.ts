@@ -1,21 +1,21 @@
-import { defineConfig } from 'tsdown';
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: {
-    index: 'src/index.ts',
-    migrate: 'src/migrate.ts',
-    // the one-shot task in infra/iac/ecs_tasks_oneshot.tf runs this by path, so it has to be
-    // its own entry rather than a chunk
-    'provision-sponsorship': 'src/provision-sponsorship.ts',
-  },
-  format: ['esm'],
-  platform: 'node',
-  target: 'node22',
-  sourcemap: true,
-  clean: true,
-  // An application, not a library: no declarations. `.js` because the package is "type": "module".
-  dts: false,
-  outExtensions: () => ({ js: '.js' }),
-  // workspace dep is bundled at image build via `pnpm deploy`; keep runtime deps external
-  tsconfig: './tsconfig.json',
+	entry: {
+		index: "src/index.ts",
+		migrate: "src/migrate.ts",
+		// the one-shot task in infra/iac/ecs_tasks_oneshot.tf runs this by path, so it has to be
+		// its own entry rather than a chunk
+		"provision-sponsorship": "src/provision-sponsorship.ts",
+	},
+	format: ["esm"],
+	platform: "node",
+	target: "node22",
+	sourcemap: true,
+	clean: true,
+	// An application, not a library: no declarations. `.js` because the package is "type": "module".
+	dts: false,
+	outExtensions: () => ({ js: ".js" }),
+	// workspace dep is bundled at image build via `pnpm deploy`; keep runtime deps external
+	tsconfig: "./tsconfig.json",
 });

@@ -1,36 +1,36 @@
-import { AssertHexOptions } from './types'
+import type { AssertHexOptions } from "./types";
 
 type HexLength = {
-  digits: number
-  originalUnit: 'digit' | 'byte'
-}
+	digits: number;
+	originalUnit: "digit" | "byte";
+};
 
 export function getHexAssertionLength(
-  options: AssertHexOptions
+	options: AssertHexOptions,
 ): HexLength | undefined {
-  if ('digits' in options && options.digits !== undefined) {
-    if (typeof options.digits !== 'number') {
-      throw new Error('`options.digits` must be a number')
-    }
+	if ("digits" in options && options.digits !== undefined) {
+		if (typeof options.digits !== "number") {
+			throw new Error("`options.digits` must be a number");
+		}
 
-    return {
-      digits: options.digits,
-      originalUnit: 'digit'
-    }
-  }
+		return {
+			digits: options.digits,
+			originalUnit: "digit",
+		};
+	}
 
-  if ('bytes' in options && options.bytes !== undefined) {
-    if (typeof options.bytes !== 'number') {
-      throw new Error('`options.bytes` must be a number')
-    }
+	if ("bytes" in options && options.bytes !== undefined) {
+		if (typeof options.bytes !== "number") {
+			throw new Error("`options.bytes` must be a number");
+		}
 
-    return {
-      digits: options.bytes * 2,
-      originalUnit: 'byte'
-    }
-  }
+		return {
+			digits: options.bytes * 2,
+			originalUnit: "byte",
+		};
+	}
 
-  return undefined
+	return undefined;
 }
 
 /**
@@ -38,15 +38,16 @@ export function getHexAssertionLength(
  * @param length - The length to format
  * @returns The formatted length
  */
-export function getHexAssertionLengthMessage(length: HexLength | undefined): string {
-  if (length === undefined) {
-    return 'hex'
-  }
+export function getHexAssertionLengthMessage(
+	length: HexLength | undefined,
+): string {
+	if (length === undefined) {
+		return "hex";
+	}
 
-  const valueInOriginalUnit = length.digits / (
-    length.originalUnit === 'digit' ? 1 : 2
-  )
+	const valueInOriginalUnit =
+		length.digits / (length.originalUnit === "digit" ? 1 : 2);
 
-  // formats to: 'X-byte hex' | 'X-digit hex'
-  return `${valueInOriginalUnit}-${length.originalUnit} hex`
+	// formats to: 'X-byte hex' | 'X-digit hex'
+	return `${valueInOriginalUnit}-${length.originalUnit} hex`;
 }

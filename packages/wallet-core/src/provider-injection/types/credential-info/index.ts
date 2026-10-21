@@ -1,2 +1,2 @@
-export * from './credential-info'
-export * from './defaults'
+export * from "./credential-info";
+export * from "./defaults";

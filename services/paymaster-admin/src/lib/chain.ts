@@ -1,7 +1,16 @@
-import type { PaymasterWalletClient } from '@appliedblockchain/giano-paymaster-sdk';
-import { createPublicClient, createWalletClient, custom, defineChain, http, type Address, type Chain, type EIP1193Provider } from 'viem';
-import type { Deployment } from '../config';
-import { describeError } from './format';
+import type { PaymasterWalletClient } from "@appliedblockchain/giano-paymaster-sdk";
+import {
+	type Address,
+	type Chain,
+	createPublicClient,
+	createWalletClient,
+	custom,
+	defineChain,
+	type EIP1193Provider,
+	http,
+} from "viem";
+import type { Deployment } from "../config";
+import { describeError } from "./format";
 
 /**
  * Chain wiring.
@@ -14,27 +23,30 @@ import { describeError } from './format';
  */
 
 export function toChain(deployment: Deployment): Chain {
-  return defineChain({
-    id: deployment.chainId,
-    name: deployment.name ?? `chain-${deployment.chainId}`,
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: { default: { http: [deployment.rpcUrl] } },
-  });
+	return defineChain({
+		id: deployment.chainId,
+		name: deployment.name ?? `chain-${deployment.chainId}`,
+		nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+		rpcUrls: { default: { http: [deployment.rpcUrl] } },
+	});
 }
 
 export function createReadClient(deployment: Deployment) {
-  return createPublicClient({ chain: toChain(deployment), transport: http(deployment.rpcUrl) });
+	return createPublicClient({
+		chain: toChain(deployment),
+		transport: http(deployment.rpcUrl),
+	});
 }
 
 type InjectedProvider = EIP1193Provider & { isMetaMask?: boolean };
 
 export function getInjectedProvider(): InjectedProvider | undefined {
-  return (globalThis as { ethereum?: InjectedProvider }).ethereum;
+	return (globalThis as { ethereum?: InjectedProvider }).ethereum;
 }
 
 export type ConnectedWallet = {
-  address: Address;
-  walletClient: PaymasterWalletClient;
+	address: Address;
+	walletClient: PaymasterWalletClient;
 };
 
 /**
@@ -45,15 +57,17 @@ export type ConnectedWallet = {
  * connection is a plain error with nothing to do about it but read.
  */
 export class ChainMismatchError extends Error {
-  readonly walletChainId: number;
-  readonly deployment: Deployment;
+	readonly walletChainId: number;
+	readonly deployment: Deployment;
 
-  constructor(walletChainId: number, deployment: Deployment) {
-    super(`The wallet is on chain ${walletChainId}, but this console administers ${deployment.name} (chain ${deployment.chainId}).`);
-    this.name = 'ChainMismatchError';
-    this.walletChainId = walletChainId;
-    this.deployment = deployment;
-  }
+	constructor(walletChainId: number, deployment: Deployment) {
+		super(
+			`The wallet is on chain ${walletChainId}, but this console administers ${deployment.name} (chain ${deployment.chainId}).`,
+		);
+		this.name = "ChainMismatchError";
+		this.walletChainId = walletChainId;
+		this.deployment = deployment;
+	}
 }
 
 /**
@@ -65,18 +79,20 @@ export class ChainMismatchError extends Error {
  * operator needs to add the network themselves, since that is the only way through.
  */
 export class ChainNotAddedError extends Error {
-  readonly deployment: Deployment;
-  readonly rpcUrl: string;
-  /** What the wallet said, verbatim. Its own words are usually more specific than anything here. */
-  readonly walletMessage: string;
+	readonly deployment: Deployment;
+	readonly rpcUrl: string;
+	/** What the wallet said, verbatim. Its own words are usually more specific than anything here. */
+	readonly walletMessage: string;
 
-  constructor(deployment: Deployment, rpcUrl: string, cause: unknown) {
-    super(`This wallet would not add ${deployment.name} (chain ${deployment.chainId}).`);
-    this.name = 'ChainNotAddedError';
-    this.deployment = deployment;
-    this.rpcUrl = rpcUrl;
-    this.walletMessage = describeError(cause);
-  }
+	constructor(deployment: Deployment, rpcUrl: string, cause: unknown) {
+		super(
+			`This wallet would not add ${deployment.name} (chain ${deployment.chainId}).`,
+		);
+		this.name = "ChainNotAddedError";
+		this.deployment = deployment;
+		this.rpcUrl = rpcUrl;
+		this.walletMessage = describeError(cause);
+	}
 }
 
 /** EIP-1193: the wallet does not know this chain and cannot switch to it until it is added. */
@@ -86,12 +102,12 @@ const UNRECOGNISED_CHAIN = 4902;
 const USER_REJECTED = 4001;
 
 function providerErrorCode(error: unknown): number | undefined {
-  const code = (error as { code?: unknown })?.code;
-  return typeof code === 'number' ? code : undefined;
+	const code = (error as { code?: unknown })?.code;
+	return typeof code === "number" ? code : undefined;
 }
 
 function toHex(value: number): `0x${string}` {
-  return `0x${value.toString(16)}`;
+	return `0x${value.toString(16)}`;
 }
 
 /**
@@ -107,57 +123,66 @@ function toHex(value: number): `0x${string}` {
  * {@link ChainNotAddedError}, which the caller turns into instructions rather than an error.
  */
 export async function switchChain(deployment: Deployment): Promise<void> {
-  const provider = getInjectedProvider();
-  if (!provider) throw new Error('No injected wallet found.');
+	const provider = getInjectedProvider();
+	if (!provider) throw new Error("No injected wallet found.");
 
-  const chainId = toHex(deployment.chainId);
+	const chainId = toHex(deployment.chainId);
 
-  try {
-    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] });
-    return;
-  } catch (cause) {
-    if (providerErrorCode(cause) !== UNRECOGNISED_CHAIN) throw cause;
-  }
+	try {
+		await provider.request({
+			method: "wallet_switchEthereumChain",
+			params: [{ chainId }],
+		});
+		return;
+	} catch (cause) {
+		if (providerErrorCode(cause) !== UNRECOGNISED_CHAIN) throw cause;
+	}
 
-  // Where the WALLET should dial, which is not always where the console reads: `rpcUrl` is
-  // routinely a path on this origin, proxying a node whose real address the browser is not meant
-  // to hold. `walletRpcUrl` is the address to publish when there is one. Absolute either way — the
-  // wallet is a different context entirely, with nothing to resolve a relative URL against.
-  const rpcUrl = new URL(deployment.walletRpcUrl ?? deployment.rpcUrl, window.location.origin).toString();
+	// Where the WALLET should dial, which is not always where the console reads: `rpcUrl` is
+	// routinely a path on this origin, proxying a node whose real address the browser is not meant
+	// to hold. `walletRpcUrl` is the address to publish when there is one. Absolute either way — the
+	// wallet is a different context entirely, with nothing to resolve a relative URL against.
+	const rpcUrl = new URL(
+		deployment.walletRpcUrl ?? deployment.rpcUrl,
+		window.location.origin,
+	).toString();
 
-  try {
-    await provider.request({
-      method: 'wallet_addEthereumChain',
-      params: [
-        {
-          chainId,
-          chainName: deployment.name,
-          rpcUrls: [rpcUrl],
-          nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-        },
-      ],
-    });
+	try {
+		await provider.request({
+			method: "wallet_addEthereumChain",
+			params: [
+				{
+					chainId,
+					chainName: deployment.name,
+					rpcUrls: [rpcUrl],
+					nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+				},
+			],
+		});
 
-    // Some wallets add without switching; others switch as part of adding and no-op here.
-    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] });
-  } catch (cause) {
-    if (isUserRejection(cause)) throw cause;
-    throw new ChainNotAddedError(deployment, rpcUrl, cause);
-  }
+		// Some wallets add without switching; others switch as part of adding and no-op here.
+		await provider.request({
+			method: "wallet_switchEthereumChain",
+			params: [{ chainId }],
+		});
+	} catch (cause) {
+		if (isUserRejection(cause)) throw cause;
+		throw new ChainNotAddedError(deployment, rpcUrl, cause);
+	}
 }
 
 /** The deployment's chain as a wallet's "add a network" form asks for it. */
 export function networkDetails(deployment: Deployment, rpcUrl: string) {
-  return [
-    { label: 'Network name', value: deployment.name },
-    { label: 'Chain ID', value: String(deployment.chainId) },
-    { label: 'RPC URL', value: rpcUrl },
-    { label: 'Currency symbol', value: 'ETH' },
-  ];
+	return [
+		{ label: "Network name", value: deployment.name },
+		{ label: "Chain ID", value: String(deployment.chainId) },
+		{ label: "RPC URL", value: rpcUrl },
+		{ label: "Currency symbol", value: "ETH" },
+	];
 }
 
 export function isUserRejection(error: unknown): boolean {
-  return providerErrorCode(error) === USER_REJECTED;
+	return providerErrorCode(error) === USER_REJECTED;
 }
 
 /**
@@ -168,23 +193,35 @@ export function isUserRejection(error: unknown): boolean {
  * the wrong deployment. A mismatch comes back as {@link ChainMismatchError} so the caller can
  * offer {@link switchChain} as a deliberate second step.
  */
-export async function connectWallet(deployment: Deployment): Promise<ConnectedWallet> {
-  const provider = getInjectedProvider();
-  if (!provider) {
-    throw new Error('No injected wallet found. Install a browser wallet, or use the console read-only.');
-  }
+export async function connectWallet(
+	deployment: Deployment,
+): Promise<ConnectedWallet> {
+	const provider = getInjectedProvider();
+	if (!provider) {
+		throw new Error(
+			"No injected wallet found. Install a browser wallet, or use the console read-only.",
+		);
+	}
 
-  const accounts = (await provider.request({ method: 'eth_requestAccounts' })) as Address[];
-  const address = accounts[0];
-  if (!address) throw new Error('The wallet returned no account.');
+	const accounts = (await provider.request({
+		method: "eth_requestAccounts",
+	})) as Address[];
+	const address = accounts[0];
+	if (!address) throw new Error("The wallet returned no account.");
 
-  const walletChainId = Number(await provider.request({ method: 'eth_chainId' }));
-  if (walletChainId !== deployment.chainId) {
-    throw new ChainMismatchError(walletChainId, deployment);
-  }
+	const walletChainId = Number(
+		await provider.request({ method: "eth_chainId" }),
+	);
+	if (walletChainId !== deployment.chainId) {
+		throw new ChainMismatchError(walletChainId, deployment);
+	}
 
-  const walletClient = createWalletClient({ account: address, chain: toChain(deployment), transport: custom(provider) });
-  return { address, walletClient };
+	const walletClient = createWalletClient({
+		account: address,
+		chain: toChain(deployment),
+		transport: custom(provider),
+	});
+	return { address, walletClient };
 }
 
 /**
@@ -195,28 +232,43 @@ export async function connectWallet(deployment: Deployment): Promise<ConnectedWa
  * the configured list. So an operator cannot end up signing against a deployment they did not
  * choose, and one whose wallet simply happens to be elsewhere is not made to do anything about it.
  */
-export async function connectOnChain(deployment: Deployment): Promise<ConnectedWallet> {
-  try {
-    return await connectWallet(deployment);
-  } catch (cause) {
-    if (!(cause instanceof ChainMismatchError)) throw cause;
-  }
+export async function connectOnChain(
+	deployment: Deployment,
+): Promise<ConnectedWallet> {
+	try {
+		return await connectWallet(deployment);
+	} catch (cause) {
+		if (!(cause instanceof ChainMismatchError)) throw cause;
+	}
 
-  await switchChain(deployment);
-  return connectWallet(deployment);
+	await switchChain(deployment);
+	return connectWallet(deployment);
 }
 
 /** Accounts the wallet has already authorised, without prompting. Used to restore a session. */
-export async function getAuthorisedAccount(deployment: Deployment): Promise<ConnectedWallet | undefined> {
-  const provider = getInjectedProvider();
-  if (!provider) return undefined;
+export async function getAuthorisedAccount(
+	deployment: Deployment,
+): Promise<ConnectedWallet | undefined> {
+	const provider = getInjectedProvider();
+	if (!provider) return undefined;
 
-  const accounts = (await provider.request({ method: 'eth_accounts' })) as Address[];
-  const address = accounts[0];
-  if (!address) return undefined;
+	const accounts = (await provider.request({
+		method: "eth_accounts",
+	})) as Address[];
+	const address = accounts[0];
+	if (!address) return undefined;
 
-  const walletChainId = Number(await provider.request({ method: 'eth_chainId' }));
-  if (walletChainId !== deployment.chainId) return undefined;
+	const walletChainId = Number(
+		await provider.request({ method: "eth_chainId" }),
+	);
+	if (walletChainId !== deployment.chainId) return undefined;
 
-  return { address, walletClient: createWalletClient({ account: address, chain: toChain(deployment), transport: custom(provider) }) };
+	return {
+		address,
+		walletClient: createWalletClient({
+			account: address,
+			chain: toChain(deployment),
+			transport: custom(provider),
+		}),
+	};
 }

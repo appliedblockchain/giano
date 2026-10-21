@@ -1,0 +1,11 @@
+// R4 (design.md D2, D10): the demo writes no CSS. Chakra components and theme tokens are the whole
+// vocabulary, so neither an inline `style` nor a `css` prop is allowed on any element or component.
+language js
+
+JsxAttribute(name=$name) as $attribute where {
+	$name <: or {
+		`style`,
+		`css`
+	},
+	register_diagnostic(span=$attribute, message="No inline style or css prop: use Chakra style props and theme tokens (R4).")
+}

@@ -1,25 +1,28 @@
 {
-  "name": "@appliedblockchain/giano",
-  "private": true,
-  "scripts": {
-    "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
-    "demo:dev": "pnpm -C services/custom-example dev",
-    "demo:stock": "pnpm -C services/custom-example dev:stock",
-    "demo:byo": "pnpm -C services/custom-example dev:byo",
-    "demo:admin": "pnpm -F @appliedblockchain/giano-paymaster-admin dev",
-    "paymaster": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run cli --",
-    "paymaster:demo": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run demo --",
-    "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
-    "git:init": "git submodule update --init --recursive",
-    "local:node": "pnpm --filter @appliedblockchain/giano-contracts local:node",
-    "local:deploy": "pnpm --filter @appliedblockchain/giano-contracts local:deploy",
-    "doctor": "pnpm --filter @appliedblockchain/giano-contracts run doctor --"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.31.1",
-    "@typescript/native": "npm:typescript@7.0.2",
-    "typescript": "npm:@typescript/typescript6@6.0.2"
-  },
-  "packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
+	"name": "@appliedblockchain/giano",
+	"private": true,
+	"scripts": {
+		"build": "pnpm -r build",
+		"typecheck": "pnpm -r typecheck",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"demo:dev": "pnpm -C services/custom-example dev",
+		"demo:stock": "pnpm -C services/custom-example dev:stock",
+		"demo:byo": "pnpm -C services/custom-example dev:byo",
+		"demo:admin": "pnpm -F @appliedblockchain/giano-paymaster-admin dev",
+		"paymaster": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run cli --",
+		"paymaster:demo": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run demo --",
+		"build:connector": "pnpm -F @appliedblockchain/giano-connector build",
+		"git:init": "git submodule update --init --recursive",
+		"local:node": "pnpm --filter @appliedblockchain/giano-contracts local:node",
+		"local:deploy": "pnpm --filter @appliedblockchain/giano-contracts local:deploy",
+		"doctor": "pnpm --filter @appliedblockchain/giano-contracts run doctor --"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@changesets/cli": "^2.31.1",
+		"@typescript/native": "npm:typescript@7.0.2",
+		"typescript": "npm:@typescript/typescript6@6.0.2"
+	},
+	"packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
 }

@@ -1,0 +1,50 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": false,
+		"includes": [
+			"**",
+			"!!**/packages/contracts/lib",
+			"!!**/packages/contracts/vendor",
+			"!**/packages/contracts/generated.ts",
+			"!**/packages/contracts/addresses.ts",
+			"!**/packages/contracts/canonical.ts",
+			"!**/packages/contracts/releases",
+			"!**/packages/contracts/deployments/*.json",
+			"!**/packages/contracts/storage-layout",
+			"!**/services/wallet-api/openapi/openapi.json",
+			"!**/e2e/devnet/state.json",
+			"!**/e2e/devnet/addresses.json",
+			"!**/scripts/spa-parity/fixtures",
+			"!!**/services/custom-example"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended"
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	}
+}

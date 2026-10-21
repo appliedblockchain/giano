@@ -26,7 +26,7 @@ Requirements `Rn` and findings `Gn` are defined there. Behavioural scenarios are
 | # | Decision | Alternatives rejected |
 |---|---|---|
 | D1 | Vite + React 19 + TypeScript + Chakra UI v3 (`~3.36`), `viem` pinned, `wagmi` + `@tanstack/react-query` for the connector card, RainbowKit for the `giano()` adapter. | MUI (no MCP), Tailwind/shadcn (utility classes are CSS authoring). |
-| D2 | Published surface only, enforced by ESLint `no-restricted-imports`; dependency `workspace:^` until H2 publishes, same import path afterwards. | Install from the registry now (blocked on H2). |
+| D2 | Published surface only, enforced by Biome `noRestrictedImports`; dependency `workspace:^` until H2 publishes, same import path afterwards. | Install from the registry now (blocked on H2). |
 | D3 | One provider per chain, built lazily from the runtime chain list plus ad-hoc chains; selecting a chain selects a provider. | Any form of switching. |
 | D4 | Identity asserted from granted accounts; disagreement is a persistent violation banner plus a ledger row. | Computing the counterfactual address (not possible through the public surface). |
 | D5 | Gas payer declared by the user, attributed from `receipt.paymaster` and the native balance delta; mismatch flagged. In the reference stack, wallet-web serves chain B with `sponsorship: off`. | A per-request opt-out (would be a Giano change in disguise). |
@@ -168,10 +168,11 @@ as-declared/mismatch · short hash · duration), chevron; details = key/value li
 
 ## 7. Guards: lint and bundle scan
 
-`eslint.config.js` (ESLint 9 flat config, typescript-eslint, eslint-plugin-react):
-`no-restricted-imports` bans `@appliedblockchain/*` except the connector's default entry, relative
-paths leaving `src/`, and `*.css` except `@rainbow-me/rainbowkit/styles.css`;
-`react/forbid-dom-props` bans `style`; `react/forbid-component-props` bans `style` and `css`.
+`biome.json` (Biome's recommended rules, its own root config so the standalone workspace and its
+Docker build lint without the repo's): `noRestrictedImports` bans `@appliedblockchain/*` except the
+connector's default entry, relative paths leaving `src/`, and `*.css` except
+`@rainbow-me/rainbowkit/styles.css`; the GritQL plugin `no-custom-css.grit` bans the `style` and
+`css` props on every element and component.
 `scripts/scan-bundle.mjs` fails the build on `navigator.credentials`, any `VITE_` token, or a
 stylesheet in `dist/` that is not RainbowKit's (recognised by content). `pnpm build` = lint →
 typecheck → vite build → scan.
@@ -202,7 +203,7 @@ demo (R18 assumption).
 | Requirement | Where |
 |---|---|
 | R1 | `services/custom-example/**` |
-| R2 | D2; `eslint.config.js`; `scripts/scan-bundle.mjs` |
+| R2 | D2; `biome.json`; `scripts/scan-bundle.mjs` |
 | R3 | D13; `DEVELOPER-GUIDE.md` §3–4; `INTEGRATION.md` §9 |
 | R4, R5 | D10; `src/theme.ts`; lint |
 | R6 | §6 cards 5–13; `README.md` table |

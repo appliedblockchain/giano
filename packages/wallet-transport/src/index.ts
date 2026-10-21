@@ -1,20 +1,25 @@
-export { TransportClient, type TransportClientOptions } from './client';
+export { TransportClient, type TransportClientOptions } from "./client";
 export {
-  HandshakeRefusedError,
-  TransportError,
-  TransportRpcError,
-  UnsupportedChainError,
-  type TransportErrorCode,
-} from './errors';
-export { TransportHost, type RequestContext, type RequestHandler, type TransportHostOptions } from './host';
-export { PopupManager, type PopupManagerOptions } from './popup-manager';
+	HandshakeRefusedError,
+	TransportError,
+	type TransportErrorCode,
+	TransportRpcError,
+	UnsupportedChainError,
+} from "./errors";
 export {
-  PROTOCOL_VERSION,
-  RPC_ERRORS,
-  parseTransportMessage,
-  transportMessageSchema,
-  type HandshakeNackMessage,
-  type HandshakeNackReason,
-  type RpcError,
-  type TransportMessage,
-} from './protocol';
+	type RequestContext,
+	type RequestHandler,
+	TransportHost,
+	type TransportHostOptions,
+} from "./host";
+export { PopupManager, type PopupManagerOptions } from "./popup-manager";
+export {
+	type HandshakeNackMessage,
+	type HandshakeNackReason,
+	PROTOCOL_VERSION,
+	parseTransportMessage,
+	RPC_ERRORS,
+	type RpcError,
+	type TransportMessage,
+	transportMessageSchema,
+} from "./protocol";
