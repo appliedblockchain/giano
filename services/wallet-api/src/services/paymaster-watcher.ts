@@ -223,7 +223,10 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
 
   return {
     async pollOnce() {
-      const head = await client.getBlockNumber();
+      // cacheTime: 0 — viem otherwise serves a head up to `pollingInterval` old, and a poll bounded
+      // by a stale head skips blocks already mined: the event lands a whole poll late, or, for a
+      // caller that polls once and reads back (the chain suite), not at all.
+      const head = await client.getBlockNumber({ cacheTime: 0 });
       const { from, to } = pollRange({ head, confirmations: options.confirmations, cursor: await cursor() });
 
       if (to < from) {
@@ -312,7 +315,7 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
      * event history looks like.
      */
     async reconcileOnce() {
-      const [treasury, deposit, blockNumber] = await Promise.all([paymaster.treasury(), paymaster.deposit(), client.getBlockNumber()]);
+      const [treasury, deposit, blockNumber] = await Promise.all([paymaster.treasury(), paymaster.deposit(), client.getBlockNumber({ cacheTime: 0 })]);
 
       // Every tenant this deployment could bill: one that has a ledger row, and one that has
       // configured sponsorship but has not been seen on chain yet.
