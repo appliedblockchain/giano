@@ -1,5 +1,5 @@
 # E2E stack: instant-boot devnet (pre-baked state: EntryPoint v0.7 + Giano factory +
-# testing contracts), alto bundler, ONE multi-tenant wallet-api, and tenant A's stock
+# testing contracts), giano-bundler, ONE multi-tenant wallet-api, and tenant A's stock
 # wallet-web. Two tenants are seeded:
 #   - "stock": Giano's stock UI at http://wallet.localhost (wallet-web container)
 #   - "byo":   a tenant-built UI at http://wallet-byo.localhost (host-side fixture,
@@ -63,34 +63,32 @@ services:
     command: TCP-LISTEN:80,fork,reuseaddr TCP:host.docker.internal:1355
     restart: unless-stopped
 
-  alto:
+  # giano-bundler: estimates, simulates and submits each operation as its own handleOps
+  # transaction. The executor is anvil account 0, which is why GIANO_DEV_MODE is set.
+  bundler:
     build:
       context: ..
       dockerfile: services/bundler/Dockerfile
     depends_on:
       - anvil
     environment:
-      ALTO_RPC_URL: http://anvil:8545
-      ALTO_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-      ALTO_UTILITY_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
-      ALTO_SAFE_MODE: 'true'
+      BUNDLER_RPC_URL: http://anvil:8545
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
       GIANO_DEV_MODE: 'true'
     ports:
       - '4337:4337'
 
   # Chain B's own submission infrastructure: submission endpoints are never shared between
   # chains (MC-43), and each chain's executor is its own funded account (MC-98).
-  alto-b:
+  bundler-b:
     build:
       context: ..
       dockerfile: services/bundler/Dockerfile
     depends_on:
       - anvil-b
     environment:
-      ALTO_RPC_URL: http://anvil-b:8545
-      ALTO_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-      ALTO_UTILITY_PRIVATE_KEY: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
-      ALTO_SAFE_MODE: 'true'
+      BUNDLER_RPC_URL: http://anvil-b:8545
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
       GIANO_DEV_MODE: 'true'
     ports:
       - '4338:4337'
@@ -138,7 +136,7 @@ services:
         [
           {
             "chainId": 31337, "name": "Devnet A",
-            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
+            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://bundler:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
             "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
             "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
@@ -146,7 +144,7 @@ services:
           },
           {
             "chainId": 31338, "name": "Devnet B",
-            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
+            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://bundler-b:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
             "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
             "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
@@ -227,7 +225,7 @@ services:
     environment:
       # Both chains, one wallet origin (MC-39). No node or bundler URLs: the wallet reads through
       # wallet-api's /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId>, so
-      # anvil and alto are dialled by wallet-api only. Sponsorship via the production paymaster.
+      # anvil and the bundlers are dialled by wallet-api only. Sponsorship via the production paymaster.
       GIANO_CHAINS: |
         [
           { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050", "sponsorship": "service" },

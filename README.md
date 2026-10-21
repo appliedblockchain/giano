@@ -14,7 +14,7 @@ deployed on-premise, into a stack the client controls; that path is supported bu
 used it yet.
 
 - **Packages** (npm, GitHub Packages): `giano-contracts` (ABIs + address registry), `giano-wallet-core` (provider, passkey smart account, injection seam), `giano-wallet-transport` (popup protocol), `giano-connector` (the thin dApp SDK).
-- **Services** (Docker images, GHCR): `giano-wallet-api` (Fastify + Postgres: WebAuthn ceremonies, sessions, policied userop relay), `giano-wallet-web` (the dedicated wallet origin — passkey ceremonies + consent UI), `giano-bundler`, `giano-devnet`, `giano-contracts-deployer`.
+- **Services** (Docker images, GHCR): `giano-wallet-api` (Fastify + Postgres: WebAuthn ceremonies, sessions, policied userop relay), `giano-wallet-web` (the dedicated wallet origin — passkey ceremonies + consent UI), `giano-bundler` (Giano's own ERC-4337 submission service — estimates, simulates and submits each user operation as its own `handleOps` transaction; see `services/bundler/README.md`), `giano-devnet`, `giano-contracts-deployer`.
 
 A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives on the wallet origin.
 
@@ -71,9 +71,9 @@ unnecessary.
 | Service | URL | Notes |
 | --- | --- | --- |
 | devnet A (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler A (alto) | http://bundler.localhost | EntryPoint v0.7 |
+| bundler A (giano-bundler) | http://bundler.localhost | EntryPoint v0.7 |
 | devnet B (anvil) | http://rpc-b.localhost | chain 31338 — same contracts at the SAME addresses (the stack is two-chain by default; see `e2e/README.md`) |
-| bundler B (alto) | http://bundler-b.localhost | chain B's own submission infrastructure |
+| bundler B (giano-bundler) | http://bundler-b.localhost | chain B's own submission infrastructure |
 | wallet-api | http://api.localhost | serves both chains; also reached via the wallet-web `/api` proxy |
 | wallet-web | http://wallet.localhost | the wallet origin, serving both chains (open it directly for the Settings view) |
 | paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health |
@@ -107,7 +107,7 @@ pnpm --filter @appliedblockchain/giano-e2e dapp # the barebones test fixture
 
 ### Option B — iterate on wallet-api against a fresh devnet
 
-`deploy/docker-compose.dev.yml` runs Postgres + a fresh anvil + alto + wallet-api (built from
+`deploy/docker-compose.dev.yml` runs Postgres + a fresh anvil + giano-bundler + wallet-api (built from
 source). The chain starts empty, so deploy the contracts first and pass the factory address:
 
 ```sh

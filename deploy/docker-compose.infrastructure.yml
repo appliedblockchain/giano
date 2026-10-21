@@ -154,45 +154,40 @@ services:
       - '8546:8545'
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # alto / alto-b — one ERC-4337 bundler per chain.
+  # bundler / bundler-b — one giano-bundler per chain.
   #
   # Submission endpoints are never shared between chains, and each chain's executor is its own
-  # funded account. Both keys here are anvil's well-known accounts: deterministic, worthless,
-  # committed on purpose, and funded by the baked state.
+  # funded account. The key here is anvil's well-known account 0: deterministic, worthless,
+  # committed on purpose, funded by the baked state — and refused unless GIANO_DEV_MODE=true.
   #
-  # --safe-mode false because anvil is not trace-capable. A real deployment runs safe mode on
-  # and therefore needs a trace-capable RPC — that is the one line where this stack and the
-  # AWS one deliberately differ (see the bundler service in the .aws.yml sibling).
+  # The same image and settings as the AWS stack's bundler service; only the key and the RPC
+  # differ. It needs no trace-capable RPC: operations are simulated with eth_call.
   # ════════════════════════════════════════════════════════════════════════════════════════
-  alto:
-    image: node:22-alpine
+  bundler:
+    build:
+      context: ..
+      dockerfile: services/bundler/Dockerfile
     restart: unless-stopped
     depends_on:
       - anvil
-    command: >
-      npx -y @pimlico/alto@0.0.18 run
-      --rpc-url http://anvil:8545
-      --entrypoints 0x0000000071727De22E5E9d8BAf0edAc6f37da032
-      --executor-private-keys 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-      --utility-private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
-      --safe-mode false
-      --port 4337
+    environment:
+      BUNDLER_RPC_URL: http://anvil:8545
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+      GIANO_DEV_MODE: 'true'
     ports:
       - '4337:4337'
 
-  alto-b:
-    image: node:22-alpine
+  bundler-b:
+    build:
+      context: ..
+      dockerfile: services/bundler/Dockerfile
     restart: unless-stopped
     depends_on:
       - anvil-b
-    command: >
-      npx -y @pimlico/alto@0.0.18 run
-      --rpc-url http://anvil-b:8545
-      --entrypoints 0x0000000071727De22E5E9d8BAf0edAc6f37da032
-      --executor-private-keys 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-      --utility-private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
-      --safe-mode false
-      --port 4337
+    environment:
+      BUNDLER_RPC_URL: http://anvil-b:8545
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+      GIANO_DEV_MODE: 'true'
     ports:
       - '4338:4337'
 
@@ -262,7 +257,7 @@ services:
         [
           {
             "chainId": 31337, "name": "Devnet A",
-            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://alto:4337",
+            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://bundler:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
             "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
             "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
@@ -270,7 +265,7 @@ services:
           },
           {
             "chainId": 31338, "name": "Devnet B",
-            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://alto-b:4337",
+            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://bundler-b:4337",
             "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
             "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
             "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
@@ -416,7 +411,7 @@ services:
     environment:
       # Both chains, one wallet origin. Only ids, names and contracts: the wallet reads through
       # wallet-api's /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId> (behind
-      # the session and the policy check), so anvil and alto are dialled by wallet-api only and
+      # the session and the policy check), so anvil and the bundlers are dialled by wallet-api only and
       # this origin proxies nothing but /api. On a real chain that is also what keeps a keyed
       # RPC URL out of the browser.
       GIANO_CHAINS: |

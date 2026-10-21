@@ -93,8 +93,8 @@ x-secret-inventory: &secret-inventory
   #   database-url            DERIVED by Terraform, not in 1Password (§7.4)
   #   rpc-url                 the RPC endpoint INCLUDING its API key — hence a secret (§13.3)
   #   sponsorship-signer-key  32-byte hex; signs paymaster data, holds no funds
-  #   alto-executor-key       32-byte hex; MUST BE FUNDED — pays L1 gas for every bundle
-  #   alto-utility-key        32-byte hex; nonce/gas-price management, needs no funding
+  #   alto-executor-key       32-byte hex; MUST BE FUNDED — the bundler executor, pays gas for every handleOps
+  #   alto-utility-key        UNUSED since giano-bundler replaced Alto; safe to delete
   #   tenants-seed            the TENANTS_SEED JSON, because it carries adminKeys
   #   metrics-bearer-token    random, min 16 chars; gates GET /metrics
   #   datadog-api-key         MIRRORED from the shared DevOps vault, not Giano's own (§7.4)
@@ -109,7 +109,7 @@ x-chain-prerequisites: &chain-prerequisites
   #      sponsorshipPaymaster, so PAYMASTER_ADDRESS has no default and no registry fallback.
   #      `pnpm --filter @appliedblockchain/giano-contracts hh:deploy:paymaster`  (§13.1)
   #   2. Two accounts must be FUNDED, and will need topping up (§13.2):
-  #        the Alto executor      drains on every sponsored transaction
+  #        the bundler executor   fronts gas for every transaction
   #        the paymaster deposit  the EntryPoint deposit + stake sponsorship spends from
   #      Nothing currently alarms on either. It is the most likely cause of an environment
   #      that "stopped working" for no visible reason — R2, and §16.6 is the fix.
@@ -364,7 +364,7 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   # bundler  →  module "svc-bundler"   NO ALB TARGET   0.5 vCPU / 2048 MB   (§14.7)
   #
-  # Self-hosted Alto, pinned to 0.0.18 in the image (D3). Note the absence of `ports:`: this
+  # giano-bundler, Giano's own submission service (services/bundler). Note the absence of `ports:`: this
   # is `alb_enabled = false` — no target group, no listener rule, no hostname. It is
   # reachable only from the tasks security group, and wallet-api relays user operations to it
   # AFTER the policy check. Nothing else in the deployment dials it: the wallet origins speak
@@ -378,31 +378,23 @@ services:
     restart: unless-stopped
     networks: [bundler]
     environment:
-      # [ASM] giano-<env>-rpc-url. Required — the entrypoint exits if unset.
-      ALTO_RPC_URL: ${RPC_URL:?set RPC_URL}
+      # [ASM] giano-<env>-rpc-url. Required. Needs eth_call with state overrides (estimation)
+      # but no debug_traceCall — there is no ERC-7562 tracer, so no trace-capable plan either.
+      BUNDLER_RPC_URL: ${RPC_URL:?set RPC_URL}
       # [tfvar] EntryPoint v0.7, canonical at the same address on every chain.
-      ALTO_ENTRYPOINTS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
-      # [ASM] giano-<env>-alto-executor-key. ⚠ MUST BE FUNDED: this account signs and pays
-      # L1 gas for every bundle, and it drains. Note the PLURAL — the image reads
-      # ALTO_EXECUTOR_PRIVATE_KEYS, while the older compose stacks' .env uses the singular
-      # name because they invoke `npx alto` directly instead of using this image.
-      ALTO_EXECUTOR_PRIVATE_KEYS: ${ALTO_EXECUTOR_PRIVATE_KEYS:?set ALTO_EXECUTOR_PRIVATE_KEYS}
-      # [ASM] giano-<env>-alto-utility-key. Nonce management and gas-price checks; needs no
-      # funding. Omit it entirely and the flag is dropped rather than passed empty.
-      ALTO_UTILITY_PRIVATE_KEY: ${ALTO_UTILITY_PRIVATE_KEY:?set ALTO_UTILITY_PRIVATE_KEY}
-      # [literal] `true` because this is a real chain. Safe mode validates user operations
-      # with `debug_traceCall`, so the RPC MUST be trace-capable (Alchemy, QuickNode, or your
-      # own node) — a plain public RPC works only with safe mode off, which is what the
-      # devnet and sepolia stacks do and this deployment must not.
-      ALTO_SAFE_MODE: 'true'
-      # GIANO_DEV_MODE is DELIBERATELY UNSET. The entrypoint refuses to start if the
-      # well-known Anvil key appears in either key variable unless this is `true`. Leaving it
-      # unset keeps that guard armed, which is the only thing standing between a copy-pasted
-      # devnet key and a real chain.
+      BUNDLER_ENTRYPOINT: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      # [ASM] giano-<env>-alto-executor-key (the secret kept its Alto-era name). ⚠ MUST BE
+      # FUNDED: this account signs and pays gas for every handleOps transaction and is
+      # reimbursed by the EntryPoint, so it drains only by what reimbursement misses. A
+      # comma-separated list gives one submission lane per key.
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS}
+      # GIANO_DEV_MODE is DELIBERATELY UNSET. The bundler refuses to start if the well-known
+      # Anvil key is an executor key unless this is `true`. Leaving it unset keeps that guard
+      # armed, which is the only thing standing between a copy-pasted devnet key and a real chain.
     healthcheck:
-      # The image's own probe, and note it is a JSON-RPC POST, not a GET on a path — there is
-      # no HTTP health endpoint to point an ALB at even if it had a target group. Exec form
-      # calling node: the hardened runtime has no shell and no curl (ABIP-2).
+      # The image's own probe: a JSON-RPC POST, which answers only once the chain is reachable
+      # and the EntryPoint is deployed (GET /health reports the same, with the executors). Exec
+      # form calling node: the hardened runtime has no shell and no curl (ABIP-2).
       test:
         - 'CMD'
         - 'node'

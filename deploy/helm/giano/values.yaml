@@ -38,7 +38,8 @@ config:
 # secrets: reference an existing k8s Secret; never inline production keys in values
 secrets:
   existingSecret: "" # must provide keys: DATABASE_URL, ADMIN_API_KEYS
-  # bundler executor key (only when bundler.enabled): ALTO_EXECUTOR_PRIVATE_KEYS
+  # bundler executor key(s), comma-separated (only when bundler.enabled):
+  # BUNDLER_EXECUTOR_PRIVATE_KEYS. A secret that still carries ALTO_EXECUTOR_PRIVATE_KEYS works too.
 
 postgres:
   # external by default — set the DSN in the existingSecret's DATABASE_URL
@@ -62,7 +63,6 @@ walletWeb:
 bundler:
   enabled: false
   image: giano-bundler
-  altoSafeMode: true
 
 deployer:
   # one-shot CREATE2 deploy as a pre-install hook Job

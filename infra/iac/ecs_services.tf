@@ -387,10 +387,12 @@ module "svc-paymaster-admin" {
 
 # ── bundler-base-sepolia / bundler-eth-sepolia — no ALB target — §9.2, §14.7 ────────────────
 #
-# Two services, one image. Alto does not multiplex chains inside one process (D3): a bundler's
+# Two services, one image (giano-bundler, services/bundler). A bundler serves one chain: its
 # executor and submission endpoint are chain-specific, so one chain means one bundler. They
-# share an executor and a utility key — one EOA funded on both chains (§13.2) — and differ in
-# ALTO_RPC_URL alone.
+# share an executor key — one EOA funded on both chains (§13.2) — and differ in
+# BUNDLER_RPC_URL alone. One task each, stopped before its replacement starts (no ALB, so the
+# module deploys at 0%/100%): executors track nonces in memory, and two tasks on one key would
+# race for them.
 locals {
   bundlers = {
     "bundler-base-sepolia" = module.asm-app.secret_arns["rpc-url-base-sepolia"]
@@ -411,7 +413,7 @@ module "svc-bundler" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  # One repository for both — same image, different ALTO_RPC_URL (§11).
+  # One repository for both — same image, different BUNDLER_RPC_URL (§11).
   image              = "${module.ecr["bundler"].repository_url}:${local.image_tag}"
   image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["bundler"].repository_arn
@@ -425,14 +427,14 @@ module "svc-bundler" {
   security_group_ids = [aws_security_group.bundler-sg.id] # reachable only from the tasks SG
 
   environment = {
-    ALTO_ENTRYPOINTS = var.entrypoint_address
-    ALTO_SAFE_MODE   = "true" # a real chain — safe mode needs a trace-capable RPC on BOTH chains
+    BUNDLER_ENTRYPOINT = var.entrypoint_address
     # GIANO_DEV_MODE deliberately unset — keeps the Anvil-key guard armed
   }
+  # The RPC needs eth_call state overrides, not debug_traceCall: no trace-capable plan required.
+  # The executor secret keeps its Alto-era name; alto-utility-key is no longer read.
   secret_arns = {
-    ALTO_RPC_URL               = each.value
-    ALTO_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]
-    ALTO_UTILITY_PRIVATE_KEY   = module.asm-app.secret_arns["alto-utility-key"]
+    BUNDLER_RPC_URL               = each.value
+    BUNDLER_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

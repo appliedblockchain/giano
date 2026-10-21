@@ -537,7 +537,7 @@ async function doctorChain(flags: Record<string, string>) {
     : undefined;
   await checkSponsorshipPaymaster(provider, sponsorshipPaymaster, deployment, entryPoint, flags, chainId);
 
-  const executor = flags.executor ?? process.env.ALTO_EXECUTOR_ADDRESS;
+  const executor = flags.executor ?? process.env.BUNDLER_EXECUTOR_ADDRESS ?? process.env.ALTO_EXECUTOR_ADDRESS;
   if (executor) {
     section('Bundler executor');
     const executorAddr = requireAddress(executor, 'executor');
@@ -545,7 +545,7 @@ async function doctorChain(flags: Record<string, string>) {
     const eth = formatEther(balance);
     report(balance >= 10_000_000_000_000_000n ? 'ok' : 'warn', 'executor native balance', `${executorAddr} — ${eth} ETH`);
     if (balance < 10_000_000_000_000_000n) {
-      report('info', 'low executor balance', 'the executor fronts gas for every bundle — keep it funded');
+      report('info', 'low executor balance', 'the executor fronts gas for every handleOps transaction — keep it funded');
     }
   }
 

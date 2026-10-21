@@ -136,6 +136,26 @@ jobs:
       - name: OpenAPI drift check
         run: pnpm --filter @appliedblockchain/giano-wallet-api openapi:check
 
+  bundler:
+    name: giano-bundler tests (anvil)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # anvil for the integration suite, at the version the repo pins everywhere else.
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm --filter @appliedblockchain/giano-bundler typecheck
+      - name: Vitest (unit + anvil integration, incl. the simulation bytecode drift check)
+        run: pnpm --filter @appliedblockchain/giano-bundler test
+
   generated-drift:
     name: generated.ts drift check (solc)
     runs-on: ubuntu-latest
