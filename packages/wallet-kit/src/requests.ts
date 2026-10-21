@@ -31,7 +31,7 @@ export function createRequestStore() {
   const notify = () => listeners.forEach((listener) => listener(current));
 
   return {
-    get current() {
+    get current(): PendingRequest | null {
       return current;
     },
     subscribe(listener: Listener): () => void {

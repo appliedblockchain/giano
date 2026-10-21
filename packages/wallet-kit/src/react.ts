@@ -3,7 +3,18 @@
  * entry point (`@appliedblockchain/giano-wallet-kit/react`). It adds no capability the
  * core lacks — it only wraps the core's subscriptions as idiomatic React state.
  */
-import { createContext, createElement, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type FunctionComponentElement,
+  type ProviderProps,
+  type ReactNode,
+} from 'react';
 import type { WalletConfig } from './config';
 import { createWalletHost, type WalletHost } from './host';
 import { createManagementController, type ManagementController, type ManagementFlow, type ManagementState } from './management/controller';
@@ -28,7 +39,11 @@ export type WalletHostProviderProps = {
  * Builds the runtimes and the host once, starts the transport for the component's
  * lifetime, and makes them available to the hooks below.
  */
-export function WalletHostProvider({ config, walletVersion, children }: WalletHostProviderProps) {
+export function WalletHostProvider({
+  config,
+  walletVersion,
+  children,
+}: WalletHostProviderProps): FunctionComponentElement<ProviderProps<WalletKitContextValue | null>> {
   const runtimes = useMemo(() => createWalletRuntimes(config), [config]);
   const host = useMemo(() => createWalletHost({ runtimes, config, walletVersion }), [runtimes, config, walletVersion]);
 

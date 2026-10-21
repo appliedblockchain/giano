@@ -46,8 +46,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
         # Every publishable package ships only `dist` (see its `files`), so all of them must be
-        # built here — and in dependency order, because each tsup dts build resolves its workspace
-        # deps through their built `dist` types, not their source.
+        # built here. tsdown's oxc declarations read no other package's types, so the order no
+        # longer matters to the build; it is kept in dependency order anyway.
         run: |
           pnpm --filter @appliedblockchain/giano-contracts build:ts
           pnpm --filter @appliedblockchain/giano-wallet-transport build
@@ -80,11 +80,12 @@ jobs:
           commit: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Every package has `prepublishOnly: pnpm build`, and tsup runs with `clean: true`. A
-          # package's rebuild wipes its `dist` while a dependent's dts build resolves types through
-          # it, which is the likely cause of wallet-kit failing on 3.0.0 (TS2307 on
-          # giano-wallet-transport). The build step above has already built everything in dependency
-          # order, so the publish must not rebuild. pnpm 11 reads the lowercase name; the
+          # Every package has `prepublishOnly: pnpm build`, and the build runs with `clean: true`.
+          # Under tsup, a package's rebuild wiped its `dist` while a dependent's dts build resolved
+          # types through it, the likely cause of wallet-kit failing on 3.0.0 (TS2307 on
+          # giano-wallet-transport); tsdown's declarations no longer depend on that, but publishing
+          # what was built and tested is the point either way. The build step above has already
+          # built everything, so the publish must not rebuild. pnpm 11 reads the lowercase name; the
           # NPM_CONFIG_ form is ignored and `prepublishOnly` still runs.
           pnpm_config_ignore_scripts: 'true'
 

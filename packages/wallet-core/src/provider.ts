@@ -182,7 +182,9 @@ export function resolveUserOpFees(
   };
 }
 
-export const createGianoProvider = (options: CreateGianoProviderParams) => {
+export const createGianoProvider = (
+  options: CreateGianoProviderParams,
+): { readonly gianoClient: PublicClient; readonly gianoProvider: GianoProvider } => {
   const injection = withValidation(options.injection)
   const {
     transports,

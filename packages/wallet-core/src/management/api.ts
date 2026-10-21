@@ -51,7 +51,32 @@ export type CreateWalletManagementApiOptions = {
   fetch?: typeof fetch;
 };
 
-export function createWalletManagementApi(options: CreateWalletManagementApiOptions) {
+/** The wallet-api's credential-registry and pending-addition endpoints, as typed calls. */
+export type WalletManagementApi = {
+  me: () => Promise<{ externalUserId: string; walletAddress: Hex; credentialId: string }>;
+  listCredentials: () => Promise<RegistryCredential[]>;
+  renameCredential: (credentialId: string, name: string | null) => Promise<{ ok: true; name: string | null }>;
+  /** Tells the registry an owner key was removed on-chain; it verifies before believing. */
+  markCredentialRemoved: (credentialId: string) => Promise<{ ok: true; removedCurrentSession: boolean }>;
+  openPendingAddition: () => Promise<{ id: string; claimCode: string; expiresAt: string }>;
+  getPendingAddition: (id: string) => Promise<PendingAddition>;
+  declinePendingAddition: (id: string) => Promise<{ ok: true }>;
+  completePendingAddition: (id: string, body: { chainIds: number[]; name?: string }) => Promise<{ ok: true; credentialId: string }>;
+  claimPendingAddition: (claimCode: string) => Promise<{ rpId: string; challenge: string; pendingAdditionId: string }>;
+  fillPendingAddition: (
+    claimCode: string,
+    credential: Omit<PublicKeyCredential, 'toJSON'>,
+  ) => Promise<{ ok: true; publicKey: { x: Hex; y: Hex } }>;
+  recordOwnerEvent: (body: {
+    action: 'owner-added' | 'owner-removed' | 'owner-change-refused';
+    ownerKind: 'address' | 'passkey';
+    owner: string;
+    chainIds: number[];
+    detail?: string;
+  }) => Promise<{ ok: true }>;
+};
+
+export function createWalletManagementApi(options: CreateWalletManagementApiOptions): WalletManagementApi {
   const base = options.apiUrl.replace(/\/$/, '');
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
 
@@ -145,4 +170,3 @@ export function createWalletManagementApi(options: CreateWalletManagementApiOpti
   };
 }
 
-export type WalletManagementApi = ReturnType<typeof createWalletManagementApi>;

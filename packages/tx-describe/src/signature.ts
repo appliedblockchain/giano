@@ -1,9 +1,9 @@
 import { keccak_256 } from '@noble/hashes/sha3';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 
-export const SELECTOR_RE = /^0x[0-9a-fA-F]{8}$/;
-export const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-export const HEX_RE = /^0x([0-9a-fA-F]{2})*$/;
+export const SELECTOR_RE: RegExp = /^0x[0-9a-fA-F]{8}$/;
+export const ADDRESS_RE: RegExp = /^0x[0-9a-fA-F]{40}$/;
+export const HEX_RE: RegExp = /^0x([0-9a-fA-F]{2})*$/;
 
 export function isSelector(value: string): boolean {
   return SELECTOR_RE.test(value);

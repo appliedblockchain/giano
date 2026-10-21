@@ -22,8 +22,47 @@ export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/** The WebAuthn JSON the API takes for a registration ceremony. */
+export type RegistrationCredentialJSON = {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  response: { clientDataJSON: string; attestationObject: string; transports: string[] | undefined };
+  clientExtensionResults: AuthenticationExtensionsClientOutputs;
+  authenticatorAttachment: string | undefined;
+};
+
+/** The WebAuthn JSON the API takes for an authentication ceremony. */
+export type AuthenticationCredentialJSON = {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  response: { clientDataJSON: string; authenticatorData: string; signature: string; userHandle: string | undefined };
+  clientExtensionResults: AuthenticationExtensionsClientOutputs;
+  authenticatorAttachment: string | undefined;
+};
+
+/** A signed user operation in the JSON-RPC hex encoding the API takes. */
+export type SerializedUserOperation = {
+  sender: string;
+  nonce: Hex | undefined;
+  callData: Hex;
+  callGasLimit: Hex | undefined;
+  verificationGasLimit: Hex | undefined;
+  preVerificationGas: Hex | undefined;
+  maxFeePerGas: Hex | undefined;
+  maxPriorityFeePerGas: Hex | undefined;
+  signature: Hex;
+  factory?: string;
+  factoryData?: Hex;
+  paymaster?: string;
+  paymasterData?: Hex;
+  paymasterVerificationGasLimit?: Hex;
+  paymasterPostOpGasLimit?: Hex;
+};
+
 /** Serializes a registration PublicKeyCredential into WebAuthn JSON for the API. */
-export function serializeRegistrationCredential(credential: Omit<PublicKeyCredential, 'toJSON'>) {
+export function serializeRegistrationCredential(credential: Omit<PublicKeyCredential, 'toJSON'>): RegistrationCredentialJSON {
   const response = credential.response as AuthenticatorAttestationResponse;
   return {
     id: credential.id,
@@ -41,7 +80,7 @@ export function serializeRegistrationCredential(credential: Omit<PublicKeyCreden
 }
 
 /** Serializes an authentication PublicKeyCredential into WebAuthn JSON for the API. */
-export function serializeAuthenticationCredential(credential: PublicKeyCredential) {
+export function serializeAuthenticationCredential(credential: PublicKeyCredential): AuthenticationCredentialJSON {
   const response = credential.response as AuthenticatorAssertionResponse;
   return {
     id: credential.id,
@@ -67,7 +106,7 @@ const toHexQuantity = (value: bigint | number | string | undefined): Hex | undef
  * the wallet-api accepts. Non-userop fields (like the legacy `account` envelope the
  * provider attaches) are dropped — the server never trusts request-side EntryPoints.
  */
-export function serializeUserOperation(signedUserOp: Record<string, unknown>) {
+export function serializeUserOperation(signedUserOp: Record<string, unknown>): SerializedUserOperation {
   const op = signedUserOp as {
     sender: string;
     nonce: bigint | string;
