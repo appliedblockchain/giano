@@ -40,6 +40,13 @@ spec:
             # each chain submits to <base>/<chainId> unless its walletApi.bundlerUrl names another
             - name: BUNDLER_BASE_URL
               value: {{ printf "http://%s-bundler:4337" .Release.Name | quote }}
+            {{- else }}
+            {{- /* No in-chart bundler to derive from: wallet-api would refuse to boot, so say so here. */}}
+            {{- range .Values.config.chains }}
+            {{- if not (dig "walletApi" "bundlerUrl" "" .) }}
+            {{- fail (printf "config.chains: chain %v needs walletApi.bundlerUrl when bundler.enabled is false" .chainId) }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- else }}
             - name: CHAIN_ID
