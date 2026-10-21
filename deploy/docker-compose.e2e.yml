@@ -152,6 +152,10 @@ services:
           }
         ]
       LOG_LEVEL: info
+      # The ceremony limit is per client IP, and every Playwright test is the same IP. With
+      # operations included as soon as they are sent, the suite runs passkey ceremonies faster
+      # than the production default of 30 a minute allows; this is a test-runner allowance only.
+      CEREMONY_RATE_LIMIT_PER_MINUTE: '120'
       # ── Gas sponsorship ──────────────────────────────────────────────────────
       # The demo transacts through the PRODUCTION paymaster, so what is demonstrated is the path
       # real tenants use — rules enforced, balance debited, fee charged — rather than a permissive
