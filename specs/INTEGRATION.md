@@ -70,8 +70,11 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
   (default from the contracts registry). No node or bundler URL: the wallet uses wallet-api's
   `/api/v1/rpc/<chainId>` and `/api/v1/bundler/<chainId>` relays (`GIANO_RPC_URL` /
   `GIANO_BUNDLER_URL` exist only to dial them directly in development).
-- **bundler** (optional in-stack, `giano-bundler`) — `BUNDLER_RPC_URL` (needs `eth_call` state
-  overrides, not `debug_traceCall`), `BUNDLER_EXECUTOR_PRIVATE_KEYS` (from a secret, funded).
+- **bundler** (optional in-stack, `giano-bundler`) — `GIANO_CHAINS`, the same backend chain
+  document wallet-api reads (`packages/contracts/chains.ts`; each RPC needs `eth_call` state
+  overrides, not `debug_traceCall`), and `BUNDLER_EXECUTOR_PRIVATE_KEYS` (from a secret, funded on
+  every chain served). One process serves every chain at `POST /<chainId>`; a multi-chain wallet-api
+  points `BUNDLER_BASE_URL` at it. The old `BUNDLER_RPC_URL` and `ALTO_*` variables are refused.
 
 `ENTRYPOINT_ADDRESS`/`FACTORY_ADDRESS` default from
 `@appliedblockchain/giano-contracts` for known chains; set them explicitly for others.
@@ -252,7 +255,7 @@ upgrade controls. We would rather say that than let the shorter version stand.
   `GET /metrics` (Prometheus, `tenant`-labelled; bearer-gated when `METRICS_BEARER_TOKEN`
   is set).
 - wallet-web: `GET /` (nginx).
-- bundler: `eth_supportedEntryPoints`.
+- bundler: `GET /health` — each chain's status; 200 while any chain is ready.
 
 ## 9. SDK snippet (dApp)
 

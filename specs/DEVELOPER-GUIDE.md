@@ -434,10 +434,16 @@ Run `giano-bundler` with a funded executor. It sends every UserOp as its own `ha
 transaction, signed and paid for by the executor (reimbursed by the paymaster deposit, but must
 front the ETH). Env ([`services/bundler/README.md`](../services/bundler/README.md)):
 
-- `BUNDLER_RPC_URL` (required), `BUNDLER_ENTRYPOINT` (default canonical v0.7),
-  `BUNDLER_EXECUTOR_PRIVATE_KEYS` (required, **funded**, comma-separated — one lane each). The old
-  `ALTO_*` names are still read with a deprecation warning; `ALTO_SAFE_MODE` and
-  `ALTO_UTILITY_PRIVATE_KEY` are ignored.
+- `GIANO_CHAINS` (required) — the backend chain document wallet-api reads too
+  (`packages/contracts/chains.ts`): per chain `chainId`, `name`, `rpcUrl`, optional `entryPoint`
+  (default canonical v0.7), and an optional `bundler` section (`enabled`, `rpcUrl`, `chainType`,
+  `maxBlockRange`). One process serves every chain in it, at `POST /<chainId>`, each isolated in its
+  own lanes, estimator and lookup; point wallet-api's `BUNDLER_BASE_URL` at it.
+- `BUNDLER_EXECUTOR_PRIVATE_KEYS` (required, **funded on every chain served**, comma-separated — one
+  lane each per chain; nonces are per chain, so one key serves all). Kept out of the document, which
+  reaches wallet-api.
+- The single-chain `BUNDLER_RPC_URL`, `BUNDLER_ENTRYPOINT`, `BUNDLER_CHAIN_TYPE`,
+  `BUNDLER_MAX_BLOCK_RANGE` and every `ALTO_*` variable are **refused at boot**.
 - UserOps are validated by `eth_call` simulation with a state override, so the RPC needs
   `eth_call` state overrides but never `debug_traceCall`. There is no ERC-7562 tracing: nothing in
   Giano's own stack checks that account and paymaster validation stays ERC-7562-compliant.
@@ -458,6 +464,7 @@ Full schema in `services/wallet-api/src/config.ts`. Required and notable vars:
 | `DATABASE_URL` | ✓ | Postgres DSN (secret) |
 | `TENANTS_SEED` | ✓ (in practice) | JSON array of tenants, upserted by slug at boot. Per tenant: `walletOrigin` (its host is the **irreversible** RP ID), `rpName`, `expectedOrigins` (**every host must equal the rpId or be a subdomain** — validated on write), `allowedDappOrigins`, `corsOrigins` (dApp origins that poll the public receipt endpoint cross-origin), `openRegistration` (`false` ⇒ registration gated by the tenant's `adminKeys`), `adminKeys` (secrets; stored sha256-hashed), `policy` (per-tenant `USEROP_*` overrides) |
 | `CHAIN_ID`, `RPC_URL`, `BUNDLER_URL` | ✓ | chain wiring (one chain for all tenants) |
+| `GIANO_CHAINS`, `BUNDLER_BASE_URL` | instead of the three above | several chains: the backend chain document the bundler reads too (shared fields, then a `walletApi` section with `factory`, `policy`, `bundlerUrl`); each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless `walletApi.bundlerUrl` is set. Mutually exclusive with the shorthand |
 | `ENTRYPOINT_ADDRESS`, `FACTORY_ADDRESS` | conditional | default from the registry; **required when `CHAIN_ID` is not in the registry** |
 | `USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | — | relay policy **defaults** — each tenant's `policy` jsonb overrides per field (gas as integers, fees in wei) |
 | `CHALLENGE_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `CEREMONY_RATE_LIMIT_PER_MINUTE`, `METRICS_BEARER_TOKEN` | — | TTLs / rate limit / metrics auth |
@@ -757,7 +764,8 @@ the upgrade controls. Anything stronger would be a claim the architecture does n
 - `deploy/helm/giano` — Helm chart: wallet-api (+ migrations hook), wallet-web, optional bundler,
   contracts-deployer pre-install Job, ingress. Secrets come from `secrets.existingSecret` (a k8s
   Secret with at least `DATABASE_URL`, `TENANTS_SEED` (it carries tenant admin keys), and `BUNDLER_EXECUTOR_PRIVATE_KEYS` if the
-  bundler is enabled; `ALTO_EXECUTOR_PRIVATE_KEYS` is still read). `serviceMonitor.enabled=true` for Prometheus scraping.
+  bundler is enabled; `ALTO_EXECUTOR_PRIVATE_KEYS` is refused at boot). The in-chart bundler reads the same chain list as
+  wallet-api (`config.chains`, or the single-chain scalars as a one-entry document). `serviceMonitor.enabled=true` for Prometheus scraping.
 
 ### 5.8 Transaction display mappings (what users read before they sign)
 
@@ -893,7 +901,7 @@ P-256 passkey).
 **Other operational surfaces:**
 
 - **Health:** wallet-api `GET /healthz` (liveness), `GET /readyz` (DB ping), `GET /v1/version`;
-  wallet-web `GET /`; bundler `eth_supportedEntryPoints`.
+  wallet-web `GET /`; bundler `GET /health` (per chain; 200 while any chain is ready).
 - **UserOp status:** `GET /v1/userops/:hash` (authenticated, DB status + policy audit) and public
   `GET /v1/userops/:hash/receipt` (on-chain receipt — this is what the SDK polls).
 - **Metrics:** wallet-api `GET /metrics` (Prometheus; bearer-gated when `METRICS_BEARER_TOKEN` is

@@ -40,7 +40,7 @@
 #
 # Unlike the e2e stack, nothing here needs `portless` on the host and nothing needs sudo:
 # Docker binds :80 through its own privileged helper. Because it holds :80, this stack and
-# the e2e stack cannot run at the same time — and they also collide on 8545/8546/4337/4338
+# the e2e stack cannot run at the same time — and they also collide on 8545/8546/4337
 # and 8080 below, exactly as the e2e and dev stacks already do. `down` one before `up` the
 # other; `lsof -nP -iTCP -sTCP:LISTEN | grep 8545` is the fastest way to spot a leftover.
 #
@@ -55,7 +55,7 @@
 #   http://rpc.giano.localhost  /  rpc-b   the two anvil chains
 #
 # The ports that ARE published are the server-side ones, for tooling rather than for a
-# browser: 8545/8546 for `cast`, 4337/4338 for the bundlers, 8080 for `curl` against the
+# browser: 8545/8546 for `cast`, 4337 for the bundler, 8080 for `curl` against the
 # admin API. Open the wallet on a port and nothing works — the origin matches no tenant.
 #
 # ── The two tenants, and why they are the two shapes ──────────────────────────────────────
@@ -71,6 +71,33 @@
 # hostnames, by contrast, are only in this file and in the Caddyfile.
 # ==========================================================================================
 name: giano-infrastructure
+
+# The backend chain document (packages/contracts/chains.ts) — wallet-api and the bundler read the
+# same one, as the AWS stack's `chains` secret serves both. Identical canonical contracts on both
+# chains, VERIFIED at boot against the chain, not assumed, so a stale state.json fails loudly here
+# rather than mysteriously later. `allowedPaymasters` is per chain by design: only ops sponsored by
+# our own paymaster reach the bundler through the relay.
+x-giano-chains: &giano-chains |
+  [
+    {
+      "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://anvil:8545",
+      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+      "walletApi": {
+        "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+        "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+      }
+    },
+    {
+      "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://anvil-b:8545",
+      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+      "walletApi": {
+        "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+        "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+      }
+    }
+  ]
 
 # Read access to GitHub Packages for the giano-example build: export GITHUB_TOKEN (read:packages).
 secrets:
@@ -154,14 +181,15 @@ services:
       - '8546:8545'
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # bundler / bundler-b — one giano-bundler per chain.
+  # bundler — one giano-bundler serving both chains (POST /31337, POST /31338).
   #
-  # Submission endpoints are never shared between chains, and each chain's executor is its own
-  # funded account. The key here is anvil's well-known account 0: deterministic, worthless,
-  # committed on purpose, funded by the baked state — and refused unless GIANO_DEV_MODE=true.
+  # Nothing chain-bound is shared between the chains inside it: each has its own lanes,
+  # estimator and lookup. The executor key is anvil's well-known account 0 — deterministic,
+  # worthless, committed on purpose, funded on both chains by the baked state, and refused
+  # unless GIANO_DEV_MODE=true. Nonces are per chain, so one key serves both.
   #
-  # The same image and settings as the AWS stack's bundler service; only the key and the RPC
-  # differ. It needs no trace-capable RPC: operations are simulated with eth_call.
+  # The same image and settings as the AWS stack's bundler service; only the key and the
+  # document differ. It needs no trace-capable RPC: operations are simulated with eth_call.
   # ════════════════════════════════════════════════════════════════════════════════════════
   bundler:
     build:
@@ -170,26 +198,13 @@ services:
     restart: unless-stopped
     depends_on:
       - anvil
+      - anvil-b
     environment:
-      BUNDLER_RPC_URL: http://anvil:8545
+      GIANO_CHAINS: *giano-chains
       BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
       GIANO_DEV_MODE: 'true'
     ports:
       - '4337:4337'
-
-  bundler-b:
-    build:
-      context: ..
-      dockerfile: services/bundler/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - anvil-b
-    environment:
-      BUNDLER_RPC_URL: http://anvil-b:8545
-      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-      GIANO_DEV_MODE: 'true'
-    ports:
-      - '4338:4337'
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # postgres — wallet-api's database, and the only service that has one.
@@ -247,31 +262,10 @@ services:
       # No init container here, unlike the AWS stack: one process, one lock, migrations on
       # boot. The advisory lock makes it safe either way.
       RUN_MIGRATIONS: 'true'
-      # The closed list of chains this backend serves, one descriptor per chain. Identical
-      # canonical contracts on both — VERIFIED at boot against the chain, not assumed, so a
-      # stale state.json fails loudly here rather than mysteriously later.
-      #
-      # `allowedPaymasters` is per chain by design: only ops sponsored by our own paymaster
-      # reach the bundler through the relay.
-      GIANO_CHAINS: |
-        [
-          {
-            "chainId": 31337, "name": "Devnet A",
-            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://bundler:4337",
-            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
-          },
-          {
-            "chainId": 31338, "name": "Devnet B",
-            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://bundler-b:4337",
-            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
-          }
-        ]
+      # The closed list of chains this backend serves: the document at the top of this file.
+      # Each chain submits to <BUNDLER_BASE_URL>/<chainId>.
+      GIANO_CHAINS: *giano-chains
+      BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # METRICS_BEARER_TOKEN deliberately unset, which leaves GET /metrics OPEN. Acceptable
       # on a loopback stack and nowhere else.

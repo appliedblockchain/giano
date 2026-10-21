@@ -35,11 +35,13 @@ fi
 
 # Keep the fields the console reads and drop the rest.
 #
-# A deployment serving both hands this variable the same array wallet-api reads as GIANO_CHAINS,
-# which is what keeps the chain list authored once. The console spells its fields as that
-# descriptor spells them, so nothing is renamed here — but a descriptor also carries bundlerUrl,
-# entryPoint, factory and policy, and /config.json is served to the browser. Naming what is kept
-# means a field added to a descriptor later is not published to every console user by default.
+# A deployment serving both hands this variable the same backend chain document wallet-api and
+# the bundler read as GIANO_CHAINS (packages/contracts/chains.ts), which is what keeps the chain
+# list authored once. name, chainId, rpcUrl and sponsorshipPaymaster are its shared fields; the
+# console's own settings are its `paymasterAdmin` section, and a standalone list may spell them flat
+# instead. The document also carries entryPoint and the other services' sections, and /config.json
+# is served to the browser: naming what is kept means a field added later is not published to every
+# console user by default.
 #
 # Malformed JSON stops the container here, naming the variable and then letting jq name the defect.
 # That is the intended failure: the alternative is nginx serving a /config.json the SPA refuses to
@@ -54,7 +56,9 @@ if ! printf '%s' "$GIANO_DEPLOYMENTS" | jq -e 'type == "array"' > /dev/null; the
 fi
 GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
   [ .[]
-    | { name, chainId, rpcUrl, walletRpcUrl, sponsorshipPaymaster, refreshSeconds: (.refreshSeconds // 15) }
+    | { name, chainId, rpcUrl, sponsorshipPaymaster,
+        walletRpcUrl: (.paymasterAdmin.walletRpcUrl // .walletRpcUrl),
+        refreshSeconds: (.paymasterAdmin.refreshSeconds // .refreshSeconds // 15) }
     # Only walletRpcUrl is dropped when empty. Every other field keeps an empty string on purpose:
     # the proxy step below asks whether rpcUrl looks absolute, and a missing key would make that
     # `null | test(...)`, which stops the container with a jq message instead of letting the SPA

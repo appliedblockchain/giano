@@ -75,7 +75,8 @@ example). Highlights:
 | `DATABASE_URL` | required |
 | `RUN_MIGRATIONS` | `true` = apply `migrations/*.sql` before listening (also: `node dist/migrate.js` one-shot) |
 | `TENANTS_SEED` | JSON array of tenants, upserted by slug at boot. Per tenant: `slug`, `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
-| `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | chain wiring (one chain for all tenants) |
+| `GIANO_CHAINS` + `BUNDLER_BASE_URL` | the chains served: the backend chain document (`packages/contracts/chains.ts`) giano-bundler reads too; each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless its `walletApi.bundlerUrl` names another bundler |
+| `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | single-chain shorthand, mutually exclusive with `GIANO_CHAINS`; `BUNDLER_URL` is the exact endpoint |
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |

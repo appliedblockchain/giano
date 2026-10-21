@@ -81,23 +81,24 @@ flowchart TB
     subgraph OURS["APPLIED BLOCKCHAIN INFRASTRUCTURE · one deployment · every tenant · every served chain"]
         direction TB
         SEED[/"TENANTS_SEED — declarative, upserted by slug at boot<br/>slug · id, which IS the paymaster's bytes16 tenant key<br/>walletOrigin · rpId, immutable, the walletOrigin host · rpName<br/>expectedOrigins · allowedDappOrigins · corsOrigins<br/>openRegistration · adminKeys · policy overrides, per chain<br/>sponsorship rules are NOT here — each tenant writes its own"/]
-        CHAINCFG[/"GIANO_CHAINS — the closed list of chains served<br/>chainId · rpcUrl · bundlerUrl · entryPoint · factory<br/>sponsorshipPaymaster · per-chain policy<br/>verified at boot; the API refuses to start on a structural failure"/]
+        CHAINCFG[/"GIANO_CHAINS — the closed list of chains served<br/>one document for wallet-api, the bundler and the console<br/>chainId · rpcUrl · entryPoint · sponsorshipPaymaster<br/>per-service sections: factory · per-chain policy · bundler settings<br/>verified at boot; the API refuses to start on a structural failure"/]
         API["<b>giano-wallet-api</b><br/>holds no key that can move a user's assets<br/>tenant from Origin · Host · session · admin key<br/>chain named by the caller, admitted only by the registry<br/>WebAuthn ceremonies · sessions<br/>UserOp policy gate + per-tenant audit<br/>ERC-7677 sponsorship: rules · ledger · watcher<br/>tenant-labelled metrics"]
         PG[("<b>Postgres 17</b><br/>every row tenant-scoped, and<br/>chain-scoped wherever<br/>it touches a chain")]
         SIGNER[/"Sponsorship signer<br/>authorises spending the operator's gas,<br/>never a user's assets<br/>HSM in production · a local key<br/>only for development and testnet"/]
-        BUN["<b>giano-bundler</b><br/>one per served chain<br/>funded executor EOA, ours<br/>never reached by a browser"]
+        BUN["<b>giano-bundler</b><br/>one process, every served chain<br/>isolated per chain: lanes · estimator · lookup<br/>funded executor EOA, ours, funded on each chain<br/>never reached by a browser"]
         ADMIN["<b>giano-paymaster-admin</b><br/>operator console · no backend, no database<br/>it reads the chain, and writes are signed<br/>by the operator's own wallet"]
         SEED -.-> API
         CHAINCFG -.-> API
+        CHAINCFG -.-> BUN
         API <--> PG
         API -.->|"EIP-712 authorisation"| SIGNER
-        API ==>|"policied relay of the signed UserOp,<br/>to that chain's own bundler"| BUN
+        API ==>|"policied relay of the signed UserOp,<br/>to the bundler at POST /chainId"| BUN
     end
 
     subgraph CHAINS["SERVED CHAINS · the same canonical addresses on every one"]
         direction LR
         CA["<b>Chain A</b><br/>EntryPoint v0.7 · GianoSmartWalletFactory · GianoPaymaster proxy<br/>P-256 via the RIP-7212 precompile, else the in-contract FCL verifier"]
-        CB["<b>Chain B … Chain N</b><br/>the same three contracts at the same addresses<br/>its own RPC, its own bundler, its own paymaster deposit"]
+        CB["<b>Chain B … Chain N</b><br/>the same three contracts at the same addresses<br/>its own RPC, its own bundler lanes and executor funding, its own paymaster deposit"]
     end
 
     T1_WEB ==>|"/api · /.well-known/webauthn<br/>same-origin through nginx"| API
@@ -152,7 +153,7 @@ Removing the bundler in favour of direct `EntryPoint` submission has been analys
 | `giano-wallet-api` | The only stateful service. WebAuthn ceremonies, sessions, the credential and wallet registry, the UserOp policy gate and its audit log, the ERC-7677 sponsorship service with its rules engine, ledger, signer and chain watcher, and the per-tenant admin API. Serves `/.well-known/webauthn` for related-origin passkey sharing. |
 | `giano-wallet-web` | The stock wallet origin: passkey ceremonies, the consent screens, the sponsorship refusal UI, and a same-origin nginx proxy to `/api`, `/rpc` and `/bundler`. Its RP ID comes from the browser's own hostname. |
 | `giano-paymaster-admin` | The operator console. It reads the paymaster contract and nothing else — no backend, no database, no cache that could be wrong about solvency. |
-| `giano-bundler` | In-house ERC-4337 submission service (`services/bundler`): one `handleOps` transaction per UserOp, no mempool. One instance per served chain, with its own funded executor account. |
+| `giano-bundler` | In-house ERC-4337 submission service (`services/bundler`): one `handleOps` transaction per UserOp, no mempool. One instance serves every chain in the backend chain document, each at `POST /<chainId>` and isolated per chain inside the process (its own lanes, estimator and lookup); one executor account, funded on each chain. |
 | `giano-devnet`, `giano-contracts-deployer` | An instant-boot anvil with the contracts pre-baked, and the deployer that puts them on a real chain. |
 
 **On-chain** — the same three at the same addresses on every served chain.
@@ -233,7 +234,7 @@ error — no enumeration oracle — and counted on a per-tenant metric so the at
 Sponsorship balances never pool: per tenant, and per chain within that tenant.
 
 **What is not isolated, by design.** Every tenant sees every configured chain, and shares the
-EntryPoint, the factory, the bundlers and the paymaster contract. Session and challenge TTLs and the
+EntryPoint, the factory, the bundler and the paymaster contract. Session and challenge TTLs and the
 ceremony rate limit are deployment-wide. The relay rate limit is per tenant but shared across that
 tenant's chains.
 

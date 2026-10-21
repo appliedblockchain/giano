@@ -64,12 +64,17 @@ console at an arbitrary chain by typing into it.
 | `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
 | `refreshSeconds` | poll interval; `0` disables polling |
 
-Every key but `refreshSeconds` is spelled as a chain descriptor spells it
-(`packages/contracts/chains.ts`), so a deployment that also runs `wallet-api` can hand
-`GIANO_DEPLOYMENTS` that service's own `GIANO_CHAINS` value and have one authored chain list
-instead of two. The container keeps the five keys above and drops the rest of a descriptor —
-`bundlerUrl`, `entryPoint`, `factory`, `policy` — rather than publishing them in a file served to
-the browser.
+`name`, `chainId`, `rpcUrl` and `sponsorshipPaymaster` are the shared fields of the backend chain
+document (`packages/contracts/chains.ts`) that wallet-api and giano-bundler read as `GIANO_CHAINS`.
+So a deployment running them can hand `GIANO_DEPLOYMENTS` that same value and have one authored
+chain list instead of three.
+
+In that document the console's own settings sit in its section: `paymasterAdmin.walletRpcUrl` and
+`paymasterAdmin.refreshSeconds`. A standalone list may spell them flat, as in the table above.
+
+The container keeps the keys above and drops everything else rather than publishing it in a file
+served to the browser: `entryPoint`, the `walletApi` and `bundler` sections, and anything added
+later.
 
 With more than one entry the header shows a **picker**; with one it shows the label as a badge. The
 choice is remembered in `localStorage`, keyed on chain and address rather than on the label, so

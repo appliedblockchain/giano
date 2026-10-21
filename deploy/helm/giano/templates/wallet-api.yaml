@@ -32,9 +32,15 @@ spec:
             - name: EXPECTED_ORIGINS
               value: {{ include "giano.expectedOrigins" . | quote }}
             {{- if .Values.config.chains }}
-            # multi-chain: the closed list of served chains, one JSON document (MC-94)
+            # multi-chain: the closed list of served chains, one JSON document (MC-94) — the same
+            # one the in-chart bundler reads
             - name: GIANO_CHAINS
               value: {{ toJson .Values.config.chains | quote }}
+            {{- if .Values.bundler.enabled }}
+            # each chain submits to <base>/<chainId> unless its walletApi.bundlerUrl names another
+            - name: BUNDLER_BASE_URL
+              value: {{ printf "http://%s-bundler:4337" .Release.Name | quote }}
+            {{- end }}
             {{- else }}
             - name: CHAIN_ID
               value: {{ .Values.config.chainId | quote }}

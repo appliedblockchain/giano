@@ -4,6 +4,17 @@
 # Uses the well-known anvil accounts — never reuse these keys anywhere real.
 name: giano-dev
 
+# The backend chain document wallet-api and the bundler both read (packages/contracts/chains.ts).
+# The local chain is not in the committed registry, so its addresses come from hh:initlocal.
+x-giano-chains: &giano-chains |
+  [
+    {
+      "chainId": 31337, "name": "Local devnet", "rpcUrl": "http://anvil:8545",
+      "entryPoint": "${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}",
+      "walletApi": { "factory": "${FACTORY_ADDRESS:?run hh:initlocal and export FACTORY_ADDRESS}" }
+    }
+  ]
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -33,8 +44,7 @@ services:
     depends_on:
       - anvil
     environment:
-      BUNDLER_RPC_URL: http://anvil:8545
-      BUNDLER_ENTRYPOINT: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      GIANO_CHAINS: *giano-chains
       BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
       GIANO_DEV_MODE: 'true'
     ports:
@@ -56,12 +66,8 @@ services:
       GIANO_DEPLOYMENT_CLASS: development
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
-      CHAIN_ID: '31337'
-      RPC_URL: http://anvil:8545
-      BUNDLER_URL: http://bundler:4337
-      # local chain is not in the committed registry — supply addresses from hh:initlocal
-      ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
-      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run hh:initlocal and export FACTORY_ADDRESS}
+      GIANO_CHAINS: *giano-chains
+      BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: debug
       # single dev tenant: the vite dev server (5173) is the wallet origin; 4000 is the
       # legacy demo origin. Tenant provisioning is declarative — edit and restart.

@@ -71,9 +71,8 @@ unnecessary.
 | Service | URL | Notes |
 | --- | --- | --- |
 | devnet A (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler A (giano-bundler) | http://bundler.localhost | EntryPoint v0.7 |
+| bundler (giano-bundler) | http://bundler.localhost | both chains: `POST /31337`, `POST /31338` |
 | devnet B (anvil) | http://rpc-b.localhost | chain 31338 — same contracts at the SAME addresses (the stack is two-chain by default; see `e2e/README.md`) |
-| bundler B (giano-bundler) | http://bundler-b.localhost | chain B's own submission infrastructure |
 | wallet-api | http://api.localhost | serves both chains; also reached via the wallet-web `/api` proxy |
 | wallet-web | http://wallet.localhost | the wallet origin, serving both chains (open it directly for the Settings view) |
 | paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health |

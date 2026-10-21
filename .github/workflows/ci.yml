@@ -137,7 +137,7 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-wallet-api openapi:check
 
   bundler:
-    name: giano-bundler tests (anvil)
+    name: giano-bundler tests (anvil) + chain document
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -155,6 +155,8 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-bundler typecheck
       - name: Vitest (unit + anvil integration, incl. the simulation bytecode drift check)
         run: pnpm --filter @appliedblockchain/giano-bundler test
+      - name: Chain document migration script
+        run: node --test scripts/migrate-chains-document.test.mjs
 
   generated-drift:
     name: generated.ts drift check (solc)

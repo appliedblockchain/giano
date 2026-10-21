@@ -62,6 +62,7 @@ export type Submitter = ReturnType<typeof createSubmitter>;
 
 export function createSubmitter(options: SubmitterOptions) {
   const { client, chainId, entryPoint, executors, log, metrics } = options;
+  const chain = String(chainId);
   const tracked = new Map<Hex, Tracked>();
   /** Operations waiting for an earlier nonce of the same sender and key: predecessor → waiting. */
   const successors = new Map<Hex, Hex>();
@@ -134,7 +135,7 @@ export function createSubmitter(options: SubmitterOptions) {
       await submit(entry);
     } catch (error) {
       log.warn({ userOpHash: entry.hash, err: error }, 'queued user operation failed validation and was dropped');
-      metrics.userOperations.inc({ outcome: 'dropped' });
+      metrics.userOperations.inc({ chain, outcome: 'dropped' });
       finish(entry, 'failed', { error: (error as Error).message });
     }
   };
@@ -148,7 +149,7 @@ export function createSubmitter(options: SubmitterOptions) {
       const sent = await broadcast(entry, executor, gasEstimate);
       entry.status = 'submitted';
       entry.updatedAt = Date.now();
-      metrics.userOperations.inc({ outcome: 'submitted' });
+      metrics.userOperations.inc({ chain, outcome: 'submitted' });
       log.info({ userOpHash: entry.hash, transactionHash: sent.hash, executor: executor.address, nonce: sent.nonce }, 'user operation submitted');
       handedOff = true;
       void watch(entry, executor, sent).finally(() => release(executor));
@@ -254,7 +255,7 @@ export function createSubmitter(options: SubmitterOptions) {
             if (receipt) return settle(entry, receipt, hash);
           }
           if (entry.status !== 'failed') {
-            metrics.userOperations.inc({ outcome: 'dropped' });
+            metrics.userOperations.inc({ chain, outcome: 'dropped' });
             finish(entry, 'failed', { error: 'the executor nonce was used by another transaction' });
           }
           log.warn({ userOpHash: entry.hash, executor: executor.address, nonce: latest.nonce }, 'executor nonce consumed by a foreign transaction');
@@ -302,7 +303,7 @@ export function createSubmitter(options: SubmitterOptions) {
             cancelBumps++;
             if (!cancelled) {
               cancelled = true;
-              metrics.userOperations.inc({ outcome: 'dropped' });
+              metrics.userOperations.inc({ chain, outcome: 'dropped' });
               finish(entry, 'failed', { error: 'not included in time; the transaction was cancelled' });
             }
             // A zero-value transfer to itself at the same nonce frees the lane; if the original
@@ -340,12 +341,12 @@ export function createSubmitter(options: SubmitterOptions) {
         eventLog.topics[1]?.toLowerCase() === entry.hash.toLowerCase(),
     );
     if (event) {
-      metrics.userOperations.inc({ outcome: 'included' });
+      metrics.userOperations.inc({ chain, outcome: 'included' });
       log.info({ userOpHash: entry.hash, transactionHash: hash, blockNumber: Number(receipt.blockNumber) }, 'user operation included');
       finish(entry, 'included', { transactionHash: hash });
     } else if (entry.transactions.includes(hash)) {
       // Our handleOps was mined and reverted: the executor paid for it and nobody reimbursed it.
-      metrics.userOperations.inc({ outcome: 'reverted' });
+      metrics.userOperations.inc({ chain, outcome: 'reverted' });
       log.error({ userOpHash: entry.hash, transactionHash: hash }, 'handleOps transaction reverted on chain');
       finish(entry, 'failed', { transactionHash: hash, error: 'the handleOps transaction reverted' });
     } else {
@@ -355,7 +356,7 @@ export function createSubmitter(options: SubmitterOptions) {
 
   const refreshBalance = async (address: Address) => {
     try {
-      metrics.executorBalance.set({ executor: address }, Number(await client.getBalance({ address })));
+      metrics.executorBalance.set({ chain, executor: address }, Number(await client.getBalance({ address })));
     } catch {
       // the next refresh tries again
     }
@@ -428,7 +429,7 @@ export function createSubmitter(options: SubmitterOptions) {
         await submit(entry);
       } catch (error) {
         tracked.delete(hash);
-        metrics.userOperations.inc({ outcome: 'rejected' });
+        metrics.userOperations.inc({ chain, outcome: 'rejected' });
         throw error;
       }
       return hash;
