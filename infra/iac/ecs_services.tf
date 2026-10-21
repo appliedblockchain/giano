@@ -426,7 +426,7 @@ module "svc-bundler" {
 
   environment = {
     ALTO_ENTRYPOINTS = var.entrypoint_address
-    ALTO_SAFE_MODE   = "true" # a real chain — safe mode needs a trace-capable RPC on BOTH chains
+    ALTO_SAFE_MODE   = tostring(var.bundler_safe_mode[terraform.workspace]) # true needs an RPC that allows custom JS tracers on BOTH chains
     # GIANO_DEV_MODE deliberately unset — keeps the Anvil-key guard armed
   }
   secret_arns = {

@@ -22,6 +22,12 @@ variable "ecs_enable_execute_command" {
   default     = { dev = true, stg = true, prd = false }
 }
 
+variable "bundler_safe_mode" {
+  description = "Alto safe mode validates every userop with a custom-JS-tracer debug_traceCall; the dev QuickNode plan blocks custom traces, so dev runs eth_call validation — §13, §14.7"
+  type        = map(bool)
+  default     = { dev = false, stg = true, prd = true }
+}
+
 variable "byo_wallet_enabled" {
   description = "dev-only: a real BYO tenant hosts its own UI, so stg/prd carry the tenant row and nothing else (D17, §9.2, §20)"
   type        = map(bool)

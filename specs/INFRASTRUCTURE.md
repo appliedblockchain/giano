@@ -2946,8 +2946,10 @@ differ by service — `custom-example`/`custom-example-byoui` take both scalar s
 [§7.3](#73-the-secrets)); each bundler takes only its own chain's.
 
 The bundler's safe mode (`ALTO_SAFE_MODE=true`, [§14.7](#147-bundler)) validates every user operation
-with `debug_traceCall`, so **both** endpoints must be trace-capable — QuickNode's are, on the tiers
-this needs.
+with `debug_traceCall` and a **custom JS tracer**, so **both** endpoints must allow custom traces.
+QuickNode's free tier does not (`-32612 custom traces are blocked`), so dev runs with safe mode off
+(`bundler_safe_mode`), which makes Alto validate through `eth_call`. Before stg/prd go live, either
+enable custom traces on the plan or switch to a provider that allows them.
 
 **The wallet origins never see either key.** `wallet-web` and `wallet-byo` read every chain through
 `wallet-api`'s `/v1/rpc/:chainId` relay (same-origin under `/api`), so both keys stay in
@@ -3370,7 +3372,7 @@ inside one process, so one chain means one bundler.
 | `ALTO_ENTRYPOINTS` | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | same |
 | `ALTO_EXECUTOR_PRIVATE_KEYS` | **ASM** `giano-dev-alto-executor-key` | same secret — same key, funded separately on each chain ([§13.2](#132-funded-accounts)) |
 | `ALTO_UTILITY_PRIVATE_KEY` | **ASM** `giano-dev-alto-utility-key` | same secret |
-| `ALTO_SAFE_MODE` | `true` — this is a real chain | same |
+| `ALTO_SAFE_MODE` | `bundler_safe_mode`: `false` in dev (QuickNode blocks custom traces, [§13](#13-chain-prerequisites)), `true` in stg/prd | same |
 | `GIANO_DEV_MODE` | unset; the entrypoint's Anvil-key guard stays armed | same |
 
 Sharing one executor key across both rather than minting a second is deliberate: it is one EOA, one
