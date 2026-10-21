@@ -3030,7 +3030,27 @@ others' as-is. `entryPoint`, `factory` and `sponsorshipPaymaster` are the same a
 The `bundler` section is omitted, so both chains take its defaults (`enabled: true`,
 `chainType: "auto"`, `maxBlockRange: 2000`, the shared `rpcUrl`). The old flat shape — `bundlerUrl`,
 `factory` and `policy` at the top of each entry — is refused by wallet-api;
-`scripts/migrate-chains-document.mjs` converts an old secret value.
+`scripts/migrate-chains-document.mjs --bundle` converts it.
+
+**Changing it — through the note, never in Secrets Manager.** The value lives in the `secrets-<env>`
+note ([§12.3](#123-the-bundle)), and ASM is written from it only by `terraform apply`, only when
+`chains.version` moves. `--bundle` takes the whole note on stdin, converts `chains.value` (a JSON
+document inside a string) in place, bumps `chains.version`, and leaves every other entry untouched,
+so its output is pasted back as-is.
+
+The flat-to-sectioned switch cannot be rolled out by `deploy.yml`. That workflow clones the live
+task definitions and swaps only the image, so the new wallet-api would start against the old value.
+It has to be one apply:
+
+1. Merge the code. Images are published; nothing deploys.
+2. Bump `chains` in the note, and
+3. straight away run `terraform apply` from a branch that also bumps `infra/versions.json` to that
+   commit. That single apply writes the new ASM version, replaces the bundler services and rolls
+   every task onto the new image and environment; tasks read secrets when they start.
+4. Merge the version bump. `deploy.yml` re-rolls onto the same tag, which changes nothing.
+
+Between steps 2 and 3 **nobody else applies**. Any apply would push the sectioned value to ASM while
+the old images, which need the flat shape, are still the ones that start.
 
 `allowedPaymasters` is per chain by design: only ops sponsored by our own paymaster on that chain
 reach that chain's bundler path through the relay. Because the whole array — including the two embedded
