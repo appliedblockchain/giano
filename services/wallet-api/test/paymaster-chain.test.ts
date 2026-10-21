@@ -461,6 +461,10 @@ describe.skipIf(!hasState)('sponsorship against a real chain', () => {
   }, 120_000);
 
   it('settles the reservation and records the breakdown when the watcher observes the event', async () => {
+    // Warm viem's block-number cache with a head from before the op is mined. A watcher that
+    // trusted that cache would poll up to the stale head and miss the Sponsored event — which is
+    // what made this test flaky whenever anything else had read the head moments earlier.
+    await client.getBlockNumber();
     const { userOpHash, feeWei } = await sendSponsoredOp(erc20Transfer());
 
     await watcher.pollOnce();
