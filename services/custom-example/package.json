@@ -33,9 +33,8 @@
 		"@types/node": "^20.14.8",
 		"@types/react": "^19.0.6",
 		"@types/react-dom": "^19.0.3",
-		"@typescript/native": "npm:typescript@7.0.2",
 		"@vitejs/plugin-react": "^4.4.1",
-		"typescript": "npm:@typescript/typescript6@6.0.2",
+		"typescript": "7.0.2",
 		"vite": "^6.3.5"
 	},
 	"packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"

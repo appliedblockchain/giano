@@ -8,8 +8,7 @@
 '@appliedblockchain/giano-paymaster-sdk': patch
 ---
 
-Built with the TypeScript 7 toolchain (declarations still emitted through the 6.0 API) and tsup 9.
-No API changes. Consumers need TypeScript 5.0.4 or later, as before.
+Built and typechecked with TypeScript 7 only. No API changes. Consumers need TypeScript 5.0.4 or later, as before.
 
 - `giano-wallet-core`'s declarations no longer import viem internals by relative path
   (`../../types/misc.js` and three more), which failed to resolve in a consuming project with
