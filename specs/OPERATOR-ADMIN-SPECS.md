@@ -194,7 +194,7 @@ who uses a hardware wallet gets a second factor without the API implementing one
 | `OPERATOR_SIWE_URI` | `https://${OPERATOR_SIWE_DOMAIN}` | the `uri` every sign-in message must carry |
 | `OPERATOR_CHALLENGE_TTL_SECONDS` | `300` | how long a nonce stays usable |
 | `OPERATOR_SESSION_TTL_SECONDS` | `1800` | absolute session lifetime; no sliding renewal |
-| `OPERATOR_RATE_LIMIT_PER_MINUTE` | `60` | per operator session. Challenge is limited per requested address and verify per address parsed from the message, each with a deployment-wide ceiling. Not per IP: without `trustProxy` every request arrives from the proxy's address (§3). |
+| `OPERATOR_RATE_LIMIT_PER_MINUTE` | `60` | per operator session. Challenge is limited to the same rate per requested address and verify per address parsed from the message, under a deployment-wide sign-in ceiling of ten times the rate. Not per IP: without `trustProxy` every request arrives from the proxy's address (§3). |
 
 Adding or removing an operator is a config change and a rolling restart. Removal takes effect on the
 next request of any open session after the restart, because the guard re-checks the address against
@@ -805,12 +805,14 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 
 ### Deliverables
 
+✅ = implemented by the OpenSpec change `operator-tenant-lifecycle` (PR #125).
+
 | # | Files |
 | --- | --- |
-| D1 | `src/config.ts` (the `OPERATOR_*` variables in §4.1, `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`), `src/routes/operator-auth.ts` (challenge, verify, logout), `src/services/operator-sessions.ts`, `src/plugins/auth.ts` (`requireOperator`), `scripts/operator-login.ts` |
-| D2 | `migrations/0007_tenant_lifecycle.sql`, `src/db/schema.ts`, the new challenge expiry sweep in `src/index.ts` |
-| D3 | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`, seed ownership rules) |
-| D4 | `src/routes/operator-tenants.ts`, `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when `OPERATOR_ADDRESSES` is non-empty), `openapi/` |
+| D1 ✅ | `src/config.ts` (the `OPERATOR_*` variables in §4.1, `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`), `src/routes/operator-auth.ts` (challenge, verify, logout), `src/services/operator-sessions.ts`, `src/plugins/auth.ts` (`requireOperator`), `scripts/operator-login.ts` |
+| D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
+| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`, seed ownership rules) |
+| D4 ✅ | `src/routes/operator-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when `OPERATOR_ADDRESSES` is non-empty), `openapi/` |
 | D5 *(follow-up card)* | `src/routes/operator-chains.ts`, `src/services/chains.ts` (keep last verification and probe), `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts` (prober stores both) |
 | D6 | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/operator-api.ts`, `src/lib/operator-session.ts`, `src/operator/{SignIn,TenantsTab,TenantDrawer}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
 

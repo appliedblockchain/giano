@@ -13,7 +13,8 @@ Giano's stock wallet-web UI **or a UI the tenant built itself** ("bring your own
 architecture, only the SPA's authorship differs; see
 [§5.5b](#55b-bring-your-own-wallet-ui-per-tenant)). Whether you run a single-tenant stack for
 your own project or one instance for many clients, the deployment shape is identical — the
-tenants are just rows seeded from `TENANTS_SEED`. A dApp integrates only the thin
+tenants are just rows, written by `TENANTS_SEED` at boot or by Giano's operators at runtime
+([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md)). A dApp integrates only the thin
 `@appliedblockchain/giano-connector` SDK plus its tenant's wallet URL; all wallet trust
 (passkeys, signing, consent, bundler) lives on the wallet origin.
 
@@ -468,12 +469,22 @@ Full schema in `services/wallet-api/src/config.ts`. Required and notable vars:
 | `ENTRYPOINT_ADDRESS`, `FACTORY_ADDRESS` | conditional | default from the registry; **required when `CHAIN_ID` is not in the registry** |
 | `USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | — | relay policy **defaults** — each tenant's `policy` jsonb overrides per field (gas as integers, fees in wei) |
 | `CHALLENGE_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `CEREMONY_RATE_LIMIT_PER_MINUTE`, `METRICS_BEARER_TOKEN` | — | TTLs / rate limit / metrics auth |
+| `OPERATOR_ADDRESSES`, `OPERATOR_SIWE_DOMAIN` | — | the operator tier: a JSON array of `{ id, address }` operator EOAs, and the console host they sign in for (required when the list is set). Empty means no operator route exists. Public values, not secrets |
 
-**Onboarding a tenant** is declarative: append an entry to `TENANTS_SEED` and restart — the seed
-upserts by `slug` and validates the RP/origin invariants before touching the database. `rpId` is
-immutable per tenant (the seeder refuses to change it); everything else (origins, registration
-mode, admin keys, policy) is updated in place. Removing an entry does **not** delete the tenant's
-data. DNS/TLS for the tenant's wallet host is yours to provision (see
+**Onboarding a tenant** is either declarative or at runtime, and a tenant is managed by one of
+the two, never both:
+
+- **Declarative.** Append an entry to `TENANTS_SEED` and restart. The seed upserts by `slug` and
+  validates the RP/origin invariants, including that no origin is claimed by two tenants, before
+  touching the database. `rpId` and `id` are immutable per tenant; everything else (origins,
+  registration mode, admin keys, policy) is updated in place. Removing an entry does **not** delete
+  the tenant's data, and the seed never changes whether a tenant is suspended.
+- **At runtime.** An operator creates, edits, suspends and deletes tenants through
+  `/v1/operator/tenants` with no redeploy, when `OPERATOR_ADDRESSES` is set. Each write passes the
+  same validation as the seed. A seed-managed tenant can only be suspended and resumed this way. A
+  seed entry whose slug matches an operator-managed tenant takes it over at boot, and a seed entry
+  for a deleted slug refuses boot. See
+  [`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §9. DNS/TLS for the tenant's wallet host is yours to provision (see
 [`INTEGRATION.md` §1](./INTEGRATION.md#1-dns--tls) for the DNS, TLS and edge-route requirements —
 one set per tenant, because the wallet host is that tenant's RP ID).
 
