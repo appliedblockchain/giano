@@ -18,7 +18,6 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@appliedblockchain/giano-example",
     "@appliedblockchain/giano-wallet-api",
     "@appliedblockchain/giano-wallet-web",
     "@appliedblockchain/giano-paymaster-admin",
