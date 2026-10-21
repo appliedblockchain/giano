@@ -9,51 +9,66 @@
  * re-exports only what a wallet UI needs (WK-24).
  */
 
+export type {
+	DescribedTransaction,
+	DescriptionField,
+	DescriptionSource,
+	DescriptionWarning,
+	DescriptionWarningCode,
+	TransactionDescription,
+	UnknownReason,
+	UnknownTransaction,
+} from "@appliedblockchain/giano-tx-describe";
+// ── the error shapes and reason codes a client keys behaviour off (spec §9, WK-15) ──
+export {
+	type SponsorshipRefusalReason,
+	type SponsorshipRuleResult,
+	WalletManagementApiError,
+} from "@appliedblockchain/giano-wallet-core";
+export { TransportRpcError } from "@appliedblockchain/giano-wallet-transport";
 // ── configuration (WK-06, WK-07) ──
 export {
-  loadWalletConfig,
-  resolveWalletConfig,
-  type LoadWalletConfigOptions,
-  type RawWalletConfig,
-  type ResolveWalletConfigOptions,
-  type WalletChainConfig,
-  type WalletConfig,
-} from './config';
-
-// ── runtimes (WK-01…WK-05) ──
-export { createWalletRuntimes, type SponsorshipPreflight, type TransactionRequest, type WalletRuntime, type WalletRuntimes } from './runtimes';
-
+	type LoadWalletConfigOptions,
+	loadWalletConfig,
+	type RawWalletConfig,
+	type ResolveWalletConfigOptions,
+	resolveWalletConfig,
+	type WalletChainConfig,
+	type WalletConfig,
+} from "./config";
 // ── transaction descriptions (the review screen's account of a request) ──
-export { createTransactionDescriber, type CreateTransactionDescriberOptions } from './describe';
-export type {
-  DescribedTransaction,
-  DescriptionField,
-  DescriptionSource,
-  DescriptionWarning,
-  DescriptionWarningCode,
-  TransactionDescription,
-  UnknownReason,
-  UnknownTransaction,
-} from '@appliedblockchain/giano-tx-describe';
-
+export {
+	type CreateTransactionDescriberOptions,
+	createTransactionDescriber,
+} from "./describe";
 // ── the host and consent (WK-08…WK-12) ──
-export { createWalletHost, type CreateWalletHostOptions, type WalletHost } from './host';
-export { toRpcError, type PendingRequest, type RequestStore } from './requests';
-
+export {
+	type CreateWalletHostOptions,
+	createWalletHost,
+	type WalletHost,
+} from "./host";
+export type {
+	ChainProgress,
+	ChainStepState,
+} from "./management/apply-owner-change";
 // ── the wallet-management controller (WK-16…WK-21) ──
 export {
-  createManagementController,
-  type AddressInputError,
-  type CreateManagementControllerOptions,
-  type ManagementChainStatus,
-  type ManagementController,
-  type ManagementFlow,
-  type ManagementState,
-  type OwnerRow,
-  type SponsorshipRefusal,
-} from './management/controller';
-export type { ChainProgress, ChainStepState } from './management/apply-owner-change';
-
-// ── the error shapes and reason codes a client keys behaviour off (spec §9, WK-15) ──
-export { WalletManagementApiError, type SponsorshipRefusalReason, type SponsorshipRuleResult } from '@appliedblockchain/giano-wallet-core';
-export { TransportRpcError } from '@appliedblockchain/giano-wallet-transport';
+	type AddressInputError,
+	type CreateManagementControllerOptions,
+	createManagementController,
+	type ManagementChainStatus,
+	type ManagementController,
+	type ManagementFlow,
+	type ManagementState,
+	type OwnerRow,
+	type SponsorshipRefusal,
+} from "./management/controller";
+export { type PendingRequest, type RequestStore, toRpcError } from "./requests";
+// ── runtimes (WK-01…WK-05) ──
+export {
+	createWalletRuntimes,
+	type SponsorshipPreflight,
+	type TransactionRequest,
+	type WalletRuntime,
+	type WalletRuntimes,
+} from "./runtimes";

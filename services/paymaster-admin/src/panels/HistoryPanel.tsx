@@ -1,9 +1,13 @@
-import type { BlockRange, GianoPaymasterClient, SponsorshipRecord } from '@appliedblockchain/giano-paymaster-sdk';
-import { Badge, Button, HStack, Table, Text } from '@chakra-ui/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LuChevronsDown, LuRefreshCw } from 'react-icons/lu';
-import { Copyable, SectionCard, notifyError } from '../components/ui';
-import { eth, exactEth } from '../lib/format';
+import type {
+	BlockRange,
+	GianoPaymasterClient,
+	SponsorshipRecord,
+} from "@appliedblockchain/giano-paymaster-sdk";
+import { Badge, Button, HStack, Table, Text } from "@chakra-ui/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { LuChevronsDown, LuRefreshCw } from "react-icons/lu";
+import { Copyable, notifyError, SectionCard } from "../components/ui";
+import { eth, exactEth } from "../lib/format";
 
 /**
  * Rows rendered from each window read.
@@ -37,122 +41,183 @@ type Loaded = BlockRange & { records: readonly SponsorshipRecord[] };
  * network cost, what Giano charged, and what the contract could not observe at settlement.
  */
 export function HistoryPanel({ client }: { client: GianoPaymasterClient }) {
-  /** Newest window first, which is also the order they are rendered in. */
-  const [loaded, setLoaded] = useState<readonly Loaded[]>();
-  const [older, setOlder] = useState<BlockRange>();
-  const [loading, setLoading] = useState(false);
+	/** Newest window first, which is also the order they are rendered in. */
+	const [loaded, setLoaded] = useState<readonly Loaded[]>();
+	const [older, setOlder] = useState<BlockRange>();
+	const [loading, setLoading] = useState(false);
 
-  const read = useCallback(
-    async (range: BlockRange | undefined, append: boolean) => {
-      setLoading(true);
-      try {
-        const { fromBlock, toBlock, older: previous, records } = await client.getSponsorships({ range });
-        const window = { fromBlock, toBlock, records };
-        setLoaded((existing) => (append && existing ? [...existing, window] : [window]));
-        setOlder(previous);
-      } catch (error) {
-        notifyError('Could not load sponsorship history', error);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [client],
-  );
+	const read = useCallback(
+		async (range: BlockRange | undefined, append: boolean) => {
+			setLoading(true);
+			try {
+				const {
+					fromBlock,
+					toBlock,
+					older: previous,
+					records,
+				} = await client.getSponsorships({ range });
+				const window = { fromBlock, toBlock, records };
+				setLoaded((existing) =>
+					append && existing ? [...existing, window] : [window],
+				);
+				setOlder(previous);
+			} catch (error) {
+				notifyError("Could not load sponsorship history", error);
+			} finally {
+				setLoading(false);
+			}
+		},
+		[client],
+	);
 
-  const reload = useCallback(() => read(undefined, false), [read]);
+	const reload = useCallback(() => read(undefined, false), [read]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+	useEffect(() => {
+		void reload();
+	}, [reload]);
 
-  // Each window contributes its own newest rows, so asking for an older one always adds to the
-  // table. Within a window the SDK returns settlements newest last, hence the reverse.
-  const shown = useMemo(() => (loaded ?? []).flatMap((window) => [...window.records].reverse().slice(0, ROWS_PER_WINDOW)), [loaded]);
-  const total = (loaded ?? []).reduce((sum, window) => sum + window.records.length, 0);
-  const blocks = loaded?.length ? `blocks ${loaded[loaded.length - 1].fromBlock}–${loaded[0].toBlock}` : '';
+	// Each window contributes its own newest rows, so asking for an older one always adds to the
+	// table. Within a window the SDK returns settlements newest last, hence the reverse.
+	const shown = useMemo(
+		() =>
+			(loaded ?? []).flatMap((window) =>
+				[...window.records].reverse().slice(0, ROWS_PER_WINDOW),
+			),
+		[loaded],
+	);
+	const total = (loaded ?? []).reduce(
+		(sum, window) => sum + window.records.length,
+		0,
+	);
+	const blocks = loaded?.length
+		? `blocks ${loaded[loaded.length - 1].fromBlock}–${loaded[0].toBlock}`
+		: "";
 
-  return (
-    <SectionCard
-      title="Sponsorships"
-      subtitle="Settlements in the blocks read so far, newest first. A shortfall becomes a recorded deficit rather than a revert — by then the network has already been paid."
-      action={
-        <HStack gap="2">
-          {older && (
-            <Button size="sm" variant="outline" onClick={() => void read(older, true)} loading={loading}>
-              <LuChevronsDown /> Look further back
-            </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={() => void reload()} loading={loading}>
-            <LuRefreshCw /> Reload
-          </Button>
-        </HStack>
-      }
-    >
-      {!loaded && loading && <Text color="fg.muted">Reading logs…</Text>}
-      {loaded && total === 0 && (
-        <Text color="fg.muted">
-          Nothing settled in {blocks}. A settlement older than that is still on chain — "Look further back" reads the preceding window. To make a new one,
-          the sample dApp's gasless panel is the quickest way.
-        </Text>
-      )}
-      {shown.length > 0 && (
-        <Table.ScrollArea borderWidth="1px" rounded="md" maxH="30rem">
-          <Table.Root size="sm" stickyHeader>
-            <Table.Header>
-              <Table.Row>
-                <Table.ColumnHeader>Block</Table.ColumnHeader>
-                <Table.ColumnHeader>Tenant</Table.ColumnHeader>
-                <Table.ColumnHeader>Sender</Table.ColumnHeader>
-                <Table.ColumnHeader></Table.ColumnHeader>
-                <Table.ColumnHeader textAlign="end">Gas</Table.ColumnHeader>
-                <Table.ColumnHeader textAlign="end">Fee</Table.ColumnHeader>
-                <Table.ColumnHeader textAlign="end">Overhead</Table.ColumnHeader>
-                <Table.ColumnHeader textAlign="end">Balance after</Table.ColumnHeader>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {shown.map((record) => (
-                <Table.Row key={`${record.transactionHash}-${record.userOpHash}`}>
-                  <Table.Cell fontFamily="mono" fontSize="xs">
-                    {String(record.blockNumber)}
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Copyable value={record.uuid} label="Tenant id" />
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Copyable value={record.sender} label="Sender" />
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Badge colorPalette={record.success ? 'green' : 'red'} variant="subtle" title={record.userOpHash}>
-                      {record.success ? 'ok' : 'reverted'}
-                    </Badge>
-                  </Table.Cell>
-                  <Table.Cell textAlign="end" fontFamily="mono" fontSize="xs" title={exactEth(record.gasCostWei)}>
-                    {eth(record.gasCostWei, 6)}
-                  </Table.Cell>
-                  <Table.Cell textAlign="end" fontFamily="mono" fontSize="xs" title={exactEth(record.feeWei)}>
-                    {eth(record.feeWei, 6)}
-                  </Table.Cell>
-                  <Table.Cell textAlign="end" fontFamily="mono" fontSize="xs" title={exactEth(record.overheadWei)}>
-                    {eth(record.overheadWei, 6)}
-                  </Table.Cell>
-                  <Table.Cell textAlign="end" fontFamily="mono" fontSize="xs" title={exactEth(record.newBalanceWei)}>
-                    {eth(record.newBalanceWei)}
-                  </Table.Cell>
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table.Root>
-        </Table.ScrollArea>
-      )}
-      {loaded && (
-        <Text fontSize="xs" color="fg.muted" mt="2">
-          {total > shown.length ? `Showing ${shown.length} of ${total} settlements in ${blocks}. ` : `Read ${blocks}. `}
-          {older
-            ? 'This is a window of the chain — older settlements exist below it and "Look further back" reads the preceding window.'
-            : 'That reaches the first block, so this is every settlement.'}
-        </Text>
-      )}
-    </SectionCard>
-  );
+	return (
+		<SectionCard
+			title="Sponsorships"
+			subtitle="Settlements in the blocks read so far, newest first. A shortfall becomes a recorded deficit rather than a revert — by then the network has already been paid."
+			action={
+				<HStack gap="2">
+					{older && (
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() => void read(older, true)}
+							loading={loading}
+						>
+							<LuChevronsDown /> Look further back
+						</Button>
+					)}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() => void reload()}
+						loading={loading}
+					>
+						<LuRefreshCw /> Reload
+					</Button>
+				</HStack>
+			}
+		>
+			{!loaded && loading && <Text color="fg.muted">Reading logs…</Text>}
+			{loaded && total === 0 && (
+				<Text color="fg.muted">
+					Nothing settled in {blocks}. A settlement older than that is still on
+					chain — "Look further back" reads the preceding window. To make a new
+					one, the sample dApp's gasless panel is the quickest way.
+				</Text>
+			)}
+			{shown.length > 0 && (
+				<Table.ScrollArea borderWidth="1px" rounded="md" maxH="30rem">
+					<Table.Root size="sm" stickyHeader>
+						<Table.Header>
+							<Table.Row>
+								<Table.ColumnHeader>Block</Table.ColumnHeader>
+								<Table.ColumnHeader>Tenant</Table.ColumnHeader>
+								<Table.ColumnHeader>Sender</Table.ColumnHeader>
+								<Table.ColumnHeader></Table.ColumnHeader>
+								<Table.ColumnHeader textAlign="end">Gas</Table.ColumnHeader>
+								<Table.ColumnHeader textAlign="end">Fee</Table.ColumnHeader>
+								<Table.ColumnHeader textAlign="end">
+									Overhead
+								</Table.ColumnHeader>
+								<Table.ColumnHeader textAlign="end">
+									Balance after
+								</Table.ColumnHeader>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{shown.map((record) => (
+								<Table.Row
+									key={`${record.transactionHash}-${record.userOpHash}`}
+								>
+									<Table.Cell fontFamily="mono" fontSize="xs">
+										{String(record.blockNumber)}
+									</Table.Cell>
+									<Table.Cell>
+										<Copyable value={record.uuid} label="Tenant id" />
+									</Table.Cell>
+									<Table.Cell>
+										<Copyable value={record.sender} label="Sender" />
+									</Table.Cell>
+									<Table.Cell>
+										<Badge
+											colorPalette={record.success ? "green" : "red"}
+											variant="subtle"
+											title={record.userOpHash}
+										>
+											{record.success ? "ok" : "reverted"}
+										</Badge>
+									</Table.Cell>
+									<Table.Cell
+										textAlign="end"
+										fontFamily="mono"
+										fontSize="xs"
+										title={exactEth(record.gasCostWei)}
+									>
+										{eth(record.gasCostWei, 6)}
+									</Table.Cell>
+									<Table.Cell
+										textAlign="end"
+										fontFamily="mono"
+										fontSize="xs"
+										title={exactEth(record.feeWei)}
+									>
+										{eth(record.feeWei, 6)}
+									</Table.Cell>
+									<Table.Cell
+										textAlign="end"
+										fontFamily="mono"
+										fontSize="xs"
+										title={exactEth(record.overheadWei)}
+									>
+										{eth(record.overheadWei, 6)}
+									</Table.Cell>
+									<Table.Cell
+										textAlign="end"
+										fontFamily="mono"
+										fontSize="xs"
+										title={exactEth(record.newBalanceWei)}
+									>
+										{eth(record.newBalanceWei)}
+									</Table.Cell>
+								</Table.Row>
+							))}
+						</Table.Body>
+					</Table.Root>
+				</Table.ScrollArea>
+			)}
+			{loaded && (
+				<Text fontSize="xs" color="fg.muted" mt="2">
+					{total > shown.length
+						? `Showing ${shown.length} of ${total} settlements in ${blocks}. `
+						: `Read ${blocks}. `}
+					{older
+						? 'This is a window of the chain — older settlements exist below it and "Look further back" reads the preceding window.'
+						: "That reaches the first block, so this is every settlement."}
+				</Text>
+			)}
+		</SectionCard>
+	);
 }

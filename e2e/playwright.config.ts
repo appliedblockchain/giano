@@ -1,9 +1,9 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig } from "@playwright/test";
 
-import { ORIGINS, loopbackOf, portOf } from './origins.mjs';
+import { loopbackOf, ORIGINS, portOf } from "./origins.mjs";
 
 /** `DEMO=1` adds the reference dApp's project and dev server (see `pnpm test:demo`). */
-const DEMO = process.env.DEMO === '1';
+const DEMO = process.env.DEMO === "1";
 
 /**
  * Two-tenant, four-origin topology against ONE shared backend stack
@@ -17,74 +17,84 @@ const DEMO = process.env.DEMO === '1';
  * WebAuthn uses the CDP virtual authenticator on the popup page — Chromium-only.
  */
 export default defineConfig({
-  testDir: './tests',
-  timeout: 120_000,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  workers: 1, // one shared backend + stateful wallet popups — serialize
-  // Registers the demo's names with portless and refuses to start until they answer.
-  globalSetup: './portless-setup.mjs',
-  use: {
-    baseURL: process.env.DAPP_URL ?? ORIGINS.dapp,
-    trace: 'retain-on-failure',
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { browserName: 'chromium' },
-      // The reference dApp's smoke spec lives under tests/demo and runs only in the opt-in project below.
-      testIgnore: /tests\/demo\//,
-    },
-    // Opt-in (`pnpm test:demo`, DEMO=1): drives the reference dApp (services/custom-example) on its own
-    // origin. Defined only when asked for, so `pnpm test` neither starts the demo nor depends on it.
-    ...(DEMO
-      ? [
-          {
-            name: 'demo',
-            use: { browserName: 'chromium' as const, baseURL: ORIGINS.demo },
-            testMatch: /tests\/demo\/.*\.spec\.ts/,
-          },
-        ]
-      : []),
-  ],
-  // The fixtures listen on fixed loopback ports and portless publishes each one under a
-  // name; `url` below is deliberately the loopback address rather than the name, so that
-  // this readiness check tests the fixture alone and stays independent of both the proxy
-  // and the order Playwright runs `webServer` and `globalSetup` in. portless-setup.mjs is
-  // what proves the names themselves resolve.
-  webServer: [
-    {
-      // tenant A dApp
-      command: 'node dapp/serve.mjs',
-      env: { DAPP_PORT: String(portOf('app')), WALLET_URL: process.env.WALLET_URL ?? ORIGINS.wallet },
-      url: loopbackOf('app'),
-      reuseExistingServer: true,
-    },
-    {
-      // tenant B dApp (same fixture, different wallet origin)
-      command: 'node dapp/serve.mjs',
-      env: { DAPP_PORT: String(portOf('app-byo')), WALLET_URL: process.env.WALLET_BYO_URL ?? ORIGINS.walletByo },
-      url: loopbackOf('app-byo'),
-      reuseExistingServer: true,
-    },
-    {
-      // tenant B wallet origin (BYO UI + /api proxy to the wallet-api container)
-      command: 'node wallet-byo/serve.mjs',
-      env: { BYO_WALLET_PORT: String(portOf('wallet-byo')), WALLET_API_UPSTREAM: process.env.WALLET_API_UPSTREAM ?? loopbackOf('api') },
-      url: loopbackOf('wallet-byo'),
-      reuseExistingServer: true,
-    },
-    ...(DEMO
-      ? [
-          {
-            // the reference dApp, tenant stock, on its own name (http://demo.localhost)
-            command: 'pnpm -C services/custom-example dev:stock',
-            cwd: '..',
-            url: loopbackOf('demo'),
-            reuseExistingServer: true,
-            timeout: 120_000,
-          },
-        ]
-      : []),
-  ],
+	testDir: "./tests",
+	timeout: 120_000,
+	forbidOnly: !!process.env.CI,
+	retries: process.env.CI ? 1 : 0,
+	workers: 1, // one shared backend + stateful wallet popups — serialize
+	// Registers the demo's names with portless and refuses to start until they answer.
+	globalSetup: "./portless-setup.mjs",
+	use: {
+		baseURL: process.env.DAPP_URL ?? ORIGINS.dapp,
+		trace: "retain-on-failure",
+	},
+	projects: [
+		{
+			name: "chromium",
+			use: { browserName: "chromium" },
+			// The reference dApp's smoke spec lives under tests/demo and runs only in the opt-in project below.
+			testIgnore: /tests\/demo\//,
+		},
+		// Opt-in (`pnpm test:demo`, DEMO=1): drives the reference dApp (services/custom-example) on its own
+		// origin. Defined only when asked for, so `pnpm test` neither starts the demo nor depends on it.
+		...(DEMO
+			? [
+					{
+						name: "demo",
+						use: { browserName: "chromium" as const, baseURL: ORIGINS.demo },
+						testMatch: /tests\/demo\/.*\.spec\.ts/,
+					},
+				]
+			: []),
+	],
+	// The fixtures listen on fixed loopback ports and portless publishes each one under a
+	// name; `url` below is deliberately the loopback address rather than the name, so that
+	// this readiness check tests the fixture alone and stays independent of both the proxy
+	// and the order Playwright runs `webServer` and `globalSetup` in. portless-setup.mjs is
+	// what proves the names themselves resolve.
+	webServer: [
+		{
+			// tenant A dApp
+			command: "node dapp/serve.mjs",
+			env: {
+				DAPP_PORT: String(portOf("app")),
+				WALLET_URL: process.env.WALLET_URL ?? ORIGINS.wallet,
+			},
+			url: loopbackOf("app"),
+			reuseExistingServer: true,
+		},
+		{
+			// tenant B dApp (same fixture, different wallet origin)
+			command: "node dapp/serve.mjs",
+			env: {
+				DAPP_PORT: String(portOf("app-byo")),
+				WALLET_URL: process.env.WALLET_BYO_URL ?? ORIGINS.walletByo,
+			},
+			url: loopbackOf("app-byo"),
+			reuseExistingServer: true,
+		},
+		{
+			// tenant B wallet origin (BYO UI + /api proxy to the wallet-api container)
+			command: "node wallet-byo/serve.mjs",
+			env: {
+				BYO_WALLET_PORT: String(portOf("wallet-byo")),
+				WALLET_API_UPSTREAM:
+					process.env.WALLET_API_UPSTREAM ?? loopbackOf("api"),
+			},
+			url: loopbackOf("wallet-byo"),
+			reuseExistingServer: true,
+		},
+		...(DEMO
+			? [
+					{
+						// the reference dApp, tenant stock, on its own name (http://demo.localhost)
+						command: "pnpm -C services/custom-example dev:stock",
+						cwd: "..",
+						url: loopbackOf("demo"),
+						reuseExistingServer: true,
+						timeout: 120_000,
+					},
+				]
+			: []),
+	],
 });

@@ -1,11 +1,11 @@
 {
-  "deployments": [
-    {
-      "name": "local devnet",
-      "chainId": 31337,
-      "rpcUrl": "http://localhost:8545",
-      "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
-      "refreshSeconds": 10
-    }
-  ]
+	"deployments": [
+		{
+			"name": "local devnet",
+			"chainId": 31337,
+			"rpcUrl": "http://localhost:8545",
+			"sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+			"refreshSeconds": 10
+		}
+	]
 }

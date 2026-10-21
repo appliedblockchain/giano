@@ -1,0 +1,115 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"root": true,
+	"vcs": {
+		"enabled": false
+	},
+	"files": {
+		"ignoreUnknown": false,
+		"includes": ["**", "!!**/dist"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended"
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"plugins": ["./no-custom-css.grit"],
+	"overrides": [
+		{
+			"includes": ["src/**", "!src/components/ui/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@appliedblockchain/*",
+											"!@appliedblockchain/giano-connector"
+										],
+										"message": "The demo may only import @appliedblockchain/giano-connector — the same artifact a client installs (R2)."
+									},
+									{
+										"group": ["@appliedblockchain/giano-connector/*"],
+										"message": "Only the default entry point of the connector is public (R2)."
+									},
+									{
+										"group": ["../../*", "**/packages/*", "**/services/*"],
+										"message": "A relative import that leaves services/custom-example/src reaches into workspace internals (R2)."
+									},
+									{
+										"group": [
+											"*.css",
+											"**/*.css",
+											"!@rainbow-me/rainbowkit/styles.css"
+										],
+										"message": "No stylesheets: Chakra components and theme tokens only (R4). RainbowKit ships its own stylesheet, which is allowed."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["src/components/ui/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"@appliedblockchain/*",
+											"!@appliedblockchain/giano-connector"
+										],
+										"message": "The demo may only import @appliedblockchain/giano-connector (R2)."
+									},
+									{
+										"group": ["@appliedblockchain/giano-connector/*"],
+										"message": "Only the default entry point of the connector is public (R2)."
+									},
+									{
+										"group": ["../../../*", "**/packages/*", "**/services/*"],
+										"message": "A relative import that leaves services/custom-example/src reaches into workspace internals (R2)."
+									},
+									{
+										"group": [
+											"*.css",
+											"**/*.css",
+											"!@rainbow-me/rainbowkit/styles.css"
+										],
+										"message": "No stylesheets (R4)."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		}
+	]
+}

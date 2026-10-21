@@ -6,19 +6,19 @@
  * `createGianoProvider` to capture the other levels.
  */
 export type GianoLogger = {
-  debug: (message: string, data?: unknown) => void;
-  warn: (message: string, data?: unknown) => void;
-  error: (message: string, data?: unknown) => void;
+	debug: (message: string, data?: unknown) => void;
+	warn: (message: string, data?: unknown) => void;
+	error: (message: string, data?: unknown) => void;
 };
 
 export const defaultGianoLogger: GianoLogger = {
-  debug: () => {},
-  warn: () => {},
-  error: (message, data) => {
-    if (data === undefined) {
-      console.error(message);
-    } else {
-      console.error(message, data);
-    }
-  },
+	debug: () => {},
+	warn: () => {},
+	error: (message, data) => {
+		if (data === undefined) {
+			console.error(message);
+		} else {
+			console.error(message, data);
+		}
+	},
 };

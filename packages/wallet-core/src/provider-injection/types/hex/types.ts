@@ -1,19 +1,18 @@
 export type AssertHexBaseOptions = {
-  descriptor?: string
-}
+	descriptor?: string;
+};
 
 export type AssertHexDigitsOptions = AssertHexBaseOptions & {
-  digits: number
-  bytes?: never
-}
+	digits: number;
+	bytes?: never;
+};
 
 export type AssertHexBytesOptions = AssertHexBaseOptions & {
-  bytes: number
-  digits?: never
-}
+	bytes: number;
+	digits?: never;
+};
 
-export type AssertHexOptions = (
-  | AssertHexBaseOptions
-  | AssertHexDigitsOptions
-  | AssertHexBytesOptions
-)
+export type AssertHexOptions =
+	| AssertHexBaseOptions
+	| AssertHexDigitsOptions
+	| AssertHexBytesOptions;

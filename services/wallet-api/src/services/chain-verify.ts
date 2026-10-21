@@ -1,6 +1,11 @@
-import { CANONICAL_FACTORY, CANONICAL_IMPLEMENTATION, canonicalCodeAt, gianoSmartWalletFactoryAbi } from '@appliedblockchain/giano-contracts';
-import { keccak256, type PublicClient } from 'viem';
-import type { ResolvedChain } from '../config.js';
+import {
+	CANONICAL_FACTORY,
+	CANONICAL_IMPLEMENTATION,
+	canonicalCodeAt,
+	gianoSmartWalletFactoryAbi,
+} from "@appliedblockchain/giano-contracts";
+import { keccak256, type PublicClient } from "viem";
+import type { ResolvedChain } from "../config.js";
 
 /**
  * Boot-time (and on-demand) verification of one configured chain, per
@@ -16,32 +21,45 @@ import type { ResolvedChain } from '../config.js';
  */
 
 export type ChainVerificationFailure =
-  | { kind: 'unreachable'; detail: string } // NOT fatal
-  | { kind: 'chain-id-mismatch'; declared: number; reported: number }
-  | { kind: 'entrypoint-missing'; address: `0x${string}` }
-  | { kind: 'factory-missing'; address: `0x${string}` }
-  | { kind: 'factory-not-canonical'; expected: `0x${string}`; found: `0x${string}` }
-  | { kind: 'implementation-mismatch'; expected: `0x${string}`; found: `0x${string}` }
-  | { kind: 'code-not-canonical'; contract: 'factory' | 'implementation'; address: `0x${string}`; codehash: `0x${string}` }
-  | { kind: 'paymaster-missing'; address: `0x${string}` };
+	| { kind: "unreachable"; detail: string } // NOT fatal
+	| { kind: "chain-id-mismatch"; declared: number; reported: number }
+	| { kind: "entrypoint-missing"; address: `0x${string}` }
+	| { kind: "factory-missing"; address: `0x${string}` }
+	| {
+			kind: "factory-not-canonical";
+			expected: `0x${string}`;
+			found: `0x${string}`;
+	  }
+	| {
+			kind: "implementation-mismatch";
+			expected: `0x${string}`;
+			found: `0x${string}`;
+	  }
+	| {
+			kind: "code-not-canonical";
+			contract: "factory" | "implementation";
+			address: `0x${string}`;
+			codehash: `0x${string}`;
+	  }
+	| { kind: "paymaster-missing"; address: `0x${string}` };
 
 export type ChainVerification = {
-  chainId: number;
-  reachable: boolean;
-  reportedChainId?: number;
-  entryPointPresent?: boolean;
-  factoryPresent?: boolean;
-  factoryAddressCanonical?: boolean;
-  implementationAddress?: `0x${string}`;
-  paymasterPresent?: boolean;
-  /** The address the chain's own factory derives for the probe owner (MC-22). */
-  probeAddress?: `0x${string}`;
-  failures: ChainVerificationFailure[];
+	chainId: number;
+	reachable: boolean;
+	reportedChainId?: number;
+	entryPointPresent?: boolean;
+	factoryPresent?: boolean;
+	factoryAddressCanonical?: boolean;
+	implementationAddress?: `0x${string}`;
+	paymasterPresent?: boolean;
+	/** The address the chain's own factory derives for the probe owner (MC-22). */
+	probeAddress?: `0x${string}`;
+	failures: ChainVerificationFailure[];
 };
 
 /** True for a failure that must prevent the deployment from serving this chain. */
 export function isFatalFailure(failure: ChainVerificationFailure): boolean {
-  return failure.kind !== 'unreachable';
+	return failure.kind !== "unreachable";
 }
 
 /**
@@ -49,7 +67,7 @@ export function isFatalFailure(failure: ChainVerificationFailure): boolean {
  * live factory cross-check: every served chain's factory must derive the same address for
  * it (MC-22) — which is what catches a factory at the right address running different code.
  */
-export const PROBE_OWNER = `0x${'11'.repeat(64)}` as const;
+export const PROBE_OWNER = `0x${"11".repeat(64)}` as const;
 
 /**
  * Whether `codehash` is a release's code at `address` (canonical.ts). A parameter only so tests can
@@ -58,119 +76,170 @@ export const PROBE_OWNER = `0x${'11'.repeat(64)}` as const;
 export type CanonicalCodeCheck = (address: string, codehash: string) => unknown;
 
 export async function verifyChain(
-  descriptor: ResolvedChain,
-  client: PublicClient,
-  isCanonicalCode: CanonicalCodeCheck = canonicalCodeAt,
+	descriptor: ResolvedChain,
+	client: PublicClient,
+	isCanonicalCode: CanonicalCodeCheck = canonicalCodeAt,
 ): Promise<ChainVerification> {
-  const result: ChainVerification = { chainId: descriptor.chainId, reachable: false, failures: [] };
+	const result: ChainVerification = {
+		chainId: descriptor.chainId,
+		reachable: false,
+		failures: [],
+	};
 
-  let reported: number;
-  try {
-    reported = await client.getChainId();
-  } catch (error) {
-    result.failures.push({ kind: 'unreachable', detail: (error as Error).message });
-    return result;
-  }
-  result.reachable = true;
-  result.reportedChainId = reported;
+	let reported: number;
+	try {
+		reported = await client.getChainId();
+	} catch (error) {
+		result.failures.push({
+			kind: "unreachable",
+			detail: (error as Error).message,
+		});
+		return result;
+	}
+	result.reachable = true;
+	result.reportedChainId = reported;
 
-  // MC-49: an endpoint that reports a different chain than declared is the exact failure
-  // this work exists to eliminate. Fatal, never warned past.
-  if (reported !== descriptor.chainId) {
-    result.failures.push({ kind: 'chain-id-mismatch', declared: descriptor.chainId, reported });
-    return result;
-  }
+	// MC-49: an endpoint that reports a different chain than declared is the exact failure
+	// this work exists to eliminate. Fatal, never warned past.
+	if (reported !== descriptor.chainId) {
+		result.failures.push({
+			kind: "chain-id-mismatch",
+			declared: descriptor.chainId,
+			reported,
+		});
+		return result;
+	}
 
-  try {
-    const [entryPointCode, factoryCode] = await Promise.all([
-      client.getCode({ address: descriptor.entryPoint }),
-      client.getCode({ address: descriptor.factory }),
-    ]);
+	try {
+		const [entryPointCode, factoryCode] = await Promise.all([
+			client.getCode({ address: descriptor.entryPoint }),
+			client.getCode({ address: descriptor.factory }),
+		]);
 
-    result.entryPointPresent = !!entryPointCode && entryPointCode !== '0x';
-    if (!result.entryPointPresent) {
-      result.failures.push({ kind: 'entrypoint-missing', address: descriptor.entryPoint });
-    }
+		result.entryPointPresent = !!entryPointCode && entryPointCode !== "0x";
+		if (!result.entryPointPresent) {
+			result.failures.push({
+				kind: "entrypoint-missing",
+				address: descriptor.entryPoint,
+			});
+		}
 
-    result.factoryPresent = !!factoryCode && factoryCode !== '0x';
-    if (!result.factoryPresent) {
-      result.failures.push({ kind: 'factory-missing', address: descriptor.factory });
-    }
+		result.factoryPresent = !!factoryCode && factoryCode !== "0x";
+		if (!result.factoryPresent) {
+			result.failures.push({
+				kind: "factory-missing",
+				address: descriptor.factory,
+			});
+		}
 
-    // MC-19: the admission gate. Canonical is the frozen constant exported by the contracts
-    // package — never "whatever some reference chain happens to have" (S13).
-    result.factoryAddressCanonical = descriptor.factory.toLowerCase() === CANONICAL_FACTORY.toLowerCase();
-    if (!result.factoryAddressCanonical) {
-      result.failures.push({ kind: 'factory-not-canonical', expected: CANONICAL_FACTORY, found: descriptor.factory });
-    }
+		// MC-19: the admission gate. Canonical is the frozen constant exported by the contracts
+		// package — never "whatever some reference chain happens to have" (S13).
+		result.factoryAddressCanonical =
+			descriptor.factory.toLowerCase() === CANONICAL_FACTORY.toLowerCase();
+		if (!result.factoryAddressCanonical) {
+			result.failures.push({
+				kind: "factory-not-canonical",
+				expected: CANONICAL_FACTORY,
+				found: descriptor.factory,
+			});
+		}
 
-    if (result.factoryPresent) {
-      // Canonical addresses are CREATE3: they do not commit to code, so the code there must be a
-      // release's as well (canonical.ts CANONICAL_CODE).
-      const factoryHash = keccak256(factoryCode!);
-      if (!isCanonicalCode(descriptor.factory, factoryHash)) {
-        result.failures.push({ kind: 'code-not-canonical', contract: 'factory', address: descriptor.factory, codehash: factoryHash });
-      }
+		if (result.factoryPresent) {
+			// Canonical addresses are CREATE3: they do not commit to code, so the code there must be a
+			// release's as well (canonical.ts CANONICAL_CODE).
+			const factoryHash = keccak256(factoryCode!);
+			if (!isCanonicalCode(descriptor.factory, factoryHash)) {
+				result.failures.push({
+					kind: "code-not-canonical",
+					contract: "factory",
+					address: descriptor.factory,
+					codehash: factoryHash,
+				});
+			}
 
-      const implementation = (await client.readContract({
-        address: descriptor.factory,
-        abi: gianoSmartWalletFactoryAbi,
-        functionName: 'implementation',
-      })) as `0x${string}`;
-      result.implementationAddress = implementation;
-      if (implementation.toLowerCase() !== CANONICAL_IMPLEMENTATION.toLowerCase()) {
-        result.failures.push({ kind: 'implementation-mismatch', expected: CANONICAL_IMPLEMENTATION, found: implementation });
-      } else {
-        const implementationCode = await client.getCode({ address: implementation });
-        const implementationHash = keccak256(implementationCode ?? '0x');
-        if (!isCanonicalCode(implementation, implementationHash)) {
-          result.failures.push({ kind: 'code-not-canonical', contract: 'implementation', address: implementation, codehash: implementationHash });
-        }
-      }
+			const implementation = (await client.readContract({
+				address: descriptor.factory,
+				abi: gianoSmartWalletFactoryAbi,
+				functionName: "implementation",
+			})) as `0x${string}`;
+			result.implementationAddress = implementation;
+			if (
+				implementation.toLowerCase() !== CANONICAL_IMPLEMENTATION.toLowerCase()
+			) {
+				result.failures.push({
+					kind: "implementation-mismatch",
+					expected: CANONICAL_IMPLEMENTATION,
+					found: implementation,
+				});
+			} else {
+				const implementationCode = await client.getCode({
+					address: implementation,
+				});
+				const implementationHash = keccak256(implementationCode ?? "0x");
+				if (!isCanonicalCode(implementation, implementationHash)) {
+					result.failures.push({
+						kind: "code-not-canonical",
+						contract: "implementation",
+						address: implementation,
+						codehash: implementationHash,
+					});
+				}
+			}
 
-      // MC-22: the live cross-check — ask the chain's own factory to derive an address for
-      // the probe owner. The caller compares this across chains; the derivation has no
-      // chain-dependent term (MC-18), so it must be identical everywhere.
-      result.probeAddress = (await client.readContract({
-        address: descriptor.factory,
-        abi: gianoSmartWalletFactoryAbi,
-        functionName: 'getAddress',
-        args: [[PROBE_OWNER], 0n],
-      })) as `0x${string}`;
-    }
+			// MC-22: the live cross-check — ask the chain's own factory to derive an address for
+			// the probe owner. The caller compares this across chains; the derivation has no
+			// chain-dependent term (MC-18), so it must be identical everywhere.
+			result.probeAddress = (await client.readContract({
+				address: descriptor.factory,
+				abi: gianoSmartWalletFactoryAbi,
+				functionName: "getAddress",
+				args: [[PROBE_OWNER], 0n],
+			})) as `0x${string}`;
+		}
 
-    if (descriptor.sponsorshipPaymaster) {
-      const paymasterCode = await client.getCode({ address: descriptor.sponsorshipPaymaster });
-      result.paymasterPresent = !!paymasterCode && paymasterCode !== '0x';
-      if (!result.paymasterPresent) {
-        result.failures.push({ kind: 'paymaster-missing', address: descriptor.sponsorshipPaymaster });
-      }
-    }
-  } catch (error) {
-    result.failures.push({ kind: 'unreachable', detail: (error as Error).message });
-  }
+		if (descriptor.sponsorshipPaymaster) {
+			const paymasterCode = await client.getCode({
+				address: descriptor.sponsorshipPaymaster,
+			});
+			result.paymasterPresent = !!paymasterCode && paymasterCode !== "0x";
+			if (!result.paymasterPresent) {
+				result.failures.push({
+					kind: "paymaster-missing",
+					address: descriptor.sponsorshipPaymaster,
+				});
+			}
+		}
+	} catch (error) {
+		result.failures.push({
+			kind: "unreachable",
+			detail: (error as Error).message,
+		});
+	}
 
-  return result;
+	return result;
 }
 
 /** One line per failure, naming the chain and what to do about it. */
-export function describeFailure(chainId: number, failure: ChainVerificationFailure): string {
-  switch (failure.kind) {
-    case 'unreachable':
-      return `chain ${chainId}: endpoint unreachable (${failure.detail}) — will start unavailable and retry`;
-    case 'chain-id-mismatch':
-      return `chain ${chainId}: the RPC endpoint reports chain ${failure.reported}, not ${failure.declared} — the endpoint and the declaration disagree; fix the configuration`;
-    case 'entrypoint-missing':
-      return `chain ${chainId}: no EntryPoint at ${failure.address} — deploy EntryPoint v0.7 at its canonical address before any Giano contract (adoption checklist step 2)`;
-    case 'factory-missing':
-      return `chain ${chainId}: no account factory at ${failure.address} — deploy the canonical contracts (adoption checklist step 4)`;
-    case 'factory-not-canonical':
-      return `chain ${chainId}: factory ${failure.found} is not the canonical ${failure.expected} — this chain cannot be served without breaking address identity (MC-19)`;
-    case 'implementation-mismatch':
-      return `chain ${chainId}: implementation ${failure.found} is not the canonical ${failure.expected} — the factory at the canonical address is running a different build`;
-    case 'code-not-canonical':
-      return `chain ${chainId}: the ${failure.contract} at ${failure.address} runs code no release puts there (codehash ${failure.codehash}) — redeploy from a release (MC-19)`;
-    case 'paymaster-missing':
-      return `chain ${chainId}: sponsorship is configured but there is no paymaster at ${failure.address}`;
-  }
+export function describeFailure(
+	chainId: number,
+	failure: ChainVerificationFailure,
+): string {
+	switch (failure.kind) {
+		case "unreachable":
+			return `chain ${chainId}: endpoint unreachable (${failure.detail}) — will start unavailable and retry`;
+		case "chain-id-mismatch":
+			return `chain ${chainId}: the RPC endpoint reports chain ${failure.reported}, not ${failure.declared} — the endpoint and the declaration disagree; fix the configuration`;
+		case "entrypoint-missing":
+			return `chain ${chainId}: no EntryPoint at ${failure.address} — deploy EntryPoint v0.7 at its canonical address before any Giano contract (adoption checklist step 2)`;
+		case "factory-missing":
+			return `chain ${chainId}: no account factory at ${failure.address} — deploy the canonical contracts (adoption checklist step 4)`;
+		case "factory-not-canonical":
+			return `chain ${chainId}: factory ${failure.found} is not the canonical ${failure.expected} — this chain cannot be served without breaking address identity (MC-19)`;
+		case "implementation-mismatch":
+			return `chain ${chainId}: implementation ${failure.found} is not the canonical ${failure.expected} — the factory at the canonical address is running a different build`;
+		case "code-not-canonical":
+			return `chain ${chainId}: the ${failure.contract} at ${failure.address} runs code no release puts there (codehash ${failure.codehash}) — redeploy from a release (MC-19)`;
+		case "paymaster-missing":
+			return `chain ${chainId}: sponsorship is configured but there is no paymaster at ${failure.address}`;
+	}
 }

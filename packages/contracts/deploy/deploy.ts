@@ -5,74 +5,88 @@
  * checked and recorded, never redeployed.
  */
 import {
-  concat,
-  encodeAbiParameters,
-  encodeFunctionData,
-  getAddress,
-  keccak256,
-  parseAbiParameters,
-  type Account,
-  type Address,
-  type Chain,
-  type Hex,
-  type PublicClient,
-  type Transport,
-  type WalletClient,
-} from 'viem';
-import { gianoPaymasterAbi } from '../generated';
-import { LABELS, upgradeLabel, type LabelKey } from './config';
-import { CREATEX_ADDRESS, create3Address, create3Salt, guardedSalt } from './create3';
-import { createxAbi } from './createx';
-import type { DeployedContract, DeploymentRecord } from './records';
-import { DEV_RELEASE, type Release } from './release';
+	type Account,
+	type Address,
+	type Chain,
+	concat,
+	encodeAbiParameters,
+	encodeFunctionData,
+	getAddress,
+	type Hex,
+	keccak256,
+	type PublicClient,
+	parseAbiParameters,
+	type Transport,
+	type WalletClient,
+} from "viem";
+import { gianoPaymasterAbi } from "../generated";
+import { LABELS, type LabelKey, upgradeLabel } from "./config";
+import {
+	CREATEX_ADDRESS,
+	create3Address,
+	create3Salt,
+	guardedSalt,
+} from "./create3";
+import { createxAbi } from "./createx";
+import type { DeployedContract, DeploymentRecord } from "./records";
+import { DEV_RELEASE, type Release } from "./release";
 
 export type DeployContext = {
-  publicClient: PublicClient;
-  walletClient: WalletClient<Transport, Chain, Account>;
-  /** The canonical deployer; the wallet client's account must be this address. */
-  deployer: Address;
-  record: DeploymentRecord;
-  log: (line: string) => void;
+	publicClient: PublicClient;
+	walletClient: WalletClient<Transport, Chain, Account>;
+	/** The canonical deployer; the wallet client's account must be this address. */
+	deployer: Address;
+	record: DeploymentRecord;
+	log: (line: string) => void;
 };
 
 export type PaymasterParams = {
-  entryPoint: Address;
-  /** Sole ROLE_ADMIN. A TimelockController in production. */
-  roleAdmin: Address;
-  defaultFeeWei: bigint;
-  postOpGasAllowance: number;
-  penaltyBps: number;
+	entryPoint: Address;
+	/** Sole ROLE_ADMIN. A TimelockController in production. */
+	roleAdmin: Address;
+	defaultFeeWei: bigint;
+	postOpGasAllowance: number;
+	penaltyBps: number;
 };
 
 export type TestingParams = {
-  /** Receives PrivateERC20's initial supply. */
-  holder: Address;
-  /** Owns PermissivePaymaster (stake and deposit withdrawals). */
-  owner: Address;
-  entryPoint: Address;
-  /** Wei forwarded to PermissivePaymaster's EntryPoint deposit; 0 skips funding. */
-  fundWei: bigint;
+	/** Receives PrivateERC20's initial supply. */
+	holder: Address;
+	/** Owns PermissivePaymaster (stake and deposit withdrawals). */
+	owner: Address;
+	entryPoint: Address;
+	/** Wei forwarded to PermissivePaymaster's EntryPoint deposit; 0 skips funding. */
+	fundWei: bigint;
 };
 
 function assertDeployerAccount(ctx: DeployContext): void {
-  // CreateX only honours a permissioned salt from the address in its first 20 bytes. From any
-  // other sender it treats the salt as ordinary and deploys somewhere else, unprotected — so a
-  // wrong key must stop us here, before anything is sent.
-  if (getAddress(ctx.walletClient.account.address) !== getAddress(ctx.deployer)) {
-    throw new Error(`the signing account ${ctx.walletClient.account.address} is not the canonical deployer ${ctx.deployer}`);
-  }
+	// CreateX only honours a permissioned salt from the address in its first 20 bytes. From any
+	// other sender it treats the salt as ordinary and deploys somewhere else, unprotected — so a
+	// wrong key must stop us here, before anything is sent.
+	if (
+		getAddress(ctx.walletClient.account.address) !== getAddress(ctx.deployer)
+	) {
+		throw new Error(
+			`the signing account ${ctx.walletClient.account.address} is not the canonical deployer ${ctx.deployer}`,
+		);
+	}
 }
 
 async function assertCreateX(ctx: DeployContext): Promise<void> {
-  const code = await ctx.publicClient.getCode({ address: CREATEX_ADDRESS });
-  if (!code || code === '0x') {
-    throw new Error(`CreateX is not deployed at ${CREATEX_ADDRESS} on this chain. On a local chain run \`install-createx\`; elsewhere follow github.com/pcaversaccio/createx`);
-  }
+	const code = await ctx.publicClient.getCode({ address: CREATEX_ADDRESS });
+	if (!code || code === "0x") {
+		throw new Error(
+			`CreateX is not deployed at ${CREATEX_ADDRESS} on this chain. On a local chain run \`install-createx\`; elsewhere follow github.com/pcaversaccio/createx`,
+		);
+	}
 }
 
-async function codehashAt(ctx: DeployContext, address: Address): Promise<Hex | null> {
-  const code = await ctx.publicClient.getCode({ address });
-  return code && code !== '0x' ? keccak256(code) : null;
+async function codehashAt(
+	ctx: DeployContext,
+	address: Address,
+): Promise<Hex | null> {
+	const code = await ctx.publicClient.getCode({ address });
+	return code && code !== "0x" ? keccak256(code) : null;
 }
 
 /**
@@ -80,131 +94,215 @@ async function codehashAt(ctx: DeployContext, address: Address): Promise<Hex | n
  * transaction. Returns the contract whether it was deployed now or found already in place.
  */
 export async function deployLabel(
-  ctx: DeployContext,
-  { label, release, initCode, init }: { label: string; release: string; initCode: Hex; init?: Hex },
+	ctx: DeployContext,
+	{
+		label,
+		release,
+		initCode,
+		init,
+	}: { label: string; release: string; initCode: Hex; init?: Hex },
 ): Promise<DeployedContract> {
-  assertDeployerAccount(ctx);
-  await assertCreateX(ctx);
-  const salt = create3Salt(ctx.deployer, label);
-  const address = create3Address(ctx.deployer, label);
+	assertDeployerAccount(ctx);
+	await assertCreateX(ctx);
+	const salt = create3Salt(ctx.deployer, label);
+	const address = create3Address(ctx.deployer, label);
 
-  // The local address math must agree with CreateX's own; a disagreement means create3.ts is wrong
-  // and every address it ever produced is suspect.
-  const onChain = (await ctx.publicClient.readContract({
-    address: CREATEX_ADDRESS,
-    abi: createxAbi,
-    functionName: 'computeCreate3Address',
-    args: [guardedSalt(ctx.deployer, salt)],
-  })) as Address;
-  if (getAddress(onChain) !== address) throw new Error(`create3.ts computed ${address} for ${label} but CreateX says ${onChain}`);
+	// The local address math must agree with CreateX's own; a disagreement means create3.ts is wrong
+	// and every address it ever produced is suspect.
+	const onChain = (await ctx.publicClient.readContract({
+		address: CREATEX_ADDRESS,
+		abi: createxAbi,
+		functionName: "computeCreate3Address",
+		args: [guardedSalt(ctx.deployer, salt)],
+	})) as Address;
+	if (getAddress(onChain) !== address)
+		throw new Error(
+			`create3.ts computed ${address} for ${label} but CreateX says ${onChain}`,
+		);
 
-  const existing = await codehashAt(ctx, address);
-  if (existing) {
-    ctx.log(`  = ${label.padEnd(28)} ${address} (already deployed)`);
-    return { address, label, release, codehash: existing };
-  }
+	const existing = await codehashAt(ctx, address);
+	if (existing) {
+		ctx.log(`  = ${label.padEnd(28)} ${address} (already deployed)`);
+		return { address, label, release, codehash: existing };
+	}
 
-  const { request, result } = init
-    ? await ctx.publicClient.simulateContract({
-        account: ctx.walletClient.account,
-        address: CREATEX_ADDRESS,
-        abi: createxAbi,
-        functionName: 'deployCreate3AndInit',
-        args: [salt, initCode, init, { constructorAmount: 0n, initCallAmount: 0n }],
-      })
-    : await ctx.publicClient.simulateContract({
-        account: ctx.walletClient.account,
-        address: CREATEX_ADDRESS,
-        abi: createxAbi,
-        functionName: 'deployCreate3',
-        args: [salt, initCode],
-      });
-  if (getAddress(result as Address) !== address) throw new Error(`CreateX would deploy ${label} at ${result as Address}, expected ${address}`);
+	const { request, result } = init
+		? await ctx.publicClient.simulateContract({
+				account: ctx.walletClient.account,
+				address: CREATEX_ADDRESS,
+				abi: createxAbi,
+				functionName: "deployCreate3AndInit",
+				args: [
+					salt,
+					initCode,
+					init,
+					{ constructorAmount: 0n, initCallAmount: 0n },
+				],
+			})
+		: await ctx.publicClient.simulateContract({
+				account: ctx.walletClient.account,
+				address: CREATEX_ADDRESS,
+				abi: createxAbi,
+				functionName: "deployCreate3",
+				args: [salt, initCode],
+			});
+	if (getAddress(result as Address) !== address)
+		throw new Error(
+			`CreateX would deploy ${label} at ${result as Address}, expected ${address}`,
+		);
 
-  const transactionHash = await ctx.walletClient.writeContract(request);
-  const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: transactionHash });
-  if (receipt.status !== 'success') throw new Error(`deploying ${label} reverted (${transactionHash})`);
-  const codehash = await codehashAt(ctx, address);
-  if (!codehash) throw new Error(`no code at ${address} after deploying ${label} (${transactionHash})`);
-  ctx.log(`  + ${label.padEnd(28)} ${address}  ${transactionHash}`);
-  return { address, label, release, codehash, transactionHash };
+	const transactionHash = await ctx.walletClient.writeContract(request);
+	const receipt = await ctx.publicClient.waitForTransactionReceipt({
+		hash: transactionHash,
+	});
+	if (receipt.status !== "success")
+		throw new Error(`deploying ${label} reverted (${transactionHash})`);
+	const codehash = await codehashAt(ctx, address);
+	if (!codehash)
+		throw new Error(
+			`no code at ${address} after deploying ${label} (${transactionHash})`,
+		);
+	ctx.log(`  + ${label.padEnd(28)} ${address}  ${transactionHash}`);
+	return { address, label, release, codehash, transactionHash };
 }
 
 /**
  * Records `deployed` under `key`. A contract found already in place keeps the transaction hash and
  * release from the run that actually deployed it.
  */
-function record(ctx: DeployContext, key: LabelKey, deployed: DeployedContract): DeployedContract {
-  const previous = ctx.record.contracts[key];
-  const merged = previous && previous.address === deployed.address && !deployed.transactionHash ? { ...previous, codehash: deployed.codehash } : deployed;
-  ctx.record.contracts[key] = merged;
-  return merged;
+function record(
+	ctx: DeployContext,
+	key: LabelKey,
+	deployed: DeployedContract,
+): DeployedContract {
+	const previous = ctx.record.contracts[key];
+	const merged =
+		previous &&
+		previous.address === deployed.address &&
+		!deployed.transactionHash
+			? { ...previous, codehash: deployed.codehash }
+			: deployed;
+	ctx.record.contracts[key] = merged;
+	return merged;
 }
 
-function withArgs(creationCode: Hex, types: string, values: readonly unknown[]): Hex {
-  return concat([creationCode, encodeAbiParameters(parseAbiParameters(types), values)]);
+function withArgs(
+	creationCode: Hex,
+	types: string,
+	values: readonly unknown[],
+): Hex {
+	return concat([
+		creationCode,
+		encodeAbiParameters(parseAbiParameters(types), values),
+	]);
 }
 
 /**
  * The canonical contracts under their fixed labels: wallet implementation, factory, paymaster
  * implementation and paymaster proxy. On a chain that already has them this verifies and records.
  */
-export async function deployCore(ctx: DeployContext, release: Release, paymaster: PaymasterParams): Promise<void> {
-  const c = release.contracts;
-  const put = (key: LabelKey, deployed: DeployedContract) => record(ctx, key, deployed);
+export async function deployCore(
+	ctx: DeployContext,
+	release: Release,
+	paymaster: PaymasterParams,
+): Promise<void> {
+	const c = release.contracts;
+	const put = (key: LabelKey, deployed: DeployedContract) =>
+		record(ctx, key, deployed);
 
-  const wallet = put('walletImplementation', await deployLabel(ctx, { label: LABELS.walletImplementation, release: release.version, initCode: c.GianoSmartWallet.creationCode }));
-  put(
-    'factory',
-    await deployLabel(ctx, {
-      label: LABELS.factory,
-      release: release.version,
-      initCode: withArgs(c.GianoSmartWalletFactory.creationCode, 'address', [wallet.address]),
-    }),
-  );
-  const implementation = put(
-    'paymasterImplementation',
-    await deployLabel(ctx, { label: LABELS.paymasterImplementation, release: release.version, initCode: c.GianoPaymaster.creationCode }),
-  );
-  // A stock ERC1967Proxy with an EMPTY payload, initialised by CreateX in the same transaction: no
-  // window in which an unconfigured proxy could be claimed, and nothing operator-specific in the
-  // init code (§4.2 of specs/PAYMASTER-SPECS.md).
-  put(
-    'paymasterProxy',
-    await deployLabel(ctx, {
-      label: LABELS.paymasterProxy,
-      release: release.version,
-      initCode: withArgs(c.ERC1967Proxy.creationCode, 'address, bytes', [implementation.address, '0x']),
-      init: encodeFunctionData({
-        abi: gianoPaymasterAbi,
-        functionName: 'initialize',
-        args: [paymaster.entryPoint, paymaster.roleAdmin, paymaster.defaultFeeWei, paymaster.postOpGasAllowance, paymaster.penaltyBps],
-      }),
-    }),
-  );
+	const wallet = put(
+		"walletImplementation",
+		await deployLabel(ctx, {
+			label: LABELS.walletImplementation,
+			release: release.version,
+			initCode: c.GianoSmartWallet.creationCode,
+		}),
+	);
+	put(
+		"factory",
+		await deployLabel(ctx, {
+			label: LABELS.factory,
+			release: release.version,
+			initCode: withArgs(c.GianoSmartWalletFactory.creationCode, "address", [
+				wallet.address,
+			]),
+		}),
+	);
+	const implementation = put(
+		"paymasterImplementation",
+		await deployLabel(ctx, {
+			label: LABELS.paymasterImplementation,
+			release: release.version,
+			initCode: c.GianoPaymaster.creationCode,
+		}),
+	);
+	// A stock ERC1967Proxy with an EMPTY payload, initialised by CreateX in the same transaction: no
+	// window in which an unconfigured proxy could be claimed, and nothing operator-specific in the
+	// init code (§4.2 of specs/PAYMASTER-SPECS.md).
+	put(
+		"paymasterProxy",
+		await deployLabel(ctx, {
+			label: LABELS.paymasterProxy,
+			release: release.version,
+			initCode: withArgs(c.ERC1967Proxy.creationCode, "address, bytes", [
+				implementation.address,
+				"0x",
+			]),
+			init: encodeFunctionData({
+				abi: gianoPaymasterAbi,
+				functionName: "initialize",
+				args: [
+					paymaster.entryPoint,
+					paymaster.roleAdmin,
+					paymaster.defaultFeeWei,
+					paymaster.postOpGasAllowance,
+					paymaster.penaltyBps,
+				],
+			}),
+		}),
+	);
 }
 
 /** PrivateERC20 and PermissivePaymaster. Never on a production chain (the CLI enforces it). */
-export async function deployTesting(ctx: DeployContext, release: Release, params: TestingParams): Promise<void> {
-  const c = release.contracts;
-  record(ctx, 'testErc20', await deployLabel(ctx, {
-    label: LABELS.testErc20,
-    release: release.version,
-    initCode: withArgs(c.PrivateERC20.creationCode, 'uint256, address', [100_000_000_000_000n * 10n ** 18n, params.holder]),
-  }));
-  const testPaymaster = await deployLabel(ctx, {
-    label: LABELS.testPaymaster,
-    release: release.version,
-    initCode: withArgs(c.PermissivePaymaster.creationCode, 'address, address', [params.entryPoint, params.owner]),
-  });
-  record(ctx, 'testPaymaster', testPaymaster);
-  if (params.fundWei > 0n && testPaymaster.transactionHash) {
-    // receive() forwards to the EntryPoint deposit. Only on first deployment, so re-runs do not
-    // keep topping it up.
-    const hash = await ctx.walletClient.sendTransaction({ to: testPaymaster.address, value: params.fundWei });
-    await ctx.publicClient.waitForTransactionReceipt({ hash });
-    ctx.log(`  + funded the test paymaster's deposit with ${params.fundWei} wei`);
-  }
+export async function deployTesting(
+	ctx: DeployContext,
+	release: Release,
+	params: TestingParams,
+): Promise<void> {
+	const c = release.contracts;
+	record(
+		ctx,
+		"testErc20",
+		await deployLabel(ctx, {
+			label: LABELS.testErc20,
+			release: release.version,
+			initCode: withArgs(c.PrivateERC20.creationCode, "uint256, address", [
+				100_000_000_000_000n * 10n ** 18n,
+				params.holder,
+			]),
+		}),
+	);
+	const testPaymaster = await deployLabel(ctx, {
+		label: LABELS.testPaymaster,
+		release: release.version,
+		initCode: withArgs(c.PermissivePaymaster.creationCode, "address, address", [
+			params.entryPoint,
+			params.owner,
+		]),
+	});
+	record(ctx, "testPaymaster", testPaymaster);
+	if (params.fundWei > 0n && testPaymaster.transactionHash) {
+		// receive() forwards to the EntryPoint deposit. Only on first deployment, so re-runs do not
+		// keep topping it up.
+		const hash = await ctx.walletClient.sendTransaction({
+			to: testPaymaster.address,
+			value: params.fundWei,
+		});
+		await ctx.publicClient.waitForTransactionReceipt({ hash });
+		ctx.log(
+			`  + funded the test paymaster's deposit with ${params.fundWei} wei`,
+		);
+	}
 }
 
 /**
@@ -212,19 +310,34 @@ export async function deployTesting(ctx: DeployContext, release: Release, params
  * `giano.paymaster.impl@v2`, `giano.wallet.impl@v2`. The fixed-label contracts do not change.
  */
 export async function deployUpgradeTarget(
-  ctx: DeployContext,
-  release: Release,
-  of: 'paymasterImplementation' | 'walletImplementation',
+	ctx: DeployContext,
+	release: Release,
+	of: "paymasterImplementation" | "walletImplementation",
 ): Promise<DeployedContract> {
-  const creationCode = of === 'paymasterImplementation' ? release.contracts.GianoPaymaster.creationCode : release.contracts.GianoSmartWallet.creationCode;
-  // A working-tree build changes between runs, so its label names the code rather than a version.
-  const version = release.version === DEV_RELEASE ? `${DEV_RELEASE}-${keccak256(creationCode).slice(2, 10)}` : release.version;
-  const deployed = await deployLabel(ctx, { label: upgradeLabel(LABELS[of], version), release: release.version, initCode: creationCode });
-  if (!ctx.record.upgrades.some((u) => u.address === deployed.address)) ctx.record.upgrades.push({ ...deployed, of });
-  return deployed;
+	const creationCode =
+		of === "paymasterImplementation"
+			? release.contracts.GianoPaymaster.creationCode
+			: release.contracts.GianoSmartWallet.creationCode;
+	// A working-tree build changes between runs, so its label names the code rather than a version.
+	const version =
+		release.version === DEV_RELEASE
+			? `${DEV_RELEASE}-${keccak256(creationCode).slice(2, 10)}`
+			: release.version;
+	const deployed = await deployLabel(ctx, {
+		label: upgradeLabel(LABELS[of], version),
+		release: release.version,
+		initCode: creationCode,
+	});
+	if (!ctx.record.upgrades.some((u) => u.address === deployed.address))
+		ctx.record.upgrades.push({ ...deployed, of });
+	return deployed;
 }
 
 /** `upgradeToAndCall(implementation, '')` on the paymaster proxy, for an account holding UPGRADER_ROLE. */
 export function paymasterUpgradeCalldata(implementation: Address): Hex {
-  return encodeFunctionData({ abi: gianoPaymasterAbi, functionName: 'upgradeToAndCall', args: [implementation, '0x'] });
+	return encodeFunctionData({
+		abi: gianoPaymasterAbi,
+		functionName: "upgradeToAndCall",
+		args: [implementation, "0x"],
+	});
 }

@@ -1,6 +1,6 @@
-import type { WriteResult } from '@appliedblockchain/giano-paymaster-sdk';
-import { useCallback, useState } from 'react';
-import { notifyError, notifySuccess } from '../components/ui';
+import type { WriteResult } from "@appliedblockchain/giano-paymaster-sdk";
+import { useCallback, useState } from "react";
+import { notifyError, notifySuccess } from "../components/ui";
 
 /**
  * The write lifecycle, in one place.
@@ -14,27 +14,35 @@ import { notifyError, notifySuccess } from '../components/ui';
  * trace — so they are surfaced verbatim rather than reworded here.
  */
 export function useWrite(refresh: () => Promise<void>) {
-  const [pending, setPending] = useState<string>();
+	const [pending, setPending] = useState<string>();
 
-  const run = useCallback(
-    async (label: string, send: () => Promise<WriteResult>): Promise<boolean> => {
-      setPending(label);
-      try {
-        const result = await send();
-        notifySuccess(`${label} submitted`, result.hash);
-        await result.wait();
-        notifySuccess(`${label} confirmed`);
-        await refresh();
-        return true;
-      } catch (error) {
-        notifyError(`Could not ${label.toLowerCase()}`, error);
-        return false;
-      } finally {
-        setPending(undefined);
-      }
-    },
-    [refresh],
-  );
+	const run = useCallback(
+		async (
+			label: string,
+			send: () => Promise<WriteResult>,
+		): Promise<boolean> => {
+			setPending(label);
+			try {
+				const result = await send();
+				notifySuccess(`${label} submitted`, result.hash);
+				await result.wait();
+				notifySuccess(`${label} confirmed`);
+				await refresh();
+				return true;
+			} catch (error) {
+				notifyError(`Could not ${label.toLowerCase()}`, error);
+				return false;
+			} finally {
+				setPending(undefined);
+			}
+		},
+		[refresh],
+	);
 
-  return { run, pending, isPending: (label: string) => pending === label, busy: pending !== undefined };
+	return {
+		run,
+		pending,
+		isPending: (label: string) => pending === label,
+		busy: pending !== undefined,
+	};
 }

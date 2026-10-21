@@ -1,5 +1,5 @@
-import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
-import type { Address, Hex, PublicClient } from 'viem';
+import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
+import type { Address, Hex, PublicClient } from "viem";
 
 /**
  * On-chain owner-set reads (D1: the chain IS the owner set). Used wherever the registry
@@ -11,35 +11,47 @@ import type { Address, Hex, PublicClient } from 'viem';
  * null as "unknown", never as "no".
  */
 
-async function hasCode(client: PublicClient, address: Address): Promise<boolean> {
-  const code = await client.getCode({ address }).catch(() => undefined);
-  return !!code && code !== '0x';
+async function hasCode(
+	client: PublicClient,
+	address: Address,
+): Promise<boolean> {
+	const code = await client.getCode({ address }).catch(() => undefined);
+	return !!code && code !== "0x";
 }
 
-export async function isOwnerPublicKeyOnChain(client: PublicClient, wallet: Address, x: Hex, y: Hex): Promise<boolean | null> {
-  try {
-    if (!(await hasCode(client, wallet))) return null;
-    return await client.readContract({
-      address: wallet,
-      abi: gianoSmartWalletAbi,
-      functionName: 'isOwnerPublicKey',
-      args: [x, y],
-    });
-  } catch {
-    return null;
-  }
+export async function isOwnerPublicKeyOnChain(
+	client: PublicClient,
+	wallet: Address,
+	x: Hex,
+	y: Hex,
+): Promise<boolean | null> {
+	try {
+		if (!(await hasCode(client, wallet))) return null;
+		return await client.readContract({
+			address: wallet,
+			abi: gianoSmartWalletAbi,
+			functionName: "isOwnerPublicKey",
+			args: [x, y],
+		});
+	} catch {
+		return null;
+	}
 }
 
-export async function isOwnerAddressOnChain(client: PublicClient, wallet: Address, owner: Address): Promise<boolean | null> {
-  try {
-    if (!(await hasCode(client, wallet))) return null;
-    return await client.readContract({
-      address: wallet,
-      abi: gianoSmartWalletAbi,
-      functionName: 'isOwnerAddress',
-      args: [owner],
-    });
-  } catch {
-    return null;
-  }
+export async function isOwnerAddressOnChain(
+	client: PublicClient,
+	wallet: Address,
+	owner: Address,
+): Promise<boolean | null> {
+	try {
+		if (!(await hasCode(client, wallet))) return null;
+		return await client.readContract({
+			address: wallet,
+			abi: gianoSmartWalletAbi,
+			functionName: "isOwnerAddress",
+			args: [owner],
+		});
+	} catch {
+		return null;
+	}
 }
