@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { mergePolicy, tenantsSeedSchema, validateTenantSeed } from '../src/services/tenants.js';
+import {
+  checkTenantInvariants,
+  mergePolicy,
+  tenantCreateSchema,
+  tenantPatchSchema,
+  tenantsSeedSchema,
+  validateTenantSeed,
+  validateTenantUpdate,
+  type Tenant,
+} from '../src/services/tenants.js';
 
 /**
  * The RP/origin invariant (specs/DEVELOPER-GUIDE.md §1) is enforced on the
@@ -61,6 +70,82 @@ describe('tenant seed validation (V11)', () => {
         { ...other, adminKeys: [sharedKey] },
       ]).success,
     ).toBe(false);
+  });
+});
+
+describe('one validator for every tenant write (operator-tenant-lifecycle)', () => {
+  const base = {
+    slug: 'acme',
+    walletOrigin: 'https://wallet.acme.app',
+    rpName: 'Acme Wallet',
+    openRegistration: true,
+  };
+
+  it('refuses an unknown field on the seed, create and patch paths alike', () => {
+    expect(() => validateTenantSeed({ ...base, rpname: 'typo' })).toThrow(/Unrecognized key/);
+    expect(tenantCreateSchema.safeParse({ ...base, rpname: 'typo' }).success).toBe(false);
+    expect(tenantPatchSchema.safeParse({ rpname: 'typo' }).success).toBe(false);
+  });
+
+  it('applies the same invariants to an operator create as to a seed entry', () => {
+    const create = (input: object) => tenantCreateSchema.safeParse({ ...base, ...input });
+    expect(create({ rpId: 'acme.app' }).error?.issues[0]).toMatchObject({ path: ['rpId'] });
+    expect(create({ expectedOrigins: ['https://evil.example.com'] }).error?.issues[0]).toMatchObject({ path: ['expectedOrigins'] });
+    expect(create({ openRegistration: false }).error?.issues[0]).toMatchObject({ path: ['adminKeys'] });
+    expect(create({ openRegistration: false, adminKeys: [{ label: 'ops' }] }).success).toBe(true);
+  });
+
+  it('normalises a create the way the seed does', () => {
+    const created = tenantCreateSchema.parse(base);
+    expect(created.rpId).toBe('wallet.acme.app');
+    expect(created.expectedOrigins).toEqual(['https://wallet.acme.app']);
+  });
+
+  it('reports a malformed origin once, from the field schema, without the invariant check throwing', () => {
+    const parsed = tenantCreateSchema.safeParse({ ...base, walletOrigin: 'not a url' });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues).toHaveLength(1);
+    expect(checkTenantInvariants({ walletOrigin: 'not a url', expectedOrigins: [], openRegistration: true }, { adminKeyCount: 0 })).toEqual([]);
+  });
+
+  it('a patch is validated as the merged result, with the stored admin-key count', () => {
+    const stored = {
+      ...base,
+      id: '00000000-0000-4000-8000-000000000001',
+      rpId: 'wallet.acme.app',
+      expectedOrigins: ['https://wallet.acme.app'],
+      allowedDappOrigins: [],
+      corsOrigins: [],
+      policy: {},
+      branding: {},
+    } as unknown as Tenant;
+    const closed = validateTenantUpdate(stored, { openRegistration: false }, { adminKeyCount: 0 });
+    expect(closed.ok).toBe(false);
+    expect(closed.ok === false && closed.issues[0].path).toEqual(['adminKeys']);
+    expect(validateTenantUpdate(stored, { openRegistration: false }, { adminKeyCount: 1 }).ok).toBe(true);
+    const outside = validateTenantUpdate(stored, { expectedOrigins: ['https://evil.example.com'] }, { adminKeyCount: 1 });
+    expect(outside.ok === false && outside.issues[0].path).toEqual(['expectedOrigins']);
+    // replacing expectedOrigins never drops the wallet origin itself
+    const replaced = validateTenantUpdate(stored, { expectedOrigins: ['https://pay.wallet.acme.app'] }, { adminKeyCount: 1 });
+    expect(replaced.ok && replaced.fields.expectedOrigins).toEqual(['https://wallet.acme.app', 'https://pay.wallet.acme.app']);
+  });
+
+  it('refuses a seed in which one entry claims an origin another entry claims', () => {
+    const other = { ...base, slug: 'other', walletOrigin: 'https://pay.wallet.acme.app' };
+    const parsed = tenantsSeedSchema.safeParse([{ ...base, expectedOrigins: ['https://pay.wallet.acme.app'] }, { ...other, rpId: undefined }]);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues.map((issue) => issue.message)).toContainEqual(expect.stringMatching(/claimed by both "acme" and "other"/));
+  });
+
+  it('lets two tenants share a CORS or dApp origin, which are not claims', () => {
+    const other = { ...base, slug: 'other', walletOrigin: 'https://wallet.other.app' };
+    const dapp = 'https://dapp.example.com';
+    expect(
+      tenantsSeedSchema.safeParse([
+        { ...base, corsOrigins: [dapp], allowedDappOrigins: [dapp] },
+        { ...other, corsOrigins: [dapp], allowedDappOrigins: [dapp] },
+      ]).success,
+    ).toBe(true);
   });
 });
 

@@ -46,11 +46,36 @@ export type ResolvedChain = {
   };
 };
 
+/** One operator: a label for logs and history, and the EOA that signs in as them. */
+const operatorAddressesSchema = z
+  .array(
+    z
+      .object({
+        id: z.string().regex(/^[a-z0-9-]{1,64}$/, 'lowercase id, e.g. ops-oncall'),
+        address: z
+          .string()
+          .regex(/^0x[0-9a-fA-F]{40}$/, 'expected a 0x address')
+          .transform((address) => address.toLowerCase()),
+      })
+      .strict(),
+  )
+  .superRefine((operators, ctx) => {
+    for (const field of ['id', 'address'] as const) {
+      const seen = new Set<string>();
+      for (const operator of operators) {
+        if (seen.has(operator[field])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate operator ${field}: ${operator[field]}` });
+        seen.add(operator[field]);
+      }
+    }
+  });
+
+export type OperatorEntry = z.infer<typeof operatorAddressesSchema>[number];
+
 /**
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
- * rows, provisioned via TENANTS_SEED — see src/services/tenants.ts and
- * specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
+ * rows, written by TENANTS_SEED at boot or by operators at runtime — see
+ * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
  * jsonb may override per field.
  */
 const envSchema = z
@@ -103,6 +128,55 @@ const envSchema = z
         }
         return parsed.data;
       }),
+
+    /**
+     * Giano's operators (specs/OPERATOR-ADMIN-SPECS.md §4.1): a JSON array of `{ id, address }`.
+     * Configuration, never rows — a database write must not be able to mint an operator. Addresses
+     * are public, so this is a plain variable, not a secret. Empty or absent: no operator route
+     * is registered at all.
+     */
+    OPERATOR_ADDRESSES: z
+      .string()
+      .optional()
+      .transform((raw, ctx) => {
+        if (!raw) return [];
+        let json: unknown;
+        try {
+          json = JSON.parse(raw);
+        } catch (error) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `not valid JSON: ${(error as Error).message}` });
+          return z.NEVER;
+        }
+        const parsed = operatorAddressesSchema.safeParse(json);
+        if (!parsed.success) {
+          for (const issue of parsed.error.issues) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${issue.path.join('.') || '(root)'}: ${issue.message}` });
+          }
+          return z.NEVER;
+        }
+        return parsed.data;
+      }),
+    /** The console's host; the `domain` every operator sign-in message carries. */
+    OPERATOR_SIWE_DOMAIN: z
+      .string()
+      .regex(/^[a-z0-9.-]+(:\d+)?$/i, 'a host, optionally with a port, e.g. paymaster.dev.giano.appliedblockchain.dev')
+      .optional(),
+    /** Defaults to https://${OPERATOR_SIWE_DOMAIN}. */
+    OPERATOR_SIWE_URI: z.string().url().optional(),
+    OPERATOR_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+    /** Absolute operator session lifetime; sessions are never renewed. */
+    OPERATOR_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
+    /**
+     * Per operator session, and per address for challenge and verify, never per IP. Sign-in also
+     * has a deployment-wide ceiling of ten times this.
+     */
+    OPERATOR_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+    /**
+     * Delete refuses to trust a zero balance read from a ledger more than this many blocks behind
+     * the chain head (§5.3). Must exceed PAYMASTER_WATCHER_CONFIRMATIONS, which the watcher's
+     * cursor trails the head by on purpose.
+     */
+    TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS: z.coerce.number().int().positive().default(50),
 
     /**
      * The chains this deployment serves (MC-46): the backend chain document giano-bundler reads
@@ -378,6 +452,23 @@ const envSchema = z
       }
     }
 
+    if (env.OPERATOR_ADDRESSES.length > 0 && !env.OPERATOR_SIWE_DOMAIN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['OPERATOR_SIWE_DOMAIN'],
+        message: 'required when OPERATOR_ADDRESSES is set — it is the domain operators sign in for',
+      });
+    }
+    if (env.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS <= env.PAYMASTER_WATCHER_CONFIRMATIONS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS'],
+        message:
+          `must exceed PAYMASTER_WATCHER_CONFIRMATIONS (${env.PAYMASTER_WATCHER_CONFIRMATIONS}) — the watcher trails the ` +
+          'head by that many blocks on purpose, so a smaller threshold would refuse every delete',
+      });
+    }
+
     if (env.SPONSORSHIP_ENABLED) {
       const anyPaymaster = env.GIANO_CHAINS
         ? env.GIANO_CHAINS.some((d) => d.sponsorshipPaymaster ?? gianoAddresses[d.chainId]?.sponsorshipPaymaster)
@@ -475,7 +566,9 @@ const envSchema = z
           },
         ];
 
-    return { ...env, CHAINS };
+    const OPERATOR_SIWE_URI = env.OPERATOR_SIWE_URI ?? (env.OPERATOR_SIWE_DOMAIN ? `https://${env.OPERATOR_SIWE_DOMAIN}` : undefined);
+
+    return { ...env, CHAINS, OPERATOR_SIWE_URI };
   });
 
 export type AppConfig = z.infer<typeof envSchema>;

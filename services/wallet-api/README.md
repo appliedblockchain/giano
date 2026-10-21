@@ -8,8 +8,9 @@ ERC-4337 user-operation relay. Distributed as `ghcr.io/appliedblockchain/giano-w
 client projects. Every tenant owns its wallet origin, and that origin's host is the tenant's
 WebAuthn RP ID — 1:1 (`specs/DEVELOPER-GUIDE.md` §1). The origin may serve Giano's stock
 wallet-web UI or a UI the tenant built itself; both are the same architecture. Tenants are
-provisioned declaratively via the `TENANTS_SEED` env var (upserted by slug at boot) — no
-dashboard, onboarding is edit-and-restart.
+provisioned declaratively via the `TENANTS_SEED` env var (upserted by slug at boot) or, when
+`OPERATOR_ADDRESSES` is set, by Giano's operators at runtime through `/v1/operator/*`
+(`specs/OPERATOR-ADMIN-SPECS.md`) — no redeploy needed for the latter.
 
 ## Security model
 
@@ -57,6 +58,8 @@ Swagger UI at `/docs` outside production).
 | `GET /v1/userops/:hash/receipt` | public (deliberately tenant-free) | read-only receipt proxy (thin-SDK receipt waiting) |
 | `GET /.well-known/webauthn` | `Host` → tenant | that tenant's Related Origin Requests document |
 | `GET/POST/DELETE /v1/admin/ror-origins` | tenant admin key | manage the key's tenant's ROR origins |
+| `POST /v1/operator/auth/challenge`, `/verify`, `/logout` | none / operator session; any `Origin` refused | operator sign-in with a wallet (EIP-4361): a server-issued message, exchanged once for a `gos_` session |
+| `GET/POST /v1/operator/tenants`, `GET/PATCH/DELETE /v1/operator/tenants/:slug`, `…/suspend`, `…/resume`, `…/admin-keys`, `…/adopt`, `…/history` | operator session; any `Origin` refused | runtime tenant CRUD and lifecycle (active → suspended → deleted tombstone), generated admin keys, history |
 | `GET /healthz`, `GET /readyz` | public | liveness / readiness (DB ping) |
 | `GET /metrics` | open, or bearer when `METRICS_BEARER_TOKEN` set | Prometheus metrics, `tenant`-labelled |
 
@@ -80,6 +83,10 @@ example). Highlights:
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
+| `OPERATOR_ADDRESSES` | JSON array of `{ id, address }`: the EOAs that may sign in as Giano operators. Empty or absent (the default) registers no operator route |
+| `OPERATOR_SIWE_DOMAIN` / `OPERATOR_SIWE_URI` | the console host every operator sign-in message names (required with operators), and its URI (default `https://<domain>`) |
+| `OPERATOR_CHALLENGE_TTL_SECONDS` / `OPERATOR_SESSION_TTL_SECONDS` / `OPERATOR_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute operator session lifetime (1800), per-session and per-address limit (60) |
+| `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` | delete refuses a ledger further than this behind the chain head (50); must exceed `PAYMASTER_WATCHER_CONFIRMATIONS` |
 
 CORS is per-tenant (`corsOrigins`) and fail-closed; there is no global CORS allowlist.
 
@@ -95,6 +102,17 @@ pnpm migrate        # apply migrations to DATABASE_URL
 
 The integration tests exercise real WebAuthn ceremonies end-to-end using generated P-256 keys
 and hand-encoded CBOR attestations — no browser needed.
+
+## Operator sign-in from a script
+
+For acceptance on a deployment, with a throwaway EOA listed in its `OPERATOR_ADDRESSES`:
+
+```sh
+OPERATOR_PRIVATE_KEY=0x… pnpm -s --filter @appliedblockchain/giano-wallet-api operator:login --api https://api.dev.giano.appliedblockchain.dev
+```
+
+It prints only the session token on stdout. A real operator signs in through the console with
+their own wallet.
 
 ## Docker
 

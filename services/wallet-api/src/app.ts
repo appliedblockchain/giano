@@ -20,12 +20,15 @@ import paymasterRoutes from './routes/paymaster.js';
 import rpcRelayRoutes from './routes/rpc-relay.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
+import operatorAuthRoutes from './routes/operator-auth.js';
+import operatorTenantRoutes from './routes/operator-tenants.js';
 import useropRoutes from './routes/userops.js';
 import walletManagementRoutes from './routes/wallet-management.js';
 import webauthnRoutes from './routes/webauthn.js';
 import wellKnownRoutes from './routes/well-known.js';
 import { buildChainRegistry, type ChainRegistry } from './services/chains.js';
 import { createChallengeService } from './services/challenges.js';
+import { createOperatorSessionService } from './services/operator-sessions.js';
 import { createSessionService } from './services/sessions.js';
 import type { PaymasterReader } from './services/paymaster-contract.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
@@ -71,6 +74,18 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   const challenges = createChallengeService(db, config.CHALLENGE_TTL_SECONDS);
   const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
   const tenants = createTenantService(db);
+  // The operator tier exists only where operators are configured: an empty OPERATOR_ADDRESSES
+  // registers no operator route at all (specs/OPERATOR-ADMIN-SPECS.md H-b).
+  const operatorSessions =
+    config.OPERATOR_ADDRESSES.length > 0
+      ? createOperatorSessionService(db, {
+          operators: config.OPERATOR_ADDRESSES,
+          domain: config.OPERATOR_SIWE_DOMAIN!,
+          uri: config.OPERATOR_SIWE_URI!,
+          challengeTtlSeconds: config.OPERATOR_CHALLENGE_TTL_SECONDS,
+          sessionTtlSeconds: config.OPERATOR_SESSION_TTL_SECONDS,
+        })
+      : undefined;
 
   await app.register(errorHandler);
   await app.register(metricsPlugin, { bearerToken: config.METRICS_BEARER_TOKEN });
@@ -100,7 +115,8 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
       components: {
         securitySchemes: {
           session: { type: 'http', scheme: 'bearer', description: 'Opaque session token from a ceremony verify endpoint' },
-          adminKey: { type: 'http', scheme: 'bearer', description: "Per-tenant admin API key (provisioned via TENANTS_SEED)" },
+          adminKey: { type: 'http', scheme: 'bearer', description: 'Per-tenant admin API key (from TENANTS_SEED, or issued by an operator)' },
+          operatorSession: { type: 'http', scheme: 'bearer', description: 'Giano operator session from POST /v1/operator/auth/verify (EIP-4361 sign-in)' },
         },
       },
     },
@@ -111,7 +127,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   }
 
   await app.register(tenantPlugin, { tenants });
-  await app.register(authPlugin, { sessions, tenants });
+  await app.register(authPlugin, { sessions, tenants, operatorSessions });
 
   // ── The chain registry ─────────────────────────────────────────────────────────
   //
@@ -198,6 +214,10 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   await app.register(useropRoutes, { db, registry, relay });
   await app.register(bundlerRelayRoutes, { config, relay });
   await app.register(rpcRelayRoutes, { config });
+  if (operatorSessions) {
+    await app.register(operatorAuthRoutes, { operatorSessions, ratePerMinute: config.OPERATOR_RATE_LIMIT_PER_MINUTE });
+    await app.register(operatorTenantRoutes, { db, config, registry });
+  }
 
   return app;
 }

@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "verify:authorisation": "tsx scripts/verify-authorisation.ts",
+    "operator:login": "tsx scripts/operator-login.ts",
     "openapi": "tsx openapi/generate.ts",
     "openapi:check": "tsx openapi/generate.ts --check"
   },
