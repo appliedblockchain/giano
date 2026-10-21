@@ -70,8 +70,8 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
   (default from the contracts registry). No node or bundler URL: the wallet uses wallet-api's
   `/api/v1/rpc/<chainId>` and `/api/v1/bundler/<chainId>` relays (`GIANO_RPC_URL` /
   `GIANO_BUNDLER_URL` exist only to dial them directly in development).
-- **bundler** (optional in-stack) — `ALTO_RPC_URL`, `ALTO_EXECUTOR_PRIVATE_KEYS` (from a
-  secret), `ALTO_SAFE_MODE=true`.
+- **bundler** (optional in-stack, `giano-bundler`) — `BUNDLER_RPC_URL` (needs `eth_call` state
+  overrides, not `debug_traceCall`), `BUNDLER_EXECUTOR_PRIVATE_KEYS` (from a secret, funded).
 
 `ENTRYPOINT_ADDRESS`/`FACTORY_ADDRESS` default from
 `@appliedblockchain/giano-contracts` for known chains; set them explicitly for others.
@@ -424,7 +424,7 @@ than the wallet-api. Full policy: `COMPATIBILITY.md`.
 # --profile portless adds the relay that lets those addresses omit a port; the names
 # themselves come from `pnpm -F @appliedblockchain/giano-e2e portless:up` (see e2e/README.md).
 docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
-# or the from-source dev stack (postgres + anvil + alto + wallet-api; run wallet-web
+# or the from-source dev stack (postgres + anvil + bundler + wallet-api; run wallet-web
 # separately with `pnpm --filter @appliedblockchain/giano-wallet-web dev`):
 docker compose -f deploy/docker-compose.dev.yml up --build
 ```

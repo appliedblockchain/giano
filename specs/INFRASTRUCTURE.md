@@ -141,7 +141,7 @@ nothing in the `dev` workspace values should be mistaken for a production postur
 |---|---|---|---|---|
 | D1 | Compute | **ECS Fargate** | EC2 + compose; EKS; App Runner | No control-plane fee, no hosts to patch, task definitions map ~1:1 onto the existing compose services. EKS costs $73/mo before a pod runs. |
 | D2 | Chain | **Two: Base Sepolia (84532) and Ethereum Sepolia (11155111)**, RPC via QuickNode | Self-hosted anvil devnet; Base Sepolia alone | Persistent state and a realistic, multi-chain stack — "one passkey, one address, every chain" is only demonstrable with more than one chain. The canonical factory and implementation are already registered and deployed on both ([§13](#13-chain-prerequisites)). |
-| D3 | Bundler | **Self-hosted Alto on Fargate, one per chain** | Pimlico hosted; one bundler shared across chains | `services/bundler` already exists, pinned and env-driven. No third-party account, no shared API key. A bundler's executor and submission endpoint are chain-specific — Alto does not multiplex chains inside one process — so two chains need two services ([§14.7](#147-bundler)). Both share one executor and one utility key, funded on both chains; only the RPC endpoint differs between them. |
+| D3 | Bundler | **Self-hosted Alto on Fargate, one per chain** | Pimlico hosted; one bundler shared across chains | `services/bundler` already exists, pinned and env-driven. No third-party account, no shared API key. A bundler's executor and submission endpoint are chain-specific — Alto does not multiplex chains inside one process — so two chains need two services ([§14.7](#147-bundler)). Both share one executor and one utility key, funded on both chains; only the RPC endpoint differs between them. *(Superseded: giano-bundler replaced Alto — still self-hosted, one per chain, one shared executor, but no utility key; see `services/bundler/README.md`.)* |
 | D4 | Database | **RDS Postgres 17, `db.t4g.micro`, single-AZ in `dev`** | Aurora Serverless v2 min-0; Postgres container on EFS | Managed backups for ~$16/mo. Aurora's scale-to-zero is attractive but adds cold-start latency to a stack that is already asleep out of hours (D9). |
 | D5 | Region | **`eu-west-2` (London)** | `eu-west-1`; `us-east-1` | Team latency and UK residency, at ~5–10% over Ireland. |
 | D6 | DNS | **DNSimple, via the `dnsimple/dnsimple` provider** | Route 53 delegated subdomain | The parent domains already live in DNSimple. Delegating a child zone to Route 53 buys an alias record type we do not need and adds a second DNS system, a manual `NS` handover step and a hosted-zone charge. One provider, one zone, no delegation ([§6](#6-dns)). |
@@ -277,8 +277,8 @@ subgraph VPCX["VPC giano-dev · 10.40.0.0/16 · eu-west-2 · two AZs"]
     SEX2["custom-example-byoui · nginx :8080<br/>0.25 / 512 — tenant byoui's dApp<br/>same image, GIANO_WALLET_URL differs"]
     SPM["paymaster-admin · nginx :8080<br/>0.25 / 512 — operator console"]
     SAPI["wallet-api · Fastify :8080<br/>0.5 vCPU / 2048 MB<br/>RUN_MIGRATIONS=true — migrates on boot, before listen<br/>multi-tenant · testnet class · both chains"]
-    SBD["bundler-base-sepolia · Alto :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only"]
-    SBD2["bundler-eth-sepolia · Alto :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only<br/>same image, executor and utility key as bundler-base-sepolia"]
+    SBD["bundler-base-sepolia · giano-bundler :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only"]
+    SBD2["bundler-eth-sepolia · giano-bundler :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only<br/>same image and executor key as bundler-base-sepolia"]
     ONESHOT["one-shot task definition, no service<br/>provision-sponsorship"]
     RDSX["RDS Postgres 17 · db.t4g.micro<br/>publicly_accessible = false<br/>SG: 5432 from the tasks SG only<br/>KMS CMK giano-dev-rds-kms at rest"]
   end
@@ -1655,8 +1655,8 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui, bundler-eth-sepolia |
 | `chains` | the full `GIANO_CHAINS` JSON — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api, paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
-| `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)) | bundler-base-sepolia, bundler-eth-sepolia |
-| `alto-utility-key` | 32-byte hex — likewise shared, needs no funding | bundler-base-sepolia, bundler-eth-sepolia |
+| `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)); keeps its Alto-era name | bundler-base-sepolia, bundler-eth-sepolia (as `BUNDLER_EXECUTOR_PRIVATE_KEYS`) |
+| `alto-utility-key` | 32-byte hex — **no longer read**: giano-bundler has no utility key | nothing |
 | `tenants-seed` | the [§14.2](#142-wallet-api) JSON, carrying `adminKeys` | wallet-api |
 | `metrics-bearer-token` | random string | wallet-api |
 
@@ -2067,7 +2067,7 @@ task's; the split across containers is in [§17.3.3](#1733-the-sidecars).
 | `wallet-byo` | `giano-wallet-byo` | 0.25 / 1024 | 512 | 8080 | `wallet.byoui.*` | 1 |
 | `paymaster-admin` | `giano-paymaster-admin` | 0.25 / 1024 | 512 | 8080 | `paymaster.*` | 1 |
 | `bundler-base-sepolia` | `giano-bundler` | 0.5 / 2048 | 1024 | 4337 | **none** — no target group | 1 |
-| `bundler-eth-sepolia` | `giano-bundler` — **same image, different `ALTO_RPC_URL`** | 0.5 / 2048 | 1024 | 4337 | **none** — no target group | 1 |
+| `bundler-eth-sepolia` | `giano-bundler` — **same image, different `BUNDLER_RPC_URL`** | 0.5 / 2048 | 1024 | 4337 | **none** — no target group | 1 |
 
 Per-service environment variables are in [§14](#14-the-services), which is the section to read
 alongside this one when writing the task definitions.
@@ -2171,7 +2171,7 @@ module "svc-wallet-api" {
 
 `bundler-base-sepolia` and `bundler-eth-sepolia` are the same module with `alb_enabled = false`,
 which drops the target group, the listener rule and the load-balancer block on the service — and the
-same `image` as each other, differing only in `ALTO_RPC_URL`. `custom-example-byoui` is the same
+same `image` as each other, differing only in `BUNDLER_RPC_URL`. `custom-example-byoui` is the same
 module with the same `image` as `custom-example` and two different `environment` entries.
 
 Every service definition:
@@ -2926,7 +2926,7 @@ private key, funded separately on each network.
 
 | Account | Purpose | Drains when |
 |---|---|---|
-| Alto executor | submits bundles, pays L1 gas — on whichever chain the bundle was submitted to | every sponsored transaction on that chain |
+| Bundler executor | submits one `handleOps` transaction per UserOp, pays L1 gas — on whichever chain it was submitted to; not refilled automatically | every sponsored transaction on that chain |
 | Paymaster deposit | the EntryPoint deposit + stake the paymaster spends from, on that chain | every sponsored transaction on that chain |
 
 The sponsorship signer key ([§10.4](#104-the-sponsorship-signer-constraint)) signs paymaster data and
@@ -2945,9 +2945,10 @@ differ by service — `custom-example`/`custom-example-byoui` take both scalar s
 `wallet-api` instead takes them pre-composed into its own `GIANO_CHAINS` secret (`chains`,
 [§7.3](#73-the-secrets)); each bundler takes only its own chain's.
 
-The bundler's safe mode (`ALTO_SAFE_MODE=true`, [§14.7](#147-bundler)) validates every user operation
-with `debug_traceCall`, so **both** endpoints must be trace-capable — QuickNode's are, on the tiers
-this needs.
+The bundler ([§14.7](#147-bundler)) simulates every user operation with `eth_call` state overrides
+and never calls `debug_traceCall`, so **both** endpoints need state overrides but need not be
+trace-capable. giano-bundler does no ERC-7562 tracing, so nothing in Giano's own stack checks that
+account and paymaster validation stays ERC-7562-compliant.
 
 **The wallet origins never see either key.** `wallet-web` and `wallet-byo` read every chain through
 `wallet-api`'s `/v1/rpc/:chainId` relay (same-origin under `/api`), so both keys stay in
@@ -3360,18 +3361,17 @@ implementation, not of the requirement.
 ### 14.7 `bundler`
 
 Two services, `bundler-base-sepolia` and `bundler-eth-sepolia` — the same image
-(`giano-bundler`), the same executor and utility key, differing only in `ALTO_RPC_URL`. A bundler's
-submission endpoint and executor are chain-specific by nature (D3): Alto does not multiplex chains
-inside one process, so one chain means one bundler.
+(`giano-bundler`), the same executor key, differing only in `BUNDLER_RPC_URL`. A bundler's
+submission endpoint and executor are chain-specific by nature (D3): giano-bundler serves one chain
+per process, so one chain means one bundler. One task each, stopped before its replacement starts:
+executors track their nonces in memory.
 
 | Variable | `bundler-base-sepolia` | `bundler-eth-sepolia` |
 |---|---|---|
-| `ALTO_RPC_URL` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) | Ethereum Sepolia endpoint (**ASM** `giano-dev-rpc-url-eth-sepolia`) |
-| `ALTO_ENTRYPOINTS` | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | same |
-| `ALTO_EXECUTOR_PRIVATE_KEYS` | **ASM** `giano-dev-alto-executor-key` | same secret — same key, funded separately on each chain ([§13.2](#132-funded-accounts)) |
-| `ALTO_UTILITY_PRIVATE_KEY` | **ASM** `giano-dev-alto-utility-key` | same secret |
-| `ALTO_SAFE_MODE` | `true` — this is a real chain | same |
-| `GIANO_DEV_MODE` | unset; the entrypoint's Anvil-key guard stays armed | same |
+| `BUNDLER_RPC_URL` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) | Ethereum Sepolia endpoint (**ASM** `giano-dev-rpc-url-eth-sepolia`) |
+| `BUNDLER_ENTRYPOINT` | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | same |
+| `BUNDLER_EXECUTOR_PRIVATE_KEYS` | **ASM** `giano-dev-alto-executor-key` | same secret — same key, funded separately on each chain ([§13.2](#132-funded-accounts)) |
+| `GIANO_DEV_MODE` | unset; the Anvil-key guard stays armed | same |
 
 Sharing one executor key across both rather than minting a second is deliberate: it is one EOA, one
 address, funded on two chains — no different from how the wallet contracts themselves land at the
@@ -3681,7 +3681,7 @@ the Datadog monitor that would catch it. **Nothing emits the metric it watches.*
 
 The gap is small. `wallet-api` already holds a viem public client per served chain and already runs a
 per-chain paymaster watcher on a timer — one instance per entry in `GIANO_CHAINS`, so both chains
-already have one. Have each watcher additionally read the (shared) Alto executor's ETH balance on
+already have one. Have each watcher additionally read the (shared) bundler executor's ETH balance on
 its own chain and that chain's paymaster's EntryPoint deposit, and submit both to DogStatsD as
 `giano.chain.balance` tagged `account:executor` / `account:paymaster` and `chain_id:84532` or
 `chain_id:11155111`, whichever the watcher instance is for. The
@@ -4373,7 +4373,7 @@ pnpm --filter @appliedblockchain/giano-contracts \
 ```
 
 Record both proxy addresses and confirm they agree (§13.1). Then fund each chain's EntryPoint
-deposit and the (shared) Alto executor account from that chain's faucet — Base Sepolia and Ethereum
+deposit and the (shared) bundler executor account from that chain's faucet — Base Sepolia and Ethereum
 Sepolia each have their own ([§13.2](#132-funded-accounts)). All four drain with use, and an empty
 one presents as "transactions stopped working" ([R2](#19-risks-and-open-items)) — on whichever chain
 it was.
@@ -4641,7 +4641,7 @@ touches routing, networking or secrets.
 
 #### Step 13 — Confirm no wallet origin answers as a bundler 🖥️
 
-An open relay here would bypass every policy check wallet-api makes and drain the shared Alto
+An open relay here would bypass every policy check wallet-api makes and drain the shared bundler
 executor on whichever chain it fronts. The `/bundler` location no longer exists on either wallet
 origin, for either chain — every path goes through wallet-api's session-bound relay,
 `/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), [§16.5](#165-a-deployable-byo-wallet-reference))

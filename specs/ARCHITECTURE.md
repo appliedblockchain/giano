@@ -85,7 +85,7 @@ flowchart TB
         API["<b>giano-wallet-api</b><br/>holds no key that can move a user's assets<br/>tenant from Origin · Host · session · admin key<br/>chain named by the caller, admitted only by the registry<br/>WebAuthn ceremonies · sessions<br/>UserOp policy gate + per-tenant audit<br/>ERC-7677 sponsorship: rules · ledger · watcher<br/>tenant-labelled metrics"]
         PG[("<b>Postgres 17</b><br/>every row tenant-scoped, and<br/>chain-scoped wherever<br/>it touches a chain")]
         SIGNER[/"Sponsorship signer<br/>authorises spending the operator's gas,<br/>never a user's assets<br/>HSM in production · a local key<br/>only for development and testnet"/]
-        BUN["<b>Alto bundler</b><br/>one per served chain<br/>funded executor EOA, ours<br/>never reached by a browser"]
+        BUN["<b>giano-bundler</b><br/>one per served chain<br/>funded executor EOA, ours<br/>never reached by a browser"]
         ADMIN["<b>giano-paymaster-admin</b><br/>operator console · no backend, no database<br/>it reads the chain, and writes are signed<br/>by the operator's own wallet"]
         SEED -.-> API
         CHAINCFG -.-> API
@@ -152,7 +152,7 @@ Removing the bundler in favour of direct `EntryPoint` submission has been analys
 | `giano-wallet-api` | The only stateful service. WebAuthn ceremonies, sessions, the credential and wallet registry, the UserOp policy gate and its audit log, the ERC-7677 sponsorship service with its rules engine, ledger, signer and chain watcher, and the per-tenant admin API. Serves `/.well-known/webauthn` for related-origin passkey sharing. |
 | `giano-wallet-web` | The stock wallet origin: passkey ceremonies, the consent screens, the sponsorship refusal UI, and a same-origin nginx proxy to `/api`, `/rpc` and `/bundler`. Its RP ID comes from the browser's own hostname. |
 | `giano-paymaster-admin` | The operator console. It reads the paymaster contract and nothing else — no backend, no database, no cache that could be wrong about solvency. |
-| `giano-bundler` | Pinned Alto, one instance per served chain, with its own funded executor account. |
+| `giano-bundler` | In-house ERC-4337 submission service (`services/bundler`): one `handleOps` transaction per UserOp, no mempool. One instance per served chain, with its own funded executor account. |
 | `giano-devnet`, `giano-contracts-deployer` | An instant-boot anvil with the contracts pre-baked, and the deployer that puts them on a real chain. |
 
 **On-chain** — the same three at the same addresses on every served chain.

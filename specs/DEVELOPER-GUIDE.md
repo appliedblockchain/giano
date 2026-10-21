@@ -54,7 +54,7 @@ An integration has **two halves**:
         ▼                                                                    │  /api  (incl. /v1/rpc, /v1/bundler relays)
    EVM RPC (public)                                              ┌───────────┴───────────┐
                                                                  ▼                       ▼
-                                                        wallet-api + Postgres     ERC-4337 bundler (Alto)
+                                                        wallet-api + Postgres     ERC-4337 bundler (giano-bundler)
                                                         WebAuthn, sessions,        signs+pays bundles
                                                         policied userop relay              │
                                                                  └──────────┬──────────────┘
@@ -131,8 +131,7 @@ one of them is failing are in §6.
 | Secret | Held by | Purpose | Funded? |
 | --- | --- | --- | --- |
 | `DEPLOYER_PRIVATE_KEY` | contracts-deployer (one-shot) | deploys contracts + seeds the paymaster deposit on a new chain | **yes** — ~0.1 test ETH; ephemeral, never mount into long-running pods |
-| `ALTO_EXECUTOR_PRIVATE_KEY(S)` | bundler | signs **and pays gas** for every bundle on-chain (reimbursed by the paymaster, but fronts the ETH) | **yes** — keep topped up (~0.05+); must differ from the deployer |
-| `ALTO_UTILITY_PRIVATE_KEY` | bundler | Alto nonce/gas-price management | no — any throwaway key |
+| `BUNDLER_EXECUTOR_PRIVATE_KEYS` | bundler | signs **and pays gas** for every `handleOps` transaction on-chain (reimbursed by the paymaster, but fronts the ETH); comma-separated, one lane each | **yes** — keep topped up (~0.05+), not refilled automatically; must differ from the deployer |
 | `DATABASE_URL` | wallet-api, migrate job | Postgres DSN (credentials, sessions, audit) | n/a |
 | tenant `adminKeys` (in `TENANTS_SEED`) | wallet-api | per-tenant server-to-server ceremony options + ROR admin (required unless the tenant sets `openRegistration: true`); stored sha256-hashed | n/a |
 | `POSTGRES_PASSWORD` | Postgres (reference/prod stacks) | DB credentials | n/a |
@@ -154,8 +153,8 @@ a request.
 | **Postgres 17** | `postgres:17-alpine` or managed | 5432 | **yes** — wallet-api state (users, credentials, sessions, challenges, userop log, ROR origins) |
 | **wallet-api** | `ghcr.io/appliedblockchain/giano-wallet-api` (Fastify) | 8080 | **yes** — multi-tenant: WebAuthn ceremonies, sessions, policied userop relay for every tenant |
 | **wallet-web** | `ghcr.io/appliedblockchain/giano-wallet-web` (nginx + React) | 8080 | the passkey popup origin. Every tenant needs its own TLS host (= that tenant's irreversible RP ID), but **not** its own container: one per tenant, or one shared instance every tenant `CNAME`s to — see [§5.5a](#55a-two-topologies-per-tenant-container-or-shared-ui). Tenants bringing their own UI deploy their own SPA instead (reference: `e2e/wallet-byo/`) |
-| **ERC-4337 bundler** | `ghcr.io/appliedblockchain/giano-bundler` (Pimlico Alto) | 4337 | **yes** — needs a funded executor EOA; any ERC-4337 bundler works |
-| **EVM RPC** | public or your own node | — | **yes** — a keyless public endpoint works with Alto `--safe-mode false` |
+| **ERC-4337 bundler** | `ghcr.io/appliedblockchain/giano-bundler` (in-house, `services/bundler`) | 4337 | **yes** — needs a funded executor EOA; any ERC-4337 bundler works |
+| **EVM RPC** | public or your own node | — | **yes** — must support `eth_call` state overrides (the bundler never calls `debug_traceCall`) |
 | **Deployed contracts** | factory + implementation (+ paymaster/test-ERC20 for demos) | — | **yes** — pre-deployed on chains 8453 / 84532 / 381185; deploy per-chain elsewhere |
 
 ---
@@ -205,7 +204,7 @@ relay-to-proxy chain, the `portless:*` scripts, how to add or rename a name (and
 | Service | URL | Notes |
 | --- | --- | --- |
 | devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler (alto) | http://bundler.localhost | EntryPoint v0.7 |
+| bundler (giano-bundler) | http://bundler.localhost | EntryPoint v0.7 |
 | wallet-web (tenant `stock`) | http://wallet.localhost | Giano's stock wallet UI (open directly for the Settings view) |
 | wallet-api | http://api.localhost | shared multi-tenant backend (also reached via each wallet origin's `/api` proxy) |
 
@@ -431,13 +430,17 @@ chain by changing `CHAIN_ID` + `RPC_URL` + the addresses. The full runbook is
 
 ### 5.2 Bundler
 
-Run Alto with a funded executor. It signs and pays for every bundle on-chain (reimbursed by the
-paymaster deposit, but must front the ETH). Env (`services/bundler/entrypoint.sh`):
+Run `giano-bundler` with a funded executor. It sends every UserOp as its own `handleOps`
+transaction, signed and paid for by the executor (reimbursed by the paymaster deposit, but must
+front the ETH). Env ([`services/bundler/README.md`](../services/bundler/README.md)):
 
-- `ALTO_RPC_URL` (required), `ALTO_ENTRYPOINTS` (default canonical v0.7),
-  `ALTO_EXECUTOR_PRIVATE_KEYS` (required, **funded**), `ALTO_UTILITY_PRIVATE_KEY`, `ALTO_SAFE_MODE`.
-- `--safe-mode false` validates UserOps via `eth_call` simulation, so a **plain public RPC works**.
-  Only enable safe mode with a `debug_traceCall`-capable RPC (Alchemy/QuickNode/your node).
+- `BUNDLER_RPC_URL` (required), `BUNDLER_ENTRYPOINT` (default canonical v0.7),
+  `BUNDLER_EXECUTOR_PRIVATE_KEYS` (required, **funded**, comma-separated — one lane each). The old
+  `ALTO_*` names are still read with a deprecation warning; `ALTO_SAFE_MODE` and
+  `ALTO_UTILITY_PRIVATE_KEY` are ignored.
+- UserOps are validated by `eth_call` simulation with a state override, so the RPC needs
+  `eth_call` state overrides but never `debug_traceCall`. There is no ERC-7562 tracing: nothing in
+  Giano's own stack checks that account and paymaster validation stays ERC-7562-compliant.
 - The image refuses to start with the well-known anvil key unless `GIANO_DEV_MODE=true`.
 
 ### 5.3 Postgres + migrations
@@ -753,8 +756,8 @@ the upgrade controls. Anything stronger would be a claim the architecture does n
   wallet-web from published images) with a fully commented env matrix.
 - `deploy/helm/giano` — Helm chart: wallet-api (+ migrations hook), wallet-web, optional bundler,
   contracts-deployer pre-install Job, ingress. Secrets come from `secrets.existingSecret` (a k8s
-  Secret with at least `DATABASE_URL`, `TENANTS_SEED` (it carries tenant admin keys), and `ALTO_EXECUTOR_PRIVATE_KEYS` if the
-  bundler is enabled). `serviceMonitor.enabled=true` for Prometheus scraping.
+  Secret with at least `DATABASE_URL`, `TENANTS_SEED` (it carries tenant admin keys), and `BUNDLER_EXECUTOR_PRIVATE_KEYS` if the
+  bundler is enabled; `ALTO_EXECUTOR_PRIVATE_KEYS` is still read). `serviceMonitor.enabled=true` for Prometheus scraping.
 
 ### 5.8 Transaction display mappings (what users read before they sign)
 
