@@ -30,7 +30,11 @@ RUN --mount=type=secret,id=github_token,required=true \
     status=$?; mv .npmrc.orig .npmrc; exit $status
 COPY services/custom-example ./
 # lint + typecheck + vite build + bundle scan (package.json `build`)
-RUN pnpm build
+# Biome's launcher detects musl with `ldd --version`, which this image lacks, so it would pick the
+# glibc binary; pnpm installed the musl one, which BIOME_BINARY names (resolved as a module path).
+ARG TARGETARCH
+RUN case "$TARGETARCH" in amd64) arch=x64 ;; *) arch="$TARGETARCH" ;; esac \
+ && BIOME_BINARY="@biomejs/cli-linux-${arch}-musl/biome" pnpm build
 
 # The SPA tool allow-list, staged at its real paths with exactly the shared libraries it links
 # beyond what the runtime already has (glibc and the loader), plus the html root owned by nginx so
