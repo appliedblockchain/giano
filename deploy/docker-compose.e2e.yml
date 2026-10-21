@@ -169,6 +169,12 @@ services:
       PAYMASTER_WATCHER_POLL_MS: '1000'
       PAYMASTER_WATCHER_CONFIRMATIONS: '0'
       PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
+      # The operator tier (specs/OPERATOR-ADMIN-SPECS.md §4), for e2e/tests/operator.spec.ts. The
+      # operator is anvil's account 3: it only signs a sign-in message, never a transaction, and is
+      # deliberately not the sponsorship signer above. The domain is the paymaster console's.
+      OPERATOR_ADDRESSES: '[{"id":"ops-e2e","address":"0x90F79bf6EB2c4f870365E785982E1f101E93b906"}]'
+      OPERATOR_SIWE_DOMAIN: paymaster.localhost
+      OPERATOR_SIWE_URI: http://paymaster.localhost
       # Two tenants, one backend. corsOrigins carries each tenant's dApp origin — the
       # thin SDK polls the public receipt endpoint from the dApp origin (cross-origin).
       TENANTS_SEED: |
