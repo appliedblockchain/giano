@@ -1,7 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // Declarations are generated from each file alone (tsdown, oxc): every export carries its own types.
+    "isolatedDeclarations": true
   },
   "include": ["src", "test", "demo", "cli"]
 }

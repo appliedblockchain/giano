@@ -325,10 +325,21 @@ until they support 7.1's. Each one has its own exit condition:
 
 | Tool | Why it needs the API | Moves to TS 7 when |
 | --- | --- | --- |
-| tsup `dts` (declaration bundling, 7 published packages) | runs the compiler programmatically to emit `.d.ts` | tsup or its successor supports the TS 7.1 API, or the packages emit declarations with `isolatedDeclarations` |
+| tsup `dts` (declaration bundling, 6 published packages) | runs the compiler programmatically to emit `.d.ts` | the package moves to tsdown with the `oxc` declaration generator, which needs `isolatedDeclarations`-compatible code (see below) |
 | typescript-eslint (`services/custom-example` lint) | the parser and type-aware rules use the API | typescript-eslint supports TS 7 |
 
 vite, vitest, tsx and tsup's JavaScript output transpile with esbuild and do not use the compiler.
+
+**Moving off tsup.** tsup is no longer maintained; its README points to
+[tsdown](https://tsdown.dev). `packages/paymaster-sdk` builds with tsdown and its `oxc` declaration
+generator, which emits each `.d.ts` from source alone (`isolatedDeclarations` is on in its
+tsconfig), so its build involves no TypeScript compiler at all. The other packages follow once their
+exports carry explicit types (`tsc --noEmit --isolatedDeclarations` lists what is missing).
+
+The `@typescript/typescript6` alias can only be dropped from **every package at once**. viem (and
+abitype) declare `typescript` as a peer, so pnpm installs one viem copy per TypeScript a package
+resolves; a package on plain `typescript@7` gets a different viem than one on the alias, and viem
+types passed between the two stop being assignable.
 
 **Consumers** of the published packages need **TypeScript 5.0.4 or later** (the same floor as
 viem). The declarations are checked with 5.0.4, 5.5, 6.0 and 7.0.
