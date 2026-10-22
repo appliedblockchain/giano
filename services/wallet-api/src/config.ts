@@ -235,6 +235,8 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
     PAYMASTER_WATCHER_POLL_MS: z.coerce.number().int().positive().default(4000),
+    /** How often a standby replica retries the watcher lock, so it takes over once the holder goes away. */
+    PAYMASTER_WATCHER_LOCK_RETRY_MS: z.coerce.number().int().positive().default(10_000),
     PAYMASTER_WATCHER_CONFIRMATIONS: z.coerce.number().int().nonnegative().default(1),
     /** How often the accounting invariant and the deposit drawdown are checked. */
     PAYMASTER_RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),

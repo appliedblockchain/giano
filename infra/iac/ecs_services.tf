@@ -425,7 +425,7 @@ module "svc-bundler" {
   }
   # The SAME `chains` document wallet-api reads as GIANO_CHAINS. Its RPCs need eth_call state
   # overrides, not debug_traceCall: no trace-capable plan required. The executor secret keeps its
-  # Alto-era name; alto-utility-key is no longer read.
+  # Alto-era name.
   secret_arns = {
     GIANO_CHAINS                  = module.asm-app.secret_arns["chains"]
     BUNDLER_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]

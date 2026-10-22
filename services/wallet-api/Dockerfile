@@ -18,6 +18,8 @@ RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-wallet-api.
 COPY packages/contracts packages/contracts
 COPY packages/tx-describe packages/tx-describe
 COPY services/wallet-api services/wallet-api
+# the shared release version /v1/version reports, bundled into dist/ by the build (src/app.ts)
+COPY packages/connector/package.json packages/connector/package.json
 # contracts: committed generated.ts/addresses.ts -> tsup only, no solc. `deploy --prod` is the prune
 # step: /out holds dist/ and production dependencies only.
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \

@@ -162,6 +162,7 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
       ledger: createLedgerService(db),
       chainId: chain.chainId,
       pollMs: config.PAYMASTER_WATCHER_POLL_MS,
+      lockRetryMs: config.PAYMASTER_WATCHER_LOCK_RETRY_MS,
       confirmations: config.PAYMASTER_WATCHER_CONFIRMATIONS,
       reconcileIntervalMs: config.PAYMASTER_RECONCILE_INTERVAL_MS,
       tenantSlug,
@@ -184,6 +185,9 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
         },
         setDivergence(wei) {
           app.metrics.paymasterReconciliationDivergenceWei.set({ chain: chainLabel }, Number(wei));
+        },
+        setActive(active) {
+          app.metrics.paymasterWatcherActive.set({ chain: chainLabel }, active ? 1 : 0);
         },
       },
       logger: app.log.child({ chainId: chain.chainId }),

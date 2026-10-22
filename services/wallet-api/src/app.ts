@@ -32,6 +32,7 @@ import { createLedgerService } from './services/sponsorship-ledger.js';
 import { createHsmSponsorshipSigner, createLocalSponsorshipSigner, type HsmSignerAdapter, type SponsorshipSigner } from './services/sponsorship-signer.js';
 import { createTenantService } from './services/tenants.js';
 import { createUseropRelay } from './services/userop-relay.js';
+import releasePackage from '../../../packages/connector/package.json' with { type: 'json' };
 
 export type BuildAppOptions = {
   config: AppConfig;
@@ -161,7 +162,10 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
 
   await app.register(healthRoutes, {
     db,
-    version: process.env.GIANO_VERSION ?? '0.1.0',
+    // Every Giano package and image shares one release version (INTEGRATION.md). Changesets
+    // versions only the SDK packages, so the api reports theirs: a dApp's preflight compares it
+    // against its connector, and the old '0.1.0' fallback made every SDK look ahead of the api.
+    version: process.env.GIANO_VERSION ?? releasePackage.version,
     registry,
     // The sponsorship service is on the critical path for transacting: if it cannot sign, this
     // deployment cannot sponsor, and reporting itself healthy would hide that. The signer is

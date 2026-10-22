@@ -234,6 +234,7 @@ describe.skipIf(!hasState)('sponsorship against a real chain', () => {
       ledger,
       chainId: CHAIN_ID,
       pollMs: 1000,
+      lockRetryMs: 1000,
       confirmations: 0,
       reconcileIntervalMs: 1000,
       tenantSlug: async () => devnet!.tenants[0].slug,
