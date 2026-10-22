@@ -7,7 +7,7 @@ locals {
   # monitors below.
   ecs_services = toset(concat(
     ["wallet-api", "wallet-web", "custom-example", "paymaster-admin"],
-    keys(local.bundlers), # one bundler per chain — §14.7
+    ["bundler"], # one bundler, every chain — §14.7
     var.byo_wallet_enabled[terraform.workspace] ? ["custom-example-byoui", "wallet-byo"] : [],
   ))
 }

@@ -92,6 +92,7 @@ x-secret-inventory: &secret-inventory
   #   database-password       RDS master password; also composes database-url
   #   database-url            DERIVED by Terraform, not in 1Password (§7.4)
   #   rpc-url                 the RPC endpoint INCLUDING its API key — hence a secret (§13.3)
+  #   chains                  the backend chain document (GIANO_CHAINS) wallet-api and the bundler share
   #   sponsorship-signer-key  32-byte hex; signs paymaster data, holds no funds
   #   alto-executor-key       32-byte hex; MUST BE FUNDED — the bundler executor, pays gas for every handleOps
   #   alto-utility-key        UNUSED since giano-bundler replaced Alto; safe to delete
@@ -219,13 +220,10 @@ services:
   # and the userop relay, and from `Host` on /.well-known/webauthn — never per container.
   # That is what lets one wallet-web task serve N relying parties (§3.3).
   #
-  # SINGLE-CHAIN SHORTHAND, not GIANO_CHAINS. The two shapes are mutually exclusive and the
-  # config loader refuses both together (`services/wallet-api/src/config.ts` superRefine):
-  #   shorthand  CHAIN_ID + RPC_URL + BUNDLER_URL, all three required together
-  #   multichain GIANO_CHAINS, a JSON array of {chainId,name,rpcUrl,bundlerUrl,…}
-  # Supplying GIANO_CHAINS additionally REJECTS ENTRYPOINT_ADDRESS, FACTORY_ADDRESS,
-  # SPONSORSHIP_PAYMASTER_ADDRESS and USEROP_ALLOWED_* as shorthand-only. One chain is
-  # served here, so shorthand is the correct shape.
+  # GIANO_CHAINS, as in ECS: the backend chain document (packages/contracts/chains.ts), the
+  # SAME value the bundler reads — the `chains` ASM secret serves both tasks. Each chain submits
+  # to <BUNDLER_BASE_URL>/<chainId>. GIANO_CHAINS REJECTS ENTRYPOINT_ADDRESS, FACTORY_ADDRESS,
+  # SPONSORSHIP_PAYMASTER_ADDRESS and USEROP_ALLOWED_* — those live in each chain's entry.
   # ════════════════════════════════════════════════════════════════════════════════════════
   wallet-api:
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
@@ -261,16 +259,14 @@ services:
       RUN_MIGRATIONS: 'false'
 
       # ── Chain (§13) ─────────────────────────────────────────────────────────────────────
-      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      # [ASM] giano-<env>-rpc-url. Server-side reads only. This is the URL WITH the API key.
-      RPC_URL: ${RPC_URL:?set RPC_URL}
+      # [ASM] giano-<env>-chains. Each entry's rpcUrl carries its provider key, hence a secret.
+      # entryPoint and walletApi.factory are best left out for registry chains (84532, 11155111
+      # are): they default correctly, and wallet-api verifies the canonical factory and
+      # implementation on chain at boot, refusing to start if they are wrong (§13).
+      GIANO_CHAINS: ${GIANO_CHAINS:?set GIANO_CHAINS}
       # [literal] Cloud Map in AWS: http://bundler.giano-dev.local:4337. The bundler has no
       # public listener and no ALB target; wallet-api is the only thing that talks to it.
-      BUNDLER_URL: http://bundler:4337
-      # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS are DELIBERATELY UNSET: 84532 is in the
-      # contracts registry and both default correctly from it. Setting them by hand is how
-      # they drift — and wallet-api verifies the canonical factory and implementation on
-      # chain at boot, refusing to start if they are wrong (§13).
+      BUNDLER_BASE_URL: http://bundler:4337
 
       # ── Gas sponsorship (§14.2) ─────────────────────────────────────────────────────────
       SPONSORSHIP_ENABLED: 'true'
@@ -281,9 +277,9 @@ services:
       # [ASM] giano-<env>-sponsorship-signer-key. Must match ^0x[0-9a-fA-F]{64}$ when the
       # kind is `local`. Signs paymaster data; holds no funds itself.
       SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY}
-      # [tfvar] var.paymaster_address — see x-chain-prerequisites: NOT in the registry for
-      # 84532, so this must be a real deployed proxy or sponsorship cannot work at all.
-      SPONSORSHIP_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
+      # The paymaster is each chain's sponsorshipPaymaster in GIANO_CHAINS — see
+      # x-chain-prerequisites: NOT in the registry for 84532, so it must name a real deployed
+      # proxy or sponsorship cannot work at all.
       # Left at their defaults, and worth knowing: SPONSORSHIP_VALIDITY_SECONDS=180 (max
       # 1800), SPONSORSHIP_RESERVATION_TTL_SECONDS=300 — and the loader requires the
       # reservation TTL to be STRICTLY GREATER than the validity window.
@@ -378,11 +374,10 @@ services:
     restart: unless-stopped
     networks: [bundler]
     environment:
-      # [ASM] giano-<env>-rpc-url. Required. Needs eth_call with state overrides (estimation)
-      # but no debug_traceCall — there is no ERC-7562 tracer, so no trace-capable plan either.
-      BUNDLER_RPC_URL: ${RPC_URL:?set RPC_URL}
-      # [tfvar] EntryPoint v0.7, canonical at the same address on every chain.
-      BUNDLER_ENTRYPOINT: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
+      # [ASM] giano-<env>-chains — the same document as wallet-api's. Each RPC needs eth_call with
+      # state overrides (estimation) but no debug_traceCall: there is no ERC-7562 tracer. A
+      # chain's bundler.rpcUrl may name a separate submission endpoint.
+      GIANO_CHAINS: ${GIANO_CHAINS:?set GIANO_CHAINS}
       # [ASM] giano-<env>-alto-executor-key (the secret kept its Alto-era name). ⚠ MUST BE
       # FUNDED: this account signs and pays gas for every handleOps transaction and is
       # reimbursed by the EntryPoint, so it drains only by what reimbursement misses. A

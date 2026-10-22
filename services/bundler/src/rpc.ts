@@ -6,6 +6,7 @@ import { ERROR_CODES, RpcError } from './errors.js';
 import type { Estimator } from './estimator.js';
 import type { Lookup } from './lookup.js';
 import type { Metrics } from './metrics.js';
+import type { ChainRegistry } from './registry.js';
 import type { Submitter } from './submitter.js';
 import { addressSchema, estimateUserOpSchema, hash32Schema, signedUserOpSchema, toUserOp } from './userop.js';
 
@@ -13,8 +14,9 @@ import { addressSchema, estimateUserOpSchema, hash32Schema, signedUserOpSchema, 
  * The JSON-RPC surface wallet-api speaks to, which is the ERC-4337 subset it used with Alto:
  * eth_sendUserOperation, eth_estimateUserOperationGas, eth_getUserOperationReceipt,
  * eth_getUserOperationByHash, eth_supportedEntryPoints and eth_chainId. Anything else is
- * method-not-found. Errors are HTTP 200 with a JSON-RPC error object; only a malformed HTTP
- * request gets an HTTP error.
+ * method-not-found. One endpoint per chain, `POST /<chainId>`: a bundler client is configured with
+ * one URL and names no chain in its calls. Errors are HTTP 200 with a JSON-RPC error object; a
+ * request for a chain this process does not serve, or cannot serve yet, gets an HTTP error.
  */
 
 export type RpcContext = {
@@ -113,20 +115,20 @@ export async function handleJsonRpc(context: RpcContext, methods: ReturnType<typ
   const { id = null, method, params: raw = [] } = parsed.data;
   const handler = Object.hasOwn(methods, method) ? methods[method as keyof typeof methods] : undefined;
   if (!handler) {
-    context.metrics.rpcRequests.inc({ method: 'unknown', outcome: String(ERROR_CODES.methodNotFound) });
+    context.metrics.rpcRequests.inc({ chain: String(context.chainId), method: 'unknown', outcome: String(ERROR_CODES.methodNotFound) });
     return { jsonrpc: '2.0', id, error: { code: ERROR_CODES.methodNotFound, message: `the method ${method} does not exist / is not available` } };
   }
   try {
     const result = await handler(raw);
-    context.metrics.rpcRequests.inc({ method, outcome: 'ok' });
+    context.metrics.rpcRequests.inc({ chain: String(context.chainId), method, outcome: 'ok' });
     return { jsonrpc: '2.0', id, result };
   } catch (error) {
     if (error instanceof RpcError) {
-      context.metrics.rpcRequests.inc({ method, outcome: String(error.code) });
+      context.metrics.rpcRequests.inc({ chain: String(context.chainId), method, outcome: String(error.code) });
       context.log.info({ method, code: error.code, message: error.message }, 'request refused');
       return { jsonrpc: '2.0', id, error: { code: error.code, message: error.message, ...(error.data === undefined ? {} : { data: error.data }) } };
     }
-    context.metrics.rpcRequests.inc({ method, outcome: String(ERROR_CODES.internal) });
+    context.metrics.rpcRequests.inc({ chain: String(context.chainId), method, outcome: String(ERROR_CODES.internal) });
     context.log.error({ method, err: error }, 'request failed');
     return { jsonrpc: '2.0', id, error: { code: ERROR_CODES.internal, message: 'internal error' } };
   }
@@ -148,25 +150,75 @@ function reply(response: ServerResponse, status: number, body: unknown, contentT
   response.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
-/** Any POST path is the JSON-RPC endpoint (Alto served `/`, `/rpc` and `/:version/rpc`). */
-export function createRpcServer(context: RpcContext, ready: () => boolean): Server {
-  const methods = createMethods(context);
+const CHAIN_PATH = /^\/(\d+)\/?$/;
+
+function rpcFailure(response: ServerResponse, status: number, code: number, message: string) {
+  reply(response, status, { jsonrpc: '2.0', id: null, error: { code, message } });
+}
+
+export function createRpcServer(options: { registry: ChainRegistry; metrics: Metrics; log: Logger }): Server {
+  const { registry, metrics, log } = options;
+  const methodsByChain = new Map<number, ReturnType<typeof createMethods>>();
+
+  /** The chain a request is for: `/<chainId>`, or `/` when exactly one chain is served (MC-53). */
+  const resolve = (response: ServerResponse, path: string): RpcContext | undefined => {
+    const served = registry.servedChainIds();
+    let chainId: number;
+    const match = CHAIN_PATH.exec(path);
+    if (match) {
+      chainId = Number(match[1]);
+    } else if (path === '/' && served.length === 1) {
+      chainId = served[0];
+    } else if (path === '/') {
+      rpcFailure(response, 400, ERROR_CODES.invalidRequest, `this bundler serves chains ${served.join(', ')}: POST /<chainId>`);
+      return undefined;
+    } else {
+      reply(response, 404, { error: 'not found' });
+      return undefined;
+    }
+    const entry = registry.get(chainId);
+    if (!entry) {
+      rpcFailure(response, 404, ERROR_CODES.invalidParams, `this bundler does not serve chain ${chainId} (served: ${served.join(', ')})`);
+      return undefined;
+    }
+    if (!entry.services) {
+      rpcFailure(response, 503, ERROR_CODES.internal, `chain ${chainId} is not available yet: ${entry.waitingFor ?? 'connecting'}`);
+      return undefined;
+    }
+    const { services } = entry;
+    return { chainId, entryPoint: services.entryPoint, estimator: services.estimator, submitter: services.submitter, lookup: services.lookup, metrics, log: log.child({ chainId }) };
+  };
+
   return createServer(async (request, response) => {
     try {
-      if (request.method === 'GET' && request.url === '/health') {
-        const ok = ready();
-        return reply(response, ok ? 200 : 503, {
-          status: ok ? 'ok' : 'starting',
-          chainId: context.chainId,
-          entryPoint: context.entryPoint,
-          executors: context.submitter.executors,
-          pendingUserOperations: context.submitter.pending(),
-        });
+      const path = (request.url ?? '/').split('?')[0];
+      if (request.method === 'GET' && path === '/health') {
+        // Healthy while ANY chain serves: one chain's outage must not get the process — and with it
+        // every other chain — restarted by the orchestrator.
+        const chains = registry.all().map((entry) => ({
+          chainId: entry.config.chainId,
+          name: entry.config.name,
+          status: entry.status,
+          entryPoint: entry.config.entryPoint,
+          ...(entry.waitingFor ? { waitingFor: entry.waitingFor } : {}),
+          ...(entry.services ? { chainType: entry.services.chainType, pendingUserOperations: entry.services.submitter.pending() } : {}),
+        }));
+        const ready = chains.some((chain) => chain.status === 'ready');
+        const executors = registry.all().find((entry) => entry.services)?.services?.submitter.executors ?? [];
+        return reply(response, ready ? 200 : 503, { status: ready ? 'ok' : 'starting', executors, chains });
       }
-      if (request.method === 'GET' && request.url === '/metrics') {
-        return reply(response, 200, await context.metrics.registry.metrics(), context.metrics.registry.contentType);
+      if (request.method === 'GET' && path === '/metrics') {
+        return reply(response, 200, await metrics.registry.metrics(), metrics.registry.contentType);
       }
       if (request.method !== 'POST') return reply(response, 405, { error: 'method not allowed' });
+
+      const context = resolve(response, path);
+      if (!context) return;
+      let methods = methodsByChain.get(context.chainId);
+      if (!methods) {
+        methods = createMethods(context);
+        methodsByChain.set(context.chainId, methods);
+      }
 
       let body: unknown;
       try {
@@ -178,11 +230,12 @@ export function createRpcServer(context: RpcContext, ready: () => boolean): Serv
         if (body.length === 0) {
           return reply(response, 200, { jsonrpc: '2.0', id: null, error: { code: ERROR_CODES.invalidRequest, message: 'empty batch' } });
         }
-        return reply(response, 200, await Promise.all(body.map((item) => handleJsonRpc(context, methods, item))));
+        const batch = methods;
+        return reply(response, 200, await Promise.all(body.map((item) => handleJsonRpc(context, batch, item))));
       }
       return reply(response, 200, await handleJsonRpc(context, methods, body));
     } catch (error) {
-      context.log.error({ err: error }, 'http request failed');
+      log.error({ err: error }, 'http request failed');
       if (!response.headersSent) reply(response, 500, { error: 'internal error' });
     }
   });

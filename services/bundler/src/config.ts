@@ -1,4 +1,5 @@
-import { getAddress, isAddress, isHex, type Address, type Hex } from 'viem';
+import { bundlerChainSchema, gianoAddresses, validateChainList } from '@appliedblockchain/giano-contracts';
+import { getAddress, isHex, type Address, type Hex } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { z } from 'zod';
 
@@ -10,16 +11,25 @@ export class ConfigError extends Error {}
 
 export type ChainType = 'default' | 'op-stack';
 
-export type BundlerConfig = {
+/** One chain this process serves, resolved from its GIANO_CHAINS entry. */
+export type ChainConfig = {
+  chainId: number;
+  name: string;
+  /** The entry's `bundler.rpcUrl`, else its shared `rpcUrl`. */
   rpcUrl: string;
   entryPoint: Address;
+  /** 'auto' resolves when the chain connects: OP-stack when the GasPriceOracle predeploy has code. */
+  chainType: ChainType | 'auto';
+  /** Where to look for an operation's UserOperationEvent when this process did not submit it. */
+  maxBlockRange: bigint;
+};
+
+export type BundlerConfig = {
+  chains: ChainConfig[];
+  /** One lane per key on every chain: nonces are per chain, so a key is safely shared across them. */
   executors: PrivateKeyAccount[];
   port: number;
   host: string;
-  /** Where to look for an operation's UserOperationEvent when this process did not submit it. */
-  maxBlockRange: bigint;
-  /** 'auto' resolves at boot: OP-stack when the GasPriceOracle predeploy has code. */
-  chainType: ChainType | 'auto';
   /** How long a submission may sit unmined before it is re-priced. */
   resubmitTimeoutMs: number;
   /** Re-pricings before the nonce is cancelled and the operation given up. */
@@ -30,36 +40,34 @@ export type BundlerConfig = {
 };
 
 /**
- * The Alto variable each setting used to be read from. Accepted so a deployment that still
- * carries them (an existing k8s secret, an ECS task definition mid-rollout) boots unchanged;
- * the BUNDLER_* name wins when both are set.
+ * Single-chain settings from before GIANO_CHAINS. Refused rather than ignored: a deployment still
+ * carrying them was configured for a bundler that no longer exists, and should say so at boot.
  */
-const ALIASES = {
-  BUNDLER_RPC_URL: 'ALTO_RPC_URL',
-  BUNDLER_EXECUTOR_PRIVATE_KEYS: 'ALTO_EXECUTOR_PRIVATE_KEYS',
-  BUNDLER_ENTRYPOINT: 'ALTO_ENTRYPOINTS',
-  BUNDLER_PORT: 'ALTO_PORT',
-} as const;
-
-/** Alto options with no counterpart here: ignored, with a warning, rather than refused. */
-const IGNORED = {
-  ALTO_SAFE_MODE: 'there is no ERC-7562 tracer; every operation is simulated against the EntryPoint before it is sent',
-  ALTO_UTILITY_PRIVATE_KEY: 'nothing is deployed at boot and executors are not refilled, so there is no utility account',
-} as const;
+const RETIRED = [
+  'BUNDLER_RPC_URL',
+  'BUNDLER_ENTRYPOINT',
+  'BUNDLER_CHAIN_TYPE',
+  'BUNDLER_MAX_BLOCK_RANGE',
+  'ALTO_RPC_URL',
+  'ALTO_EXECUTOR_PRIVATE_KEYS',
+  'ALTO_ENTRYPOINTS',
+  'ALTO_PORT',
+  'ALTO_SAFE_MODE',
+  'ALTO_UTILITY_PRIVATE_KEY',
+] as const;
 
 const positiveInt = (name: string) =>
   z.coerce.number({ invalid_type_error: `${name} must be a number` }).int().positive(`${name} must be a positive integer`);
 
 const schema = z.object({
-  BUNDLER_RPC_URL: z.string({ required_error: 'BUNDLER_RPC_URL is required' }).url('BUNDLER_RPC_URL must be a URL'),
+  GIANO_CHAINS: z.string({
+    required_error: 'GIANO_CHAINS is required (the backend chain document wallet-api reads too, see packages/contracts/chains.ts)',
+  }),
   BUNDLER_EXECUTOR_PRIVATE_KEYS: z.string({
     required_error: 'BUNDLER_EXECUTOR_PRIVATE_KEYS is required (executor keys sign the handleOps transactions)',
   }),
-  BUNDLER_ENTRYPOINT: z.string().optional(),
   BUNDLER_PORT: positiveInt('BUNDLER_PORT').default(4337),
   BUNDLER_HOST: z.string().default('0.0.0.0'),
-  BUNDLER_MAX_BLOCK_RANGE: positiveInt('BUNDLER_MAX_BLOCK_RANGE').default(2000),
-  BUNDLER_CHAIN_TYPE: z.enum(['auto', 'default', 'op-stack']).default('auto'),
   BUNDLER_RESUBMIT_TIMEOUT_SECONDS: positiveInt('BUNDLER_RESUBMIT_TIMEOUT_SECONDS').default(30),
   BUNDLER_MAX_REPLACEMENTS: z.coerce.number().int().min(0).default(3),
   BUNDLER_POLL_INTERVAL_MS: positiveInt('BUNDLER_POLL_INTERVAL_MS').default(1000),
@@ -70,17 +78,15 @@ const schema = z.object({
 export function loadConfig(env: Record<string, string | undefined> = process.env): BundlerConfig {
   const warnings: string[] = [];
   const resolved: Record<string, string | undefined> = { ...env };
-  for (const [name, legacy] of Object.entries(ALIASES)) {
-    if (resolved[name] === undefined && env[legacy] !== undefined) {
-      resolved[name] = env[legacy];
-      warnings.push(`${legacy} is deprecated, read as ${name}`);
-    }
-  }
-  for (const [name, why] of Object.entries(IGNORED)) {
-    if (env[name] !== undefined) warnings.push(`${name} is ignored: ${why}`);
-  }
   // Empty strings are what an unset compose/helm interpolation produces: treat them as unset.
   for (const key of Object.keys(resolved)) if (resolved[key] === '') delete resolved[key];
+
+  const retired = RETIRED.filter((name) => resolved[name] !== undefined);
+  if (retired.length > 0) {
+    throw new ConfigError(
+      `FATAL: no longer read: ${retired.join(', ')} — chains are configured by GIANO_CHAINS and executors by BUNDLER_EXECUTOR_PRIVATE_KEYS`,
+    );
+  }
 
   const parsed = schema.safeParse(resolved);
   if (!parsed.success) {
@@ -107,13 +113,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
 
   return {
-    rpcUrl: values.BUNDLER_RPC_URL,
-    entryPoint: parseEntryPoint(values.BUNDLER_ENTRYPOINT),
+    chains: parseChains(values.GIANO_CHAINS),
     executors: keys.map((key) => privateKeyToAccount(key as Hex)),
     port: values.BUNDLER_PORT,
     host: values.BUNDLER_HOST,
-    maxBlockRange: BigInt(values.BUNDLER_MAX_BLOCK_RANGE),
-    chainType: values.BUNDLER_CHAIN_TYPE,
     resubmitTimeoutMs: values.BUNDLER_RESUBMIT_TIMEOUT_SECONDS * 1000,
     maxReplacements: values.BUNDLER_MAX_REPLACEMENTS,
     pollIntervalMs: values.BUNDLER_POLL_INTERVAL_MS,
@@ -122,11 +125,32 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   };
 }
 
-/** One EntryPoint, v0.7. Alto took a comma-separated list; a list of one is still accepted. */
-function parseEntryPoint(value: string | undefined): Address {
-  if (value === undefined) return DEFAULT_ENTRYPOINT;
-  const entries = value.split(',').map((entry) => entry.trim()).filter(Boolean);
-  if (entries.length !== 1) throw new ConfigError('FATAL: BUNDLER_ENTRYPOINT takes exactly one EntryPoint v0.7 address');
-  if (!isAddress(entries[0], { strict: false })) throw new ConfigError(`FATAL: BUNDLER_ENTRYPOINT is not an address: ${entries[0]}`);
-  return getAddress(entries[0]);
+/** The chains to serve: every GIANO_CHAINS entry whose `bundler.enabled` is not false. */
+function parseChains(raw: string): ChainConfig[] {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (error) {
+    throw new ConfigError(`FATAL: GIANO_CHAINS is not valid JSON: ${(error as Error).message}`);
+  }
+  const parsed = z.array(bundlerChainSchema).safeParse(json);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`);
+    throw new ConfigError(`FATAL: GIANO_CHAINS: ${issues.join('; ')}`);
+  }
+  const { errors } = validateChainList(parsed.data);
+  if (errors.length > 0) throw new ConfigError(`FATAL: GIANO_CHAINS: ${errors.join('; ')}`);
+
+  const chains = parsed.data
+    .filter((entry) => entry.bundler.enabled)
+    .map((entry) => ({
+      chainId: entry.chainId,
+      name: entry.name,
+      rpcUrl: entry.bundler.rpcUrl ?? entry.rpcUrl,
+      entryPoint: getAddress(entry.entryPoint ?? gianoAddresses[entry.chainId]?.entryPoint ?? DEFAULT_ENTRYPOINT),
+      chainType: entry.bundler.chainType,
+      maxBlockRange: BigInt(entry.bundler.maxBlockRange),
+    }));
+  if (chains.length === 0) throw new ConfigError('FATAL: GIANO_CHAINS enables no chain for this bundler (every entry has bundler.enabled false)');
+  return chains;
 }

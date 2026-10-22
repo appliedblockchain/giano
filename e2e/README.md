@@ -16,9 +16,8 @@ Plus the service endpoints, useful when poking at the stack by hand:
 | --- | --- |
 | http://api.localhost | `wallet-api` — public + admin |
 | http://rpc.localhost | anvil devnet JSON-RPC (chain A, 31337) |
-| http://bundler.localhost | alto ERC-4337 bundler (chain A) |
+| http://bundler.localhost | giano-bundler, both chains (`POST /31337`, `POST /31338`) |
 | http://rpc-b.localhost | anvil devnet JSON-RPC (chain B, 31338) |
-| http://bundler-b.localhost | alto ERC-4337 bundler (chain B) |
 | http://paymaster.localhost | paymaster admin console — tenant balances, treasury, roles, health |
 
 ## Two chains, by default
@@ -31,8 +30,8 @@ are provisioned identically for sponsorship at bring-up (`devnet/provision-spons
 explicit PUT per tenant per chain). One wallet-api, one wallet origin, one Postgres, two chains —
 the topology the standalone profile actually uses.
 
-Both bundlers run the production bundler image with `ALTO_SAFE_MODE=true`, including its
-RIP-7212 tracer patch for the P-256 precompile at `0x100`. Run `pnpm test:demo` to exercise
+One giano-bundler serves both chains, reading the same chain document as wallet-api. Run
+`pnpm test:demo` to exercise
 the reference demo's transactions, token calls, signatures, raw user operations, authenticated
 reads and refusal paths on this stack.
 
@@ -40,8 +39,7 @@ To update the baked paymaster implementation while keeping its proxy and funded 
 run `pnpm devnet:upgrade:paymaster` in this package. It loads the committed fixture into a
 fresh pinned Anvil on port 18545, performs the UUPS upgrade while preserving the signer
 allowlist, and saves the upgraded fixture. Restart both Anvil containers and wallet-api
-afterwards so they load the new state, then restart both bundlers so they re-deploy their
-simulation contracts into the reloaded chains.
+afterwards so they load the new state. The bundler needs no restart: it deploys nothing.
 
 The dApp fixture holds two thin-SDK providers over the same wallet origin, one per chain
 (`#send-chain-b` and friends), and reports the chain and the account of every send in its output,

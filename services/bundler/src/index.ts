@@ -1,12 +1,8 @@
-import { createPublicClient, formatEther, http, type PublicClient } from 'viem';
 import { pino } from 'pino';
-import { ConfigError, loadConfig, type BundlerConfig, type ChainType } from './config.js';
-import { createEstimator } from './estimator.js';
-import { createLookup } from './lookup.js';
+import { ConfigError, loadConfig, type BundlerConfig } from './config.js';
 import { createMetrics } from './metrics.js';
-import { GAS_PRICE_ORACLE } from './pvg.js';
+import { createChainRegistry } from './registry.js';
 import { createRpcServer } from './rpc.js';
-import { createSubmitter } from './submitter.js';
 
 let config: BundlerConfig;
 try {
@@ -20,41 +16,9 @@ try {
 const log = pino({ level: config.logLevel, base: { service: 'giano-bundler' } });
 for (const warning of config.warnings) log.warn(warning);
 
-const client = createPublicClient({ transport: http(config.rpcUrl, { retryCount: 2, timeout: 30_000 }) }) as PublicClient;
-
-/**
- * What the chain must be before anything is served: reachable, with the EntryPoint deployed.
- * Both are waited for rather than refused — the node may be starting alongside us, and a fresh
- * devnet gets its contracts after `up` — so until then nothing listens and the healthcheck fails.
- */
-async function connect(): Promise<{ chainId: number; chainType: ChainType }> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const chainId = await client.getChainId();
-      const code = await client.getCode({ address: config.entryPoint });
-      if (code && code !== '0x') {
-        let chainType = config.chainType;
-        if (chainType === 'auto') {
-          const oracle = await client.getCode({ address: GAS_PRICE_ORACLE });
-          chainType = oracle && oracle !== '0x' ? 'op-stack' : 'default';
-        }
-        return { chainId, chainType };
-      }
-      if (attempt % 10 === 1) log.error({ chainId, entryPoint: config.entryPoint }, 'no EntryPoint is deployed at the configured address yet; waiting');
-    } catch (error) {
-      if (attempt % 10 === 1) log.warn({ attempt, err: (error as Error).message }, 'waiting for the chain RPC');
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-  }
-}
-
 const metrics = createMetrics();
-const { chainId, chainType } = await connect();
-
-const submitter = createSubmitter({
-  client,
-  chainId,
-  entryPoint: config.entryPoint,
+const registry = createChainRegistry({
+  chains: config.chains,
   executors: config.executors,
   resubmitTimeoutMs: config.resubmitTimeoutMs,
   maxReplacements: config.maxReplacements,
@@ -62,20 +26,14 @@ const submitter = createSubmitter({
   log,
   metrics,
 });
-const estimator = createEstimator({ client, entryPoint: config.entryPoint, chainId, chainType, executor: config.executors[0].address });
-const lookup = createLookup({ client, chainId, entryPoint: config.entryPoint, maxBlockRange: config.maxBlockRange, submitter });
+registry.start();
 
-for (const executor of config.executors) {
-  const balance = await client.getBalance({ address: executor.address });
-  metrics.executorBalance.set({ executor: executor.address }, Number(balance));
-  if (balance === 0n) log.warn({ executor: executor.address }, 'executor has no balance: every submission will fail until it is funded');
-  else log.info({ executor: executor.address, balance: formatEther(balance) }, 'executor');
-}
-setInterval(() => void submitter.refreshBalances(), 60_000).unref();
-
-const server = createRpcServer({ chainId, entryPoint: config.entryPoint, estimator, submitter, lookup, metrics, log }, () => true);
+const server = createRpcServer({ registry, metrics, log });
 server.listen(config.port, config.host, () => {
-  log.info({ chainId, chainType, entryPoint: config.entryPoint, port: config.port, executors: submitter.executors.length }, 'giano-bundler listening');
+  log.info(
+    { port: config.port, chains: config.chains.map((chain) => chain.chainId), executors: config.executors.length },
+    'giano-bundler listening',
+  );
 });
 
 // The image's runtime has no init process: Node runs as PID 1, which has no default action for
@@ -85,7 +43,7 @@ server.listen(config.port, config.host, () => {
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     log.info({ signal }, 'shutting down');
-    submitter.stop();
+    registry.stop();
     server.close();
     setTimeout(() => process.exit(0), 500).unref();
   });

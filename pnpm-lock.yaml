@@ -360,6 +360,9 @@ importers:
 
   services/bundler:
     dependencies:
+      '@appliedblockchain/giano-contracts':
+        specifier: workspace:^
+        version: link:../../packages/contracts
       pino:
         specifier: ^9.6.0
         version: 9.14.0

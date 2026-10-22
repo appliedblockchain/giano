@@ -5,14 +5,22 @@ It is deliberately not a general-purpose bundler: there is no mempool, no bundli
 peer-to-peer network. Every user operation it accepts is sent at once as its own
 `EntryPoint.handleOps([op], executor)` transaction. EntryPoint v0.7 only.
 
-The only client is wallet-api (`BUNDLER_URL` / `bundlerUrl` in `GIANO_CHAINS`), which applies
-policy, audit and rate limits before anything reaches here. The bundler is never exposed to a
-browser.
+One process serves every chain in its chain document, each with its own executor lanes,
+estimator and lookup. Nothing chain-bound is shared between chains, the rule wallet-api keeps too
+(MC-50). The only client is wallet-api, which applies policy, audit and rate limits before anything
+reaches here, and submits each chain's operations to `<BUNDLER_BASE_URL>/<chainId>`. The bundler is
+never exposed to a browser.
 
 ## JSON-RPC
 
-The same methods, parameters, result shapes and error codes wallet-api used with Alto. Any POST
-path is the endpoint.
+The same methods, parameters, result shapes and error codes wallet-api used with Alto, at one
+endpoint per chain: `POST /<chainId>`.
+
+- A bare `POST /` is accepted only when exactly one chain is served. Otherwise it gets a 400 asking
+  for the chain.
+- A chain not in the document gets a 404.
+- A chain that is configured but not connected yet gets a 503, which wallet-api treats as "bundler
+  unavailable".
 
 | Method | Behaviour |
 | --- | --- |
@@ -23,13 +31,20 @@ path is the endpoint.
 | `eth_getUserOperationByHash` `[hash]` | Alto's shape, decoded from the `handleOps` input. `null` while pending. |
 
 Receipts come from the chain: an operation this process submitted is found by its transaction,
-any other by its `UserOperationEvent` in the last `BUNDLER_MAX_BLOCK_RANGE` blocks. Lookups
-therefore survive a restart.
+any other by its `UserOperationEvent` in the last `maxBlockRange` blocks. Lookups therefore survive
+a restart.
 
-`GET /health` reports the chain, the EntryPoint, the executors and the number of operations in
-flight. `GET /metrics` serves Prometheus metrics (`giano_bundler_*`), including each executor's
-balance. Nothing listens until the RPC answers and the EntryPoint has code, so the healthcheck
-(`eth_supportedEntryPoints`) fails until then.
+**Per-chain readiness.** A chain becomes ready once its RPC reports the declared chain id and its
+EntryPoint has code. Until then it is retried in the background while the other chains serve: one
+chain's outage, or a fresh devnet still waiting for its contracts, never holds up the rest.
+
+**Health.**
+- `GET /health` lists each chain's status (`ready`, or `connecting` with what it is waiting for)
+  and the operations in flight.
+- It answers 200 while **any** chain is ready. The container healthcheck uses it, so one chain going
+  down never gets the whole process restarted.
+- `GET /metrics` serves Prometheus metrics (`giano_bundler_*`), labelled by chain:
+  `giano_bundler_chain_ready` and each executor's balance on each chain, among others.
 
 ## How it works
 
@@ -92,28 +107,55 @@ Alto did. A resubmission of an operation it already has returns the same hash.
 - **No stake or reputation checks**, and no bundling of several operations into one transaction.
 - **No utility key.** Nothing is deployed at boot and executors are not refilled automatically:
   fund them, and watch `giano_bundler_executor_balance_wei`.
-- **One replica per executor key.** Lanes are tracked in memory. ECS (no ALB, 0%/100%) and the Helm
+- **One replica per executor key.** Lanes, one per key per chain, are tracked in memory. ECS (no ALB, 0%/100%) and the Helm
   chart (`Recreate`) stop the old task before starting the new one.
 
 ## Configuration
 
+**Chains: `GIANO_CHAINS`** is the backend chain document, defined in `packages/contracts/chains.ts`.
+It is the **same value wallet-api reads** (and paymaster-admin, as `GIANO_DEPLOYMENTS`), usually
+from the same secret, so the services cannot disagree about a chain. Fields more than one service
+reads sit at the top of each entry, and each service's own settings sit in its section. Each
+service validates its own section strictly and accepts the others' as-is.
+
+```jsonc
+[
+  {
+    "chainId": 84532,
+    "name": "Base Sepolia",
+    "rpcUrl": "https://…",                 // shared
+    "entryPoint": "0x…",                   // shared; optional, registry default
+    "sponsorshipPaymaster": "0x…",         // shared (wallet-api, paymaster-admin)
+    "walletApi": { "factory": "0x…", "policy": { … }, "bundlerUrl": "…" },
+    "bundler": {
+      "enabled": true,                     // false: this bundler skips the chain
+      "rpcUrl": "https://…",               // optional override for submission and simulation
+      "chainType": "auto",                 // auto | default | op-stack
+      "maxBlockRange": 2000                // receipt lookback
+    },
+    "paymasterAdmin": { "walletRpcUrl": "…", "refreshSeconds": 15 }
+  }
+]
+```
+
+Executor keys are deliberately **not** in the document. It reaches wallet-api, which must never
+hold the keys that fund submission.
+
 | Variable | Default | |
 | --- | --- | --- |
-| `BUNDLER_RPC_URL` | — | Required. Must support `eth_call` state overrides. |
-| `BUNDLER_EXECUTOR_PRIVATE_KEYS` | — | Required. Comma-separated; one lane each. Must be funded. |
-| `BUNDLER_ENTRYPOINT` | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | Exactly one, v0.7. |
+| `GIANO_CHAINS` | — | Required. Every RPC must support `eth_call` state overrides. |
+| `BUNDLER_EXECUTOR_PRIVATE_KEYS` | — | Required. Comma-separated; one lane per key on every chain (nonces are per chain). Fund each key on each chain. |
 | `BUNDLER_PORT` / `BUNDLER_HOST` | `4337` / `0.0.0.0` | |
-| `BUNDLER_CHAIN_TYPE` | `auto` | `default` or `op-stack` to override detection. |
-| `BUNDLER_MAX_BLOCK_RANGE` | `2000` | Receipt lookback for operations this process did not submit. |
 | `BUNDLER_RESUBMIT_TIMEOUT_SECONDS` | `30` | |
 | `BUNDLER_MAX_REPLACEMENTS` | `3` | |
 | `BUNDLER_POLL_INTERVAL_MS` | `1000` | |
 | `BUNDLER_LOG_LEVEL` | `info` | |
 | `GIANO_DEV_MODE` | `false` | Must be `true` to start with the well-known Anvil key. |
 
-For a drop-in upgrade, Alto's `ALTO_RPC_URL`, `ALTO_EXECUTOR_PRIVATE_KEYS`, `ALTO_ENTRYPOINTS` and
-`ALTO_PORT` are still read, with a deprecation warning. `ALTO_SAFE_MODE` and
-`ALTO_UTILITY_PRIVATE_KEY` are accepted and ignored.
+The single-chain variables `GIANO_CHAINS` replaced are refused at boot, so a stale deployment
+fails loudly rather than half-configured:
+- `BUNDLER_RPC_URL`, `BUNDLER_ENTRYPOINT`, `BUNDLER_CHAIN_TYPE` and `BUNDLER_MAX_BLOCK_RANGE`;
+- every `ALTO_*` variable.
 
 ## Development
 

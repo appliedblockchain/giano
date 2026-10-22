@@ -16,14 +16,13 @@ import {
   type PublicClient,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { foundry } from 'viem/chains';
+import { foundry as anvilChain } from 'viem/chains';
 import { pino } from 'pino';
-import { DEFAULT_ENTRYPOINT } from '../src/config.js';
-import { createEstimator } from '../src/estimator.js';
-import { createLookup } from '../src/lookup.js';
+import { DEFAULT_ENTRYPOINT, type ChainConfig } from '../src/config.js';
 import { createMetrics } from '../src/metrics.js';
+import { createChainRegistry, type ChainRegistry } from '../src/registry.js';
 import { createRpcServer } from '../src/rpc.js';
-import { createSubmitter, type Submitter } from '../src/submitter.js';
+import type { Submitter } from '../src/submitter.js';
 
 const require = createRequire(import.meta.url);
 const artifact = (name: string) => require(`@account-abstraction/contracts/artifacts/${name}.json`) as { abi: any; bytecode: Hex };
@@ -39,6 +38,7 @@ export const KEYS = {
 export const anvilAvailable = spawnSync('anvil', ['--version']).status === 0;
 
 export type Devnet = {
+  chainId: number;
   rpcUrl: string;
   client: PublicClient;
   test: ReturnType<typeof createTestClient>;
@@ -49,10 +49,11 @@ export type Devnet = {
   stop: () => void;
 };
 
-export async function startDevnet(): Promise<Devnet> {
+export async function startDevnet(chainId = 31337): Promise<Devnet> {
   const port = 20_000 + Math.floor(Math.random() * 20_000);
-  const anvil: ChildProcess = spawn('anvil', ['--port', String(port), '--silent', '--chain-id', '31337'], { stdio: 'ignore' });
+  const anvil: ChildProcess = spawn('anvil', ['--port', String(port), '--silent', '--chain-id', String(chainId)], { stdio: 'ignore' });
   const rpcUrl = `http://127.0.0.1:${port}`;
+  const foundry = { ...anvilChain, id: chainId };
   const client = createPublicClient({ chain: foundry, transport: http(rpcUrl) }) as PublicClient;
   for (let i = 0; ; i++) {
     try {
@@ -95,41 +96,69 @@ export async function startDevnet(): Promise<Devnet> {
     hash: await wallet.writeContract({ address: paymaster, abi: paymasterAbi, functionName: 'deposit', args: [], value: parseEther('10'), account: deployer, chain: foundry }),
   });
 
-  return { rpcUrl, client, test, wallet, entryPoint, factory, paymaster, stop: () => anvil.kill() };
+  return { chainId, rpcUrl, client, test, wallet, entryPoint, factory, paymaster, stop: () => anvil.kill() };
 }
 
-export type Bundler = { url: string; submitter: Submitter; stop: () => Promise<void> };
+export type Bundler = {
+  /** The first chain's endpoint, `<base>/<chainId>`. */
+  url: string;
+  base: string;
+  /** The first chain's submitter. */
+  submitter: Submitter;
+  registry: ChainRegistry;
+  stop: () => Promise<void>;
+};
 
+/**
+ * One bundler process serving every devnet given, plus any extra chain configs (to test a chain
+ * that never becomes ready). Resolves once the devnets' chains are ready.
+ */
 export async function startBundler(
-  devnet: Devnet,
-  options: { resubmitTimeoutMs?: number; maxReplacements?: number } = {},
+  devnets: Devnet | Devnet[],
+  options: { resubmitTimeoutMs?: number; maxReplacements?: number; extraChains?: ChainConfig[] } = {},
 ): Promise<Bundler> {
-  const executor = privateKeyToAccount(KEYS.executor);
+  const list = Array.isArray(devnets) ? devnets : [devnets];
   const log = pino({ level: process.env.BUNDLER_TEST_LOG ?? 'silent' });
   const metrics = createMetrics();
-  const chainId = 31337;
-  const submitter = createSubmitter({
-    client: devnet.client,
-    chainId,
-    entryPoint: devnet.entryPoint,
-    executors: [executor],
+  const registry = createChainRegistry({
+    chains: [
+      ...list.map((devnet) => ({
+        chainId: devnet.chainId,
+        name: `devnet ${devnet.chainId}`,
+        rpcUrl: devnet.rpcUrl,
+        entryPoint: devnet.entryPoint,
+        chainType: 'default' as const,
+        maxBlockRange: 2000n,
+      })),
+      ...(options.extraChains ?? []),
+    ],
+    executors: [privateKeyToAccount(KEYS.executor)],
     resubmitTimeoutMs: options.resubmitTimeoutMs ?? 60_000,
     maxReplacements: options.maxReplacements ?? 3,
     pollIntervalMs: 50,
+    retryMs: 100,
     log,
     metrics,
   });
-  const estimator = createEstimator({ client: devnet.client, entryPoint: devnet.entryPoint, chainId, chainType: 'default', executor: executor.address });
-  const lookup = createLookup({ client: devnet.client, chainId, entryPoint: devnet.entryPoint, maxBlockRange: 2000n, submitter });
-  const server: Server = createRpcServer({ chainId, entryPoint: devnet.entryPoint, estimator, submitter, lookup, metrics, log }, () => true);
+  registry.start();
+  for (const devnet of list) {
+    for (let i = 0; !registry.get(devnet.chainId)?.services; i++) {
+      if (i > 200) throw new Error(`chain ${devnet.chainId} never became ready`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  const server: Server = createRpcServer({ registry, metrics, log });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
+  const base = `http://127.0.0.1:${port}`;
   return {
-    url: `http://127.0.0.1:${port}`,
-    submitter,
+    url: `${base}/${list[0].chainId}`,
+    base,
+    submitter: registry.get(list[0].chainId)!.services!.submitter,
+    registry,
     stop: () =>
       new Promise((resolve) => {
-        submitter.stop();
+        registry.stop();
         server.close(() => resolve());
       }),
   };

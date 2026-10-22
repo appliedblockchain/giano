@@ -27,7 +27,7 @@ const rows = [
   ],
   [
     'Bundler executor',
-    (process.env.BUNDLER_EXECUTOR_PRIVATE_KEYS || process.env.ALTO_EXECUTOR_PRIVATE_KEY || '').split(',')[0].trim(),
+    (process.env.BUNDLER_EXECUTOR_PRIVATE_KEYS || '').split(',')[0].trim(),
     '~0.05',
     'fronts gas for every handleOps transaction (reimbursed by the EntryPoint)',
   ],

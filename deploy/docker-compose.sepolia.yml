@@ -20,20 +20,37 @@
 #   pnpm --filter @appliedblockchain/giano-e2e dapp    # sample dApp on http://app.localhost:4400
 name: giano-sepolia
 
+# The backend chain document wallet-api and the bundler both read (packages/contracts/chains.ts),
+# interpolated from deploy/.env. The chain is not in the committed contracts registry, so its
+# addresses are explicit. Only our own paymaster's operations are relayed (allowedPaymasters).
+x-giano-chains: &giano-chains |
+  [
+    {
+      "chainId": ${CHAIN_ID:-11155111}, "name": "${CHAIN_NAME:-Sepolia}",
+      "rpcUrl": "${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}",
+      "entryPoint": "${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}",
+      "sponsorshipPaymaster": "${SPONSORSHIP_PAYMASTER_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set SPONSORSHIP_PAYMASTER_ADDRESS}",
+      "walletApi": {
+        "factory": "${FACTORY_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set FACTORY_ADDRESS}",
+        "policy": { "allowedPaymasters": ["${SPONSORSHIP_PAYMASTER_ADDRESS}"] }
+      },
+      "bundler": { "rpcUrl": "${BUNDLER_NODE_RPC_URL:-${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}}" }
+    }
+  ]
+
 services:
   # Self-hosted giano-bundler. Its executor EOA signs and pays for every handleOps transaction,
   # so it must be funded with testnet ETH. It simulates operations with eth_call (state
   # overrides, no debug_traceCall), so BUNDLER_NODE_RPC_URL can be a plain public RPC — it
-  # defaults to RPC_URL (publicnode). ALTO_EXECUTOR_PRIVATE_KEY from an older .env still works.
+  # defaults to RPC_URL (publicnode).
   bundler:
     build:
       context: ..
       dockerfile: services/bundler/Dockerfile
     restart: unless-stopped
     environment:
-      BUNDLER_RPC_URL: ${BUNDLER_NODE_RPC_URL:-${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}}
-      BUNDLER_ENTRYPOINT: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
-      BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:-${ALTO_EXECUTOR_PRIVATE_KEY:-}}
+      GIANO_CHAINS: *giano-chains
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS in deploy/.env}
     ports:
       - '4337:4337'
 
@@ -64,15 +81,9 @@ services:
       # A testnet: the balances at risk are worthless, so an environment-variable signing key is
       # acceptable here where it would be refused for `production`.
       GIANO_DEPLOYMENT_CLASS: testnet
-      CHAIN_ID: ${CHAIN_ID:-11155111}
-      # server-side reads; can be a plain public RPC (no trace needed here)
-      RPC_URL: ${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}
-      BUNDLER_URL: http://bundler:4337
-      # chain is not in the committed contracts registry — supply addresses explicitly
-      ENTRYPOINT_ADDRESS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
-      FACTORY_ADDRESS: ${FACTORY_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set FACTORY_ADDRESS}
-      # only sponsor through our own paymaster (empty = any paymaster allowed)
-      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-${SPONSORSHIP_PAYMASTER_ADDRESS:-}}
+      # The chain, its addresses and the paymaster allowlist: the document at the top of this file.
+      GIANO_CHAINS: *giano-chains
+      BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # ── Sponsorship — the production GianoPaymaster, not the permissive test one ───────────
       # The demo sponsors the way a real deployment does: wallet-api signs an ERC-7677 sponsorship
@@ -84,7 +95,6 @@ services:
       # provision-sponsorship.sh installs its rules through the admin API. Funding without rules
       # sponsors nothing, and the stack gives no hint that that is why.
       SPONSORSHIP_ENABLED: 'true'
-      SPONSORSHIP_PAYMASTER_ADDRESS: ${SPONSORSHIP_PAYMASTER_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set SPONSORSHIP_PAYMASTER_ADDRESS}
       # `local` is refused outright when GIANO_DEPLOYMENT_CLASS is `production`; a testnet key
       # guarding worthless balances is the case the distinction exists to allow.
       SPONSORSHIP_SIGNER_KIND: local

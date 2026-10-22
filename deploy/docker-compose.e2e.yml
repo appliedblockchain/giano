@@ -11,6 +11,32 @@
 #   docker compose -f deploy/docker-compose.e2e.yml up --build
 name: giano-e2e
 
+# The backend chain document (packages/contracts/chains.ts), read by wallet-api and the bundler
+# alike, so the two cannot disagree about a chain's RPC or EntryPoint. Identical canonical
+# contracts on both chains — verified at boot, not assumed (MC-48). allowedPaymasters is per chain
+# by design (MC-61): only ops sponsored by our own paymaster reach the bundler through the relay.
+x-giano-chains: &giano-chains |
+  [
+    {
+      "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://anvil:8545",
+      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+      "walletApi": {
+        "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+        "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+      }
+    },
+    {
+      "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://anvil-b:8545",
+      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+      "walletApi": {
+        "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
+        "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
+      }
+    }
+  ]
+
 services:
   # Chain A. The stack runs TWO chains by default (MC-116–MC-118): same canonical contracts
   # at the same addresses on both, from the same state generator run twice, so multi-chain
@@ -63,35 +89,22 @@ services:
     command: TCP-LISTEN:80,fork,reuseaddr TCP:host.docker.internal:1355
     restart: unless-stopped
 
-  # giano-bundler: estimates, simulates and submits each operation as its own handleOps
-  # transaction. The executor is anvil account 0, which is why GIANO_DEV_MODE is set.
+  # giano-bundler, serving both chains (POST /31337, POST /31338): one process, its own
+  # lanes, estimator and lookup per chain. The executor is anvil account 0 — the same key on
+  # both chains, funded on each by the baked state — which is why GIANO_DEV_MODE is set.
   bundler:
     build:
       context: ..
       dockerfile: services/bundler/Dockerfile
     depends_on:
       - anvil
+      - anvil-b
     environment:
-      BUNDLER_RPC_URL: http://anvil:8545
+      GIANO_CHAINS: *giano-chains
       BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
       GIANO_DEV_MODE: 'true'
     ports:
       - '4337:4337'
-
-  # Chain B's own submission infrastructure: submission endpoints are never shared between
-  # chains (MC-43), and each chain's executor is its own funded account (MC-98).
-  bundler-b:
-    build:
-      context: ..
-      dockerfile: services/bundler/Dockerfile
-    depends_on:
-      - anvil-b
-    environment:
-      BUNDLER_RPC_URL: http://anvil-b:8545
-      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-      GIANO_DEV_MODE: 'true'
-    ports:
-      - '4338:4337'
 
   postgres:
     image: postgres:17-alpine
@@ -128,29 +141,10 @@ services:
       # key authorises spending against customer funds.
       GIANO_DEPLOYMENT_CLASS: development
       RUN_MIGRATIONS: 'true'
-      # The closed list of chains this backend serves (MC-46), one descriptor per chain.
-      # Identical canonical contracts on both — verified at boot, not assumed (MC-48).
-      # allowedPaymasters is per chain by design (MC-61): only ops sponsored by our own
-      # paymaster reach the bundler through the relay.
-      GIANO_CHAINS: |
-        [
-          {
-            "chainId": 31337, "name": "Devnet A",
-            "rpcUrl": "http://anvil:8545", "bundlerUrl": "http://bundler:4337",
-            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
-          },
-          {
-            "chainId": 31338, "name": "Devnet B",
-            "rpcUrl": "http://anvil-b:8545", "bundlerUrl": "http://bundler-b:4337",
-            "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-            "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-            "sponsorshipPaymaster": "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
-            "policy": { "allowedPaymasters": ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] }
-          }
-        ]
+      # The closed list of chains this backend serves (MC-46): the document above. Each chain
+      # submits to <BUNDLER_BASE_URL>/<chainId>.
+      GIANO_CHAINS: *giano-chains
+      BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: info
       # The ceremony limit is per client IP, and every Playwright test is the same IP. With
       # operations included as soon as they are sent, the suite runs passkey ceremonies faster

@@ -26,12 +26,15 @@ spec:
           ports:
             - containerPort: 4337
           env:
-            - name: BUNDLER_RPC_URL
-              value: {{ .Values.config.rpcUrl | quote }}
-            {{- with .Values.config.entryPointAddress }}
-            - name: BUNDLER_ENTRYPOINT
-              value: {{ . | quote }}
-            {{- end }}
+            # The chain document wallet-api reads; with the single-chain scalars, its one-entry form.
+            - name: GIANO_CHAINS
+              {{- if .Values.config.chains }}
+              value: {{ toJson .Values.config.chains | quote }}
+              {{- else }}
+              {{- $chain := dict "chainId" .Values.config.chainId "name" (printf "chain %v" .Values.config.chainId) "rpcUrl" .Values.config.rpcUrl }}
+              {{- with .Values.config.entryPointAddress }}{{- $_ := set $chain "entryPoint" . }}{{- end }}
+              value: {{ toJson (list $chain) | quote }}
+              {{- end }}
           envFrom:
             - secretRef:
                 name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
