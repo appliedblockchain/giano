@@ -8,7 +8,7 @@ any EVM chain by changing the values in `deploy/.env`.
 | --- | --- | --- |
 | Chain | local anvil, pre-baked state | real chain via external RPC |
 | Contracts | baked into `state.json` | **you deploy them once** |
-| Bundler | Alto + anvil dev key | Alto + **your funded executor** |
+| Bundler | giano-bundler + anvil dev key | giano-bundler + **your funded executor** |
 | Gas | free anvil ETH | **real testnet ETH** |
 
 This stack sponsors through the production `GianoPaymaster`, the same way a real deployment does —
@@ -31,7 +31,7 @@ required but needs no funding:
 | Account | Suggested | Why |
 | --- | --- | --- |
 | **Deployer** (`DEPLOYER_PRIVATE_KEY`) | ~0.25 ETH | Deploys the contracts, stakes the paymaster (`STAKE_ETH`), funds **each** tenant's sponsorship balance (`TENANT_FUND_ETH`, spent once per entry in `PAYMASTER_TENANTS`) and seeds the test paymaster's deposit (`PAYMASTER_FUND_ETH`). |
-| **Alto executor** (`ALTO_EXECUTOR_PRIVATE_KEY`) | ~0.05 ETH | Signs and pays gas for every bundle on-chain. It's reimbursed from the paymaster deposit, but must front the ETH. |
+| **Bundler executor** (`BUNDLER_EXECUTOR_PRIVATE_KEYS`) | ~0.05 ETH | Signs and pays gas for every `handleOps` transaction. It's reimbursed by the EntryPoint (from the paymaster deposit), but must front the ETH. |
 | **Sponsorship signer** (`SPONSORSHIP_SIGNER_KEY`) | none | The key wallet-api signs ERC-7677 sponsorships with. It authorises spending against the tenant's paymaster balance; it never pays gas. |
 
 The end user's passkey wallet pays nothing.
@@ -44,9 +44,8 @@ The end user's passkey wallet pays nothing.
 
 - Docker (Compose), Node/pnpm (repo already bootstrapped)
 - An RPC endpoint. The keyless public default (`https://ethereum-sepolia-rpc.publicnode.com`) works
-  for everything here, including the bundler: the stack runs Alto with `--safe-mode false`, which
-  validates userops via `eth_call` simulation rather than `debug_traceCall`. Only if you enable
-  Alto's safe mode do you need a trace-capable RPC (Alchemy/QuickNode/Infura free tier).
+  for everything here, including the bundler: giano-bundler simulates userops with `eth_call`
+  (state overrides) and never calls `debug_traceCall`, so no trace-capable RPC is needed.
 - Three throwaway private keys. Generate one with:
   ```sh
   pnpm --filter @appliedblockchain/giano-contracts exec node -e "console.log(require('ethers').Wallet.createRandom().privateKey)"
@@ -69,12 +68,11 @@ aligned with the environment described in `infra/`, and *B. the local demo stack
 
 Set at minimum:
 - `DEPLOYER_PRIVATE_KEY` and `SPONSORSHIP_SIGNER_KEY` (half A — deployment and provisioning)
-- `ALTO_EXECUTOR_PRIVATE_KEY`, `ALTO_UTILITY_PRIVATE_KEY` (half B — only to run the stack)
+- `BUNDLER_EXECUTOR_PRIVATE_KEYS` (half B — only to run the stack)
 - (optional) `DEPLOY_RPC_URL` — the **only** RPC the deployment needs. Prefer a keyed endpoint:
   a dropped receipt mid-run is what corrupts the Ignition journal.
 - (optional) `RPC_URL` — the local stack's serving RPC; the keyless publicnode default is fine
-- (optional) `BUNDLER_NODE_RPC_URL` — leave blank to reuse `RPC_URL`; only needed if you enable
-  Alto's safe mode (then point it at a `debug_traceCall`-capable RPC)
+- (optional) `BUNDLER_NODE_RPC_URL` — leave blank to reuse `RPC_URL`
 
 ### 2. Check funding
 
@@ -155,7 +153,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml up --
 
 | Service | URL |
 | --- | --- |
-| bundler (alto) | http://localhost:4337 |
+| bundler (giano-bundler) | http://localhost:4337 |
 | wallet-web | http://wallet.localhost:8081 |
 | wallet-api | internal (via wallet-web `/api` proxy) |
 

@@ -104,4 +104,4 @@ docker build -f services/wallet-api/Dockerfile -t ghcr.io/appliedblockchain/gian
 ```
 
 - `deploy/docker-compose.reference.yml` — what client projects copy (postgres + wallet-api).
-- `deploy/docker-compose.dev.yml` — local stack incl. anvil + alto.
+- `deploy/docker-compose.dev.yml` — local stack incl. anvil + giano-bundler.

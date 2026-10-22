@@ -144,7 +144,7 @@ export default async function globalSetup() {
   // Only the compose-backed HTTP services are waited on, and deliberately so: the fixtures are
   // Playwright's to start (and it gates them on `webServer.url` already), so waiting for them
   // here would make `pnpm portless:up` — which a developer runs right after `docker compose up`,
-  // before any fixture exists — hang and fail. anvil and alto are skipped because neither
+  // before any fixture exists — hang and fail. anvil and the bundlers are skipped because neither
   // answers a plain GET meaningfully; the suite's own traffic is what exercises those routes.
   await Promise.all([
     waitFor(originOf('wallet'), 120_000),

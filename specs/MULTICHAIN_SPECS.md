@@ -1426,7 +1426,7 @@ Two anvil instances, both started by the stack's normal start-up with no opt-in 
 |---|---|---|
 | chain id | `31337` | `31338` |
 | RPC | `:8545` | `:8546` |
-| bundler (Alto) | `:4337` | `:4338` |
+| bundler (giano-bundler) | `:4337` | `:4338` |
 | state | `e2e/devnet/state.json` | `e2e/devnet/state-31338.json` |
 
 Retaining `31337` as chain A means every existing single-chain test passes unmodified, demonstrating

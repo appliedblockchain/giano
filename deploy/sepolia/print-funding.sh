@@ -25,7 +25,12 @@ const rows = [
     '~0.25',
     `contracts + paymaster stake (${stake}) + tenant balance (${tenantFund}) + test deposit (${testDeposit}) + gas`,
   ],
-  ['Alto executor', process.env.ALTO_EXECUTOR_PRIVATE_KEY, '~0.05', 'fronts gas for every bundle (reimbursed by paymaster)'],
+  [
+    'Bundler executor',
+    (process.env.BUNDLER_EXECUTOR_PRIVATE_KEYS || process.env.ALTO_EXECUTOR_PRIVATE_KEY || '').split(',')[0].trim(),
+    '~0.05',
+    'fronts gas for every handleOps transaction (reimbursed by the EntryPoint)',
+  ],
   // Listed so a missing key is caught here rather than three steps later, not because it needs ETH:
   // it authorises spending against the tenant's paymaster balance and never pays gas.
   ['Sponsorship signer', process.env.SPONSORSHIP_SIGNER_KEY, 'none', 'signs ERC-7677 sponsorships — no funding needed'],
