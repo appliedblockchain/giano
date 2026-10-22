@@ -1,10 +1,12 @@
-import { Alert, Badge, Box, Button, Container, HStack, Heading, NativeSelect, Popover, Portal, Spinner, Stack, Tabs, Text } from '@chakra-ui/react';
+import { Alert, Badge, Box, Button, ButtonGroup, Container, HStack, Heading, NativeSelect, Popover, Portal, Spinner, Stack, Tabs, Text } from '@chakra-ui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { LuLayoutDashboard, LuRefreshCw, LuSettings, LuShieldCheck, LuUsers, LuWallet, LuHistory } from 'react-icons/lu';
+import { LuLayoutDashboard, LuRefreshCw, LuSettings, LuShieldCheck, LuUsers, LuWallet, LuHistory, LuUserCog } from 'react-icons/lu';
 import { Copyable, notifyError } from './components/ui';
 import { deploymentKey, getAdminConfig, initialDeployment, rememberDeployment, type Deployment } from './config';
 import { usePaymaster } from './hooks/usePaymaster';
 import { ChainNotAddedError, connectOnChain, getAuthorisedAccount, getInjectedProvider, isUserRejection, networkDetails, type ConnectedWallet } from './lib/chain';
+import { OperatorSessionProvider } from './lib/operator-session';
+import { OperatorArea } from './operator/OperatorArea';
 import { HealthPanel } from './panels/HealthPanel';
 import { HistoryPanel } from './panels/HistoryPanel';
 import { OverviewPanel } from './panels/OverviewPanel';
@@ -13,8 +15,13 @@ import { SettingsPanel } from './panels/SettingsPanel';
 import { TenantsPanel } from './panels/TenantsPanel';
 
 export function App() {
-  const { deployments } = getAdminConfig();
+  const { deployments, operatorApi } = getAdminConfig();
   const [deployment, setDeployment] = useState(() => initialDeployment(deployments));
+  /**
+   * Paymaster (the chain view, as it always was) or Operator (wallet-api's tenant registry). Not
+   * remembered: a reload lands on Paymaster, and the Operator area asks for a signature anyway.
+   */
+  const [area, setArea] = useState<'paymaster' | 'operator'>('paymaster');
   const [wallet, setWallet] = useState<ConnectedWallet>();
   const [connecting, setConnecting] = useState(false);
   const [notAdded, setNotAdded] = useState<ChainNotAddedError>();
@@ -72,15 +79,19 @@ export function App() {
     };
   }, []);
 
-  const connect = useCallback(async () => {
+  /** Resolves to the wallet it connected, so a caller can act with it straight away (operator sign-in). */
+  const connect = useCallback(async (): Promise<ConnectedWallet | undefined> => {
     setConnecting(true);
     setNotAdded(undefined);
     connectingRef.current = true;
     try {
-      setWallet(await connectOnChain(deployment));
+      const connected = await connectOnChain(deployment);
+      setWallet(connected);
+      return connected;
     } catch (cause) {
       if (cause instanceof ChainNotAddedError) setNotAdded(cause);
       else if (!isUserRejection(cause)) notifyError('Could not connect a wallet', cause);
+      return undefined;
     } finally {
       connectingRef.current = false;
       setConnecting(false);
@@ -119,6 +130,16 @@ export function App() {
               )}
               {deployments.length === 1 && <Badge variant="outline">chain {deployment.chainId}</Badge>}
               {overview && <Field label="Paymaster" value={overview.address} />}
+              {operatorApi && (
+                <ButtonGroup size="sm" variant="outline" attached aria-label="Area">
+                  <Button variant={area === 'paymaster' ? 'solid' : 'outline'} onClick={() => setArea('paymaster')} aria-pressed={area === 'paymaster'}>
+                    <LuLayoutDashboard /> Paymaster
+                  </Button>
+                  <Button variant={area === 'operator' ? 'solid' : 'outline'} onClick={() => setArea('operator')} aria-pressed={area === 'operator'}>
+                    <LuUserCog /> Operator
+                  </Button>
+                </ButtonGroup>
+              )}
             </HStack>
 
             <HStack gap="3">
@@ -174,7 +195,7 @@ export function App() {
           </Alert.Root>
         )}
 
-        {!wallet && !notAdded && (
+        {!wallet && !notAdded && area === 'paymaster' && (
           <Alert.Root status="info" mb="4">
             <Alert.Indicator />
             <Alert.Content>
@@ -197,14 +218,31 @@ export function App() {
           </Alert.Root>
         )}
 
-        {!overview && loading && (
+        {area === 'operator' && (
+          // Keyed on the deployment: switching environments remounts the provider, and the operator
+          // session goes with it — the same reason the wallet is dropped on a switch.
+          <OperatorSessionProvider key={deploymentKey(deployment)}>
+            <OperatorArea
+              deployment={deployment}
+              wallet={wallet}
+              connect={connect}
+              connecting={connecting}
+              client={client}
+              overview={overview}
+              myRoles={myRoles}
+              refreshChain={refresh}
+            />
+          </OperatorSessionProvider>
+        )}
+
+        {area === 'paymaster' && !overview && loading && (
           <Stack align="center" py="16" gap="3">
             <Spinner size="lg" color="brand.solid" />
             <Text color="fg.muted">Reading the paymaster…</Text>
           </Stack>
         )}
 
-        {overview && client && (
+        {area === 'paymaster' && overview && client && (
           <Tabs.Root defaultValue="overview" lazyMount unmountOnExit={false}>
             <Tabs.List mb="4">
               <Tabs.Trigger value="overview">
