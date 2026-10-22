@@ -47,7 +47,9 @@ test('the wallet card names the account, the network and what that account may d
   await expect(card.getByText(`chain ${CHAINS.a.chainId}`, { exact: false })).toBeVisible();
   await expect(card.getByText(/on this paymaster/)).toBeVisible();
   // The header's other address is the paymaster's, and is labelled as such rather than left bare.
-  await expect(page.getByText('Paymaster', { exact: true })).toBeVisible();
+  // Scoped to the label itself: where the Operator area is configured, the header's area switch
+  // also has a "Paymaster" button.
+  await expect(page.getByRole('paragraph').filter({ hasText: /^Paymaster$/ })).toBeVisible();
 });
 
 test('a chain the wallet has never seen is added with the address published for wallets', async ({ page }) => {
