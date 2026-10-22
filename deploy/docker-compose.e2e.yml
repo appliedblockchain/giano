@@ -169,10 +169,12 @@ services:
       PAYMASTER_WATCHER_POLL_MS: '1000'
       PAYMASTER_WATCHER_CONFIRMATIONS: '0'
       PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
-      # The operator tier (specs/OPERATOR-ADMIN-SPECS.md §4), for e2e/tests/operator.spec.ts. The
-      # operator is anvil's account 3: it only signs a sign-in message, never a transaction, and is
-      # deliberately not the sponsorship signer above. The domain is the paymaster console's.
-      OPERATOR_ADDRESSES: '[{"id":"ops-e2e","address":"0x90F79bf6EB2c4f870365E785982E1f101E93b906"}]'
+      # The operator tier (specs/OPERATOR-ADMIN-SPECS.md §4). Two operators: anvil's account 3
+      # (ops-e2e) signs in from e2e/tests/operator.spec.ts and holds no paymaster role; anvil's
+      # account 0 (ops-console) is the console's injected test wallet, and holds every role, so the
+      # console's on-chain follow-ups can run. Neither is the sponsorship signer above. The domain
+      # is the paymaster console's.
+      OPERATOR_ADDRESSES: '[{"id":"ops-e2e","address":"0x90F79bf6EB2c4f870365E785982E1f101E93b906"},{"id":"ops-console","address":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}]'
       OPERATOR_SIWE_DOMAIN: paymaster.localhost
       OPERATOR_SIWE_URI: http://paymaster.localhost
       # Two tenants, one backend. corsOrigins carries each tenant's dApp origin — the
@@ -242,20 +244,27 @@ services:
       GIANO_RP_ID: wallet.localhost
       GIANO_BRAND_NAME: Giano E2E
 
-  # The operator's view of the same paymaster the wallet is sponsoring through. Everything it shows
-  # is read straight from the chain, so it needs neither wallet-api nor a database — only anvil and
-  # the paymaster address. It waits for the provisioner all the same, so that opening it during an
-  # e2e run shows a provisioned deployment rather than an empty roster that looks like a bug.
+  # The operator's view of the same paymaster the wallet is sponsoring through. The Paymaster area is
+  # read straight from the chain — only anvil and the paymaster address. The Operator area is
+  # wallet-api's tenant registry, reached through the console's own /api proxy
+  # (GIANO_WALLET_API_UPSTREAM), so it waits for wallet-api too. It also waits for the provisioner,
+  # so that opening it during an e2e run shows a provisioned deployment rather than an empty roster
+  # that looks like a bug.
   paymaster-admin:
     build:
       context: ..
       dockerfile: services/paymaster-admin/Dockerfile
     depends_on:
+      wallet-api:
+        condition: service_healthy
       sponsorship-provisioner:
         condition: service_completed_successfully
     ports:
       - '8083:8080'
     environment:
+      # The Operator area's same-origin proxy to wallet-api, as wallet-web's. Unset, the console has
+      # no Operator area at all.
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # Both chains, so the header carries a picker. Each rpcUrl is the node itself: the console
       # proxies it through its own origin (/rpc/<chainId>), so the browser never dials anvil
       # directly — which also means anvil's missing CORS headers do not matter here.
