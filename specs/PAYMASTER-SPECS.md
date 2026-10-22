@@ -1121,6 +1121,7 @@ New Prometheus series, all `tenant`-labelled to match the existing convention
 | `giano_paymaster_invariant_slack_wei` / `_breach` | gauge | Breach pages; slack growth rate warns (R-34) |
 | `giano_paymaster_deposit_wei` / `_treasury_wei` / `_stake_wei` | gauge | Deposit or stake below the low-water mark (R-24) |
 | `giano_paymaster_watcher_lag_blocks` / `_seconds` | gauge | Watcher stalled |
+| `giano_paymaster_watcher_active{chain}` | gauge | Sum across replicas is 0: no replica holds the chain's watcher lock |
 | `giano_sponsorship_unavailable_total{cause}` | counter | Signer/HSM/database failures — outage, not misconfiguration (R-21) |
 | `giano_paymaster_reconciliation_divergence_wei` | gauge | Unexplained drawdown (R-26) |
 
@@ -1400,6 +1401,7 @@ New `wallet-api` environment, following the existing zod-validated conventions:
 | `SPONSORSHIP_RESERVATION_TTL_SECONDS` | Slightly above the validity window (§7.4) |
 | `SPONSORSHIP_RATE_LIMIT_PER_MINUTE` | Per tenant, overridable like the relay's |
 | `PAYMASTER_WATCHER_ENABLED`, `..._POLL_MS`, `..._CONFIRMATIONS` | Watcher behaviour |
+| `PAYMASTER_WATCHER_LOCK_RETRY_MS` | How often a standby replica retries the per-chain watcher lock |
 | `PAYMASTER_RECONCILE_INTERVAL_MS` | Invariant and drawdown checks |
 | `PAYMASTER_LOW_BALANCE_DEFAULT_WEI` | Default alert threshold when a tenant sets none |
 | `SPONSORSHIP_EMERGENCY_STOP` | Stops issuance immediately without a restart (R-19) |

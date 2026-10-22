@@ -78,8 +78,8 @@ unnecessary.
 | paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at
-`http://wallet.localhost` as the wallet URL; the stack already allow-lists the demo dApp
-origin (`http://app.localhost`).
+`http://wallet.localhost` as the wallet URL; the stack already allow-lists the example app's
+origin (`http://demo.localhost`) and the test fixture's (`http://app.localhost`).
 
 Tear down with `docker compose --profile portless -f deploy/docker-compose.e2e.yml down`, and
 drop the names with `pnpm -F @appliedblockchain/giano-e2e portless:down`. HTTP rather than
@@ -88,16 +88,17 @@ passkeys work without minting and trusting a local CA.
 
 ### Which dApp goes in front of it
 
-Two dApps in this repo can sit on `http://app.localhost`, and it is worth knowing which is
+Two dApps in this repo can sit in front of the stack, and it is worth knowing which is
 which — they are not interchangeable:
 
 | | What it is | When to use it |
 | --- | --- | --- |
-| **The example app**<br>`services/custom-example` | A real UI — Vite + React + Chakra UI: wallet basics, an ERC-20 panel, a gasless-sponsorship panel. | **This is the one to run.** Whenever you want to *use* Giano, show it to someone, or poke at a change by hand. See [Option C](#option-c--the-example-app). |
-| **The demo fixture**<br>`e2e/dapp` | Deliberately barebones: one static HTML page, no framework, stable element ids and nothing else. | Mostly just a Playwright target. The E2E suite starts it itself, so you rarely run it by hand — only to debug a failing test. |
+| **The example app**<br>`services/custom-example`<br>`http://demo.localhost` | A real UI — Vite + React + Chakra UI: wallet basics, an ERC-20 panel, a gasless-sponsorship panel. | **This is the one to run.** Whenever you want to *use* Giano, show it to someone, or poke at a change by hand. See [Option C](#option-c--the-example-app). |
+| **The demo fixture**<br>`e2e/dapp`<br>`http://app.localhost` | Deliberately barebones: one static HTML page, no framework, stable element ids and nothing else. | Mostly just a Playwright target. The E2E suite starts it itself, so you rarely run it by hand — only to debug a failing test. |
 
-They share the one origin, so **only one of them can run at a time**: `http://app.localhost` is
-port 4400 behind portless, and 4400/4401 are the only dApp origins the E2E tenants allow-list.
+Each has its own origins, so both can run at once: the example app is `demo.localhost` /
+`demo-byo.localhost` (ports 4410/4411 behind portless), the fixture `app.localhost` /
+`app-byo.localhost` (4400/4401). The E2E tenants allow-list all four.
 
 ```sh
 pnpm demo:dev                                  # the example app — start here
@@ -139,7 +140,7 @@ asserted against:
 Bring up the Option A stack, then:
 
 ```sh
-pnpm demo:dev   # http://app.localhost
+pnpm demo:dev   # http://demo.localhost
 ```
 
 (The root scripts are named `demo:*` for historical reasons — `pnpm demo:dev` runs the example
@@ -153,8 +154,8 @@ It defaults to the Option A stack (wallet origin `http://wallet.localhost`, anvi
 own wallet origin, and this one app serves both:
 
 ```sh
-pnpm demo:stock                                      # http://app.localhost     -> wallet.localhost
-pnpm demo:byo                                        # http://app-byo.localhost -> wallet-byo.localhost
+pnpm demo:stock                                      # http://demo.localhost     -> wallet.localhost
+pnpm demo:byo                                        # http://demo-byo.localhost -> wallet-byo.localhost
 pnpm -F @appliedblockchain/giano-e2e wallet-byo       # tenant byo's wallet origin (needed for demo:byo)
 ```
 
@@ -280,7 +281,7 @@ never by re-publishing the same number.
 ### The demo's `*.localhost` addresses do not answer
 
 The E2E demo is addressed by name rather than by port, via a local portless proxy. If
-`http://app.localhost` and friends fail:
+`http://demo.localhost` and friends fail:
 
 - a portless **404** means the routes are not registered — `pnpm -F @appliedblockchain/giano-e2e portless:up`;
 - a **502** means the route is registered but nothing is behind it — the compose stack or a host

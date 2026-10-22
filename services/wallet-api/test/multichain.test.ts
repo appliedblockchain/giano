@@ -8,6 +8,7 @@ import type { ChainRegistry, ChainServices } from '../src/services/chains.js';
 import { isFatalFailure, verifyChain } from '../src/services/chain-verify.js';
 import { startTestStack, stopTestStack, TENANT_A, type TestContext } from './setup.js';
 import { createAuthenticator, makeRegistrationResponse } from './webauthn-fixtures.js';
+import connectorPackage from '../../../packages/connector/package.json' with { type: 'json' };
 
 const BASE_ENV = {
   NODE_ENV: 'test',
@@ -505,5 +506,12 @@ describe('two-chain relay', () => {
     const body = res.json() as { chainId: number | null; chains: Array<{ chainId: number }> };
     expect(body.chainId).toBeNull();
     expect(body.chains.map((chain) => chain.chainId)).toEqual([31337, 31338]);
+  });
+
+  it('reports the release version the SDK packages carry on /v1/version', async () => {
+    // A dApp's preflight warns when its connector is ahead of this. Reporting anything but the
+    // shared release version made every SDK look ahead of the api.
+    const res = await ctx.app.inject({ method: 'GET', url: '/v1/version' });
+    expect((res.json() as { version: string }).version).toBe(connectorPackage.version);
   });
 });

@@ -1653,7 +1653,6 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | `chains` | the backend chain document (`packages/contracts/chains.ts`) — both chain entries, RPC URLs embedded, shared fields plus per-service sections (§14.2) | wallet-api and bundler (as `GIANO_CHAINS`), paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
 | `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)); keeps its Alto-era name | bundler (as `BUNDLER_EXECUTOR_PRIVATE_KEYS`) |
-| `alto-utility-key` | 32-byte hex — **no longer read**: giano-bundler has no utility key | nothing |
 | `tenants-seed` | the [§14.2](#142-wallet-api) JSON, carrying `adminKeys` | wallet-api |
 | `metrics-bearer-token` | random string | wallet-api |
 
@@ -2701,7 +2700,6 @@ hand** and is not managed by Terraform.
   "chains":                 { "value": "[{…},{…}]",             "version": 1 },
   "sponsorship-signer-key": { "value": "0x…",                   "version": 1 },
   "alto-executor-key":      { "value": "0x…",                   "version": 1 },
-  "alto-utility-key":       { "value": "0x…",                   "version": 1 },
   "tenants-seed":           { "value": "[{…}]",                 "version": 1 },
   "metrics-bearer-token":   { "value": "…",                     "version": 1 }
 }
@@ -4365,7 +4363,7 @@ FAIL — the note is not valid JSON
                                              swallows the quote of "version"
 
 FAIL — valid JSON, but a key is missing value or version:
-  alto-utility-key
+  metrics-bearer-token
 ```
 
 A healthy line for comparison — note the `",` that the broken one is missing:

@@ -45,6 +45,8 @@ declare module 'fastify' {
       paymasterStakeWei: Gauge<'chain'>;
       paymasterWatcherLagBlocks: Gauge<'chain'>;
       paymasterWatcherLagSeconds: Gauge<'chain'>;
+      /** ALERTABLE: summed across replicas, 0 means no replica is watching that chain. */
+      paymasterWatcherActive: Gauge<'chain'>;
       /** ALERTABLE: a drawdown the events do not explain is the signature of a leaked signing key. */
       paymasterReconciliationDivergenceWei: Gauge<'chain'>;
       /** 0/1 per served chain — drives the chain-unavailable alert (MC-54, MC-103). */
@@ -197,6 +199,12 @@ export default fp(
       paymasterWatcherLagSeconds: new Gauge({
         name: 'giano_paymaster_watcher_lag_seconds',
         help: 'Seconds since the watcher last completed a pass',
+        labelNames: ['chain'] as const,
+        registers: [registry],
+      }),
+      paymasterWatcherActive: new Gauge({
+        name: 'giano_paymaster_watcher_active',
+        help: '1 while this replica holds the chain lock and runs the watcher. Alert when the sum across replicas is 0',
         labelNames: ['chain'] as const,
         registers: [registry],
       }),

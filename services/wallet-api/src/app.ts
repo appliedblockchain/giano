@@ -32,6 +32,7 @@ import { createLedgerService } from './services/sponsorship-ledger.js';
 import { createHsmSponsorshipSigner, createLocalSponsorshipSigner, type HsmSignerAdapter, type SponsorshipSigner } from './services/sponsorship-signer.js';
 import { createTenantService } from './services/tenants.js';
 import { createUseropRelay } from './services/userop-relay.js';
+import { releaseVersion } from './release-version.js';
 
 export type BuildAppOptions = {
   config: AppConfig;
@@ -161,7 +162,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
 
   await app.register(healthRoutes, {
     db,
-    version: process.env.GIANO_VERSION ?? '0.1.0',
+    version: process.env.GIANO_VERSION ?? releaseVersion,
     registry,
     // The sponsorship service is on the critical path for transacting: if it cannot sign, this
     // deployment cannot sponsor, and reporting itself healthy would hide that. The signer is

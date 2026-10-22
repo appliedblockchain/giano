@@ -625,6 +625,7 @@ warning, so it can gate a rollout.
 | `SPONSORSHIP_RATE_LIMIT_PER_MINUTE` | Per tenant; its own budget so pre-flight traffic cannot hammer the signer |
 | `SPONSORSHIP_EMERGENCY_STOP` | Stops issuance immediately, without a restart |
 | `PAYMASTER_WATCHER_ENABLED`, `..._POLL_MS`, `..._CONFIRMATIONS` | Event ingestion and settlement |
+| `PAYMASTER_WATCHER_LOCK_RETRY_MS` | How often a standby replica retries the watcher lock (default 10 s). One replica per chain holds it; after a rolling deploy the new replica takes over within this interval of the old one draining |
 | `PAYMASTER_RECONCILE_INTERVAL_MS` | How often the accounting invariant is checked |
 | `PAYMASTER_LOW_BALANCE_DEFAULT_WEI` | Alert threshold for tenants that set none |
 
@@ -717,6 +718,7 @@ that looks nothing like a clock problem. Run NTP and alert on drift.
 | `giano_sponsorship_signatures_total{key_id}` | Any signature from an unexpected `key_id`; signing stopping entirely |
 | `giano_sponsorship_unavailable_total` | Signer, HSM or database failures — an outage, not a misconfiguration |
 | `giano_paymaster_watcher_lag_blocks` | Watcher stalled: settlements queue and balances go stale |
+| `giano_paymaster_watcher_active` | Sum across replicas is 0 for a chain for more than a few minutes: nobody is watching it, and the invariant and drawdown checks have stopped |
 
 The invariant is the one to understand: `Σ tenant balances + treasury ≤ deposit`. It is "at most"
 deliberately — the overhead allowance over-charges slightly, so the ledger falls a little faster

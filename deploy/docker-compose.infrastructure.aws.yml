@@ -95,7 +95,6 @@ x-secret-inventory: &secret-inventory
   #   chains                  the backend chain document (GIANO_CHAINS) wallet-api and the bundler share
   #   sponsorship-signer-key  32-byte hex; signs paymaster data, holds no funds
   #   alto-executor-key       32-byte hex; MUST BE FUNDED — the bundler executor, pays gas for every handleOps
-  #   alto-utility-key        UNUSED since giano-bundler replaced Alto; safe to delete
   #   tenants-seed            the TENANTS_SEED JSON, because it carries adminKeys
   #   metrics-bearer-token    random, min 16 chars; gates GET /metrics
   #   datadog-api-key         MIRRORED from the shared DevOps vault, not Giano's own (§7.4)
