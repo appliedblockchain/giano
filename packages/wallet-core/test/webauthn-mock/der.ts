@@ -6,13 +6,14 @@
  */
 
 /**
- * Encodes a fixed-width 32-byte big-endian value as a DER INTEGER, prepending a
- * 0x00 sign byte when the MSB is set. Kept fixed-width (32 or 33 bytes) rather
- * than minimally stripped: WebAuthn consumers such as ox's `parseAsn1Signature`
- * assume a 32-byte `r`, so a stripped, shorter integer would misalign them.
+ * Encodes a fixed-width 32-byte big-endian value as a minimal DER INTEGER, as real authenticators
+ * do: leading zero bytes are stripped (so roughly one value in 256 is 31 bytes or shorter), then a
+ * 0x00 sign byte is prepended when the MSB is set.
  */
 function toDerInteger(bytes: Uint8Array): Uint8Array {
-  let content = bytes;
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0) start++;
+  let content = bytes.slice(start);
   if (content[0] & 0x80) {
     const padded = new Uint8Array(content.length + 1);
     padded.set(content, 1); // prepend 0x00 so the value stays positive
