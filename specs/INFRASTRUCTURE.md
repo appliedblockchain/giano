@@ -3071,7 +3071,7 @@ wrong here is a drift risk the shorthand shape does not have, and worth double-c
 The tenants are not configuration. `TENANTS_SEED` is retired: wallet-api no longer reads it, boots
 fine with no tenants, and Giano's platform admins create and edit them in the paymaster console's Platform
 area ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §9). dev's two were written by the
-retired seed and handed to the platform admins at the first boot of the retiring release. The platform admins
+retired seed and since handed to the platform admins. The platform admins
 are not configuration either: the init container writes the environment's bootstrap platform admins
 into an empty `platform_admins` table, and from then on the platform admins add and remove each
 other in the console's Admins tab ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §4.1). As tenant
