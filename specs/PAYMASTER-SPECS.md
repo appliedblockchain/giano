@@ -64,7 +64,7 @@ and are the two that changed a position this document had already taken.
 | # | Decision | Consequence in this document |
 |---|---|---|
 | S1 | **The service is new routes on `wallet-api`**, not a fifth service — with the signer behind a narrow interface so the key can leave the process without touching the API or the ledger | §5 adds routes to the existing app; §9 defines `SponsorshipSigner`; no new image, no new per-tenant edge route |
-| S2 | **Sponsorship config lives in its own table**, written only through the tenant's existing admin key. No tenant-row write — operator or fixture — touches it | §6.4 — R-08 self-service that no operator edit or restart can revert |
+| S2 | **Sponsorship config lives in its own table**, written only through the tenant's existing admin key. No tenant-row write — platform admin or fixture — touches it | §6.4 — R-08 self-service that no platform admin edit or restart can revert |
 | S3 | **An AWS HSM key from day one, through [`evm-hsm-signer`](https://github.com/appliedblockchain/evm-hsm-signer)**; a local-key implementation of the same interface serves development *and testnet*, and is refused for a production deployment | §9 — the key that authorises spending customer funds never sits in an env var where the funds are real. Requirements D16 / R-66 |
 | S4 | **UUPS proxy; `UPGRADER_ROLE` and a single `ROLE_ADMIN` both held by an OZ `TimelockController` whose proposers are a Safe; `DEFAULT_ADMIN_ROLE` never granted** | §4.3 — R-46 and R-51 become on-chain properties rather than process promises |
 | S5 | **The pre-approval refusal (R-15) is implemented by calling the rules engine from the wallet's review screen** — `pm_getPaymasterStubData` doubles as the read-only pre-flight | §5.2, §10.3. This settles requirements [Q7](./PAYMASTER-REQUIREMENTS.md#7-open-questions) in the affirmative for the wallet's own UI, without a second rules implementation |
@@ -792,8 +792,8 @@ tenant_sponsorship(tenant_id PK → tenants.id, chain_id, config jsonb,
 tenant_sponsorship_history(id, tenant_id, chain_id, config jsonb, created_at, created_by_key_hash)
 ```
 
-Nothing that writes the tenant row touches it — not the operator API, not the local-stack tenant
-fixtures (and not the retired `TENANTS_SEED` before them) — so a restart or an operator edit can
+Nothing that writes the tenant row touches it — not the platform API, not the local-stack tenant
+fixtures (and not the retired `TENANTS_SEED` before them) — so a restart or a platform admin edit can
 never revert a tenant's own rules. A tenant with
 no row sponsors nothing, which is R-02 in the storage layer as well as in the engine.
 
@@ -1344,7 +1344,7 @@ no credential (R-61), and is refused for a production class (§9.1).
 step in the compose profile (and the equivalent step in the e2e setup script) waits for
 `/readyz`, then `PUT`s each demo tenant's sponsorship config through
 `/v1/admin/sponsorship` using the fixed admin key that tenant's fixture gives it (the stack's
-`init` service, [`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §9). It uses the
+`init` service, [`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §9). It uses the
 same endpoint a tenant would, so there is no dev-only seeding mechanism to disable in production and
 R-62 is satisfied by construction rather than by a flag. The tenant fixtures never touch sponsorship
 (S2), and §6.4's "no row means no sponsorship" stays true for real tenants.

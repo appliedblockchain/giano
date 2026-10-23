@@ -75,7 +75,7 @@ unnecessary.
 | devnet B (anvil) | http://rpc-b.localhost | chain 31338 — same contracts at the SAME addresses (the stack is two-chain by default; see `e2e/README.md`) |
 | wallet-api | http://api.localhost | serves both chains; also reached via the wallet-web `/api` proxy |
 | wallet-web | http://wallet.localhost | the wallet origin, serving both chains (open it directly for the Settings view) |
-| paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health; its Operator area manages tenants and operators (anvil 0 is bootstrapped as operator `ops-console`) |
+| paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health; its Platform area manages tenants and platform admins (anvil 0 is bootstrapped as platform admin `admin-console`) |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at
 `http://wallet.localhost` as the wallet URL; the stack already allow-lists the example app's

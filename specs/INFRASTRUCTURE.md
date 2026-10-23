@@ -114,8 +114,8 @@ dev would then never exercise the one onboarding step that costs a client anythi
 **Two tenants, because there are two ways to be one.** `example` takes Giano's stock UI and reaches
 it by `CNAME`; `byoui` serves a wallet SPA it wrote itself
 (`e2e/wallet-byo/`, `DEVELOPER-GUIDE.md` §5.5b) at its own wallet origin, so it points at Giano's
-wallet hostname not at all. Both are ordinary tenant rows that Giano's operators manage in the
-paymaster console's Operator area, both resolve against the same
+wallet hostname not at all. Both are ordinary tenant rows that Giano's platform admins manage in the
+paymaster console's Platform area, both resolve against the same
 wallet-api, Postgres and bundler, and each has its own irreversible RP ID. A dev environment that
 serves only one of the two shapes cannot show that the other works — and cross-tenant isolation is
 not observable at all with a single tenant.
@@ -239,7 +239,7 @@ R20 --> TGE
 R25 --> TGE2
 R30 --> TGP
 
-NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 tenant created in the console's Operator area.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the tenant row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
+NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 tenant created in the console's Platform area.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the tenant row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
 TGW -.- NOTE
 TGBYO -.- NOTE
 
@@ -277,7 +277,7 @@ subgraph VPCX["VPC giano-dev · 10.40.0.0/16 · eu-west-2 · two AZs"]
     SEX["custom-example · nginx :8080<br/>0.25 / 512 — tenant example's dApp"]
     SEX2["custom-example-byoui · nginx :8080<br/>0.25 / 512 — tenant byoui's dApp<br/>same image, GIANO_WALLET_URL differs"]
     SPM["paymaster-admin · nginx :8080<br/>0.25 / 512 — operator console"]
-    SAPI["wallet-api · Fastify :8080<br/>0.5 vCPU / 2048 MB<br/>init container (dist/init.js) migrates and<br/>bootstraps operators before the API starts<br/>multi-tenant · testnet class · both chains"]
+    SAPI["wallet-api · Fastify :8080<br/>0.5 vCPU / 2048 MB<br/>init container (dist/init.js) migrates and<br/>bootstraps platform admins before the API starts<br/>multi-tenant · testnet class · both chains"]
     SBD["bundler · giano-bundler :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only<br/>both chains: POST /84532, POST /11155111 · one executor key"]
     ONESHOT["one-shot task definition, no service<br/>provision-sponsorship"]
     RDSX["RDS Postgres 17 · db.t4g.micro<br/>publicly_accessible = false<br/>SG: 5432 from the tasks SG only<br/>KMS CMK giano-dev-rds-kms at rest"]
@@ -1472,7 +1472,7 @@ The whole per-tenant cost, and the script dev's own example tenant follows:
 | 2 | Request an ACM certificate for `wallet.<tenant>.com`; tenant adds the validation `CNAME` ACM asks for | Giano + tenant DNS | free |
 | 3 | Attach it to the HTTPS listener as an additional SNI certificate | Terraform | free |
 | 4 | Add the hostname to `var.tenant_wallet_hosts` → the §5.7 rule 40 host list | Terraform | free |
-| 5 | Create the tenant in the paymaster console's Operator area — no restart | operator | one row |
+| 5 | Create the tenant in the paymaster console's Platform area — no restart | platform admin | one row |
 
 Steps 1 and 2 need the tenant to act, and step 2 needs them to act *again* on certificate renewal
 unless the validation `CNAME` is left in place — ACM renews automatically only while that record
@@ -2056,7 +2056,7 @@ vCPU-hour and every image in the repo already builds multi-arch in `docker.yml`.
 
 **Every task runs three containers**, not one: the application, the Datadog Agent and the FireLens
 log router ([§17.3](#173-observability)). `wallet-api`'s runs a fourth, short-lived one: the `init`
-container, which migrates the schema and bootstraps operators and exits 0 before the application
+container, which migrates the schema and bootstraps platform admins and exits 0 before the application
 starts ([§9.6](#96-migrations-run-on-boot)). The task-level `cpu` and `memory` below are the whole
 task's; the split across containers is in [§17.3.3](#1733-the-sidecars).
 
@@ -2147,7 +2147,7 @@ module "svc-wallet-api" {
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
-  # §9.6 — migrations and the bootstrap operators, before the API starts
+  # §9.6 — migrations and the bootstrap platform admins, before the API starts
   init_container = { command = ["node", "dist/init.js"], secret_keys = ["DATABASE_URL"] }
 
   alb_enabled            = true
@@ -2291,10 +2291,10 @@ starts and keeps running after it exits — so it ships to Datadog like everythi
 — the `init` service in every compose file, the init container here. In order, it:
 
 1. applies pending migrations (`runMigrations`, `services/wallet-api/src/migrate.ts`);
-2. writes the environment's bootstrap operators (`services/wallet-api/src/environments.ts`, keyed by
-   `GIANO_ENVIRONMENT`) **only into an empty `operators` table** — once a database has an operator,
-   the operators manage the list in the console and a release changing the map touches nothing
-   ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §4.1);
+2. writes the environment's bootstrap platform admins (`services/wallet-api/src/environments.ts`, keyed by
+   `GIANO_ENVIRONMENT`) **only into an empty `platform_admins` table** — once a database has a platform
+   admin, the platform admins manage the list in the console and a release changing the map touches nothing
+   ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §4.1);
 3. on a local stack only, creates the `TENANT_FIXTURES` tenants that do not exist yet. Anywhere else
    a set `TENANT_FIXTURES` makes it exit non-zero, so no live configuration creates a tenant.
 
@@ -2335,7 +2335,7 @@ Two consequences follow from running at every task start:
 
 - **It runs on every task start**, not once per deploy — deployments, health-check replacements,
   scale events and the 07:00 scale-up ([§17.2](#172-scheduling)). Migrations are tracked and the
-  operator bootstrap is a no-op on a non-empty table, so a re-run is a few queries, but application
+  platform admin bootstrap is a no-op on a non-empty table, so a re-run is a few queries, but application
   start-up is coupled to database reachability permanently.
 - **At `desired_count = 2` the replicas race.** The advisory locks serialise them safely, but the
   second replica's init waits out the first's migration before its API starts.
@@ -2364,7 +2364,7 @@ tenant** and whenever the rules change. A tenant with no rules gets no sponsorsh
 produces an environment where every transaction is refused — which looks exactly like a bug.
 
 The tenant's admin key reaches it as `ADMIN_API_KEY`, passed per run in the overrides next to
-`TENANT_SLUG`, not from a secret. Issue a key for the run in the paymaster console's Operator area
+`TENANT_SLUG`, not from a secret. Issue a key for the run in the paymaster console's Platform area
 and revoke it afterwards, because ECS keeps overrides in the task's description.
 
 It uses the same execution role pattern as the services and its own task role, and runs in the
@@ -2989,7 +2989,7 @@ and `SPONSORSHIP_PAYMASTER_ADDRESS` as shorthand-only.
 |---|---|---|
 | `GIANO_DEPLOYMENT_CLASS` | `testnet` | literal |
 | `DATABASE_URL` | `postgres://…` | **ASM** `giano-dev-database-url` |
-| `GIANO_ENVIRONMENT` | `terraform.workspace` (`dev` / `stg` / `prd`) — selects the operator sign-in domain and bootstrap operators in `services/wallet-api/src/environments.ts` ([§9.6](#96-migrations-run-on-boot)) | literal |
+| `GIANO_ENVIRONMENT` | `terraform.workspace` (`dev` / `stg` / `prd`) — selects the platform admin sign-in domain and bootstrap platform admins in `services/wallet-api/src/environments.ts` ([§9.6](#96-migrations-run-on-boot)) | literal |
 | `RUN_MIGRATIONS` | `false` — the `init` container runs them, `node dist/init.js` ([§9.6](#96-migrations-run-on-boot)) | literal |
 | `GIANO_CHAINS` | the backend chain document, both chains, below | **ASM** `giano-dev-chains` (composed — embeds both RPC URLs, [§7.3](#73-the-secrets)) |
 | `BUNDLER_BASE_URL` | `http://bundler.giano-dev.local:4337` — each chain submits to `<BUNDLER_BASE_URL>/<chainId>` ([§9.4](#94-service-discovery)) | literal |
@@ -3069,12 +3069,12 @@ wrong here is a drift risk the shorthand shape does not have, and worth double-c
 `packages/contracts/canonical.ts` when this secret is authored or updated.
 
 The tenants are not configuration. `TENANTS_SEED` is retired: wallet-api no longer reads it, boots
-fine with no tenants, and Giano's operators create and edit them in the paymaster console's Operator
-area ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §9). dev's two were written by the
-retired seed and handed to the operators at the first boot of the retiring release. The operators
-are not configuration either: the init container writes the environment's bootstrap operators into
-an empty `operators` table, and from then on the operators add and remove each other in the
-console's Operators tab ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §4.1). As tenant
+fine with no tenants, and Giano's platform admins create and edit them in the paymaster console's Platform
+area ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §9). dev's two were written by the
+retired seed and handed to the platform admins at the first boot of the retiring release. The platform admins
+are not configuration either: the init container writes the environment's bootstrap platform admins
+into an empty `platform_admins` table, and from then on the platform admins add and remove each
+other in the console's Admins tab ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §4.1). As tenant
 fields, the two tenants are:
 
 ```json
@@ -3291,7 +3291,7 @@ there is one authored list, and adding a chain to the deployment adds it to the 
 | Variable | Value |
 |---|---|
 | `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
-| `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` — nginx proxies `/api/*` to `wallet-api`, same-origin with the browser's `Origin` removed, which is what turns on the console's Operator area (tenants and operators; [`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §11) |
+| `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` — nginx proxies `/api/*` to `wallet-api`, same-origin with the browser's `Origin` removed, which is what turns on the console's Platform area (tenants and platform admins; [`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §11) |
 | *(nothing else)* | the RPC proxy, the CSP and the picker all derive from the array — see below |
 
 Nothing is translated on the way in. The console reads the document's shared fields `chainId`,
@@ -3693,8 +3693,8 @@ fetches it after `/config.json` and prefers its values, keeping the env values a
 single-tenant and local stacks. Then:
 
 - `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_BRAND_NAME` leave the §14.3 table.
-- The allowlist becomes per tenant again, fail-closed, and provisioned by the same tenant row an
-  operator writes for everything else about a tenant — so §6.6 step 5 stays one row.
+- The allowlist becomes per tenant again, fail-closed, and provisioned by the same tenant row a
+  platform admin writes for everything else about a tenant — so §6.6 step 5 stays one row.
 - An unknown `Host` gets the same 404 `requireTenantByHost` already returns, so a probe on Giano's
   own serving hostname learns nothing and, correctly, cannot connect any dApp.
 
@@ -4627,7 +4627,7 @@ NET=$(terraform output -json RUN_TASK_NETWORK)
 SUBNETS=$(jq -r '.subnets | join(",")'       <<<"$NET")
 SGS=$(jq   -r '.security_groups | join(",")' <<<"$NET")
 
-# one admin key per tenant, issued for this run in the paymaster console's Operator area;
+# one admin key per tenant, issued for this run in the paymaster console's Platform area;
 # revoke both once the tasks have finished (ECS keeps overrides in the task's description)
 EXAMPLE_ADMIN_KEY='gak_…'
 BYOUI_ADMIN_KEY='gak_…'
@@ -4809,7 +4809,7 @@ third is the guarantee everything else in §12 rests on.
 | R28 | **`container_definitions` diffs as text, not structure.** ECS's `DescribeTaskDefinition` echoes back `mountPoints`, `volumesFrom`, `systemControls`, `portMappings`, `environment` (all `[]`) and, on `log_router` only, `user = "0"`, whether or not a container declared them — and a `jsonencode()`'d string that omits any of them never converges. | `terraform plan` proposes `-/+ destroy and then create replacement` on every service's task definition, on every run, including genuine no-ops — confirmed twice in a row with zero config changes between them | Closed by `local.container_defaults`, merged into all four container shapes ([§9.3.1](#931-every-container-definition-merges-a-shared-normalization-default)). Not something AWS documents as a stable contract — if a future field shows the same symptom (a `~` line naming a field neither side's config appears to touch), the fix is the same: add it to the shared default or, if it is specific to one container the way `user` is, to that container alone. |
 | R29 | **`datadog_enabled` can be, and was, wired to only one of the four things it has to move together.** An earlier revision gated the execution role's `datadog-api-key` grant ([§10.2](#102-what-each-role-gets)) on the variable but never gated the sidecar containers, the log driver, or the CloudWatch group name — so flipping it dropped IAM access to a secret a still-present `datadog-agent` container still declared in its `secrets` block. | Every task fails at placement, silently — `apply` reports success, the plan showed only an IAM policy change, and nothing says why tasks stopped starting until the ECS events are read | Closed: all four now move together ([§17.3.7](#1737-turning-datadog-off)) — the sidecars are conditionally excluded from `container_definitions`, `logConfiguration` switches `awsfirelens`/`awslogs`, `dependsOn` on `log_router` is conditional with it, and the log group's name (and therefore its identity) changes with it. The signal that they have come apart again is the same one that caught this: a plan touching the IAM policy alone. |
 | R30 | **RDS's parameter group family ships `rds.force_ssl = 1` as a system default, and `database-url`'s DSN never requested SSL.** Nothing in this module set `rds.force_ssl` — it was never disabled, just never accounted for — so Postgres rejected `wallet-api`'s plaintext connection outright: `no pg_hba.conf entry ... no encryption`. Fixing that alone traded it for a second, independent failure: plain `sslmode=require` is an alias for `verify-full` on recent `pg-connection-string`, and RDS's certificate chains to Amazon's own RDS CA, not Node's trust store, so the driver then failed with `self-signed certificate in certificate chain` — encrypted, but chain-unverifiable. | `wallet-api` crash-loops on every boot with database errors that read like networking or credentials problems, not a missing query parameter — and `wallet-web`/`custom-example-byoui` cascade from it, since their nginx upstreams (`wallet-api.giano-dev.local`, `bundler.giano-dev.local`) never register in Cloud Map while the service they front never stabilises | Closed: the DSN carries `?sslmode=require&uselibpqcompat=true` ([§7.4](#74-the-derived-secrets)) — the second parameter restores classic libpq semantics, where `require` means encrypt-only, accepted here because the instance is already private-subnet and security-group isolated (§5.6). Required a second, separate fix to actually reach a running task: `secret_string_wo` is never read back, so `secret_string_wo_version` is the only change signal, and it was tied purely to `database-password`'s own 1Password version — a code-only DSN format change moved nothing. Now combined with `local.database_url_format_version`, bumped by hand on every format change (currently `3`), so either trigger rotates the secret. |
-| R31 | **`tasks-sg` only ever allowed 8080 from `alb-sg`, but the SPA origins reach `wallet-api` task-to-task.** `wallet-web`, `custom-example` and `paymaster-admin` each serve `/api` from an nginx `proxy_pass` to `wallet-api` over service discovery (`paymaster-admin` only when `GIANO_WALLET_API_UPSTREAM` is set, for its Operator area — [`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §11); `wallet-byo` does the same through its own minimal Node reverse proxy (`e2e/wallet-byo/serve.mjs`) rather than nginx. Either way it is a hop the ALB is never on the path for, since the ALB only ever targets the SPA's own container, not `wallet-api`'s. | Every `/api` call through any SPA origin hangs until the proxy's own connect timeout and the browser gives up — nginx logs a `499`, `wallet-api` never sees the request — which reads as an application timeout rather than a dropped SYN at the security group | Closed for connectivity: `tasks-from-tasks`, a self-referencing ingress rule on `tasks-sg` for 8080 ([§5.6](#56-security-groups)). The instinct to scope this to "SPA origins → wallet-api only" doesn't fit the security-group model — a self-reference is symmetric by construction — so the rule is task-to-task on 8080 in general, no narrower than the ALB's own grant already was. **Not closed for the `description` string**: `tasks-sg`'s `description` was updated to say so in words too, and that is accepted as-is rather than reverted, on the reasoning that an accurate description is worth more than a cosmetic mismatch. The cost: `aws_security_group.description` has no update API at all, so this edit forces `-/+` replacement of a group referenced by three other groups' rules and attached to every running task's ENI — AWS refuses `DeleteSecurityGroup` with a live ENI attached (`DependencyViolation`), so the replace half of that plan cannot complete while anything is running. Applying this needs a coordinated cutover (drain or replace every task before the destroy step runs), not a plain `terraform apply` — a plain apply will get partway through and fail on the delete. Any future edit to `alb-sg`'s, `bundler-sg`'s or `app-db-sg`'s `description` carries the identical trap. |
+| R31 | **`tasks-sg` only ever allowed 8080 from `alb-sg`, but the SPA origins reach `wallet-api` task-to-task.** `wallet-web`, `custom-example` and `paymaster-admin` each serve `/api` from an nginx `proxy_pass` to `wallet-api` over service discovery (`paymaster-admin` only when `GIANO_WALLET_API_UPSTREAM` is set, for its Platform area — [`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §11); `wallet-byo` does the same through its own minimal Node reverse proxy (`e2e/wallet-byo/serve.mjs`) rather than nginx. Either way it is a hop the ALB is never on the path for, since the ALB only ever targets the SPA's own container, not `wallet-api`'s. | Every `/api` call through any SPA origin hangs until the proxy's own connect timeout and the browser gives up — nginx logs a `499`, `wallet-api` never sees the request — which reads as an application timeout rather than a dropped SYN at the security group | Closed for connectivity: `tasks-from-tasks`, a self-referencing ingress rule on `tasks-sg` for 8080 ([§5.6](#56-security-groups)). The instinct to scope this to "SPA origins → wallet-api only" doesn't fit the security-group model — a self-reference is symmetric by construction — so the rule is task-to-task on 8080 in general, no narrower than the ALB's own grant already was. **Not closed for the `description` string**: `tasks-sg`'s `description` was updated to say so in words too, and that is accepted as-is rather than reverted, on the reasoning that an accurate description is worth more than a cosmetic mismatch. The cost: `aws_security_group.description` has no update API at all, so this edit forces `-/+` replacement of a group referenced by three other groups' rules and attached to every running task's ENI — AWS refuses `DeleteSecurityGroup` with a live ENI attached (`DependencyViolation`), so the replace half of that plan cannot complete while anything is running. Applying this needs a coordinated cutover (drain or replace every task before the destroy step runs), not a plain `terraform apply` — a plain apply will get partway through and fail on the delete. Any future edit to `alb-sg`'s, `bundler-sg`'s or `app-db-sg`'s `description` carries the identical trap. |
 | R32 | **`paymaster-admin` published its QuickNode RPC tokens to every visitor.** A chain descriptor's `rpcUrl` is browser-facing — written into `/config.json` and dialled by the SPA — and both dev endpoints embed their key in the URL path, so the console served both tokens outright and named one of them in its own CSP `connect-src` header. | Anyone who opened `paymaster.dev.giano.appliedblockchain.dev` had two working, unrotated provider endpoints, usable until someone rotated them | Closed: every absolute `rpcUrl` is proxied through the console's own origin by default (`GIANO_RPC_PROXY=true`, opt-out for a node that must be dialled from the browser or an upstream nginx cannot reach) — nginx holds the keyed URL behind a per-chain `/rpc/<chainId>` location, the browser gets a relative path, and `connect-src` derives to `'self'` from the same array ([§14.6](#146-paymaster-admin)). `wallet-web` was moved off direct RPC for the identical reason (R3); this closes the same gap for `paymaster-admin`, which had been left behind. The two already-exposed tokens are **not** being rotated — accepted for `dev`, where the QuickNode endpoints carry no cost worth the coordination of rotating them across every consumer (`custom-example`, `custom-example-byoui`, `wallet-api` and the bundler via `chains`). Revisit this acceptance before treating any higher environment's tokens the same way. |
 
 ---

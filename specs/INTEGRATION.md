@@ -6,8 +6,8 @@
 
 Giano ships as versioned artifacts deployed into a stack you (or your operator) run. The
 backend is **multi-tenant**: one `giano-wallet-api` (+ Postgres + bundler) serves one or
-many client projects, each as a tenant that Giano's operators create in the paymaster
-console's Operator area. A complete
+many client projects, each as a tenant that Giano's platform admins create in the paymaster
+console's Platform area. A complete
 integration is:
 
 1. A **tenant-owned wallet origin** (`wallet.yourapp.com`) serving a wallet UI —
@@ -64,8 +64,8 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
   `deploy/docker-compose.reference.yml` for the full env matrix. Key values: `DATABASE_URL`,
   `CHAIN_ID`/`RPC_URL`/`BUNDLER_URL`, userop policy defaults, and `GIANO_ENVIRONMENT` — which
   entry of `services/wallet-api/src/environments.ts` this deployment is: the console host its
-  operators sign in for and its bootstrap operators (§6). The client-run `reference` environment
-  has no console host, so it registers no operator route. Neither tenants nor operators are
+  platform admins sign in for and its bootstrap platform admins (§6). The client-run `reference` environment
+  has no console host, so it registers no platform route. Neither tenants nor platform admins are
   configuration: both are rows.
 - **wallet-web** — `GIANO_CHAIN_ID`, `GIANO_WALLET_API_UPSTREAM`, `GIANO_RP_ID`,
   `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array), `GIANO_FACTORY_ADDRESS`/`GIANO_PAYMASTER_ADDRESS`
@@ -86,8 +86,8 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
 External Postgres by default. Run the init step, `node dist/init.js` (`DATABASE_URL`,
 `GIANO_ENVIRONMENT`), to completion before wallet-api, which then runs with
 `RUN_MIGRATIONS=false`; `deploy/docker-compose.reference.yml` does this with an `init` service. It
-applies migrations and writes the environment's bootstrap operators into an empty `operators`
-table. `RUN_MIGRATIONS=true` on the wallet-api, or the one-shot `node dist/migrate.js` (the Helm
+applies migrations and writes the environment's bootstrap platform admins into an empty
+`platform_admins` table. `RUN_MIGRATIONS=true` on the wallet-api, or the one-shot `node dist/migrate.js` (the Helm
 chart runs it as a pre-install/upgrade hook Job), still apply migrations alone. Migrations are
 backward-compatible across one minor.
 
@@ -101,10 +101,10 @@ CREATE2 deploy (identical addresses across chains for identical bytecode) and em
 
 ## 6. Tenants
 
-Tenants are created, edited, suspended and deleted at runtime by Giano's operators, in the
-paymaster console's Operator area (`/v1/operator/*`, signed in with EIP-4361) — no restart.
-The operators are rows too: the init step bootstraps an environment's first operators into an
-empty table, and from then on operators add and remove each other in the console's Operators tab.
+Tenants are created, edited, suspended and deleted at runtime by Giano's platform admins, in the
+paymaster console's Platform area (`/v1/platform/*`, signed in with EIP-4361) — no restart.
+The platform admins are rows too: the init step bootstraps an environment's first platform admins
+into an empty table, and from then on they add and remove each other in the console's Admins tab.
 wallet-api boots with no tenants. Each tenant carries its `walletOrigin` (host = RP ID),
 origins, `openRegistration`, admin keys and `corsOrigins` (your dApp origins, for the public
 receipt endpoint). Every write is validated (every `expectedOrigins` host must be

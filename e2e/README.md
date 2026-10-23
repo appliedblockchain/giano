@@ -69,10 +69,10 @@ the baked devnet state — a `down -v` drops it, and bringing the stack back up 
 The paymaster console is the operator's side of the same sponsorship the dApps are using: open it
 next to http://app.localhost and a sponsored send shows up as a falling tenant balance and a new
 row under **History**. Its Paymaster view reads everything straight from the chain, so it needs no
-login and works read-only with no wallet connected. Its **Operator** area (tenants and operators)
-needs a wallet sign-in: the stack's `init` service bootstraps anvil accounts 3 (`ops-e2e`) and 0
-(`ops-console`) as operators for the `e2e` environment
-(`services/wallet-api/src/environments.ts`), into an empty `operators` table only.
+login and works read-only with no wallet connected. Its **Platform** area (tenants and platform admins)
+needs a wallet sign-in: the stack's `init` service bootstraps anvil accounts 3 (`admin-e2e`) and 0
+(`admin-console`) as platform admins for the `e2e` environment
+(`services/wallet-api/src/environments.ts`), into an empty `platform_admins` table only.
 
 Every private key, account and fixed address this stack uses is catalogued in
 [`docs/E2E-DEV-KEYS.md`](../docs/E2E-DEV-KEYS.md) — all of them public anvil test values, none of
