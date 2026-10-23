@@ -58,7 +58,7 @@ pnpm -F @appliedblockchain/giano-e2e portless:up
 
 Addresses are names, not ports. [portless](https://github.com/vercel-labs/portless) maps each
 `*.localhost` name to the loopback port behind it; `e2e/origins.mjs` is the name/port table and
-the single source of truth the fixtures, the tenant seed and the tests all read.
+the single source of truth the fixtures, the stacks' `TENANT_FIXTURES` and the tests all read.
 
 None of it runs as root. A URL with no port *is* port 80, and macOS and Linux reserve ports
 below 1024 for root — so rather than `sudo portless proxy start`, the `portless-port80`
@@ -150,7 +150,7 @@ It defaults to the Option A stack (wallet origin `http://wallet.localhost`, anvi
 `http://rpc.localhost`, chain 31337, devnet test token prefilled). Override with `VITE_WALLET_URL`,
 `VITE_RPC_URL`, `VITE_CHAIN_ID`, `VITE_TEST_ERC20` for other networks.
 
-**Two tenants side by side.** The E2E stack seeds two tenants against one backend, each with its
+**Two tenants side by side.** The E2E stack creates two tenants against one backend, each with its
 own wallet origin, and this one app serves both:
 
 ```sh

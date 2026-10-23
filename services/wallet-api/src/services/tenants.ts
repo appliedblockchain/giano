@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, eq, ne, notInArray, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
 import { tenantAdminKeys, tenantHistory, tenantHistoryActions, tenants } from '../db/schema.js';
@@ -7,8 +7,8 @@ import type { PolicyConfig } from './userop-policy.js';
 
 /**
  * Tenancy model (specs/DEVELOPER-GUIDE.md §1): tenant ≡ wallet origin ≡ RP ID, 1:1.
- * Tenants are written by the boot seed (TENANTS_SEED) and, at runtime, by Giano's operators
- * (specs/OPERATOR-ADMIN-SPECS.md). EVERY write, seed or operator, passes through
+ * Tenants are written at runtime by Giano's operators (specs/OPERATOR-ADMIN-SPECS.md), and on
+ * local stacks by the tenant fixtures (tenant-fixtures.ts). EVERY write passes through
  * checkTenantInvariants and checkOriginClaims, so the RP/origin invariant can never be
  * violated in the database and no origin can ever resolve to two tenants.
  */
@@ -77,7 +77,7 @@ const originList = z.array(z.string().refine(isBareOrigin, 'must be a bare origi
 
 /**
  * Field shapes only, shared by every write path. Strict: an unknown key is refused rather than
- * silently dropped, so a typo in a seed or a request never reads as "applied".
+ * silently dropped, so a typo in a fixture or a request never reads as "applied".
  */
 export const tenantFieldsSchema = z
   .object({
@@ -111,7 +111,7 @@ export type TenantIssue = { path: (string | number)[]; message: string };
 
 /**
  * The single-tenant invariants every write must satisfy. Returns issues rather than throwing, so
- * the seed can fail boot with them and the operator API can return them as a 400.
+ * the fixture loader can fail with them and the operator API can return them as a 400.
  */
 export function checkTenantInvariants(
   fields: Pick<TenantFields, 'walletOrigin' | 'rpId' | 'expectedOrigins' | 'openRegistration'>,
@@ -156,17 +156,6 @@ const addIssues = (ctx: z.RefinementCtx, issues: TenantIssue[]) => {
   for (const issue of issues) ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
 };
 
-/** A TENANTS_SEED entry: the fields plus plaintext admin keys, stored sha256-hashed. */
-export const tenantSeedSchema = tenantFieldsSchema
-  .extend({
-    /** Plaintext admin keys — stored sha256-hashed, never persisted or logged as-is. */
-    adminKeys: z.array(z.string().min(16, 'admin keys must be at least 16 characters')).default([]),
-  })
-  .superRefine((seed, ctx) => addIssues(ctx, checkTenantInvariants(seed, { adminKeyCount: seed.adminKeys.length })))
-  .transform(normaliseTenantFields);
-
-export type TenantSeed = z.infer<typeof tenantSeedSchema>;
-
 /** An operator create: the fields plus labels for admin keys the server generates (H-i). */
 export const tenantCreateSchema = tenantFieldsSchema
   .extend({
@@ -177,7 +166,7 @@ export const tenantCreateSchema = tenantFieldsSchema
 
 export type TenantCreate = z.infer<typeof tenantCreateSchema>;
 
-/** Never changeable through the API (H-f): passkeys, the paymaster balance and the seed key on them. */
+/** Never changeable through the API (H-f): passkeys and the paymaster balance key on them. */
 export const IMMUTABLE_TENANT_FIELDS = ['slug', 'id', 'walletOrigin', 'rpId'] as const;
 
 /** The mutable subset. Absent fields stay as stored. */
@@ -189,9 +178,9 @@ export const tenantPatchSchema = tenantFieldsSchema
 export type TenantPatch = z.infer<typeof tenantPatchSchema>;
 
 /**
- * Validates an update the way the seed validates a write: the patch is merged onto the stored
- * row and the RESULT is checked, with the admin-key count taken from storage — so a patch can
- * never leave a tenant in a state the seed would have refused.
+ * Validates an update the way a create is validated: the patch is merged onto the stored row and
+ * the RESULT is checked, with the admin-key count taken from storage — so a patch can never leave
+ * a tenant in a state a create would have refused.
  */
 export function validateTenantUpdate(
   stored: Tenant,
@@ -226,47 +215,6 @@ export function originClaims(fields: { walletOrigin: string; expectedOrigins?: s
   return [...new Set([fields.walletOrigin, ...(fields.expectedOrigins ?? [])])];
 }
 
-export const tenantsSeedSchema = z
-  .array(tenantSeedSchema)
-  .superRefine((seeds, ctx) => {
-    const duplicate = (values: string[], what: string) => {
-      const seen = new Set<string>();
-      for (const value of values) {
-        if (seen.has(value)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate ${what} across tenants: ${value}` });
-        seen.add(value);
-      }
-    };
-    duplicate(seeds.map((s) => s.slug), 'slug');
-    duplicate(seeds.map((s) => s.id).filter((id): id is string => Boolean(id)), 'id');
-    duplicate(seeds.map((s) => s.walletOrigin), 'walletOrigin');
-    duplicate(seeds.map((s) => s.rpId), 'rpId');
-    // a plaintext key shared by two tenants would make key → tenant resolution ambiguous
-    duplicate(seeds.flatMap((s) => s.adminKeys), 'admin key');
-    // getByOrigin matches wallet_origin OR expected_origins: an origin two entries claim would
-    // resolve to whichever row Postgres returned first
-    const claimedBy = new Map<string, string>();
-    for (const seed of seeds) {
-      for (const origin of originClaims(seed)) {
-        const other = claimedBy.get(origin);
-        if (other !== undefined && other !== seed.slug) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `origin ${origin} is claimed by both "${other}" and "${seed.slug}" — no origin may resolve to two tenants` });
-        } else {
-          claimedBy.set(origin, seed.slug);
-        }
-      }
-    }
-  });
-
-/** Validates one tenant input through the seed schema; throws with readable messages. */
-export function validateTenantSeed(input: unknown): TenantSeed {
-  const parsed = tenantSeedSchema.safeParse(input);
-  if (!parsed.success) {
-    const details = parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('\n');
-    throw new Error(`invalid tenant:\n${details}`);
-  }
-  return parsed.data;
-}
-
 // ── Writing ────────────────────────────────────────────────────────────────────
 
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -294,7 +242,7 @@ export async function lockTenantWrites(tx: Tx): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('giano:tenant-origin-claims'))`);
 }
 
-export type OriginClaimClash = { origin: string; slug: string; managedBy: Tenant['managedBy']; status: Tenant['status'] };
+export type OriginClaimClash = { origin: string; slug: string; status: Tenant['status'] };
 
 /**
  * Finds another tenant — in ANY lifecycle state, deleted included (H-d) — that already claims one
@@ -308,13 +256,13 @@ export async function checkOriginClaims(tx: Tx, { selfId, claims }: { selfId: st
     sql`, `,
   )}]::text[]`;
   const [row] = await tx
-    .select({ slug: tenants.slug, walletOrigin: tenants.walletOrigin, expectedOrigins: tenants.expectedOrigins, managedBy: tenants.managedBy, status: tenants.status })
+    .select({ slug: tenants.slug, walletOrigin: tenants.walletOrigin, expectedOrigins: tenants.expectedOrigins, status: tenants.status })
     .from(tenants)
     .where(and(selfId ? ne(tenants.id, selfId) : undefined, sql`(${tenants.walletOrigin} = ANY(${list}) OR ${tenants.expectedOrigins} && ${list})`))
     .limit(1);
   if (!row) return null;
   const origin = claims.find((claim) => claim === row.walletOrigin || row.expectedOrigins.includes(claim))!;
-  return { origin, slug: row.slug, managedBy: row.managedBy, status: row.status };
+  return { origin, slug: row.slug, status: row.status };
 }
 
 const UNIQUE_TENANT_FIELDS: Record<string, string> = {
@@ -366,134 +314,6 @@ export async function appendTenantHistory(
     after: entry.after ? tenantSnapshot(entry.after) : null,
     detail: entry.detail ?? null,
   });
-}
-
-/** Key order-insensitive equality for jsonb values (Postgres reorders jsonb keys). */
-const canonical = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value !== null && typeof value === 'object'
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical((value as Record<string, unknown>)[key])]),
-        )
-      : value;
-const sameJson = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
-
-/** Replaces a tenant's admin-key set with exactly `hashes`. */
-async function replaceAdminKeys(tx: Tx, tenantId: string, hashes: string[]): Promise<void> {
-  if (hashes.length > 0) {
-    await tx
-      .insert(tenantAdminKeys)
-      .values(hashes.map((keyHash) => ({ tenantId, keyHash })))
-      .onConflictDoNothing({ target: tenantAdminKeys.keyHash });
-    await tx.delete(tenantAdminKeys).where(and(eq(tenantAdminKeys.tenantId, tenantId), notInArray(tenantAdminKeys.keyHash, hashes)));
-  } else {
-    await tx.delete(tenantAdminKeys).where(eq(tenantAdminKeys.tenantId, tenantId));
-  }
-}
-
-/**
- * Idempotent, declarative upsert by slug (specs/OPERATOR-ADMIN-SPECS.md §9).
- *
- * - rp_id and id are immutable per tenant (passkeys and the paymaster balance bind to them), with
- *   one documented exception: a row whose rp_id ends in '.invalid' — the migration backfill
- *   sentinel — may be claimed and rewritten by a seed entry with the same slug.
- * - An operator-managed row with the same slug is TAKEN OVER: config wins, because config is what
- *   was reviewed and deployed. A deleted slug is never re-created.
- * - Admin keys are a replace-set of sha256 hashes.
- * - The seed never changes a tenant's lifecycle state, and writes history only when something
- *   changed, so an idle restart appends nothing.
- *
- * Every replica runs this at boot, concurrently. Each entry's transaction takes the tenant-write
- * lock before it reads, so replicas apply the same change one after the other and the second
- * finds nothing left to do.
- */
-export async function seedTenants(db: Db, seeds: TenantSeed[], options: { warn?: (message: string) => void } = {}): Promise<void> {
-  const warn = options.warn ?? ((message: string) => console.warn(message));
-  for (const seed of seeds) {
-    await db.transaction(async (tx) => {
-      await lockTenantWrites(tx);
-      const [existing] = await tx.select().from(tenants).where(eq(tenants.slug, seed.slug)).for('update');
-
-      if (existing) {
-        if (existing.status === 'deleted') {
-          throw new Error(`tenant "${seed.slug}" was deleted; a deleted tenant is never re-created — remove it from TENANTS_SEED`);
-        }
-        const claimableSentinel = existing.rpId.endsWith('.invalid');
-        if (existing.rpId !== seed.rpId && !claimableSentinel) {
-          throw new Error(
-            `tenant "${seed.slug}": rp_id is immutable (stored "${existing.rpId}", seed "${seed.rpId}") — ` +
-              'passkeys bind to it irreversibly; create a new tenant instead',
-          );
-        }
-        if (seed.id && seed.id !== existing.id) {
-          throw new Error(
-            `tenant "${seed.slug}": id is immutable (stored "${existing.id}", seed "${seed.id}") — ` +
-              'the paymaster keys this tenant\'s gas balance on it, so changing it would orphan those funds',
-          );
-        }
-      }
-
-      const clash = await checkOriginClaims(tx, { selfId: existing?.id ?? null, claims: originClaims(seed) });
-      if (clash) {
-        throw new Error(
-          `tenant "${seed.slug}": origin ${clash.origin} is already claimed by tenant "${clash.slug}" ` +
-            `(managed by ${clash.managedBy}, ${clash.status}) — no origin may resolve to two tenants. ` +
-            'Drop the entry, give it another origin, or seed the other tenant under its own slug to take it over.',
-        );
-      }
-
-      const values = {
-        walletOrigin: seed.walletOrigin,
-        rpId: seed.rpId,
-        rpName: seed.rpName,
-        expectedOrigins: seed.expectedOrigins,
-        allowedDappOrigins: seed.allowedDappOrigins,
-        corsOrigins: seed.corsOrigins,
-        openRegistration: seed.openRegistration,
-        policy: seed.policy,
-        branding: seed.branding,
-      };
-      const hashes = [...new Set(seed.adminKeys.map(sha256hex))];
-
-      if (!existing) {
-        const [inserted] = await tx
-          .insert(tenants)
-          .values({ slug: seed.slug, ...(seed.id ? { id: seed.id } : {}), ...values, managedBy: 'seed' })
-          .returning();
-        await replaceAdminKeys(tx, inserted.id, hashes);
-        await appendTenantHistory(tx, { tenantId: inserted.id, action: 'create', actor: 'seed', before: null, after: inserted });
-        return;
-      }
-
-      const stored = await tx.select({ keyHash: tenantAdminKeys.keyHash }).from(tenantAdminKeys).where(eq(tenantAdminKeys.tenantId, existing.id));
-      const keysChanged = !sameJson(stored.map((row) => row.keyHash).sort(), [...hashes].sort());
-      const { slug: _slug, ...storedValues } = storedFields(existing);
-      const fieldsChanged = !sameJson(storedValues, values);
-      const takeover = existing.managedBy === 'operator';
-      if (!fieldsChanged && !keysChanged && !takeover) return;
-
-      const [updated] = await tx
-        .update(tenants)
-        .set({ ...values, managedBy: 'seed', version: sql`${tenants.version} + 1`, updatedAt: sql`now()` })
-        .where(eq(tenants.id, existing.id))
-        .returning();
-      if (keysChanged) await replaceAdminKeys(tx, existing.id, hashes);
-      await appendTenantHistory(tx, {
-        tenantId: existing.id,
-        action: takeover ? 'seed-takeover' : 'seed-apply',
-        actor: 'seed',
-        before: existing,
-        after: updated,
-        detail: keysChanged ? { adminKeysReplaced: true } : null,
-      });
-      if (takeover) {
-        warn(`tenant "${seed.slug}" was operator-managed; TENANTS_SEED has taken it over, replacing its fields and admin keys`);
-      }
-    });
-  }
 }
 
 export type Tenant = typeof tenants.$inferSelect;

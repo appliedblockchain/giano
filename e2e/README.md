@@ -80,7 +80,7 @@ None of them carries a port. That is what this document is about.
 ## Why names instead of ports
 
 The demo used to speak in ports — `http://app.localhost:4400` talking to
-`http://wallet.localhost:8081`, with 8080, 8545 and 4337 threaded through the tenant seed, the
+`http://wallet.localhost:8081`, with 8080, 8545 and 4337 threaded through the tenant config, the
 fixtures, the tests, CI and four documents. Every one of those was a place a port could go stale,
 and none of them told you anything: `:8081` is not a fact about the wallet, it is a fact about
 which container happened to publish which port.
@@ -156,17 +156,18 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
   bake into their bundles;
 - [`playwright.config.ts`](./playwright.config.ts), for `baseURL` and the `webServer` entries;
 - the tests, via `tests/helpers.ts`;
-- and, by hand rather than by import, the tenant seed in `deploy/docker-compose.e2e.yml`.
+- and, by hand rather than by import, the tenant fixtures in `deploy/docker-compose.e2e.yml`.
 
 That last one is the seam to watch: compose is YAML and cannot import a module, so the origins in
-`TENANTS_SEED`, `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_RP_ID`
-have to be kept in step with `origins.mjs` by hand.
+`TENANT_FIXTURES`, `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_RP_ID`
+have to be kept in step with `origins.mjs` by hand. Fixtures only ever create a tenant, so a
+changed fixture takes effect after `docker compose … down -v`, not on a restart.
 
 ### Adding or renaming a name
 
 Add a row to `ROUTES` in `origins.mjs` and it is registered on the next `portless:up`. Renaming is
 the same edit — with one caveat: `wallet` and `wallet-byo` are also **WebAuthn RP IDs**, because a
-tenant's RP ID must equal its wallet origin's host. Renaming those two means updating `TENANTS_SEED`
+tenant's RP ID must equal its wallet origin's host. Renaming those two means updating `TENANT_FIXTURES`
 and `GIANO_RP_ID` in the compose file to match, and existing passkeys minted under the old RP ID
 will not be offered for the new one.
 
@@ -210,7 +211,7 @@ CI runs Node 24, because portless requires it.
 | `portless alias` reports a route conflict | another portless project has claimed that name — rename the route in `origins.mjs` |
 | Names resolve but hit the wrong app | a stale route from an earlier layout — `portless:down`, then `portless:up` |
 | Suite reuses a stale fixture | `webServer` has `reuseExistingServer: true`; kill whatever is on 4400/4401/8082 and re-run |
-| dApp rejected as an unknown origin | the tenant seed still allow-lists a ported origin — the origins in `deploy/docker-compose.e2e.yml` must match `origins.mjs` |
+| dApp rejected as an unknown origin | the tenant fixtures still allow-list a ported origin — the origins in `deploy/docker-compose.e2e.yml` must match `origins.mjs`, and a changed fixture needs `down -v` |
 | Passkey prompt never appears in a real browser | not a portless problem: use Chrome or Firefox, which treat `http://*.localhost` as a secure context |
 
 `portless doctor` checks the proxy, the routes, DNS resolution and CA trust in one go, and is the

@@ -282,7 +282,7 @@ chain in the same document — unless its `walletApi.bundlerUrl` names another b
 with `bundlerUrl`, `factory` and `policy` at the top of each entry, is refused;
 `scripts/migrate-chains-document.mjs` rewrites it.
 
-Validated by zod exactly as `TENANTS_SEED` is, with the same failure mode: a bad entry is a start-up
+Validated by zod at boot, with a strict failure mode: a bad entry is a start-up
 error naming the chain and the field, not a warning (MC-42). Rules:
 
 - `chainId` values are unique. A duplicate is a configuration error.

@@ -15,7 +15,7 @@
       "adminKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Per-tenant admin API key (from TENANTS_SEED, or issued by an operator)"
+        "description": "Per-tenant admin API key, issued by an operator"
       },
       "operatorSession": {
         "type": "http",
@@ -5151,13 +5151,6 @@
                               "deleted"
                             ]
                           },
-                          "managedBy": {
-                            "type": "string",
-                            "enum": [
-                              "seed",
-                              "operator"
-                            ]
-                          },
                           "version": {
                             "type": "integer"
                           },
@@ -5217,7 +5210,6 @@
                           "id",
                           "slug",
                           "status",
-                          "managedBy",
                           "version",
                           "walletOrigin",
                           "rpId",
@@ -5598,13 +5590,6 @@
                             "deleted"
                           ]
                         },
-                        "managedBy": {
-                          "type": "string",
-                          "enum": [
-                            "seed",
-                            "operator"
-                          ]
-                        },
                         "version": {
                           "type": "integer"
                         },
@@ -5661,7 +5646,6 @@
                         "id",
                         "slug",
                         "status",
-                        "managedBy",
                         "version",
                         "walletOrigin",
                         "rpId",
@@ -5923,13 +5907,6 @@
                             "deleted"
                           ]
                         },
-                        "managedBy": {
-                          "type": "string",
-                          "enum": [
-                            "seed",
-                            "operator"
-                          ]
-                        },
                         "version": {
                           "type": "integer"
                         },
@@ -5986,7 +5963,6 @@
                         "id",
                         "slug",
                         "status",
-                        "managedBy",
                         "version",
                         "walletOrigin",
                         "rpId",
@@ -6413,13 +6389,6 @@
                         "deleted"
                       ]
                     },
-                    "managedBy": {
-                      "type": "string",
-                      "enum": [
-                        "seed",
-                        "operator"
-                      ]
-                    },
                     "version": {
                       "type": "integer"
                     },
@@ -6476,7 +6445,6 @@
                     "id",
                     "slug",
                     "status",
-                    "managedBy",
                     "version",
                     "walletOrigin",
                     "rpId",
@@ -6925,13 +6893,6 @@
                         "deleted"
                       ]
                     },
-                    "managedBy": {
-                      "type": "string",
-                      "enum": [
-                        "seed",
-                        "operator"
-                      ]
-                    },
                     "version": {
                       "type": "integer"
                     },
@@ -6988,7 +6949,6 @@
                     "id",
                     "slug",
                     "status",
-                    "managedBy",
                     "version",
                     "walletOrigin",
                     "rpId",
@@ -7217,13 +7177,6 @@
                         "deleted"
                       ]
                     },
-                    "managedBy": {
-                      "type": "string",
-                      "enum": [
-                        "seed",
-                        "operator"
-                      ]
-                    },
                     "version": {
                       "type": "integer"
                     },
@@ -7280,7 +7233,6 @@
                     "id",
                     "slug",
                     "status",
-                    "managedBy",
                     "version",
                     "walletOrigin",
                     "rpId",
@@ -7742,298 +7694,6 @@
                     "null"
                   ],
                   "nullable": true
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/operator/tenants/{slug}/adopt": {
-      "post": {
-        "summary": "Move a seed-managed tenant to operator management, once the seed no longer names it",
-        "tags": [
-          "operator"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            },
-            "in": "path",
-            "name": "slug",
-            "required": true
-          }
-        ],
-        "security": [
-          {
-            "operatorSession": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "slug": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "active",
-                        "suspended",
-                        "deleted"
-                      ]
-                    },
-                    "managedBy": {
-                      "type": "string",
-                      "enum": [
-                        "seed",
-                        "operator"
-                      ]
-                    },
-                    "version": {
-                      "type": "integer"
-                    },
-                    "walletOrigin": {
-                      "type": "string"
-                    },
-                    "rpId": {
-                      "type": "string"
-                    },
-                    "rpName": {
-                      "type": "string"
-                    },
-                    "expectedOrigins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "allowedDappOrigins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "corsOrigins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "openRegistration": {
-                      "type": "boolean"
-                    },
-                    "policy": {
-                      "type": "object",
-                      "additionalProperties": {}
-                    },
-                    "branding": {
-                      "type": "object",
-                      "additionalProperties": {}
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "statusChangedAt": {
-                      "type": "string",
-                      "nullable": true
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "slug",
-                    "status",
-                    "managedBy",
-                    "version",
-                    "walletOrigin",
-                    "rpId",
-                    "rpName",
-                    "expectedOrigins",
-                    "allowedDappOrigins",
-                    "corsOrigins",
-                    "openRegistration",
-                    "policy",
-                    "branding",
-                    "createdAt",
-                    "updatedAt",
-                    "statusChangedAt"
-                  ],
-                  "additionalProperties": false
                 }
               }
             }

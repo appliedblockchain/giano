@@ -20,7 +20,6 @@ const tenantSchema = z.object({
   id: z.string(),
   slug: z.string(),
   status: statusSchema,
-  managedBy: z.enum(['seed', 'operator']),
   version: z.number().int(),
   walletOrigin: z.string(),
   rpId: z.string(),
@@ -41,7 +40,6 @@ const tenantView = (tenant: Tenant): z.infer<typeof tenantSchema> => ({
   id: tenant.id,
   slug: tenant.slug,
   status: tenant.status,
-  managedBy: tenant.managedBy,
   version: tenant.version,
   walletOrigin: tenant.walletOrigin,
   rpId: tenant.rpId,
@@ -84,7 +82,6 @@ function sendWriteError(reply: FastifyReply, error: unknown) {
 export default async function operatorTenantRoutes(instance: FastifyInstance, opts: { db: Db; config: AppConfig; registry: ChainRegistry }) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const admin = createTenantAdminService(opts.db);
-  const seededSlugs = new Set(opts.config.TENANTS_SEED.map((seed) => seed.slug));
   app.addHook('onRequest', app.requireOperator);
 
   const route = {
@@ -321,27 +318,6 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
       try {
         await admin.revokeAdminKey(request.params.slug, request.params.keyId, request.operator!);
         return reply.code(204).send(null);
-      } catch (error) {
-        return sendWriteError(reply, error);
-      }
-    },
-  );
-
-  app.post(
-    '/v1/operator/tenants/:slug/adopt',
-    {
-      ...route,
-      schema: {
-        ...docs,
-        summary: 'Move a seed-managed tenant to operator management, once the seed no longer names it',
-        params: slugParams,
-        response: { 200: tenantSchema, ...errors },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const tenant = await admin.adopt(request.params.slug, seededSlugs, request.operator!);
-        return reply.header('etag', `"${tenant.version}"`).send(tenantView(tenant));
       } catch (error) {
         return sendWriteError(reply, error);
       }

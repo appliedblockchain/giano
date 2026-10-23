@@ -13,13 +13,11 @@
  */
 
 export type TenantStatus = 'active' | 'suspended' | 'deleted';
-export type ManagedBy = 'seed' | 'operator';
 
 export type OperatorTenant = {
   id: string;
   slug: string;
   status: TenantStatus;
-  managedBy: ManagedBy;
   version: number;
   walletOrigin: string;
   rpId: string;
@@ -144,7 +142,6 @@ export function operatorApi(token: string) {
     suspend: (slug: string, reason: string) => call<OperatorTenant>('POST', `${slugPath(slug)}/suspend`, { reason }),
     resume: (slug: string) => call<OperatorTenant>('POST', `${slugPath(slug)}/resume`),
     remove: (slug: string) => call<void>('DELETE', slugPath(slug)),
-    adopt: (slug: string) => call<OperatorTenant>('POST', `${slugPath(slug)}/adopt`),
     issueKey: (slug: string, label: string) => call<IssuedAdminKey>('POST', `${slugPath(slug)}/admin-keys`, { label }),
     revokeKey: (slug: string, keyId: string) => call<void>('DELETE', `${slugPath(slug)}/admin-keys/${encodeURIComponent(keyId)}`),
     history: (slug: string, before?: string) =>
