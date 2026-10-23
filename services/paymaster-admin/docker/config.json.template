@@ -1,3 +1,4 @@
 {
-  "deployments": ${GIANO_DEPLOYMENTS}
+  "deployments": ${GIANO_DEPLOYMENTS},
+  "operatorApi": ${GIANO_OPERATOR_API}
 }

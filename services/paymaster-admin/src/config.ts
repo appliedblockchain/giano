@@ -61,6 +61,12 @@ export type Deployment = {
 
 export type AdminConfig = {
   deployments: readonly Deployment[];
+  /**
+   * Whether this console can reach wallet-api's operator tier through its own `/api` proxy — true
+   * exactly when the container was given GIANO_WALLET_API_UPSTREAM. False hides the Operator area
+   * entirely, which is what every deployment that sets nothing new gets.
+   */
+  operatorApi: boolean;
 };
 
 /**
@@ -83,6 +89,7 @@ type RawAdminConfig = RawDeployment & {
   deployments?: RawDeployment[];
   /** Accepted at the top level for the single-deployment shape. */
   environmentLabel?: string;
+  operatorApi?: boolean;
 };
 
 let config: AdminConfig | undefined;
@@ -125,7 +132,7 @@ export async function loadAdminConfig(): Promise<AdminConfig> {
     seen.add(key);
   }
 
-  config = { deployments };
+  config = { deployments, operatorApi: raw.operatorApi === true };
   return config;
 }
 
