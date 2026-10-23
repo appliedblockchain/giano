@@ -6,10 +6,10 @@ import { appendTenantHistory, lockTenantWrites } from './tenants.js';
 /**
  * ONE-TIME MIGRATION — remove once every deployment has booted this version.
  *
- * `TENANTS_SEED` is retired: tenants are managed only by Giano's operators, in the paymaster
- * console's Operator area. A database written by an earlier version still holds the seed's tenants
- * as `managed_by = 'seed'`, which the operator API would refuse to edit. This hands each of them to
- * the operators, exactly as an operator adopt would, with a history entry per tenant.
+ * `TENANTS_SEED` is retired: tenants are managed only by Giano's platform admins, in the paymaster
+ * console's Platform area. A database written by an earlier version still holds the seed's tenants
+ * as `managed_by = 'seed'`, which the platform API would refuse to edit. This hands each of them to
+ * the platform admins, exactly as a platform admin adopt would, with a history entry per tenant.
  *
  * Runs at every boot and does nothing once no seed-managed row is left — that check is what makes
  * it safe to keep in the image. Every replica runs it concurrently; the tenant-write lock makes the
@@ -20,7 +20,7 @@ export const SEED_RETIREMENT_ACTOR = 'system:tenants-seed-retirement';
 
 export async function retireTenantsSeed(db: Db, log: { info: (message: string) => void; warn: (message: string) => void }): Promise<string[]> {
   if (process.env.TENANTS_SEED) {
-    log.warn('TENANTS_SEED is set but no longer read: tenants are managed in the paymaster console\'s Operator area. Remove it from this deployment.');
+    log.warn('TENANTS_SEED is set but no longer read: tenants are managed in the paymaster console\'s Platform area. Remove it from this deployment.');
   }
   const adopted = await db.transaction(async (tx) => {
     await lockTenantWrites(tx);
@@ -38,7 +38,7 @@ export async function retireTenantsSeed(db: Db, log: { info: (message: string) =
     return slugs;
   });
   if (adopted.length > 0) {
-    log.info(`TENANTS_SEED retirement: handed ${adopted.length} seed-managed tenant(s) to the operators: ${adopted.join(', ')}`);
+    log.info(`TENANTS_SEED retirement: handed ${adopted.length} seed-managed tenant(s) to the platform admins: ${adopted.join(', ')}`);
   }
   return adopted;
 }

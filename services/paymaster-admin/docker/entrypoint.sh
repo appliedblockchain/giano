@@ -120,14 +120,14 @@ GIANO_CSP_CONNECT_SRC="${GIANO_CSP_CONNECT_SRC:-$(
 )}"
 export GIANO_RPC_LOCATIONS GIANO_CSP_CONNECT_SRC
 
-# The operator API (specs/OPERATOR-ADMIN-SPECS.md §11.1), only where it is asked for.
+# The platform API (specs/PLATFORM-ADMIN-SPECS.md §11.1), only where it is asked for.
 #
 # With GIANO_WALLET_API_UPSTREAM set, /api/* is proxied to wallet-api on this origin, and the
-# console shows its Operator area. Unset, nothing below is rendered and the console is exactly the
+# console shows its Platform area. Unset, nothing below is rendered and the console is exactly the
 # read-mostly paymaster view it was — so every existing deployment keeps its nginx config byte for
 # byte.
 #
-# The proxy drops the browser's Origin: wallet-api refuses any operator request that carries one,
+# The proxy drops the browser's Origin: wallet-api refuses any platform request that carries one,
 # which is what keeps a page on another origin from calling those routes, and this same-origin hop
 # is the one path a browser is meant to take.
 #
@@ -137,7 +137,7 @@ export GIANO_RPC_LOCATIONS GIANO_CSP_CONNECT_SRC
 # resolver — the container's own nameserver, read from /etc/resolv.conf. First IPv4 match only:
 # the directive takes one address.
 GIANO_API_LOCATION=""
-GIANO_OPERATOR_API=false
+GIANO_PLATFORM_API=false
 if [ -n "${GIANO_WALLET_API_UPSTREAM:-}" ]; then
   GIANO_RESOLVER=""
   while read -r key value _ || [ -n "${key:-}" ]; do
@@ -167,11 +167,11 @@ if [ -n "${GIANO_WALLET_API_UPSTREAM:-}" ]; then
     '        proxy_set_header Origin "";' \
     '        add_header Cache-Control "no-store" always;' \
     '    }')
-  GIANO_OPERATOR_API=true
+  GIANO_PLATFORM_API=true
 fi
-export GIANO_API_LOCATION GIANO_OPERATOR_API
+export GIANO_API_LOCATION GIANO_PLATFORM_API
 
-envsubst '${GIANO_DEPLOYMENTS} ${GIANO_OPERATOR_API}' < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
+envsubst '${GIANO_DEPLOYMENTS} ${GIANO_PLATFORM_API}' < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
 envsubst '${GIANO_RPC_LOCATIONS} ${GIANO_CSP_CONNECT_SRC} ${GIANO_API_LOCATION}' \
   < /etc/giano/nginx.conf.template > /etc/nginx/conf.d/default.conf
 

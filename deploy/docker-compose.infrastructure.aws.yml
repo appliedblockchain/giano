@@ -125,7 +125,7 @@ x-chain-prerequisites: &chain-prerequisites
 networks:
   # Every task. Stands in for `giano-dev-tasks-sg`.
   tasks:
-  # `giano-dev-db-sg` accepts 5432 from the tasks SG. Only wallet-api and the migrate job
+  # `giano-dev-db-sg` accepts 5432 from the tasks SG. Only wallet-api and its init container
   # are on it — wallet-api is the only service with database access at all.
   data:
   # `giano-dev-bundler-sg` accepts 4337 from the tasks SG. Only wallet-api is on it: both
@@ -171,11 +171,15 @@ services:
       retries: 10
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # migrate  →  the `migrate` INIT CONTAINER inside the wallet-api task definition  (§9.6)
+  # init  →  the `init` INIT CONTAINER inside the wallet-api task definition  (§9.6)
   #
   # Not a service in AWS and not a deploy-time job: it is a second container in wallet-api's
   # own task definition, running the SAME image with a different command, `essential = false`,
-  # and the application container carries `dependsOn: [{ migrate, condition: SUCCESS }]`.
+  # and the application container carries `dependsOn: [{ init, condition: SUCCESS }]`.
+  #
+  # It runs services/wallet-api/src/init.ts: migrations, then the environment's bootstrap
+  # platform admins (src/environments.ts) — written only into an EMPTY platform_admins table, so after the
+  # first boot the platform admins manage that list in the console and a redeploy never touches it.
   #
   # `SUCCESS` is the whole mechanism. `COMPLETE` would accept any exit code and start the API
   # against a half-applied schema. The guarantee bought is one ECS enforces rather than one a
@@ -186,10 +190,10 @@ services:
   # Consequences, all of them real (R21, R22): it runs on EVERY task start, not once per
   # deploy; application start-up is now coupled to database reachability permanently; and a
   # failed migration presents as a failed DEPLOYMENT — the circuit breaker rolls back and
-  # destroys the task holding the evidence, so the migrate container's log line in Datadog is
+  # destroys the task holding the evidence, so the init container's log line in Datadog is
   # the only durable record of why.
   # ════════════════════════════════════════════════════════════════════════════════════════
-  migrate:
+  init:
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
     build:
       context: ..
@@ -198,7 +202,7 @@ services:
     # concurrency-safe: it takes a Postgres advisory lock, so replicas serialise rather
     # than race — which is why health_check_grace_period_seconds must outlast the slowest
     # migration (120s in dev, R22).
-    command: ['node', 'dist/migrate.js']
+    command: ['node', 'dist/init.js']
     restart: 'no'
     networks: [data]
     depends_on:
@@ -210,6 +214,8 @@ services:
       # password is `urlencode`d there: a `#`, `/` or `@` in it silently truncates the DSN
       # and the failure looks like a wrong hostname.
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      # [literal] the Terraform workspace: dev | stg | prd. Picks the bootstrap platform admins.
+      GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   # ════════════════════════════════════════════════════════════════════════════════════════
@@ -236,7 +242,7 @@ services:
       postgres:
         condition: service_healthy
       # The init container's `condition = "SUCCESS"`, in compose form.
-      migrate:
+      init:
         condition: service_completed_successfully
     ports:
       # → ALB target group, rule 10, host `api.<apex>`. Also proxied same-origin under each
@@ -251,12 +257,16 @@ services:
       # outright, and the `hsm` alternative is not reachable from the published image (R14).
       GIANO_DEPLOYMENT_CLASS: ${GIANO_DEPLOYMENT_CLASS:-testnet}
 
-      # [ASM] giano-<env>-database-url — see the migrate job above.
+      # [ASM] giano-<env>-database-url — see the init container above.
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
 
       # [literal] false: the init container runs them. Both trying is how two containers in
       # one task fight over the same advisory lock (§9.6).
       RUN_MIGRATIONS: 'false'
+
+      # [literal] the Terraform workspace: dev | stg | prd. services/wallet-api/src/environments.ts
+      # maps it to the platform sign-in domain, paymaster.<apex>; changing that is a release.
+      GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
 
       # ── Chain (§13) ─────────────────────────────────────────────────────────────────────
       # [ASM] giano-<env>-chains. Each entry's rpcUrl carries its provider key, hence a secret.
@@ -292,10 +302,10 @@ services:
       METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:?set METRICS_BEARER_TOKEN}
 
       # ── Tenants (§14.2) ─────────────────────────────────────────────────────────────────
-      # Not configured here. Tenants live in the database and are managed by Giano's operators
-      # in the paymaster console's Operator area; the service boots fine with none. The
+      # Not configured here. Tenants live in the database and are managed by Giano's platform admins
+      # in the paymaster console's Platform area; the service boots fine with none. The
       # environment's existing tenants (`example`, `byoui`) were written by the retired
-      # TENANTS_SEED and are handed to the operators on the first boot of this release.
+      # TENANTS_SEED and are handed to the platform admins on the first boot of this release.
       #
       # ⚠ `rpId` is IRREVERSIBLE per tenant (R1), and `id` is what the paymaster keys the
       # tenant's on-chain balance on — both are fixed at create time. Never create a tenant for
@@ -665,6 +675,9 @@ services:
       GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
       GIANO_ENVIRONMENT_LABEL: ${GIANO_ENVIRONMENT_LABEL:-dev (Base Sepolia)}
       GIANO_REFRESH_SECONDS: '15'
+      # [literal] the Platform area: /api/* proxied to wallet-api over Cloud Map, same-origin,
+      # with the browser's Origin removed (specs/PLATFORM-ADMIN-SPECS.md §11.1).
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
     healthcheck:
       test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']
       interval: 15s

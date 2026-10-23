@@ -1,6 +1,6 @@
 # E2E stack: instant-boot devnet (pre-baked state: EntryPoint v0.7 + Giano factory +
 # testing contracts), giano-bundler, ONE multi-tenant wallet-api, and tenant A's stock
-# wallet-web. Two tenants, created by the tenant-fixtures one-shot:
+# wallet-web. Two tenants, created by the init service:
 #   - "stock": Giano's stock UI at http://wallet.localhost (wallet-web container)
 #   - "byo":   a tenant-built UI at http://wallet-byo.localhost (host-side fixture,
 #              e2e/wallet-byo/serve.mjs, proxying /api to the published wallet-api port)
@@ -118,19 +118,20 @@ services:
       timeout: 3s
       retries: 10
 
-  # The stack's two test tenants. wallet-api itself never creates a tenant — on a live deployment
-  # its operators do, in the paymaster console — so a local stack gets its tenants from this
-  # one-shot (services/wallet-api/src/tenant-fixtures.ts), which runs before wallet-api starts.
-  # Insert-only: a tenant that already exists is left as it is, so an edit made in the console
-  # survives a restart and `down -v` is what puts the fixtures back.
-  tenant-fixtures:
+  # Everything the database needs before wallet-api serves (services/wallet-api/src/init.ts), the
+  # same init step every deployment runs: migrations, the e2e environment's bootstrap platform admins
+  # (src/environments.ts) into an empty platform_admins table, and — this being a local stack — the two
+  # test tenants. wallet-api itself never seeds anything. Insert-only: an platform admin or tenant that
+  # already exists is left as it is, so console edits survive a restart and `down -v` is what puts
+  # the fixtures back.
+  init:
     build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/tenant-fixtures.js']
+    command: ['node', 'dist/init.js']
     restart: 'no'
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
@@ -138,6 +139,7 @@ services:
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       NODE_ENV: test
+      GIANO_ENVIRONMENT: e2e
       # Two tenants, one backend. corsOrigins carries each tenant's dApp origin — the thin SDK
       # polls the public receipt endpoint from the dApp origin (cross-origin). The ids are pinned
       # because the devnet paymaster is pre-registered against them; the admin keys are fixed
@@ -173,7 +175,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      tenant-fixtures:
+      init:
         condition: service_completed_successfully
     ports:
       # published for the host-side BYO wallet proxy (e2e/wallet-byo/serve.mjs) and as the
@@ -190,7 +192,11 @@ services:
       # SPONSORSHIP_SIGNER_KIND=local when this says `production`, and that guard is the point: the
       # key authorises spending against customer funds.
       GIANO_DEPLOYMENT_CLASS: development
-      RUN_MIGRATIONS: 'true'
+      # The platform sign-in domain (paymaster.localhost) and bootstrap platform admins come from here:
+      # services/wallet-api/src/environments.ts.
+      GIANO_ENVIRONMENT: e2e
+      # the init service ran them
+      RUN_MIGRATIONS: 'false'
       # The closed list of chains this backend serves (MC-46): the document above. Each chain
       # submits to <BUNDLER_BASE_URL>/<chainId>.
       GIANO_CHAINS: *giano-chains
@@ -219,14 +225,6 @@ services:
       PAYMASTER_WATCHER_POLL_MS: '1000'
       PAYMASTER_WATCHER_CONFIRMATIONS: '0'
       PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
-      # The operator tier (specs/OPERATOR-ADMIN-SPECS.md §4). Two operators: anvil's account 3
-      # (ops-e2e) signs in from e2e/tests/operator.spec.ts and holds no paymaster role; anvil's
-      # account 0 (ops-console) is the console's injected test wallet, and holds every role, so the
-      # console's on-chain follow-ups can run. Neither is the sponsorship signer above. The domain
-      # is the paymaster console's.
-      OPERATOR_ADDRESSES: '[{"id":"ops-e2e","address":"0x90F79bf6EB2c4f870365E785982E1f101E93b906"},{"id":"ops-console","address":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}]'
-      OPERATOR_SIWE_DOMAIN: paymaster.localhost
-      OPERATOR_SIWE_URI: http://paymaster.localhost
 
   wallet-web:
     build:
@@ -268,7 +266,7 @@ services:
       GIANO_BRAND_NAME: Giano E2E
 
   # The operator's view of the same paymaster the wallet is sponsoring through. The Paymaster area is
-  # read straight from the chain — only anvil and the paymaster address. The Operator area is
+  # read straight from the chain — only anvil and the paymaster address. The Platform area is
   # wallet-api's tenant registry, reached through the console's own /api proxy
   # (GIANO_WALLET_API_UPSTREAM), so it waits for wallet-api too. It also waits for the provisioner,
   # so that opening it during an e2e run shows a provisioned deployment rather than an empty roster
@@ -285,8 +283,8 @@ services:
     ports:
       - '8083:8080'
     environment:
-      # The Operator area's same-origin proxy to wallet-api, as wallet-web's. Unset, the console has
-      # no Operator area at all.
+      # The Platform area's same-origin proxy to wallet-api, as wallet-web's. Unset, the console has
+      # no Platform area at all.
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # Both chains, so the header carries a picker. Each rpcUrl is the node itself: the console
       # proxies it through its own origin (/rpc/<chainId>), so the browser never dials anvil

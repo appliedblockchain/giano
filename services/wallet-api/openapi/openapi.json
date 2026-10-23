@@ -15,12 +15,12 @@
       "adminKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Per-tenant admin API key, issued by an operator"
+        "description": "Per-tenant admin API key, issued by an admin"
       },
-      "operatorSession": {
+      "platformSession": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Giano operator session from POST /v1/operator/auth/verify (EIP-4361 sign-in)"
+        "description": "Platform admin session from POST /v1/platform/auth/verify (EIP-4361 sign-in)"
       }
     },
     "schemas": {}
@@ -4841,11 +4841,11 @@
         }
       }
     },
-    "/v1/operator/auth/challenge": {
+    "/v1/platform/auth/challenge": {
       "post": {
-        "summary": "Issue an EIP-4361 sign-in message for an operator address",
+        "summary": "Issue an EIP-4361 sign-in message for a platform admin address",
         "tags": [
-          "operator"
+          "platform"
         ],
         "requestBody": {
           "required": true,
@@ -4919,11 +4919,11 @@
         }
       }
     },
-    "/v1/operator/auth/verify": {
+    "/v1/platform/auth/verify": {
       "post": {
-        "summary": "Exchange a signed sign-in message for an operator session",
+        "summary": "Exchange a signed sign-in message for a platform admin session",
         "tags": [
-          "operator"
+          "platform"
         ],
         "requestBody": {
           "required": true,
@@ -4965,7 +4965,7 @@
                     "expiresAt": {
                       "type": "string"
                     },
-                    "operator": {
+                    "admin": {
                       "type": "object",
                       "properties": {
                         "id": {
@@ -4985,7 +4985,7 @@
                   "required": [
                     "token",
                     "expiresAt",
-                    "operator"
+                    "admin"
                   ],
                   "additionalProperties": false
                 }
@@ -5044,15 +5044,15 @@
         }
       }
     },
-    "/v1/operator/auth/logout": {
+    "/v1/platform/auth/logout": {
       "post": {
-        "summary": "Revoke the presented operator session",
+        "summary": "Revoke the presented platform admin session",
         "tags": [
-          "operator"
+          "platform"
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -5098,11 +5098,11 @@
         }
       }
     },
-    "/v1/operator/tenants": {
+    "/v1/platform/tenants": {
       "get": {
         "summary": "List tenants, newest first; deleted tenants only when asked for",
         "tags": [
-          "operator"
+          "platform"
         ],
         "parameters": [
           {
@@ -5121,7 +5121,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -5401,9 +5401,9 @@
         }
       },
       "post": {
-        "summary": "Create an operator-managed tenant; generated admin keys are returned once",
+        "summary": "Create a tenant; generated admin keys are returned once",
         "tags": [
-          "operator"
+          "platform"
         ],
         "requestBody": {
           "required": true,
@@ -5562,7 +5562,7 @@
         },
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -5859,11 +5859,11 @@
         }
       }
     },
-    "/v1/operator/tenants/{slug}": {
+    "/v1/platform/tenants/{slug}": {
       "get": {
         "summary": "One tenant: fields, lifecycle, admin keys without key material, usage and ledger position",
         "tags": [
-          "operator"
+          "platform"
         ],
         "parameters": [
           {
@@ -5879,7 +5879,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -6229,7 +6229,7 @@
       "patch": {
         "summary": "Update mutable fields; requires If-Match with the current version",
         "tags": [
-          "operator"
+          "platform"
         ],
         "requestBody": {
           "required": true,
@@ -6364,7 +6364,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -6630,7 +6630,7 @@
       "delete": {
         "summary": "suspended → deleted: a tombstone; refused while funds or open reservations are attached",
         "tags": [
-          "operator"
+          "platform"
         ],
         "parameters": [
           {
@@ -6646,7 +6646,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -6827,11 +6827,11 @@
         }
       }
     },
-    "/v1/operator/tenants/{slug}/suspend": {
+    "/v1/platform/tenants/{slug}/suspend": {
       "post": {
         "summary": "active → suspended: the tenant stops resolving on the next request",
         "tags": [
-          "operator"
+          "platform"
         ],
         "requestBody": {
           "required": true,
@@ -6868,7 +6868,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -7132,11 +7132,11 @@
         }
       }
     },
-    "/v1/operator/tenants/{slug}/resume": {
+    "/v1/platform/tenants/{slug}/resume": {
       "post": {
         "summary": "suspended → active",
         "tags": [
-          "operator"
+          "platform"
         ],
         "parameters": [
           {
@@ -7152,7 +7152,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -7416,11 +7416,11 @@
         }
       }
     },
-    "/v1/operator/tenants/{slug}/admin-keys": {
+    "/v1/platform/tenants/{slug}/admin-keys": {
       "post": {
         "summary": "Issue a generated admin key; the plaintext is returned once",
         "tags": [
-          "operator"
+          "platform"
         ],
         "requestBody": {
           "required": true,
@@ -7457,7 +7457,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -7652,11 +7652,11 @@
         }
       }
     },
-    "/v1/operator/tenants/{slug}/admin-keys/{keyId}": {
+    "/v1/platform/tenants/{slug}/admin-keys/{keyId}": {
       "delete": {
         "summary": "Revoke an admin key; refused for the last key of a tenant with closed registration",
         "tags": [
-          "operator"
+          "platform"
         ],
         "parameters": [
           {
@@ -7681,7 +7681,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -7862,11 +7862,11 @@
         }
       }
     },
-    "/v1/operator/tenants/{slug}/history": {
+    "/v1/platform/tenants/{slug}/history": {
       "get": {
         "summary": "Every write to the tenant, newest first, 50 per page",
         "tags": [
-          "operator"
+          "platform"
         ],
         "parameters": [
           {
@@ -7891,7 +7891,7 @@
         ],
         "security": [
           {
-            "operatorSession": []
+            "platformSession": []
           }
         ],
         "responses": {
@@ -7916,7 +7916,7 @@
                           "actor": {
                             "type": "string"
                           },
-                          "operatorSessionId": {
+                          "platformAdminSessionId": {
                             "type": "string",
                             "nullable": true
                           },
@@ -7943,7 +7943,7 @@
                           "id",
                           "action",
                           "actor",
-                          "operatorSessionId",
+                          "platformAdminSessionId",
                           "before",
                           "after",
                           "detail",
@@ -8105,6 +8105,607 @@
             }
           },
           "428": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platform/admins": {
+      "get": {
+        "summary": "The platform admins, oldest first",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "admins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "address": {
+                            "type": "string"
+                          },
+                          "addedBy": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "address",
+                          "addedBy",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "admins"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a platform admin; they can sign in at once",
+        "tags": [
+          "platform"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]{1,64}$"
+                  },
+                  "address": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "platformSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "address": {
+                      "type": "string"
+                    },
+                    "addedBy": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "address",
+                    "addedBy",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platform/admins/{id}": {
+      "delete": {
+        "summary": "Remove a platform admin and end their sessions; never the last one, never yourself",
+        "tags": [
+          "platform"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "platformSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "enum": [
+                    "null"
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platform/admins/history": {
+      "get": {
+        "summary": "Every change to the platform admins, newest first, the latest 100",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "adminId": {
+                            "type": "string"
+                          },
+                          "address": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "actor": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "adminId",
+                          "address",
+                          "action",
+                          "actor",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "entries"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Default Response",
             "content": {
               "application/json": {

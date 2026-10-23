@@ -266,7 +266,7 @@ describe('reservation ledger', () => {
     });
 
     // A suspended tenant still has operations in flight, and the chain settles them regardless:
-    // accounting must keep running for it (operator-tenant-lifecycle, "Background accounting continues").
+    // accounting must keep running for it (platform admin-tenant-lifecycle, "Background accounting continues").
     it('settles for a suspended tenant exactly as for an active one', async () => {
       await fund(tenantA, 100n);
       const result = await ledger.reserve(request(tenantA, 7n, 50n));

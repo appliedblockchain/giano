@@ -31,10 +31,9 @@ const config = loadConfig({
   // generated against the production signer shape.
   SPONSORSHIP_SIGNER_KIND: 'hsm',
   SPONSORSHIP_SIGNER_KEY_REF: 'arn:aws:kms:eu-west-1:000000000000:key/giano-sponsorship',
-  // The operator routes are registered only when operators are configured; the document
-  // describes them, so it is generated with a placeholder operator.
-  OPERATOR_ADDRESSES: JSON.stringify([{ id: 'openapi-codegen', address: '0x0000000000000000000000000000000000000003' }]),
-  OPERATOR_SIWE_DOMAIN: 'paymaster.example.com',
+  // The platform admin routes are registered only where the environment has a sign-in domain; the
+  // document describes them, so it is generated as a live environment that has one.
+  GIANO_ENVIRONMENT: 'prd',
 } as NodeJS.ProcessEnv);
 
 const { db, pool } = createDb(config.DATABASE_URL);

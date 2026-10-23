@@ -14,8 +14,8 @@ export default defineConfig({
     // the one-shot task in infra/iac/ecs_tasks_oneshot.tf runs this by path, so it has to be
     // its own entry rather than a chunk
     'provision-sponsorship': 'src/provision-sponsorship.ts',
-    // run by the local compose files only, before wallet-api starts
-    'tenant-fixtures': 'src/tenant-fixtures.ts',
+    // the init container / init service every deployment runs before wallet-api
+    init: 'src/init.ts',
   },
   format: ['esm'],
   target: 'node22',

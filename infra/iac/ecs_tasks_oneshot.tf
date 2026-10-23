@@ -6,7 +6,7 @@
 # Run once at bring-up PER TENANT and whenever the rules change — a tenant with no rules gets
 # no sponsorship, which looks exactly like a broken environment. The tenant's admin key is
 # passed per run in the overrides, next to TENANT_SLUG: issue one for the run in the paymaster
-# console's Operator area and revoke it afterwards, because ECS keeps overrides in the task's
+# console's Platform area and revoke it afterwards, because ECS keeps overrides in the task's
 # description. Blocked on §16.3: the image does not build `dist/provision-sponsorship.js` as
 # an entry point yet.
 

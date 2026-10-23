@@ -20,7 +20,11 @@ spec:
       containers:
         - name: migrate
           image: {{ include "giano.image" (dict "root" . "name" .Values.walletApi.image) }}
-          command: ["node", "dist/migrate.js"]
+          # the init step: migrations, then the environment's bootstrap platform admins (src/init.ts)
+          command: ["node", "dist/init.js"]
+          env:
+            - name: GIANO_ENVIRONMENT
+              value: {{ .Values.config.environment | quote }}
           envFrom:
             - secretRef:
                 name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}

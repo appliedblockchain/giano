@@ -50,23 +50,25 @@ services:
     ports:
       - '4337:4337'
 
-  # The dev tenant. wallet-api never creates a tenant itself (operators do, in the paymaster
-  # console), so this one-shot creates it before wallet-api starts — insert-only, so an existing
-  # tenant is left as it is and `down -v` is what resets it. See src/tenant-fixtures.ts.
-  tenant-fixtures:
+  # The init step every deployment runs before wallet-api (services/wallet-api/src/init.ts):
+  # migrations, the local-dev bootstrap platform admins into an empty platform_admins table, and the dev
+  # tenant. wallet-api never seeds anything itself. Insert-only, so an existing platform admin or tenant
+  # is left as it is and `down -v` is what resets them.
+  init:
     build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/tenant-fixtures.js']
+    command: ['node', 'dist/init.js']
     restart: 'no'
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      GIANO_ENVIRONMENT: local-dev
       NODE_ENV: development
       # single dev tenant: the vite dev server (5173) is the wallet origin; 4000 is the
       # legacy demo origin.
@@ -89,7 +91,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      tenant-fixtures:
+      init:
         condition: service_completed_successfully
     ports:
       - '8080:8080'
@@ -99,7 +101,9 @@ services:
       # signing key may sit in an environment variable (see services/wallet-api/src/config.ts).
       GIANO_DEPLOYMENT_CLASS: development
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
-      RUN_MIGRATIONS: 'true'
+      GIANO_ENVIRONMENT: local-dev
+      # the init service ran them
+      RUN_MIGRATIONS: 'false'
       GIANO_CHAINS: *giano-chains
       BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: debug
