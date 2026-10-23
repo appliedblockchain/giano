@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { createDb } from './db/index.js';
 import { runMigrations } from './migrate.js';
 import { describeFailure, isFatalFailure, verifyChain } from './services/chain-verify.js';
+import { HOUSEKEEPING_INTERVAL_MS, pruneExpiredChallenges } from './services/housekeeping.js';
 import { createPaymasterWatcher, type PaymasterWatcher } from './services/paymaster-watcher.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
 import { seedTenants } from './services/tenants.js';
@@ -129,6 +130,13 @@ const prober = setInterval(() => {
 }, CHAIN_PROBE_INTERVAL_MS);
 prober.unref();
 
+// Challenge housekeeping: nothing else removes expired ceremony or operator sign-in challenges.
+// Idempotent, so every replica runs it.
+const housekeeping = setInterval(() => {
+  pruneExpiredChallenges(db).catch((error: Error) => app.log.warn({ error: error.message }, 'challenge housekeeping failed'));
+}, HOUSEKEEPING_INTERVAL_MS);
+housekeeping.unref();
+
 /**
  * The chain watchers run inside this process, behind a Postgres advisory lock so exactly one
  * replica ingests. Enabled separately from sponsorship itself: a deployment can serve
@@ -200,6 +208,7 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'shutting down');
   clearInterval(prober);
+  clearInterval(housekeeping);
   await Promise.all(watchers.map((watcher) => watcher.stop()));
   await app.close();
   await pool.end();

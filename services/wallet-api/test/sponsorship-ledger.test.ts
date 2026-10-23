@@ -5,6 +5,7 @@ import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
 import { paymasterTenants, sponsorshipReservations, tenants } from '../src/db/schema.js';
 import { createLedgerService, type LedgerService } from '../src/services/sponsorship-ledger.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * The reservation ledger, against a real Postgres.
@@ -47,7 +48,7 @@ describe('reservation ledger', () => {
 
   afterAll(async () => {
     await pool.end();
-    await container.stop();
+    await stopPostgres(container);
   });
 
   beforeEach(async () => {
@@ -262,6 +263,22 @@ describe('reservation ledger', () => {
 
       expect(await ledger.settle({ chainId: CHAIN_ID, sender: SENDER, useropHash: '0xabc' })).toBe(id);
       expect((await ledger.getBalanceView(tenantA, CHAIN_ID)).reservedWei).toBe(0n);
+    });
+
+    // A suspended tenant still has operations in flight, and the chain settles them regardless:
+    // accounting must keep running for it (operator-tenant-lifecycle, "Background accounting continues").
+    it('settles for a suspended tenant exactly as for an active one', async () => {
+      await fund(tenantA, 100n);
+      const result = await ledger.reserve(request(tenantA, 7n, 50n));
+      const id = (result as { id: string }).id;
+      await ledger.attachUseropHash(id, '0xsuspended');
+      await db.update(tenants).set({ status: 'suspended' }).where(eq(tenants.id, tenantA));
+      try {
+        expect(await ledger.settle({ chainId: CHAIN_ID, sender: SENDER, useropHash: '0xsuspended' })).toBe(id);
+        expect((await ledger.getBalanceView(tenantA, CHAIN_ID)).reservedWei).toBe(0n);
+      } finally {
+        await db.update(tenants).set({ status: 'active' }).where(eq(tenants.id, tenantA));
+      }
     });
 
     // The signature binds (sender, nonce), so that pair is always available even when the wallet

@@ -18,6 +18,7 @@ import { createLedgerService, type LedgerService } from '../src/services/sponsor
 import { createSponsorshipService, packUints, type SponsorshipService } from '../src/services/sponsorship-service.js';
 import { createLocalSponsorshipSigner } from '../src/services/sponsorship-signer.js';
 import { tenantSponsorship } from '../src/db/schema.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * The sponsorship path against a real chain.
@@ -294,7 +295,7 @@ describe.skipIf(!hasState)('sponsorship against a real chain', () => {
   afterAll(async () => {
     await watcher?.stop();
     await pool?.end();
-    await container?.stop();
+    await stopPostgres(container);
     spawnSync('docker', ['rm', '-f', ANVIL_CONTAINER], { stdio: 'ignore' });
   });
 
