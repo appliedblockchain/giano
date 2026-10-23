@@ -80,7 +80,7 @@ flowchart TB
 
     subgraph OURS["APPLIED BLOCKCHAIN INFRASTRUCTURE · one deployment · every tenant · every served chain"]
         direction TB
-        SEED[/"TENANTS_SEED — declarative, upserted by slug at boot<br/>slug · id, which IS the paymaster's bytes16 tenant key<br/>walletOrigin · rpId, immutable, the walletOrigin host · rpName<br/>expectedOrigins · allowedDappOrigins · corsOrigins<br/>openRegistration · adminKeys · policy overrides, per chain<br/>sponsorship rules are NOT here — each tenant writes its own"/]
+        SEED[/"Tenant registry — rows written at runtime by Giano's operators<br/>in the console's Operator area (/v1/operator), never at boot<br/>slug · id, which IS the paymaster's bytes16 tenant key<br/>walletOrigin · rpId, immutable, the walletOrigin host · rpName<br/>expectedOrigins · allowedDappOrigins · corsOrigins<br/>openRegistration · adminKeys · policy overrides, per chain<br/>sponsorship rules are NOT here — each tenant writes its own"/]
         CHAINCFG[/"GIANO_CHAINS — the closed list of chains served<br/>one document for wallet-api, the bundler and the console<br/>chainId · rpcUrl · entryPoint · sponsorshipPaymaster<br/>per-service sections: factory · per-chain policy · bundler settings<br/>verified at boot; the API refuses to start on a structural failure"/]
         API["<b>giano-wallet-api</b><br/>holds no key that can move a user's assets<br/>tenant from Origin · Host · session · admin key<br/>chain named by the caller, admitted only by the registry<br/>WebAuthn ceremonies · sessions<br/>UserOp policy gate + per-tenant audit<br/>ERC-7677 sponsorship: rules · ledger · watcher<br/>tenant-labelled metrics"]
         PG[("<b>Postgres 17</b><br/>every row tenant-scoped, and<br/>chain-scoped wherever<br/>it touches a chain")]
@@ -274,9 +274,10 @@ Named here rather than left to be discovered. The requirement numbers are
   and the mechanism is still an open question.
 - **Balances and history in the wallet UI (BR-34).** The wallet appears to ask for approval and is
   not yet somewhere a user can go and look.
-- **A tenant-onboarding interface (BR-35).** Tenants are provisioned only through `TENANTS_SEED`;
-  there is no tenant CRUD API and no operator UI for it. The paymaster console covers gas, not
-  onboarding.
+- **A tenant-onboarding interface (BR-35).** Tenants are provisioned only by Giano's operators,
+  through `/v1/operator` and the console's Operator area
+  ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md)); there is no tenant-facing onboarding or
+  self-service.
 - **Multi-party approval (BR-36).** The account admits several owners; there is no threshold rule.
 - **Branding (BR-18, partial).** A tenant's `branding` is accepted, validated and stored, and no
   code reads it. The stock wallet UI is Giano-branded for every tenant it serves.
