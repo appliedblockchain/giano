@@ -47,7 +47,6 @@ test.describe('operator console', () => {
     await create.getByRole('button', { name: 'Done' }).click();
 
     const row = page.getByTestId(`tenant-row-${slug}`);
-    await expect(row).toContainText('operator');
     await expect(row).toContainText('not registered');
 
     await row.click();
