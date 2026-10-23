@@ -262,24 +262,6 @@ function DeleteBody({ tenant, typed, setTyped }: { tenant: OperatorTenant; typed
   );
 }
 
-export function AdoptDialog({ open, onClose, onDone, tenant }: Base) {
-  const { act, busy, error } = useOperatorAction();
-  const confirm = async () => {
-    if ((await act((api) => api.adopt(tenant.slug)))?.ok) {
-      onDone();
-      onClose();
-    }
-  };
-  return (
-    <ActionDialog open={open} onClose={onClose} title={`Adopt ${tenant.slug}`} confirmLabel="Adopt" busy={busy} error={error} onConfirm={() => void confirm()}>
-      <Text>
-        Moves <b>{tenant.slug}</b> from TENANTS_SEED to operator management, so it can be edited here. Only possible once its entry has been removed
-        from the seed and the service redeployed — otherwise the next boot would take it straight back.
-      </Text>
-    </ActionDialog>
-  );
-}
-
 export function IssueKeyDialog({ open, onClose, onDone, tenant }: Base) {
   const { act, busy, error } = useOperatorAction();
   const [label, setLabel] = useState('');

@@ -6,7 +6,7 @@ import type { TenantSummary } from '../lib/operator-api';
 import { useOperator } from '../lib/operator-session';
 import { CreateTenantDialog } from './CreateTenantDialog';
 import type { OperatorAreaProps } from './OperatorArea';
-import { LifecycleBadge, OnChainBadge, onChainState, OwnerBadge, rosterByUuid } from './shared';
+import { LifecycleBadge, OnChainBadge, onChainState, rosterByUuid } from './shared';
 import { TenantDrawer } from './TenantDrawer';
 
 /**
@@ -115,7 +115,6 @@ export function TenantsTab(props: OperatorAreaProps) {
                     <Table.ColumnHeader>Tenant</Table.ColumnHeader>
                     <Table.ColumnHeader>Id</Table.ColumnHeader>
                     <Table.ColumnHeader>Status</Table.ColumnHeader>
-                    <Table.ColumnHeader>Managed by</Table.ColumnHeader>
                     <Table.ColumnHeader>Wallet origin</Table.ColumnHeader>
                     <Table.ColumnHeader textAlign="end">Users</Table.ColumnHeader>
                     <Table.ColumnHeader>On chain {deployment.chainId}</Table.ColumnHeader>
@@ -135,9 +134,6 @@ export function TenantsTab(props: OperatorAreaProps) {
                       </Table.Cell>
                       <Table.Cell>
                         <LifecycleBadge status={tenant.status} />
-                      </Table.Cell>
-                      <Table.Cell>
-                        <OwnerBadge managedBy={tenant.managedBy} />
                       </Table.Cell>
                       <Table.Cell fontFamily="mono" fontSize="xs">
                         {tenant.walletOrigin}

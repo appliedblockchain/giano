@@ -2,7 +2,7 @@ import type { PaymasterOverview, PaymasterRoleName, TenantView } from '@appliedb
 import { Alert, Badge, Box, Button, HStack, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import { eth } from '../lib/format';
-import type { ApiError, ManagedBy, TenantStatus } from '../lib/operator-api';
+import type { ApiError, TenantStatus } from '../lib/operator-api';
 
 /** Where a registry tenant stands on the selected chain's paymaster, matched on tenant id. */
 export type OnChainState = 'enabled' | 'disabled' | 'not-registered' | 'unknown';
@@ -50,13 +50,8 @@ export function LifecycleBadge({ status }: { status: TenantStatus }) {
   );
 }
 
-export function OwnerBadge({ managedBy }: { managedBy: ManagedBy }) {
-  return (
-    <Badge variant="outline" colorPalette={managedBy === 'seed' ? 'purple' : 'blue'} title={managedBy === 'seed' ? 'Managed by TENANTS_SEED' : 'Managed by operators'}>
-      {managedBy === 'seed' ? 'seed' : 'operator'}
-    </Badge>
-  );
-}
+/** Who wrote a history entry or issued a key: the operator's id, or the non-operator writer as recorded. */
+export const actorLabel = (actor: string) => (actor.startsWith('operator:') ? actor.split(':')[1] : actor);
 
 /** The tenant-admin role every on-chain follow-up needs, as the console already reads it. */
 export const canAdministerOnChain = (myRoles: readonly PaymasterRoleName[]) => myRoles.includes('TENANT_ADMIN_ROLE');
@@ -100,14 +95,12 @@ export function ApiErrorAlert({ error, title }: { error: ApiError; title?: strin
 const EXPLAIN: Record<string, string> = {
   'origin-claimed': 'That origin already belongs to another tenant',
   conflict: 'Another tenant already uses that value',
-  'seed-managed': 'This tenant is managed by TENANTS_SEED',
   'invalid-transition': 'Not possible in the tenant’s current state',
   'tenant-not-suspended': 'Suspend the tenant before deleting it',
   'tenant-has-funds': 'The tenant still has a balance or deficit on-chain',
   'tenant-has-reservations': 'The tenant has sponsorship reservations still open',
   'ledger-stale': 'The paymaster ledger is too far behind to trust',
   'last-admin-key': 'This is the last admin key of a tenant with closed registration',
-  'still-seeded': 'The tenant is still in TENANTS_SEED — remove it there and redeploy first',
   'version-mismatch': 'Someone else changed this tenant',
   validation: 'Some fields need attention',
 };
