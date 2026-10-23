@@ -5,6 +5,7 @@ import { createDb, type Db } from '../src/db/index.js';
 import { tenantAdminKeys, tenantHistory, tenants } from '../src/db/schema.js';
 import { runMigrations } from '../src/migrate.js';
 import { checkOriginClaims, seedTenants, sha256hex, tenantUniqueViolation, validateTenantSeed } from '../src/services/tenants.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * The boot seed after operators can write tenants too (specs/OPERATOR-ADMIN-SPECS.md §6.2, §9):
@@ -48,7 +49,7 @@ describe('seedTenants with the tenant lifecycle', () => {
 
   afterAll(async () => {
     await pool?.end();
-    await container?.stop();
+    await stopPostgres(container);
   });
 
   beforeEach(async () => {

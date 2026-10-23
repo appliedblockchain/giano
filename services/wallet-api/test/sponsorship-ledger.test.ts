@@ -5,6 +5,7 @@ import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
 import { paymasterTenants, sponsorshipReservations, tenants } from '../src/db/schema.js';
 import { createLedgerService, type LedgerService } from '../src/services/sponsorship-ledger.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * The reservation ledger, against a real Postgres.
@@ -47,7 +48,7 @@ describe('reservation ledger', () => {
 
   afterAll(async () => {
     await pool.end();
-    await container.stop();
+    await stopPostgres(container);
   });
 
   beforeEach(async () => {

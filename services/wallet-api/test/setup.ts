@@ -7,6 +7,7 @@ import { loadConfig, type AppConfig } from '../src/config.js';
 import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
 import { seedTenants } from '../src/services/tenants.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * Two seeded tenants. Tenant A keeps the pre-tenancy test values (origin
@@ -207,7 +208,7 @@ export async function stopTestStack(ctx: TestContext): Promise<void> {
   await ctx.app.close();
   await ctx.pool.end();
   await ctx.rpc.close();
-  await ctx.container.stop();
+  await stopPostgres(ctx.container);
 }
 
 // ── Sponsorship fixtures ───────────────────────────────────────────────────────

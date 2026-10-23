@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
 import { pruneExpiredChallenges } from '../src/services/housekeeping.js';
+import { stopPostgres } from './postgres.js';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 
@@ -40,7 +41,7 @@ describe('migration 0007_tenant_lifecycle', () => {
 
   afterAll(async () => {
     await client?.end();
-    await container?.stop();
+    await stopPostgres(container);
   });
 
   it('backfills existing tenants as active, seed-managed, version 1, and their keys as seed-created', async () => {
