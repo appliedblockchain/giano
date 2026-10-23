@@ -122,7 +122,7 @@ export function createTenantAdminService(db: Db) {
           const { adminKeys: labels, id, ...fields } = input;
           const [tenant] = await tx
             .insert(tenants)
-            .values({ ...fields, ...(id ? { id } : {}), managedBy: 'operator' })
+            .values({ ...fields, ...(id ? { id } : {}) })
             .returning();
           const issued = labels.map(({ label }) => ({ label, key: generateAdminKey() }));
           const keys =

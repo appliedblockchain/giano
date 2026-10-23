@@ -11,8 +11,7 @@ wallet-web UI or a UI the tenant built itself; both are the same architecture. T
 created and managed only by Giano's platform admins at runtime, through `/v1/platform/*` (the paymaster
 console's Platform area; only where the environment has a console host) — no redeploy. The
 platform admins are rows too, in the `platform_admins` table, and add and remove each other the same way. The
-service boots fine with no tenants. `TENANTS_SEED` is retired and no longer read; a one-time boot
-step hands tenants it wrote to the platform admins (`src/services/tenants-seed-retirement.ts`).
+service boots fine with no tenants. `TENANTS_SEED` is retired and no longer read.
 
 **Init step.** `node dist/init.js` (`src/init.ts`) runs to completion before the API everywhere — an
 `init` service in every compose file, an init container on AWS — and the API runs with

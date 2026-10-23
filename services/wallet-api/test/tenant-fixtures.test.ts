@@ -35,7 +35,7 @@ describe('loadTenantFixtures', () => {
   const platformTenant = (slug: string, walletOrigin: string, status: 'active' | 'suspended' | 'deleted' = 'active') =>
     db
       .insert(tenants)
-      .values({ slug, walletOrigin, rpId: new URL(walletOrigin).hostname, rpName: slug, expectedOrigins: [walletOrigin], managedBy: 'operator', status })
+      .values({ slug, walletOrigin, rpId: new URL(walletOrigin).hostname, rpName: slug, expectedOrigins: [walletOrigin], status })
       .returning();
 
   beforeAll(async () => {
@@ -53,10 +53,10 @@ describe('loadTenantFixtures', () => {
     await db.execute(sql`TRUNCATE tenant_history, tenant_admin_keys, tenants CASCADE`);
   });
 
-  it('creates an unknown slug as an admin-managed tenant, with hashed keys and a create entry by fixture', async () => {
+  it('creates an unknown slug as an active tenant, with hashed keys and a create entry by fixture', async () => {
     expect(await loadTenantFixtures(db, [acme({ id: '11111111-1111-4111-8111-111111111111' })])).toEqual({ created: ['acme'], existing: [] });
     const tenant = await row('acme');
-    expect(tenant).toMatchObject({ id: '11111111-1111-4111-8111-111111111111', status: 'active', managedBy: 'operator', version: 1, rpId: 'wallet.acme.app' });
+    expect(tenant).toMatchObject({ id: '11111111-1111-4111-8111-111111111111', status: 'active', version: 1, rpId: 'wallet.acme.app' });
     expect(await keyHashes('acme')).toEqual([sha256hex('acme-admin-key-0001')]);
     expect((await history('acme')).map((h) => [h.action, h.actor])).toEqual([['create', FIXTURE_ACTOR]]);
     expect(JSON.stringify(await history('acme'))).not.toContain('acme-admin-key');
@@ -115,7 +115,7 @@ describe('loadTenantFixtures', () => {
         if (clash) return 'clash';
         // widen the race window: without the lock both would pass the check
         await tx.execute(sql`SELECT pg_sleep(0.2)`);
-        await tx.insert(tenants).values({ slug, walletOrigin, rpId: new URL(walletOrigin).hostname, rpName: slug, expectedOrigins: claims, managedBy: 'operator' });
+        await tx.insert(tenants).values({ slug, walletOrigin, rpId: new URL(walletOrigin).hostname, rpName: slug, expectedOrigins: claims });
         return 'created';
       });
     expect((await Promise.all([claim('one'), claim('two')])).sort()).toEqual(['clash', 'created']);
