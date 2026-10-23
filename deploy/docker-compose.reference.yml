@@ -46,19 +46,14 @@ services:
       # ENTRYPOINT_ADDRESS: '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
       # FACTORY_ADDRESS: ''
 
-      # --- tenants (JSON array, upserted by slug at boot) ---
-      # One entry per client project. rpId is IRREVERSIBLE per tenant (passkeys bind to
-      # it) and must equal the walletOrigin host. openRegistration=false keeps
-      # registration server-to-server via the tenant's adminKeys.
-      # Example:
-      #   [{"slug":"clientapp",
-      #     "walletOrigin":"https://wallet.clientapp.com",
-      #     "rpName":"ClientApp Wallet",
-      #     "allowedDappOrigins":["https://app.clientapp.com"],
-      #     "corsOrigins":["https://app.clientapp.com"],
-      #     "openRegistration":false,
-      #     "adminKeys":["<long-random-secret>"]}]
-      TENANTS_SEED: ${TENANTS_SEED:?JSON array of tenants — see services/wallet-api/README.md}
+      # --- tenants ---
+      # Not configured here. The service boots with no tenants; Giano's operators create one per
+      # client project in the paymaster console's Operator area, which signs in against the
+      # operators listed below. rpId is IRREVERSIBLE per tenant (passkeys bind to it).
+      # OPERATOR_ADDRESSES: JSON array of { id, address }; unset registers no operator route.
+      # OPERATOR_SIWE_DOMAIN: the console's host — required when OPERATOR_ADDRESSES is set.
+      # OPERATOR_ADDRESSES: '[{"id":"ops-oncall","address":"0x…"}]'
+      # OPERATOR_SIWE_DOMAIN: paymaster.example.com
 
       # --- userop relay policy DEFAULTS (integers; fees in wei) — a tenant's policy
       #     jsonb may override any field per tenant ---

@@ -84,7 +84,7 @@ test.describe('operator tenant administration', () => {
     const walletOrigin = `http://wallet-${slug}.localhost`;
     const created = await asOperator('POST', '/v1/operator/tenants', { slug, walletOrigin, rpName: 'Runtime E2E', openRegistration: true });
     expect(created.status).toBe(201);
-    expect(created.json().tenant).toMatchObject({ slug, status: 'active', managedBy: 'operator' });
+    expect(created.json().tenant).toMatchObject({ slug, status: 'active' });
 
     const wellKnown = await call('GET', '/.well-known/webauthn', { headers: { host: `wallet-${slug}.localhost` } });
     expect(wellKnown.status).toBe(200);

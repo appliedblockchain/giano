@@ -1,6 +1,6 @@
 # E2E stack: instant-boot devnet (pre-baked state: EntryPoint v0.7 + Giano factory +
 # testing contracts), giano-bundler, ONE multi-tenant wallet-api, and tenant A's stock
-# wallet-web. Two tenants are seeded:
+# wallet-web. Two tenants, created by the tenant-fixtures one-shot:
 #   - "stock": Giano's stock UI at http://wallet.localhost (wallet-web container)
 #   - "byo":   a tenant-built UI at http://wallet-byo.localhost (host-side fixture,
 #              e2e/wallet-byo/serve.mjs, proxying /api to the published wallet-api port)
@@ -118,13 +118,63 @@ services:
       timeout: 3s
       retries: 10
 
-  wallet-api:
-    build:
+  # The stack's two test tenants. wallet-api itself never creates a tenant — on a live deployment
+  # its operators do, in the paymaster console — so a local stack gets its tenants from this
+  # one-shot (services/wallet-api/src/tenant-fixtures.ts), which runs before wallet-api starts.
+  # Insert-only: a tenant that already exists is left as it is, so an edit made in the console
+  # survives a restart and `down -v` is what puts the fixtures back.
+  tenant-fixtures:
+    build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
+    command: ['node', 'dist/tenant-fixtures.js']
+    restart: 'no'
+    # the image's healthcheck probes the API, which this container never starts
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      NODE_ENV: test
+      # Two tenants, one backend. corsOrigins carries each tenant's dApp origin — the thin SDK
+      # polls the public receipt endpoint from the dApp origin (cross-origin). The ids are pinned
+      # because the devnet paymaster is pre-registered against them; the admin keys are fixed
+      # because the provisioners and the e2e suite authenticate with them.
+      TENANT_FIXTURES: |
+        [
+          {
+            "slug": "stock",
+            "walletOrigin": "http://wallet.localhost",
+            "rpId": "wallet.localhost",
+            "rpName": "Giano E2E",
+            "allowedDappOrigins": ["http://app.localhost", "http://demo.localhost"],
+            "corsOrigins": ["http://app.localhost", "http://demo.localhost"],
+            "openRegistration": true,
+            "adminKeys": ["e2e-admin-key-stock"],
+            "id": "11111111-1111-4111-8111-111111111111"
+          },
+          {
+            "slug": "byo",
+            "walletOrigin": "http://wallet-byo.localhost",
+            "rpId": "wallet-byo.localhost",
+            "rpName": "BYO Wallet E2E",
+            "allowedDappOrigins": ["http://app-byo.localhost", "http://demo-byo.localhost"],
+            "corsOrigins": ["http://app-byo.localhost", "http://demo-byo.localhost"],
+            "openRegistration": true,
+            "adminKeys": ["e2e-admin-key-byo00"],
+            "id": "22222222-2222-4222-8222-222222222222"
+          }
+        ]
+
+  wallet-api:
+    build: *wallet-api-build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tenant-fixtures:
+        condition: service_completed_successfully
     ports:
       # published for the host-side BYO wallet proxy (e2e/wallet-byo/serve.mjs) and as the
       # loopback target for portless's http://api.localhost.
@@ -177,33 +227,6 @@ services:
       OPERATOR_ADDRESSES: '[{"id":"ops-e2e","address":"0x90F79bf6EB2c4f870365E785982E1f101E93b906"},{"id":"ops-console","address":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}]'
       OPERATOR_SIWE_DOMAIN: paymaster.localhost
       OPERATOR_SIWE_URI: http://paymaster.localhost
-      # Two tenants, one backend. corsOrigins carries each tenant's dApp origin — the
-      # thin SDK polls the public receipt endpoint from the dApp origin (cross-origin).
-      TENANTS_SEED: |
-        [
-          {
-            "slug": "stock",
-            "walletOrigin": "http://wallet.localhost",
-            "rpId": "wallet.localhost",
-            "rpName": "Giano E2E",
-            "allowedDappOrigins": ["http://app.localhost", "http://demo.localhost"],
-            "corsOrigins": ["http://app.localhost", "http://demo.localhost"],
-            "openRegistration": true,
-            "adminKeys": ["e2e-admin-key-stock"],
-            "id": "11111111-1111-4111-8111-111111111111"
-          },
-          {
-            "slug": "byo",
-            "walletOrigin": "http://wallet-byo.localhost",
-            "rpId": "wallet-byo.localhost",
-            "rpName": "BYO Wallet E2E",
-            "allowedDappOrigins": ["http://app-byo.localhost", "http://demo-byo.localhost"],
-            "corsOrigins": ["http://app-byo.localhost", "http://demo-byo.localhost"],
-            "openRegistration": true,
-            "adminKeys": ["e2e-admin-key-byo00"],
-            "id": "22222222-2222-4222-8222-222222222222"
-          }
-        ]
 
   wallet-web:
     build:

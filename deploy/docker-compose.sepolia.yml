@@ -67,14 +67,49 @@ services:
       timeout: 3s
       retries: 10
 
-  wallet-api:
-    build:
+  # The demo tenant, created before wallet-api starts. wallet-api never creates a tenant itself
+  # (on a live deployment its operators do, in the paymaster console); this one-shot
+  # (services/wallet-api/src/tenant-fixtures.ts) is insert-only, so an existing tenant is left as
+  # it is and `down -v` is what resets it.
+  tenant-fixtures:
+    build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['node', 'dist/tenant-fixtures.js']
+    restart: 'no'
+    # the image's healthcheck probes the API, which this container never starts
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      # single demo tenant, interpolated from deploy/.env (validate the rendered JSON
+      # with `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml config`)
+      #
+      # The `id` is load-bearing and must equal the TENANT_ID provision-paymaster.sh registered on
+      # the paymaster: it is the key the tenant's on-chain balance is held under. Let it default
+      # and the tenant gets a fresh id, whose balance is zero.
+      TENANT_FIXTURES: >-
+        [{"slug":"${TENANT_SLUG:-example}",
+        "id":"${TENANT_ID:-cf0d5345-0fdb-4688-b1db-9a288c9d9aed}",
+        "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
+        "rpId":"${RP_ID:-wallet.localhost}",
+        "rpName":"${RP_NAME:-Giano Example}",
+        "allowedDappOrigins":${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
+        "corsOrigins":${TENANT_CORS_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
+        "openRegistration":${OPEN_REGISTRATION:-true},
+        "adminKeys":["${ADMIN_API_KEY:-sepolia-admin-key-0000}"]}]
+
+  wallet-api:
+    build: *wallet-api-build
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      tenant-fixtures:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       RUN_MIGRATIONS: 'true'
@@ -101,22 +136,6 @@ services:
       SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in deploy/.env}
       # Credits tenant balances from on-chain deposits. Without it a funded tenant stays at zero.
       PAYMASTER_WATCHER_ENABLED: 'true'
-      # single demo tenant, interpolated from deploy/.env (validate the rendered JSON
-      # with `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml config`)
-      #
-      # The `id` is load-bearing and must equal the TENANT_ID provision-paymaster.sh registered on
-      # the paymaster: it is the key the tenant's on-chain balance is held under. Let it default
-      # and the tenant gets a fresh id, whose balance is zero.
-      TENANTS_SEED: >-
-        [{"slug":"${TENANT_SLUG:-example}",
-        "id":"${TENANT_ID:-cf0d5345-0fdb-4688-b1db-9a288c9d9aed}",
-        "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
-        "rpId":"${RP_ID:-wallet.localhost}",
-        "rpName":"${RP_NAME:-Giano Example}",
-        "allowedDappOrigins":${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
-        "corsOrigins":${TENANT_CORS_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
-        "openRegistration":${OPEN_REGISTRATION:-true},
-        "adminKeys":["${ADMIN_API_KEY:-sepolia-admin-key-0000}"]}]
 
   wallet-web:
     build:

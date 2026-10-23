@@ -31,7 +31,7 @@ module "svc-wallet-api" {
     GIANO_DEPLOYMENT_CLASS = "testnet"
     # No init container: wallet-api runs its own migrations on boot, before it starts
     # listening, serialised by a Postgres advisory lock — safe under concurrent replicas the
-    # same way `services/tenants.ts` seeding already is. Matches
+    # same way every tenant write is. Matches
     # deploy/docker-compose.infrastructure.yml, which never had an init container either.
     RUN_MIGRATIONS            = "true"
     SPONSORSHIP_ENABLED       = "true"
@@ -52,7 +52,6 @@ module "svc-wallet-api" {
     # document (packages/contracts/chains.ts), read by the bundler and paymaster-admin too.
     GIANO_CHAINS               = module.asm-app.secret_arns["chains"]
     SPONSORSHIP_SIGNER_KEY_REF = module.asm-app.secret_arns["sponsorship-signer-key"]
-    TENANTS_SEED               = module.asm-app.secret_arns["tenants-seed"]
     METRICS_BEARER_TOKEN       = module.asm-app.secret_arns["metrics-bearer-token"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn

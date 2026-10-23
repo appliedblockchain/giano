@@ -117,17 +117,17 @@ every tenant in `PAYMASTER_TENANTS` and funds each balance — then verifies all
 
 `PAYMASTER_TENANTS` defaults to the two tenants the development environment serves
 (`infra/iac/_locals.tf`): `example` and `byoui`, under the ids its database already holds — the
-same ids they are registered under on Base Sepolia, and that its tenants-seed pins
-(`EXAMPLE_TENANT_ID` / `BYOUI_TENANT_ID`). They are **pinned** in
+same ids they are registered under on Base Sepolia (recorded as `EXAMPLE_TENANT_ID` /
+`BYOUI_TENANT_ID` in `deploy/infrastructure.aws.env.example`). They are **pinned** in
 `deploy/sepolia.env.example`, and that is load-bearing — the paymaster keys each tenant's balance
 on the 16 bytes of its UUID, so the database and the chain have to agree. `wallet-api` states the
-consequence directly (`services/wallet-api/src/services/tenants.ts`): a tenant seeded without an
+consequence directly (`services/wallet-api/src/services/tenants.ts`): a tenant created without an
 `id` gets a random one, and *"a random id would leave every sponsorship refused as unknown
 tenant"*. The id is immutable once set; changing it orphans that tenant's on-chain balance.
 
 > ⚠ Never invent tenant ids here. A tenant registered under an id no database holds can never
-> be sponsored for, and its balance can only be withdrawn. A new environment generates its ids
-> first, pins them in its tenants-seed, and registers those.
+> be sponsored for, and its balance can only be withdrawn. A new environment's operators create
+> its tenants in the paymaster console first, then register the ids those tenants were given.
 
 Every role lands on the deployer EOA. That is the development shape the e2e devnet uses too, not a
 shortcut smuggled in: a production deployment routes every grant through the timelock, and

@@ -50,28 +50,27 @@ services:
     ports:
       - '4337:4337'
 
-  wallet-api:
-    build:
+  # The dev tenant. wallet-api never creates a tenant itself (operators do, in the paymaster
+  # console), so this one-shot creates it before wallet-api starts — insert-only, so an existing
+  # tenant is left as it is and `down -v` is what resets it. See src/tenant-fixtures.ts.
+  tenant-fixtures:
+    build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - '8080:8080'
+    command: ['node', 'dist/tenant-fixtures.js']
+    restart: 'no'
+    # the image's healthcheck probes the API, which this container never starts
+    healthcheck:
+      disable: true
     environment:
-      NODE_ENV: development
-      # What the deployment is, as distinct from how it was built — it is what gates whether a
-      # signing key may sit in an environment variable (see services/wallet-api/src/config.ts).
-      GIANO_DEPLOYMENT_CLASS: development
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
-      RUN_MIGRATIONS: 'true'
-      GIANO_CHAINS: *giano-chains
-      BUNDLER_BASE_URL: http://bundler:4337
-      LOG_LEVEL: debug
+      NODE_ENV: development
       # single dev tenant: the vite dev server (5173) is the wallet origin; 4000 is the
-      # legacy demo origin. Tenant provisioning is declarative — edit and restart.
-      TENANTS_SEED: |
+      # legacy demo origin.
+      TENANT_FIXTURES: |
         [
           {
             "slug": "dev",
@@ -84,3 +83,23 @@ services:
             "adminKeys": ["dev-admin-key-local"]
           }
         ]
+
+  wallet-api:
+    build: *wallet-api-build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tenant-fixtures:
+        condition: service_completed_successfully
+    ports:
+      - '8080:8080'
+    environment:
+      NODE_ENV: development
+      # What the deployment is, as distinct from how it was built — it is what gates whether a
+      # signing key may sit in an environment variable (see services/wallet-api/src/config.ts).
+      GIANO_DEPLOYMENT_CLASS: development
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      RUN_MIGRATIONS: 'true'
+      GIANO_CHAINS: *giano-chains
+      BUNDLER_BASE_URL: http://bundler:4337
+      LOG_LEVEL: debug

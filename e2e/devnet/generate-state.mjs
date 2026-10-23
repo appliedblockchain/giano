@@ -74,8 +74,8 @@ const ANVIL = {
 
 /**
  * Tenant ids are UUIDs in the database and `bytes16` on chain, and the paymaster has to be
- * registered against the *same* ids the wallet-api will send. Fixed here and referenced from
- * `TENANTS_SEED`, so the two cannot drift.
+ * registered against the *same* ids the wallet-api will send. Fixed here and pinned in the
+ * `TENANT_FIXTURES` of deploy/docker-compose.e2e.yml, which must carry the same values.
  */
 export const DEMO_TENANTS = [
   { slug: 'stock', id: '11111111-1111-4111-8111-111111111111', withdrawAddress: ANVIL.stockWithdraw, fundEth: '50' },
