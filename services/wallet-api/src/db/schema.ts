@@ -25,7 +25,7 @@ export const tenants = pgTable(
     status: text('status', { enum: ['active', 'suspended', 'deleted'] }).notNull().default('active'),
     /**
      * Legacy: 'seed' marked a tenant written by the retired TENANTS_SEED. Every write now sets
-     * 'platform admin', and the boot-time retirement (services/tenants-seed-retirement.ts) converts what
+     * 'operator' (the role's former name), and the boot-time retirement (services/tenants-seed-retirement.ts) converts what
      * is left; the column goes once that has run everywhere.
      */
     managedBy: text('managed_by', { enum: ['seed', 'operator'] }).notNull().default('seed'),

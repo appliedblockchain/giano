@@ -13,7 +13,7 @@ import { appendTenantHistory, checkOriginClaims, checkTenantInvariants, normalis
  * `localStack` (src/environments.ts), so no configuration of a live deployment can create a tenant.
  *
  * A fixture is a create and nothing else. A slug that already exists is left exactly as it is —
- * once created, a fixture tenant is an ordinary platform admin-managed tenant, so a restart never
+ * once created, a fixture tenant is an ordinary platform-admin-managed tenant, so a restart never
  * reverts an edit made in the console. `down -v` is what puts a fixture back to its committed
  * values.
  *
