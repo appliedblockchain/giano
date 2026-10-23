@@ -50,7 +50,7 @@ Concretely, six deliverables:
 
 | # | Deliverable | Where |
 | --- | --- | --- |
-| **D1** | Operator sign-in with a wallet (EIP-4361) against a deployment-configured list of operator addresses, short-lived operator sessions, a `requireOperator` guard, and routes that refuse browser cross-origin calls outright | `wallet-api` — [§4](#4-operator-authority) |
+| **D1** | Operator sign-in with a wallet (EIP-4361) against an `operators` table the operators manage themselves, short-lived operator sessions, a `requireOperator` guard, and routes that refuse browser cross-origin calls outright | `wallet-api` — [§4](#4-operator-authority) |
 | **D2** | Tenant lifecycle columns, an append-only `tenant_history`, operator challenge and session tables, migration `0007_tenant_lifecycle.sql` | `wallet-api` — [§5](#5-tenant-lifecycle-and-data-model) |
 | **D3** | One validation path for every tenant write, with the cross-tenant origin check the retired seed never did | `services/tenants.ts` — [§6](#6-keeping-the-invariant-under-runtime-writes) |
 | **D4** | `/v1/operator/tenants/*` routes, and every tenant resolver made lifecycle-aware | `wallet-api` — [§7](#7-operator-api), [§8](#8-resolution-under-the-lifecycle) |
@@ -74,13 +74,13 @@ Delivery, in order:
 | # | Decision | Why |
 | --- | --- | --- |
 | **H-a** | **The operator tier is new routes on `wallet-api`**, under `/v1/operator`, not a new service. | `wallet-api` already owns the tenants table, the validation, the ledger and the chain registry. A second service writing the same table would need its own copy of the invariant, and two copies drift. Same reasoning as PAYMASTER-SPECS S1. |
-| **H-b** | **Operators sign in with a wallet.** `OPERATOR_ADDRESSES` lists `{ id, address }`; an operator signs an EIP-4361 message and gets a 30-minute session. The operator routes are not registered when the list is empty. | No shared secret exists to copy or leak, a hardware wallet is the second factor, and the API identity is the same address that signs the on-chain tenant actions. The list is configuration, never rows: "a caller may name a tenant; only configuration admits one" ([`ARCHITECTURE.md`](./ARCHITECTURE.md)), and a database write must not be able to mint an operator. Off by default, like sponsorship. [§4](#4-operator-authority). |
+| **H-b** | **Operators sign in with a wallet.** The `operators` table lists `{ id, address }`; an operator signs an EIP-4361 message and gets a 30-minute session. Operators add and remove operators in the console. The init step writes an environment's bootstrap operators (`src/environments.ts`) into an empty table only. The operator routes are not registered in an environment with no sign-in domain. | No shared secret exists to copy or leak, a hardware wallet is the second factor, and the API identity is the same address that signs the on-chain tenant actions. **This reverses the original decision** that the list is "configuration, never rows" so that a database write could not mint an operator. A config-only list meant a redeploy for every change. That risk is now accepted, and mitigated: only a signed-in operator reaches the management routes, every change is recorded in `operator_history`, and nobody can remove themselves or the last operator. The sign-in domain is still code, never a row (§4.1). [§4](#4-operator-authority). |
 | **H-c** | **Operator routes refuse any request that carries an `Origin` header.** The console reaches them through its own nginx proxy, which strips it. | The CORS plugin grants ACAO to every tenant's `cors_origins` on every route. Refusing `Origin` on `/v1/operator/*` means no browser page on any origin can call these routes cross-origin, whatever CORS says, and the check is one line. [§4.5](#45-no-browser-cross-origin-path). |
 | **H-d** | **Delete is a tombstone.** A deleted tenant's row stays, with `status = 'deleted'`; its slug, id, wallet origin and RP ID are never reusable. | The id keys the tenant's balance on every paymaster, which nothing off-chain can delete. `userop_log`, `wallet_management_log`, `users` and `credentials` reference `tenants` without cascade, and they are records we keep. And an RP ID handed to a new tenant would inherit every passkey users still hold for the old one. [§5.3](#53-delete). |
 | **H-e** | **Suspend before delete, and delete refuses while money is attached.** | Suspend is immediate and reversible, so it is the incident tool. Delete is irreversible, so it requires the reversible step first and a zero balance and no open reservations on every chain. [§5](#5-tenant-lifecycle-and-data-model). |
 | **H-f** | **`slug`, `id`, `walletOrigin` and `rpId` are immutable through the API.** | `rpId` is immutable today (passkeys bind to it); `walletOrigin` must keep its host equal to `rpId` (D1 in `tenants.ts`), so it is immutable with it. `id` is the paymaster key. `slug` is what operators address a tenant by. A tenant that needs a new origin is a new tenant. |
 | **H-g** | **Every tenant write goes through one validator**, and that validator gains a cross-tenant check: no origin may be claimed by two tenants. | `getByOrigin` resolves `wallet_origin OR origin = ANY(expected_origins)` with `findFirst`. Two tenants claiming the same origin resolve to whichever row Postgres returns first. The seed schema checked duplicate `walletOrigin` and `rpId` but not `expectedOrigins`, a latent gap that runtime writes would have made reachable. [§6.2](#62-origin-claims-are-disjoint). |
-| **H-h** | **Operators are the only writers of a live deployment's tenants; `TENANTS_SEED` is retired.** `wallet-api` no longer reads it and boots with zero tenants. Tenants an earlier version seeded are handed to the operators once, at boot. Local stacks get their test tenants from a separate, insert-only `tenant-fixtures` one-shot that no live deployment runs. | Two writers of one row needed an ownership rule: a seed-managed tenant could not be edited without a redeploy, and a seed entry silently took over an operator-managed tenant at the next boot. One writer needs no rule. [§9](#9-retiring-tenants_seed). |
+| **H-h** | **Operators are the only writers of a live deployment's tenants; `TENANTS_SEED` is retired.** `wallet-api` no longer reads it and boots with zero tenants. Tenants an earlier version seeded are handed to the operators once, at boot. Local stacks get their test tenants from the insert-only init step (`dist/init.js`), which refuses `TENANT_FIXTURES` on any environment that is not a local stack. | Two writers of one row needed an ownership rule: a seed-managed tenant could not be edited without a redeploy, and a seed entry silently took over an operator-managed tenant at the next boot. One writer needs no rule. [§9](#9-retiring-tenants_seed). |
 | **H-i** | **Admin keys are generated by the server** and returned once. The API never accepts a caller-chosen admin key. | A generated key has full entropy and cannot collide with another tenant's key. Only the local-stack fixtures take plaintext keys (§9). |
 | **H-j** | **The console is the existing `paymaster-admin`**, gaining an Operator area. The image and package keep their names. | It is already the operator console, already deployed at `paymaster.*`, and already holds the on-chain roster. Joining the registry to that roster on tenant id is what lets an operator see a tenant that exists in one place and not the other. Renaming the image touches ECR and Terraform, which is devops territory (O-4). |
 | **H-k** | **H5 delivers R1 only. Blockchain status (D5 and the Chains tab) is a separate card.** | The card is estimated at 3 SP and D1–D4 with D6's tenant half already fill it. Blockchain status has no requirement (O-1), and §10 needs new code the original draft did not count: a bundler method, a prober that records its results, a resolver in the console image. Splitting lets R1 ship without waiting on O-1. |
@@ -108,8 +108,9 @@ Delivery, in order:
   `PUT` its rules. The console's create dialog says so. An operator route for sponsorship rules
   would be a second writer of rules the tenant owns, and is not proposed.
 - **Fees, treasury, roles.** Unchanged; already in the console.
-- **`infra/iac/`.** The new `wallet-api` and `paymaster-admin` environment variables and the network
-  restriction on `/v1/operator/*` are raised as O-3 for devops.
+- **`infra/iac/`.** The network restriction on `/v1/operator/*` is raised as O-3 for devops. The
+  `wallet-api` and `paymaster-admin` environment variables and the init container have since landed
+  in Terraform.
 - **Blockchain status.** D5 and the Chains tab, per H-k.
 
 ---
@@ -163,8 +164,8 @@ since been retired (§9).
 ## 4. Operator authority
 
 An operator signs in with an Ethereum wallet, using Sign-In with Ethereum
-([EIP-4361](https://eips.ethereum.org/EIPS/eip-4361)). The deployment configures which addresses
-are operators. A verified signature buys a short-lived operator session, and that session is what
+([EIP-4361](https://eips.ethereum.org/EIPS/eip-4361)). The `operators` table says which addresses
+are operators, and the operators manage it. A verified signature buys a short-lived operator session, and that session is what
 the operator routes accept.
 
 The console already connects a wallet for every on-chain action, so the person who signs in to the
@@ -174,41 +175,69 @@ who uses a hardware wallet gets a second factor without the API implementing one
 
 ### 4.1 Configuration
 
-```jsonc
-// OPERATOR_ADDRESSES — JSON array, parsed and validated in src/config.ts
-[
-  { "id": "ops-gabriel", "address": "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" },
-  { "id": "ops-oncall",  "address": "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2" }
-]
+What an environment *is* lives in code, in `src/environments.ts`, keyed by the required variable
+`GIANO_ENVIRONMENT` (`dev`, `stg`, `prd`, `reference`, `e2e`, `local-infra`, `local-dev`,
+`local-sepolia`, `test`; Terraform sets it to `terraform.workspace`):
+
+```ts
+// src/environments.ts (abridged)
+dev:   { siweDomain: 'paymaster.dev.giano.appliedblockchain.dev', bootstrapOperators: [GIOVANNI], localStack: false },
+e2e:   { siweDomain: 'paymaster.localhost', siweUri: 'http://paymaster.localhost',
+         bootstrapOperators: [ANVIL_3, ANVIL_0, GIOVANNI], localStack: true },
+reference: { siweDomain: null, bootstrapOperators: [], localStack: false },
 ```
 
-- `id` is a label, `^[a-z0-9-]{1,64}$`. Both `id` and `address` are unique across entries; boot
-  refuses a duplicate.
-- Addresses are normalised to lowercase on parse. They are EOAs: the signature is checked by ECDSA
-  recovery, so a Safe or other contract account cannot be an operator (§4.3).
-- An empty or absent value means no operator route is registered, and the console's Operator area
+- `siweDomain` / `siweUri` are the console's host and URI, the `domain` and `uri` every sign-in
+  message must carry. `siweUri` defaults to `https://<siweDomain>`. They are never stored in the
+  database, because a wrong value would sign every operator out, including whoever set it. They
+  change only with a release. `null` means the environment runs no console (`reference`,
+  `local-dev`, `local-sepolia`): no operator route is registered, and a console pointed at it
   reports *operator API disabled on this deployment*.
-- Addresses are public, so this is a plain environment variable, not a secret.
+- `bootstrapOperators` are written by the init step (§9) **only into an empty `operators` table**,
+  recorded in `operator_history` as `bootstrap` by `bootstrap:<environment>`. Once a database has an
+  operator, the table is the operators' to manage, and a later release that changes this list
+  changes nothing there. Addresses are public, so committing them is safe.
+- `localStack` marks a compose stack on a developer machine or in CI. Only these may load
+  `TENANT_FIXTURES` (§9).
+
+The `operators` table (migration `0008_operators.sql`):
+
+- `id` is a label, `^[a-z0-9-]{1,64}$`. Both `id` and `address` are unique; adding a duplicate is
+  `409 conflict`.
+- Addresses are stored lowercase. They are EOAs: the signature is checked by ECDSA recovery, so a
+  Safe or other contract account cannot be an operator (§4.3).
+- `added_by` is `bootstrap:<environment>` or `operator:<id>:<address>`.
+
+Operators manage operators through four routes, behind the same guard and rate limit as the tenant
+routes (`src/routes/operator-operators.ts`, `src/services/operators.ts`):
+
+| Route | Does |
+| --- | --- |
+| `GET /v1/operator/operators` | the operators, oldest first |
+| `POST /v1/operator/operators` | `{ id, address }`; the new operator can sign in at once. `201` |
+| `DELETE /v1/operator/operators/:id` | removes the operator and revokes their open sessions. `409 self-removal` for your own row, `409 last-operator` for the only one. `204` |
+| `GET /v1/operator/operators/history` | the latest 100 entries of `operator_history` (`bootstrap`, `add`, `remove`), newest first |
+
+Writes to the table are serialised by a Postgres advisory lock, so the last-operator check cannot
+race.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OPERATOR_ADDRESSES` | `[]` | as above |
-| `OPERATOR_SIWE_DOMAIN` | required when `OPERATOR_ADDRESSES` is non-empty | the console's host, e.g. `paymaster.dev.giano.appliedblockchain.dev`; the `domain` every sign-in message must carry |
-| `OPERATOR_SIWE_URI` | `https://${OPERATOR_SIWE_DOMAIN}` | the `uri` every sign-in message must carry |
+| `GIANO_ENVIRONMENT` | required | which entry of `src/environments.ts` this is |
 | `OPERATOR_CHALLENGE_TTL_SECONDS` | `300` | how long a nonce stays usable |
 | `OPERATOR_SESSION_TTL_SECONDS` | `1800` | absolute session lifetime; no sliding renewal |
 | `OPERATOR_RATE_LIMIT_PER_MINUTE` | `60` | per operator session. Challenge is limited to the same rate per requested address and verify per address parsed from the message, under a deployment-wide sign-in ceiling of ten times the rate. Not per IP: without `trustProxy` every request arrives from the proxy's address (§3). |
 
-Adding or removing an operator is a config change and a rolling restart. Removal takes effect on the
-next request of any open session after the restart, because the guard re-checks the address against
-the current list (§4.4).
+Adding or removing an operator needs no restart. Removal takes effect on the next request of any
+open session, because removal revokes the operator's sessions and the guard re-checks the address
+against the table on every request (§4.4).
 
 ### 4.2 Sign-in
 
 ```
 console                               wallet-api                         wallet
    │ POST /v1/operator/auth/challenge     │                                   │
-   │   { address, chainId }  ───────────► │ address ∈ OPERATOR_ADDRESSES?     │
+   │   { address, chainId }  ───────────► │ address ∈ operators table?        │
    │                                      │ insert operator_challenges row    │
    │ ◄─── { message }  (EIP-4361 text)    │                                   │
    │ personal_sign(message) ──────────────┼─────────────────────────────────► │
@@ -227,8 +256,8 @@ endpoint does not reveal who the operators are. For a listed address the API gen
 
 | Field | Value |
 | --- | --- |
-| `domain` | `OPERATOR_SIWE_DOMAIN` |
-| `uri` | `OPERATOR_SIWE_URI` |
+| `domain` | the environment's `siweDomain` (§4.1) |
+| `uri` | the environment's `siweUri` |
 | `address` | the requested address, checksummed |
 | `statement` | `Sign in to the Giano operator console. This grants access to tenant administration for <N> minutes.` |
 | `version` | `1` |
@@ -254,7 +283,7 @@ In order. Step 4 is the only write, and the session row is inserted only after i
 2. `recoverMessageAddress({ message, signature })` equals that `address`. ECDSA only, with
    no ERC-1271 call, so verify needs no RPC and works when every chain is down, which is when an
    operator most needs to sign in.
-3. The address is in `OPERATOR_ADDRESSES`.
+3. The address is in the `operators` table.
 4. The challenge is consumed atomically, and only if the signed text is the text issued for it:
    `UPDATE operator_challenges SET used_at = now() WHERE nonce = $1 AND address = $2 AND message = $3 AND used_at IS NULL AND expires_at > now() RETURNING nonce`.
    No row means replayed, expired, altered or never issued.
@@ -281,11 +310,11 @@ triggers that warning. A wallet that does not implement the check would not warn
 1. Refuse with `403 operator-origin-refused` if the request carries an `Origin` header (§4.5).
 2. Take the bearer token, sha256 it, and load the `operator_sessions` row by hash where
    `revoked_at IS NULL AND expires_at > now()`.
-3. Confirm the row's address is still in the current `OPERATOR_ADDRESSES`. Removing an operator
-   from config ends their sessions at the next restart without touching the table.
+3. Confirm the row's address is still in the `operators` table. Removing an operator also revokes
+   their sessions, and this check ends any that remain at their next request.
 4. On any failure, `401 unauthorized`, with the same body as an invalid token anywhere else.
 5. On success, set `request.operator = { id, address, sessionId }`, with `id` taken from the
-   current `OPERATOR_ADDRESSES` entry for that address, and log with `operator: id`.
+   current `operators` row for that address, and log with `operator: id`.
 
 A tenant admin key on `/v1/operator/*` fails at step 2 because it is not a session hash. An operator
 session token on `/v1/admin/*` fails `requireAdmin` because it is not in `tenant_admin_keys`. The two
@@ -308,9 +337,9 @@ the threat it guards against. What controls access is the signature (§4.3) and 
 ### 4.6 State and storage
 
 Challenges and sessions are rows (§5.2), because `wallet-api` runs more than one replica and a nonce
-issued by one must be consumable by another. Who is an operator stays configuration: a database
-write can create a session row, but the guard ignores any session whose address is not in the
-configured list.
+issued by one must be consumable by another. Who is an operator is a row too, in `operators`
+(§4.1): the guard ignores any session whose address is not in that table, so removing an operator
+ends their sessions at once.
 
 The console keeps the session token in React state only, never in `localStorage` or
 `sessionStorage`. A reload signs in again, which costs one wallet prompt. The console already
@@ -390,7 +419,7 @@ CREATE INDEX operator_challenges_expires_idx ON operator_challenges (expires_at)
 CREATE TABLE operator_sessions (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   token_hash  text NOT NULL UNIQUE,          -- sha256 hex of the gos_ token
-  operator_id text NOT NULL,                 -- the OPERATOR_ADDRESSES id at sign-in
+  operator_id text NOT NULL,                 -- the operators.id at sign-in
   address     text NOT NULL,                 -- lowercase
   chain_id    bigint NOT NULL,               -- from the signed message, for the record
   created_at  timestamptz NOT NULL DEFAULT now(),
@@ -416,6 +445,11 @@ CREATE TABLE tenant_history (
 );
 CREATE INDEX tenant_history_tenant_idx ON tenant_history (tenant_id, created_at);
 ```
+
+Migration `0008_operators.sql` adds the operators themselves (§4.1): `operators (id, address,
+added_by, created_at)`, and an append-only `operator_history (operator_id, address, action, actor,
+operator_session_id, created_at)` with `action` one of `bootstrap | add | remove`. History rows
+outlive the operator they describe, so they have no foreign key to `operators`.
 
 No sweep exists today: `challenges.prune()` is defined and never called (§3). D2 adds one, an
 unref'd interval in `src/index.ts` next to the chain prober. It calls `challenges.prune()` and
@@ -624,14 +658,17 @@ column, once every deployment has run it.
 
 **Local stacks.** The e2e, dev, loopback and Sepolia compose stacks still have to come up
 deterministic, with fixed tenant ids pre-registered on the devnet paymaster and fixed admin keys the
-provisioners and the e2e suite use. They get them from a separate one-shot compose service,
-`tenant-fixtures` (`node dist/tenant-fixtures.js`, source `src/tenant-fixtures.ts` and
-`src/services/tenant-fixtures.ts`). It reads `TENANT_FIXTURES`, a JSON array with the old seed
-entry's fields, including a pinned `id` and plaintext `adminKeys`; runs migrations; and creates
-each missing tenant through the same invariant and origin-claim checks as every other write (§6),
-with actor `fixture`. `wallet-api` starts only after it completes. It is insert-only: an existing
-slug is left untouched, so console edits survive a restart and `down -v` resets the fixtures. No
-live deployment runs it, and no configuration of `wallet-api` can make it create a tenant.
+provisioners and the e2e suite use. They get them from the init step, `node dist/init.js`
+(source `src/init.ts` and `src/services/tenant-fixtures.ts`), which every deployment runs before
+`wallet-api`: the `init` service in each compose file, and an init container in the AWS task. It
+runs migrations, then writes the environment's bootstrap operators into an empty `operators` table
+(§4.1), then, on a `localStack` environment only, reads `TENANT_FIXTURES`, a JSON array with the
+old seed entry's fields, including a pinned `id` and plaintext `adminKeys`. It creates each missing
+tenant through the same invariant and origin-claim checks as every other write (§6), with actor
+`fixture`. `wallet-api` starts only after it completes, and runs with `RUN_MIGRATIONS=false`. It is
+insert-only: an existing slug is left untouched, so console edits survive a restart and `down -v`
+resets the fixtures. On any environment that is not a local stack, init refuses to start when
+`TENANT_FIXTURES` is set, so no live configuration can create a tenant.
 
 ---
 
@@ -725,13 +762,15 @@ and whether it should also alert.
 
 A top-level switch between the existing **Paymaster** tabs (Overview, Tenants, Roles, Settings,
 History, Health — unchanged) and a new **Operator** area. H5 delivers its Tenants and Sign-in
-tabs; the Chains tab belongs to the follow-up card (H-k).
+tabs, and the Operators tab followed with `operators-in-database`; the Chains tab belongs to the
+follow-up card (H-k).
 
 | Tab | Contents |
 | --- | --- |
 | **Tenants** | Registry table: slug, id, status, wallet origin, users, and per selected chain an *on-chain* column joined from the paymaster roster by id: `registered · enabled`, `registered · disabled`, or `not registered`. A fourth group lists tenants on the roster with **no** registry row, which today nobody can see. Row → detail drawer with fields, keys, ledger position and history. |
+| **Operators** | The operators (id, address, who added them, when), *Add operator*, and *Remove* with a confirmation, plus the change history (§4.1). No Remove button on the signed-in operator's own row, or when only one operator is left; the API refuses both anyway. |
 | **Chains** *(follow-up card)* | One card per served chain from `/v1/operator/chains`, with the thresholds applied and the same ok/check/failing badges as `HealthPanel`. |
-| **Sign-in** | Shown in place of the other two until the operator has a session. One button, *Sign in with wallet*: connects the wallet if needed, then runs §4.2 with the connected address and the selected chain. Shows which operator id and address are signed in and when the session expires. Any `401` returns here. |
+| **Sign-in** | Shown in place of the other tabs until the operator has a session. One button, *Sign in with wallet*: connects the wallet if needed, then runs §4.2 with the connected address and the selected chain. Shows which operator id and address are signed in and when the session expires. Any `401` returns here. |
 
 ### 11.3 Flows
 
@@ -768,7 +807,7 @@ balance or open reservations from the response.
 | --- | --- |
 | **O-1** | **Blockchain status has no requirement.** §10 is a guess at the smallest useful thing. Needed: who looks at it (operators in the console, or an alerting path too), and whether "status" includes anything beyond node, bundler, paymaster and watcher, e.g. gas price, EntryPoint deposit trend, or per-tenant balance warnings. No longer blocks H5 (H-k); it is the first question for the follow-up card. |
 | **O-2** | **Estimate.** *Resolved by H-k.* The card says 3 SP and its estimation field says 2.5. D1–D4 plus D6's tenant half fill that. D5 and the Chains tab move to a follow-up card. |
-| **O-3** | **Devops (`infra/iac/`).** Three asks, none of them H5 deliverables. (1) `OPERATOR_ADDRESSES` and `OPERATOR_SIWE_DOMAIN` as plain environment variables on `wallet-api`; addresses are public, so no ASM secret is needed. (2) `GIANO_WALLET_API_UPSTREAM` on the `paymaster-admin` task. (3) A network restriction **on `/v1/operator/*` at the `api.*` listener**, as an ALB path rule (VPN CIDR or ALB OIDC). Restricting only `paymaster.*` would not cover these routes, because they are equally reachable on `api.*`, as §14.3 itself shows. Wallet sign-in is the control; the restriction is defence in depth for write routes. Restricting `paymaster.*` as well is optional. |
+| **O-3** | **Devops (`infra/iac/`).** Three asks, none of them H5 deliverables. (1) *Done, in a changed form:* `wallet-api` gets `GIANO_ENVIRONMENT = terraform.workspace`, and the operators and sign-in domain come from `src/environments.ts` and the `operators` table (§4.1), so no `OPERATOR_*` list is set anywhere. Its task runs the init container (§9). (2) *Done:* `GIANO_WALLET_API_UPSTREAM` on the `paymaster-admin` task. (3) **Still open:** a network restriction **on `/v1/operator/*` at the `api.*` listener**, as an ALB path rule (VPN CIDR or ALB OIDC). Restricting only `paymaster.*` would not cover these routes, because they are equally reachable on `api.*`, as §14.3 itself shows. Wallet sign-in is the control; the restriction is defence in depth for write routes. Restricting `paymaster.*` as well is optional. |
 | **O-4** | **Naming.** `paymaster-admin` now administers more than the paymaster. Renaming the package, image and ECR repository is a separate, mechanical change with an infra component. Not proposed here. |
 | **O-5** | **Serving a runtime tenant's wallet origin** still needs infra (§1.3). The real fix is the Host-resolved `wallet-web` config already listed as unbuilt in [`ARCHITECTURE.md`](./ARCHITECTURE.md). Worth a card of its own, because until it lands "create a tenant at runtime" means "create the backend half at runtime". |
 | **O-6** | *Resolved by D6.* **`INFRASTRUCTURE.md` R31** says `paymaster-admin` proxies `/api` to `wallet-api`. It now does, when `GIANO_WALLET_API_UPSTREAM` is set, and R31 says so. |
@@ -793,21 +832,21 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 | R1 — delete | §5.3 tombstone delete, §5.1 suspend, §7.1 lifecycle routes |
 | R1 — without a redeploy | §8: per-request resolution, no tenant cache; §9: operators the only writer |
 | R1 — the tenant ≡ wallet origin ≡ RP ID invariant holds | §6.1 single validator, §6.2 disjoint origin claims, H-f immutable fields |
-| R1 — operator surface, not tenant-facing | §4: configured operator addresses, wallet sign-in, a separate guard, no cross-origin path |
+| R1 — operator surface, not tenant-facing | §4: an operator-managed `operators` table seeded per environment, wallet sign-in, a separate guard, no cross-origin path |
 | Blockchain status | Follow-up card (H-k); §10 and §11.2's Chains tab are its starting point, pending O-1 |
 
 ### Deliverables
 
-✅ = implemented: D1–D4 by the OpenSpec change `operator-tenant-lifecycle` (PR #125), D6's tenant half by `operator-console`.
+✅ = implemented: D1–D4 by the OpenSpec change `operator-tenant-lifecycle` (PR #125), D6's tenant half by `operator-console`. The OpenSpec change `operators-in-database` then moved the operators from configuration into the database (H-b) and added the init step (§9); the rows below describe the code as it now stands.
 
 | # | Files |
 | --- | --- |
-| D1 ✅ | `src/config.ts` (the `OPERATOR_*` variables in §4.1, `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`), `src/routes/operator-auth.ts` (challenge, verify, logout), `src/services/operator-sessions.ts`, `src/plugins/auth.ts` (`requireOperator`), `scripts/operator-login.ts` |
-| D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
-| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts`, `src/tenant-fixtures.ts` (local-stack fixtures) and `src/services/tenants-seed-retirement.ts` (one-time) replace the seed (§9) |
-| D4 ✅ | `src/routes/operator-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when `OPERATOR_ADDRESSES` is non-empty), `openapi/` |
+| D1 ✅ | `src/config.ts` (`GIANO_ENVIRONMENT`, the `OPERATOR_*` tuning variables in §4.1, `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`), `src/environments.ts` (sign-in domain and bootstrap operators per environment), `src/routes/operator-auth.ts` (challenge, verify, logout), `src/services/operator-sessions.ts`, `src/services/operators.ts` and `src/routes/operator-operators.ts` (the operators and their management routes), `src/plugins/auth.ts` (`requireOperator`), `scripts/operator-login.ts` |
+| D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `migrations/0008_operators.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
+| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts` and `src/init.ts` (the init step, which loads local-stack fixtures) and `src/services/tenants-seed-retirement.ts` (one-time) replace the seed (§9) |
+| D4 ✅ | `src/routes/operator-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when the environment has a sign-in domain), `openapi/` |
 | D5 *(follow-up card)* | `src/routes/operator-chains.ts`, `src/services/chains.ts` (keep last verification and probe), `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts` (prober stores both) |
-| D6 ✅ (tenant half) | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/operator-api.ts`, `src/lib/operator-session.ts`, `src/operator/{SignIn,TenantsTab,TenantDrawer}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
+| D6 ✅ (tenant half) | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/operator-api.ts`, `src/lib/operator-session.ts`, `src/operator/{SignIn,TenantsTab,TenantDrawer,OperatorsTab}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
 
 ---
 
@@ -835,10 +874,12 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
   fields, keys and state kept and one `adopt` entry; a database with none is left alone; two
   replicas booting at once adopt each tenant once; a still-set `TENANTS_SEED` is warned about and
   ignored.
+- **Init.** `TENANT_FIXTURES` outside a local stack, or an unknown `GIANO_ENVIRONMENT`, is refused
+  before the database is touched.
 - **Fixtures.** An unknown slug is created with hashed keys and a `create` entry by `fixture`; an
   existing slug is left exactly as it is; a deleted slug is never re-created; two loaders at once
   create the tenant once.
-- **Operator sign-in.** A valid challenge signed by a listed EOA → session. Each of these → `401`
+- **Operator sign-in.** A valid challenge signed by an operator's EOA → session. Each of these → `401`
   with identical bodies: a signature by a different key; an address not in the list; a reused nonce;
   an expired challenge; the issued message with any field changed (`domain`, `uri`, `version`,
   `chainId`, `issuedAt`, `expirationTime`, `statement`) and re-signed by the same key; a message the
@@ -846,9 +887,14 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
   address returns the same shape as for a listed one and stores nothing.
 - **Operator guard.** No token / wrong token / expired / revoked / tenant admin key → `401` with
   identical bodies; any `Origin` header → `403`, including on challenge and verify; a session token
-  on `/v1/admin/*` → `401`; a session whose address was removed from `OPERATOR_ADDRESSES` → `401`
-  after restart; `OPERATOR_ADDRESSES` empty → every operator route `404`; a duplicate id or address
-  in the list → boot refuses.
+  on `/v1/admin/*` → `401`; a session whose operator was removed → `401` on the very next request;
+  an environment with no sign-in domain → every operator route `404`; no known `GIANO_ENVIRONMENT`
+  → boot refuses; the retired `OPERATOR_*` list and domain variables are ignored.
+- **Operators.** Bootstrap writes nothing into a table that has an operator, and seeds an empty one
+  once even from replicas booting together, recording each as `bootstrap`. An added operator can
+  sign in at once and records who added them; a duplicate id or address → `409`. Removing an
+  operator ends their sessions at once; removing yourself → `409 self-removal`; removing the last
+  operator → `409 last-operator`. No session → `401`.
 - **Attribution.** Every operator write's `tenant_history` row carries `operator:<id>:<address>`
   and the session id.
 - **No restart.** Create a tenant through the API, then in the same process: `GET
@@ -857,23 +903,26 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 
 ### 14.2 E2E (`e2e/tests/operator.spec.ts`)
 
-Against the two-tenant compose stack, with an anvil account listed in `OPERATOR_ADDRESSES` in
-`deploy/docker-compose.e2e.yml`, `OPERATOR_SIWE_DOMAIN=paymaster.localhost` and
-`OPERATOR_SIWE_URI=http://paymaster.localhost`. API steps sign in in-process with viem and that
-account's key:
+Against the two-tenant compose stack, whose `GIANO_ENVIRONMENT=e2e` bootstraps anvil accounts 3
+(`ops-e2e`) and 0 (`ops-console`) as operators and signs in for `paymaster.localhost`
+(`src/environments.ts`). API steps sign in in-process with viem and account 3's key:
 
 1. Suspend `byo` through the API; connecting from `app-byo.localhost` fails. Resume; it succeeds.
    Tenant `stock` is unaffected throughout.
 2. Create tenant `runtime` with walletOrigin `http://wallet-runtime.localhost`; `GET
    http://api.localhost/.well-known/webauthn` with `Host: wallet-runtime.localhost` returns its
    document with no container restarted.
-3. Console smoke: connect the anvil account through the injected test provider and *Sign in with
+3. Console smoke: connect anvil account 0 through the injected test provider and *Sign in with
    wallet*. The registry shows `stock`, `byo` and `runtime`; `stock` and `byo` show
    *registered · enabled* against the devnet paymaster, and `runtime` shows *not registered*.
+4. Operators tab (`e2e/tests/operator-console.spec.ts`): the bootstrapped operators are listed, the
+   signed-in operator's own row has no Remove button, and an operator added from the console can be
+   removed again, with both changes in the history.
 
 ### 14.3 Acceptance on dev
 
-Run with a throwaway EOA that is listed in dev's `OPERATOR_ADDRESSES` and nowhere else.
+Run with a throwaway EOA that an operator has added to dev's operators (Operators tab, or
+`POST /v1/operator/operators`) and nowhere else. Remove it afterwards.
 
 ```fish
 set -l base https://api.dev.giano.appliedblockchain.dev/v1/operator

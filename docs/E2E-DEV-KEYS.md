@@ -23,7 +23,7 @@ Only **two** private keys appear anywhere in the dev/test surface.
 
 | # | Address | Private key | Used as |
 | --- | --- | --- | --- |
-| anvil 0 | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` | `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` | contract deployer · paymaster `ROLE_ADMIN` · bundler **executor** · default key for the SDK CLI & demo |
+| anvil 0 | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` | `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` | contract deployer · paymaster `ROLE_ADMIN` · bundler **executor** · default key for the SDK CLI & demo · operator `ops-console` (e2e, local-infra) |
 | anvil 1 | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` | `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d` | **sponsorship signer** (signs the paymaster's EIP-712 authorisations) |
 
 Verified with `cast wallet address --private-key <key>`.
@@ -56,11 +56,29 @@ census is complete, not because the stack needs them.
 | # | Address | Used as |
 | --- | --- | --- |
 | anvil 2 | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` | tenant `stock`'s withdrawal address |
-| anvil 3 | `0x90F79bf6EB2c4f870365E785982E1f101E93b906` | tenant `byo`'s withdrawal address |
+| anvil 3 | `0x90F79bf6EB2c4f870365E785982E1f101E93b906` | tenant `byo`'s withdrawal address · operator `ops-e2e` (e2e) |
 
 A tenant's withdrawal address is the **only** account that can move that tenant's balance — no
 paymaster role can, including all of them at once. On the devnet these are deliberately different
 from the deployer so that separation is exercised rather than assumed.
+
+### Operators
+
+Who may sign in to the paymaster console's Operator area is a row in wallet-api's `operators`
+table, not a compose variable. The first rows come from the environment map in
+`services/wallet-api/src/environments.ts` (selected by `GIANO_ENVIRONMENT`), which the `init`
+service writes **only into an empty table** — so a changed map takes effect after `down -v`, and
+operators added or removed in the console survive a restart.
+
+| Environment (`GIANO_ENVIRONMENT`) | Bootstrap operators |
+| --- | --- |
+| `e2e` (`docker-compose.e2e.yml`) | `ops-e2e` = anvil 3 (signs in from `e2e/tests/operator.spec.ts`, which holds its private key; no paymaster role) · `ops-console` = anvil 0 (the console's injected test wallet; holds every role) · `giovanni` |
+| `local-infra` (`docker-compose.infrastructure.yml`) | `ops-console` = anvil 0 · `giovanni` |
+| `local-dev`, `local-sepolia` | `giovanni` (these stacks run no console, so no operator route) |
+
+`giovanni` is `0xFebBB1e5b6D66E6281d0d4d4816f76B69365a09d`, a real person's address and not an anvil
+account; it is also the bootstrap operator of `dev`, `stg` and `prd`. Neither operator account is the
+sponsorship signer.
 
 ---
 
@@ -161,7 +179,7 @@ authenticator, so no credential is ever stored in the repository. There is no pa
 | http://bundler.localhost | 4337 | giano-bundler |
 
 `e2e/origins.mjs` is the single source of truth. `wallet.localhost` and `wallet-byo.localhost` double
-as WebAuthn **RP IDs**, so renaming either means updating `TENANT_FIXTURES` (the `tenant-fixtures` service) and `GIANO_RP_ID` to match.
+as WebAuthn **RP IDs**, so renaming either means updating `TENANT_FIXTURES` (the `init` service) and `GIANO_RP_ID` to match.
 
 ---
 

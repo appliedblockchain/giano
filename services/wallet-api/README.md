@@ -9,11 +9,17 @@ client projects. Every tenant owns its wallet origin, and that origin's host is 
 WebAuthn RP ID — 1:1 (`specs/DEVELOPER-GUIDE.md` §1). The origin may serve Giano's stock
 wallet-web UI or a UI the tenant built itself; both are the same architecture. Tenants are
 created and managed only by Giano's operators at runtime, through `/v1/operator/*` (the paymaster
-console's Operator area; needs `OPERATOR_ADDRESSES`) — no redeploy. The service boots fine with no
-tenants. `TENANTS_SEED` is retired and no longer read; a one-time boot step hands tenants it wrote
-to the operators (`src/services/tenants-seed-retirement.ts`). Local compose stacks get their test
-tenants from the separate `node dist/tenant-fixtures.js` one-shot (`TENANT_FIXTURES`, insert-only),
-which no live deployment runs (`specs/OPERATOR-ADMIN-SPECS.md` §9).
+console's Operator area; only where the environment has a console host) — no redeploy. The
+operators are rows too, in the `operators` table, and add and remove each other the same way. The
+service boots fine with no tenants. `TENANTS_SEED` is retired and no longer read; a one-time boot
+step hands tenants it wrote to the operators (`src/services/tenants-seed-retirement.ts`).
+
+**Init step.** `node dist/init.js` (`src/init.ts`) runs to completion before the API everywhere — an
+`init` service in every compose file, an init container on AWS — and the API runs with
+`RUN_MIGRATIONS=false`. It applies migrations; writes the environment's bootstrap operators
+(`src/environments.ts`) **only into an empty `operators` table**; and, on local compose stacks only,
+creates the `TENANT_FIXTURES` tenants (insert-only). Anywhere else it refuses `TENANT_FIXTURES`
+(`specs/OPERATOR-ADMIN-SPECS.md` §4.1, §9).
 
 ## Security model
 
@@ -63,6 +69,7 @@ Swagger UI at `/docs` outside production).
 | `GET/POST/DELETE /v1/admin/ror-origins` | tenant admin key | manage the key's tenant's ROR origins |
 | `POST /v1/operator/auth/challenge`, `/verify`, `/logout` | none / operator session; any `Origin` refused | operator sign-in with a wallet (EIP-4361): a server-issued message, exchanged once for a `gos_` session |
 | `GET/POST /v1/operator/tenants`, `GET/PATCH/DELETE /v1/operator/tenants/:slug`, `…/suspend`, `…/resume`, `…/admin-keys`, `…/history` | operator session; any `Origin` refused | runtime tenant CRUD and lifecycle (active → suspended → deleted tombstone), generated admin keys, history |
+| `GET/POST /v1/operator/operators`, `DELETE /v1/operator/operators/:id`, `GET /v1/operator/operators/history` | operator session; any `Origin` refused | the operators: list, add (can sign in at once), remove (revokes their sessions; `409 self-removal` / `409 last-operator`), and the append-only change history |
 | `GET /healthz`, `GET /readyz` | public | liveness / readiness (DB ping) |
 | `GET /metrics` | open, or bearer when `METRICS_BEARER_TOKEN` set | Prometheus metrics, `tenant`-labelled |
 
@@ -79,15 +86,14 @@ example). Highlights:
 | Variable | Notes |
 | --- | --- |
 | `DATABASE_URL` | required |
-| `RUN_MIGRATIONS` | `true` = apply `migrations/*.sql` before listening (also: `node dist/migrate.js` one-shot) |
-| `TENANT_FIXTURES` | **read only by the `node dist/tenant-fixtures.js` one-shot of the local compose stacks, never by the API** (which no longer reads the retired `TENANTS_SEED` either). JSON array of tenants, each created if its slug is missing and otherwise left untouched. Per tenant: `slug`, `id?` (pinned, for a tenant pre-registered on a devnet paymaster), `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
+| `GIANO_ENVIRONMENT` | required: `dev`, `stg`, `prd`, `reference`, `e2e`, `local-infra`, `local-dev`, `local-sepolia` or `test`. Selects the entry in `src/environments.ts`: the console host every operator sign-in message names (`siweDomain`/`siweUri`, changed only by a release, never stored), the init step's bootstrap operators, and whether this is a local stack. An environment with no console host registers no operator route |
+| `RUN_MIGRATIONS` | `true` = apply `migrations/*.sql` before listening. `false` in every compose file and on AWS, where the init step runs them (also: `node dist/migrate.js` one-shot) |
+| `TENANT_FIXTURES` | **read only by the init step (`node dist/init.js`), only on a local-stack environment, never by the API**; init refuses to start if it is set anywhere else (which no longer reads the retired `TENANTS_SEED` either). JSON array of tenants, each created if its slug is missing and otherwise left untouched. Per tenant: `slug`, `id?` (pinned, for a tenant pre-registered on a devnet paymaster), `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
 | `GIANO_CHAINS` + `BUNDLER_BASE_URL` | the chains served: the backend chain document (`packages/contracts/chains.ts`) giano-bundler reads too; each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless its `walletApi.bundlerUrl` names another bundler |
 | `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | single-chain shorthand, mutually exclusive with `GIANO_CHAINS`; `BUNDLER_URL` is the exact endpoint |
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
-| `OPERATOR_ADDRESSES` | JSON array of `{ id, address }`: the EOAs that may sign in as Giano operators. Empty or absent (the default) registers no operator route |
-| `OPERATOR_SIWE_DOMAIN` / `OPERATOR_SIWE_URI` | the console host every operator sign-in message names (required with operators), and its URI (default `https://<domain>`) |
 | `OPERATOR_CHALLENGE_TTL_SECONDS` / `OPERATOR_SESSION_TTL_SECONDS` / `OPERATOR_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute operator session lifetime (1800), per-session and per-address limit (60) |
 | `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` | delete refuses a ledger further than this behind the chain head (50); must exceed `PAYMASTER_WATCHER_CONFIRMATIONS` |
 
@@ -108,7 +114,8 @@ and hand-encoded CBOR attestations — no browser needed.
 
 ## Operator sign-in from a script
 
-For acceptance on a deployment, with a throwaway EOA listed in its `OPERATOR_ADDRESSES`:
+For acceptance on a deployment, with a throwaway EOA an operator has added in the console's
+Operators tab (remove it afterwards):
 
 ```sh
 OPERATOR_PRIVATE_KEY=0x… pnpm -s --filter @appliedblockchain/giano-wallet-api operator:login --api https://api.dev.giano.appliedblockchain.dev

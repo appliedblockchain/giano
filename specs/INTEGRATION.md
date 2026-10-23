@@ -62,9 +62,11 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
 
 - **wallet-api** — see `services/wallet-api/README.md` and
   `deploy/docker-compose.reference.yml` for the full env matrix. Key values: `DATABASE_URL`,
-  `CHAIN_ID`/`RPC_URL`/`BUNDLER_URL`, userop policy defaults, and `OPERATOR_ADDRESSES` /
-  `OPERATOR_SIWE_DOMAIN` — the operators who sign in to the paymaster console to manage
-  tenants (§6). Tenants themselves are not configuration.
+  `CHAIN_ID`/`RPC_URL`/`BUNDLER_URL`, userop policy defaults, and `GIANO_ENVIRONMENT` — which
+  entry of `services/wallet-api/src/environments.ts` this deployment is: the console host its
+  operators sign in for and its bootstrap operators (§6). The client-run `reference` environment
+  has no console host, so it registers no operator route. Neither tenants nor operators are
+  configuration: both are rows.
 - **wallet-web** — `GIANO_CHAIN_ID`, `GIANO_WALLET_API_UPSTREAM`, `GIANO_RP_ID`,
   `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array), `GIANO_FACTORY_ADDRESS`/`GIANO_PAYMASTER_ADDRESS`
   (default from the contracts registry). No node or bundler URL: the wallet uses wallet-api's
@@ -81,9 +83,13 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
 
 ## 4. Database
 
-External Postgres by default. Apply migrations either with `RUN_MIGRATIONS=true` on the
-wallet-api, or the one-shot `node dist/migrate.js` (the Helm chart runs it as a
-pre-install/upgrade hook Job). Migrations are backward-compatible across one minor.
+External Postgres by default. Run the init step, `node dist/init.js` (`DATABASE_URL`,
+`GIANO_ENVIRONMENT`), to completion before wallet-api, which then runs with
+`RUN_MIGRATIONS=false`; `deploy/docker-compose.reference.yml` does this with an `init` service. It
+applies migrations and writes the environment's bootstrap operators into an empty `operators`
+table. `RUN_MIGRATIONS=true` on the wallet-api, or the one-shot `node dist/migrate.js` (the Helm
+chart runs it as a pre-install/upgrade hook Job), still apply migrations alone. Migrations are
+backward-compatible across one minor.
 
 ## 5. Contracts
 
@@ -97,6 +103,8 @@ CREATE2 deploy (identical addresses across chains for identical bytecode) and em
 
 Tenants are created, edited, suspended and deleted at runtime by Giano's operators, in the
 paymaster console's Operator area (`/v1/operator/*`, signed in with EIP-4361) — no restart.
+The operators are rows too: the init step bootstraps an environment's first operators into an
+empty table, and from then on operators add and remove each other in the console's Operators tab.
 wallet-api boots with no tenants. Each tenant carries its `walletOrigin` (host = RP ID),
 origins, `openRegistration`, admin keys and `corsOrigins` (your dApp origins, for the public
 receipt endpoint). Every write is validated (every `expectedOrigins` host must be
@@ -425,7 +433,7 @@ than the wallet-api. Full policy: `COMPATIBILITY.md`.
 ## Quick start (local)
 
 ```bash
-# pre-baked E2E stack (instant-boot devnet, contracts included) — its tenant-fixtures
+# pre-baked E2E stack (instant-boot devnet, contracts included) — its init
 # one-shot creates TWO tenants:
 # "stock" (Giano's wallet-web at wallet.localhost) and "byo" (bring-your-own UI,
 # served host-side via `pnpm --filter @appliedblockchain/giano-e2e wallet-byo`).

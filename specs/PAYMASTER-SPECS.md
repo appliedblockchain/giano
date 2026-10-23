@@ -1344,7 +1344,7 @@ no credential (R-61), and is refused for a production class (§9.1).
 step in the compose profile (and the equivalent step in the e2e setup script) waits for
 `/readyz`, then `PUT`s each demo tenant's sponsorship config through
 `/v1/admin/sponsorship` using the fixed admin key that tenant's fixture gives it (the stack's
-`tenant-fixtures` one-shot, [`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §9). It uses the
+`init` service, [`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §9). It uses the
 same endpoint a tenant would, so there is no dev-only seeding mechanism to disable in production and
 R-62 is satisfied by construction rather than by a flag. The tenant fixtures never touch sponsorship
 (S2), and §6.4's "no row means no sponsorship" stays true for real tenants.
