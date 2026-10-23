@@ -1,10 +1,11 @@
 import type { GianoPaymasterClient, PaymasterOverview, PaymasterRoleName } from '@appliedblockchain/giano-paymaster-sdk';
 import { Badge, Button, HStack, Stack, Tabs, Text } from '@chakra-ui/react';
-import { LuLogOut, LuUsers } from 'react-icons/lu';
+import { LuLogOut, LuShieldCheck, LuUsers } from 'react-icons/lu';
 import { Copyable } from '../components/ui';
 import type { Deployment } from '../config';
 import type { ConnectedWallet } from '../lib/chain';
 import { useOperator } from '../lib/operator-session';
+import { OperatorsTab } from './OperatorsTab';
 import { SignIn } from './SignIn';
 import { TenantsTab } from './TenantsTab';
 
@@ -22,7 +23,7 @@ export type OperatorAreaProps = {
 
 /**
  * The Operator area (specs/OPERATOR-ADMIN-SPECS.md §11.2): Giano's own staff administering the
- * tenant registry in wallet-api. Shown only where the console has an operator API to reach.
+ * tenant registry in wallet-api, and the list of operators itself. Shown only where the console has an operator API to reach.
  * Without a session it is the sign-in view and nothing else.
  */
 export function OperatorArea(props: OperatorAreaProps) {
@@ -52,9 +53,15 @@ export function OperatorArea(props: OperatorAreaProps) {
           <Tabs.Trigger value="tenants">
             <LuUsers /> Tenants
           </Tabs.Trigger>
+          <Tabs.Trigger value="operators">
+            <LuShieldCheck /> Operators
+          </Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="tenants">
           <TenantsTab {...props} />
+        </Tabs.Content>
+        <Tabs.Content value="operators">
+          <OperatorsTab />
         </Tabs.Content>
       </Tabs.Root>
     </Stack>

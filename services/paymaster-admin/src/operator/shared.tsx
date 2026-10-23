@@ -101,6 +101,8 @@ const EXPLAIN: Record<string, string> = {
   'tenant-has-reservations': 'The tenant has sponsorship reservations still open',
   'ledger-stale': 'The paymaster ledger is too far behind to trust',
   'last-admin-key': 'This is the last admin key of a tenant with closed registration',
+  'last-operator': 'The last operator cannot be removed',
+  'self-removal': 'You cannot remove yourself — ask another operator',
   'version-mismatch': 'Someone else changed this tenant',
   validation: 'Some fields need attention',
 };

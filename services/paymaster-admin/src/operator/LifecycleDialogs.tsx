@@ -22,7 +22,7 @@ type ChainBase = Base & {
 };
 
 /** A dialog that runs one operator call and shows its refusal in place. */
-function ActionDialog({
+export function ActionDialog({
   open,
   onClose,
   title,

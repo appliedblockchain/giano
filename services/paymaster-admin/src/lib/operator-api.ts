@@ -146,7 +146,15 @@ export function operatorApi(token: string) {
     revokeKey: (slug: string, keyId: string) => call<void>('DELETE', `${slugPath(slug)}/admin-keys/${encodeURIComponent(keyId)}`),
     history: (slug: string, before?: string) =>
       call<{ entries: HistoryEntry[]; next: string | null }>('GET', `${slugPath(slug)}/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+    operators: () => call<{ operators: OperatorRow[] }>('GET', '/operators'),
+    addOperator: (id: string, address: string) => call<OperatorRow>('POST', '/operators', { id, address }),
+    removeOperator: (id: string) => call<void>('DELETE', `/operators/${encodeURIComponent(id)}`),
+    operatorHistory: () => call<{ entries: OperatorHistoryEntry[] }>('GET', '/operators/history'),
   };
 }
 
 export type OperatorApi = ReturnType<typeof operatorApi>;
+
+/** An operator, as GET /v1/operator/operators lists them. */
+export type OperatorRow = { id: string; address: string; addedBy: string; createdAt: string };
+export type OperatorHistoryEntry = { id: string; operatorId: string; address: string; action: 'bootstrap' | 'add' | 'remove'; actor: string; createdAt: string };

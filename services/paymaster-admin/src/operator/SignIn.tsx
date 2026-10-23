@@ -13,11 +13,11 @@ import type { OperatorAreaProps } from './OperatorArea';
 const FAILURE_TEXT: Record<Exclude<SignInFailure, 'rejected' | 'failed'>, { title: string; description: string }> = {
   'not-operator': {
     title: 'Not an operator on this deployment',
-    description: "The connected address is not on this deployment's operator list. Connect the wallet holding an operator address, or ask for yours to be added to OPERATOR_ADDRESSES.",
+    description: "The connected address is not on this deployment's operator list. Connect the wallet holding an operator address, or ask an operator to add yours under Operator → Operators.",
   },
   disabled: {
     title: 'Operator API disabled on this deployment',
-    description: 'wallet-api answers, but has no operators configured (OPERATOR_ADDRESSES is empty), so there is nothing to sign in to.',
+    description: 'wallet-api answers, but this environment has no operator sign-in domain, so there is nothing to sign in to.',
   },
 };
 
