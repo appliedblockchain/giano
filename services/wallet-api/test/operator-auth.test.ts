@@ -3,7 +3,8 @@ import { createSiweMessage, generateSiweNonce } from 'viem/siwe';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { operatorChallenges, operatorSessions } from '../src/db/schema.js';
+import { operatorChallenges, operators, operatorSessions } from '../src/db/schema.js';
+import { resolveEnvironment } from '../src/environments.js';
 import { ADMIN_KEY, OPERATOR, OPERATOR_ENV, SECOND_OPERATOR, startTestStack, STRANGER, stopTestStack, type OperatorAccount, type TestContext } from './setup.js';
 
 /**
@@ -194,25 +195,21 @@ describe('the guard', () => {
     expect(again.json()).toEqual(UNAUTHORIZED);
   });
 
-  it('refuses a session whose operator was removed from the configuration, after a restart', async () => {
+  it('refuses a session whose operator has been removed, on the very next request', async () => {
     const { token } = await signIn(SECOND_OPERATOR);
-    // the restart: same database, a list without ops-second
-    const restarted = await buildApp({
-      config: { ...ctx.config, OPERATOR_ADDRESSES: [{ id: 'ops-test', address: OPERATOR.address.toLowerCase() }] },
-      db: ctx.db,
-    });
+    await ctx.db.delete(operators).where(eq(operators.id, 'ops-second'));
     try {
-      const res = await restarted.inject({ method: 'POST', url: '/v1/operator/auth/logout', headers: { authorization: `Bearer ${token}` } });
+      const res = await logout(token);
       expect(res.statusCode).toBe(401);
     } finally {
-      await restarted.close();
+      await ctx.db.insert(operators).values({ id: 'ops-second', address: SECOND_OPERATOR.address.toLowerCase(), addedBy: 'test' });
     }
   });
 });
 
 describe('configuration', () => {
-  it('registers no operator route when OPERATOR_ADDRESSES is empty', async () => {
-    const disabled = await buildApp({ config: { ...ctx.config, OPERATOR_ADDRESSES: [] }, db: ctx.db });
+  it('registers no operator route where the environment has no sign-in domain', async () => {
+    const disabled = await buildApp({ config: { ...ctx.config, ENVIRONMENT: resolveEnvironment('reference') }, db: ctx.db });
     try {
       const res = await disabled.inject({ method: 'POST', url: '/v1/operator/auth/challenge', payload: { address: OPERATOR.address, chainId: 1 } });
       expect(res.statusCode).toBe(404);
@@ -224,6 +221,7 @@ describe('configuration', () => {
   const baseEnv = {
     NODE_ENV: 'test',
     GIANO_DEPLOYMENT_CLASS: 'development',
+    GIANO_ENVIRONMENT: 'test',
     DATABASE_URL: 'postgres://u:p@localhost:5432/db',
     CHAIN_ID: '31337',
     RPC_URL: 'http://localhost:8545',
@@ -233,26 +231,22 @@ describe('configuration', () => {
   };
   const load = (env: Record<string, string>) => () => loadConfig({ ...baseEnv, ...env } as NodeJS.ProcessEnv);
 
-  it('refuses to boot on a duplicate operator id or address', () => {
-    const dupAddress = JSON.stringify([
-      { id: 'a', address: OPERATOR.address },
-      { id: 'b', address: OPERATOR.address.toLowerCase() },
-    ]);
-    expect(load({ OPERATOR_ADDRESSES: dupAddress, OPERATOR_SIWE_DOMAIN: 'p.example' })).toThrow(/duplicate operator address/);
-    const dupId = JSON.stringify([
-      { id: 'a', address: OPERATOR.address },
-      { id: 'a', address: STRANGER.address },
-    ]);
-    expect(load({ OPERATOR_ADDRESSES: dupId, OPERATOR_SIWE_DOMAIN: 'p.example' })).toThrow(/duplicate operator id/);
+  it('refuses to boot without a known GIANO_ENVIRONMENT', () => {
+    expect(load({ GIANO_ENVIRONMENT: '' })).toThrow(/GIANO_ENVIRONMENT/);
+    expect(load({ GIANO_ENVIRONMENT: 'staging' })).toThrow(/GIANO_ENVIRONMENT/);
   });
 
-  it('refuses to boot with operators but no sign-in domain', () => {
-    expect(load({ OPERATOR_ADDRESSES: JSON.stringify([{ id: 'a', address: OPERATOR.address }]) })).toThrow(/OPERATOR_SIWE_DOMAIN: required/);
+  it("takes the sign-in domain from the environment map, defaulting the uri to https on it", () => {
+    expect(load({ GIANO_ENVIRONMENT: 'dev' })().ENVIRONMENT).toMatchObject({
+      siweDomain: 'paymaster.dev.giano.appliedblockchain.dev',
+      siweUri: 'https://paymaster.dev.giano.appliedblockchain.dev',
+    });
+    expect(load({ GIANO_ENVIRONMENT: 'e2e' })().ENVIRONMENT.siweUri).toBe('http://paymaster.localhost');
   });
 
-  it('defaults the sign-in uri to https on the domain', () => {
-    const config = load({ OPERATOR_ADDRESSES: JSON.stringify([{ id: 'a', address: OPERATOR.address }]), OPERATOR_SIWE_DOMAIN: 'p.example' })();
-    expect(config.OPERATOR_SIWE_URI).toBe('https://p.example');
+  it('ignores the retired OPERATOR_* variables', () => {
+    const config = load({ OPERATOR_ADDRESSES: '[]', OPERATOR_SIWE_DOMAIN: 'evil.example' })();
+    expect(config.ENVIRONMENT.siweDomain).toBe('paymaster.localhost');
   });
 
   it('refuses a delete lag threshold the watcher can never meet', () => {

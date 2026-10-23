@@ -22,6 +22,7 @@ import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
 import operatorAuthRoutes from './routes/operator-auth.js';
 import operatorTenantRoutes from './routes/operator-tenants.js';
+import operatorOperatorRoutes from './routes/operator-operators.js';
 import useropRoutes from './routes/userops.js';
 import walletManagementRoutes from './routes/wallet-management.js';
 import webauthnRoutes from './routes/webauthn.js';
@@ -29,6 +30,7 @@ import wellKnownRoutes from './routes/well-known.js';
 import { buildChainRegistry, type ChainRegistry } from './services/chains.js';
 import { createChallengeService } from './services/challenges.js';
 import { createOperatorSessionService } from './services/operator-sessions.js';
+import { createOperatorService } from './services/operators.js';
 import { createSessionService } from './services/sessions.js';
 import type { PaymasterReader } from './services/paymaster-contract.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
@@ -74,14 +76,16 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   const challenges = createChallengeService(db, config.CHALLENGE_TTL_SECONDS);
   const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
   const tenants = createTenantService(db);
-  // The operator tier exists only where operators are configured: an empty OPERATOR_ADDRESSES
-  // registers no operator route at all (specs/OPERATOR-ADMIN-SPECS.md H-b).
+  // The operator tier exists only where the environment runs a console to sign in from: one with
+  // no sign-in domain registers no operator route at all (src/environments.ts, H-b).
+  const operators = createOperatorService(db);
+  const { siweDomain, siweUri } = config.ENVIRONMENT;
   const operatorSessions =
-    config.OPERATOR_ADDRESSES.length > 0
+    siweDomain && siweUri
       ? createOperatorSessionService(db, {
-          operators: config.OPERATOR_ADDRESSES,
-          domain: config.OPERATOR_SIWE_DOMAIN!,
-          uri: config.OPERATOR_SIWE_URI!,
+          operatorByAddress: (address) => operators.byAddress(address),
+          domain: siweDomain,
+          uri: siweUri,
           challengeTtlSeconds: config.OPERATOR_CHALLENGE_TTL_SECONDS,
           sessionTtlSeconds: config.OPERATOR_SESSION_TTL_SECONDS,
         })
@@ -217,6 +221,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   if (operatorSessions) {
     await app.register(operatorAuthRoutes, { operatorSessions, ratePerMinute: config.OPERATOR_RATE_LIMIT_PER_MINUTE });
     await app.register(operatorTenantRoutes, { db, config, registry });
+    await app.register(operatorOperatorRoutes, { operators, config });
   }
 
   return app;

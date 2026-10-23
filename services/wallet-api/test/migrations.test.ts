@@ -12,6 +12,15 @@ import { stopPostgres } from './postgres.js';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 
+/** A directory holding the migrations up to and including `prefix`, as a deployment at that release has them. */
+function upTo(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'giano-migrations-'));
+  for (const file of fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql') && f.slice(0, 4) <= prefix)) {
+    fs.copyFileSync(path.join(MIGRATIONS_DIR, file), path.join(dir, file));
+  }
+  return dir;
+}
+
 /**
  * 0007 adds the tenant lifecycle to a table that already holds live tenants, so it must backfill
  * every existing row as an active, seed-managed tenant — anything else would suspend or orphan a
@@ -45,7 +54,7 @@ describe('migration 0007_tenant_lifecycle', () => {
   });
 
   it('backfills existing tenants as active, seed-managed, version 1, and their keys as seed-created', async () => {
-    expect(await runMigrations(container.getConnectionUri())).toEqual(['0007_tenant_lifecycle.sql']);
+    expect(await runMigrations(container.getConnectionUri(), upTo('0007'))).toEqual(['0007_tenant_lifecycle.sql']);
     const tenant = await client.query(`SELECT status, managed_by, version, status_changed_at FROM tenants WHERE slug = 'acme'`);
     expect(tenant.rows[0]).toEqual({ status: 'active', managed_by: 'seed', version: 1, status_changed_at: null });
     const key = await client.query(`SELECT created_by FROM tenant_admin_keys`);
@@ -66,7 +75,7 @@ describe('migration 0007_tenant_lifecycle', () => {
   });
 
   it('is a no-op on a second run', async () => {
-    expect(await runMigrations(container.getConnectionUri())).toEqual([]);
+    expect(await runMigrations(container.getConnectionUri(), upTo('0007'))).toEqual([]);
   });
 
   it('housekeeping drops challenges expired over a day ago and keeps younger ones', async () => {
@@ -90,5 +99,13 @@ describe('migration 0007_tenant_lifecycle', () => {
     }
     expect((await client.query(`SELECT challenge FROM challenges`)).rows.map((r) => r.challenge)).toEqual(['recent']);
     expect((await client.query(`SELECT nonce FROM operator_challenges`)).rows.map((r) => r.nonce)).toEqual(['recent']);
+  });
+
+  it('0008 creates the operators and their history, constrained to lowercase addresses and known actions', async () => {
+    expect(await runMigrations(container.getConnectionUri(), upTo('0008'))).toEqual(['0008_operators.sql']);
+    await client.query(`INSERT INTO operators (id, address, added_by) VALUES ('ops-a', '0x${'a'.repeat(40)}', 'bootstrap:test')`);
+    await expect(client.query(`INSERT INTO operators (id, address, added_by) VALUES ('ops-b', '0x${'A'.repeat(40)}', 'x')`)).rejects.toThrow(/check constraint/);
+    await expect(client.query(`INSERT INTO operators (id, address, added_by) VALUES ('Ops B', '0x${'b'.repeat(40)}', 'x')`)).rejects.toThrow(/check constraint/);
+    await expect(client.query(`INSERT INTO operator_history (operator_id, address, action, actor) VALUES ('ops-a', '0x', 'promote', 'x')`)).rejects.toThrow(/check constraint/);
   });
 });

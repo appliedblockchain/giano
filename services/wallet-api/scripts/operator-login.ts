@@ -2,8 +2,8 @@
  * Signs in to a wallet-api's operator tier from a private key and prints the session token.
  *
  * Runs the same EIP-4361 challenge and verify the console does (specs/OPERATOR-ADMIN-SPECS.md
- * §4.2), for acceptance on dev with a throwaway EOA listed in that deployment's
- * OPERATOR_ADDRESSES and nowhere else. A real operator uses the console and their own wallet.
+ * §4.2), for acceptance on dev with a throwaway EOA an operator has added in the console and
+ * removes afterwards. A real operator uses the console and their own wallet.
  *
  *   OPERATOR_PRIVATE_KEY=0x... \
  *   pnpm -s --filter @appliedblockchain/giano-wallet-api operator:login --api https://api.dev.giano.appliedblockchain.dev

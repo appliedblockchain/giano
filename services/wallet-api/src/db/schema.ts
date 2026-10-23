@@ -57,8 +57,37 @@ export const tenantAdminKeys = pgTable(
 
 // ── Operators ──────────────────────────────────────────────────────────────────
 //
-// Who is an operator is configuration (OPERATOR_ADDRESSES), never a row: these tables hold only
-// sign-in state, and the guard ignores a session whose address the configuration does not list.
+// Who is an operator is the `operators` table, seeded once per environment by the init step and
+// managed by the operators from then on. The guard ignores a session whose address the table no
+// longer holds, so removing an operator ends their sessions on the next request.
+
+/** The operators. Written by the init step into an empty table, and by operators after that. */
+export const operators = pgTable('operators', {
+  /** A label for logs and history, e.g. ops-oncall. */
+  id: text('id').primaryKey(),
+  /** lowercase */
+  address: text('address').notNull().unique(),
+  /** 'bootstrap:<environment>' | 'operator:<id>:<address>' */
+  addedBy: text('added_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const operatorHistoryActions = ['bootstrap', 'add', 'remove'] as const;
+
+/** Append-only record of every change to the operators. Outlives the operators it describes. */
+export const operatorHistory = pgTable(
+  'operator_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    operatorId: text('operator_id').notNull(),
+    address: text('address').notNull(),
+    action: text('action', { enum: operatorHistoryActions }).notNull(),
+    actor: text('actor').notNull(),
+    operatorSessionId: uuid('operator_session_id').references(() => operatorSessions.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('operator_history_created_idx').on(t.createdAt)],
+);
 
 /** EIP-4361 challenges. The exact issued text is kept so verify accepts nothing else. */
 export const operatorChallenges = pgTable(
@@ -82,7 +111,7 @@ export const operatorSessions = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     /** sha256 hex of the gos_ token. */
     tokenHash: text('token_hash').notNull().unique(),
-    /** The OPERATOR_ADDRESSES id at sign-in. */
+    /** The operator's id at sign-in. */
     operatorId: text('operator_id').notNull(),
     /** lowercase */
     address: text('address').notNull(),

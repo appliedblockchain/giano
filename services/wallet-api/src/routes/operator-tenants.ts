@@ -74,8 +74,8 @@ function sendWriteError(reply: FastifyReply, error: unknown) {
 }
 
 /**
- * The operator tier's tenant registry (specs/OPERATOR-ADMIN-SPECS.md §7). Registered only when
- * OPERATOR_ADDRESSES is non-empty. Every route needs an operator session, refuses an Origin, and is
+ * The operator tier's tenant registry (specs/OPERATOR-ADMIN-SPECS.md §7). Registered with the rest
+ * of the operator tier. Every route needs an operator session, refuses an Origin, and is
  * rate limited per session. Tenants are addressed by slug, which is what operators type;
  * responses always carry the id.
  */

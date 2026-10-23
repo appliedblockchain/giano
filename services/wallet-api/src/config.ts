@@ -6,6 +6,7 @@ import {
   type ChainPolicy,
 } from '@appliedblockchain/giano-contracts';
 import { z } from 'zod';
+import { ENVIRONMENT_NAMES, resolveEnvironment } from './environments.js';
 
 const addressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be a 0x-prefixed 20-byte hex address');
 
@@ -45,31 +46,6 @@ export type ResolvedChain = {
   };
 };
 
-/** One operator: a label for logs and history, and the EOA that signs in as them. */
-const operatorAddressesSchema = z
-  .array(
-    z
-      .object({
-        id: z.string().regex(/^[a-z0-9-]{1,64}$/, 'lowercase id, e.g. ops-oncall'),
-        address: z
-          .string()
-          .regex(/^0x[0-9a-fA-F]{40}$/, 'expected a 0x address')
-          .transform((address) => address.toLowerCase()),
-      })
-      .strict(),
-  )
-  .superRefine((operators, ctx) => {
-    for (const field of ['id', 'address'] as const) {
-      const seen = new Set<string>();
-      for (const operator of operators) {
-        if (seen.has(operator[field])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate operator ${field}: ${operator[field]}` });
-        seen.add(operator[field]);
-      }
-    }
-  });
-
-export type OperatorEntry = z.infer<typeof operatorAddressesSchema>[number];
-
 /**
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
@@ -90,6 +66,11 @@ const envSchema = z
      * env-var key reaches production.
      */
     GIANO_DEPLOYMENT_CLASS: z.enum(['development', 'testnet', 'production']),
+    /**
+     * Which environment this is (src/environments.ts): its operator sign-in domain and, for the
+     * init step, its bootstrap operators. The one piece of identity the image cannot know itself.
+     */
+    GIANO_ENVIRONMENT: z.enum(ENVIRONMENT_NAMES),
     HOST: z.string().default('0.0.0.0'),
     PORT: z.coerce.number().int().min(1).max(65535).default(8080),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
@@ -101,40 +82,6 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
-    /**
-     * Giano's operators (specs/OPERATOR-ADMIN-SPECS.md §4.1): a JSON array of `{ id, address }`.
-     * Configuration, never rows — a database write must not be able to mint an operator. Addresses
-     * are public, so this is a plain variable, not a secret. Empty or absent: no operator route
-     * is registered at all.
-     */
-    OPERATOR_ADDRESSES: z
-      .string()
-      .optional()
-      .transform((raw, ctx) => {
-        if (!raw) return [];
-        let json: unknown;
-        try {
-          json = JSON.parse(raw);
-        } catch (error) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `not valid JSON: ${(error as Error).message}` });
-          return z.NEVER;
-        }
-        const parsed = operatorAddressesSchema.safeParse(json);
-        if (!parsed.success) {
-          for (const issue of parsed.error.issues) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${issue.path.join('.') || '(root)'}: ${issue.message}` });
-          }
-          return z.NEVER;
-        }
-        return parsed.data;
-      }),
-    /** The console's host; the `domain` every operator sign-in message carries. */
-    OPERATOR_SIWE_DOMAIN: z
-      .string()
-      .regex(/^[a-z0-9.-]+(:\d+)?$/i, 'a host, optionally with a port, e.g. paymaster.dev.giano.appliedblockchain.dev')
-      .optional(),
-    /** Defaults to https://${OPERATOR_SIWE_DOMAIN}. */
-    OPERATOR_SIWE_URI: z.string().url().optional(),
     OPERATOR_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
     /** Absolute operator session lifetime; sessions are never renewed. */
     OPERATOR_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
@@ -424,13 +371,6 @@ const envSchema = z
       }
     }
 
-    if (env.OPERATOR_ADDRESSES.length > 0 && !env.OPERATOR_SIWE_DOMAIN) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['OPERATOR_SIWE_DOMAIN'],
-        message: 'required when OPERATOR_ADDRESSES is set — it is the domain operators sign in for',
-      });
-    }
     if (env.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS <= env.PAYMASTER_WATCHER_CONFIRMATIONS) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -538,9 +478,7 @@ const envSchema = z
           },
         ];
 
-    const OPERATOR_SIWE_URI = env.OPERATOR_SIWE_URI ?? (env.OPERATOR_SIWE_DOMAIN ? `https://${env.OPERATOR_SIWE_DOMAIN}` : undefined);
-
-    return { ...env, CHAINS, OPERATOR_SIWE_URI };
+    return { ...env, CHAINS, ENVIRONMENT: resolveEnvironment(env.GIANO_ENVIRONMENT) };
   });
 
 export type AppConfig = z.infer<typeof envSchema>;

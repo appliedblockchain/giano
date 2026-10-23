@@ -18,7 +18,7 @@ const rateLimitedSchema = z.object({ error: z.string(), message: z.string() });
 
 /**
  * Operator sign-in with a wallet (EIP-4361; specs/OPERATOR-ADMIN-SPECS.md §4.2). Registered only
- * when OPERATOR_ADDRESSES is non-empty. Challenge and verify are unauthenticated, so they run the
+ * when the environment has a sign-in domain (src/environments.ts). Challenge and verify are unauthenticated, so they run the
  * Origin refusal only; logout runs the whole guard.
  */
 export default async function operatorAuthRoutes(

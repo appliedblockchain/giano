@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { getAddress, recoverMessageAddress, type Hex } from 'viem';
 import { createSiweMessage, generateSiweNonce, parseSiweMessage } from 'viem/siwe';
-import type { OperatorEntry } from '../config.js';
 import type { Db } from '../db/index.js';
 import { operatorChallenges, operatorSessions } from '../db/schema.js';
 import { sha256hex } from './tenants.js';
@@ -16,8 +15,8 @@ import { sha256hex } from './tenants.js';
  * `validateSiweMessage` is not used, because in viem 2.31.6 it skips issuedAt, uri, version and
  * chainId, and checks no time at all when expirationTime is absent.
  *
- * Who is an operator is the configured list, read on every resolve: a database write can create a
- * session row, but a session whose address the current configuration does not list is worthless.
+ * Who is an operator is the operators table, read on every sign-in and every resolve: removing an
+ * operator ends their sessions on the next request.
  */
 
 export type OperatorIdentity = { id: string; address: string };
@@ -27,7 +26,8 @@ export type OperatorContext = OperatorIdentity & { sessionId: string };
 export type OperatorAuthFailure = 'malformed-message' | 'bad-signature' | 'not-operator' | 'challenge-invalid';
 
 export type OperatorSessionOptions = {
-  operators: OperatorEntry[];
+  /** The operator with this lowercase address, if there is one. */
+  operatorByAddress: (address: string) => Promise<OperatorIdentity | undefined>;
   domain: string;
   uri: string;
   challengeTtlSeconds: number;
@@ -35,7 +35,6 @@ export type OperatorSessionOptions = {
 };
 
 export function createOperatorSessionService(db: Db, options: OperatorSessionOptions) {
-  const byAddress = new Map(options.operators.map((operator) => [operator.address, operator]));
   const minutes = Math.round(options.sessionTtlSeconds / 60);
 
   return {
@@ -59,7 +58,7 @@ export function createOperatorSessionService(db: Db, options: OperatorSessionOpt
         expirationTime,
       });
       const lower = address.toLowerCase();
-      if (byAddress.has(lower)) {
+      if (await options.operatorByAddress(lower)) {
         await db.insert(operatorChallenges).values({ nonce, address: lower, message, expiresAt: expirationTime });
       }
       return { message };
@@ -91,7 +90,7 @@ export function createOperatorSessionService(db: Db, options: OperatorSessionOpt
       const address = parsed.address.toLowerCase();
       if (signer.toLowerCase() !== address) return { ok: false, reason: 'bad-signature' };
 
-      const operator = byAddress.get(address);
+      const operator = await options.operatorByAddress(address);
       if (!operator) return { ok: false, reason: 'not-operator' };
 
       const consumed = await db
@@ -129,9 +128,8 @@ export function createOperatorSessionService(db: Db, options: OperatorSessionOpt
     },
 
     /**
-     * An unrevoked, unexpired session whose address the CURRENT configuration still lists — so
-     * removing an operator from the list ends their sessions at the next restart. The id comes
-     * from the current entry, not from the row.
+     * An unrevoked, unexpired session whose address is still an operator — so removing an
+     * operator ends their sessions at once. The id comes from the current operator, not the row.
      */
     async resolve(token: string): Promise<OperatorContext | null> {
       const [row] = await db
@@ -140,7 +138,7 @@ export function createOperatorSessionService(db: Db, options: OperatorSessionOpt
         .where(and(eq(operatorSessions.tokenHash, sha256hex(token)), isNull(operatorSessions.revokedAt), gt(operatorSessions.expiresAt, sql`now()`)))
         .limit(1);
       if (!row) return null;
-      const operator = byAddress.get(row.address);
+      const operator = await options.operatorByAddress(row.address);
       if (!operator) return null;
       return { id: operator.id, address: operator.address, sessionId: row.id };
     },

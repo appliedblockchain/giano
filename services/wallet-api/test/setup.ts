@@ -6,6 +6,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
+import { bootstrapOperators } from '../src/services/operators.js';
 import { loadTenantFixtures, parseTenantFixtures } from '../src/services/tenant-fixtures.js';
 import { stopPostgres } from './postgres.js';
 
@@ -179,6 +180,7 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   const baseEnv: Record<string, string> = {
     NODE_ENV: 'test',
     GIANO_DEPLOYMENT_CLASS: 'development',
+    GIANO_ENVIRONMENT: 'test',
     LOG_LEVEL: 'error',
     DATABASE_URL: databaseUrl,
     CHAIN_ID: '31337',
@@ -199,6 +201,7 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   const { db, pool } = createDb(databaseUrl);
   // the local stacks' write path — the same validation and origin-claim checks as an operator create
   await loadTenantFixtures(db, tenantFixtures);
+  await bootstrapOperators(db, 'test', TEST_OPERATORS);
   const app = await buildApp({ config, db, fetchImpl });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState };
 }
@@ -322,6 +325,7 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
   const config = loadConfig({
     NODE_ENV: 'test',
     GIANO_DEPLOYMENT_CLASS: 'development',
+    GIANO_ENVIRONMENT: 'test',
     LOG_LEVEL: 'error',
     DATABASE_URL: databaseUrl,
     CHAIN_ID: '31337',
@@ -341,6 +345,7 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
 
   const { db, pool } = createDb(databaseUrl);
   await loadTenantFixtures(db, tenantFixtures);
+  await bootstrapOperators(db, 'test', TEST_OPERATORS);
   const app = await buildApp({ config, db, fetchImpl, paymasterReader: createFakePaymasterReader(paymasterState) });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState, paymasterState };
 }
@@ -353,16 +358,16 @@ export const SECOND_OPERATOR = privateKeyToAccount('0x59c6995e998f97a5a0044966f0
 export const STRANGER = privateKeyToAccount('0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a');
 export type OperatorAccount = typeof OPERATOR;
 
-/** Environment that turns the operator tier on, with limits high enough not to trip in a suite. */
+/** Operator limits high enough not to trip in a suite. Every test stack has the two operators below. */
 export const OPERATOR_ENV = {
-  OPERATOR_ADDRESSES: JSON.stringify([
-    { id: 'ops-test', address: OPERATOR.address },
-    { id: 'ops-second', address: SECOND_OPERATOR.address },
-  ]),
-  OPERATOR_SIWE_DOMAIN: 'paymaster.localhost',
-  OPERATOR_SIWE_URI: 'http://paymaster.localhost',
   OPERATOR_RATE_LIMIT_PER_MINUTE: '1000',
 };
+
+/** The suite's operators, written the way the init step writes an environment's bootstrap list. */
+export const TEST_OPERATORS = [
+  { id: 'ops-test', address: OPERATOR.address },
+  { id: 'ops-second', address: SECOND_OPERATOR.address },
+];
 
 /** Signs in the way the console does: challenge, personal_sign, verify. Returns the session token. */
 export async function operatorSignIn(app: TestContext['app'], account: OperatorAccount = OPERATOR): Promise<string> {

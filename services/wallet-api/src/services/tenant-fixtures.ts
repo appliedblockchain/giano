@@ -9,8 +9,8 @@ import { appendTenantHistory, checkOriginClaims, checkTenantInvariants, normalis
  * (dev, staging, prod) never runs this: it boots with no tenants, and Giano's operators create
  * them in the paymaster console's Operator area.
  *
- * It is a separate one-shot command (`node dist/tenant-fixtures.js`), not a boot step of the API,
- * so no configuration of a live wallet-api can make it create a tenant.
+ * Loaded by the init step (src/init.ts) from TENANT_FIXTURES, and only for an environment marked
+ * `localStack` (src/environments.ts), so no configuration of a live deployment can create a tenant.
  *
  * A fixture is a create and nothing else. A slug that already exists is left exactly as it is —
  * once created, a fixture tenant is an ordinary operator-managed tenant, so a restart never
