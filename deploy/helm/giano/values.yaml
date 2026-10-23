@@ -6,6 +6,8 @@ global:
 
 # --- chain / RP config shared by wallet-api and wallet-web ---
 config:
+  # an entry of services/wallet-api/src/environments.ts; `reference` has no operator console
+  environment: reference
   # SINGLE-CHAIN (on-premises profile, MC-88): the scalars below are the complete
   # configuration. MULTI-CHAIN (standalone profile): set `chains` / `walletWeb.chains`
   # instead — JSON documents passed through verbatim, because a per-field template cannot

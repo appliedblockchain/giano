@@ -14,7 +14,7 @@ import { connectWallet, TENANTS } from './helpers';
  * will, so they carry no Origin — operator routes refuse any request that does.
  */
 
-// anvil's account 3, listed as ops-e2e in deploy/docker-compose.e2e.yml
+// anvil's account 3, bootstrapped as ops-e2e for the e2e environment (services/wallet-api/src/environments.ts)
 const OPERATOR = privateKeyToAccount('0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6');
 const API = loopbackOf('api');
 

@@ -68,8 +68,11 @@ the baked devnet state — a `down -v` drops it, and bringing the stack back up 
 
 The paymaster console is the operator's side of the same sponsorship the dApps are using: open it
 next to http://app.localhost and a sponsored send shows up as a falling tenant balance and a new
-row under **History**. It reads everything straight from the chain, so it needs no login and works
-read-only with no wallet connected.
+row under **History**. Its Paymaster view reads everything straight from the chain, so it needs no
+login and works read-only with no wallet connected. Its **Operator** area (tenants and operators)
+needs a wallet sign-in: the stack's `init` service bootstraps anvil accounts 3 (`ops-e2e`) and 0
+(`ops-console`) as operators for the `e2e` environment
+(`services/wallet-api/src/environments.ts`), into an empty `operators` table only.
 
 Every private key, account and fixed address this stack uses is catalogued in
 [`docs/E2E-DEV-KEYS.md`](../docs/E2E-DEV-KEYS.md) — all of them public anvil test values, none of
@@ -156,7 +159,8 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
   bake into their bundles;
 - [`playwright.config.ts`](./playwright.config.ts), for `baseURL` and the `webServer` entries;
 - the tests, via `tests/helpers.ts`;
-- and, by hand rather than by import, the tenant fixtures in `deploy/docker-compose.e2e.yml`.
+- and, by hand rather than by import, the tenant fixtures (`TENANT_FIXTURES` on the `init` service)
+  in `deploy/docker-compose.e2e.yml`.
 
 That last one is the seam to watch: compose is YAML and cannot import a module, so the origins in
 `TENANT_FIXTURES`, `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_RP_ID`
