@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { paymasterState, paymasterTenants, sessions, sponsorshipReservations, tenantAdminKeys, tenantHistory, tenants, users } from '../src/db/schema.js';
@@ -66,7 +66,7 @@ describe('access', () => {
 describe('create', () => {
   it('creates an active operator-managed tenant that resolves on the next request, with no restart', async () => {
     const created = await createTenant({ slug: 'runtime', adminKeys: [{ label: 'ops' }] });
-    expect(created.tenant).toMatchObject({ slug: 'runtime', status: 'active', managedBy: 'operator', version: 1, rpId: 'wallet-runtime.localhost' });
+    expect(created.tenant).toMatchObject({ slug: 'runtime', status: 'active', version: 1, rpId: 'wallet-runtime.localhost' });
     expect(created.adminKeys).toEqual([{ id: expect.any(String), label: 'ops', key: expect.stringMatching(/^gak_[A-Za-z0-9_-]{43}$/) }]);
 
     const wellKnown = await ctx.app.inject({ method: 'GET', url: '/.well-known/webauthn', headers: { host: 'wallet-runtime.localhost' } });
@@ -197,30 +197,15 @@ describe('update', () => {
   });
 });
 
-describe('seed-managed tenants', () => {
-  it('refuse every write except suspend and resume', async () => {
-    const url = `/v1/operator/tenants/${TENANT_B.slug}`;
+describe('no seed-managed tenants', () => {
+  it('fixture tenants are ordinary tenants: every write is allowed', async () => {
     const [beta] = await ctx.db.select().from(tenants).where(eq(tenants.slug, TENANT_B.slug));
-    const [key] = await ctx.db.select().from(tenantAdminKeys).where(eq(tenantAdminKeys.tenantId, beta.id));
-    const writes = [
-      await op('PATCH', url, { payload: { rpName: 'x' }, headers: { 'if-match': `"${beta.version}"` } }),
-      await op('POST', `${url}/admin-keys`, { payload: { label: 'x' } }),
-      await op('DELETE', `${url}/admin-keys/${key.id}`),
-    ];
-    for (const res of writes) expect(res.json().error).toBe('seed-managed');
-    expect((await suspend(TENANT_B.slug)).statusCode).toBe(200);
-    expect((await remove(TENANT_B.slug)).json().error).toBe('seed-managed');
-    expect((await op('POST', `${url}/resume`)).statusCode).toBe(200);
+    const res = await op('PATCH', `/v1/operator/tenants/${TENANT_B.slug}`, { payload: { rpName: 'Beta, edited' }, headers: { 'if-match': `"${beta.version}"` } });
+    expect(res.statusCode).toBe(200);
   });
 
-  it('cannot be adopted while still in TENANTS_SEED, and can once it has left', async () => {
-    expect((await op('POST', `/v1/operator/tenants/${TENANT_A.slug}/adopt`)).json().error).toBe('still-seeded');
-    // a seed-managed tenant whose slug has left the seed
-    await ctx.db.insert(tenants).values({ slug: 'legacy', walletOrigin: 'http://wallet-legacy.localhost', rpId: 'wallet-legacy.localhost', rpName: 'Legacy', expectedOrigins: ['http://wallet-legacy.localhost'], openRegistration: true });
-    const adopted = await op('POST', '/v1/operator/tenants/legacy/adopt');
-    expect(adopted.statusCode).toBe(200);
-    expect(adopted.json()).toMatchObject({ managedBy: 'operator', version: 2 });
-    expect((await op('PATCH', '/v1/operator/tenants/legacy', { payload: { rpName: 'Adopted' }, headers: { 'if-match': '"2"' } })).statusCode).toBe(200);
+  it('has no adopt route any more', async () => {
+    expect((await op('POST', `/v1/operator/tenants/${TENANT_A.slug}/adopt`)).statusCode).toBe(404);
   });
 });
 
@@ -391,18 +376,5 @@ describe('rate limit', () => {
     } finally {
       await limited.close();
     }
-  });
-});
-
-describe('the seed takes over at boot', () => {
-  it('a seed entry matching an operator tenant takes it over; the operator-issued key stops working', async () => {
-    const { tenant, adminKeys } = await createTenant({ slug: 'acme-takeover', adminKeys: [{ label: 'ops' }] });
-    const { seedTenants, validateTenantSeed } = await import('../src/services/tenants.js');
-    await seedTenants(ctx.db, [validateTenantSeed({ slug: 'acme-takeover', walletOrigin: tenant.walletOrigin, rpName: 'Seeded', adminKeys: ['seeded-admin-key-001'] })], { warn: () => {} });
-    const [row] = await ctx.db.select().from(tenants).where(and(eq(tenants.id, tenant.id)));
-    expect(row).toMatchObject({ managedBy: 'seed', rpName: 'Seeded' });
-    expect((await ctx.app.inject({ method: 'GET', url: '/v1/admin/ror-origins', headers: { authorization: `Bearer ${adminKeys[0].key}` } })).statusCode).toBe(401);
-    const count = await ctx.db.execute(sql`SELECT count(*)::int AS n FROM tenant_history WHERE tenant_id = ${tenant.id} AND action = 'seed-takeover'`);
-    expect(count.rows[0]).toEqual({ n: 1 });
   });
 });

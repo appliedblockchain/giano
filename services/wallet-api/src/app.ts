@@ -55,7 +55,7 @@ export type BuildAppOptions = {
 
 /**
  * Design constraint: buildApp must never READ the tenants table — tenant resolution is
- * strictly per-request (plugins/tenant.ts), so tenants seeded or edited after boot are
+ * strictly per-request (plugins/tenant.ts), so tenants created or edited after boot are
  * live immediately and openapi/generate.ts can build the app without a database. The same
  * holds for chains: the registry is CONSTRUCTED here (pure object wiring, no network);
  * verification against the chains themselves happens in index.ts before listen (§3.5).
@@ -115,7 +115,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
       components: {
         securitySchemes: {
           session: { type: 'http', scheme: 'bearer', description: 'Opaque session token from a ceremony verify endpoint' },
-          adminKey: { type: 'http', scheme: 'bearer', description: 'Per-tenant admin API key (from TENANTS_SEED, or issued by an operator)' },
+          adminKey: { type: 'http', scheme: 'bearer', description: 'Per-tenant admin API key, issued by an operator' },
           operatorSession: { type: 'http', scheme: 'bearer', description: 'Giano operator session from POST /v1/operator/auth/verify (EIP-4361 sign-in)' },
         },
       },

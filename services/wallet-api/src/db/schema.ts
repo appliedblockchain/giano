@@ -11,7 +11,7 @@ export const tenants = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     slug: text('slug').notNull().unique(),
     walletOrigin: text('wallet_origin').notNull().unique(),
-    /** IMMUTABLE once the tenant's first passkey exists — enforced by the seeder. */
+    /** IMMUTABLE: passkeys bind to it. The operator API never changes it. */
     rpId: text('rp_id').notNull().unique(),
     rpName: text('rp_name').notNull(),
     expectedOrigins: text('expected_origins').array().notNull(),
@@ -23,9 +23,13 @@ export const tenants = pgTable(
     branding: jsonb('branding').notNull().default({}),
     /** Only an active tenant resolves; deleted is a terminal tombstone (operator-tenant-lifecycle). */
     status: text('status', { enum: ['active', 'suspended', 'deleted'] }).notNull().default('active'),
-    /** Who may write this row: the boot seed or the operators, never both. */
+    /**
+     * Legacy: 'seed' marked a tenant written by the retired TENANTS_SEED. Every write now sets
+     * 'operator', and the boot-time retirement (services/tenants-seed-retirement.ts) converts what
+     * is left; the column goes once that has run everywhere.
+     */
     managedBy: text('managed_by', { enum: ['seed', 'operator'] }).notNull().default('seed'),
-    /** Incremented by every write, seed writes included; the ETag for PATCH. */
+    /** Incremented by every write; the ETag for PATCH. */
     version: integer('version').notNull().default(1),
     statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -44,7 +48,7 @@ export const tenantAdminKeys = pgTable(
     /** sha256 hex of the plaintext key; globally unique so key → tenant is unambiguous. */
     keyHash: text('key_hash').notNull().unique(),
     label: text('label'),
-    /** 'seed' | 'operator:<id>:<address>' */
+    /** 'operator:<id>:<address>' | 'fixture' (local stacks) | 'seed' (written by the retired TENANTS_SEED) */
     createdBy: text('created_by').notNull().default('seed'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -100,8 +104,10 @@ export const tenantHistoryActions = [
   'delete',
   'admin-key-issue',
   'admin-key-revoke',
+  // written by the retired TENANTS_SEED and kept for the history it left; nothing writes them now
   'seed-apply',
   'seed-takeover',
+  // the operator adopt endpoint (retired) and the one-time TENANTS_SEED retirement at boot
   'adopt',
 ] as const;
 
@@ -115,7 +121,7 @@ export const tenantHistory = pgTable(
       .notNull()
       .references(() => tenants.id),
     action: text('action', { enum: tenantHistoryActions }).notNull(),
-    /** 'seed' | 'operator:<id>:<address>' */
+    /** 'operator:<id>:<address>' | 'fixture' | 'system:tenants-seed-retirement' | 'seed' (retired) */
     actor: text('actor').notNull(),
     operatorSessionId: uuid('operator_session_id').references(() => operatorSessions.id),
     before: jsonb('before'),
@@ -331,8 +337,7 @@ export const rorOrigins = pgTable(
 // ── Sponsorship ────────────────────────────────────────────────────────────────
 //
 // A tenant's sponsorship *rules* are its own to edit through its admin key, and live in their
-// own table so TENANTS_SEED keeps its declarative meaning — a restart must never revert a
-// tenant's edit. A tenant with no row sponsors nothing, which is deny-by-default in the storage
+// own table, apart from the tenant row its operators edit. A tenant with no row sponsors nothing, which is deny-by-default in the storage
 // layer as well as in the rules engine.
 //
 // A tenant's *balance* is not the service's to own: it is chain state, cached here from paymaster

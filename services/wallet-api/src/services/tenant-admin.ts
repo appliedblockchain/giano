@@ -45,8 +45,6 @@ const generateAdminKey = () => `gak_${randomBytes(32).toString('base64url')}`;
 const keyDetail = (key: { id: string; label: string | null; keyHash: string }) => ({ keyId: key.id, label: key.label, hashPrefix: key.keyHash.slice(0, 8) });
 
 const notFound = (slug: string) => new TenantWriteError(404, 'not-found', `tenant "${slug}" not found`);
-const seedManaged = (slug: string) =>
-  new TenantWriteError(409, 'seed-managed', `tenant "${slug}" is managed by TENANTS_SEED; only suspend and resume are allowed — change it in the seed`);
 const invalidTransition = (tenant: Tenant, what: string) => new TenantWriteError(409, 'invalid-transition', `cannot ${what} tenant "${tenant.slug}" while it is ${tenant.status}`);
 
 async function lockBySlug(tx: Tx, slug: string): Promise<Tenant> {
@@ -112,7 +110,7 @@ export function createTenantAdminService(db: Db) {
       };
     },
 
-    /** Active and operator-managed from birth. Admin keys are generated here and returned once. */
+    /** Active from birth. Admin keys are generated here and returned once. */
     async create(input: TenantCreate, operator: OperatorContext) {
       const actor = actorOf(operator);
       return mappingConflicts(() =>
@@ -153,8 +151,7 @@ export function createTenantAdminService(db: Db) {
       return mappingConflicts(() =>
         db.transaction(async (tx) => {
           const tenant = await lockBySlug(tx, slug);
-          if (tenant.managedBy === 'seed') throw seedManaged(slug);
-          if (tenant.status !== 'active') throw invalidTransition(tenant, 'edit');
+            if (tenant.status !== 'active') throw invalidTransition(tenant, 'edit');
           if (tenant.version !== version) {
             throw new TenantWriteError(412, 'version-mismatch', `tenant "${slug}" is at version ${tenant.version}`, { version: tenant.version });
           }
@@ -177,7 +174,7 @@ export function createTenantAdminService(db: Db) {
       );
     },
 
-    /** active → suspended. Allowed on seed-managed tenants too: it is the incident tool. */
+    /** active → suspended: the incident tool. */
     async suspend(slug: string, reason: string, operator: OperatorContext) {
       return transition(slug, operator, { from: 'active', to: 'suspended', action: 'suspend', detail: { reason } });
     },
@@ -198,7 +195,6 @@ export function createTenantAdminService(db: Db) {
         if (tenant.status !== 'suspended') {
           throw new TenantWriteError(409, 'tenant-not-suspended', `tenant "${slug}" must be suspended before it is deleted`);
         }
-        if (tenant.managedBy === 'seed') throw seedManaged(slug);
 
         const ledger = await tx.select().from(paymasterTenants).where(eq(paymasterTenants.tenantId, tenant.id));
         const funded = ledger.filter((row) => BigInt(row.balanceWei) !== 0n || BigInt(row.deficitWei) !== 0n);
@@ -271,7 +267,6 @@ export function createTenantAdminService(db: Db) {
     async issueAdminKey(slug: string, label: string, operator: OperatorContext) {
       return db.transaction(async (tx) => {
         const tenant = await lockBySlug(tx, slug);
-        if (tenant.managedBy === 'seed') throw seedManaged(slug);
         if (tenant.status !== 'active') throw invalidTransition(tenant, 'issue an admin key for');
         const key = generateAdminKey();
         const [row] = await tx
@@ -295,7 +290,6 @@ export function createTenantAdminService(db: Db) {
     async revokeAdminKey(slug: string, keyId: string, operator: OperatorContext) {
       return db.transaction(async (tx) => {
         const tenant = await lockBySlug(tx, slug);
-        if (tenant.managedBy === 'seed') throw seedManaged(slug);
         if (tenant.status === 'deleted') throw invalidTransition(tenant, 'revoke an admin key of');
         const keys = await tx.select().from(tenantAdminKeys).where(eq(tenantAdminKeys.tenantId, tenant.id));
         const key = keys.find((candidate) => candidate.id === keyId);
@@ -313,27 +307,6 @@ export function createTenantAdminService(db: Db) {
           after: tenant,
           detail: keyDetail(key),
         });
-      });
-    },
-
-    /** seed → operator, once the seed no longer names the tenant (§9). */
-    async adopt(slug: string, seededSlugs: ReadonlySet<string>, operator: OperatorContext) {
-      return db.transaction(async (tx) => {
-        const tenant = await lockBySlug(tx, slug);
-        if (tenant.managedBy === 'operator') {
-          throw new TenantWriteError(409, 'invalid-transition', `tenant "${slug}" is already operator-managed`);
-        }
-        if (tenant.status === 'deleted') throw invalidTransition(tenant, 'adopt');
-        if (seededSlugs.has(slug)) {
-          throw new TenantWriteError(409, 'still-seeded', `tenant "${slug}" is still in TENANTS_SEED; remove it there and redeploy first`);
-        }
-        const [adopted] = await tx
-          .update(tenants)
-          .set({ managedBy: 'operator', version: sql`${tenants.version} + 1`, updatedAt: sql`now()` })
-          .where(eq(tenants.id, tenant.id))
-          .returning();
-        await appendTenantHistory(tx, { tenantId: tenant.id, action: 'adopt', actor: actorOf(operator), operatorSessionId: operator.sessionId, before: tenant, after: adopted });
-        return adopted;
       });
     },
 
