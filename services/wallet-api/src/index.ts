@@ -22,14 +22,14 @@ if (config.RUN_MIGRATIONS) {
 
 const { db, pool } = createDb(config.DATABASE_URL);
 
-// One-time: hands tenants an earlier version wrote from TENANTS_SEED to the operators. A no-op
+// One-time: hands tenants an earlier version wrote from TENANTS_SEED to the platform admins. A no-op
 // once none is left; removed in the release after every deployment has run it.
 await retireTenantsSeed(db, { info: (message) => console.log(message), warn: (message) => console.warn(`WARNING: ${message}`) });
 
-// Tenants are created by Giano's operators at runtime, so a deployment may well boot with none.
+// Tenants are created by Giano's platform admins at runtime, so a deployment may well boot with none.
 const [{ count: tenantCount }] = (await db.execute(sql`SELECT count(*)::int AS count FROM tenants WHERE status = 'active'`)).rows as [{ count: number }];
 if (tenantCount === 0) {
-  console.warn('No active tenants yet — tenant-scoped routes refuse requests until an operator creates one in the paymaster console');
+  console.warn('No active tenants yet — tenant-scoped routes refuse requests until a platform admin creates one in the paymaster console');
 }
 
 const app = await buildApp({ config, db });
@@ -129,7 +129,7 @@ const prober = setInterval(() => {
 }, CHAIN_PROBE_INTERVAL_MS);
 prober.unref();
 
-// Challenge housekeeping: nothing else removes expired ceremony or operator sign-in challenges.
+// Challenge housekeeping: nothing else removes expired ceremony or platform admin sign-in challenges.
 // Idempotent, so every replica runs it.
 const housekeeping = setInterval(() => {
   pruneExpiredChallenges(db).catch((error: Error) => app.log.warn({ error: error.message }, 'challenge housekeeping failed'));

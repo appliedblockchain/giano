@@ -4,25 +4,25 @@ import { CHAINS } from '../origins.mjs';
 import { chooseDeployment, installWallet, openConsole } from './console-wallet';
 
 /**
- * The console's Operator area against the real stack (specs/OPERATOR-ADMIN-SPECS.md §14.2 step 3):
- * an operator signs in with the console's wallet, sees the tenant registry joined to the devnet
+ * The console's Platform area against the real stack (specs/PLATFORM-ADMIN-SPECS.md §14.2 step 3):
+ * a platform admin signs in with the console's wallet, sees the tenant registry joined to the devnet
  * paymaster's roster, and takes a tenant through create → suspend → delete without leaving the page.
  *
- * The injected wallet is anvil's account 0, bootstrapped as `ops-console` for the e2e environment
+ * The injected wallet is anvil's account 0, bootstrapped as `admin-console` for the e2e environment
  * (services/wallet-api/src/environments.ts) and holding every paymaster role; its personal_sign is
  * answered by the node.
  */
 
-test.describe('operator console', () => {
+test.describe('admin console', () => {
   test.beforeEach(async ({ page }) => {
     await installWallet(page, { known: [CHAINS.a.chainId] });
     await openConsole(page);
     await chooseDeployment(page, CHAINS.a.chainId);
     await page.getByRole('button', { name: /^Connect wallet$/ }).click();
     await expect(page.getByRole('button', { name: /^Connected/ })).toBeVisible();
-    await page.getByRole('button', { name: 'Operator', exact: true }).click();
+    await page.getByRole('button', { name: 'Platform', exact: true }).click();
     await page.getByRole('button', { name: /Sign in with wallet/ }).click();
-    await expect(page.getByText('ops-console')).toBeVisible();
+    await expect(page.getByText('admin-console')).toBeVisible();
   });
 
   test('the registry shows the fixture tenants joined to the paymaster roster', async ({ page }) => {
@@ -81,7 +81,7 @@ test.describe('operator console', () => {
     await create.getByRole('textbox', { name: 'Wallet origin' }).fill(`http://wallet-${slug}.localhost`);
     await create.getByRole('textbox', { name: 'Display name' }).fill('On-chain E2E');
     await create.getByRole('button', { name: 'Create tenant' }).click();
-    // ops-console holds TENANT_ADMIN_ROLE on the devnet paymaster, so registering is offered
+    // admin-console holds TENANT_ADMIN_ROLE on the devnet paymaster, so registering is offered
     await create.getByRole('textbox', { name: 'Withdrawal address' }).fill('0x70997970C51812dc3A010C7d01b50e0d17dc79C8');
     await create.getByRole('button', { name: 'Register on-chain' }).click();
     await expect(create.getByText(/Registered on e2e devnet A/)).toBeVisible({ timeout: 30_000 });
@@ -134,41 +134,41 @@ test.describe('operator console', () => {
     await expect(page.getByTestId('tenant-history')).toContainText('admin-key-revoke');
   });
 
-  test('operators are added and removed from the console, but never yourself', async ({ page }) => {
+  test('admins are added and removed from the console, but never yourself', async ({ page }) => {
     // a fresh id and address per run: this stack's database may outlive a run
-    const id = `ops-run-${Date.now()}`;
+    const id = `admin-run-${Date.now()}`;
     const address = `0x${Date.now().toString(16).padStart(40, '0')}`;
 
-    await page.getByRole('tab', { name: /Operators/ }).click();
-    for (const bootstrapped of ['ops-e2e', 'ops-console', 'giovanni']) {
-      await expect(page.getByTestId(`operator-row-${bootstrapped}`)).toBeVisible();
+    await page.getByRole('tab', { name: /Admins/ }).click();
+    for (const bootstrapped of ['admin-e2e', 'admin-console', 'giovanni']) {
+      await expect(page.getByTestId(`admin-row-${bootstrapped}`)).toBeVisible();
     }
-    // the signed-in operator has no Remove button on their own row
-    const me = page.getByTestId('operator-row-ops-console');
+    // the signed-in platform admin has no Remove button on their own row
+    const me = page.getByTestId('admin-row-admin-console');
     await expect(me).toContainText('you');
     await expect(me.getByRole('button', { name: /Remove/ })).toHaveCount(0);
 
-    await page.getByRole('button', { name: /Add operator/ }).click();
-    const add = page.getByRole('dialog', { name: 'Add operator' });
+    await page.getByRole('button', { name: /Add admin/ }).click();
+    const add = page.getByRole('dialog', { name: 'Add platform admin' });
     await add.getByRole('textbox', { name: 'Id' }).fill(id);
     await add.getByRole('textbox', { name: 'Wallet address' }).fill(address);
-    await add.getByRole('button', { name: 'Add operator' }).click();
-    const row = page.getByTestId(`operator-row-${id}`);
+    await add.getByRole('button', { name: 'Add admin' }).click();
+    const row = page.getByTestId(`admin-row-${id}`);
     await expect(row).toContainText(address);
-    await expect(row).toContainText('ops-console');
+    await expect(row).toContainText('admin-console');
 
     await row.getByRole('button', { name: /Remove/ }).click();
-    await page.getByRole('dialog', { name: `Remove ${id}` }).getByRole('button', { name: 'Remove operator' }).click();
+    await page.getByRole('dialog', { name: `Remove ${id}` }).getByRole('button', { name: 'Remove admin' }).click();
     await expect(row).toHaveCount(0);
-    await expect(page.getByTestId('operator-history')).toContainText(`remove`);
-    await expect(page.getByTestId('operator-history')).toContainText(id);
+    await expect(page.getByTestId('admin-history')).toContainText(`remove`);
+    await expect(page.getByTestId('admin-history')).toContainText(id);
   });
 
-  test('a reload signs the operator out, and the session was never stored', async ({ page }) => {
+  test('a reload signs the admin out, and the session was never stored', async ({ page }) => {
     const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }) + document.cookie);
-    expect(stored).not.toContain('gos_');
+    expect(stored).not.toContain('gps_');
     await page.reload();
-    await page.getByRole('button', { name: 'Operator', exact: true }).click();
+    await page.getByRole('button', { name: 'Platform', exact: true }).click();
     await expect(page.getByRole('button', { name: /Sign in with wallet/ })).toBeVisible();
   });
 });

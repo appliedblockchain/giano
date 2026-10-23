@@ -31,7 +31,7 @@ const config = loadConfig({
   // generated against the production signer shape.
   SPONSORSHIP_SIGNER_KIND: 'hsm',
   SPONSORSHIP_SIGNER_KEY_REF: 'arn:aws:kms:eu-west-1:000000000000:key/giano-sponsorship',
-  // The operator routes are registered only where the environment has a sign-in domain; the
+  // The platform admin routes are registered only where the environment has a sign-in domain; the
   // document describes them, so it is generated as a live environment that has one.
   GIANO_ENVIRONMENT: 'prd',
 } as NodeJS.ProcessEnv);

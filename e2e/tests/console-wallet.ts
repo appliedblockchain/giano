@@ -4,7 +4,7 @@ import { ORIGINS } from '../origins.mjs';
 
 /**
  * The scripted browser wallet the paymaster console is driven with, shared by the console's
- * specs (paymaster-admin.spec.ts, operator-console.spec.ts).
+ * specs (paymaster-admin.spec.ts, platform-console.spec.ts).
  *
  * A real extension cannot be driven, so an EIP-1193 wallet is injected before any page script
  * runs, shaped like MetaMask where the console's behaviour depends on it. Its accounts are anvil's

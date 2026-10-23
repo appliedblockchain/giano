@@ -5,7 +5,7 @@ import { startTestStack, stopTestStack, TENANT_A, TENANT_B, type TestContext } f
 import { createAuthenticator, makeRegistrationResponse } from './webauthn-fixtures.js';
 
 /**
- * Only an active tenant resolves (specs/OPERATOR-ADMIN-SPECS.md §8): a suspended tenant must be
+ * Only an active tenant resolves (specs/PLATFORM-ADMIN-SPECS.md §8): a suspended tenant must be
  * indistinguishable from an unknown one on every path that attributes a request to a tenant —
  * Origin, Host, admin key, session and CORS — and resume must restore it with no restart.
  */

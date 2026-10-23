@@ -6,7 +6,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
-import { bootstrapOperators } from '../src/services/operators.js';
+import { bootstrapAdmins } from '../src/services/platform-admins.js';
 import { loadTenantFixtures, parseTenantFixtures } from '../src/services/tenant-fixtures.js';
 import { stopPostgres } from './postgres.js';
 
@@ -199,9 +199,9 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   const config = loadConfig({ ...baseEnv, ...envOverrides } as NodeJS.ProcessEnv);
 
   const { db, pool } = createDb(databaseUrl);
-  // the local stacks' write path — the same validation and origin-claim checks as an operator create
+  // the local stacks' write path — the same validation and origin-claim checks as a platform admin create
   await loadTenantFixtures(db, tenantFixtures);
-  await bootstrapOperators(db, 'test', TEST_OPERATORS);
+  await bootstrapAdmins(db, 'test', TEST_ADMINS);
   const app = await buildApp({ config, db, fetchImpl });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState };
 }
@@ -345,35 +345,35 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
 
   const { db, pool } = createDb(databaseUrl);
   await loadTenantFixtures(db, tenantFixtures);
-  await bootstrapOperators(db, 'test', TEST_OPERATORS);
+  await bootstrapAdmins(db, 'test', TEST_ADMINS);
   const app = await buildApp({ config, db, fetchImpl, paymasterReader: createFakePaymasterReader(paymasterState) });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState, paymasterState };
 }
 
-// ── Operator fixtures ──────────────────────────────────────────────────────────
+// ── Platform admin fixtures ──────────────────────────────────────────────────────────
 
-/** anvil's default accounts 0–2: two listed operators and one stranger. */
-export const OPERATOR = privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
-export const SECOND_OPERATOR = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+/** anvil's default accounts 0–2: two listed platform admins and one stranger. */
+export const ADMIN = privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
+export const SECOND_ADMIN = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
 export const STRANGER = privateKeyToAccount('0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a');
-export type OperatorAccount = typeof OPERATOR;
+export type AdminAccount = typeof ADMIN;
 
-/** Operator limits high enough not to trip in a suite. Every test stack has the two operators below. */
-export const OPERATOR_ENV = {
-  OPERATOR_RATE_LIMIT_PER_MINUTE: '1000',
+/** Platform admin limits high enough not to trip in a suite. Every test stack has the two platform admins below. */
+export const PLATFORM_ENV = {
+  PLATFORM_RATE_LIMIT_PER_MINUTE: '1000',
 };
 
-/** The suite's operators, written the way the init step writes an environment's bootstrap list. */
-export const TEST_OPERATORS = [
-  { id: 'ops-test', address: OPERATOR.address },
-  { id: 'ops-second', address: SECOND_OPERATOR.address },
+/** The suite's platform admins, written the way the init step writes an environment's bootstrap list. */
+export const TEST_ADMINS = [
+  { id: 'admin-test', address: ADMIN.address },
+  { id: 'admin-second', address: SECOND_ADMIN.address },
 ];
 
 /** Signs in the way the console does: challenge, personal_sign, verify. Returns the session token. */
-export async function operatorSignIn(app: TestContext['app'], account: OperatorAccount = OPERATOR): Promise<string> {
-  const challenge = await app.inject({ method: 'POST', url: '/v1/operator/auth/challenge', payload: { address: account.address, chainId: 31337 } });
+export async function platformSignIn(app: TestContext['app'], account: AdminAccount = ADMIN): Promise<string> {
+  const challenge = await app.inject({ method: 'POST', url: '/v1/platform/auth/challenge', payload: { address: account.address, chainId: 31337 } });
   const { message } = challenge.json() as { message: string };
-  const verify = await app.inject({ method: 'POST', url: '/v1/operator/auth/verify', payload: { message, signature: await account.signMessage({ message }) } });
-  if (verify.statusCode !== 200) throw new Error(`operator sign-in failed: ${verify.statusCode} ${verify.body}`);
+  const verify = await app.inject({ method: 'POST', url: '/v1/platform/auth/verify', payload: { message, signature: await account.signMessage({ message }) } });
+  if (verify.statusCode !== 200) throw new Error(`admin sign-in failed: ${verify.statusCode} ${verify.body}`);
   return (verify.json() as { token: string }).token;
 }

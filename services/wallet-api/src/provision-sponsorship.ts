@@ -80,7 +80,7 @@ const config = (() => {
 })();
 
 /**
- * The tenant's admin key, as the operator console issued it. Never logged, and never echoed back by
+ * The tenant's admin key, as the platform console issued it. Never logged, and never echoed back by
  * the API.
  */
 const adminKey = required('ADMIN_API_KEY');

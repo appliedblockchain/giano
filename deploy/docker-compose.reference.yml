@@ -20,7 +20,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # Runs to completion before wallet-api: migrations, then the environment's bootstrap operators
+  # Runs to completion before wallet-api: migrations, then the environment's bootstrap platform admins
   # (services/wallet-api/src/init.ts). wallet-api waits for it and never migrates itself.
   init:
     image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
@@ -50,7 +50,7 @@ services:
       # the init service ran them
       RUN_MIGRATIONS: 'false'
       # Which environment this is (services/wallet-api/src/environments.ts). `reference` has no
-      # operator console of Giano's, so no operator route is registered.
+      # platform console of Giano's, so no platform route is registered.
       GIANO_ENVIRONMENT: reference
       # What this deployment IS, as distinct from how the image was built. Required, with no
       # default: it is what refuses an environment-variable sponsorship signing key, and a default
@@ -67,8 +67,8 @@ services:
       # FACTORY_ADDRESS: ''
 
       # --- tenants ---
-      # Not configured here. Tenants live in the database and are created by operators in the
-      # paymaster console's Operator area; the service boots with none. rpId is IRREVERSIBLE per
+      # Not configured here. Tenants live in the database and are created by platform admins in the
+      # paymaster console's Platform area; the service boots with none. rpId is IRREVERSIBLE per
       # tenant (passkeys bind to it).
 
       # --- userop relay policy DEFAULTS (integers; fees in wei) — a tenant's policy

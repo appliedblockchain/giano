@@ -20,17 +20,17 @@ import paymasterRoutes from './routes/paymaster.js';
 import rpcRelayRoutes from './routes/rpc-relay.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
-import operatorAuthRoutes from './routes/operator-auth.js';
-import operatorTenantRoutes from './routes/operator-tenants.js';
-import operatorOperatorRoutes from './routes/operator-operators.js';
+import platformAuthRoutes from './routes/platform-auth.js';
+import platformTenantRoutes from './routes/platform-tenants.js';
+import platformAdminRoutes from './routes/platform-admins.js';
 import useropRoutes from './routes/userops.js';
 import walletManagementRoutes from './routes/wallet-management.js';
 import webauthnRoutes from './routes/webauthn.js';
 import wellKnownRoutes from './routes/well-known.js';
 import { buildChainRegistry, type ChainRegistry } from './services/chains.js';
 import { createChallengeService } from './services/challenges.js';
-import { createOperatorSessionService } from './services/operator-sessions.js';
-import { createOperatorService } from './services/operators.js';
+import { createPlatformSessionService } from './services/platform-sessions.js';
+import { createPlatformAdminService } from './services/platform-admins.js';
 import { createSessionService } from './services/sessions.js';
 import type { PaymasterReader } from './services/paymaster-contract.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
@@ -76,18 +76,18 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   const challenges = createChallengeService(db, config.CHALLENGE_TTL_SECONDS);
   const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
   const tenants = createTenantService(db);
-  // The operator tier exists only where the environment runs a console to sign in from: one with
-  // no sign-in domain registers no operator route at all (src/environments.ts, H-b).
-  const operators = createOperatorService(db);
+  // The platform tier exists only where the environment runs a console to sign in from: one with
+  // no sign-in domain registers no platform admin route at all (src/environments.ts, H-b).
+  const admins = createPlatformAdminService(db);
   const { siweDomain, siweUri } = config.ENVIRONMENT;
-  const operatorSessions =
+  const platformAdminSessions =
     siweDomain && siweUri
-      ? createOperatorSessionService(db, {
-          operatorByAddress: (address) => operators.byAddress(address),
+      ? createPlatformSessionService(db, {
+          adminByAddress: (address) => admins.byAddress(address),
           domain: siweDomain,
           uri: siweUri,
-          challengeTtlSeconds: config.OPERATOR_CHALLENGE_TTL_SECONDS,
-          sessionTtlSeconds: config.OPERATOR_SESSION_TTL_SECONDS,
+          challengeTtlSeconds: config.PLATFORM_CHALLENGE_TTL_SECONDS,
+          sessionTtlSeconds: config.PLATFORM_SESSION_TTL_SECONDS,
         })
       : undefined;
 
@@ -119,8 +119,8 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
       components: {
         securitySchemes: {
           session: { type: 'http', scheme: 'bearer', description: 'Opaque session token from a ceremony verify endpoint' },
-          adminKey: { type: 'http', scheme: 'bearer', description: 'Per-tenant admin API key, issued by an operator' },
-          operatorSession: { type: 'http', scheme: 'bearer', description: 'Giano operator session from POST /v1/operator/auth/verify (EIP-4361 sign-in)' },
+          adminKey: { type: 'http', scheme: 'bearer', description: 'Per-tenant admin API key, issued by an admin' },
+          platformSession: { type: 'http', scheme: 'bearer', description: 'Platform admin session from POST /v1/platform/auth/verify (EIP-4361 sign-in)' },
         },
       },
     },
@@ -131,7 +131,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   }
 
   await app.register(tenantPlugin, { tenants });
-  await app.register(authPlugin, { sessions, tenants, operatorSessions });
+  await app.register(authPlugin, { sessions, tenants, platformAdminSessions });
 
   // ── The chain registry ─────────────────────────────────────────────────────────
   //
@@ -218,10 +218,10 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   await app.register(useropRoutes, { db, registry, relay });
   await app.register(bundlerRelayRoutes, { config, relay });
   await app.register(rpcRelayRoutes, { config });
-  if (operatorSessions) {
-    await app.register(operatorAuthRoutes, { operatorSessions, ratePerMinute: config.OPERATOR_RATE_LIMIT_PER_MINUTE });
-    await app.register(operatorTenantRoutes, { db, config, registry });
-    await app.register(operatorOperatorRoutes, { operators, config });
+  if (platformAdminSessions) {
+    await app.register(platformAuthRoutes, { platformAdminSessions, ratePerMinute: config.PLATFORM_RATE_LIMIT_PER_MINUTE });
+    await app.register(platformTenantRoutes, { db, config, registry });
+    await app.register(platformAdminRoutes, { admins, config });
   }
 
   return app;

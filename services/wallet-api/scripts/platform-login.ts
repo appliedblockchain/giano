@@ -1,14 +1,14 @@
 /**
- * Signs in to a wallet-api's operator tier from a private key and prints the session token.
+ * Signs in to a wallet-api's platform tier from a private key and prints the session token.
  *
- * Runs the same EIP-4361 challenge and verify the console does (specs/OPERATOR-ADMIN-SPECS.md
- * §4.2), for acceptance on dev with a throwaway EOA an operator has added in the console and
- * removes afterwards. A real operator uses the console and their own wallet.
+ * Runs the same EIP-4361 challenge and verify the console does (specs/PLATFORM-ADMIN-SPECS.md
+ * §4.2), for acceptance on dev with a throwaway EOA a platform admin has added in the console and
+ * removes afterwards. A real platform admin uses the console and their own wallet.
  *
- *   OPERATOR_PRIVATE_KEY=0x... \
- *   pnpm -s --filter @appliedblockchain/giano-wallet-api operator:login --api https://api.dev.giano.appliedblockchain.dev
+ *   PLATFORM_ADMIN_PRIVATE_KEY=0x... \
+ *   pnpm -s --filter @appliedblockchain/giano-wallet-api platform:login --api https://api.dev.giano.appliedblockchain.dev
  *
- * The token goes to stdout alone, so it can be captured: `set -l token (… operator:login …)`.
+ * The token goes to stdout alone, so it can be captured: `set -l token (… platform:login …)`.
  * Everything else goes to stderr.
  */
 import type { Hex } from 'viem';
@@ -26,7 +26,7 @@ function argument(flag: string): string | undefined {
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
-  // no Origin header: operator routes refuse any request that carries one
+  // no Origin header: platform admin routes refuse any request that carries one
   const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   if (!response.ok) throw new Error(`${url} answered ${response.status}: ${await response.text()}`);
   return (await response.json()) as T;
@@ -35,13 +35,13 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 async function main(): Promise<void> {
   const api = (argument('--api') ?? process.env.WALLET_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
   const chainId = Number(argument('--chain-id') ?? '1');
-  const account = privateKeyToAccount(required('OPERATOR_PRIVATE_KEY') as Hex);
+  const account = privateKeyToAccount(required('PLATFORM_ADMIN_PRIVATE_KEY') as Hex);
 
-  const { message } = await post<{ message: string }>(`${api}/v1/operator/auth/challenge`, { address: account.address, chainId });
+  const { message } = await post<{ message: string }>(`${api}/v1/platform/auth/challenge`, { address: account.address, chainId });
   const signature = await account.signMessage({ message });
-  const session = await post<{ token: string; expiresAt: string; operator: { id: string } }>(`${api}/v1/operator/auth/verify`, { message, signature });
+  const session = await post<{ token: string; expiresAt: string; admin: { id: string } }>(`${api}/v1/platform/auth/verify`, { message, signature });
 
-  console.error(`signed in as ${session.operator.id} (${account.address}) until ${session.expiresAt}`);
+  console.error(`signed in as ${session.admin.id} (${account.address}) until ${session.expiresAt}`);
   console.log(session.token);
 }
 

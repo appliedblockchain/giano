@@ -178,8 +178,8 @@ services:
   # and the application container carries `dependsOn: [{ init, condition: SUCCESS }]`.
   #
   # It runs services/wallet-api/src/init.ts: migrations, then the environment's bootstrap
-  # operators (src/environments.ts) — written only into an EMPTY operators table, so after the
-  # first boot the operators manage that list in the console and a redeploy never touches it.
+  # platform admins (src/environments.ts) — written only into an EMPTY platform_admins table, so after the
+  # first boot the platform admins manage that list in the console and a redeploy never touches it.
   #
   # `SUCCESS` is the whole mechanism. `COMPLETE` would accept any exit code and start the API
   # against a half-applied schema. The guarantee bought is one ECS enforces rather than one a
@@ -214,7 +214,7 @@ services:
       # password is `urlencode`d there: a `#`, `/` or `@` in it silently truncates the DSN
       # and the failure looks like a wrong hostname.
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
-      # [literal] the Terraform workspace: dev | stg | prd. Picks the bootstrap operators.
+      # [literal] the Terraform workspace: dev | stg | prd. Picks the bootstrap platform admins.
       GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
@@ -265,7 +265,7 @@ services:
       RUN_MIGRATIONS: 'false'
 
       # [literal] the Terraform workspace: dev | stg | prd. services/wallet-api/src/environments.ts
-      # maps it to the operator sign-in domain, paymaster.<apex>; changing that is a release.
+      # maps it to the platform sign-in domain, paymaster.<apex>; changing that is a release.
       GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
 
       # ── Chain (§13) ─────────────────────────────────────────────────────────────────────
@@ -302,10 +302,10 @@ services:
       METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:?set METRICS_BEARER_TOKEN}
 
       # ── Tenants (§14.2) ─────────────────────────────────────────────────────────────────
-      # Not configured here. Tenants live in the database and are managed by Giano's operators
-      # in the paymaster console's Operator area; the service boots fine with none. The
+      # Not configured here. Tenants live in the database and are managed by Giano's platform admins
+      # in the paymaster console's Platform area; the service boots fine with none. The
       # environment's existing tenants (`example`, `byoui`) were written by the retired
-      # TENANTS_SEED and are handed to the operators on the first boot of this release.
+      # TENANTS_SEED and are handed to the platform admins on the first boot of this release.
       #
       # ⚠ `rpId` is IRREVERSIBLE per tenant (R1), and `id` is what the paymaster keys the
       # tenant's on-chain balance on — both are fixed at create time. Never create a tenant for
@@ -675,8 +675,8 @@ services:
       GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
       GIANO_ENVIRONMENT_LABEL: ${GIANO_ENVIRONMENT_LABEL:-dev (Base Sepolia)}
       GIANO_REFRESH_SECONDS: '15'
-      # [literal] the Operator area: /api/* proxied to wallet-api over Cloud Map, same-origin,
-      # with the browser's Origin removed (specs/OPERATOR-ADMIN-SPECS.md §11.1).
+      # [literal] the Platform area: /api/* proxied to wallet-api over Cloud Map, same-origin,
+      # with the browser's Origin removed (specs/PLATFORM-ADMIN-SPECS.md §11.1).
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
     healthcheck:
       test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']

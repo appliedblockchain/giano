@@ -1,7 +1,7 @@
 /**
- * A thin client over wallet-api's operator tier (specs/OPERATOR-ADMIN-SPECS.md §7), reached
+ * A thin client over wallet-api's platform tier (specs/PLATFORM-ADMIN-SPECS.md §7), reached
  * through this console's own `/api` proxy — same origin, and the proxy drops the Origin header the
- * operator routes refuse.
+ * platform admin routes refuse.
  *
  * Types are written by hand against `services/wallet-api/openapi/openapi.json`, which CI keeps
  * honest on the API side; there are few enough routes that a generator would be more machinery
@@ -9,12 +9,12 @@
  * carrying the API's own code and detail, because every refusal here has something specific to
  * show — the field an issue is on, the tenant that holds an origin, the balance blocking a delete.
  * The one exception is 401, which means the session is gone and is raised as
- * {@link OperatorUnauthorized} so the session layer can drop it wherever it happens.
+ * {@link PlatformUnauthorized} so the session layer can drop it wherever it happens.
  */
 
 export type TenantStatus = 'active' | 'suspended' | 'deleted';
 
-export type OperatorTenant = {
+export type PlatformTenant = {
   id: string;
   slug: string;
   status: TenantStatus;
@@ -33,13 +33,13 @@ export type OperatorTenant = {
   statusChangedAt: string | null;
 };
 
-export type TenantSummary = OperatorTenant & { users: number };
+export type TenantSummary = PlatformTenant & { users: number };
 
 export type AdminKeyInfo = { id: string; label: string | null; hashPrefix: string; createdBy: string; createdAt: string };
 export type IssuedAdminKey = { id: string; label: string; key: string };
 
 export type TenantDetail = {
-  tenant: OperatorTenant;
+  tenant: PlatformTenant;
   adminKeys: AdminKeyInfo[];
   users: number;
   credentials: number;
@@ -51,14 +51,14 @@ export type HistoryEntry = {
   id: string;
   action: string;
   actor: string;
-  operatorSessionId: string | null;
+  platformSessionId: string | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   detail: Record<string, unknown> | null;
   createdAt: string;
 };
 
-export type SignedInOperator = { token: string; expiresAt: string; operator: { id: string; address: string } };
+export type SignedInAdmin = { token: string; expiresAt: string; admin: { id: string; address: string } };
 
 /** What a create sends. Origins are lists; the API validates every field and every invariant. */
 export type TenantCreateInput = {
@@ -74,7 +74,7 @@ export type TenantCreateInput = {
 };
 
 export type TenantPatchInput = Partial<
-  Pick<OperatorTenant, 'rpName' | 'expectedOrigins' | 'allowedDappOrigins' | 'corsOrigins' | 'openRegistration' | 'policy' | 'branding'>
+  Pick<PlatformTenant, 'rpName' | 'expectedOrigins' | 'allowedDappOrigins' | 'corsOrigins' | 'openRegistration' | 'policy' | 'branding'>
 >;
 
 /** A refusal, exactly as the API stated it: `error` is its code, the rest is its detail. */
@@ -89,15 +89,15 @@ export type ApiError = {
 
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; error: ApiError };
 
-/** The session is gone — expired, revoked, or its operator removed. Never a reason to retry. */
-export class OperatorUnauthorized extends Error {
+/** The session is gone — expired, revoked, or its platform admin removed. Never a reason to retry. */
+export class PlatformUnauthorized extends Error {
   constructor() {
-    super('operator session ended');
-    this.name = 'OperatorUnauthorized';
+    super('platform admin session ended');
+    this.name = 'PlatformUnauthorized';
   }
 }
 
-const BASE = '/api/v1/operator';
+const BASE = '/api/v1/platform';
 
 async function request<T>(method: string, path: string, { token, body, headers = {} }: { token?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<ApiResult<T>> {
   const response = await fetch(`${BASE}${path}`, {
@@ -110,7 +110,7 @@ async function request<T>(method: string, path: string, { token, body, headers =
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
   });
-  if (response.status === 401 && token) throw new OperatorUnauthorized();
+  if (response.status === 401 && token) throw new PlatformUnauthorized();
   if (response.status === 204) return { ok: true, value: undefined as T };
   const text = await response.text();
   const json = text ? (JSON.parse(text) as unknown) : undefined;
@@ -124,37 +124,37 @@ async function request<T>(method: string, path: string, { token, body, headers =
 
 const slugPath = (slug: string) => `/tenants/${encodeURIComponent(slug)}`;
 
-/** Sign-in: not authenticated, so a 401 here is an answer ("not an operator"), not a lost session. */
-export const operatorAuth = {
+/** Sign-in: not authenticated, so a 401 here is an answer ("not a platform admin"), not a lost session. */
+export const platformAuth = {
   challenge: (address: string, chainId: number) => request<{ message: string }>('POST', '/auth/challenge', { body: { address, chainId } }),
-  verify: (message: string, signature: string) => request<SignedInOperator>('POST', '/auth/verify', { body: { message, signature } }),
+  verify: (message: string, signature: string) => request<SignedInAdmin>('POST', '/auth/verify', { body: { message, signature } }),
   logout: (token: string) => request<void>('POST', '/auth/logout', { token }),
 };
 
-/** Every authenticated operator route the console uses, bound to one session token. */
-export function operatorApi(token: string) {
+/** Every authenticated platform admin route the console uses, bound to one session token. */
+export function platformApi(token: string) {
   const call = <T>(method: string, path: string, body?: unknown, headers?: Record<string, string>) => request<T>(method, path, { token, body, headers });
   return {
     list: (status?: TenantStatus) => call<{ tenants: TenantSummary[] }>('GET', `/tenants${status ? `?status=${status}` : ''}`),
     detail: (slug: string) => call<TenantDetail>('GET', slugPath(slug)),
-    create: (input: TenantCreateInput) => call<{ tenant: OperatorTenant; adminKeys: IssuedAdminKey[] }>('POST', '/tenants', input),
-    update: (slug: string, version: number, patch: TenantPatchInput) => call<OperatorTenant>('PATCH', slugPath(slug), patch, { 'if-match': `"${version}"` }),
-    suspend: (slug: string, reason: string) => call<OperatorTenant>('POST', `${slugPath(slug)}/suspend`, { reason }),
-    resume: (slug: string) => call<OperatorTenant>('POST', `${slugPath(slug)}/resume`),
+    create: (input: TenantCreateInput) => call<{ tenant: PlatformTenant; adminKeys: IssuedAdminKey[] }>('POST', '/tenants', input),
+    update: (slug: string, version: number, patch: TenantPatchInput) => call<PlatformTenant>('PATCH', slugPath(slug), patch, { 'if-match': `"${version}"` }),
+    suspend: (slug: string, reason: string) => call<PlatformTenant>('POST', `${slugPath(slug)}/suspend`, { reason }),
+    resume: (slug: string) => call<PlatformTenant>('POST', `${slugPath(slug)}/resume`),
     remove: (slug: string) => call<void>('DELETE', slugPath(slug)),
     issueKey: (slug: string, label: string) => call<IssuedAdminKey>('POST', `${slugPath(slug)}/admin-keys`, { label }),
     revokeKey: (slug: string, keyId: string) => call<void>('DELETE', `${slugPath(slug)}/admin-keys/${encodeURIComponent(keyId)}`),
     history: (slug: string, before?: string) =>
       call<{ entries: HistoryEntry[]; next: string | null }>('GET', `${slugPath(slug)}/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),
-    operators: () => call<{ operators: OperatorRow[] }>('GET', '/operators'),
-    addOperator: (id: string, address: string) => call<OperatorRow>('POST', '/operators', { id, address }),
-    removeOperator: (id: string) => call<void>('DELETE', `/operators/${encodeURIComponent(id)}`),
-    operatorHistory: () => call<{ entries: OperatorHistoryEntry[] }>('GET', '/operators/history'),
+    admins: () => call<{ admins: PlatformAdminRow[] }>('GET', '/admins'),
+    addAdmin: (id: string, address: string) => call<PlatformAdminRow>('POST', '/admins', { id, address }),
+    removeAdmin: (id: string) => call<void>('DELETE', `/admins/${encodeURIComponent(id)}`),
+    platformAdminHistory: () => call<{ entries: PlatformAdminHistoryEntry[] }>('GET', '/admins/history'),
   };
 }
 
-export type OperatorApi = ReturnType<typeof operatorApi>;
+export type PlatformApi = ReturnType<typeof platformApi>;
 
-/** An operator, as GET /v1/operator/operators lists them. */
-export type OperatorRow = { id: string; address: string; addedBy: string; createdAt: string };
-export type OperatorHistoryEntry = { id: string; operatorId: string; address: string; action: 'bootstrap' | 'add' | 'remove'; actor: string; createdAt: string };
+/** A platform admin, as GET /v1/platform/admins lists them. */
+export type PlatformAdminRow = { id: string; address: string; addedBy: string; createdAt: string };
+export type PlatformAdminHistoryEntry = { id: string; adminId: string; address: string; action: 'bootstrap' | 'add' | 'remove'; actor: string; createdAt: string };

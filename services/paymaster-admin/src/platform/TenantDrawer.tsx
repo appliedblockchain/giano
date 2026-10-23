@@ -3,14 +3,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { LuKeyRound, LuPause, LuPencil, LuPlay, LuTrash2 } from 'react-icons/lu';
 import { Copyable } from '../components/ui';
 import { eth } from '../lib/format';
-import type { HistoryEntry, TenantDetail } from '../lib/operator-api';
-import { useOperator } from '../lib/operator-session';
+import type { HistoryEntry, TenantDetail } from '../lib/platform-api';
+import { usePlatform } from '../lib/platform-session';
 import { EditTenantDialog } from './EditTenantDialog';
 import { DeleteDialog, IssueKeyDialog, ResumeDialog, RevokeKeyDialog, SuspendDialog } from './LifecycleDialogs';
-import type { OperatorAreaProps } from './OperatorArea';
+import type { PlatformAreaProps } from './PlatformArea';
 import { actorLabel, LifecycleBadge, OnChainBadge, type OnChainState } from './shared';
 
-type Props = OperatorAreaProps & {
+type Props = PlatformAreaProps & {
   slug: string;
   onClose: () => void;
   /** The registry list should re-read: something about this tenant changed. */
@@ -22,12 +22,12 @@ type Props = OperatorAreaProps & {
 type Open = 'edit' | 'suspend' | 'resume' | 'delete' | 'issue-key' | { revoke: string; label: string } | undefined;
 
 /**
- * One tenant in full (specs/OPERATOR-ADMIN-SPECS.md §11.2): fields, keys, usage, ledger and
+ * One tenant in full (specs/PLATFORM-ADMIN-SPECS.md §11.2): fields, keys, usage, ledger and
  * history, and the actions its state allows — no more.
  */
 export function TenantDrawer(props: Props) {
   const { slug, onClose, onChanged, canAdminister, onChain, client, refreshChain } = props;
-  const { run } = useOperator();
+  const { run } = usePlatform();
   const [detail, setDetail] = useState<TenantDetail>();
   const [loadError, setLoadError] = useState<string>();
   const [history, setHistory] = useState<HistoryEntry[]>([]);

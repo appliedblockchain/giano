@@ -22,7 +22,7 @@ const csv = (value: string) =>
  */
 export type ResolvedChain = {
   chainId: number;
-  /** Human-readable — consent screens and operators never see a bare id (MC-81). */
+  /** Human-readable — consent screens and platform admins never see a bare id (MC-81). */
   name: string;
   rpcUrl: string;
   bundlerUrl: string;
@@ -49,7 +49,7 @@ export type ResolvedChain = {
 /**
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
- * rows, written by Giano's operators at runtime — see
+ * rows, written by Giano's platform admins at runtime — see
  * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
  * jsonb may override per field.
  */
@@ -67,8 +67,8 @@ const envSchema = z
      */
     GIANO_DEPLOYMENT_CLASS: z.enum(['development', 'testnet', 'production']),
     /**
-     * Which environment this is (src/environments.ts): its operator sign-in domain and, for the
-     * init step, its bootstrap operators. The one piece of identity the image cannot know itself.
+     * Which environment this is (src/environments.ts): its platform admin sign-in domain and, for the
+     * init step, its bootstrap platform admins. The one piece of identity the image cannot know itself.
      */
     GIANO_ENVIRONMENT: z.enum(ENVIRONMENT_NAMES),
     HOST: z.string().default('0.0.0.0'),
@@ -82,14 +82,14 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
-    OPERATOR_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
-    /** Absolute operator session lifetime; sessions are never renewed. */
-    OPERATOR_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
+    PLATFORM_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+    /** Absolute platform admin session lifetime; sessions are never renewed. */
+    PLATFORM_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
     /**
-     * Per operator session, and per address for challenge and verify, never per IP. Sign-in also
+     * Per platform admin session, and per address for challenge and verify, never per IP. Sign-in also
      * has a deployment-wide ceiling of ten times this.
      */
-    OPERATOR_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+    PLATFORM_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
     /**
      * Delete refuses to trust a zero balance read from a ledger more than this many blocks behind
      * the chain head (§5.3). Must exceed PAYMASTER_WATCHER_CONFIRMATIONS, which the watcher's
@@ -130,7 +130,7 @@ const envSchema = z
 
     /**
      * Single-chain shorthand (MC-47, MC-88): the complete configuration for the on-premises
-     * profile, normalised internally into a one-entry chain list. An operator serving one
+     * profile, normalised internally into a one-entry chain list. A platform admin serving one
      * chain never needs to know the multi-chain shape exists.
      */
     CHAIN_ID: z.coerce.number().int().positive().optional(),

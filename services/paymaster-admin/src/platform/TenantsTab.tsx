@@ -2,15 +2,15 @@ import { Alert, Box, Button, Checkbox, HStack, Spinner, Stack, Table, Text } fro
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LuPlus, LuRefreshCw } from 'react-icons/lu';
 import { Copyable, SectionCard } from '../components/ui';
-import type { TenantSummary } from '../lib/operator-api';
-import { useOperator } from '../lib/operator-session';
+import type { TenantSummary } from '../lib/platform-api';
+import { usePlatform } from '../lib/platform-session';
 import { CreateTenantDialog } from './CreateTenantDialog';
-import type { OperatorAreaProps } from './OperatorArea';
+import type { PlatformAreaProps } from './PlatformArea';
 import { LifecycleBadge, OnChainBadge, onChainState, rosterByUuid } from './shared';
 import { TenantDrawer } from './TenantDrawer';
 
 /**
- * The tenant registry, joined to the paymaster roster (specs/OPERATOR-ADMIN-SPECS.md §11.2).
+ * The tenant registry, joined to the paymaster roster (specs/PLATFORM-ADMIN-SPECS.md §11.2).
  *
  * Two sources that know about the same tenants and neither of which can see the other: wallet-api
  * holds who a tenant is, the paymaster holds whether it can be sponsored. Matched on the tenant id
@@ -20,9 +20,9 @@ import { TenantDrawer } from './TenantDrawer';
  * Deleted tenants are always fetched, because a tombstone still explains a roster entry, and shown
  * only when asked for.
  */
-export function TenantsTab(props: OperatorAreaProps) {
+export function TenantsTab(props: PlatformAreaProps) {
   const { deployment, overview, myRoles } = props;
-  const { run } = useOperator();
+  const { run } = usePlatform();
   const [live, setLive] = useState<TenantSummary[]>();
   const [deleted, setDeleted] = useState<TenantSummary[]>([]);
   const [includeDeleted, setIncludeDeleted] = useState(false);

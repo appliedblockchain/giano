@@ -3,10 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { paymasterState, paymasterTenants, sessions, sponsorshipReservations, tenantAdminKeys, tenantHistory, tenants, users } from '../src/db/schema.js';
 import {
-  OPERATOR,
-  OPERATOR_ENV,
-  operatorSignIn,
-  SECOND_OPERATOR,
+  ADMIN,
+  PLATFORM_ENV,
+  platformSignIn,
+  SECOND_ADMIN,
   startSponsorshipStack,
   stopTestStack,
   TENANT_A,
@@ -17,37 +17,37 @@ import {
 import { createAuthenticator, makeRegistrationResponse } from './webauthn-fixtures.js';
 
 /**
- * The operator tenant registry (specs/OPERATOR-ADMIN-SPECS.md §5, §7; specs tenant-administration
+ * The platform admin tenant registry (specs/PLATFORM-ADMIN-SPECS.md §5, §7; specs tenant-administration
  * and tenant-lifecycle). Runs against a sponsoring stack, so delete meets a real ledger. The mock
  * chain reports head block 0, so a paymaster_state row synced at block 0 is a fresh ledger.
  */
 let ctx: SponsorshipTestContext;
 let token: string;
 const CHAIN_ID = 31337;
-const ACTOR = `operator:ops-test:${OPERATOR.address.toLowerCase()}`;
+const ACTOR = `platform-admin:admin-test:${ADMIN.address.toLowerCase()}`;
 
 type InjectOptions = { payload?: unknown; headers?: Record<string, string>; as?: string; app?: SponsorshipTestContext['app'] };
 const op = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, { payload, headers = {}, as = token, app = ctx.app }: InjectOptions = {}) =>
   app.inject({ method, url, payload: payload as never, headers: { authorization: `Bearer ${as}`, ...headers } });
 
 let counter = 0;
-/** A fresh operator tenant on its own origin; open registration unless keys are asked for. */
+/** A fresh platform admin tenant on its own origin; open registration unless keys are asked for. */
 const createTenant = async (overrides: Record<string, unknown> = {}) => {
   const slug = (overrides.slug as string) ?? `t${++counter}-${Date.now() % 100000}`;
-  const res = await op('POST', '/v1/operator/tenants', {
+  const res = await op('POST', '/v1/platform/tenants', {
     payload: { slug, walletOrigin: `http://wallet-${slug}.localhost`, rpName: slug, openRegistration: true, ...overrides },
   });
   expect(res.statusCode, res.body).toBe(201);
   return res.json() as { tenant: { id: string; slug: string; version: number; walletOrigin: string; rpId: string }; adminKeys: { id: string; label: string; key: string }[] };
 };
-const suspend = (slug: string) => op('POST', `/v1/operator/tenants/${slug}/suspend`, { payload: { reason: 'test' } });
-const remove = (slug: string, app = ctx.app) => op('DELETE', `/v1/operator/tenants/${slug}`, { app });
+const suspend = (slug: string) => op('POST', `/v1/platform/tenants/${slug}/suspend`, { payload: { reason: 'test' } });
+const remove = (slug: string, app = ctx.app) => op('DELETE', `/v1/platform/tenants/${slug}`, { app });
 const historyOf = async (tenantId: string) =>
   ctx.db.select().from(tenantHistory).where(eq(tenantHistory.tenantId, tenantId)).orderBy(tenantHistory.createdAt);
 
 beforeAll(async () => {
-  ctx = await startSponsorshipStack(OPERATOR_ENV);
-  token = await operatorSignIn(ctx.app);
+  ctx = await startSponsorshipStack(PLATFORM_ENV);
+  token = await platformSignIn(ctx.app);
 }, 120_000);
 
 afterAll(async () => {
@@ -55,16 +55,16 @@ afterAll(async () => {
 });
 
 describe('access', () => {
-  it('requires an operator session and refuses an Origin on tenant routes', async () => {
-    expect((await ctx.app.inject({ method: 'GET', url: '/v1/operator/tenants' })).statusCode).toBe(401);
-    const withOrigin = await op('GET', '/v1/operator/tenants', { headers: { origin: 'https://evil.example' } });
+  it('requires an admin session and refuses an Origin on tenant routes', async () => {
+    expect((await ctx.app.inject({ method: 'GET', url: '/v1/platform/tenants' })).statusCode).toBe(401);
+    const withOrigin = await op('GET', '/v1/platform/tenants', { headers: { origin: 'https://evil.example' } });
     expect(withOrigin.statusCode).toBe(403);
-    expect(withOrigin.json().error).toBe('operator-origin-refused');
+    expect(withOrigin.json().error).toBe('platform-origin-refused');
   });
 });
 
 describe('create', () => {
-  it('creates an active operator-managed tenant that resolves on the next request, with no restart', async () => {
+  it('creates an active admin-managed tenant that resolves on the next request, with no restart', async () => {
     const created = await createTenant({ slug: 'runtime', adminKeys: [{ label: 'ops' }] });
     expect(created.tenant).toMatchObject({ slug: 'runtime', status: 'active', version: 1, rpId: 'wallet-runtime.localhost' });
     expect(created.adminKeys).toEqual([{ id: expect.any(String), label: 'ops', key: expect.stringMatching(/^gak_[A-Za-z0-9_-]{43}$/) }]);
@@ -85,17 +85,17 @@ describe('create', () => {
 
   it('shows keys once: reads list them by id, label and hash prefix, never as plaintext', async () => {
     const created = await createTenant({ adminKeys: [{ label: 'backend' }] });
-    const detail = await op('GET', `/v1/operator/tenants/${created.tenant.slug}`);
+    const detail = await op('GET', `/v1/platform/tenants/${created.tenant.slug}`);
     expect(detail.statusCode).toBe(200);
     expect(detail.headers.etag).toBe('"1"');
     expect(detail.json().adminKeys).toEqual([{ id: created.adminKeys[0].id, label: 'backend', hashPrefix: expect.stringMatching(/^[0-9a-f]{8}$/), createdBy: ACTOR, createdAt: expect.any(String) }]);
     expect(detail.body).not.toContain(created.adminKeys[0].key);
   });
 
-  it('records the create, attributed to the operator and the session', async () => {
+  it('records the create, attributed to the admin and the session', async () => {
     const created = await createTenant({ adminKeys: [{ label: 'x' }] });
     const [entry] = await historyOf(created.tenant.id);
-    expect(entry).toMatchObject({ action: 'create', actor: ACTOR, operatorSessionId: expect.any(String), before: null });
+    expect(entry).toMatchObject({ action: 'create', actor: ACTOR, platformAdminSessionId: expect.any(String), before: null });
     expect(JSON.stringify(entry)).not.toContain(created.adminKeys[0].key);
   });
 
@@ -107,26 +107,26 @@ describe('create', () => {
       [{ ...base, openRegistration: false }, '/adminKeys'],
     ] as const;
     for (const [payload, path] of cases) {
-      const res = await op('POST', '/v1/operator/tenants', { payload });
+      const res = await op('POST', '/v1/platform/tenants', { payload });
       expect(res.statusCode).toBe(400);
       expect(res.json().issues.map((issue: { path: string }) => issue.path)).toContain(path);
     }
-    expect((await op('POST', '/v1/operator/tenants', { payload: { ...base, rpname: 'typo' } })).statusCode).toBe(400);
+    expect((await op('POST', '/v1/platform/tenants', { payload: { ...base, rpname: 'typo' } })).statusCode).toBe(400);
     expect((await ctx.db.select().from(tenants).where(eq(tenants.slug, 'bad'))).length).toBe(0);
   });
 
   it('refuses a duplicate slug, and an origin another tenant claims', async () => {
-    const dupSlug = await op('POST', '/v1/operator/tenants', { payload: { slug: TENANT_A.slug, walletOrigin: 'http://wallet-other.localhost', rpName: 'x', openRegistration: true } });
+    const dupSlug = await op('POST', '/v1/platform/tenants', { payload: { slug: TENANT_A.slug, walletOrigin: 'http://wallet-other.localhost', rpName: 'x', openRegistration: true } });
     expect(dupSlug.statusCode).toBe(409);
     expect(dupSlug.json()).toMatchObject({ error: 'conflict', field: 'slug' });
-    const claimed = await op('POST', '/v1/operator/tenants', { payload: { slug: 'copycat', walletOrigin: TENANT_A.walletOrigin, rpName: 'x', openRegistration: true } });
+    const claimed = await op('POST', '/v1/platform/tenants', { payload: { slug: 'copycat', walletOrigin: TENANT_A.walletOrigin, rpName: 'x', openRegistration: true } });
     expect(claimed.statusCode).toBe(409);
     expect(claimed.json()).toMatchObject({ error: 'origin-claimed', origin: TENANT_A.walletOrigin, slug: TENANT_A.slug });
   });
 
   it('lets exactly one of two concurrent creates claiming one origin win', async () => {
     const payload = (slug: string) => ({ slug, walletOrigin: 'http://wallet-contested.localhost', rpName: slug, openRegistration: true });
-    const results = await Promise.all([op('POST', '/v1/operator/tenants', { payload: payload('one') }), op('POST', '/v1/operator/tenants', { payload: payload('two') })]);
+    const results = await Promise.all([op('POST', '/v1/platform/tenants', { payload: payload('one') }), op('POST', '/v1/platform/tenants', { payload: payload('two') })]);
     expect(results.map((res) => res.statusCode).sort()).toEqual([201, 409]);
     expect(results.find((res) => res.statusCode === 409)!.json().error).toBe('origin-claimed');
   });
@@ -139,19 +139,19 @@ describe('create', () => {
 
 describe('read', () => {
   it('lists newest first, hides deleted tenants unless asked for, and 404s an unknown slug', async () => {
-    const list = (await op('GET', '/v1/operator/tenants')).json().tenants as { slug: string; createdAt: string; status: string; users: number }[];
+    const list = (await op('GET', '/v1/platform/tenants')).json().tenants as { slug: string; createdAt: string; status: string; users: number }[];
     expect(list.map((t) => t.slug)).toEqual(expect.arrayContaining([TENANT_A.slug, TENANT_B.slug, 'runtime']));
     const times = list.map((t) => Date.parse(t.createdAt));
     expect([...times].sort((a, b) => b - a)).toEqual(times);
     expect(list.every((t) => t.status !== 'deleted')).toBe(true);
-    expect((await op('GET', '/v1/operator/tenants/nope')).statusCode).toBe(404);
+    expect((await op('GET', '/v1/platform/tenants/nope')).statusCode).toBe(404);
   });
 });
 
 describe('update', () => {
   it('requires If-Match, refuses a stale version with the current one, and bumps the version', async () => {
     const { tenant } = await createTenant();
-    const url = `/v1/operator/tenants/${tenant.slug}`;
+    const url = `/v1/platform/tenants/${tenant.slug}`;
     expect((await op('PATCH', url, { payload: { rpName: 'New' } })).statusCode).toBe(428);
     const stale = await op('PATCH', url, { payload: { rpName: 'New' }, headers: { 'if-match': '"7"' } });
     expect(stale.statusCode).toBe(412);
@@ -166,14 +166,14 @@ describe('update', () => {
 
   it('gives one of two concurrent edits at the same version a 412', async () => {
     const { tenant } = await createTenant();
-    const edit = (rpName: string) => op('PATCH', `/v1/operator/tenants/${tenant.slug}`, { payload: { rpName }, headers: { 'if-match': '"1"' } });
+    const edit = (rpName: string) => op('PATCH', `/v1/platform/tenants/${tenant.slug}`, { payload: { rpName }, headers: { 'if-match': '"1"' } });
     const results = await Promise.all([edit('A'), edit('B')]);
     expect(results.map((res) => res.statusCode).sort()).toEqual([200, 412]);
   });
 
   it('refuses identity fields with 422 and invariant violations of the merged result with 400', async () => {
     const { tenant } = await createTenant();
-    const url = `/v1/operator/tenants/${tenant.slug}`;
+    const url = `/v1/platform/tenants/${tenant.slug}`;
     const immutable = await op('PATCH', url, { payload: { walletOrigin: 'http://elsewhere.localhost' }, headers: { 'if-match': '"1"' } });
     expect(immutable.statusCode).toBe(422);
     expect(immutable.json()).toMatchObject({ error: 'immutable-field', fields: ['walletOrigin'] });
@@ -188,7 +188,7 @@ describe('update', () => {
     const { tenant } = await createTenant({ slug: 'claimer' });
     // a second tenant whose wallet origin sits under the first tenant's rpId
     await createTenant({ slug: 'holder', walletOrigin: 'http://pay.wallet-claimer.localhost' });
-    const res = await op('PATCH', '/v1/operator/tenants/claimer', {
+    const res = await op('PATCH', '/v1/platform/tenants/claimer', {
       payload: { expectedOrigins: ['http://pay.wallet-claimer.localhost'] },
       headers: { 'if-match': `"${tenant.version}"` },
     });
@@ -200,20 +200,20 @@ describe('update', () => {
 describe('no seed-managed tenants', () => {
   it('fixture tenants are ordinary tenants: every write is allowed', async () => {
     const [beta] = await ctx.db.select().from(tenants).where(eq(tenants.slug, TENANT_B.slug));
-    const res = await op('PATCH', `/v1/operator/tenants/${TENANT_B.slug}`, { payload: { rpName: 'Beta, edited' }, headers: { 'if-match': `"${beta.version}"` } });
+    const res = await op('PATCH', `/v1/platform/tenants/${TENANT_B.slug}`, { payload: { rpName: 'Beta, edited' }, headers: { 'if-match': `"${beta.version}"` } });
     expect(res.statusCode).toBe(200);
   });
 
   it('has no adopt route any more', async () => {
-    expect((await op('POST', `/v1/operator/tenants/${TENANT_A.slug}/adopt`)).statusCode).toBe(404);
+    expect((await op('POST', `/v1/platform/tenants/${TENANT_A.slug}/adopt`)).statusCode).toBe(404);
   });
 });
 
 describe('lifecycle', () => {
   it('suspends with a required reason, refuses impossible transitions, and serialises concurrent ones', async () => {
     const { tenant } = await createTenant();
-    expect((await op('POST', `/v1/operator/tenants/${tenant.slug}/suspend`, { payload: {} })).statusCode).toBe(400);
-    expect((await op('POST', `/v1/operator/tenants/${tenant.slug}/resume`)).json().error).toBe('invalid-transition');
+    expect((await op('POST', `/v1/platform/tenants/${tenant.slug}/suspend`, { payload: {} })).statusCode).toBe(400);
+    expect((await op('POST', `/v1/platform/tenants/${tenant.slug}/resume`)).json().error).toBe('invalid-transition');
     const results = await Promise.all([suspend(tenant.slug), suspend(tenant.slug)]);
     expect(results.map((res) => res.statusCode).sort()).toEqual([200, 409]);
     const entries = await historyOf(tenant.id);
@@ -290,16 +290,16 @@ describe('lifecycle', () => {
       expect(await ctx.db.select().from(tenantAdminKeys).where(eq(tenantAdminKeys.tenantId, tenant.id))).toEqual([]);
       expect((await ctx.app.inject({ method: 'GET', url: '/v1/admin/ror-origins', headers: { authorization: `Bearer ${adminKeys[0].key}` } })).statusCode).toBe(401);
 
-      const listed = (await op('GET', '/v1/operator/tenants')).json().tenants.map((t: { slug: string }) => t.slug);
+      const listed = (await op('GET', '/v1/platform/tenants')).json().tenants.map((t: { slug: string }) => t.slug);
       expect(listed).not.toContain(tenant.slug);
-      const deleted = (await op('GET', '/v1/operator/tenants?status=deleted')).json().tenants.map((t: { slug: string }) => t.slug);
+      const deleted = (await op('GET', '/v1/platform/tenants?status=deleted')).json().tenants.map((t: { slug: string }) => t.slug);
       expect(deleted).toContain(tenant.slug);
 
-      const again = (payload: Record<string, unknown>) => op('POST', '/v1/operator/tenants', { payload: { rpName: 'again', openRegistration: true, ...payload } });
+      const again = (payload: Record<string, unknown>) => op('POST', '/v1/platform/tenants', { payload: { rpName: 'again', openRegistration: true, ...payload } });
       expect((await again({ slug: tenant.slug, walletOrigin: 'http://wallet-fresh.localhost' })).json()).toMatchObject({ error: 'conflict', field: 'slug' });
       expect((await again({ slug: 'fresh-origin-reuse', walletOrigin: tenant.walletOrigin })).json()).toMatchObject({ error: 'origin-claimed', slug: tenant.slug });
       expect((await again({ slug: 'fresh-id-reuse', walletOrigin: 'http://wallet-fresh-id.localhost', id: tenant.id })).json()).toMatchObject({ error: 'conflict', field: 'id' });
-      expect((await op('POST', `/v1/operator/tenants/${tenant.slug}/resume`)).json().error).toBe('invalid-transition');
+      expect((await op('POST', `/v1/platform/tenants/${tenant.slug}/resume`)).json().error).toBe('invalid-transition');
 
       const entries = await historyOf(tenant.id);
       expect(entries.at(-1)).toMatchObject({ action: 'delete', actor: ACTOR, detail: { removed: expect.objectContaining({ sessions: 1 }) } });
@@ -321,7 +321,7 @@ describe('lifecycle', () => {
 describe('admin keys', () => {
   it('issues and revokes keys, never the last key of a closed tenant', async () => {
     const { tenant, adminKeys } = await createTenant({ openRegistration: false, adminKeys: [{ label: 'only' }] });
-    const url = `/v1/operator/tenants/${tenant.slug}/admin-keys`;
+    const url = `/v1/platform/tenants/${tenant.slug}/admin-keys`;
     const last = await op('DELETE', `${url}/${adminKeys[0].id}`);
     expect(last.statusCode).toBe(409);
     expect(last.json().error).toBe('last-admin-key');
@@ -341,7 +341,7 @@ describe('admin keys', () => {
   it('issues no key for a suspended tenant', async () => {
     const { tenant } = await createTenant();
     await suspend(tenant.slug);
-    expect((await op('POST', `/v1/operator/tenants/${tenant.slug}/admin-keys`, { payload: { label: 'x' } })).json().error).toBe('invalid-transition');
+    expect((await op('POST', `/v1/platform/tenants/${tenant.slug}/admin-keys`, { payload: { label: 'x' } })).json().error).toBe('invalid-transition');
   });
 });
 
@@ -350,13 +350,13 @@ describe('history', () => {
     const { tenant } = await createTenant();
     for (let i = 0; i < 30; i++) {
       await suspend(tenant.slug);
-      await op('POST', `/v1/operator/tenants/${tenant.slug}/resume`);
+      await op('POST', `/v1/platform/tenants/${tenant.slug}/resume`);
     }
-    const first = (await op('GET', `/v1/operator/tenants/${tenant.slug}/history`)).json();
+    const first = (await op('GET', `/v1/platform/tenants/${tenant.slug}/history`)).json();
     expect(first.entries).toHaveLength(50);
     expect(first.entries[0].action).toBe('resume');
     expect(first.next).toBe(first.entries[49].id);
-    const second = (await op('GET', `/v1/operator/tenants/${tenant.slug}/history?before=${first.next}`)).json();
+    const second = (await op('GET', `/v1/platform/tenants/${tenant.slug}/history?before=${first.next}`)).json();
     expect(second.entries).toHaveLength(11);
     expect(second.entries.at(-1).action).toBe('create');
     expect(second.next).toBeNull();
@@ -364,15 +364,15 @@ describe('history', () => {
 });
 
 describe('rate limit', () => {
-  it('limits each operator session, leaving another operator unaffected', async () => {
-    const limited = await buildApp({ config: { ...ctx.config, OPERATOR_RATE_LIMIT_PER_MINUTE: 3 }, db: ctx.db });
+  it('limits each admin session, leaving another admin unaffected', async () => {
+    const limited = await buildApp({ config: { ...ctx.config, PLATFORM_RATE_LIMIT_PER_MINUTE: 3 }, db: ctx.db });
     try {
-      const first = await operatorSignIn(limited);
+      const first = await platformSignIn(limited);
       const codes = [];
-      for (let i = 0; i < 4; i++) codes.push((await op('GET', '/v1/operator/tenants', { as: first, app: limited })).statusCode);
+      for (let i = 0; i < 4; i++) codes.push((await op('GET', '/v1/platform/tenants', { as: first, app: limited })).statusCode);
       expect(codes).toEqual([200, 200, 200, 429]);
-      const second = await operatorSignIn(limited, SECOND_OPERATOR);
-      expect((await op('GET', '/v1/operator/tenants', { as: second, app: limited })).statusCode).toBe(200);
+      const second = await platformSignIn(limited, SECOND_ADMIN);
+      expect((await op('GET', '/v1/platform/tenants', { as: second, app: limited })).statusCode).toBe(200);
     } finally {
       await limited.close();
     }

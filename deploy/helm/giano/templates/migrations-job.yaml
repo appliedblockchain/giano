@@ -20,7 +20,7 @@ spec:
       containers:
         - name: migrate
           image: {{ include "giano.image" (dict "root" . "name" .Values.walletApi.image) }}
-          # the init step: migrations, then the environment's bootstrap operators (src/init.ts)
+          # the init step: migrations, then the environment's bootstrap platform admins (src/init.ts)
           command: ["node", "dist/init.js"]
           env:
             - name: GIANO_ENVIRONMENT

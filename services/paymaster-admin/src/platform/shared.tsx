@@ -2,7 +2,7 @@ import type { PaymasterOverview, PaymasterRoleName, TenantView } from '@appliedb
 import { Alert, Badge, Box, Button, HStack, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import { eth } from '../lib/format';
-import type { ApiError, TenantStatus } from '../lib/operator-api';
+import type { ApiError, TenantStatus } from '../lib/platform-api';
 
 /** Where a registry tenant stands on the selected chain's paymaster, matched on tenant id. */
 export type OnChainState = 'enabled' | 'disabled' | 'not-registered' | 'unknown';
@@ -50,14 +50,14 @@ export function LifecycleBadge({ status }: { status: TenantStatus }) {
   );
 }
 
-/** Who wrote a history entry or issued a key: the operator's id, or the non-operator writer as recorded. */
-export const actorLabel = (actor: string) => (actor.startsWith('operator:') ? actor.split(':')[1] : actor);
+/** Who wrote a history entry or issued a key: the platform admin's id, or any other writer as recorded. */
+export const actorLabel = (actor: string) => (actor.startsWith('platform-admin:') ? actor.split(':')[1] : actor);
 
 /** The tenant-admin role every on-chain follow-up needs, as the console already reads it. */
 export const canAdministerOnChain = (myRoles: readonly PaymasterRoleName[]) => myRoles.includes('TENANT_ADMIN_ROLE');
 
 /**
- * A refused operator call, shown with what the API said and the detail it attached: the tenant
+ * A refused platform admin call, shown with what the API said and the detail it attached: the tenant
  * holding a contested origin, or each chain's figures for a delete blocked by funds.
  */
 export function ApiErrorAlert({ error, title }: { error: ApiError; title?: string }) {
@@ -91,7 +91,7 @@ export function ApiErrorAlert({ error, title }: { error: ApiError; title?: strin
   );
 }
 
-/** What each API refusal means for an operator, in their terms. */
+/** What each API refusal means for a platform admin, in their terms. */
 const EXPLAIN: Record<string, string> = {
   'origin-claimed': 'That origin already belongs to another tenant',
   conflict: 'Another tenant already uses that value',
@@ -101,8 +101,8 @@ const EXPLAIN: Record<string, string> = {
   'tenant-has-reservations': 'The tenant has sponsorship reservations still open',
   'ledger-stale': 'The paymaster ledger is too far behind to trust',
   'last-admin-key': 'This is the last admin key of a tenant with closed registration',
-  'last-operator': 'The last operator cannot be removed',
-  'self-removal': 'You cannot remove yourself — ask another operator',
+  'last-admin': 'The last platform admin cannot be removed',
+  'self-removal': 'You cannot remove yourself — ask another platform admin',
   'version-mismatch': 'Someone else changed this tenant',
   validation: 'Some fields need attention',
 };
@@ -124,7 +124,7 @@ export const linesToList = (text: string) =>
     .filter(Boolean);
 
 /**
- * An on-chain follow-up to an operator action that already succeeded: offered, never required, and
+ * An on-chain follow-up to a platform admin action that already succeeded: offered, never required, and
  * never a reason to undo the API action. Disabled, with the reason, without TENANT_ADMIN_ROLE.
  */
 export function OnChainStep({

@@ -32,7 +32,7 @@ describe('loadTenantFixtures', () => {
     const tenant = await row(slug);
     return (await db.select({ keyHash: tenantAdminKeys.keyHash }).from(tenantAdminKeys).where(eq(tenantAdminKeys.tenantId, tenant.id))).map((r) => r.keyHash);
   };
-  const operatorTenant = (slug: string, walletOrigin: string, status: 'active' | 'suspended' | 'deleted' = 'active') =>
+  const platformTenant = (slug: string, walletOrigin: string, status: 'active' | 'suspended' | 'deleted' = 'active') =>
     db
       .insert(tenants)
       .values({ slug, walletOrigin, rpId: new URL(walletOrigin).hostname, rpName: slug, expectedOrigins: [walletOrigin], managedBy: 'operator', status })
@@ -53,7 +53,7 @@ describe('loadTenantFixtures', () => {
     await db.execute(sql`TRUNCATE tenant_history, tenant_admin_keys, tenants CASCADE`);
   });
 
-  it('creates an unknown slug as an operator-managed tenant, with hashed keys and a create entry by fixture', async () => {
+  it('creates an unknown slug as an admin-managed tenant, with hashed keys and a create entry by fixture', async () => {
     expect(await loadTenantFixtures(db, [acme({ id: '11111111-1111-4111-8111-111111111111' })])).toEqual({ created: ['acme'], existing: [] });
     const tenant = await row('acme');
     expect(tenant).toMatchObject({ id: '11111111-1111-4111-8111-111111111111', status: 'active', managedBy: 'operator', version: 1, rpId: 'wallet.acme.app' });
@@ -62,7 +62,7 @@ describe('loadTenantFixtures', () => {
     expect(JSON.stringify(await history('acme'))).not.toContain('acme-admin-key');
   });
 
-  it('leaves an existing slug exactly as it is: a restart never reverts an operator edit', async () => {
+  it('leaves an existing slug exactly as it is: a restart never reverts an admin edit', async () => {
     await loadTenantFixtures(db, [acme()]);
     await db.update(tenants).set({ rpName: 'Edited in the console', status: 'suspended' }).where(eq(tenants.slug, 'acme'));
     expect(await loadTenantFixtures(db, [acme({ adminKeys: ['acme-admin-key-0002'] })])).toEqual({ created: [], existing: ['acme'] });
@@ -72,20 +72,20 @@ describe('loadTenantFixtures', () => {
   });
 
   it('never re-creates a deleted slug', async () => {
-    await operatorTenant('acme', 'https://wallet.acme.app', 'deleted');
+    await platformTenant('acme', 'https://wallet.acme.app', 'deleted');
     expect(await loadTenantFixtures(db, [acme()])).toEqual({ created: [], existing: ['acme'] });
     expect((await row('acme')).status).toBe('deleted');
   });
 
   it('refuses a fixture that claims an origin another tenant holds, naming it and its state', async () => {
-    await operatorTenant('runtime', 'https://pay.wallet.acme.app', 'suspended');
+    await platformTenant('runtime', 'https://pay.wallet.acme.app', 'suspended');
     await expect(loadTenantFixtures(db, [acme({ expectedOrigins: ['https://pay.wallet.acme.app'] })])).rejects.toThrow(
       /origin https:\/\/pay\.wallet\.acme\.app is already claimed by tenant "runtime" \(suspended\)/,
     );
   });
 
   it("keeps a deleted tenant's origins claimed", async () => {
-    await operatorTenant('gone', 'https://pay.wallet.acme.app', 'deleted');
+    await platformTenant('gone', 'https://pay.wallet.acme.app', 'deleted');
     await expect(loadTenantFixtures(db, [acme({ expectedOrigins: ['https://pay.wallet.acme.app'] })])).rejects.toThrow(/claimed by tenant "gone"/);
   });
 

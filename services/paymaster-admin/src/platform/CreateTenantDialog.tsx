@@ -2,26 +2,26 @@ import { Alert, Button, Checkbox, Dialog, Field, Input, Portal, Stack, Text, Tex
 import { useState } from 'react';
 import type { Address } from 'viem';
 import { useWrite } from '../hooks/useWrite';
-import type { IssuedAdminKey, OperatorTenant } from '../lib/operator-api';
-import { ShownOnce, useOperatorAction } from './LifecycleDialogs';
-import type { OperatorAreaProps } from './OperatorArea';
+import type { IssuedAdminKey, PlatformTenant } from '../lib/platform-api';
+import { ShownOnce, usePlatformAction } from './LifecycleDialogs';
+import type { PlatformAreaProps } from './PlatformArea';
 import { ApiErrorAlert, canAdministerOnChain, issuesByField, linesToList, OnChainStep } from './shared';
 
 const EMPTY = { slug: '', walletOrigin: '', rpName: '', expectedOrigins: '', allowedDappOrigins: '', corsOrigins: '', openRegistration: false, keyLabels: 'backend', id: '' };
 
 /**
- * Create a tenant (specs/OPERATOR-ADMIN-SPECS.md §11.3): the form, then the generated admin keys
+ * Create a tenant (specs/PLATFORM-ADMIN-SPECS.md §11.3): the form, then the generated admin keys
  * shown once, then — optionally — registering it on this deployment's paymaster.
  *
  * The form validates nothing itself. wallet-api is the one place the tenant invariants live, and a
  * second copy here would drift from it; its 400 names each violated field, and the form shows the
  * message against that field.
  */
-export function CreateTenantDialog({ open, onClose, onCreated, deployment, client, myRoles, refreshChain }: OperatorAreaProps & { open: boolean; onClose: () => void; onCreated: () => void }) {
-  const { act, busy, error, reset } = useOperatorAction();
+export function CreateTenantDialog({ open, onClose, onCreated, deployment, client, myRoles, refreshChain }: PlatformAreaProps & { open: boolean; onClose: () => void; onCreated: () => void }) {
+  const { act, busy, error, reset } = usePlatformAction();
   const write = useWrite(refreshChain);
   const [form, setForm] = useState(EMPTY);
-  const [created, setCreated] = useState<{ tenant: OperatorTenant; adminKeys: IssuedAdminKey[] }>();
+  const [created, setCreated] = useState<{ tenant: PlatformTenant; adminKeys: IssuedAdminKey[] }>();
   const [withdrawAddress, setWithdrawAddress] = useState('');
   const [registered, setRegistered] = useState(false);
   const issues = issuesByField(error);

@@ -231,8 +231,8 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   # init — what the database needs before wallet-api serves, as the AWS task's init container.
   #
-  # services/wallet-api/src/init.ts: migrations, the local-infra bootstrap operators
-  # (src/environments.ts) into an empty operators table, and — a loopback stack being local — the
+  # services/wallet-api/src/init.ts: migrations, the local-infra bootstrap platform admins
+  # (src/environments.ts) into an empty platform_admins table, and — a loopback stack being local — the
   # two tenants. wallet-api never seeds anything itself. Insert-only, so a restart never reverts
   # an edit made in the console, and `down -v` is what puts the fixtures back.
   # ════════════════════════════════════════════════════════════════════════════════════════
@@ -320,7 +320,7 @@ services:
       # `development` is what makes SPONSORSHIP_SIGNER_KIND=local legal below. `production`
       # refuses it outright, and that guard is the point: the key authorises spending.
       GIANO_DEPLOYMENT_CLASS: development
-      # The operator sign-in domain (paymaster.giano.localhost) and bootstrap operators:
+      # The platform sign-in domain (paymaster.giano.localhost) and bootstrap platform admins:
       # services/wallet-api/src/environments.ts.
       GIANO_ENVIRONMENT: local-infra
       # the init service ran them, as the AWS task's init container does

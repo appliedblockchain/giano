@@ -15,7 +15,7 @@ import {
   useropLog,
   users,
 } from '../db/schema.js';
-import type { OperatorContext } from './operator-sessions.js';
+import type { PlatformAdminContext } from './platform-sessions.js';
 import {
   appendTenantHistory,
   checkOriginClaims,
@@ -31,13 +31,13 @@ import {
 } from './tenants.js';
 
 /**
- * What an operator can do to tenants (specs/OPERATOR-ADMIN-SPECS.md §5, §7). Every write runs in
+ * What a platform admin can do to tenants (specs/PLATFORM-ADMIN-SPECS.md §5, §7). Every write runs in
  * one transaction holding the tenant's row lock, checks the source state, and appends history in
  * the same transaction. Refusals are TenantWriteErrors carrying the status and code the API
  * returns, so the routes stay thin.
  */
 
-export const actorOf = (operator: OperatorContext) => `operator:${operator.id}:${operator.address}`;
+export const actorOf = (admin: PlatformAdminContext) => `platform-admin:${admin.id}:${admin.address}`;
 
 /** 32 random bytes, base64url, `gak_`-prefixed so a leaked key is recognisable (H-i, §7.3). */
 const generateAdminKey = () => `gak_${randomBytes(32).toString('base64url')}`;
@@ -111,8 +111,8 @@ export function createTenantAdminService(db: Db) {
     },
 
     /** Active from birth. Admin keys are generated here and returned once. */
-    async create(input: TenantCreate, operator: OperatorContext) {
-      const actor = actorOf(operator);
+    async create(input: TenantCreate, admin: PlatformAdminContext) {
+      const actor = actorOf(admin);
       return mappingConflicts(() =>
         db.transaction(async (tx) => {
           const clash = await checkOriginClaims(tx, { selfId: null, claims: originClaims(input) });
@@ -136,7 +136,7 @@ export function createTenantAdminService(db: Db) {
             tenantId: tenant.id,
             action: 'create',
             actor,
-            operatorSessionId: operator.sessionId,
+            platformAdminSessionId: admin.sessionId,
             before: null,
             after: tenant,
             detail: keys.length > 0 ? { adminKeys: keys.map(keyDetail) } : null,
@@ -147,7 +147,7 @@ export function createTenantAdminService(db: Db) {
     },
 
     /** Optimistic: `version` is the precondition, and the patch is validated as the merged result. */
-    async update(slug: string, patch: TenantPatch, version: number, operator: OperatorContext) {
+    async update(slug: string, patch: TenantPatch, version: number, admin: PlatformAdminContext) {
       return mappingConflicts(() =>
         db.transaction(async (tx) => {
           const tenant = await lockBySlug(tx, slug);
@@ -168,19 +168,19 @@ export function createTenantAdminService(db: Db) {
             .set({ ...mutable, version: sql`${tenants.version} + 1`, updatedAt: sql`now()` })
             .where(eq(tenants.id, tenant.id))
             .returning();
-          await appendTenantHistory(tx, { tenantId: tenant.id, action: 'update', actor: actorOf(operator), operatorSessionId: operator.sessionId, before: tenant, after: updated });
+          await appendTenantHistory(tx, { tenantId: tenant.id, action: 'update', actor: actorOf(admin), platformAdminSessionId: admin.sessionId, before: tenant, after: updated });
           return updated;
         }),
       );
     },
 
     /** active → suspended: the incident tool. */
-    async suspend(slug: string, reason: string, operator: OperatorContext) {
-      return transition(slug, operator, { from: 'active', to: 'suspended', action: 'suspend', detail: { reason } });
+    async suspend(slug: string, reason: string, admin: PlatformAdminContext) {
+      return transition(slug, admin, { from: 'active', to: 'suspended', action: 'suspend', detail: { reason } });
     },
 
-    async resume(slug: string, operator: OperatorContext) {
-      return transition(slug, operator, { from: 'suspended', to: 'active', action: 'resume' });
+    async resume(slug: string, admin: PlatformAdminContext) {
+      return transition(slug, admin, { from: 'suspended', to: 'active', action: 'resume' });
     },
 
     /**
@@ -188,7 +188,7 @@ export function createTenantAdminService(db: Db) {
      * ID are never reusable; the tenant's sessions, open challenges, pending additions and admin
      * keys go. Refused while money is attached, or while the ledger that says so is stale.
      */
-    async remove(slug: string, operator: OperatorContext, preconditions: DeletePreconditions) {
+    async remove(slug: string, admin: PlatformAdminContext, preconditions: DeletePreconditions) {
       return db.transaction(async (tx) => {
         const tenant = await lockBySlug(tx, slug);
         if (tenant.status === 'deleted') throw invalidTransition(tenant, 'delete');
@@ -247,8 +247,8 @@ export function createTenantAdminService(db: Db) {
         await appendTenantHistory(tx, {
           tenantId: tenant.id,
           action: 'delete',
-          actor: actorOf(operator),
-          operatorSessionId: operator.sessionId,
+          actor: actorOf(admin),
+          platformAdminSessionId: admin.sessionId,
           before: tenant,
           after: deleted,
           detail: {
@@ -264,20 +264,20 @@ export function createTenantAdminService(db: Db) {
       });
     },
 
-    async issueAdminKey(slug: string, label: string, operator: OperatorContext) {
+    async issueAdminKey(slug: string, label: string, admin: PlatformAdminContext) {
       return db.transaction(async (tx) => {
         const tenant = await lockBySlug(tx, slug);
         if (tenant.status !== 'active') throw invalidTransition(tenant, 'issue an admin key for');
         const key = generateAdminKey();
         const [row] = await tx
           .insert(tenantAdminKeys)
-          .values({ tenantId: tenant.id, keyHash: sha256hex(key), label, createdBy: actorOf(operator) })
+          .values({ tenantId: tenant.id, keyHash: sha256hex(key), label, createdBy: actorOf(admin) })
           .returning();
         await appendTenantHistory(tx, {
           tenantId: tenant.id,
           action: 'admin-key-issue',
-          actor: actorOf(operator),
-          operatorSessionId: operator.sessionId,
+          actor: actorOf(admin),
+          platformAdminSessionId: admin.sessionId,
           before: tenant,
           after: tenant,
           detail: keyDetail(row),
@@ -287,7 +287,7 @@ export function createTenantAdminService(db: Db) {
     },
 
     /** Allowed while suspended too: revoking a leaked key must not wait for a resume. */
-    async revokeAdminKey(slug: string, keyId: string, operator: OperatorContext) {
+    async revokeAdminKey(slug: string, keyId: string, admin: PlatformAdminContext) {
       return db.transaction(async (tx) => {
         const tenant = await lockBySlug(tx, slug);
         if (tenant.status === 'deleted') throw invalidTransition(tenant, 'revoke an admin key of');
@@ -301,8 +301,8 @@ export function createTenantAdminService(db: Db) {
         await appendTenantHistory(tx, {
           tenantId: tenant.id,
           action: 'admin-key-revoke',
-          actor: actorOf(operator),
-          operatorSessionId: operator.sessionId,
+          actor: actorOf(admin),
+          platformAdminSessionId: admin.sessionId,
           before: tenant,
           after: tenant,
           detail: keyDetail(key),
@@ -330,7 +330,7 @@ export function createTenantAdminService(db: Db) {
 
   async function transition(
     slug: string,
-    operator: OperatorContext,
+    admin: PlatformAdminContext,
     move: { from: Tenant['status']; to: Tenant['status']; action: 'suspend' | 'resume'; detail?: Record<string, unknown> },
   ) {
     return db.transaction(async (tx) => {
@@ -344,8 +344,8 @@ export function createTenantAdminService(db: Db) {
       await appendTenantHistory(tx, {
         tenantId: tenant.id,
         action: move.action,
-        actor: actorOf(operator),
-        operatorSessionId: operator.sessionId,
+        actor: actorOf(admin),
+        platformAdminSessionId: admin.sessionId,
         before: tenant,
         after: moved,
         detail: move.detail ?? null,

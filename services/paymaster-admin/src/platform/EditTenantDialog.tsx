@@ -1,8 +1,8 @@
 import { Alert, Button, Checkbox, Dialog, Field, Input, Portal, Stack, Text, Textarea } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import type { OperatorTenant } from '../lib/operator-api';
+import type { PlatformTenant } from '../lib/platform-api';
 import { OriginsField } from './CreateTenantDialog';
-import { useOperatorAction } from './LifecycleDialogs';
+import { usePlatformAction } from './LifecycleDialogs';
 import { ApiErrorAlert, issuesByField, linesToList } from './shared';
 
 type Form = {
@@ -15,7 +15,7 @@ type Form = {
   branding: string;
 };
 
-const toForm = (tenant: OperatorTenant): Form => ({
+const toForm = (tenant: PlatformTenant): Form => ({
   rpName: tenant.rpName,
   // the wallet origin is always an expected origin, so it is not offered for removal here
   expectedOrigins: tenant.expectedOrigins.filter((origin) => origin !== tenant.walletOrigin).join('\n'),
@@ -36,13 +36,13 @@ const parseJson = (text: string): { ok: true; value: Record<string, unknown> } |
 };
 
 /**
- * Edit a tenant's mutable fields (specs/OPERATOR-ADMIN-SPECS.md §11.3). Optimistic: the request
+ * Edit a tenant's mutable fields (specs/PLATFORM-ADMIN-SPECS.md §11.3). Optimistic: the request
  * carries the version the form was opened at, and a 412 means someone changed the tenant since.
- * The drawer then reloads underneath while this form keeps what the operator typed, so it can be
+ * The drawer then reloads underneath while this form keeps what the platform admin typed, so it can be
  * re-applied against the new version rather than lost.
  */
-export function EditTenantDialog({ open, onClose, tenant, onSaved, onConflict }: { open: boolean; onClose: () => void; tenant: OperatorTenant; onSaved: () => void; onConflict: () => void }) {
-  const { act, busy, error, reset } = useOperatorAction();
+export function EditTenantDialog({ open, onClose, tenant, onSaved, onConflict }: { open: boolean; onClose: () => void; tenant: PlatformTenant; onSaved: () => void; onConflict: () => void }) {
+  const { act, busy, error, reset } = usePlatformAction();
   const [form, setForm] = useState<Form>(() => toForm(tenant));
   const [baseVersion, setBaseVersion] = useState(tenant.version);
   const [conflicted, setConflicted] = useState(false);

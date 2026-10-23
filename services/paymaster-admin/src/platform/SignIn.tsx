@@ -2,27 +2,27 @@ import { Alert, Box, Button, HStack, Stack, Text } from '@chakra-ui/react';
 import { useState } from 'react';
 import { LuLogIn } from 'react-icons/lu';
 import { Copyable, SectionCard } from '../components/ui';
-import { useOperator, type SignInFailure } from '../lib/operator-session';
-import type { OperatorAreaProps } from './OperatorArea';
+import { usePlatform, type SignInFailure } from '../lib/platform-session';
+import type { PlatformAreaProps } from './PlatformArea';
 
 /**
- * The Operator area without a session (specs/OPERATOR-ADMIN-SPECS.md §11.3): one button that
+ * The Platform area without a session (specs/PLATFORM-ADMIN-SPECS.md §11.3): one button that
  * connects the wallet if needed, then signs the message wallet-api issued. A refusal in the wallet
- * is the operator changing their mind, not an error.
+ * is the platform admin changing their mind, not an error.
  */
 const FAILURE_TEXT: Record<Exclude<SignInFailure, 'rejected' | 'failed'>, { title: string; description: string }> = {
-  'not-operator': {
-    title: 'Not an operator on this deployment',
-    description: "The connected address is not on this deployment's operator list. Connect the wallet holding an operator address, or ask an operator to add yours under Operator → Operators.",
+  'not-admin': {
+    title: 'Not a platform admin on this deployment',
+    description: "The connected address is not on this deployment's platform admin list. Connect the wallet holding a platform admin address, or ask a platform admin to add yours under Platform → Admins.",
   },
   disabled: {
-    title: 'Operator API disabled on this deployment',
-    description: 'wallet-api answers, but this environment has no operator sign-in domain, so there is nothing to sign in to.',
+    title: 'Platform API disabled on this deployment',
+    description: 'wallet-api answers, but this environment has no platform sign-in domain, so there is nothing to sign in to.',
   },
 };
 
-export function SignIn({ deployment, wallet, connect, connecting }: OperatorAreaProps) {
-  const { signIn, endedNotice } = useOperator();
+export function SignIn({ deployment, wallet, connect, connecting }: PlatformAreaProps) {
+  const { signIn, endedNotice } = usePlatform();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ title: string; description: string }>();
 
@@ -34,14 +34,14 @@ export function SignIn({ deployment, wallet, connect, connecting }: OperatorArea
     try {
       const result = await signIn(signer, deployment.chainId);
       if (result.ok || result.reason === 'rejected') return;
-      setFailure(result.reason === 'failed' ? { title: 'Sign-in failed', description: result.message ?? 'The operator API refused the request.' } : FAILURE_TEXT[result.reason]);
+      setFailure(result.reason === 'failed' ? { title: 'Sign-in failed', description: result.message ?? 'The platform API refused the request.' } : FAILURE_TEXT[result.reason]);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <SectionCard title="Operator sign-in" subtitle="Tenant administration is for Giano's operators. Sign in with the wallet that holds your operator address.">
+    <SectionCard title="Platform admin sign-in" subtitle="Tenant administration is for Giano's platform admins. Sign in with the wallet that holds your platform admin address.">
       <Stack gap="4" maxW="2xl">
         {endedNotice && (
           <Alert.Root status="info" size="sm">

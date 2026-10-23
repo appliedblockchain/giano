@@ -29,8 +29,8 @@ module "svc-wallet-api" {
 
   environment = {
     GIANO_DEPLOYMENT_CLASS = "testnet"
-    # The workspace IS the environment: services/wallet-api/src/environments.ts keys its operator
-    # sign-in domain and bootstrap operators on dev / stg / prd.
+    # The workspace IS the environment: services/wallet-api/src/environments.ts keys its platform
+    # sign-in domain and bootstrap platform admins on dev / stg / prd.
     GIANO_ENVIRONMENT = terraform.workspace
     # The init container below runs the migrations; the API never does (§9.6).
     RUN_MIGRATIONS            = "false"
@@ -57,7 +57,7 @@ module "svc-wallet-api" {
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
   # §9.6 — before the API starts, in every task: migrations, then the environment's bootstrap
-  # operators into an empty operators table. Idempotent and safe across concurrent tasks (advisory
+  # platform admins into an empty platform_admins table. Idempotent and safe across concurrent tasks (advisory
   # locks); a non-zero exit keeps the API from starting. Needs the database and nothing else.
   init_container = {
     command     = ["node", "dist/init.js"]
@@ -357,9 +357,9 @@ module "svc-paymaster-admin" {
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
 
-  # The console's Operator area (specs/OPERATOR-ADMIN-SPECS.md §11.1): nginx proxies /api/* to
+  # The console's Platform area (specs/PLATFORM-ADMIN-SPECS.md §11.1): nginx proxies /api/* to
   # wallet-api over Cloud Map, same-origin, with the browser's Origin removed. Without it the
-  # console is the read-only paymaster view and nobody can manage tenants or operators here.
+  # console is the read-only paymaster view and nobody can manage tenants or platform admins here.
   environment = {
     GIANO_WALLET_API_UPSTREAM = "http://wallet-api.${local.name_prefix}.local:8080"
   }

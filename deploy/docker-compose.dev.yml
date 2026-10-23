@@ -51,8 +51,8 @@ services:
       - '4337:4337'
 
   # The init step every deployment runs before wallet-api (services/wallet-api/src/init.ts):
-  # migrations, the local-dev bootstrap operators into an empty operators table, and the dev
-  # tenant. wallet-api never seeds anything itself. Insert-only, so an existing operator or tenant
+  # migrations, the local-dev bootstrap platform admins into an empty platform_admins table, and the dev
+  # tenant. wallet-api never seeds anything itself. Insert-only, so an existing platform admin or tenant
   # is left as it is and `down -v` is what resets them.
   init:
     build: &wallet-api-build

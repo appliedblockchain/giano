@@ -74,30 +74,30 @@ function sendWriteError(reply: FastifyReply, error: unknown) {
 }
 
 /**
- * The operator tier's tenant registry (specs/OPERATOR-ADMIN-SPECS.md §7). Registered with the rest
- * of the operator tier. Every route needs an operator session, refuses an Origin, and is
- * rate limited per session. Tenants are addressed by slug, which is what operators type;
+ * The platform tier's tenant registry (specs/PLATFORM-ADMIN-SPECS.md §7). Registered with the rest
+ * of the platform tier. Every route needs a platform admin session, refuses an Origin, and is
+ * rate limited per session. Tenants are addressed by slug, which is what platform admins type;
  * responses always carry the id.
  */
-export default async function operatorTenantRoutes(instance: FastifyInstance, opts: { db: Db; config: AppConfig; registry: ChainRegistry }) {
+export default async function platformTenantRoutes(instance: FastifyInstance, opts: { db: Db; config: AppConfig; registry: ChainRegistry }) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const admin = createTenantAdminService(opts.db);
-  app.addHook('onRequest', app.requireOperator);
+  app.addHook('onRequest', app.requirePlatformAdmin);
 
   const route = {
     config: {
       rateLimit: {
-        max: opts.config.OPERATOR_RATE_LIMIT_PER_MINUTE,
+        max: opts.config.PLATFORM_RATE_LIMIT_PER_MINUTE,
         timeWindow: '1 minute',
-        // requireOperator ran first (an instance hook), so the session is known here
-        keyGenerator: (request: FastifyRequest) => `operator-session:${request.operator?.sessionId ?? 'none'}`,
+        // requirePlatformAdmin ran first (an instance hook), so the session is known here
+        keyGenerator: (request: FastifyRequest) => `platform-session:${request.platformAdmin?.sessionId ?? 'none'}`,
       },
     },
   };
-  const docs = { tags: ['operator'], security: [{ operatorSession: [] }] };
+  const docs = { tags: ['platform'], security: [{ platformSession: [] }] };
 
   app.get(
-    '/v1/operator/tenants',
+    '/v1/platform/tenants',
     {
       ...route,
       schema: {
@@ -114,7 +114,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.get(
-    '/v1/operator/tenants/:slug',
+    '/v1/platform/tenants/:slug',
     {
       ...route,
       schema: {
@@ -151,12 +151,12 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.post(
-    '/v1/operator/tenants',
+    '/v1/platform/tenants',
     {
       ...route,
       schema: {
         ...docs,
-        summary: 'Create an operator-managed tenant; generated admin keys are returned once',
+        summary: 'Create a tenant; generated admin keys are returned once',
         body: tenantCreateSchema,
         response: {
           201: z.object({ tenant: tenantSchema, adminKeys: z.array(z.object({ id: z.string(), label: z.string(), key: z.string() })) }),
@@ -166,8 +166,8 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
     },
     async (request, reply) => {
       try {
-        const created = await admin.create(request.body, request.operator!);
-        request.log.info({ slug: created.tenant.slug }, 'tenant created by operator');
+        const created = await admin.create(request.body, request.platformAdmin!);
+        request.log.info({ slug: created.tenant.slug }, 'tenant created by platform admin');
         return reply.code(201).header('etag', `"${created.tenant.version}"`).send({ tenant: tenantView(created.tenant), adminKeys: created.adminKeys });
       } catch (error) {
         return sendWriteError(reply, error);
@@ -176,7 +176,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.patch(
-    '/v1/operator/tenants/:slug',
+    '/v1/platform/tenants/:slug',
     {
       ...route,
       schema: {
@@ -198,7 +198,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
       if (version === null) return reply.code(412).send({ error: 'version-mismatch', message: 'If-Match must carry the tenant version, e.g. "3"' });
       const { slug: _slug, id: _id, walletOrigin: _origin, rpId: _rpId, ...patch } = request.body;
       try {
-        const updated = await admin.update(request.params.slug, patch, version, request.operator!);
+        const updated = await admin.update(request.params.slug, patch, version, request.platformAdmin!);
         return reply.header('etag', `"${updated.version}"`).send(tenantView(updated));
       } catch (error) {
         return sendWriteError(reply, error);
@@ -207,7 +207,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.post(
-    '/v1/operator/tenants/:slug/suspend',
+    '/v1/platform/tenants/:slug/suspend',
     {
       ...route,
       schema: {
@@ -220,8 +220,8 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
     },
     async (request, reply) => {
       try {
-        const tenant = await admin.suspend(request.params.slug, request.body.reason, request.operator!);
-        request.log.warn({ slug: tenant.slug, reason: request.body.reason }, 'tenant suspended by operator');
+        const tenant = await admin.suspend(request.params.slug, request.body.reason, request.platformAdmin!);
+        request.log.warn({ slug: tenant.slug, reason: request.body.reason }, 'tenant suspended by platform admin');
         return reply.header('etag', `"${tenant.version}"`).send(tenantView(tenant));
       } catch (error) {
         return sendWriteError(reply, error);
@@ -230,12 +230,12 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.post(
-    '/v1/operator/tenants/:slug/resume',
+    '/v1/platform/tenants/:slug/resume',
     { ...route, schema: { ...docs, summary: 'suspended → active', params: slugParams, response: { 200: tenantSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const tenant = await admin.resume(request.params.slug, request.operator!);
-        request.log.info({ slug: tenant.slug }, 'tenant resumed by operator');
+        const tenant = await admin.resume(request.params.slug, request.platformAdmin!);
+        request.log.info({ slug: tenant.slug }, 'tenant resumed by platform admin');
         return reply.header('etag', `"${tenant.version}"`).send(tenantView(tenant));
       } catch (error) {
         return sendWriteError(reply, error);
@@ -244,7 +244,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.delete(
-    '/v1/operator/tenants/:slug',
+    '/v1/platform/tenants/:slug',
     {
       ...route,
       schema: {
@@ -269,12 +269,12 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
         ),
       );
       try {
-        await admin.remove(request.params.slug, request.operator!, {
+        await admin.remove(request.params.slug, request.platformAdmin!, {
           sponsoringChainIds: sponsoring.map((chain) => chain.chainId),
           heads,
           maxLagBlocks: opts.config.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS,
         });
-        request.log.warn({ slug: request.params.slug }, 'tenant deleted by operator');
+        request.log.warn({ slug: request.params.slug }, 'tenant deleted by platform admin');
         return reply.code(204).send(null);
       } catch (error) {
         return sendWriteError(reply, error);
@@ -283,7 +283,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.post(
-    '/v1/operator/tenants/:slug/admin-keys',
+    '/v1/platform/tenants/:slug/admin-keys',
     {
       ...route,
       schema: {
@@ -296,7 +296,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
     },
     async (request, reply) => {
       try {
-        return reply.code(201).send(await admin.issueAdminKey(request.params.slug, request.body.label, request.operator!));
+        return reply.code(201).send(await admin.issueAdminKey(request.params.slug, request.body.label, request.platformAdmin!));
       } catch (error) {
         return sendWriteError(reply, error);
       }
@@ -304,7 +304,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.delete(
-    '/v1/operator/tenants/:slug/admin-keys/:keyId',
+    '/v1/platform/tenants/:slug/admin-keys/:keyId',
     {
       ...route,
       schema: {
@@ -316,7 +316,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
     },
     async (request, reply) => {
       try {
-        await admin.revokeAdminKey(request.params.slug, request.params.keyId, request.operator!);
+        await admin.revokeAdminKey(request.params.slug, request.params.keyId, request.platformAdmin!);
         return reply.code(204).send(null);
       } catch (error) {
         return sendWriteError(reply, error);
@@ -325,7 +325,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
   );
 
   app.get(
-    '/v1/operator/tenants/:slug/history',
+    '/v1/platform/tenants/:slug/history',
     {
       ...route,
       schema: {
@@ -340,7 +340,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
                 id: z.string(),
                 action: z.string(),
                 actor: z.string(),
-                operatorSessionId: z.string().nullable(),
+                platformAdminSessionId: z.string().nullable(),
                 before: z.record(z.unknown()).nullable(),
                 after: z.record(z.unknown()).nullable(),
                 detail: z.record(z.unknown()).nullable(),
@@ -362,7 +362,7 @@ export default async function operatorTenantRoutes(instance: FastifyInstance, op
             id: entry.id,
             action: entry.action,
             actor: entry.actor,
-            operatorSessionId: entry.operatorSessionId,
+            platformAdminSessionId: entry.platformAdminSessionId,
             before: entry.before as Record<string, unknown> | null,
             after: entry.after as Record<string, unknown> | null,
             detail: entry.detail as Record<string, unknown> | null,

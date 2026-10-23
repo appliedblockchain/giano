@@ -6,8 +6,8 @@
  *   DATABASE_URL=… GIANO_ENVIRONMENT=dev node dist/init.js
  *
  * 1. Applies pending migrations.
- * 2. Writes the environment's bootstrap operators (src/environments.ts) — only into an empty
- *    operators table. Once a database has an operator, the table is the operators' to manage.
+ * 2. Writes the environment's bootstrap platform admins (src/environments.ts) — only into an empty
+ *    platform admins table. Once a database has a platform admin, the table is the platform admins' to manage.
  * 3. On a local stack only, creates the test tenants in TENANT_FIXTURES that do not exist yet
  *    (services/tenant-fixtures.ts). Refused anywhere else, so no live configuration creates a tenant.
  *
@@ -17,7 +17,7 @@
 import { createDb } from './db/index.js';
 import { resolveEnvironment } from './environments.js';
 import { runMigrations } from './migrate.js';
-import { bootstrapOperators } from './services/operators.js';
+import { bootstrapAdmins } from './services/platform-admins.js';
 import { loadTenantFixtures, parseTenantFixtures } from './services/tenant-fixtures.js';
 
 const fail = (message: string): never => {
@@ -35,7 +35,7 @@ try {
 
 const rawFixtures = process.env.TENANT_FIXTURES;
 if (rawFixtures && !environment.localStack) {
-  fail(`TENANT_FIXTURES is set, but "${environment.name}" is not a local stack — only operators create tenants there`);
+  fail(`TENANT_FIXTURES is set, but "${environment.name}" is not a local stack — only platform admins create tenants there`);
 }
 let fixtures: ReturnType<typeof parseTenantFixtures> = [];
 try {
@@ -49,11 +49,11 @@ console.log(applied.length > 0 ? `Applied migrations: ${applied.join(', ')}` : '
 
 const { db, pool } = createDb(databaseUrl);
 try {
-  const seeded = await bootstrapOperators(db, environment.name, environment.bootstrapOperators);
+  const seeded = await bootstrapAdmins(db, environment.name, environment.bootstrapAdmins);
   console.log(
     seeded.length > 0
-      ? `Bootstrapped operators for ${environment.name}: ${seeded.join(', ')}`
-      : `Operators: already present, or none to bootstrap for ${environment.name}`,
+      ? `Bootstrapped platform admins for ${environment.name}: ${seeded.join(', ')}`
+      : `Platform admins: already present, or none to bootstrap for ${environment.name}`,
   );
   if (fixtures.length > 0) {
     const { created, existing } = await loadTenantFixtures(db, fixtures);

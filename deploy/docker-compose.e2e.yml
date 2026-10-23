@@ -119,9 +119,9 @@ services:
       retries: 10
 
   # Everything the database needs before wallet-api serves (services/wallet-api/src/init.ts), the
-  # same init step every deployment runs: migrations, the e2e environment's bootstrap operators
-  # (src/environments.ts) into an empty operators table, and — this being a local stack — the two
-  # test tenants. wallet-api itself never seeds anything. Insert-only: an operator or tenant that
+  # same init step every deployment runs: migrations, the e2e environment's bootstrap platform admins
+  # (src/environments.ts) into an empty platform_admins table, and — this being a local stack — the two
+  # test tenants. wallet-api itself never seeds anything. Insert-only: an platform admin or tenant that
   # already exists is left as it is, so console edits survive a restart and `down -v` is what puts
   # the fixtures back.
   init:
@@ -192,7 +192,7 @@ services:
       # SPONSORSHIP_SIGNER_KIND=local when this says `production`, and that guard is the point: the
       # key authorises spending against customer funds.
       GIANO_DEPLOYMENT_CLASS: development
-      # The operator sign-in domain (paymaster.localhost) and bootstrap operators come from here:
+      # The platform sign-in domain (paymaster.localhost) and bootstrap platform admins come from here:
       # services/wallet-api/src/environments.ts.
       GIANO_ENVIRONMENT: e2e
       # the init service ran them
@@ -266,7 +266,7 @@ services:
       GIANO_BRAND_NAME: Giano E2E
 
   # The operator's view of the same paymaster the wallet is sponsoring through. The Paymaster area is
-  # read straight from the chain — only anvil and the paymaster address. The Operator area is
+  # read straight from the chain — only anvil and the paymaster address. The Platform area is
   # wallet-api's tenant registry, reached through the console's own /api proxy
   # (GIANO_WALLET_API_UPSTREAM), so it waits for wallet-api too. It also waits for the provisioner,
   # so that opening it during an e2e run shows a provisioned deployment rather than an empty roster
@@ -283,8 +283,8 @@ services:
     ports:
       - '8083:8080'
     environment:
-      # The Operator area's same-origin proxy to wallet-api, as wallet-web's. Unset, the console has
-      # no Operator area at all.
+      # The Platform area's same-origin proxy to wallet-api, as wallet-web's. Unset, the console has
+      # no Platform area at all.
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # Both chains, so the header carries a picker. Each rpcUrl is the node itself: the console
       # proxies it through its own origin (/rpc/<chainId>), so the browser never dials anvil

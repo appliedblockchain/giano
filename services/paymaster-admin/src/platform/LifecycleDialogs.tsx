@@ -3,17 +3,17 @@ import { Alert, Button, Dialog, Field, Input, Portal, Stack, Text, Textarea } fr
 import { useState, type ReactNode } from 'react';
 import { Copyable } from '../components/ui';
 import { useWrite } from '../hooks/useWrite';
-import type { ApiError, ApiResult, IssuedAdminKey, OperatorApi, OperatorTenant } from '../lib/operator-api';
-import { useOperator } from '../lib/operator-session';
+import type { ApiError, ApiResult, IssuedAdminKey, PlatformApi, PlatformTenant } from '../lib/platform-api';
+import { usePlatform } from '../lib/platform-session';
 import { ApiErrorAlert, OnChainStep, type OnChainState } from './shared';
 
 /**
- * The lifecycle and key actions of the tenant drawer (specs/OPERATOR-ADMIN-SPECS.md §11.3). Each is
- * one operator API call; where the chain has a matching switch, the dialog offers it as a second,
+ * The lifecycle and key actions of the tenant drawer (specs/PLATFORM-ADMIN-SPECS.md §11.3). Each is
+ * one platform API call; where the chain has a matching switch, the dialog offers it as a second,
  * optional step once the API call has succeeded — never instead of it, and never undoing it.
  */
 
-type Base = { open: boolean; onClose: () => void; onDone: () => void; tenant: OperatorTenant };
+type Base = { open: boolean; onClose: () => void; onDone: () => void; tenant: PlatformTenant };
 type ChainBase = Base & {
   client: GianoPaymasterClient | undefined;
   canAdminister: boolean;
@@ -21,7 +21,7 @@ type ChainBase = Base & {
   refreshChain: () => Promise<void>;
 };
 
-/** A dialog that runs one operator call and shows its refusal in place. */
+/** A dialog that runs one platform admin call and shows its refusal in place. */
 export function ActionDialog({
   open,
   onClose,
@@ -88,14 +88,14 @@ export function ActionDialog({
 }
 
 /**
- * Runs an operator call and keeps its refusal for the dialog. Resolves to the result, or to
+ * Runs a platform admin call and keeps its refusal for the dialog. Resolves to the result, or to
  * undefined when the session ended under it (the area is then back on sign-in).
  */
-export function useOperatorAction() {
-  const { run } = useOperator();
+export function usePlatformAction() {
+  const { run } = usePlatform();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError>();
-  const act = async <T,>(call: (api: OperatorApi) => Promise<ApiResult<T>>): Promise<ApiResult<T> | undefined> => {
+  const act = async <T,>(call: (api: PlatformApi) => Promise<ApiResult<T>>): Promise<ApiResult<T> | undefined> => {
     setBusy(true);
     setError(undefined);
     try {
@@ -110,7 +110,7 @@ export function useOperatorAction() {
 }
 
 export function SuspendDialog({ open, onClose, onDone, tenant, client, canAdminister, onChain, refreshChain }: ChainBase) {
-  const { act, busy, error } = useOperatorAction();
+  const { act, busy, error } = usePlatformAction();
   const write = useWrite(refreshChain);
   const [reason, setReason] = useState('');
   const [suspended, setSuspended] = useState(false);
@@ -168,7 +168,7 @@ export function SuspendDialog({ open, onClose, onDone, tenant, client, canAdmini
 }
 
 export function ResumeDialog({ open, onClose, onDone, tenant, client, canAdminister, onChain, refreshChain }: ChainBase) {
-  const { act, busy, error } = useOperatorAction();
+  const { act, busy, error } = usePlatformAction();
   const write = useWrite(refreshChain);
   const [resumed, setResumed] = useState(false);
 
@@ -214,7 +214,7 @@ export function ResumeDialog({ open, onClose, onDone, tenant, client, canAdminis
 }
 
 export function DeleteDialog({ open, onClose, onDone, tenant }: Base) {
-  const { act, busy, error } = useOperatorAction();
+  const { act, busy, error } = usePlatformAction();
   const [typed, setTyped] = useState('');
 
   const confirm = async () => {
@@ -241,7 +241,7 @@ export function DeleteDialog({ open, onClose, onDone, tenant }: Base) {
   );
 }
 
-function DeleteBody({ tenant, typed, setTyped }: { tenant: OperatorTenant; typed: string; setTyped: (value: string) => void }) {
+function DeleteBody({ tenant, typed, setTyped }: { tenant: PlatformTenant; typed: string; setTyped: (value: string) => void }) {
   return (
     <Stack gap="3">
       <Alert.Root status="warning" size="sm">
@@ -263,7 +263,7 @@ function DeleteBody({ tenant, typed, setTyped }: { tenant: OperatorTenant; typed
 }
 
 export function IssueKeyDialog({ open, onClose, onDone, tenant }: Base) {
-  const { act, busy, error } = useOperatorAction();
+  const { act, busy, error } = usePlatformAction();
   const [label, setLabel] = useState('');
   const [issued, setIssued] = useState<IssuedAdminKey>();
   const confirm = async () => {
@@ -295,7 +295,7 @@ export function IssueKeyDialog({ open, onClose, onDone, tenant }: Base) {
 }
 
 export function RevokeKeyDialog({ open, onClose, onDone, tenant, keyId, keyLabel }: Base & { keyId: string; keyLabel: string }) {
-  const { act, busy, error } = useOperatorAction();
+  const { act, busy, error } = usePlatformAction();
   const confirm = async () => {
     if ((await act((api) => api.revokeKey(tenant.slug, keyId)))?.ok) {
       onDone();
