@@ -8,8 +8,9 @@ import { chooseDeployment, installWallet, openConsole } from './console-wallet';
  * an operator signs in with the console's wallet, sees the tenant registry joined to the devnet
  * paymaster's roster, and takes a tenant through create → suspend → delete without leaving the page.
  *
- * The injected wallet is anvil's account 0, listed as `ops-console` in deploy/docker-compose.e2e.yml
- * and holding every paymaster role; its personal_sign is answered by the node.
+ * The injected wallet is anvil's account 0, bootstrapped as `ops-console` for the e2e environment
+ * (services/wallet-api/src/environments.ts) and holding every paymaster role; its personal_sign is
+ * answered by the node.
  */
 
 test.describe('operator console', () => {
@@ -131,6 +132,36 @@ test.describe('operator console', () => {
     await page.getByRole('dialog', { name: /Revoke admin key/ }).getByRole('button', { name: 'Revoke' }).click();
     await expect(revokeButtons).toHaveCount(1);
     await expect(page.getByTestId('tenant-history')).toContainText('admin-key-revoke');
+  });
+
+  test('operators are added and removed from the console, but never yourself', async ({ page }) => {
+    // a fresh id and address per run: this stack's database may outlive a run
+    const id = `ops-run-${Date.now()}`;
+    const address = `0x${Date.now().toString(16).padStart(40, '0')}`;
+
+    await page.getByRole('tab', { name: /Operators/ }).click();
+    for (const bootstrapped of ['ops-e2e', 'ops-console', 'giovanni']) {
+      await expect(page.getByTestId(`operator-row-${bootstrapped}`)).toBeVisible();
+    }
+    // the signed-in operator has no Remove button on their own row
+    const me = page.getByTestId('operator-row-ops-console');
+    await expect(me).toContainText('you');
+    await expect(me.getByRole('button', { name: /Remove/ })).toHaveCount(0);
+
+    await page.getByRole('button', { name: /Add operator/ }).click();
+    const add = page.getByRole('dialog', { name: 'Add operator' });
+    await add.getByRole('textbox', { name: 'Id' }).fill(id);
+    await add.getByRole('textbox', { name: 'Wallet address' }).fill(address);
+    await add.getByRole('button', { name: 'Add operator' }).click();
+    const row = page.getByTestId(`operator-row-${id}`);
+    await expect(row).toContainText(address);
+    await expect(row).toContainText('ops-console');
+
+    await row.getByRole('button', { name: /Remove/ }).click();
+    await page.getByRole('dialog', { name: `Remove ${id}` }).getByRole('button', { name: 'Remove operator' }).click();
+    await expect(row).toHaveCount(0);
+    await expect(page.getByTestId('operator-history')).toContainText(`remove`);
+    await expect(page.getByTestId('operator-history')).toContainText(id);
   });
 
   test('a reload signs the operator out, and the session was never stored', async ({ page }) => {

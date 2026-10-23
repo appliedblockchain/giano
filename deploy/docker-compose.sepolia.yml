@@ -67,24 +67,25 @@ services:
       timeout: 3s
       retries: 10
 
-  # The demo tenant, created before wallet-api starts. wallet-api never creates a tenant itself
-  # (on a live deployment its operators do, in the paymaster console); this one-shot
-  # (services/wallet-api/src/tenant-fixtures.ts) is insert-only, so an existing tenant is left as
-  # it is and `down -v` is what resets it.
-  tenant-fixtures:
+  # The init step every deployment runs before wallet-api (services/wallet-api/src/init.ts):
+  # migrations, the local-sepolia bootstrap operators into an empty operators table, and the demo
+  # tenant. wallet-api never seeds anything itself. Insert-only, so an existing operator or tenant
+  # is left as it is and `down -v` is what resets them.
+  init:
     build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/tenant-fixtures.js']
+    command: ['node', 'dist/init.js']
     restart: 'no'
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      GIANO_ENVIRONMENT: local-sepolia
       # single demo tenant, interpolated from deploy/.env (validate the rendered JSON
       # with `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml config`)
       #
@@ -108,11 +109,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      tenant-fixtures:
+      init:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
-      RUN_MIGRATIONS: 'true'
+      GIANO_ENVIRONMENT: local-sepolia
+      # the init service ran them
+      RUN_MIGRATIONS: 'false'
       # A testnet: the balances at risk are worthless, so an environment-variable signing key is
       # acceptable here where it would be refused for `production`.
       GIANO_DEPLOYMENT_CLASS: testnet

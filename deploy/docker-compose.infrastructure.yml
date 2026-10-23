@@ -229,27 +229,28 @@ services:
       retries: 10
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # tenant-fixtures — the two tenants, created before wallet-api starts.
+  # init — what the database needs before wallet-api serves, as the AWS task's init container.
   #
-  # wallet-api never creates a tenant itself: on a live deployment its operators do, in the
-  # paymaster console. A loopback stack needs its tenants without that ceremony, so this
-  # one-shot (services/wallet-api/src/tenant-fixtures.ts) creates them. Insert-only — an
-  # existing tenant is left as it is, so a restart never reverts an edit made in the console.
+  # services/wallet-api/src/init.ts: migrations, the local-infra bootstrap operators
+  # (src/environments.ts) into an empty operators table, and — a loopback stack being local — the
+  # two tenants. wallet-api never seeds anything itself. Insert-only, so a restart never reverts
+  # an edit made in the console, and `down -v` is what puts the fixtures back.
   # ════════════════════════════════════════════════════════════════════════════════════════
-  tenant-fixtures:
+  init:
     build: &wallet-api-build
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/tenant-fixtures.js']
+    command: ['node', 'dist/init.js']
     restart: 'no'
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      GIANO_ENVIRONMENT: local-infra
       NODE_ENV: test
       # ⚠ `rpId` is IRREVERSIBLE per tenant: passkeys bind to it, and it must equal the
       # `walletOrigin` host (the fixture schema enforces the second part, and there is no
@@ -303,7 +304,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      tenant-fixtures:
+      init:
         condition: service_completed_successfully
     ports:
       # For `curl` against the admin API. The browser reaches this at api.giano.localhost,
@@ -319,9 +320,11 @@ services:
       # `development` is what makes SPONSORSHIP_SIGNER_KIND=local legal below. `production`
       # refuses it outright, and that guard is the point: the key authorises spending.
       GIANO_DEPLOYMENT_CLASS: development
-      # No init container here, unlike the AWS stack: one process, one lock, migrations on
-      # boot. The advisory lock makes it safe either way.
-      RUN_MIGRATIONS: 'true'
+      # The operator sign-in domain (paymaster.giano.localhost) and bootstrap operators:
+      # services/wallet-api/src/environments.ts.
+      GIANO_ENVIRONMENT: local-infra
+      # the init service ran them, as the AWS task's init container does
+      RUN_MIGRATIONS: 'false'
       # The closed list of chains this backend serves: the document at the top of this file.
       # Each chain submits to <BUNDLER_BASE_URL>/<chainId>.
       GIANO_CHAINS: *giano-chains
