@@ -305,7 +305,7 @@ services:
       # Not configured here. Tenants live in the database and are managed by Giano's platform admins
       # in the paymaster console's Platform area; the service boots fine with none. The
       # environment's existing tenants (`example`, `byoui`) were written by the retired
-      # TENANTS_SEED and are handed to the platform admins on the first boot of this release.
+      # TENANTS_SEED and have since been handed to the platform admins.
       #
       # ⚠ `rpId` is IRREVERSIBLE per tenant (R1), and `id` is what the paymaster keys the
       # tenant's on-chain balance on — both are fixed at create time. Never create a tenant for
