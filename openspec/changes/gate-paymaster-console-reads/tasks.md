@@ -38,4 +38,4 @@
 
 - [x] 6.1 Run `openspec validate gate-paymaster-console-reads --strict` and fix any findings.
 - [ ] 6.2 List `platform_admins` on dev (and stg/prd where they exist) and compare it with the people who use the console. Report the gaps to the user before deploying, and don't add anyone without their say-so.
-- [ ] 6.3 Open the PR on `fix/g10-console-access` with the accepted R1 deviation and the non-goals (G3, G9, ALB OIDC, wallet-web X3) stated in the description.
+- [x] 6.3 Open the PR on `fix/g10-console-access` with the accepted R1 deviation and the non-goals (G3, G9, ALB OIDC, wallet-web X3) stated in the description.
