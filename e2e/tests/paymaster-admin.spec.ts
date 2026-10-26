@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { createPublicClient, formatEther, http, parseEther } from "viem";
 
-import { CHAINS } from "../origins.mjs";
+import { CHAINS, ORIGINS } from "../origins.mjs";
 import {
 	chooseDeployment,
 	installWallet,
 	OPERATOR,
 	openConsole,
+	signIn,
+	signInToPaymaster,
 	walletCalls,
 	walletChain,
 } from "./console-wallet";
@@ -21,9 +23,10 @@ import {
  * `wallet_addEthereumChain` — and the console is then used exactly as an operator would.
  *
  * Its accounts are anvil's own, unlocked on the devnet, so `eth_sendTransaction` is signed by the
- * node and a write in the console lands on chain for real. JSON-RPC is forwarded through the
- * console's own `/rpc/<chainId>` proxy because that is same-origin: anvil sends no CORS headers,
- * which is the whole reason the proxy exists.
+ * node and a write in the console lands on chain for real.
+ *
+ * This stack's console has the platform API, so it reads nothing until a platform admin signs in:
+ * every test that needs the paymaster's state signs in as `admin-console` (anvil account 0) first.
  */
 
 test("connect moves the wallet to the console's chain on its own, with nothing to click", async ({
@@ -50,6 +53,7 @@ test("the wallet card names the account, the network and what that account may d
 	await openConsole(page);
 	await chooseDeployment(page, CHAINS.a.chainId);
 	await page.getByRole("button", { name: /^Connect wallet$/ }).click();
+	await signInToPaymaster(page);
 
 	await page.getByRole("button", { name: /^Connected/ }).click();
 
@@ -118,6 +122,7 @@ test("a write is signed by the connected wallet and lands on the chain", async (
 	await chooseDeployment(page, CHAINS.a.chainId);
 	await page.getByRole("button", { name: /^Connect wallet$/ }).click();
 	await expect(page.getByRole("button", { name: /^Connected/ })).toBeVisible();
+	await signInToPaymaster(page);
 
 	const chain = createPublicClient({ transport: http(CHAINS.a.rpc) });
 	const paymaster = (await page.evaluate(
@@ -173,4 +178,155 @@ test("a write is signed by the connected wallet and lands on the chain", async (
 			await expect.poll(feeOnChain, { timeout: 60_000 }).toBe(before);
 		}
 	}
+});
+
+/**
+ * Who may read (openspec platform-console-access, platform-chain-reads, spa-container-runtime): the
+ * hosted console reads the chain only through wallet-api's platform relay, with a platform admin
+ * session, and its own nginx no longer proxies the keyed RPC URL to anyone who asks.
+ */
+test.describe("access", () => {
+	const PLATFORM_RPC = /\/api\/v1\/platform\/rpc\/(\d+)$/;
+
+	test("an anonymous visit shows only the sign-in view and reads nothing from the chain", async ({
+		page,
+	}) => {
+		const reads: string[] = [];
+		page.on("request", (request) => {
+			if (/\/rpc\//.test(request.url())) reads.push(request.url());
+		});
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+
+		await expect(page.getByRole("tab", { name: /Overview/ })).toHaveCount(0);
+		await expect(page.getByText("Reading the paymaster…")).toHaveCount(0);
+		expect(reads).toEqual([]);
+	});
+
+	test("every chain read after sign-in goes to the platform relay with the session", async ({
+		page,
+	}) => {
+		const reads: { url: string; authorization: string | undefined }[] = [];
+		let pending = 0;
+		const isRead = (url: string) => /\/rpc\//.test(url);
+		page.on("request", (request) => {
+			if (!isRead(request.url())) return;
+			pending++;
+			reads.push({
+				url: request.url(),
+				authorization: request.headers().authorization,
+			});
+		});
+		for (const done of ["requestfinished", "requestfailed"] as const)
+			page.on(done, (request) => {
+				if (isRead(request.url())) pending--;
+			});
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signInToPaymaster(page);
+
+		// One refresh, counted on its own: what a session spends per poll (PLATFORM_RPC_RATE_LIMIT_PER_MINUTE).
+		const before = reads.length;
+		await page.getByRole("button", { name: "Refresh" }).click();
+		// Settled: nothing in flight, and nothing new for a moment.
+		await expect
+			.poll(
+				async () => {
+					const seen = reads.length;
+					await page.waitForTimeout(750);
+					return pending === 0 && reads.length === seen && seen > before;
+				},
+				{ timeout: 15_000 },
+			)
+			.toBe(true);
+		test.info().annotations.push({
+			type: "reads per refresh",
+			description: String(reads.length - before),
+		});
+
+		expect(reads.length).toBeGreaterThan(0);
+		for (const read of reads) {
+			expect(read.url).toMatch(PLATFORM_RPC);
+			expect(read.url).toContain(`/${CHAINS.a.chainId}`);
+			expect(read.authorization).toMatch(/^Bearer gps_/);
+		}
+	});
+
+	test("one session serves both areas, and signing out ends both", async ({
+		page,
+	}) => {
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signInToPaymaster(page);
+
+		await page.getByRole("button", { name: "Platform", exact: true }).click();
+		await expect(page.getByRole("tab", { name: /Tenants/ })).toBeVisible();
+		await page.getByRole("button", { name: "Paymaster", exact: true }).click();
+		await expect(page.getByRole("tab", { name: /Overview/ })).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: /Sign in with wallet/ }),
+		).toHaveCount(0);
+
+		await page.getByRole("button", { name: /Sign out/ }).click();
+		await expect(
+			page.getByRole("button", { name: /Sign in with wallet/ }),
+		).toBeVisible();
+		await expect(page.getByRole("tab", { name: /Overview/ })).toHaveCount(0);
+		// signing in again from the Platform area lands there
+		await page.getByRole("button", { name: "Platform", exact: true }).click();
+		await signIn(page);
+		await expect(page.getByRole("tab", { name: /Tenants/ })).toBeVisible();
+	});
+
+	test("the platform relay refuses a caller with no session, and the console proxies no RPC", async ({
+		request,
+	}) => {
+		const body = {
+			jsonrpc: "2.0",
+			id: 1,
+			method: "eth_blockNumber",
+			params: [],
+		};
+		const relay = await request.post(
+			`${ORIGINS.paymasterAdmin}/api/v1/platform/rpc/${CHAINS.a.chainId}`,
+			{ data: body },
+		);
+		expect(relay.status()).toBe(401);
+
+		const legacy = await request.post(
+			`${ORIGINS.paymasterAdmin}/rpc/${CHAINS.a.chainId}`,
+			{ data: body },
+		);
+		expect(legacy.status()).toBe(405);
+
+		const config = await (
+			await request.get(`${ORIGINS.paymasterAdmin}/config.json`)
+		).json();
+		for (const deployment of config.deployments)
+			expect(deployment.rpcUrl).toBe(
+				`/api/v1/platform/rpc/${deployment.chainId}`,
+			);
+	});
+
+	test("security headers are on every response, including config and assets", async ({
+		request,
+	}) => {
+		const index = await (await request.get(ORIGINS.paymasterAdmin)).text();
+		const asset = /\/assets\/[^"]+\.js/.exec(index)?.[0];
+		expect(asset).toBeDefined();
+
+		for (const path of ["/", "/config.json", asset as string, "/some/route"]) {
+			const headers = (
+				await request.get(`${ORIGINS.paymasterAdmin}${path}`)
+			).headers();
+			expect(headers["x-frame-options"], path).toBe("DENY");
+			expect(headers["content-security-policy"], path).toContain(
+				"frame-ancestors 'none'",
+			);
+			expect(headers["x-content-type-options"], path).toBe("nosniff");
+			expect(headers["referrer-policy"], path).toBe("no-referrer");
+		}
+	});
 });
