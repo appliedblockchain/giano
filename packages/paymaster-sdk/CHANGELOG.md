@@ -1,5 +1,18 @@
 # @appliedblockchain/giano-paymaster-sdk
 
+## 3.1.1
+
+### Patch Changes
+
+- @appliedblockchain/giano-contracts@3.1.1
+
+## 3.1.0
+
+### Patch Changes
+
+- Updated dependencies [344a793]
+  - @appliedblockchain/giano-contracts@3.1.0
+
 ## 3.0.0
 
 ### Minor Changes

@@ -4,8 +4,11 @@
 #
 # `provision-sponsorship` installs a tenant's sponsorship rules through the real admin API.
 # Run once at bring-up PER TENANT and whenever the rules change — a tenant with no rules gets
-# no sponsorship, which looks exactly like a broken environment. Blocked on §16.3: the image
-# does not build `dist/provision-sponsorship.js` as an entry point yet.
+# no sponsorship, which looks exactly like a broken environment. The tenant's admin key is
+# passed per run in the overrides, next to TENANT_SLUG: issue one for the run in the paymaster
+# console's Platform area and revoke it afterwards, because ECS keeps overrides in the task's
+# description. Blocked on §16.3: the image does not build `dist/provision-sponsorship.js` as
+# an entry point yet.
 
 data "aws_iam_policy_document" "oneshot_assume" {
   statement {
@@ -59,18 +62,6 @@ data "aws_iam_policy_document" "oneshot_exec" {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.oneshot.arn}:*"]
   }
-
-  statement {
-    sid       = "ReadSecrets"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [module.asm-app.secret_arns["tenants-seed"]]
-  }
-
-  statement {
-    sid       = "DecryptSecrets"
-    actions   = ["kms:Decrypt"]
-    resources = [aws_kms_key.asm-kms-key.arn]
-  }
 }
 
 resource "aws_iam_role_policy" "oneshot-exec" {
@@ -119,12 +110,9 @@ resource "aws_ecs_task_definition" "provision-sponsorship" {
       { name = "WALLET_API_URL", value = "http://wallet-api.${local.name_prefix}.local:8080" },
       { name = "CHAIN_ID", value = var.chain_id },
       { name = "SPONSORSHIP_PAYMASTER_ADDRESS", value = var.paymaster_address },
-      # TENANT_SLUG is overridden per run — one invocation per tenant, §18 step 8
+      # TENANT_SLUG and ADMIN_API_KEY are overridden per run — one invocation per tenant, §18 step 8
       { name = "TENANT_SLUG", value = "" },
-    ]
-
-    secrets = [
-      { name = "TENANTS_SEED", valueFrom = module.asm-app.secret_arns["tenants-seed"] },
+      { name = "ADMIN_API_KEY", value = "" },
     ]
 
     logConfiguration = {

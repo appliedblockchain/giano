@@ -17,6 +17,8 @@ declare module 'fastify' {
       useropLatency: Histogram<'tenant' | 'chain'>;
       /** ALERTABLE: if this ever fires, RP resolution is broken or someone is probing. */
       crossTenantRejections: Counter<'kind' | 'tenant'>;
+      /** Platform admin sign-in and guard failures by cause. The client always sees one generic 401. */
+      platformAuthFailures: Counter<'reason'>;
       /**
        * Wallet-management lifecycle events (WM-50…WM-52). ALERTABLE on
        * action="pending-declined": a fingerprint the user refused to confirm is either a
@@ -45,6 +47,8 @@ declare module 'fastify' {
       paymasterStakeWei: Gauge<'chain'>;
       paymasterWatcherLagBlocks: Gauge<'chain'>;
       paymasterWatcherLagSeconds: Gauge<'chain'>;
+      /** ALERTABLE: summed across replicas, 0 means no replica is watching that chain. */
+      paymasterWatcherActive: Gauge<'chain'>;
       /** ALERTABLE: a drawdown the events do not explain is the signature of a leaked signing key. */
       paymasterReconciliationDivergenceWei: Gauge<'chain'>;
       /** 0/1 per served chain — drives the chain-unavailable alert (MC-54, MC-103). */
@@ -107,6 +111,12 @@ export default fp(
         name: 'giano_cross_tenant_rejections_total',
         help: "Requests rejected for crossing a tenant boundary (kind: credential|challenge|session) — alert on any increase",
         labelNames: ['kind', 'tenant'] as const,
+        registers: [registry],
+      }),
+      platformAuthFailures: new Counter({
+        name: 'giano_platform_auth_failures_total',
+        help: 'Platform admin sign-in and session failures by reason; the response is the same 401 whatever the reason',
+        labelNames: ['reason'] as const,
         registers: [registry],
       }),
       walletManagement: new Counter({
@@ -197,6 +207,12 @@ export default fp(
       paymasterWatcherLagSeconds: new Gauge({
         name: 'giano_paymaster_watcher_lag_seconds',
         help: 'Seconds since the watcher last completed a pass',
+        labelNames: ['chain'] as const,
+        registers: [registry],
+      }),
+      paymasterWatcherActive: new Gauge({
+        name: 'giano_paymaster_watcher_active',
+        help: '1 while this replica holds the chain lock and runs the watcher. Alert when the sum across replicas is 0',
         labelNames: ['chain'] as const,
         registers: [registry],
       }),

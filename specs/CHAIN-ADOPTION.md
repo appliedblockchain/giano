@@ -50,9 +50,10 @@ an address no longer commits to bytecode, code is checked separately (steps 5 an
       EntryPoint or a contract that did not come from a release — do NOT register the chain;
       find the cause (step 2 is the usual culprit).
 
-6.  Fund the bundler's executor account.
-      Each chain needs its own funded submission account (MC-98); the executor fronts gas
-      for every bundle.
+6.  Fund the bundler's executor account on this chain.
+      Each chain needs the submission account funded on it (MC-98); the executor fronts gas
+      for every bundle. One key serves every chain (nonces are per chain), so this is the
+      same address funded once more, not a new key.
 
 7.  Deploy, stake and fund the paymaster; register tenants on this chain.
       The proxy comes with step 4; then provision:paymaster. Sponsorship is per chain: every tenant
@@ -63,7 +64,11 @@ an address no longer commits to bytecode, code is checked separately (steps 5 an
       The same checks the wallet-api runs at boot: endpoint identity, EntryPoint, canonical
       factory + implementation (address and code), P-256, paymaster stake/deposit (MC-100).
 
-9.  Add the descriptor to GIANO_CHAINS; roll the deployment.
+9.  Add the entry to GIANO_CHAINS; roll the deployment.
+      The backend chain document (packages/contracts/chains.ts) is shared by wallet-api, the
+      bundler and paymaster-admin, so one entry adds the chain to all three: the running
+      giano-bundler serves it at POST /<chainId>, and wallet-api derives that URL from
+      BUNDLER_BASE_URL — no new bundler service.
       Adding a chain is a DEPLOYMENT action, never an admin API call (MC-91). The
       wallet-api re-verifies every configured chain at boot and refuses to start on any
       structural failure (MC-20, MC-49); a merely unreachable chain starts 'unavailable'
@@ -93,9 +98,10 @@ implementation is not canonical code, and without CreateX nothing can be deploye
 
 Serving a chain costs, per chain and forever (MC-75, MC-98):
 
-- a funded bundler executor account, monitored;
+- the bundler executor account funded on that chain, monitored
+  (`giano_bundler_executor_balance_wei`, labelled by chain);
 - a staked, funded paymaster deposit, monitored (low-balance alerting);
-- an RPC endpoint and a bundler endpoint, monitored (`giano_chain_available`,
-  per-chain watcher lag metrics);
+- an RPC endpoint, and the bundler's path for that chain, monitored (`giano_chain_available`,
+  `giano_bundler_chain_ready`, per-chain watcher lag metrics);
 - for every sponsoring tenant, a funded per-chain balance — tenants fund per chain, and
   balances never pool across chains (D7).

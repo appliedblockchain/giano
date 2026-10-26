@@ -7,7 +7,7 @@ import type { ResolvedChain } from '../config.js';
  * specs/MULTICHAIN_SPECS.md §3.5 and §4.2. Returns a structured result rather than
  * throwing, so the caller decides which failures are fatal (S7):
  *
- * - every failure kind EXCEPT `unreachable` is a structural misconfiguration — the operator
+ * - every failure kind EXCEPT `unreachable` is a structural misconfiguration — the platform admin
  *   pointed at the wrong endpoint, deployed the wrong contracts, or is serving a chain whose
  *   factory diverges — and none of them is fixed by waiting, so they refuse start-up (MC-49,
  *   MC-92);

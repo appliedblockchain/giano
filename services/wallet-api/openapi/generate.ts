@@ -13,7 +13,7 @@ import { createDb } from '../src/db/index.js';
 
 const outPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'openapi.json');
 
-// No TENANTS_SEED: buildApp never reads the tenants table at registration time
+// No tenants: buildApp never reads the tenants table at registration time
 // (tenant resolution is strictly per-request), so no tenant data is needed here.
 // Sponsorship is enabled here even though it is off by default at runtime: the ERC-7677 methods
 // are part of the published contract a tenant integrates against, and a spec that omitted them
@@ -36,6 +36,9 @@ const config = loadConfig({
   // generated against the production signer shape.
   SPONSORSHIP_SIGNER_KIND: 'hsm',
   SPONSORSHIP_SIGNER_KEY_REF: 'arn:aws:kms:eu-west-1:000000000000:key/giano-sponsorship',
+  // The platform admin routes are registered only where the environment has a sign-in domain; the
+  // document describes them, so it is generated as a live environment that has one.
+  GIANO_ENVIRONMENT: 'prd',
 } as NodeJS.ProcessEnv);
 
 const { db, pool } = createDb(config.DATABASE_URL);

@@ -29,6 +29,12 @@ export type WatcherOptions = {
   ledger: LedgerService;
   chainId: number;
   pollMs: number;
+  /**
+   * How often a standby replica retries the singleton lock. A rolling deploy starts the new task
+   * while the old one still holds it, so standby is the normal state for a new replica; the
+   * retry is what lets it take over once the old one drains.
+   */
+  lockRetryMs: number;
   confirmations: number;
   reconcileIntervalMs: number;
   /** Tenant slug for a uuid, for metric labels. Absent for a tenant this deployment does not know. */
@@ -42,6 +48,8 @@ export type WatcherMetrics = {
   setInvariant: (args: { breach: boolean; slackWei: bigint; depositWei: bigint; treasuryWei: bigint }) => void;
   setLag: (blocks: bigint, seconds: number) => void;
   setDivergence: (wei: bigint) => void;
+  /** 1 while this replica holds the chain's lock and runs the watcher. Summed across replicas, 0 means nobody does. */
+  setActive: (active: boolean) => void;
 };
 
 /**
@@ -125,9 +133,12 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
   const { db, client, paymaster, ledger, chainId } = options;
   const log = options.logger ?? { info: () => {}, warn: () => {}, error: () => {} };
 
+  const lockKey = `${WATCHER_LOCK_NAME}.${chainId}`;
   let lockConnection: pg.PoolClient | undefined;
   let pollTimer: NodeJS.Timeout | undefined;
   let reconcileTimer: NodeJS.Timeout | undefined;
+  let retryTimer: NodeJS.Timeout | undefined;
+  let standbyLogged = false;
   let stopping = false;
 
   async function cursor(): Promise<bigint | null> {
@@ -221,9 +232,12 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
     await ledger.settle({ chainId, sender, useropHash: userOpHash });
   }
 
-  return {
+  const watcher: PaymasterWatcher = {
     async pollOnce() {
-      const head = await client.getBlockNumber();
+      // cacheTime: 0 — viem otherwise serves a head up to `pollingInterval` old, and a poll bounded
+      // by a stale head skips blocks already mined: the event lands a whole poll late, or, for a
+      // caller that polls once and reads back (the chain suite), not at all.
+      const head = await client.getBlockNumber({ cacheTime: 0 });
       const { from, to } = pollRange({ head, confirmations: options.confirmations, cursor: await cursor() });
 
       if (to < from) {
@@ -312,7 +326,7 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
      * event history looks like.
      */
     async reconcileOnce() {
-      const [treasury, deposit, blockNumber] = await Promise.all([paymaster.treasury(), paymaster.deposit(), client.getBlockNumber()]);
+      const [treasury, deposit, blockNumber] = await Promise.all([paymaster.treasury(), paymaster.deposit(), client.getBlockNumber({ cacheTime: 0 })]);
 
       // Every tenant this deployment could bill: one that has a ledger row, and one that has
       // configured sponsorship but has not been seen on chain yet.
@@ -420,60 +434,136 @@ export function createPaymasterWatcher(options: WatcherOptions): PaymasterWatche
     },
 
     /**
-     * Acquires the singleton lock and starts polling. If another replica already holds the lock
-     * this returns quietly — that is the intended outcome of a rolling deploy, not an error.
+     * Acquires the singleton lock and starts polling, or goes to standby if another replica holds
+     * it. Standby is the intended outcome of a rolling deploy, not an error: the replica keeps
+     * retrying, and takes over once the holder drains, crashes or loses its connection.
      */
     async start() {
-      lockConnection = await options.pool.connect();
-      const { rows } = await lockConnection.query<{ locked: boolean }>(
-        'SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked',
-        [`${WATCHER_LOCK_NAME}.${chainId}`],
-      );
-      if (!rows[0]?.locked) {
-        lockConnection.release();
-        lockConnection = undefined;
-        log.info({ watcher: 'standby' }, 'another replica is running the paymaster watcher');
-        return;
-      }
-
-      log.info({ watcher: 'active', paymaster: paymaster.address }, 'paymaster watcher started');
-
-      const runPoll = async () => {
-        if (stopping) return;
-        try {
-          await this.pollOnce();
-        } catch (error) {
-          log.warn({ err: error }, 'paymaster watcher poll failed');
-        }
-      };
-      const runReconcile = async () => {
-        if (stopping) return;
-        try {
-          await this.reconcileOnce();
-        } catch (error) {
-          log.warn({ err: error }, 'paymaster reconciliation failed');
-        }
-      };
-
-      await runPoll();
-      await runReconcile();
-      pollTimer = setInterval(runPoll, options.pollMs);
-      reconcileTimer = setInterval(runReconcile, options.reconcileIntervalMs);
-      pollTimer.unref?.();
-      reconcileTimer.unref?.();
+      stopping = false;
+      await attempt();
     },
 
     async stop() {
       stopping = true;
-      if (pollTimer) clearInterval(pollTimer);
-      if (reconcileTimer) clearInterval(reconcileTimer);
-      if (lockConnection) {
-        await lockConnection.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [`${WATCHER_LOCK_NAME}.${chainId}`]);
-        lockConnection.release();
-        lockConnection = undefined;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = undefined;
+      stopTimers();
+      const connection = lockConnection;
+      lockConnection = undefined;
+      if (connection) {
+        try {
+          await connection.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [lockKey]);
+          connection.release();
+        } catch (error) {
+          // The lock dies with the session, so a connection that cannot unlock is destroyed instead.
+          connection.release(error as Error);
+        }
       }
+      options.metrics?.setActive(false);
     },
   };
+
+  function stopTimers(): void {
+    if (pollTimer) clearInterval(pollTimer);
+    if (reconcileTimer) clearInterval(reconcileTimer);
+    pollTimer = undefined;
+    reconcileTimer = undefined;
+  }
+
+  function scheduleRetry(): void {
+    if (stopping) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      void attempt();
+    }, options.lockRetryMs);
+    retryTimer.unref?.();
+  }
+
+  /** One try at the lock. Never throws: a failure is logged and retried like a held lock. */
+  async function attempt(): Promise<void> {
+    if (stopping) return;
+    let connection: pg.PoolClient | undefined;
+    try {
+      connection = await options.pool.connect();
+      const { rows } = await connection.query<{ locked: boolean }>('SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked', [lockKey]);
+      if (rows[0]?.locked && !stopping) {
+        await activate(connection);
+        return;
+      }
+      if (rows[0]?.locked) await connection.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [lockKey]);
+      connection.release();
+      if (!standbyLogged) {
+        standbyLogged = true;
+        options.metrics?.setActive(false);
+        log.info({ watcher: 'standby', retryMs: options.lockRetryMs }, 'another replica is running the paymaster watcher; retrying the lock');
+      }
+    } catch (error) {
+      connection?.release(error as Error);
+      options.metrics?.setActive(false);
+      log.warn({ err: error, watcher: 'standby' }, 'could not take the paymaster watcher lock; retrying');
+    }
+    scheduleRetry();
+  }
+
+  async function activate(connection: pg.PoolClient): Promise<void> {
+    lockConnection = connection;
+    standbyLogged = false;
+    // A checked-out client with no error listener crashes the process when its socket drops.
+    // Postgres frees the lock with the session, so another replica may already hold it: stop
+    // watching and compete for it again.
+    connection.on('error', (error) => demote(connection, error));
+    options.metrics?.setActive(true);
+    log.info({ watcher: 'active', paymaster: paymaster.address }, 'paymaster watcher started');
+
+    // Every pass first proves the lock's session is still alive, so a replica that lost it never
+    // runs a pass alongside the new holder.
+    const holdsLock = async (): Promise<boolean> => {
+      if (stopping || lockConnection !== connection) return false;
+      try {
+        await connection.query('SELECT 1');
+        return true;
+      } catch (error) {
+        demote(connection, error);
+        return false;
+      }
+    };
+    const runPoll = async () => {
+      if (!(await holdsLock())) return;
+      try {
+        await watcher.pollOnce();
+      } catch (error) {
+        log.warn({ err: error }, 'paymaster watcher poll failed');
+      }
+    };
+    const runReconcile = async () => {
+      if (!(await holdsLock())) return;
+      try {
+        await watcher.reconcileOnce();
+      } catch (error) {
+        log.warn({ err: error }, 'paymaster reconciliation failed');
+      }
+    };
+
+    await runPoll();
+    await runReconcile();
+    if (lockConnection !== connection || stopping) return;
+    pollTimer = setInterval(runPoll, options.pollMs);
+    reconcileTimer = setInterval(runReconcile, options.reconcileIntervalMs);
+    pollTimer.unref?.();
+    reconcileTimer.unref?.();
+  }
+
+  function demote(connection: pg.PoolClient, error: unknown): void {
+    if (lockConnection !== connection) return;
+    lockConnection = undefined;
+    stopTimers();
+    connection.release(error instanceof Error ? error : new Error(String(error)));
+    options.metrics?.setActive(false);
+    log.error({ err: error, watcher: 'standby' }, 'lost the paymaster watcher lock connection; retrying the lock');
+    scheduleRetry();
+  }
+
+  return watcher;
 }
 
 export { bytes16ToUuid, uuidToBytes16 };

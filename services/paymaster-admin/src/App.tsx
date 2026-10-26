@@ -1,10 +1,12 @@
-import { Alert, Badge, Box, Button, Container, HStack, Heading, NativeSelect, Popover, Portal, Spinner, Stack, Tabs, Text } from '@chakra-ui/react';
+import { Alert, Badge, Box, Button, ButtonGroup, Container, HStack, Heading, NativeSelect, Popover, Portal, Spinner, Stack, Tabs, Text } from '@chakra-ui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { LuLayoutDashboard, LuRefreshCw, LuSettings, LuShieldCheck, LuUsers, LuWallet, LuHistory } from 'react-icons/lu';
+import { LuLayoutDashboard, LuRefreshCw, LuSettings, LuShieldCheck, LuUsers, LuWallet, LuHistory, LuUserCog } from 'react-icons/lu';
 import { Copyable, notifyError } from './components/ui';
 import { deploymentKey, getAdminConfig, initialDeployment, rememberDeployment, type Deployment } from './config';
 import { usePaymaster } from './hooks/usePaymaster';
 import { ChainNotAddedError, connectOnChain, getAuthorisedAccount, getInjectedProvider, isUserRejection, networkDetails, type ConnectedWallet } from './lib/chain';
+import { PlatformSessionProvider } from './lib/platform-session';
+import { PlatformArea } from './platform/PlatformArea';
 import { HealthPanel } from './panels/HealthPanel';
 import { HistoryPanel } from './panels/HistoryPanel';
 import { OverviewPanel } from './panels/OverviewPanel';
@@ -13,8 +15,14 @@ import { SettingsPanel } from './panels/SettingsPanel';
 import { TenantsPanel } from './panels/TenantsPanel';
 
 export function App() {
-  const { deployments } = getAdminConfig();
+  const { deployments, platformApi } = getAdminConfig();
   const [deployment, setDeployment] = useState(() => initialDeployment(deployments));
+  /**
+   * Paymaster (the chain view, as it always was) or Platform (wallet-api's tenant registry and its
+   * platform admins). Not
+   * remembered: a reload lands on Paymaster, and the Platform area asks for a signature anyway.
+   */
+  const [area, setArea] = useState<'paymaster' | 'platform'>('paymaster');
   const [wallet, setWallet] = useState<ConnectedWallet>();
   const [connecting, setConnecting] = useState(false);
   const [notAdded, setNotAdded] = useState<ChainNotAddedError>();
@@ -72,15 +80,19 @@ export function App() {
     };
   }, []);
 
-  const connect = useCallback(async () => {
+  /** Resolves to the wallet it connected, so a caller can act with it straight away (operator sign-in). */
+  const connect = useCallback(async (): Promise<ConnectedWallet | undefined> => {
     setConnecting(true);
     setNotAdded(undefined);
     connectingRef.current = true;
     try {
-      setWallet(await connectOnChain(deployment));
+      const connected = await connectOnChain(deployment);
+      setWallet(connected);
+      return connected;
     } catch (cause) {
       if (cause instanceof ChainNotAddedError) setNotAdded(cause);
       else if (!isUserRejection(cause)) notifyError('Could not connect a wallet', cause);
+      return undefined;
     } finally {
       connectingRef.current = false;
       setConnecting(false);
@@ -119,6 +131,16 @@ export function App() {
               )}
               {deployments.length === 1 && <Badge variant="outline">chain {deployment.chainId}</Badge>}
               {overview && <Field label="Paymaster" value={overview.address} />}
+              {platformApi && (
+                <ButtonGroup size="sm" variant="outline" attached aria-label="Area">
+                  <Button variant={area === 'paymaster' ? 'solid' : 'outline'} onClick={() => setArea('paymaster')} aria-pressed={area === 'paymaster'}>
+                    <LuLayoutDashboard /> Paymaster
+                  </Button>
+                  <Button variant={area === 'platform' ? 'solid' : 'outline'} onClick={() => setArea('platform')} aria-pressed={area === 'platform'}>
+                    <LuUserCog /> Platform
+                  </Button>
+                </ButtonGroup>
+              )}
             </HStack>
 
             <HStack gap="3">
@@ -174,7 +196,7 @@ export function App() {
           </Alert.Root>
         )}
 
-        {!wallet && !notAdded && (
+        {!wallet && !notAdded && area === 'paymaster' && (
           <Alert.Root status="info" mb="4">
             <Alert.Indicator />
             <Alert.Content>
@@ -197,14 +219,31 @@ export function App() {
           </Alert.Root>
         )}
 
-        {!overview && loading && (
+        {area === 'platform' && (
+          // Keyed on the deployment: switching environments remounts the provider, and the platform admin
+          // session goes with it — the same reason the wallet is dropped on a switch.
+          <PlatformSessionProvider key={deploymentKey(deployment)}>
+            <PlatformArea
+              deployment={deployment}
+              wallet={wallet}
+              connect={connect}
+              connecting={connecting}
+              client={client}
+              overview={overview}
+              myRoles={myRoles}
+              refreshChain={refresh}
+            />
+          </PlatformSessionProvider>
+        )}
+
+        {area === 'paymaster' && !overview && loading && (
           <Stack align="center" py="16" gap="3">
             <Spinner size="lg" color="brand.solid" />
             <Text color="fg.muted">Reading the paymaster…</Text>
           </Stack>
         )}
 
-        {overview && client && (
+        {area === 'paymaster' && overview && client && (
           <Tabs.Root defaultValue="overview" lazyMount unmountOnExit={false}>
             <Tabs.List mb="4">
               <Tabs.Trigger value="overview">
@@ -267,7 +306,7 @@ export function App() {
  *
  * Two bare hex strings sat in this header — the paymaster and the connected account — and nothing
  * said which was which. They are the same shape, they are both copyable, and getting them the wrong
- * way round is exactly the mistake an operator cannot afford to make.
+ * way round is exactly the mistake a operator cannot afford to make.
  */
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -287,10 +326,10 @@ function Field({ label, value }: { label: string; value: string }) {
  * address is 42 characters and is never abbreviated here — see {@link Copyable} — so shown inline
  * it wraps the header onto a second row the moment a wallet connects, and every control in it
  * moves. It goes in a panel instead: the button carries the state worth seeing at a glance, and
- * the values an operator actually reads are one click away and full width.
+ * the values a operator actually reads are one click away and full width.
  *
  * The network is named there even though a connected wallet is always on the deployment's chain —
- * that it agrees is the thing worth showing, and it is the half an operator with several
+ * that it agrees is the thing worth showing, and it is the half a operator with several
  * environments open will otherwise assume.
  */
 function WalletCard({ wallet, deployment, roles }: { wallet: ConnectedWallet; deployment: Deployment; roles: number }) {

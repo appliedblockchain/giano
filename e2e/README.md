@@ -16,9 +16,8 @@ Plus the service endpoints, useful when poking at the stack by hand:
 | --- | --- |
 | http://api.localhost | `wallet-api` — public + admin |
 | http://rpc.localhost | anvil devnet JSON-RPC (chain A, 31337) |
-| http://bundler.localhost | alto ERC-4337 bundler (chain A) |
+| http://bundler.localhost | giano-bundler, both chains (`POST /31337`, `POST /31338`) |
 | http://rpc-b.localhost | anvil devnet JSON-RPC (chain B, 31338) |
-| http://bundler-b.localhost | alto ERC-4337 bundler (chain B) |
 | http://paymaster.localhost | paymaster admin console — tenant balances, treasury, roles, health |
 
 ## Two chains, by default
@@ -31,8 +30,8 @@ are provisioned identically for sponsorship at bring-up (`devnet/provision-spons
 explicit PUT per tenant per chain). One wallet-api, one wallet origin, one Postgres, two chains —
 the topology the standalone profile actually uses.
 
-Both bundlers run the production bundler image with `ALTO_SAFE_MODE=true`, including its
-RIP-7212 tracer patch for the P-256 precompile at `0x100`. Run `pnpm test:demo` to exercise
+One giano-bundler serves both chains, reading the same chain document as wallet-api. Run
+`pnpm test:demo` to exercise
 the reference demo's transactions, token calls, signatures, raw user operations, authenticated
 reads and refusal paths on this stack.
 
@@ -40,8 +39,7 @@ To update the baked paymaster implementation while keeping its proxy and funded 
 run `pnpm devnet:upgrade:paymaster` in this package. It loads the committed fixture into a
 fresh pinned Anvil on port 18545, performs the UUPS upgrade while preserving the signer
 allowlist, and saves the upgraded fixture. Restart both Anvil containers and wallet-api
-afterwards so they load the new state, then restart both bundlers so they re-deploy their
-simulation contracts into the reloaded chains.
+afterwards so they load the new state. The bundler needs no restart: it deploys nothing.
 
 The dApp fixture holds two thin-SDK providers over the same wallet origin, one per chain
 (`#send-chain-b` and friends), and reports the chain and the account of every send in its output,
@@ -70,8 +68,11 @@ the baked devnet state — a `down -v` drops it, and bringing the stack back up 
 
 The paymaster console is the operator's side of the same sponsorship the dApps are using: open it
 next to http://app.localhost and a sponsored send shows up as a falling tenant balance and a new
-row under **History**. It reads everything straight from the chain, so it needs no login and works
-read-only with no wallet connected.
+row under **History**. Its Paymaster view reads everything straight from the chain, so it needs no
+login and works read-only with no wallet connected. Its **Platform** area (tenants and platform admins)
+needs a wallet sign-in: the stack's `init` service bootstraps anvil accounts 3 (`admin-e2e`) and 0
+(`admin-console`) as platform admins for the `e2e` environment
+(`services/wallet-api/src/environments.ts`), into an empty `platform_admins` table only.
 
 Every private key, account and fixed address this stack uses is catalogued in
 [`docs/E2E-DEV-KEYS.md`](../docs/E2E-DEV-KEYS.md) — all of them public anvil test values, none of
@@ -82,7 +83,7 @@ None of them carries a port. That is what this document is about.
 ## Why names instead of ports
 
 The demo used to speak in ports — `http://app.localhost:4400` talking to
-`http://wallet.localhost:8081`, with 8080, 8545 and 4337 threaded through the tenant seed, the
+`http://wallet.localhost:8081`, with 8080, 8545 and 4337 threaded through the tenant config, the
 fixtures, the tests, CI and four documents. Every one of those was a place a port could go stale,
 and none of them told you anything: `:8081` is not a fact about the wallet, it is a fact about
 which container happened to publish which port.
@@ -158,17 +159,19 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
   bake into their bundles;
 - [`playwright.config.ts`](./playwright.config.ts), for `baseURL` and the `webServer` entries;
 - the tests, via `tests/helpers.ts`;
-- and, by hand rather than by import, the tenant seed in `deploy/docker-compose.e2e.yml`.
+- and, by hand rather than by import, the tenant fixtures (`TENANT_FIXTURES` on the `init` service)
+  in `deploy/docker-compose.e2e.yml`.
 
 That last one is the seam to watch: compose is YAML and cannot import a module, so the origins in
-`TENANTS_SEED`, `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_RP_ID`
-have to be kept in step with `origins.mjs` by hand.
+`TENANT_FIXTURES`, `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_RP_ID`
+have to be kept in step with `origins.mjs` by hand. Fixtures only ever create a tenant, so a
+changed fixture takes effect after `docker compose … down -v`, not on a restart.
 
 ### Adding or renaming a name
 
 Add a row to `ROUTES` in `origins.mjs` and it is registered on the next `portless:up`. Renaming is
 the same edit — with one caveat: `wallet` and `wallet-byo` are also **WebAuthn RP IDs**, because a
-tenant's RP ID must equal its wallet origin's host. Renaming those two means updating `TENANTS_SEED`
+tenant's RP ID must equal its wallet origin's host. Renaming those two means updating `TENANT_FIXTURES`
 and `GIANO_RP_ID` in the compose file to match, and existing passkeys minted under the old RP ID
 will not be offered for the new one.
 
@@ -212,7 +215,7 @@ CI runs Node 24, because portless requires it.
 | `portless alias` reports a route conflict | another portless project has claimed that name — rename the route in `origins.mjs` |
 | Names resolve but hit the wrong app | a stale route from an earlier layout — `portless:down`, then `portless:up` |
 | Suite reuses a stale fixture | `webServer` has `reuseExistingServer: true`; kill whatever is on 4400/4401/8082 and re-run |
-| dApp rejected as an unknown origin | the tenant seed still allow-lists a ported origin — the origins in `deploy/docker-compose.e2e.yml` must match `origins.mjs` |
+| dApp rejected as an unknown origin | the tenant fixtures still allow-list a ported origin — the origins in `deploy/docker-compose.e2e.yml` must match `origins.mjs`, and a changed fixture needs `down -v` |
 | Passkey prompt never appears in a real browser | not a portless problem: use Chrome or Firefox, which treat `http://*.localhost` as a secure context |
 
 `portless doctor` checks the proxy, the routes, DNS resolution and CA trust in one go, and is the

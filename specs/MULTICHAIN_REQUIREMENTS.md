@@ -852,9 +852,10 @@ unconfigured endpoint is contacted.
 contract deployment, and MUST NOT require changes to the SDK, the wallet interface or the database
 schema.
 
-**MC-98** — Each served chain requires its own transaction-submission infrastructure and its own
-funded submission account. This MUST be documented as a per-chain cost, and per-chain funding MUST be
-monitored.
+**MC-98** — Each served chain requires its own transaction-submission resources — executor lanes and
+nonce tracking — and funding of the submission account on that chain. These resources MAY live in one
+shared submission process, provided they are isolated per chain as MC-50 requires of the wallet-api.
+Per-chain funding MUST be documented as a per-chain cost, and MUST be monitored per chain.
 
 **MC-99** — Contract deployment to a new chain MUST be repeatable, MUST produce the canonical
 addresses, and MUST fail rather than deploy to divergent addresses.
@@ -935,7 +936,7 @@ the real UI, and is the thing shown to people who want to see Giano working. Bot
 submission, for different reasons.
 
 **MC-116** — The end-to-end stack MUST bring up at least two chains with **distinct chain ids**, each
-with its own submission infrastructure, and MUST deploy the canonical contracts to both at the same
+with its own submission resources (MC-98), and MUST deploy the canonical contracts to both at the same
 addresses (MC-19).
 
 **MC-117** — Both chains in the end-to-end stack MUST be provisioned identically with respect to gas
@@ -1123,8 +1124,9 @@ others. It is observable and retryable (MC-36), not atomic.
 serving N chains multiplies a tenant's funding and monitoring work by N (D7).
 
 **Infrastructure cost is linear per chain.** Each chain needs its own transaction-submission
-infrastructure and its own funded submission account. This is the dominant recurring cost of adding a
-chain and it does not amortise.
+resources and the submission account funded on it (MC-98). The resources may share one process; the
+funding, and its monitoring, is the dominant recurring cost of adding a chain and it does not
+amortise.
 
 **A chain with a divergent factory cannot be served.** Address identity is a precondition (MC-19), so
 a chain where the canonical factory cannot be placed is excluded — and that may be an external
@@ -1284,7 +1286,7 @@ Precompile availability is covered where it belongs, in the per-chain verificati
 | **Paymaster** | The on-chain contract that pays transaction fees on a user's behalf. One deployment per chain, separately staked and funded |
 | **Tenant balance** | A tenant's funds held by a chain's paymaster, spendable only by that tenant and only on that chain |
 | **Sponsorship authorisation** | The signature that permits a paymaster to pay for one operation. Bound to one chain and one paymaster instance |
-| **Submission infrastructure** | The service that submits operations to a chain and fronts their gas. One per chain, each with its own funded account |
+| **Submission infrastructure** | The service that submits operations to a chain and fronts their gas. One process may serve several chains, with its resources isolated per chain and its account funded on each (MC-98) |
 | **On-premises deployment** | Giano running inside a client's own infrastructure. Expected to serve exactly one chain |
 | **Standalone deployment** | The multi-tenant deployment Giano operates. Where several served chains are actually wanted |
 | **Deployment profile** | Which of the two shapes a deployment is. A matter of configuration only: both run the same published artefacts |

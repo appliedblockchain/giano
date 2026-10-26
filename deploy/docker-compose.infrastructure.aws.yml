@@ -92,10 +92,11 @@ x-secret-inventory: &secret-inventory
   #   database-password       RDS master password; also composes database-url
   #   database-url            DERIVED by Terraform, not in 1Password (§7.4)
   #   rpc-url                 the RPC endpoint INCLUDING its API key — hence a secret (§13.3)
+  #   chains                  the backend chain document (GIANO_CHAINS) wallet-api and the bundler share
   #   sponsorship-signer-key  32-byte hex; signs paymaster data, holds no funds
-  #   alto-executor-key       32-byte hex; MUST BE FUNDED — pays L1 gas for every bundle
-  #   alto-utility-key        32-byte hex; nonce/gas-price management, needs no funding
-  #   tenants-seed            the TENANTS_SEED JSON, because it carries adminKeys
+  #   alto-executor-key       32-byte hex; MUST BE FUNDED — the bundler executor, pays gas for every handleOps
+  #   tenants-seed            UNUSED since TENANTS_SEED was retired; safe to delete once every
+  #                           environment has booted the retiring release
   #   metrics-bearer-token    random, min 16 chars; gates GET /metrics
   #   datadog-api-key         MIRRORED from the shared DevOps vault, not Giano's own (§7.4)
   # Placeholders are `PLACEHOLDER-DO-NOT-USE`, never an empty string: a service handed an
@@ -109,7 +110,7 @@ x-chain-prerequisites: &chain-prerequisites
   #      sponsorshipPaymaster, so PAYMASTER_ADDRESS has no default and no registry fallback.
   #      `pnpm --filter @appliedblockchain/giano-contracts deploy:cli core …`  (§13.1)
   #   2. Two accounts must be FUNDED, and will need topping up (§13.2):
-  #        the Alto executor      drains on every sponsored transaction
+  #        the bundler executor   fronts gas for every transaction
   #        the paymaster deposit  the EntryPoint deposit + stake sponsorship spends from
   #      Nothing currently alarms on either. It is the most likely cause of an environment
   #      that "stopped working" for no visible reason — R2, and §16.6 is the fix.
@@ -124,7 +125,7 @@ x-chain-prerequisites: &chain-prerequisites
 networks:
   # Every task. Stands in for `giano-dev-tasks-sg`.
   tasks:
-  # `giano-dev-db-sg` accepts 5432 from the tasks SG. Only wallet-api and the migrate job
+  # `giano-dev-db-sg` accepts 5432 from the tasks SG. Only wallet-api and its init container
   # are on it — wallet-api is the only service with database access at all.
   data:
   # `giano-dev-bundler-sg` accepts 4337 from the tasks SG. Only wallet-api is on it: both
@@ -170,11 +171,15 @@ services:
       retries: 10
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # migrate  →  the `migrate` INIT CONTAINER inside the wallet-api task definition  (§9.6)
+  # init  →  the `init` INIT CONTAINER inside the wallet-api task definition  (§9.6)
   #
   # Not a service in AWS and not a deploy-time job: it is a second container in wallet-api's
   # own task definition, running the SAME image with a different command, `essential = false`,
-  # and the application container carries `dependsOn: [{ migrate, condition: SUCCESS }]`.
+  # and the application container carries `dependsOn: [{ init, condition: SUCCESS }]`.
+  #
+  # It runs services/wallet-api/src/init.ts: migrations, then the environment's bootstrap
+  # platform admins (src/environments.ts) — written only into an EMPTY platform_admins table, so after the
+  # first boot the platform admins manage that list in the console and a redeploy never touches it.
   #
   # `SUCCESS` is the whole mechanism. `COMPLETE` would accept any exit code and start the API
   # against a half-applied schema. The guarantee bought is one ECS enforces rather than one a
@@ -185,10 +190,10 @@ services:
   # Consequences, all of them real (R21, R22): it runs on EVERY task start, not once per
   # deploy; application start-up is now coupled to database reachability permanently; and a
   # failed migration presents as a failed DEPLOYMENT — the circuit breaker rolls back and
-  # destroys the task holding the evidence, so the migrate container's log line in Datadog is
+  # destroys the task holding the evidence, so the init container's log line in Datadog is
   # the only durable record of why.
   # ════════════════════════════════════════════════════════════════════════════════════════
-  migrate:
+  init:
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
     build:
       context: ..
@@ -197,7 +202,7 @@ services:
     # concurrency-safe: it takes a Postgres advisory lock, so replicas serialise rather
     # than race — which is why health_check_grace_period_seconds must outlast the slowest
     # migration (120s in dev, R22).
-    command: ['node', 'dist/migrate.js']
+    command: ['node', 'dist/init.js']
     restart: 'no'
     networks: [data]
     depends_on:
@@ -209,6 +214,8 @@ services:
       # password is `urlencode`d there: a `#`, `/` or `@` in it silently truncates the DSN
       # and the failure looks like a wrong hostname.
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      # [literal] the Terraform workspace: dev | stg | prd. Picks the bootstrap platform admins.
+      GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   # ════════════════════════════════════════════════════════════════════════════════════════
@@ -219,13 +226,10 @@ services:
   # and the userop relay, and from `Host` on /.well-known/webauthn — never per container.
   # That is what lets one wallet-web task serve N relying parties (§3.3).
   #
-  # SINGLE-CHAIN SHORTHAND, not GIANO_CHAINS. The two shapes are mutually exclusive and the
-  # config loader refuses both together (`services/wallet-api/src/config.ts` superRefine):
-  #   shorthand  CHAIN_ID + RPC_URL + BUNDLER_URL, all three required together
-  #   multichain GIANO_CHAINS, a JSON array of {chainId,name,rpcUrl,bundlerUrl,…}
-  # Supplying GIANO_CHAINS additionally REJECTS ENTRYPOINT_ADDRESS, FACTORY_ADDRESS,
-  # SPONSORSHIP_PAYMASTER_ADDRESS and USEROP_ALLOWED_* as shorthand-only. One chain is
-  # served here, so shorthand is the correct shape.
+  # GIANO_CHAINS, as in ECS: the backend chain document (packages/contracts/chains.ts), the
+  # SAME value the bundler reads — the `chains` ASM secret serves both tasks. Each chain submits
+  # to <BUNDLER_BASE_URL>/<chainId>. GIANO_CHAINS REJECTS ENTRYPOINT_ADDRESS, FACTORY_ADDRESS,
+  # SPONSORSHIP_PAYMASTER_ADDRESS and USEROP_ALLOWED_* — those live in each chain's entry.
   # ════════════════════════════════════════════════════════════════════════════════════════
   wallet-api:
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
@@ -238,7 +242,7 @@ services:
       postgres:
         condition: service_healthy
       # The init container's `condition = "SUCCESS"`, in compose form.
-      migrate:
+      init:
         condition: service_completed_successfully
     ports:
       # → ALB target group, rule 10, host `api.<apex>`. Also proxied same-origin under each
@@ -253,24 +257,26 @@ services:
       # outright, and the `hsm` alternative is not reachable from the published image (R14).
       GIANO_DEPLOYMENT_CLASS: ${GIANO_DEPLOYMENT_CLASS:-testnet}
 
-      # [ASM] giano-<env>-database-url — see the migrate job above.
+      # [ASM] giano-<env>-database-url — see the init container above.
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
 
       # [literal] false: the init container runs them. Both trying is how two containers in
       # one task fight over the same advisory lock (§9.6).
       RUN_MIGRATIONS: 'false'
 
+      # [literal] the Terraform workspace: dev | stg | prd. services/wallet-api/src/environments.ts
+      # maps it to the platform sign-in domain, paymaster.<apex>; changing that is a release.
+      GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
+
       # ── Chain (§13) ─────────────────────────────────────────────────────────────────────
-      CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
-      # [ASM] giano-<env>-rpc-url. Server-side reads only. This is the URL WITH the API key.
-      RPC_URL: ${RPC_URL:?set RPC_URL}
+      # [ASM] giano-<env>-chains. Each entry's rpcUrl carries its provider key, hence a secret.
+      # entryPoint and walletApi.factory are best left out for registry chains (84532, 11155111
+      # are): they default correctly, and wallet-api verifies the canonical factory and
+      # implementation on chain at boot, refusing to start if they are wrong (§13).
+      GIANO_CHAINS: ${GIANO_CHAINS:?set GIANO_CHAINS}
       # [literal] Cloud Map in AWS: http://bundler.giano-dev.local:4337. The bundler has no
       # public listener and no ALB target; wallet-api is the only thing that talks to it.
-      BUNDLER_URL: http://bundler:4337
-      # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS are DELIBERATELY UNSET: 84532 is in the
-      # contracts registry and both default correctly from it. Setting them by hand is how
-      # they drift — and wallet-api verifies the canonical factory and implementation on
-      # chain at boot, refusing to start if they are wrong (§13).
+      BUNDLER_BASE_URL: http://bundler:4337
 
       # ── Gas sponsorship (§14.2) ─────────────────────────────────────────────────────────
       SPONSORSHIP_ENABLED: 'true'
@@ -281,9 +287,9 @@ services:
       # [ASM] giano-<env>-sponsorship-signer-key. Must match ^0x[0-9a-fA-F]{64}$ when the
       # kind is `local`. Signs paymaster data; holds no funds itself.
       SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY}
-      # [tfvar] var.paymaster_address — see x-chain-prerequisites: NOT in the registry for
-      # 84532, so this must be a real deployed proxy or sponsorship cannot work at all.
-      SPONSORSHIP_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
+      # The paymaster is each chain's sponsorshipPaymaster in GIANO_CHAINS — see
+      # x-chain-prerequisites: NOT in the registry for 84532, so it must name a real deployed
+      # proxy or sponsorship cannot work at all.
       # Left at their defaults, and worth knowing: SPONSORSHIP_VALIDITY_SECONDS=180 (max
       # 1800), SPONSORSHIP_RESERVATION_TTL_SECONDS=300 — and the loader requires the
       # reservation TTL to be STRICTLY GREATER than the validity window.
@@ -296,57 +302,14 @@ services:
       METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:?set METRICS_BEARER_TOKEN}
 
       # ── Tenants (§14.2) ─────────────────────────────────────────────────────────────────
-      # [ASM] giano-<env>-tenants-seed — one secret, because it carries `adminKeys`.
-      # Declarative and upserted BY SLUG at boot, after migrations and before listen.
+      # Not configured here. Tenants live in the database and are managed by Giano's platform admins
+      # in the paymaster console's Platform area; the service boots fine with none. The
+      # environment's existing tenants (`example`, `byoui`) were written by the retired
+      # TENANTS_SEED and have since been handed to the platform admins.
       #
-      # Two tenants, because there are two ways to be one (D17): `example` takes Giano's
-      # stock wallet UI and CNAMEs to it; `byoui` serves a wallet SPA it wrote itself. They
-      # are INDISTINGUISHABLE to wallet-api, which is the point — it has no notion of who
-      # wrote the SPA behind a wallet origin.
-      #
-      # ⚠ `rpId` is IRREVERSIBLE per tenant (R1). Passkeys bind to it, and it must equal the
-      # `walletOrigin` host — `validateTenantSeed` enforces that. Note what is NOT here and
-      # must never be: a row for Giano's own serving hostname `wallet.<apex>`. That host
-      # terminates the shared UI and is never a relying party; a tenant row for it is how a
-      # passkey ends up bound to infrastructure nobody can ever move.
-      #
-      # `openRegistration: true` is defensible in dev and only in dev — anyone who can reach
-      # the environment can create a wallet (R4). It is the first field to turn off if the
-      # hostname circulates; doing so makes `adminKeys` mandatory.
-      #
-      # ⚠ `id` is PINNED and immutable per tenant. The paymaster keys each tenant's on-chain
-      # balance on the 16 bytes of this UUID, on every chain, so every place that registers or
-      # funds a tenant has to use the same value. The pinned values are the ids the dev database
-      # already holds (registered on Base Sepolia under them) — seeding a DIFFERENT id for an
-      # existing slug fails boot ("id is immutable"), by design.
-      #
-      # Validate the rendered JSON before trusting it:
-      #   docker compose --env-file deploy/.env -f deploy/docker-compose.infrastructure.aws.yml config
-      TENANTS_SEED: |
-        [
-          {
-            "slug": "example",
-            "id": "${EXAMPLE_TENANT_ID:?set EXAMPLE_TENANT_ID — the tenant's existing database id}",
-            "walletOrigin": "${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}",
-            "rpId": "${EXAMPLE_WALLET_HOST}",
-            "rpName": "Giano Example",
-            "allowedDappOrigins": ["${URL_SCHEME:-https}://${EXAMPLE_DAPP_HOST:?set EXAMPLE_DAPP_HOST}"],
-            "corsOrigins": ["${URL_SCHEME:-https}://${EXAMPLE_DAPP_HOST}"],
-            "openRegistration": true,
-            "adminKeys": ["${EXAMPLE_ADMIN_KEY:?set EXAMPLE_ADMIN_KEY, min 16 chars}"]
-          },
-          {
-            "slug": "byoui",
-            "id": "${BYOUI_TENANT_ID:?set BYOUI_TENANT_ID — the tenant's existing database id}",
-            "walletOrigin": "${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:?set BYOUI_WALLET_HOST}",
-            "rpId": "${BYOUI_WALLET_HOST}",
-            "rpName": "Giano BYO UI",
-            "allowedDappOrigins": ["${URL_SCHEME:-https}://${BYOUI_DAPP_HOST:?set BYOUI_DAPP_HOST}"],
-            "corsOrigins": ["${URL_SCHEME:-https}://${BYOUI_DAPP_HOST}"],
-            "openRegistration": true,
-            "adminKeys": ["${BYOUI_ADMIN_KEY:?set BYOUI_ADMIN_KEY, min 16 chars}"]
-          }
-        ]
+      # ⚠ `rpId` is IRREVERSIBLE per tenant (R1), and `id` is what the paymaster keys the
+      # tenant's on-chain balance on — both are fixed at create time. Never create a tenant for
+      # Giano's own serving hostname `wallet.<apex>`: it is never a relying party.
     healthcheck:
       # The image ships this probe itself. Two endpoints exist and they are not
       # interchangeable:
@@ -364,7 +327,7 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   # bundler  →  module "svc-bundler"   NO ALB TARGET   0.5 vCPU / 2048 MB   (§14.7)
   #
-  # Self-hosted Alto, pinned to 0.0.18 in the image (D3). Note the absence of `ports:`: this
+  # giano-bundler, Giano's own submission service (services/bundler). Note the absence of `ports:`: this
   # is `alb_enabled = false` — no target group, no listener rule, no hostname. It is
   # reachable only from the tasks security group, and wallet-api relays user operations to it
   # AFTER the policy check. Nothing else in the deployment dials it: the wallet origins speak
@@ -378,31 +341,22 @@ services:
     restart: unless-stopped
     networks: [bundler]
     environment:
-      # [ASM] giano-<env>-rpc-url. Required — the entrypoint exits if unset.
-      ALTO_RPC_URL: ${RPC_URL:?set RPC_URL}
-      # [tfvar] EntryPoint v0.7, canonical at the same address on every chain.
-      ALTO_ENTRYPOINTS: ${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}
-      # [ASM] giano-<env>-alto-executor-key. ⚠ MUST BE FUNDED: this account signs and pays
-      # L1 gas for every bundle, and it drains. Note the PLURAL — the image reads
-      # ALTO_EXECUTOR_PRIVATE_KEYS, while the older compose stacks' .env uses the singular
-      # name because they invoke `npx alto` directly instead of using this image.
-      ALTO_EXECUTOR_PRIVATE_KEYS: ${ALTO_EXECUTOR_PRIVATE_KEYS:?set ALTO_EXECUTOR_PRIVATE_KEYS}
-      # [ASM] giano-<env>-alto-utility-key. Nonce management and gas-price checks; needs no
-      # funding. Omit it entirely and the flag is dropped rather than passed empty.
-      ALTO_UTILITY_PRIVATE_KEY: ${ALTO_UTILITY_PRIVATE_KEY:?set ALTO_UTILITY_PRIVATE_KEY}
-      # [literal] `true` because this is a real chain. Safe mode validates user operations
-      # with `debug_traceCall`, so the RPC MUST be trace-capable (Alchemy, QuickNode, or your
-      # own node) — a plain public RPC works only with safe mode off, which is what the
-      # devnet and sepolia stacks do and this deployment must not.
-      ALTO_SAFE_MODE: 'true'
-      # GIANO_DEV_MODE is DELIBERATELY UNSET. The entrypoint refuses to start if the
-      # well-known Anvil key appears in either key variable unless this is `true`. Leaving it
-      # unset keeps that guard armed, which is the only thing standing between a copy-pasted
-      # devnet key and a real chain.
+      # [ASM] giano-<env>-chains — the same document as wallet-api's. Each RPC needs eth_call with
+      # state overrides (estimation) but no debug_traceCall: there is no ERC-7562 tracer. A
+      # chain's bundler.rpcUrl may name a separate submission endpoint.
+      GIANO_CHAINS: ${GIANO_CHAINS:?set GIANO_CHAINS}
+      # [ASM] giano-<env>-alto-executor-key (the secret kept its Alto-era name). ⚠ MUST BE
+      # FUNDED: this account signs and pays gas for every handleOps transaction and is
+      # reimbursed by the EntryPoint, so it drains only by what reimbursement misses. A
+      # comma-separated list gives one submission lane per key.
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS}
+      # GIANO_DEV_MODE is DELIBERATELY UNSET. The bundler refuses to start if the well-known
+      # Anvil key is an executor key unless this is `true`. Leaving it unset keeps that guard
+      # armed, which is the only thing standing between a copy-pasted devnet key and a real chain.
     healthcheck:
-      # The image's own probe, and note it is a JSON-RPC POST, not a GET on a path — there is
-      # no HTTP health endpoint to point an ALB at even if it had a target group. Exec form
-      # calling node: the hardened runtime has no shell and no curl (ABIP-2).
+      # The image's own probe: a JSON-RPC POST, which answers only once the chain is reachable
+      # and the EntryPoint is deployed (GET /health reports the same, with the executors). Exec
+      # form calling node: the hardened runtime has no shell and no curl (ABIP-2).
       test:
         - 'CMD'
         - 'node'
@@ -721,6 +675,9 @@ services:
       GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
       GIANO_ENVIRONMENT_LABEL: ${GIANO_ENVIRONMENT_LABEL:-dev (Base Sepolia)}
       GIANO_REFRESH_SECONDS: '15'
+      # [literal] the Platform area: /api/* proxied to wallet-api over Cloud Map, same-origin,
+      # with the browser's Origin removed (specs/PLATFORM-ADMIN-SPECS.md §11.1).
+      GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
     healthcheck:
       test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']
       interval: 15s
@@ -777,24 +734,7 @@ services:
       SPONSORSHIP_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
       # Overridden per run — one invocation per tenant. `example` and `byoui` here.
       TENANT_SLUG: ${TENANT_SLUG:-}
-      # [ASM] giano-<env>-tenants-seed — the job needs it for the tenants' adminKeys, which
-      # are what authorise PUT /v1/admin/sponsorship.
-      TENANTS_SEED: |
-        [
-          {
-            "slug": "example",
-            "id": "${EXAMPLE_TENANT_ID}",
-            "walletOrigin": "${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST}",
-            "rpId": "${EXAMPLE_WALLET_HOST}",
-            "rpName": "Giano Example",
-            "adminKeys": ["${EXAMPLE_ADMIN_KEY}"]
-          },
-          {
-            "slug": "byoui",
-            "id": "${BYOUI_TENANT_ID}",
-            "walletOrigin": "${URL_SCHEME:-https}://${BYOUI_WALLET_HOST}",
-            "rpId": "${BYOUI_WALLET_HOST}",
-            "rpName": "Giano BYO UI",
-            "adminKeys": ["${BYOUI_ADMIN_KEY}"]
-          }
-        ]
+      # The tenant's admin key, which is what authorises PUT /v1/admin/sponsorship. Overridden
+      # per run like TENANT_SLUG: issue one for the run in the paymaster console and revoke it
+      # afterwards.
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}

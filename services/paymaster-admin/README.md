@@ -3,10 +3,13 @@
 An operator's view of a Giano sponsorship paymaster: tenant balances, treasury, roles, health and
 settled sponsorships — all read straight from the chain.
 
-There is no backend. The console talks to an RPC endpoint and nothing else, so it needs no login,
-no API key and no database, and it cannot show you anything the chain does not already say. That is
-deliberate: an operational view whose numbers come from a cache can be wrong in the one situation
-where being wrong matters most.
+The Paymaster area has no backend. It talks to an RPC endpoint and nothing else, so it needs no
+login, no API key and no database, and it cannot show you anything the chain does not already say.
+That is deliberate: an operational view whose numbers come from a cache can be wrong in the one
+situation where being wrong matters most.
+
+Where the deployment enables it, a **Platform** area sits beside it: wallet-api's tenant registry
+and the platform admin list, for Giano's own platform admins (see [Platform area](#platform-area)).
 
 ```bash
 pnpm demo:admin            # from the repo root → http://localhost:4402
@@ -37,6 +40,32 @@ way to sign a treasury withdrawal against the wrong deployment.
 Withdrawing a tenant's balance is deliberately absent. Only that tenant's own registered withdrawal
 address can do it, and no role on the paymaster can — including every role at once.
 
+## Platform area
+
+Tenants can be created, edited, suspended and deleted at runtime, with no redeploy
+([`specs/PLATFORM-ADMIN-SPECS.md`](../../specs/PLATFORM-ADMIN-SPECS.md)). The Platform area is
+where Giano's platform admins do it. A header switch moves between **Paymaster** and **Platform**; the
+switch only exists when the container is given `GIANO_WALLET_API_UPSTREAM`.
+
+- **Sign in with wallet.** The connected wallet signs a message wallet-api wrote, naming this
+  console's domain. The address must be one of wallet-api's platform admins (its `platform_admins` table). The session lives in
+  the page's memory only: a reload, an account or network change, a deployment switch, sign-out or
+  its expiry (30 minutes) ends it.
+- **Tenants.** The registry, with each tenant's status and —
+  matched on tenant id — its state on the selected paymaster: *registered · enabled*, *registered ·
+  disabled* or *not registered*. Roster entries with no registry row are listed on their own.
+- **A tenant.** Fields, admin keys (never key material), usage, ledger and history, and the actions
+  its state allows: create (keys shown once, then an optional *Register on-chain*), edit,
+  suspend (then an optional on-chain disable), resume, delete (type the slug), issue and revoke keys.
+- **Admins.** Who can sign in here: each platform admin's id, address, who added them and when; *Add
+  admin* (they can sign in at once); *Remove* (their sessions end on their next request); and the
+  history of every change. There is no Remove button on your own row, or when only one platform admin
+  is left — wallet-api refuses both anyway. The first platform admins come from wallet-api's init step, per
+  environment (`services/wallet-api/src/environments.ts`), and only into an empty list.
+
+On-chain follow-ups need `TENANT_ADMIN_ROLE` on the paymaster and are always optional: the API action
+has already happened when they are offered.
+
 ## Configuration
 
 Runtime, from `/config.json`, fetched before the first render — not build-time `VITE_` variables.
@@ -64,12 +93,17 @@ console at an arbitrary chain by typing into it.
 | `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
 | `refreshSeconds` | poll interval; `0` disables polling |
 
-Every key but `refreshSeconds` is spelled as a chain descriptor spells it
-(`packages/contracts/chains.ts`), so a deployment that also runs `wallet-api` can hand
-`GIANO_DEPLOYMENTS` that service's own `GIANO_CHAINS` value and have one authored chain list
-instead of two. The container keeps the five keys above and drops the rest of a descriptor —
-`bundlerUrl`, `entryPoint`, `factory`, `policy` — rather than publishing them in a file served to
-the browser.
+`name`, `chainId`, `rpcUrl` and `sponsorshipPaymaster` are the shared fields of the backend chain
+document (`packages/contracts/chains.ts`) that wallet-api and giano-bundler read as `GIANO_CHAINS`.
+So a deployment running them can hand `GIANO_DEPLOYMENTS` that same value and have one authored
+chain list instead of three.
+
+In that document the console's own settings sit in its section: `paymasterAdmin.walletRpcUrl` and
+`paymasterAdmin.refreshSeconds`. A standalone list may spell them flat, as in the table above.
+
+The container keeps the keys above and drops everything else rather than publishing it in a file
+served to the browser: `entryPoint`, the `walletApi` and `bundler` sections, and anything added
+later.
 
 With more than one entry the header shows a **picker**; with one it shows the label as a badge. The
 choice is remembered in `localStorage`, keyed on chain and address rather than on the label, so
@@ -87,6 +121,14 @@ deployment now on screen. Reconnecting is one click.
 either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-deployment shorthand
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
 `GIANO_REFRESH_SECONDS`.
+
+`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area: the
+container proxies `/api/*` to wallet-api on its own origin, drops the browser's `Origin` header
+(wallet-api's platform routes refuse any request carrying one), re-resolves the upstream per request
+through the nameserver in `/etc/resolv.conf`, and renders `"platformApi": true`. Unset, none of that
+exists and the console is exactly the chain view. This console's host must be the sign-in domain
+wallet-api's environment names (`siweDomain` in `services/wallet-api/src/environments.ts`, chosen by
+its `GIANO_ENVIRONMENT`); changing it is a wallet-api release.
 
 ### The provider key does not reach the browser
 
@@ -143,6 +185,10 @@ sample dApp shows up as a falling tenant balance and a new row under **History**
 
 It waits for the sponsorship provisioner, so it shows a provisioned deployment rather than an empty
 roster that looks like a bug.
+
+Its Platform area is on: anvil's account 0 (`0xf39F…2266`), the devnet's all-roles account, is
+bootstrapped as platform admin `admin-console` for the `e2e` environment. Import that key into a browser wallet, connect, switch to **Platform** and
+sign in.
 
 ## Built on
 

@@ -4,9 +4,9 @@ import { loadConfig } from './config.js';
 import { createDb } from './db/index.js';
 import { runMigrations } from './migrate.js';
 import { describeFailure, isFatalFailure, verifyChain } from './services/chain-verify.js';
+import { HOUSEKEEPING_INTERVAL_MS, pruneExpiredChallenges } from './services/housekeeping.js';
 import { createPaymasterWatcher, type PaymasterWatcher } from './services/paymaster-watcher.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
-import { seedTenants } from './services/tenants.js';
 import { tenants as tenantsTable } from './db/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -21,15 +21,10 @@ if (config.RUN_MIGRATIONS) {
 
 const { db, pool } = createDb(config.DATABASE_URL);
 
-// Declarative tenant provisioning (after migrations, before listen). A malformed seed
-// already failed loadConfig; violations of the RP/origin invariants throw here.
-if (config.TENANTS_SEED.length > 0) {
-  await seedTenants(db, config.TENANTS_SEED);
-  console.log(`Seeded tenants: ${config.TENANTS_SEED.map((t) => t.slug).join(', ')}`);
-}
-const [{ count: tenantCount }] = (await db.execute(sql`SELECT count(*)::int AS count FROM tenants`)).rows as [{ count: number }];
+// Tenants are created by Giano's platform admins at runtime, so a deployment may well boot with none.
+const [{ count: tenantCount }] = (await db.execute(sql`SELECT count(*)::int AS count FROM tenants WHERE status = 'active'`)).rows as [{ count: number }];
 if (tenantCount === 0) {
-  console.warn('WARNING: no tenants configured — every tenant-scoped route will refuse requests (set TENANTS_SEED)');
+  console.warn('No active tenants yet — tenant-scoped routes refuse requests until a platform admin creates one in the paymaster console');
 }
 
 const app = await buildApp({ config, db });
@@ -129,6 +124,13 @@ const prober = setInterval(() => {
 }, CHAIN_PROBE_INTERVAL_MS);
 prober.unref();
 
+// Challenge housekeeping: nothing else removes expired ceremony or platform admin sign-in challenges.
+// Idempotent, so every replica runs it.
+const housekeeping = setInterval(() => {
+  pruneExpiredChallenges(db).catch((error: Error) => app.log.warn({ error: error.message }, 'challenge housekeeping failed'));
+}, HOUSEKEEPING_INTERVAL_MS);
+housekeeping.unref();
+
 /**
  * The chain watchers run inside this process, behind a Postgres advisory lock so exactly one
  * replica ingests. Enabled separately from sponsorship itself: a deployment can serve
@@ -162,6 +164,7 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
       ledger: createLedgerService(db),
       chainId: chain.chainId,
       pollMs: config.PAYMASTER_WATCHER_POLL_MS,
+      lockRetryMs: config.PAYMASTER_WATCHER_LOCK_RETRY_MS,
       confirmations: config.PAYMASTER_WATCHER_CONFIRMATIONS,
       reconcileIntervalMs: config.PAYMASTER_RECONCILE_INTERVAL_MS,
       tenantSlug,
@@ -185,6 +188,9 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
         setDivergence(wei) {
           app.metrics.paymasterReconciliationDivergenceWei.set({ chain: chainLabel }, Number(wei));
         },
+        setActive(active) {
+          app.metrics.paymasterWatcherActive.set({ chain: chainLabel }, active ? 1 : 0);
+        },
       },
       logger: app.log.child({ chainId: chain.chainId }),
     });
@@ -196,6 +202,7 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'shutting down');
   clearInterval(prober);
+  clearInterval(housekeeping);
   await Promise.all(watchers.map((watcher) => watcher.stop()));
   await app.close();
   await pool.end();

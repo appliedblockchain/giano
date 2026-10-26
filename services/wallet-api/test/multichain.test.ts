@@ -8,10 +8,12 @@ import type { ChainRegistry, ChainServices } from '../src/services/chains.js';
 import { isFatalFailure, verifyChain } from '../src/services/chain-verify.js';
 import { startTestStack, stopTestStack, TENANT_A, type TestContext } from './setup.js';
 import { createAuthenticator, makeRegistrationResponse } from './webauthn-fixtures.js';
+import connectorPackage from '../../../packages/connector/package.json' with { type: 'json' };
 
 const BASE_ENV = {
   NODE_ENV: 'test',
   GIANO_DEPLOYMENT_CLASS: 'development',
+  GIANO_ENVIRONMENT: 'test',
   LOG_LEVEL: 'error',
   DATABASE_URL: 'postgres://u:p@localhost:5432/x',
 } as NodeJS.ProcessEnv;
@@ -47,19 +49,18 @@ describe('config: the chain list', () => {
       const config = loadConfig({
         ...BASE_ENV,
         GIANO_CHAINS: JSON.stringify([
-          { chainId: 8453, name: 'Base', rpcUrl: 'http://a:8545', bundlerUrl: 'http://a:4337' },
+          { chainId: 8453, name: 'Base', rpcUrl: 'http://a:8545', walletApi: { bundlerUrl: 'http://a:4337' } },
           {
             chainId: 31338,
             name: 'Devnet B',
             rpcUrl: 'http://b:8545',
-            bundlerUrl: 'http://b:4337',
             entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-            factory: CANONICAL_FACTORY,
+            walletApi: { bundlerUrl: 'http://b:4337', factory: CANONICAL_FACTORY },
           },
         ]),
       });
       expect(config.CHAINS.map((chain) => chain.chainId)).toEqual([8453, 31338]);
-      // Base's addresses default from the contracts registry — which is canonical-only
+      // Base's addresses default from the contracts registry — which is canonical-only now
       expect(config.CHAINS[0].factory).toBe(CANONICAL_FACTORY);
     } finally {
       delete gianoAddresses[8453];
@@ -70,9 +71,74 @@ describe('config: the chain list', () => {
     expect(() =>
       loadConfig({
         ...BASE_ENV,
-        GIANO_CHAINS: JSON.stringify([{ chainId: 424242, name: 'Unregistered', rpcUrl: 'http://a:8545', bundlerUrl: 'http://a:4337' }]),
+        GIANO_CHAINS: JSON.stringify([{ chainId: 424242, name: 'Unregistered', rpcUrl: 'http://a:8545', walletApi: { bundlerUrl: 'http://a:4337' } }]),
       }),
-    ).toThrow(/chain 424242: factory required — the chain is not in the giano-contracts address registry/);
+    ).toThrow(/chain 424242: entryPoint required — the chain is not in the giano-contracts address registry/);
+  });
+
+  describe('the document giano-bundler shares', () => {
+    const chain = (extra: Record<string, unknown> = {}) => ({
+      chainId: 31337,
+      name: 'A',
+      rpcUrl: 'http://a:8545',
+      entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
+      walletApi: { factory: CANONICAL_FACTORY },
+      ...extra,
+    });
+
+    it('submits to <BUNDLER_BASE_URL>/<chainId> unless walletApi.bundlerUrl says otherwise', () => {
+      const config = loadConfig({
+        ...BASE_ENV,
+        BUNDLER_BASE_URL: 'http://bundler:4337/',
+        GIANO_CHAINS: JSON.stringify([
+          chain(),
+          chain({ chainId: 31338, name: 'B', walletApi: { factory: CANONICAL_FACTORY, bundlerUrl: 'https://external.example/rpc' } }),
+        ]),
+      });
+      expect(config.CHAINS.map((resolved) => resolved.bundlerUrl)).toEqual(['http://bundler:4337/31337', 'https://external.example/rpc']);
+    });
+
+    it('reads the shared sponsorshipPaymaster, the one paymaster-admin administers', () => {
+      const paymaster = '0xf98b56de62ce88cEb70A9155582248cDBf2D0718';
+      const config = loadConfig({
+        ...BASE_ENV,
+        BUNDLER_BASE_URL: 'http://bundler:4337',
+        GIANO_CHAINS: JSON.stringify([chain({ sponsorshipPaymaster: paymaster })]),
+      });
+      expect(config.CHAINS[0].sponsorshipPaymaster).toBe(paymaster);
+    });
+
+    it('needs a bundler for every chain', () => {
+      expect(() => loadConfig({ ...BASE_ENV, GIANO_CHAINS: JSON.stringify([chain()]) })).toThrow(/BUNDLER_BASE_URL.*31337 names no walletApi.bundlerUrl/s);
+      expect(() =>
+        loadConfig({ ...BASE_ENV, BUNDLER_BASE_URL: 'http://bundler:4337', GIANO_CHAINS: JSON.stringify([chain({ bundler: { enabled: false } })]) }),
+      ).toThrow(/bundler.enabled is false, so walletApi.bundlerUrl must name/);
+    });
+
+    it("accepts the bundler's section as-is, and validates its own strictly", () => {
+      const env = { ...BASE_ENV, BUNDLER_BASE_URL: 'http://bundler:4337' };
+      expect(() =>
+        loadConfig({
+          ...env,
+          GIANO_CHAINS: JSON.stringify([chain({ bundler: { chainType: 'op-stack', anything: 1 }, paymasterAdmin: { refreshSeconds: 5 } })]),
+        }),
+      ).not.toThrow();
+      expect(() =>
+        loadConfig({ ...env, GIANO_CHAINS: JSON.stringify([chain({ walletApi: { factory: CANONICAL_FACTORY, factroy: '0x' } })]) }),
+      ).toThrow(/factroy/);
+    });
+
+    it('refuses the pre-sections flat shape rather than guessing at it', () => {
+      expect(() =>
+        loadConfig({ ...BASE_ENV, GIANO_CHAINS: JSON.stringify([{ ...chain(), walletApi: undefined, bundlerUrl: 'http://a:4337', factory: CANONICAL_FACTORY }]) }),
+      ).toThrow(/bundlerUrl|factory/);
+    });
+
+    it('keeps BUNDLER_BASE_URL to GIANO_CHAINS', () => {
+      expect(() =>
+        loadConfig({ ...BASE_ENV, CHAIN_ID: '31337', RPC_URL: 'http://a:8545', BUNDLER_URL: 'http://a:4337', BUNDLER_BASE_URL: 'http://b:4337' }),
+      ).toThrow(/BUNDLER_BASE_URL goes with GIANO_CHAINS/);
+    });
   });
 
   it('refuses BOTH the shorthand and GIANO_CHAINS — never a merge (§3.4)', () => {
@@ -96,9 +162,8 @@ describe('config: the chain list', () => {
       chainId: 31337,
       name: 'A',
       rpcUrl: 'http://a:8545',
-      bundlerUrl: 'http://a:4337',
       entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-      factory: CANONICAL_FACTORY,
+      walletApi: { bundlerUrl: 'http://a:4337', factory: CANONICAL_FACTORY },
     };
     expect(() => loadConfig({ ...BASE_ENV, GIANO_CHAINS: JSON.stringify([entry, entry]) })).toThrow(/duplicate chainId/);
   });
@@ -112,9 +177,8 @@ describe('config: the chain list', () => {
             chainId: 31337,
             name: 'A',
             rpcUrl: 'http://a:8545',
-            bundlerUrl: 'http://a:4337',
             entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-            factory: CANONICAL_FACTORY,
+            walletApi: { bundlerUrl: 'http://a:4337', factory: CANONICAL_FACTORY },
           },
         ]),
         USEROP_ALLOWED_TARGETS: '0x1000000000000000000000000000000000000001',
@@ -310,17 +374,15 @@ describe('two-chain relay', () => {
           // because buildApp does not verify (index.ts does), and the relay path is what
           // this suite exercises
           rpcUrl: 'http://rpc-a.invalid',
-          bundlerUrl: CHAIN_A_BUNDLER,
           entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-          factory: '0x2222222222222222222222222222222222222222',
+          walletApi: { bundlerUrl: CHAIN_A_BUNDLER, factory: '0x2222222222222222222222222222222222222222' },
         },
         {
           chainId: 31338,
           name: 'Devnet B',
           rpcUrl: 'http://rpc-b.invalid',
-          bundlerUrl: CHAIN_B_BUNDLER,
           entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-          factory: '0x2222222222222222222222222222222222222222',
+          walletApi: { bundlerUrl: CHAIN_B_BUNDLER, factory: '0x2222222222222222222222222222222222222222' },
         },
       ]),
     });
@@ -471,5 +533,12 @@ describe('two-chain relay', () => {
     const body = res.json() as { chainId: number | null; chains: Array<{ chainId: number }> };
     expect(body.chainId).toBeNull();
     expect(body.chains.map((chain) => chain.chainId)).toEqual([31337, 31338]);
+  });
+
+  it('reports the release version the SDK packages carry on /v1/version', async () => {
+    // A dApp's preflight warns when its connector is ahead of this. Reporting anything but the
+    // shared release version made every SDK look ahead of the api.
+    const res = await ctx.app.inject({ method: 'GET', url: '/v1/version' });
+    expect((res.json() as { version: string }).version).toBe(connectorPackage.version);
   });
 });
