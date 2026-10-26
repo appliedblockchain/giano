@@ -6,7 +6,8 @@
 
 Giano ships as versioned artifacts deployed into a stack you (or your operator) run. The
 backend is **multi-tenant**: one `giano-wallet-api` (+ Postgres + bundler) serves one or
-many client projects, each as a tenant provisioned via `TENANTS_SEED`. A complete
+many client projects, each as a tenant that Giano's platform admins create in the paymaster
+console's Platform area. A complete
 integration is:
 
 1. A **tenant-owned wallet origin** (`wallet.yourapp.com`) serving a wallet UI —
@@ -24,7 +25,7 @@ tenants, and wallet-api tenant-scopes everything beneath that.
 
 - Give each tenant's wallet its own host: `wallet.yourapp.com`. This host is the tenant's
   WebAuthn **Relying Party ID** and is **irreversible** — passkeys bind to it. Choose it
-  before going to production; it must match the tenant's `walletOrigin` in `TENANTS_SEED`.
+  before going to production; it must match the tenant's `walletOrigin`.
 - Terminate TLS at your ingress/proxy in front of the wallet UI (the wallet-web container
   listens on `:8080`). WebAuthn requires a secure context.
 - The dApp lives on a separate origin (`app.yourapp.com`); the two communicate only via
@@ -61,26 +62,34 @@ COOP header). Call `connect()` from a user gesture so the popup is not blocked.
 
 - **wallet-api** — see `services/wallet-api/README.md` and
   `deploy/docker-compose.reference.yml` for the full env matrix. Key values: `DATABASE_URL`,
-  `CHAIN_ID`/`RPC_URL`/`BUNDLER_URL`, userop policy defaults, and `TENANTS_SEED` — a JSON
-  array with one entry per tenant carrying its `walletOrigin` (host = RP ID), origins,
-  `openRegistration`, `adminKeys` and `corsOrigins` (your dApp origins, for the public
-  receipt endpoint).
+  `CHAIN_ID`/`RPC_URL`/`BUNDLER_URL`, userop policy defaults, and `GIANO_ENVIRONMENT` — which
+  entry of `services/wallet-api/src/environments.ts` this deployment is: the console host its
+  platform admins sign in for and its bootstrap platform admins (§6). The client-run `reference` environment
+  has no console host, so it registers no platform route. Neither tenants nor platform admins are
+  configuration: both are rows.
 - **wallet-web** — `GIANO_CHAIN_ID`, `GIANO_WALLET_API_UPSTREAM`, `GIANO_RP_ID`,
   `GIANO_ALLOWED_DAPP_ORIGINS` (JSON array), `GIANO_FACTORY_ADDRESS`/`GIANO_PAYMASTER_ADDRESS`
   (default from the contracts registry). No node or bundler URL: the wallet uses wallet-api's
   `/api/v1/rpc/<chainId>` and `/api/v1/bundler/<chainId>` relays (`GIANO_RPC_URL` /
   `GIANO_BUNDLER_URL` exist only to dial them directly in development).
-- **bundler** (optional in-stack) — `ALTO_RPC_URL`, `ALTO_EXECUTOR_PRIVATE_KEYS` (from a
-  secret), `ALTO_SAFE_MODE=true`.
+- **bundler** (optional in-stack, `giano-bundler`) — `GIANO_CHAINS`, the same backend chain
+  document wallet-api reads (`packages/contracts/chains.ts`; each RPC needs `eth_call` state
+  overrides, not `debug_traceCall`), and `BUNDLER_EXECUTOR_PRIVATE_KEYS` (from a secret, funded on
+  every chain served). One process serves every chain at `POST /<chainId>`; a multi-chain wallet-api
+  points `BUNDLER_BASE_URL` at it. The old `BUNDLER_RPC_URL` and `ALTO_*` variables are refused.
 
 `ENTRYPOINT_ADDRESS`/`FACTORY_ADDRESS` default from
 `@appliedblockchain/giano-contracts` for known chains; set them explicitly for others.
 
 ## 4. Database
 
-External Postgres by default. Apply migrations either with `RUN_MIGRATIONS=true` on the
-wallet-api, or the one-shot `node dist/migrate.js` (the Helm chart runs it as a
-pre-install/upgrade hook Job). Migrations are backward-compatible across one minor.
+External Postgres by default. Run the init step, `node dist/init.js` (`DATABASE_URL`,
+`GIANO_ENVIRONMENT`), to completion before wallet-api, which then runs with
+`RUN_MIGRATIONS=false`; `deploy/docker-compose.reference.yml` does this with an `init` service. It
+applies migrations and writes the environment's bootstrap platform admins into an empty
+`platform_admins` table. `RUN_MIGRATIONS=true` on the wallet-api, or the one-shot `node dist/migrate.js` (the Helm
+chart runs it as a pre-install/upgrade hook Job), still apply migrations alone. Migrations are
+backward-compatible across one minor.
 
 ## 5. Contracts
 
@@ -92,13 +101,19 @@ CREATE2 deploy (identical addresses across chains for identical bytecode) and em
 
 ## 6. Tenants
 
-Tenant provisioning is declarative — no dashboard, no API. Append an entry to
-`TENANTS_SEED` and restart wallet-api; entries upsert by `slug` and are validated before
-touching the database (every `expectedOrigins` host must be at-or-under the tenant's
-RP ID). The RP ID is immutable per tenant; origins, registration mode, admin keys and
-policy update in place. Registration model per tenant: `openRegistration: true` for
+Tenants are created, edited, suspended and deleted at runtime by Giano's platform admins, in the
+paymaster console's Platform area (`/v1/platform/*`, signed in with EIP-4361) — no restart.
+The platform admins are rows too: the init step bootstraps an environment's first platform admins
+into an empty table, and from then on they add and remove each other in the console's Admins tab.
+wallet-api boots with no tenants. Each tenant carries its `walletOrigin` (host = RP ID),
+origins, `openRegistration`, admin keys and `corsOrigins` (your dApp origins, for the public
+receipt endpoint). Every write is validated (every `expectedOrigins` host must be
+at-or-under the tenant's RP ID, and no origin may belong to two tenants). The RP ID is
+immutable per tenant; origins, registration mode, admin keys and policy can be edited.
+Admin keys are generated by the server and shown once. `TENANTS_SEED` is retired and no
+longer read. Registration model per tenant: `openRegistration: true` for
 demos, or `false` + the tenant's backend calling `POST /v1/webauthn/options`
-server-to-server with one of its `adminKeys` bearers.
+server-to-server with one of its admin keys as bearer.
 
 ## 7. Gas sponsorship
 
@@ -252,7 +267,7 @@ upgrade controls. We would rather say that than let the shorter version stand.
   `GET /metrics` (Prometheus, `tenant`-labelled; bearer-gated when `METRICS_BEARER_TOKEN`
   is set).
 - wallet-web: `GET /` (nginx).
-- bundler: `eth_supportedEntryPoints`.
+- bundler: `GET /health` — each chain's status; 200 while any chain is ready.
 
 ## 9. SDK snippet (dApp)
 
@@ -421,13 +436,14 @@ than the wallet-api. Full policy: `COMPATIBILITY.md`.
 ## Quick start (local)
 
 ```bash
-# pre-baked E2E stack (instant-boot devnet, contracts included) — seeds TWO tenants:
+# pre-baked E2E stack (instant-boot devnet, contracts included) — its init
+# one-shot creates TWO tenants:
 # "stock" (Giano's wallet-web at wallet.localhost) and "byo" (bring-your-own UI,
 # served host-side via `pnpm --filter @appliedblockchain/giano-e2e wallet-byo`).
 # --profile portless adds the relay that lets those addresses omit a port; the names
 # themselves come from `pnpm -F @appliedblockchain/giano-e2e portless:up` (see e2e/README.md).
 docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
-# or the from-source dev stack (postgres + anvil + alto + wallet-api; run wallet-web
+# or the from-source dev stack (postgres + anvil + bundler + wallet-api; run wallet-web
 # separately with `pnpm --filter @appliedblockchain/giano-wallet-web dev`):
 docker compose -f deploy/docker-compose.dev.yml up --build
 ```

@@ -6,17 +6,25 @@ global:
 
 # --- chain / RP config shared by wallet-api and wallet-web ---
 config:
+  # an entry of services/wallet-api/src/environments.ts; `reference` has no platform console
+  environment: reference
   # SINGLE-CHAIN (on-premises profile, MC-88): the scalars below are the complete
   # configuration. MULTI-CHAIN (standalone profile): set `chains` / `walletWeb.chains`
   # instead — JSON documents passed through verbatim, because a per-field template cannot
   # express a variable-length list (MC-94). Setting both is a wallet-api boot error.
   #
-  # chains: one backend descriptor per served chain, e.g.
+  # chains: the backend chain document (packages/contracts/chains.ts), read by wallet-api and
+  # the in-chart bundler alike — shared fields, then a section per service, e.g.
   #   chains:
   #     - chainId: 8453
   #       name: Base
   #       rpcUrl: https://…
-  #       bundlerUrl: https://…
+  #       walletApi:
+  #         policy: { allowedPaymasters: ["0x…"] }
+  #       bundler:
+  #         chainType: op-stack
+  # With bundler.enabled, each chain submits to the in-chart bundler at /<chainId>; otherwise
+  # give each entry a walletApi.bundlerUrl.
   chains: []
   chainId: 8453
   # node RPC and bundler for wallet-api; the wallet UI reaches both through wallet-api's relays
@@ -38,7 +46,8 @@ config:
 # secrets: reference an existing k8s Secret; never inline production keys in values
 secrets:
   existingSecret: "" # must provide keys: DATABASE_URL, ADMIN_API_KEYS
-  # bundler executor key (only when bundler.enabled): ALTO_EXECUTOR_PRIVATE_KEYS
+  # bundler executor key(s), comma-separated (only when bundler.enabled):
+  # BUNDLER_EXECUTOR_PRIVATE_KEYS. ALTO_EXECUTOR_PRIVATE_KEYS is refused at boot — rename the key.
 
 postgres:
   # external by default — set the DSN in the existingSecret's DATABASE_URL
@@ -62,7 +71,6 @@ walletWeb:
 bundler:
   enabled: false
   image: giano-bundler
-  altoSafeMode: true
 
 deployer:
   # one-shot CREATE2 deploy as a pre-install hook Job

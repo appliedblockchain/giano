@@ -92,7 +92,7 @@ same-origin` on this page (else the popup handshake times out — the preflight'
 
 - **Published surface only.** Imports of `@appliedblockchain/*` other than the connector, and any
   relative import leaving `src/`, fail lint (`eslint.config.js`). The connector is the **published**
-  release from GitHub Packages, pinned exactly (`3.0.0`), not the workspace copy — this app shows
+  release from GitHub Packages, pinned exactly (`3.1.1`), not the workspace copy — this app shows
   what an integrator actually installs. Bump the pin after each release; a connector change on `main`
   reaches this app only once it is published (the `e2e/dapp` fixture keeps covering the workspace
   copy). To keep that true the app is **its own pnpm workspace** (`pnpm-workspace.yaml`,

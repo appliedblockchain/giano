@@ -7,7 +7,7 @@ locals {
   # monitors below.
   ecs_services = toset(concat(
     ["wallet-api", "wallet-web", "custom-example", "paymaster-admin"],
-    keys(local.bundlers), # one bundler per chain — §14.7
+    ["bundler"], # one bundler, every chain — §14.7
     var.byo_wallet_enabled[terraform.workspace] ? ["custom-example-byoui", "wallet-byo"] : [],
   ))
 }
@@ -69,7 +69,7 @@ module "datadog_monitor_chain_balance_executor" {
   count  = var.datadog_monitors_enabled[terraform.workspace] ? 1 : 0
   source = "./modules/datadog/monitor"
 
-  name  = "Chain: the Alto executor balance is running low on ${local.name_prefix} — R2"
+  name  = "Chain: the bundler executor balance is running low on ${local.name_prefix} — R2"
   query = "avg(last_1h):avg:giano.chain.balance{env:${terraform.workspace},account:executor,chain_id:${var.chain_id}} < 0.05"
 
   monitor_thresholds   = { critical = 0.05 }

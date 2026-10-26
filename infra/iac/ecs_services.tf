@@ -29,38 +29,48 @@ module "svc-wallet-api" {
 
   environment = {
     GIANO_DEPLOYMENT_CLASS = "testnet"
-    # No init container: wallet-api runs its own migrations on boot, before it starts
-    # listening, serialised by a Postgres advisory lock — safe under concurrent replicas the
-    # same way `services/tenants.ts` seeding already is. Matches
-    # deploy/docker-compose.infrastructure.yml, which never had an init container either.
-    RUN_MIGRATIONS            = "true"
+    # The workspace IS the environment: services/wallet-api/src/environments.ts keys its platform
+    # sign-in domain and bootstrap platform admins on dev / stg / prd.
+    GIANO_ENVIRONMENT = terraform.workspace
+    # The init container below runs the migrations; the API never does (§9.6).
+    RUN_MIGRATIONS            = "false"
     SPONSORSHIP_ENABLED       = "true"
     SPONSORSHIP_SIGNER_KIND   = "local"
     PAYMASTER_WATCHER_ENABLED = "true"
     LOG_LEVEL                 = "info"
     # No CHAIN_ID / RPC_URL / BUNDLER_URL / SPONSORSHIP_PAYMASTER_ADDRESS: GIANO_CHAINS
-    # carries all four per chain, and the two shapes are mutually exclusive (§14.2).
+    # carries them per chain, and the two shapes are mutually exclusive (§14.2). Each chain
+    # submits to the bundler at <BUNDLER_BASE_URL>/<chainId>.
+    BUNDLER_BASE_URL = "http://bundler.${aws_service_discovery_private_dns_namespace.ns.name}:4337"
     # ENTRYPOINT_ADDRESS and FACTORY_ADDRESS deliberately unset — both chains are in the
     # contracts registry and default correctly from it.
   }
   secret_arns = {
     DATABASE_URL = aws_secretsmanager_secret.database-url.arn
-    # Composed by hand in 1Password, not by Terraform: each descriptor's rpcUrl embeds a
-    # QuickNode key, and an ECS secret substitutes a WHOLE variable from ONE ARN (§7.3).
+    # Composed by hand in 1Password, not by Terraform: each entry's rpcUrl embeds a QuickNode
+    # key, and an ECS secret substitutes a WHOLE variable from ONE ARN (§7.3). The backend chain
+    # document (packages/contracts/chains.ts), read by the bundler and paymaster-admin too.
     GIANO_CHAINS               = module.asm-app.secret_arns["chains"]
     SPONSORSHIP_SIGNER_KEY_REF = module.asm-app.secret_arns["sponsorship-signer-key"]
-    TENANTS_SEED               = module.asm-app.secret_arns["tenants-seed"]
     METRICS_BEARER_TOKEN       = module.asm-app.secret_arns["metrics-bearer-token"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
+
+  # §9.6 — before the API starts, in every task: migrations, then the environment's bootstrap
+  # platform admins into an empty platform_admins table. Idempotent and safe across concurrent tasks (advisory
+  # locks); a non-zero exit keeps the API from starting. Needs the database and nothing else.
+  init_container = {
+    command     = ["node", "dist/init.js"]
+    secret_keys = ["DATABASE_URL"]
+  }
 
   alb_enabled       = true
   alb_listener_arn  = aws_lb_listener.https.arn
   alb_rule_priority = 10
   alb_host_headers  = [local.hosts.api]
   health_check_path = "/healthz"
-  # Must outlast the slowest migration: migrations run in-process before wallet-api starts
-  # listening, so until they complete /healthz doesn't exist to answer at all.
+  # Must outlast the slowest migration: the init container runs them before wallet-api starts,
+  # so until they complete /healthz doesn't exist to answer at all.
   health_check_grace_period_seconds = 120
 
   vpc_id                 = aws_vpc.vpc.id
@@ -347,6 +357,13 @@ module "svc-paymaster-admin" {
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
 
+  # The console's Platform area (specs/PLATFORM-ADMIN-SPECS.md §11.1): nginx proxies /api/* to
+  # wallet-api over Cloud Map, same-origin, with the browser's Origin removed. Without it the
+  # console is the read-only paymaster view and nobody can manage tenants or platform admins here.
+  environment = {
+    GIANO_WALLET_API_UPSTREAM = "http://wallet-api.${local.name_prefix}.local:8080"
+  }
+
   # The single-deployment shorthand (GIANO_CHAIN_ID / GIANO_PAYMASTER_ADDRESS /
   # GIANO_ENVIRONMENT_LABEL / GIANO_REFRESH_SECONDS) is deliberately absent: with
   # GIANO_DEPLOYMENTS set the container skips that branch, so each of those lives in its own
@@ -385,25 +402,19 @@ module "svc-paymaster-admin" {
   additional_tags = local.default_tags
 }
 
-# ── bundler-base-sepolia / bundler-eth-sepolia — no ALB target — §9.2, §14.7 ────────────────
+# ── bundler — no ALB target — §9.2, §14.7 ──────────────────────────────────────────────────
 #
-# Two services, one image. Alto does not multiplex chains inside one process (D3): a bundler's
-# executor and submission endpoint are chain-specific, so one chain means one bundler. They
-# share an executor and a utility key — one EOA funded on both chains (§13.2) — and differ in
-# ALTO_RPC_URL alone.
-locals {
-  bundlers = {
-    "bundler-base-sepolia" = module.asm-app.secret_arns["rpc-url-base-sepolia"]
-    "bundler-eth-sepolia"  = module.asm-app.secret_arns["rpc-url-eth-sepolia"]
-  }
-}
-
+# One giano-bundler (services/bundler) serving every chain in the `chains` document, each at its
+# own path (POST /<chainId>) with its own lanes, estimator and lookup — the per-chain isolation
+# wallet-api keeps, inside one process (MC-50). One executor key serves every chain: nonces are
+# per chain, and the EOA is funded on each (§13.2). One task, stopped before its replacement
+# starts (no ALB, so the module deploys at 0%/100%): executors track nonces in memory, and two
+# tasks on one key would race for them.
 module "svc-bundler" {
-  for_each = local.bundlers
-  source   = "./modules/aws/ecs-service"
+  source = "./modules/aws/ecs-service"
 
   name_prefix  = local.name_prefix
-  service      = each.key
+  service      = "bundler"
   project_name = var.project_name
 
   cluster_arn  = aws_ecs_cluster.ecs.arn
@@ -411,7 +422,6 @@ module "svc-bundler" {
   aws_region   = var.aws_region[terraform.workspace]
   account_id   = data.aws_caller_identity.current.account_id
 
-  # One repository for both — same image, different ALTO_RPC_URL (§11).
   image              = "${module.ecr["bundler"].repository_url}:${local.image_tag}"
   image_tag          = local.image_tag
   ecr_repository_arn = module.ecr["bundler"].repository_arn
@@ -425,14 +435,14 @@ module "svc-bundler" {
   security_group_ids = [aws_security_group.bundler-sg.id] # reachable only from the tasks SG
 
   environment = {
-    ALTO_ENTRYPOINTS = var.entrypoint_address
-    ALTO_SAFE_MODE   = "true" # a real chain — safe mode needs a trace-capable RPC on BOTH chains
     # GIANO_DEV_MODE deliberately unset — keeps the Anvil-key guard armed
   }
+  # The SAME `chains` document wallet-api reads as GIANO_CHAINS. Its RPCs need eth_call state
+  # overrides, not debug_traceCall: no trace-capable plan required. The executor secret keeps its
+  # Alto-era name.
   secret_arns = {
-    ALTO_RPC_URL               = each.value
-    ALTO_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]
-    ALTO_UTILITY_PRIVATE_KEY   = module.asm-app.secret_arns["alto-utility-key"]
+    GIANO_CHAINS                  = module.asm-app.secret_arns["chains"]
+    BUNDLER_EXECUTOR_PRIVATE_KEYS = module.asm-app.secret_arns["alto-executor-key"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 

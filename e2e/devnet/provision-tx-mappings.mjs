@@ -35,7 +35,7 @@ const addresses = JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), '
 /** The chains the stack runs, kept in step with provision-sponsorship.mjs. */
 const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? '31337,31338').split(',').map((id) => Number(id.trim()));
 
-/** Admin keys as `TENANTS_SEED` provisions them in deploy/docker-compose.e2e.yml. */
+/** Admin keys as the init service creates them (TENANT_FIXTURES in deploy/docker-compose.e2e.yml). */
 const TENANT_ADMIN_KEYS = {
   stock: process.env.STOCK_ADMIN_KEY ?? 'e2e-admin-key-stock',
   byo: process.env.BYO_ADMIN_KEY ?? 'e2e-admin-key-byo00',

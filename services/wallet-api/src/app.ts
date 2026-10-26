@@ -20,18 +20,24 @@ import paymasterRoutes from './routes/paymaster.js';
 import rpcRelayRoutes from './routes/rpc-relay.js';
 import credentialRoutes from './routes/credentials.js';
 import healthRoutes from './routes/health.js';
+import platformAuthRoutes from './routes/platform-auth.js';
+import platformTenantRoutes from './routes/platform-tenants.js';
+import platformAdminRoutes from './routes/platform-admins.js';
 import useropRoutes from './routes/userops.js';
 import walletManagementRoutes from './routes/wallet-management.js';
 import webauthnRoutes from './routes/webauthn.js';
 import wellKnownRoutes from './routes/well-known.js';
 import { buildChainRegistry, type ChainRegistry } from './services/chains.js';
 import { createChallengeService } from './services/challenges.js';
+import { createPlatformSessionService } from './services/platform-sessions.js';
+import { createPlatformAdminService } from './services/platform-admins.js';
 import { createSessionService } from './services/sessions.js';
 import type { PaymasterReader } from './services/paymaster-contract.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
 import { createHsmSponsorshipSigner, createLocalSponsorshipSigner, type HsmSignerAdapter, type SponsorshipSigner } from './services/sponsorship-signer.js';
 import { createTenantService } from './services/tenants.js';
 import { createUseropRelay } from './services/userop-relay.js';
+import { releaseVersion } from './release-version.js';
 
 export type BuildAppOptions = {
   config: AppConfig;
@@ -51,7 +57,7 @@ export type BuildAppOptions = {
 
 /**
  * Design constraint: buildApp must never READ the tenants table — tenant resolution is
- * strictly per-request (plugins/tenant.ts), so tenants seeded or edited after boot are
+ * strictly per-request (plugins/tenant.ts), so tenants created or edited after boot are
  * live immediately and openapi/generate.ts can build the app without a database. The same
  * holds for chains: the registry is CONSTRUCTED here (pure object wiring, no network);
  * verification against the chains themselves happens in index.ts before listen (§3.5).
@@ -70,6 +76,20 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   const challenges = createChallengeService(db, config.CHALLENGE_TTL_SECONDS);
   const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
   const tenants = createTenantService(db);
+  // The platform tier exists only where the environment runs a console to sign in from: one with
+  // no sign-in domain registers no platform admin route at all (src/environments.ts, H-b).
+  const admins = createPlatformAdminService(db);
+  const { siweDomain, siweUri } = config.ENVIRONMENT;
+  const platformAdminSessions =
+    siweDomain && siweUri
+      ? createPlatformSessionService(db, {
+          adminByAddress: (address) => admins.byAddress(address),
+          domain: siweDomain,
+          uri: siweUri,
+          challengeTtlSeconds: config.PLATFORM_CHALLENGE_TTL_SECONDS,
+          sessionTtlSeconds: config.PLATFORM_SESSION_TTL_SECONDS,
+        })
+      : undefined;
 
   await app.register(errorHandler);
   await app.register(metricsPlugin, { bearerToken: config.METRICS_BEARER_TOKEN });
@@ -99,7 +119,8 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
       components: {
         securitySchemes: {
           session: { type: 'http', scheme: 'bearer', description: 'Opaque session token from a ceremony verify endpoint' },
-          adminKey: { type: 'http', scheme: 'bearer', description: "Per-tenant admin API key (provisioned via TENANTS_SEED)" },
+          adminKey: { type: 'http', scheme: 'bearer', description: 'Per-tenant admin API key, issued by an admin' },
+          platformSession: { type: 'http', scheme: 'bearer', description: 'Platform admin session from POST /v1/platform/auth/verify (EIP-4361 sign-in)' },
         },
       },
     },
@@ -110,7 +131,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   }
 
   await app.register(tenantPlugin, { tenants });
-  await app.register(authPlugin, { sessions, tenants });
+  await app.register(authPlugin, { sessions, tenants, platformAdminSessions });
 
   // ── The chain registry ─────────────────────────────────────────────────────────
   //
@@ -161,7 +182,7 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
 
   await app.register(healthRoutes, {
     db,
-    version: process.env.GIANO_VERSION ?? '0.1.0',
+    version: process.env.GIANO_VERSION ?? releaseVersion,
     registry,
     // The sponsorship service is on the critical path for transacting: if it cannot sign, this
     // deployment cannot sponsor, and reporting itself healthy would hide that. The signer is
@@ -197,6 +218,11 @@ export async function buildApp({ config, db, fetchImpl, hsmSignerAdapter, paymas
   await app.register(useropRoutes, { db, registry, relay });
   await app.register(bundlerRelayRoutes, { config, relay });
   await app.register(rpcRelayRoutes, { config });
+  if (platformAdminSessions) {
+    await app.register(platformAuthRoutes, { platformAdminSessions, ratePerMinute: config.PLATFORM_RATE_LIMIT_PER_MINUTE });
+    await app.register(platformTenantRoutes, { db, config, registry });
+    await app.register(platformAdminRoutes, { admins, config });
+  }
 
   return app;
 }

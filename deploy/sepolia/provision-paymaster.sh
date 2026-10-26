@@ -35,7 +35,7 @@ CHAIN_ID="${CHAIN_ID:-11155111}"
 # serves (infra/iac/_locals.tf `tenant_hosts`). Each gets TENANT_FUND_ETH, so the deployer spends
 # that amount once per tenant.
 #
-# The ids must equal the ones in that deployment's TENANTS_SEED: the paymaster keys a tenant's
+# The ids must equal the ones in that deployment's database: the paymaster keys a tenant's
 # balance on the 16 bytes of its UUID, and a tenant whose database id differs from its on-chain id
 # has every sponsorship refused as an unknown tenant.
 PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:cf0d5345-0fdb-4688-b1db-9a288c9d9aed,byoui:743480a4-bdc8-4792-8ddf-625e074bd6c2}"
@@ -44,8 +44,8 @@ PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:cf0d5345-0fdb-4688-b1db-9a288c9d
 # STAKE_ETH must be at least 0.1: that is MIN_STAKE_WEI in scripts/doctor.ts, and the doctor
 # reports anything below it as a FAILED check — "deployed but not staked" is treated as a broken
 # deployment, not a warning, because bundlers reject an under-staked validating paymaster and it
-# reads to a client as a bug in their own code. Running Alto with --safe-mode false does not make
-# this optional; it only means the local stack happens not to exercise the rule.
+# reads to a client as a bug in their own code. giano-bundler does not check stake, which does not
+# make this optional: it only means Giano's own stack happens not to exercise the rule.
 TENANT_FUND_ETH="${TENANT_FUND_ETH:-0.02}"
 STAKE_ETH="${STAKE_ETH:-0.1}"
 UNSTAKE_DELAY="${UNSTAKE_DELAY:-86400}"

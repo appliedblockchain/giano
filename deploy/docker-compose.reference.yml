@@ -20,18 +20,38 @@ services:
       timeout: 3s
       retries: 10
 
+  # Runs to completion before wallet-api: migrations, then the environment's bootstrap platform admins
+  # (services/wallet-api/src/init.ts). wallet-api waits for it and never migrates itself.
+  init:
+    image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
+    command: ['node', 'dist/init.js']
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
+      GIANO_ENVIRONMENT: reference
+
   wallet-api:
     image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      init:
+        condition: service_completed_successfully
     ports:
       - '8080:8080'
     environment:
       DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
-      # apply pending migrations on boot (or run `node dist/migrate.js` as a one-shot job)
-      RUN_MIGRATIONS: 'true'
+      # the init service ran them
+      RUN_MIGRATIONS: 'false'
+      # Which environment this is (services/wallet-api/src/environments.ts). `reference` has no
+      # platform console of Giano's, so no platform route is registered.
+      GIANO_ENVIRONMENT: reference
       # What this deployment IS, as distinct from how the image was built. Required, with no
       # default: it is what refuses an environment-variable sponsorship signing key, and a default
       # that happened to be permissive is exactly how such a key reaches production.
@@ -46,19 +66,10 @@ services:
       # ENTRYPOINT_ADDRESS: '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
       # FACTORY_ADDRESS: ''
 
-      # --- tenants (JSON array, upserted by slug at boot) ---
-      # One entry per client project. rpId is IRREVERSIBLE per tenant (passkeys bind to
-      # it) and must equal the walletOrigin host. openRegistration=false keeps
-      # registration server-to-server via the tenant's adminKeys.
-      # Example:
-      #   [{"slug":"clientapp",
-      #     "walletOrigin":"https://wallet.clientapp.com",
-      #     "rpName":"ClientApp Wallet",
-      #     "allowedDappOrigins":["https://app.clientapp.com"],
-      #     "corsOrigins":["https://app.clientapp.com"],
-      #     "openRegistration":false,
-      #     "adminKeys":["<long-random-secret>"]}]
-      TENANTS_SEED: ${TENANTS_SEED:?JSON array of tenants — see services/wallet-api/README.md}
+      # --- tenants ---
+      # Not configured here. Tenants live in the database and are created by platform admins in the
+      # paymaster console's Platform area; the service boots with none. rpId is IRREVERSIBLE per
+      # tenant (passkeys bind to it).
 
       # --- userop relay policy DEFAULTS (integers; fees in wei) — a tenant's policy
       #     jsonb may override any field per tenant ---
