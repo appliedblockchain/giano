@@ -5,13 +5,13 @@
 name: giano-dev
 
 # The backend chain document wallet-api and the bundler both read (packages/contracts/chains.ts).
-# The local chain is not in the committed registry, so its addresses come from hh:initlocal.
+# The local chain is not in the committed registry, so its addresses come from `pnpm local:deploy`.
 x-giano-chains: &giano-chains |
   [
     {
       "chainId": 31337, "name": "Local devnet", "rpcUrl": "http://anvil:8545",
       "entryPoint": "${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}",
-      "walletApi": { "factory": "${FACTORY_ADDRESS:?run hh:initlocal and export FACTORY_ADDRESS}" }
+      "walletApi": { "factory": "${FACTORY_ADDRESS:?run pnpm local:deploy and export FACTORY_ADDRESS}" }
     }
   ]
 
@@ -36,7 +36,7 @@ services:
     ports:
       - '8545:8545'
 
-  # giano-bundler waits for the EntryPoint to appear, so it can start before hh:initlocal runs.
+  # giano-bundler waits for the EntryPoint to appear, so it can start before pnpm local:deploy runs.
   bundler:
     build:
       context: ..

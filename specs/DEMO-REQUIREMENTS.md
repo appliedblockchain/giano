@@ -90,7 +90,7 @@ Numbering follows the ticket. **R8 and R18 were not defined in the ticket**; R18
 | R10 | The user selects the blockchain in the UI. |
 | R11 | Switching chain preserves the smart-account address; a violation is obvious, not silent. |
 | R12 | Both sponsored and unsponsored transactions are reachable. |
-| R13 | A section dedicated to an ERC-20 token, with a default address; Giano's test ERC-20 deployed with CREATE2 to each testnet so the address is the same everywhere. |
+| R13 | A section dedicated to an ERC-20 token, with a default address; Giano's test ERC-20 deployed with CREATE3 to each testnet so the address is the same everywhere. |
 | R14 | The user can mint the default test ERC-20. |
 | R15 | Wallet-management operations are accessible. |
 | R16 | Build once, deploy anywhere: configuration resolves at runtime; one image serves every deployment and both tenant shapes. |

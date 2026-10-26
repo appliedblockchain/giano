@@ -11,13 +11,13 @@
         "chainId": 31337,
         "name": "Devnet A",
         "rpcUrl": "http://rpc.giano.localhost",
-        "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8"
+        "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7"
       },
       {
         "chainId": 31338,
         "name": "Devnet B",
         "rpcUrl": "http://rpc-b.giano.localhost",
-        "defaultToken": "0x9967bDf929856643e92EF65eefdE1fF8250774D8"
+        "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7"
       }
     ]
   },

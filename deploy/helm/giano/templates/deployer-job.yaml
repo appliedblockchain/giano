@@ -25,6 +25,8 @@ spec:
               value: {{ .Values.config.rpcUrl | quote }}
             - name: CHAIN_ID
               value: {{ .Values.config.chainId | quote }}
+            - name: ROLE_ADMIN
+              value: {{ required "deployer.roleAdmin is required (the paymaster ROLE_ADMIN)" .Values.deployer.roleAdmin | quote }}
             - name: DEPLOY_TESTING
               value: {{ .Values.deployer.deployTesting | quote }}
           envFrom:

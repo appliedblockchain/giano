@@ -73,9 +73,12 @@ bundler:
   image: giano-bundler
 
 deployer:
-  # one-shot CREATE2 deploy as a pre-install hook Job
+  # one-shot CREATE3 deploy of the canonical contracts as a pre-install hook Job. Its secret must
+  # carry DEPLOYER_PRIVATE_KEY, the canonical deployer's key (packages/contracts/deploy/config.ts).
   enabled: false
   image: giano-contracts-deployer
+  # the sponsorship paymaster's sole ROLE_ADMIN (a TimelockController in production); required
+  roleAdmin: ""
   deployTesting: false
 
 ingress:

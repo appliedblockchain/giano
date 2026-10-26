@@ -155,7 +155,7 @@ pnpm paymaster:demo --step errors      # just the refusals
 ```
 
 On a local devnet it writes by default; anywhere else it explains each write instead unless you
-pass `--write`. It needs a deployed paymaster — see `packages/contracts` for `hh:deploy:paymaster`
+pass `--write`. It needs a deployed paymaster — see `packages/contracts` for `deploy:cli core`
 and `provision:paymaster`.
 
 ## The management CLI

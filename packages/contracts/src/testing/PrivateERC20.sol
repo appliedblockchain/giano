@@ -15,8 +15,10 @@ contract PrivateERC20 is ERC20 {
     // Domain separator for EIP-712
     bytes32 public DOMAIN_SEPARATOR;
 
-    constructor(uint256 initialSupply) ERC20('Private ERC20', 'PE2') {
-        _mint(msg.sender, initialSupply);
+    /// @param holder Receives the initial supply. Explicit rather than `msg.sender`: deployed through
+    ///        CreateX's CREATE3, the constructor's sender is a throwaway proxy.
+    constructor(uint256 initialSupply, address holder) ERC20('Private ERC20', 'PE2') {
+        _mint(holder, initialSupply);
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),

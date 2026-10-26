@@ -85,34 +85,36 @@ sponsorship signer.
 ## 3. Contract addresses — devnet (chain 31337)
 
 Deterministic: baked into `e2e/devnet/state.json` and mirrored in `e2e/devnet/addresses.json`.
+They are the canonical CREATE3 addresses for the **placeholder** canonical deployer
+(`packages/contracts/deploy/config.ts`), so they change once the real deployer is set and the devnet
+state is regenerated.
 
 | Contract | Address |
 | --- | --- |
 | EntryPoint v0.7 (canonical, all chains) | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` |
-| `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` |
-| **`GianoPaymaster` (proxy)** | `0xf98b56de62ce88cEb70A9155582248cDBf2D0718` |
-| `GianoPaymaster` implementation | `0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E` |
-| `PermissivePaymaster` (test only) | `0xCbc040482c1dd07D533800874DC37De7b18c8092` |
-| Test ERC-20 | `0x9967bDf929856643e92EF65eefdE1fF8250774D8` |
+| `GianoSmartWalletFactory` | `0x9c01925D07527A7920031196396A9c37421715A2` |
+| `GianoSmartWallet` implementation | `0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6` |
+| **`GianoPaymaster` (proxy)** | `0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96` |
+| `GianoPaymaster` implementation | `0x326549c3600BFA31CB44213Df0576AE79E70E4aC` |
+| `PermissivePaymaster` (test only) | `0xE1deC1e97c1e4F4de427AFB0a5Fdbf26D3b1CcF1` |
+| Test ERC-20 | `0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7` |
 
 The **proxy** address is what tenants fund and what the admin console and `USEROP_ALLOWED_PAYMASTERS`
 point at. The implementation address changes on every upgrade; the proxy must not.
 
-Wallet addresses match the frozen canonical build on every chain. The baked paymaster keeps its
-original proxy address and is upgraded through UUPS; its current implementation is recorded in
-`e2e/devnet/addresses.json`. A fresh deployment of the ECDSA-only paymaster instead uses proxy
-`0x5Eaf2d3b813f227D2E8c0cFcD1e5D111Ade1d489` and implementation
-`0x40465E7c728cE8887958FA2fBe620924aebbC873`, frozen in `packages/contracts/canonical.ts`.
-The Determinism workflow checks those fresh-deployment addresses and operator independence.
-After changing paymaster bytecode, re-freeze deliberately and use `devnet:upgrade:paymaster`
-to update an existing baked proxy without replacing its funding address.
+The factory, implementation and paymaster proxy sit at the canonical addresses in
+`packages/contracts/canonical.ts`, on both devnet chains and on every other chain. The baked paymaster
+is upgraded through UUPS and keeps its proxy address; its current implementation is recorded in
+`e2e/devnet/addresses.json`. To run unreleased paymaster code on the devnet, use
+`devnet:upgrade:paymaster`: it deploys the working tree's build (`--release dev`, local chains only)
+as an upgrade target and points the baked proxy at it without replacing its funding address.
 
 ### Well-known addresses the stack probes
 
 | Address | What |
 | --- | --- |
-| `0x4e59b44847b379578588920ca78fbf26c0b4956c` | Arachnid deterministic-deployment (CREATE2) factory |
+| `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed` | CreateX — every canonical Giano contract is deployed through it (CREATE3) |
+| `0x4e59b44847b379578588920ca78fbf26c0b4956c` | Arachnid deterministic-deployment (CREATE2) factory — deploys the P-256 verifier |
 | `0x0000000000000000000000000000000000000100` | RIP-7212 P-256 precompile (if the chain has one) |
 | `0xc2b78104907F722DABAc4C69f826a522B2754De4` | daimo p256-verifier — the in-contract fallback |
 | `0x000000000000000000000000000000000000dEaD` | burn address; the sample dApp's *deliberately* unlisted contract, used to demonstrate a sponsorship refusal |

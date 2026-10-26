@@ -4,10 +4,11 @@ pragma solidity ^0.8.28;
 import {IPaymaster} from '@account-abstraction/contracts/interfaces/IPaymaster.sol';
 import {Initializable} from '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 import {IAccessControl} from '@openzeppelin/contracts/access/IAccessControl.sol';
+import {ERC1967Proxy} from '@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol';
 import {ERC1967Utils} from '@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol';
 import {PaymasterTestBase} from './PaymasterTestBase.sol';
+import {ICreateX} from '../utils/CreateXFixture.sol';
 import {GianoPaymaster} from '../../src/paymaster/GianoPaymaster.sol';
-import {GianoPaymasterDeployer} from '../../src/paymaster/GianoPaymasterDeployer.sol';
 
 contract DeploymentTest is PaymasterTestBase {
     function test_initialiseSetsTheConfigurationInStorageNotInBytecode() public view {
@@ -22,59 +23,86 @@ contract DeploymentTest is PaymasterTestBase {
         implementation.initialize(address(ENTRY_POINT), roleAdmin, 0, 0, 0);
     }
 
-    /// @dev O4's window. The deployer initialises in the same transaction as the CREATE2, so there
-    ///      is no block in which an unconfigured proxy is sitting there to be claimed.
+    /// @dev O4's window. CreateX initialises in the same transaction as the CREATE3, so there is
+    ///      no block in which an unconfigured proxy is sitting there to be claimed.
     function test_theProxyIsAlreadyInitialisedWhenTheDeployTransactionReturns() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         vm.prank(outsider);
         paymaster.initialize(address(ENTRY_POINT), outsider, 0, 0, 0);
     }
 
-    /// @dev Address stability (D10, R-49) rests on nothing operator-specific being in the init
-    ///      code: the same salt and implementation must land on the same address for any operator.
-    function test_theProxyAddressIsAPureFunctionOfSaltAndImplementation() public view {
-        assertEq(deployer.predict(DEPLOY_SALT, address(implementation)), address(paymaster));
+    /// @dev The proxy address is a pure function of the deployer and the label: no bytecode and no
+    ///      configuration enters it (deploy/create3.ts).
+    function test_theProxyAddressIsAPureFunctionOfDeployerAndLabel() public view {
+        assertEq(_create3Address(canonicalDeployer, PROXY_LABEL), address(paymaster));
     }
 
-    function test_twoOperatorsWithDifferentRoleAdminsGetTheSameAddress() public {
-        GianoPaymasterDeployer other = new GianoPaymasterDeployer();
-        GianoPaymaster otherImpl = new GianoPaymaster();
+    function test_neitherTheConfigurationNorTheImplementationMovesTheAddress() public {
+        uint256 snapshot = vm.snapshotState();
+        address first = _deployPaymasterProxy(
+            canonicalDeployer,
+            'giano.paymaster.proxy.config-test',
+            address(implementation),
+            abi.encodeCall(
+                GianoPaymaster.initialize,
+                (address(ENTRY_POINT), roleAdmin, DEFAULT_FEE_WEI, POST_OP_GAS_ALLOWANCE, PENALTY_BPS)
+            )
+        );
+        vm.revertToState(snapshot);
 
-        address a = other.predict(DEPLOY_SALT, address(otherImpl));
-        address deployed = other.deploy(
-            DEPLOY_SALT,
-            address(otherImpl),
+        address second = _deployPaymasterProxy(
+            canonicalDeployer,
+            'giano.paymaster.proxy.config-test',
+            address(new GianoPaymaster()),
             abi.encodeCall(GianoPaymaster.initialize, (address(ENTRY_POINT), outsider, 1, 2, 3))
         );
-        assertEq(deployed, a, 'a different role admin must not move the address');
+        assertEq(second, first, 'a different implementation or role admin must not move the address');
+    }
+
+    /// @dev The salt is permissioned: CreateX treats it as an ordinary salt when anyone but the
+    ///      deployer sends it, so nobody else can occupy a canonical address on a chain we have not
+    ///      adopted yet.
+    function test_onlyTheCanonicalDeployerCanUseItsSalts() public {
+        string memory label = 'giano.paymaster.proxy.squat-test';
+        address canonical = _create3Address(canonicalDeployer, label);
+
+        vm.prank(outsider);
+        address squatted = CREATEX.deployCreate3AndInit(
+            _create3Salt(canonicalDeployer, label),
+            abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(address(implementation), '')),
+            abi.encodeCall(GianoPaymaster.initialize, (address(ENTRY_POINT), outsider, 0, 0, 0)),
+            ICreateX.Values(0, 0)
+        );
+        assertTrue(squatted != canonical, 'an outsider landed on the canonical address');
+        assertEq(canonical.code.length, 0);
     }
 
     function test_deployRevertsIfInitialisationFails() public {
-        GianoPaymasterDeployer other = new GianoPaymasterDeployer();
         vm.expectRevert();
-        other.deploy(
-            bytes32(uint256(1)),
+        _deployPaymasterProxy(
+            canonicalDeployer,
+            'giano.paymaster.proxy.fail-1',
             address(implementation),
             abi.encodeCall(GianoPaymaster.initialize, (address(0), roleAdmin, 0, 0, 0))
         );
     }
 
     function test_initialiseRejectsAZeroEntryPointOrRoleAdmin() public {
-        GianoPaymaster impl = new GianoPaymaster();
-        GianoPaymasterDeployer d = new GianoPaymasterDeployer();
-
         vm.expectRevert();
-        d.deploy(bytes32(uint256(2)), address(impl), abi.encodeCall(GianoPaymaster.initialize, (address(ENTRY_POINT), address(0), 0, 0, 0)));
+        _deployPaymasterProxy(
+            canonicalDeployer,
+            'giano.paymaster.proxy.fail-2',
+            address(implementation),
+            abi.encodeCall(GianoPaymaster.initialize, (address(ENTRY_POINT), address(0), 0, 0, 0))
+        );
     }
 
     function test_initialiseRejectsAnAbsurdPenaltyRate() public {
-        GianoPaymaster impl = new GianoPaymaster();
-        GianoPaymasterDeployer d = new GianoPaymasterDeployer();
-
         vm.expectRevert();
-        d.deploy(
-            bytes32(uint256(3)),
-            address(impl),
+        _deployPaymasterProxy(
+            canonicalDeployer,
+            'giano.paymaster.proxy.fail-3',
+            address(implementation),
             abi.encodeCall(GianoPaymaster.initialize, (address(ENTRY_POINT), roleAdmin, 0, 0, 9999))
         );
     }

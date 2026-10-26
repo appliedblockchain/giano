@@ -95,9 +95,11 @@ backward-compatible across one minor.
 
 Use the published `giano-contracts` deployments for supported chains. To deploy to a new
 chain, run the `giano-contracts-deployer` one-shot (compose `profiles: [deploy]` or the
-Helm pre-install hook) with `RPC_URL`, `CHAIN_ID`, `DEPLOYER_PRIVATE_KEY` — it does a
-CREATE2 deploy (identical addresses across chains for identical bytecode) and emits
-`giano-addresses.<chainId>.json`.
+Helm pre-install hook) with `RPC_URL`, `CHAIN_ID`, `DEPLOYER_PRIVATE_KEY` (the canonical
+deployer's key) and `ROLE_ADMIN` (the paymaster's role admin) — it deploys the latest contracts
+release with CREATE3 through CreateX (the same addresses on every chain, set by the canonical
+deployer and fixed labels), checks the code it finds or deploys, and emits
+`giano-addresses.<chainId>.json`. Only the canonical deployer can deploy to the canonical addresses.
 
 ## 6. Tenants
 

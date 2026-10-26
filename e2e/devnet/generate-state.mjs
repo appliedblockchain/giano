@@ -7,7 +7,7 @@
  * every sponsorship.
  *
  * What it bakes:
- *   - EntryPoint v0.7 at its canonical address
+ *   - CreateX and EntryPoint v0.7 at their canonical addresses
  *   - the FreshCryptoLib P-256 verifier. The pinned anvil provides the RIP-7212 precompile natively,
  *     so this is belt-and-braces — but it makes the state work on an older anvil too, and
  *     `giano-doctor` treats missing P-256 verification as a critical failure
@@ -132,32 +132,33 @@ if (!String(clientVersion).includes(PINNED_ANVIL_VERSION) && !process.env.ALLOW_
 
 console.log(`Generating devnet state against ${RPC} (${clientVersion})`);
 
-// ── 1. EntryPoint ─────────────────────────────────────────────────────────────
-run('node', [path.join(dir, 'setup-entrypoint.mjs')]);
+// ── 1–4. Infrastructure, the canonical contracts and the testing fixtures ────────
+// One command: CreateX and EntryPoint v0.7 (what a public chain already has), the P-256 verifier,
+// then the wallet factory + implementation, the production paymaster and the fixtures — at their
+// canonical CREATE3 addresses, deployed by the impersonated canonical deployer (no key involved).
+//
+// The P-256 verifier is baked rather than assumed: whether anvil offers the RIP-7212 precompile
+// depends on its build and default hardfork (the pinned 1.7.1 does; older builds do not), and a
+// devnet where passkey signatures cannot verify fails in a way that looks like a wallet bug.
+//
+// The fixtures (the permissive test paymaster and the demo ERC-20) stay: fixtures whose subject is
+// not sponsorship keep using them, so a sponsorship rule change cannot break a token-transfer test.
+//
+// The record is wiped first so the run reflects this chain, not a previous one.
+const recordFile = path.join(contractsDir, 'deployments', `${CHAIN_ID}.json`);
+fs.rmSync(recordFile, { force: true });
+run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'local:deploy'], { env: { RPC_URL: RPC, RELEASE: process.env.RELEASE ?? '' } });
+const record = JSON.parse(fs.readFileSync(recordFile, 'utf8'));
+const deployed = {
+  factory: record.contracts.factory.address,
+  implementation: record.contracts.walletImplementation.address,
+  sponsorshipPaymaster: record.contracts.paymasterProxy.address,
+  sponsorshipPaymasterImplementation: record.contracts.paymasterImplementation.address,
+  testPaymaster: record.contracts.testPaymaster.address,
+  testErc20: record.contracts.testErc20.address,
+};
 
-// ── 2. P-256 verification ─────────────────────────────────────────────────────
-// Baked rather than assumed: whether anvil offers the RIP-7212 precompile depends on its build and
-// default hardfork (the pinned 1.7.1 does; older builds do not), and a devnet where passkey
-// signatures cannot verify fails in a way that looks like a wallet bug. The verifier is
-// deterministic (CREATE2), so baking it keeps the state reproducible either way.
-run('npx', ['hardhat', 'run', 'scripts/p256_deploy.ts', '--network', 'localhost'], { cwd: contractsDir });
-
-// ── 3. Wallet factory, implementation and the testing fixtures ────────────────
-// The deployments directory is wiped first so Ignition re-executes rather than reconciling
-// against a journal from a previous run's chain.
-fs.rmSync(path.join(contractsDir, 'ignition', 'deployments', `chain-${CHAIN_ID}`), { recursive: true, force: true });
-run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy', '--network', 'localhost']);
-run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy:testing', '--network', 'localhost']);
-
-// ── 4. The production paymaster ───────────────────────────────────────────────
-run('pnpm', ['--filter', '@appliedblockchain/giano-contracts', 'hh:deploy:paymaster', '--network', 'localhost']);
-
-const deployed = JSON.parse(
-  fs.readFileSync(path.join(contractsDir, 'ignition', 'deployments', `chain-${CHAIN_ID}`, 'deployed_addresses.json'), 'utf8'),
-);
-
-const sponsorshipPaymaster = deployed['GianoPaymaster#SponsorshipPaymaster'];
-if (!sponsorshipPaymaster) throw new Error('the paymaster module did not report a proxy address');
+const { sponsorshipPaymaster } = deployed;
 
 /*
  * Roles: every one of them on the deployer EOA, and the timelock topology D13/D14 describe is
@@ -206,7 +207,7 @@ run(
     '--chain-id',
     String(CHAIN_ID),
     '--factory',
-    deployed['GianoAccountFactory#GianoSmartWalletFactory'],
+    deployed.factory,
     '--sponsorship-paymaster',
     sponsorshipPaymaster,
     '--tenants',
@@ -225,11 +226,11 @@ run(
 if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, 'addresses.json'))) {
   const canonical = JSON.parse(fs.readFileSync(path.join(dir, 'addresses.json'), 'utf8'));
   const pairs = [
-    ['factory', deployed['GianoAccountFactory#GianoSmartWalletFactory']],
-    ['implementation', deployed['GianoAccountFactory#GianoSmartWallet']],
+    ['factory', deployed.factory],
+    ['implementation', deployed.implementation],
     ['sponsorshipPaymaster', sponsorshipPaymaster],
-    ['testPaymaster', deployed['Testing#PermissivePaymaster']],
-    ['testErc20', deployed['Testing#PrivateERC20']],
+    ['testPaymaster', deployed.testPaymaster],
+    ['testErc20', deployed.testErc20],
   ];
   for (const [field, address] of pairs) {
     if (canonical[field] && canonical[field].toLowerCase() !== String(address).toLowerCase()) {
@@ -249,15 +250,15 @@ fs.writeFileSync(path.join(dir, STATE_FILE), JSON.stringify(JSON.parse(decodeSta
 const addresses = {
   chainId: 31337,
   entryPoint: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-  factory: deployed['GianoAccountFactory#GianoSmartWalletFactory'],
-  implementation: deployed['GianoAccountFactory#GianoSmartWallet'],
+  factory: deployed.factory,
+  implementation: deployed.implementation,
   sponsorshipPaymaster,
-  sponsorshipPaymasterImplementation: deployed['GianoPaymaster#GianoPaymaster'],
+  sponsorshipPaymasterImplementation: deployed.sponsorshipPaymasterImplementation,
   sponsorshipSigner: ANVIL.sponsorshipSigner.address,
   sponsorshipSignerKey: ANVIL.sponsorshipSigner.key,
   paymasterRoleAdmin: ANVIL.deployer.address,
-  testPaymaster: deployed['Testing#PermissivePaymaster'],
-  testErc20: deployed['Testing#PrivateERC20'],
+  testPaymaster: deployed.testPaymaster,
+  testErc20: deployed.testErc20,
   tenants: DEMO_TENANTS,
 };
 // addresses.json records the canonical devnet addresses once; they are identical on every

@@ -498,11 +498,11 @@ from a CI job, so every one of them has to be in the gate:
 
 | Failure | Job that catches it | Workflow |
 | --- | --- | --- |
-| Solidity compile error | `generated.ts drift check (solc)` (`pnpm hh:compile`) and `Foundry tests` | `ci.yml` |
-| Foundry test failure (28 `.t.sol` files, no Hardhat suite) | `Foundry tests` (`forge test -vvv`) | `ci.yml` |
+| Solidity compile error | `generated.ts drift check (solc)` (`pnpm gen:abis`) and `Foundry tests` | `ci.yml` |
+| Foundry test failure | `Foundry tests` (`forge test -vvv`) | `ci.yml` |
 | ABI drift against the committed `generated.ts` | `generated.ts drift check (solc)` | `ci.yml` |
 | `addresses.ts` drift | `Build & typecheck packages (no solc)` | `ci.yml` |
-| CREATE2 address change | `CREATE2 address determinism` | `determinism.yml` |
+| A release that does not reproduce from its solc input, `canonical.ts` drift (canonical addresses or code), or a deploy CLI that deploys off-canonical or is not idempotent | `Canonical releases, addresses and code` | `determinism.yml` |
 | Unsafe paymaster storage layout | `Paymaster storage layout is upgrade-safe` (`pnpm storage:check`) | `determinism.yml` |
 
 No job in either workflow sets `continue-on-error`, so any of these fails its workflow, and a failed

@@ -89,7 +89,7 @@ rather than renumbered, because other sections cite it. Each is marked where it 
 | O1 | **Tenant identity on-chain.** The contract needs a 16/32-byte tenant id | Use the `tenants.id` UUID as `bytes16` — already immutable, already unique, never reused, and needs no new mapping. The slug travels in the registration event for human auditing |
 | O2 | **Overhead allowance formula** (R-41). A flat gas figure under-covers when a client grossly over-estimates `callGasLimit`, because the EntryPoint's 10% penalty scales with that over-estimate | §3.6 charges a *bound* derived from the op's own gas limits rather than a flat number. Needs a calibration run on the target chain before the first tenant funds |
 | O3 | **Strictness of the permissive/production separation** (R-29) | §12 layers artifact separation, registry typing and boot-time refusal. Deliberate misuse remains possible; a chain-id guard inside the test contract is offered as a fifth layer if that is judged insufficient |
-| O4 | **Initialiser front-running.** Address stability requires an empty-init proxy, which leaves a window between deploy and `initialize` | §4.2 closes it by deploying and initialising in one transaction from a small deployer built on OZ `Create2`, keeping the proxy itself stock `ERC1967Proxy`. Needs confirmation that the deployment tooling can run that one call instead of Ignition's two steps |
+| O4 | **Initialiser front-running.** Address stability requires an empty-init proxy, which leaves a window between deploy and `initialize` | *Closed.* §4.2 deploys and initialises in one transaction through CreateX's `deployCreate3AndInit`, keeping the proxy itself stock `ERC1967Proxy` |
 | O5 | **Number of chains** — *closed* (requirements Q6) | One paymaster deployment per chain, and a tenant funding a balance per chain, is the accepted shape. The ledger and config are chain-keyed throughout; nothing here needs a decision, only per-chain fee and overhead calibration (O2) |
 | O6 | **Who pays for wallet management, and may a tenant opt out** (requirements Q1) | §6.1–§6.2 implement it as sponsored-by-default under a platform cap, **charged to the tenant**, with an explicit opt-out. §6.6 sets out what changes if the platform pays instead — a platform balance, a signed payer flag, a wider invariant. Product has to choose |
 | O7 | **Deficit policy.** R-35 requires recording and alerting a shortfall, not what happens next | §3.6 clamps, records and alerts; §7.5 blocks further authorisation for a tenant carrying a deficit until it is funded. Whether that is commercially right is a call for the business |
@@ -112,7 +112,7 @@ rather than renumbered, because other sections cite it. Each is marked where it 
 | Admin config API | `wallet-api/src/routes/admin.ts` | changed | Tenant-scoped read/write of sponsorship config |
 | ERC-7677 client | `wallet-core/src/paymaster/` | new | viem-shaped `getPaymasterStubData` / `getPaymasterData` against the service, with typed errors |
 | Wallet review gate | `wallet-web/src/views/ReviewTransaction.tsx`, `wallet.ts`, `config.ts` | changed | Pre-approval sponsorship check, refusal rendering, console logging |
-| Registry & deploy | `packages/contracts/{ignition,addresses.ts,scripts}` | changed | Deterministic deploy, registry entry, `giano-doctor` checks |
+| Registry & deploy | `packages/contracts/{deploy,releases,deployments,addresses.ts,scripts}` | changed | Deterministic deploy, registry entry, `giano-doctor` checks |
 
 Nothing about tenant resolution, sessions, WebAuthn or the relay changes shape; the sponsorship
 service reuses `plugins/tenant.ts` and `plugins/auth.ts` exactly as the relay does.
@@ -212,7 +212,7 @@ check it at a glance:
 | Narrowing to `uint128` | `SafeCast.toUint128` | Unchecked casts with hand-written bounds |
 | Proxy | `ERC1967Proxy` + `UUPSUpgradeable` | A custom proxy (§4.2) |
 | Upgrade delay and role-grant delay | `TimelockController` | An in-contract delay implementation (§4.3) |
-| Deterministic deploy helper | `Create2` | Hand-assembled CREATE2 calls |
+| Deterministic deploy | CreateX's `deployCreate3AndInit` (not OpenZeppelin) | A bespoke deployer contract |
 | Upgrade safety checks | `@openzeppelin/upgrades-core` | Eyeballing the storage layout (§4.4) |
 
 `SignatureChecker` rather than bare `ECDSA.recover` is a deliberate small win: because the authorising
@@ -227,7 +227,7 @@ about twenty lines.
 
 `@openzeppelin/contracts-upgradeable` v5 is a new dependency on `packages/contracts` (the
 non-upgradeable `@openzeppelin/contracts` v5.3 is already there and stays, for `TimelockController`,
-`Create2` and the libraries). Its contracts use ERC-7201 namespaced storage, which is the discipline
+`ERC1967Proxy` and the libraries). Its contracts use ERC-7201 namespaced storage, which is the discipline
 `MultiOwnable` already follows and the reason an upgrade cannot collide with role or pause state.
 
 ### 3.2 Storage
@@ -465,43 +465,36 @@ run out of gas — a `postOp` revert is a `PostOpReverted` for the whole operati
 
 ### 4.1 Toolchain
 
-Unchanged from the rest of the stack: solc 0.8.28, optimizer 200, `viaIR`, Hardhat Ignition with
-`--strategy create2` and the repo's fixed salt. New module `ignition/modules/GianoPaymaster.ts`,
-kept out of `Testing.ts` and out of the `index.ts` aggregate that the deployer image runs for
-testing contracts.
+Unchanged from the rest of the stack: Foundry, solc 0.8.28, optimizer 200, `viaIR`, EVM `paris`
+(`packages/contracts/foundry.toml`). The paymaster is deployed from a committed release
+(`releases/<vN>`) by the contracts package's deploy CLI (`deploy/cli.ts`, `core` command), with
+CREATE3 through CreateX; the testing contracts go through a separate `testing` command that refuses
+production chain ids.
 
 ### 4.2 Address stability
 
-Both artifacts must be bytecode-determined, or the deployed address varies per operator and D10's
-promise fails:
+The proxy's address must not vary per operator, or D10's promise fails. It is a CREATE3 address: a
+pure function of the canonical deployer and the fixed label `giano.paymaster.proxy`
+(`deploy/create3.ts`), so neither the implementation's bytecode nor the initialiser arguments enter
+it. The implementation still takes no constructor arguments (everything is in the initialiser), so
+one release's implementation code is the same for every deployment, and the proxy is still
+constructed with the implementation address and an **empty** initialisation payload.
 
-- the **implementation** takes no constructor arguments (everything is in the initialiser);
-- the **proxy** is constructed with the implementation address and an **empty** initialisation
-  payload. Passing initialiser calldata into the proxy constructor — the usual OZ pattern — would
-  bake the operator's own role-admin address into the init code and change the address.
+The salt is CreateX's permissioned form (`deployer ‖ 0x00 ‖ keccak256(label)[0:11]`): CreateX
+honours it only from the deployer named in its first 20 bytes, so nobody else can occupy the
+canonical proxy address on a chain we have not adopted yet. The flip side is that only the canonical
+deployer can put the paymaster at its canonical address on a new chain.
 
-That leaves the deploy→initialise window (O4): between the two transactions, anyone watching the
+That leaves the deploy→initialise window (O4): between two transactions, anyone watching the
 mempool could call `initialize` and take the roles. It is closed **without a custom proxy** (S6) — the
-proxy stays stock OZ `ERC1967Proxy` — by doing both steps in one transaction from a minimal
-`GianoPaymasterDeployer` built on OZ's `Create2`:
+proxy stays stock OZ `ERC1967Proxy` — by doing both steps in one transaction through CreateX's
+`deployCreate3AndInit`, which deploys the proxy, calls `initialize(entryPoint, roleAdmin,
+defaultFeeWei, postOpGasAllowance, penaltyBps)` on it and reverts the whole deployment if that call
+fails. `initialize` is OZ `initializer`-guarded, so a second call is impossible regardless.
 
-```solidity
-// deploy(salt, implementation, initCalldata) → CREATE2 the stock ERC1967Proxy with empty data,
-// then call initialize in the same transaction, then revert if initialisation did not take.
-address proxy = Create2.deploy(0, salt, abi.encodePacked(type(ERC1967Proxy).creationCode,
-                                                        abi.encode(implementation, "")));
-GianoPaymaster(proxy).initialize(...);
-```
-
-The deployer contract is itself deployed deterministically (the repo already vendors the Safe
-singleton deployer), so the proxy address remains a pure function of deployer + salt + init code and
-the determinism check in §4.5 still holds. `initialize(entryPoint, roleAdmin, defaultFeeWei,
-postOpGasAllowance, penaltyBps)` is OZ `initializer`-guarded, so a second call is impossible
-regardless.
-
-The fallback, if the deployment tooling cannot be made to run that single call, is to deploy through
-a private RPC and assert the post-deploy state before announcing the address — weaker, and the
-reason O4 is still listed as open.
+Because an address no longer commits to code, `canonical.ts` records the runtime codehash each
+release leaves at each canonical address (`CANONICAL_CODE`), and §4.5's checks compare code as well
+as addresses.
 
 ### 4.3 Upgrade and role authority
 
@@ -554,8 +547,11 @@ existing `paymaster` field is renamed `testPaymaster` to make the two structural
 in every consumer's types (§12). `scripts/generate-addresses.ts` and every reader
 (`wallet-api/src/config.ts`, `wallet-web/src/config.ts`, `scripts/doctor.ts`) follow.
 
-`determinism.yml` gains the paymaster: recompute the CREATE2 addresses on a fresh anvil, assert
-equality with the committed registry. No carve-out is needed — that is the point of §4.2.
+`determinism.yml` covers the paymaster with the rest of the canonical set: every release must
+reproduce from its committed solc input, `canonical.ts` (addresses and codehashes, generated by
+deploying every release to a throwaway anvil) must not drift, and the deploy CLI must deploy the
+proxy and implementation at their canonical addresses with canonical code. `scripts/generate-addresses.ts`
+refuses a deployment record whose paymaster address or codehash is not canonical.
 
 ### 4.6 Stake, deposit and deployment completion
 
@@ -566,6 +562,7 @@ timelock-queue the role grants → `addStake(unstakeDelaySec)` → `registerTena
 tenant funds via `depositFor`.
 
 `giano-doctor chain` grows checks that fail the exit code, not just warn: paymaster proxy has code;
+the proxy and the implementation behind it run canonical code (a release's codehash);
 implementation address matches the registry; stake present and above the configured minimum;
 `EntryPoint.balanceOf(paymaster)` above the low-water mark; the signer set is exactly the expected
 keys; `ROLE_ADMIN` and `UPGRADER_ROLE` are held by the timelock and by nothing else;
@@ -1303,13 +1300,14 @@ on-chain.
 ### 12.1 Keeping the permissive paymaster, and keeping it out of production
 
 `PermissivePaymaster` stays exactly as it is, and keeps requiring no configuration (R-28). The
-Hardhat/Foundry loop, the `hh:initlocal` dev chain and every fixture whose subject is not sponsorship
+Foundry suite, the `local:deploy` dev chain and every fixture whose subject is not sponsorship
 keep using it — that is R-64: a change to a sponsorship rule must not break a token-transfer test.
 
 R-29 wants the separation structural. Four layers, in decreasing strength:
 
-1. **Artifacts.** Testing contracts compile from a source root that the deployer image and the
-   published ABI set exclude; the production Ignition module never references them.
+1. **Deployment.** The deploy CLI's `core` command, which the deployer image runs, never references
+   the testing contracts; they go only through its `testing` command, which refuses production chain
+   ids.
 2. **Types.** The registry's `testPaymaster` and `sponsorshipPaymaster` are different fields (§4.5),
    so a consumer cannot pass one where the other is meant, and CI asserts no production chain id
    carries a `testPaymaster`.
@@ -1330,7 +1328,7 @@ state on its own, from one command, deterministically and offline. Three pieces,
 introduces a production-only-in-reverse code path (R-62):
 
 **Baked into the devnet image.** `e2e/devnet`'s state generator additionally deploys the paymaster
-implementation and proxy at their CREATE2 addresses, initialises it, grants every role to the
+implementation and proxy at their canonical CREATE3 addresses, initialises it, grants every role to the
 deterministic anvil account the dev stack already uses, `addStake`s it, registers the demo tenants
 with their withdrawal addresses, and funds each balance generously via `depositFor`. Anvil's free ETH
 makes funding deterministic with no faucet and no secret. The dev role holder is a plain EOA and the

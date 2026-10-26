@@ -12,11 +12,8 @@
     "paymaster:demo": "pnpm --filter @appliedblockchain/giano-paymaster-sdk run demo --",
     "build:connector": "pnpm -F @appliedblockchain/giano-connector build",
     "git:init": "git submodule update --init --recursive",
-    "aa:deploy:local": "cd vendor/account-abstraction && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 && env COREPACK_ENABLE_STRICT=0 corepack yarn@1 deploy --network localhost",
-    "hh:initlocal": "pnpm --filter @appliedblockchain/giano-contracts hh:initlocal",
-    "hh:node": "pnpm --filter @appliedblockchain/giano-contracts hh:node",
-    "hh:deploy": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy",
-    "hh:deploy:testing": "pnpm --filter @appliedblockchain/giano-contracts hh:deploy:testing",
+    "local:node": "pnpm --filter @appliedblockchain/giano-contracts local:node",
+    "local:deploy": "pnpm --filter @appliedblockchain/giano-contracts local:deploy",
     "doctor": "pnpm --filter @appliedblockchain/giano-contracts run doctor --"
   },
   "devDependencies": {

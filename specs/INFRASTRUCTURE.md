@@ -2871,59 +2871,52 @@ dApps already support. Everything in this section happens **on both chains indep
 paymaster is deployed twice, two sets of accounts are funded, and two RPC endpoints are provisioned.
 
 `wallet-api` verifies at boot that each served chain carries the canonical factory and
-implementation at the addresses frozen in `packages/contracts/canonical.ts`, and refuses to start
-otherwise. Both chains satisfy this today, and — because the factory and implementation are deployed
-by the same CREATE2 salt on each — at the **same addresses** on both:
+implementation — at the addresses in `packages/contracts/canonical.ts` and running a release's code
+(its codehash is in `CANONICAL_CODE`) — and refuses to start otherwise. The canonical contracts are
+deployed with CREATE3 through CreateX, so their addresses are a pure function of the canonical
+deployer and fixed labels, and are the **same addresses** on both chains:
 
 | Contract | Address | On 84532? | On 11155111? |
 |---|---|---|---|
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | yes (canonical, everywhere) | yes |
-| `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` | **yes** — `ignition/deployments/chain-84532` | **yes** — on chain; deployment record reconstructed, see below |
-| `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` | **yes** — same | **yes** — same |
-| `GianoPaymaster` proxy | *not frozen; CREATE2 from the fixed salt* | **no** | **no** |
+| `GianoSmartWalletFactory` | `CANONICAL_FACTORY` | **no** — to be deployed (§13.1) | **no** — to be deployed |
+| `GianoSmartWallet` implementation | `CANONICAL_IMPLEMENTATION` | **no** — same | **no** — same |
+| `GianoPaymaster` proxy | `CANONICAL_SPONSORSHIP_PAYMASTER` | **no** | **no** |
 
-⚠ The 11155111 deployment was made outside this repo and its Ignition journal was never committed to
-any branch, so `ignition/deployments/chain-11155111` holds a **hand-written
-`deployed_addresses.json` and no journal** — the registry is generated from that file, and without an
-entry for the chain `wallet-web` cannot default `factoryAddress` and the SPA refuses to load for
-every served chain at once, because one unresolvable chain fails the whole config
-([§14.3](#143-wallet-web)). Both contracts were created through CreateX from
-`0xFebBB1e5b6D66E6281d0d4d4816f76B69365a09d` on 2026-09-11 — implementation in block 11683085,
-factory in block 11683090, transaction hashes in that directory's `README.md` — and both carry
-runtime bytecode byte-identical to Base Sepolia's.
+⚠ **Neither chain carries the current canonical contracts.** The contracts both chains hold were
+deployed under the previous scheme (CREATE2, salt `0xAB…AB`, factory `0x26dCd293…`); that scheme has
+been replaced and its deployment records removed, so the registry (`addresses.ts`) has no entry for
+either chain. Until both are redeployed (§13.1), `wallet-web` cannot default `factoryAddress` and the
+SPA refuses to load ([§14.3](#143-wallet-web)), and `wallet-api` refuses a chain whose factory is not
+the canonical one. `CANONICAL_DEPLOYER` in `packages/contracts/deploy/config.ts` is still a
+placeholder, and the deploy CLI refuses every non-local chain until the real deployer is set and
+`pnpm gen:canonical` has been rerun; the canonical addresses change at that point.
 
-**This is a placeholder, and it is the one thing in §13 that should not survive to staging.** It
-satisfies the address generator and the determinism workflow, both of which read only
-`deployed_addresses.json`, and it satisfies nothing else: `hardhat ignition status chain-11155111`
-has no journal to read, and a deploy against the chain treats it as undeployed (harmlessly — the
-salt is fixed, so CreateX reverts with `FailedContractCreation` rather than producing a divergent
-deployment). Recover the journal from the deploying machine, or redeploy the frozen canonical build
-to a fresh chain, and replace the directory with what Ignition writes.
+### 13.1 The canonical contracts must be deployed on both chains
 
-### 13.1 The paymaster must be deployed on both chains
-
-Neither `gianoAddresses[84532]` nor `gianoAddresses[11155111]` carries a `sponsorshipPaymaster`, and
-neither chain has a `GianoPaymaster` entry in its `ignition/deployments/chain-<id>/deployed_addresses.json`.
-**Deploying it on both chains is a prerequisite of this environment, not part of it.** It is a
-one-off chain operation performed with the existing tooling, before the first `terraform apply` that
-enables sponsorship:
+**Deploying them on both chains is a prerequisite of this environment, not part of it.** It is a
+one-off chain operation performed with the contracts package's deploy CLI, before the first
+`terraform apply`:
 
 ```
-pnpm --filter @appliedblockchain/giano-contracts hh:deploy:paymaster --network base-sepolia
+DEPLOYER_PRIVATE_KEY=<canonical deployer key> \
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
 pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
 
-pnpm --filter @appliedblockchain/giano-contracts hh:deploy:paymaster --network eth-sepolia
+DEPLOYER_PRIVATE_KEY=<canonical deployer key> \
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
 pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
 ```
 
-`GianoPaymaster.ts` takes a `roleAdmin` parameter; for a dev environment that is a developer-held
-EOA rather than a timelock, and the same EOA can hold the role on both chains. The fixed CREATE2 salt
-means the two deployments land at the **same proxy address** on both chains, as long as each is
-deployed from the same deployer address with the same nonce discipline — worth confirming rather
-than assuming, since a divergent address on one chain is easy to deploy and hard to notice. The
-resulting address is then either committed to `address-overrides.json` (preferred — it makes the
-address a reviewed artefact) or passed to Terraform as `var.paymaster_address`, which is chain-keyed
-only insofar as the two happen to agree; if they ever do not, it becomes a map.
+`core` deploys the wallet implementation, the factory and the paymaster (implementation, and proxy
+initialised in the same transaction) from the latest release. `--role-admin` is the paymaster's sole
+`ROLE_ADMIN`; for a dev environment that is a developer-held EOA rather than a timelock, and the same
+EOA can hold the role on both chains. Only the canonical deployer's key can deploy (the salts are
+permissioned), and the proxy lands at `CANONICAL_SPONSORSHIP_PAYMASTER` on both chains regardless of
+the role admin or any other parameter. Each run writes `packages/contracts/deployments/<chainId>.json`;
+commit both records, run `pnpm --filter @appliedblockchain/giano-contracts gen:addresses`, and the
+registry carries the factory and paymaster for both chains, so `var.paymaster_address` only needs to
+match `CANONICAL_SPONSORSHIP_PAYMASTER`.
 
 ### 13.2 Funded accounts
 
@@ -3016,20 +3009,20 @@ others' as-is. `entryPoint`, `factory` and `sponsorshipPaymaster` are the same a
     "chainId": 84532, "name": "Base Sepolia",
     "rpcUrl": "<base sepolia quicknode endpoint>",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "sponsorshipPaymaster": "<the §13.1 proxy>",
+    "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
     "walletApi": {
-      "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-      "policy": { "allowedPaymasters": ["<the §13.1 proxy>"] }
+      "factory": "<CANONICAL_FACTORY>",
+      "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
     }
   },
   {
     "chainId": 11155111, "name": "Ethereum Sepolia",
     "rpcUrl": "<eth sepolia quicknode endpoint>",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "sponsorshipPaymaster": "<the §13.1 proxy>",
+    "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
     "walletApi": {
-      "factory": "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
-      "policy": { "allowedPaymasters": ["<the §13.1 proxy>"] }
+      "factory": "<CANONICAL_FACTORY>",
+      "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
     }
   }
 ]
@@ -3237,7 +3230,7 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 | `CHAIN_NAME` | `Base Sepolia` (tfvar `var.chain_name` — the same one `custom-example`'s `GIANO_CHAIN_NAME` already reads, [§14.4](#144-custom-example)) — **not currently wired**, see below |
 | `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
 | `CHAIN_B_NAME` | `Ethereum Sepolia` (tfvar `var.chain_b_name`) — **not currently wired**, see below |
-| `FACTORY_ADDRESS` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
+| `FACTORY_ADDRESS` | `CANONICAL_FACTORY` from `packages/contracts/canonical.ts` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
 | `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
 | `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
 | `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.appliedblockchain.dev"]` — this tenant's own allowlist, which is why R9 does not reach it |
@@ -3621,7 +3614,7 @@ convention CI is trusted to keep:
 | The lifecycle policy expires on `tagStatus: any` ([§15.1](#151-the-deployed-version-is-declared)) | Attestations spend retention meant for deployable commits. Before ABIP-2 this was `provenance: false`. Since ABIP-2, each published image carries SBOM and `mode=min` provenance plus a cosign signature, about six ECR images per commit, and `var.ecr_lifecycle_image_count` stays 10, so retention covers only about one to two commits and the pinned tag must be watched |
 
 **Hardened images (ABIP-2).** Every image `docker.yml` publishes builds on a digest-pinned Docker Hardened Image, with
-two exceptions: `giano-devnet`, a recorded exception, and the deployer's build-stage `forge`. The disposition,
+two exceptions: `giano-devnet`, a recorded exception, and `giano-contracts-deployer`, which is out of scope. The disposition,
 exceptions, SPA tool allow-list and digest-refresh procedure are in [`docs/abip-compliance.md`](../docs/abip-compliance.md).
 
 What changes for operators:
@@ -4423,19 +4416,19 @@ Both dev tenants sit two labels deep on purpose, so each gets an ACM certificate
 than riding the wildcard ([§6.3](#63-certificates)) — which is what makes §6.6 step 2 a tested path
 rather than a paragraph.
 
-#### Step 3 — Deploy the paymaster and fund the accounts, on both chains 🖥️
+#### Step 3 — Deploy the contracts and fund the accounts, on both chains 🖥️
 
 A chain operation, not an infrastructure one, done twice
-([§13.1](#131-the-paymaster-must-be-deployed-on-both-chains)):
+([§13.1](#131-the-canonical-contracts-must-be-deployed-on-both-chains)):
 
 ```bash
-pnpm --filter @appliedblockchain/giano-contracts \
-  hh:deploy:paymaster --network base-sepolia
-pnpm --filter @appliedblockchain/giano-contracts \
-  hh:deploy:paymaster --network eth-sepolia
+DEPLOYER_PRIVATE_KEY=<canonical deployer key> pnpm --filter @appliedblockchain/giano-contracts \
+  deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
+DEPLOYER_PRIVATE_KEY=<canonical deployer key> pnpm --filter @appliedblockchain/giano-contracts \
+  deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
 ```
 
-Record both proxy addresses and confirm they agree (§13.1). Then fund each chain's EntryPoint
+Commit both `deployments/<chainId>.json` records and regenerate `addresses.ts` (§13.1). Then fund each chain's EntryPoint
 deposit and the (shared) bundler executor account from that chain's faucet — Base Sepolia and Ethereum
 Sepolia each have their own ([§13.2](#132-funded-accounts)). All four drain with use, and an empty
 one presents as "transactions stopped working" ([R2](#19-risks-and-open-items)) — on whichever chain

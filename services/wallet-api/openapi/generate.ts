@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CANONICAL_FACTORY, ENTRYPOINT_V07_ADDRESS } from '@appliedblockchain/giano-contracts';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { createDb } from '../src/db/index.js';
@@ -23,6 +24,10 @@ const config = loadConfig({
   LOG_LEVEL: 'error',
   DATABASE_URL: 'postgres://user:pass@localhost:5432/openapi-codegen',
   CHAIN_ID: '84532',
+  // Explicit rather than from the contracts registry, which only lists chains with a committed
+  // deployment: the document must not depend on which chains happen to be deployed.
+  ENTRYPOINT_ADDRESS: ENTRYPOINT_V07_ADDRESS,
+  FACTORY_ADDRESS: CANONICAL_FACTORY,
   RPC_URL: 'http://localhost:8545',
   BUNDLER_URL: 'http://localhost:4337',
   SPONSORSHIP_ENABLED: 'true',

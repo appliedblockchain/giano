@@ -108,7 +108,7 @@ x-chain-prerequisites: &chain-prerequisites
   # Terraform and none is created by this file.
   #   1. The GianoPaymaster proxy must be DEPLOYED. `gianoAddresses[84532]` carries no
   #      sponsorshipPaymaster, so PAYMASTER_ADDRESS has no default and no registry fallback.
-  #      `pnpm --filter @appliedblockchain/giano-contracts hh:deploy:paymaster`  (§13.1)
+  #      `pnpm --filter @appliedblockchain/giano-contracts deploy:cli core …`  (§13.1)
   #   2. Two accounts must be FUNDED, and will need topping up (§13.2):
   #        the bundler executor   fronts gas for every transaction
   #        the paymaster deposit  the EntryPoint deposit + stake sponsorship spends from
