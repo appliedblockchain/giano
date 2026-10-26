@@ -8,7 +8,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Address } from "viem";
 import type { Deployment } from "../config";
-import { type ConnectedWallet, createReadClient } from "../lib/chain";
+import {
+	type ConnectedWallet,
+	createReadClient,
+	type ReadAuth,
+} from "../lib/chain";
 import { describeError } from "../lib/format";
 
 /**
@@ -38,13 +42,33 @@ export type PaymasterState = {
 	refresh: () => Promise<void>;
 };
 
+/**
+ * `auth` is `"required"` while the console has the platform API and no session yet: nothing is
+ * read, no client is built, and whatever an earlier session read is gone. A session's read access
+ * is its token; once it ends, so do the reads made with it.
+ */
 export function usePaymaster(
 	deployment: Deployment,
 	wallet: ConnectedWallet | undefined,
+	auth?: ReadAuth | "required",
 ): PaymasterState {
+	const blocked = auth === "required";
+	const token = auth === "required" ? undefined : auth?.token;
+	// The client is keyed on the token; the callback is read when a 401 arrives, whatever its identity.
+	const onUnauthorized = useRef<() => void>(undefined);
+	onUnauthorized.current =
+		auth === "required" ? undefined : auth?.onUnauthorized;
 	const publicClient = useMemo(
-		() => createReadClient(deployment),
-		[deployment],
+		() =>
+			blocked
+				? undefined
+				: createReadClient(
+						deployment,
+						token
+							? { token, onUnauthorized: () => onUnauthorized.current?.() }
+							: undefined,
+					),
+		[deployment, blocked, token],
 	);
 
 	const [client, setClient] = useState<GianoPaymasterClient>();
@@ -59,6 +83,11 @@ export function usePaymaster(
 	// and then rebound whenever the wallet changes — rebinding is cheap and needs no network.
 	useEffect(() => {
 		let cancelled = false;
+		if (!publicClient) {
+			setClient(undefined);
+			setLoading(false);
+			return;
+		}
 
 		const build = async () => {
 			try {
@@ -97,13 +126,16 @@ export function usePaymaster(
 	// whole per-environment labelling exists to prevent.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the client and chain are triggers: a new deployment resets the snapshot
 	useEffect(() => {
+		// A refresh still in flight belongs to the previous client — or to a session that has ended.
+		generation.current++;
 		verified.current = false;
 		setOverview(undefined);
 		setMyRoles([]);
 		setError(undefined);
 		setLastUpdated(undefined);
-		setLoading(true);
-	}, [client, deployment.chainId]);
+		// Signed out, there is nothing coming to wait for.
+		setLoading(!blocked);
+	}, [client, deployment.chainId, blocked]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `deployment.chainId` is a trigger: a chain switch re-runs the immediate refresh
 	const refresh = useCallback(async () => {

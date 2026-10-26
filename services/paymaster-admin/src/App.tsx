@@ -44,17 +44,20 @@ import {
 	isUserRejection,
 	networkDetails,
 } from "./lib/chain";
-import { PlatformSessionProvider } from "./lib/platform-session";
+import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
 import { RolesPanel } from "./panels/RolesPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { TenantsPanel } from "./panels/TenantsPanel";
-import { PlatformArea } from "./platform/PlatformArea";
+import { PlatformArea, SessionBar } from "./platform/PlatformArea";
+import { SignIn } from "./platform/SignIn";
+
+type Area = "paymaster" | "platform";
 
 export function App() {
-	const { deployments, platformApi } = getAdminConfig();
+	const { deployments } = getAdminConfig();
 	const [deployment, setDeployment] = useState(() =>
 		initialDeployment(deployments),
 	);
@@ -63,7 +66,43 @@ export function App() {
 	 * platform admins). Not
 	 * remembered: a reload lands on Paymaster, and the Platform area asks for a signature anyway.
 	 */
-	const [area, setArea] = useState<"paymaster" | "platform">("paymaster");
+	const [area, setArea] = useState<Area>("paymaster");
+
+	const selectDeployment = useCallback((next: Deployment) => {
+		setDeployment(next);
+		rememberDeployment(next);
+	}, []);
+
+	// Keyed on the deployment: switching environments remounts the console under a fresh provider,
+	// and the platform admin session and the connected wallet go with it. The wallet is bound to the
+	// old chain and its roles were read from the old paymaster — keeping it would leave the console
+	// offering actions an account may not hold on the deployment now on screen. Reconnecting is one
+	// click and makes the chain check run again.
+	return (
+		<PlatformSessionProvider key={deploymentKey(deployment)}>
+			<Console
+				deployment={deployment}
+				selectDeployment={selectDeployment}
+				area={area}
+				setArea={setArea}
+			/>
+		</PlatformSessionProvider>
+	);
+}
+
+function Console({
+	deployment,
+	selectDeployment: onSelectDeployment,
+	area,
+	setArea,
+}: {
+	deployment: Deployment;
+	selectDeployment: (next: Deployment) => void;
+	area: Area;
+	setArea: (area: Area) => void;
+}) {
+	const { deployments, platformApi } = getAdminConfig();
+	const { session, expire } = usePlatform();
 	const [wallet, setWallet] = useState<ConnectedWallet>();
 	const [connecting, setConnecting] = useState(false);
 	const [notAdded, setNotAdded] = useState<ChainNotAddedError>();
@@ -75,6 +114,16 @@ export function App() {
 	 * has just approved. Changes made in the wallet itself still reload, which is what it is for.
 	 */
 	const connectingRef = useRef(false);
+	/**
+	 * Where the platform API is configured, the chain is read through wallet-api's platform relay,
+	 * with the platform admin session — and not at all before there is one. Without it, straight
+	 * from each deployment's rpcUrl, as it always was.
+	 */
+	const readAuth = platformApi
+		? session
+			? { token: session.token, onUnauthorized: expire }
+			: ("required" as const)
+		: undefined;
 	const {
 		client,
 		overview,
@@ -85,24 +134,15 @@ export function App() {
 		error,
 		lastUpdated,
 		refresh,
-	} = usePaymaster(deployment, wallet);
+	} = usePaymaster(deployment, wallet, readAuth);
+	const signedOut = platformApi && !session;
 
-	/**
-	 * Switching environments drops the connected wallet.
-	 *
-	 * The wallet is bound to the old chain, and its roles were read from the old paymaster — keeping
-	 * it would leave the console offering actions an account may not hold on the deployment now on
-	 * screen. Reconnecting is one click and makes the chain check run again.
-	 */
 	const selectDeployment = useCallback(
 		(next: Deployment) => {
 			if (deploymentKey(next) === deploymentKey(deployment)) return;
-			setWallet(undefined);
-			setNotAdded(undefined);
-			setDeployment(next);
-			rememberDeployment(next);
+			onSelectDeployment(next);
 		},
-		[deployment],
+		[deployment, onSelectDeployment],
 	);
 
 	// Restore a wallet the user already authorised, so a reload does not demand a fresh prompt.
@@ -312,7 +352,7 @@ export function App() {
 					</Alert.Root>
 				)}
 
-				{!wallet && !notAdded && area === "paymaster" && (
+				{!wallet && !notAdded && area === "paymaster" && !platformApi && (
 					<Alert.Root status="info" mb="4">
 						<Alert.Indicator />
 						<Alert.Content>
@@ -336,21 +376,28 @@ export function App() {
 					</Alert.Root>
 				)}
 
-				{area === "platform" && (
-					// Keyed on the deployment: switching environments remounts the provider, and the platform admin
-					// session goes with it — the same reason the wallet is dropped on a switch.
-					<PlatformSessionProvider key={deploymentKey(deployment)}>
-						<PlatformArea
-							deployment={deployment}
-							wallet={wallet}
-							connect={connect}
-							connecting={connecting}
-							client={client}
-							overview={overview}
-							myRoles={myRoles}
-							refreshChain={refresh}
-						/>
-					</PlatformSessionProvider>
+				<SessionBar />
+
+				{signedOut && (
+					<SignIn
+						deployment={deployment}
+						wallet={wallet}
+						connect={connect}
+						connecting={connecting}
+					/>
+				)}
+
+				{area === "platform" && !signedOut && (
+					<PlatformArea
+						deployment={deployment}
+						wallet={wallet}
+						connect={connect}
+						connecting={connecting}
+						client={client}
+						overview={overview}
+						myRoles={myRoles}
+						refreshChain={refresh}
+					/>
 				)}
 
 				{area === "paymaster" && !overview && loading && (

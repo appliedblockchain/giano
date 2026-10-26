@@ -3,10 +3,14 @@
 An operator's view of a Giano sponsorship paymaster: tenant balances, treasury, roles, health and
 settled sponsorships — all read straight from the chain.
 
-The Paymaster area has no backend. It talks to an RPC endpoint and nothing else, so it needs no
-login, no API key and no database, and it cannot show you anything the chain does not already say.
-That is deliberate: an operational view whose numbers come from a cache can be wrong in the one
-situation where being wrong matters most.
+The Paymaster area has no backend of its own. It reads the chain over JSON-RPC and nothing else, so
+it keeps no database and cannot show you anything the chain does not already say. That is
+deliberate: an operational view whose numbers come from a cache can be wrong in the one situation
+where being wrong matters most.
+
+Who may read is a separate question, answered by where the console is deployed: a hosted console
+reads only for a signed-in platform admin, through wallet-api; a standalone one must sit behind
+your own access control (see [Access](#access)).
 
 Where the deployment enables it, a **Platform** area sits beside it: wallet-api's tenant registry
 and the platform admin list, for Giano's own platform admins (see [Platform area](#platform-area)).
@@ -28,7 +32,9 @@ pnpm demo:admin            # from the repo root → http://localhost:4402
 
 ## Connecting a wallet
 
-Reads need no wallet. Connecting one enables the actions the connected account's roles allow;
+In a standalone console reads need no wallet. Where the platform API is configured, reading needs a
+platform admin sign-in, and the sign-in uses the wallet. Either way, the wallet enables the actions
+the connected account's roles allow;
 everything else stays visible but disabled, with the role it would need named underneath — hiding a
 control just produces a support ticket.
 
@@ -50,7 +56,8 @@ switch only exists when the container is given `GIANO_WALLET_API_UPSTREAM`.
 - **Sign in with wallet.** The connected wallet signs a message wallet-api wrote, naming this
   console's domain. The address must be one of wallet-api's platform admins (its `platform_admins` table). The session lives in
   the page's memory only: a reload, an account or network change, a deployment switch, sign-out or
-  its expiry (30 minutes) ends it.
+  its expiry (30 minutes) ends it. It is the same session the Paymaster area reads with, so the
+  sign-in view shows in both areas and one sign-in serves both.
 - **Tenants.** The registry, with each tenant's status and —
   matched on tenant id — its state on the selected paymaster: *registered · enabled*, *registered ·
   disabled* or *not registered*. Roster entries with no registry row are listed on their own.
@@ -89,7 +96,7 @@ console at an arbitrary chain by typing into it.
 | --- | --- |
 | `name` | how an operator tells this environment apart; shown in the header |
 | `chainId` | required |
-| `rpcUrl` | required; proxied through this origin unless `GIANO_RPC_PROXY=false` |
+| `rpcUrl` | required. With `GIANO_WALLET_API_UPSTREAM` set it is replaced by wallet-api's platform read relay, `/api/v1/platform/rpc/<chainId>`; otherwise proxied through this origin unless `GIANO_RPC_PROXY=false` |
 | `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
 | `refreshSeconds` | poll interval; `0` disables polling |
 
@@ -122,25 +129,62 @@ either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-dep
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
 `GIANO_REFRESH_SECONDS`.
 
-`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area: the
-container proxies `/api/*` to wallet-api on its own origin, drops the browser's `Origin` header
-(wallet-api's platform routes refuse any request carrying one), re-resolves the upstream per request
-through the nameserver in `/etc/resolv.conf`, and renders `"platformApi": true`. Unset, none of that
-exists and the console is exactly the chain view. This console's host must be the sign-in domain
+`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area and gates
+every read: the container proxies `/api/*` to wallet-api on its own origin, drops the browser's
+`Origin` header (wallet-api's platform routes refuse any request carrying one), re-resolves the
+upstream per request through the nameserver in `/etc/resolv.conf`, points each deployment's reads at
+wallet-api's platform read relay, and renders `"platformApi": true`. Unset, none of that exists and
+the console is exactly the chain view. This console's host must be the sign-in domain
 wallet-api's environment names (`siweDomain` in `services/wallet-api/src/environments.ts`, chosen by
 its `GIANO_ENVIRONMENT`); changing it is a wallet-api release.
 
-### The provider key does not reach the browser
+## Access
 
-`rpcUrl` is dialled by the SPA, so a keyed endpoint written into `config.json` is readable by
-everyone who can open the console and usable by them until it is rotated. So the container proxies
-every absolute `rpcUrl` through its own origin: one nginx location per chain, `/rpc/<chainId>`,
-with the keyed URL server-side and `/rpc/<chainId>` in the file. `connect-src` is derived from the
-result, and collapses to `'self'`.
+The console's design gives it nothing to protect on its own — every write is signed by the
+operator's wallet and authorised on chain by the paymaster's roles. What needs protecting is what it
+reads with: `rpcUrl` is usually a keyed provider endpoint, and its quota is the one wallet-api's
+production traffic depends on. Where that key lives, and who may spend it, depends on the mode.
 
-`GIANO_RPC_PROXY=false` opts out, for a node that must be dialled directly or an upstream nginx
-cannot reach from where it runs — and then the URL, key and all, is what every visitor receives. A
-relative `rpcUrl` is already same-origin and passes through either way.
+### Hosted: with `GIANO_WALLET_API_UPSTREAM`
+
+The console reads the chain only through wallet-api's platform read relay,
+`/api/v1/platform/rpc/<chainId>`, and only with a platform admin session. The relay forwards the same
+read-only methods as wallet-api's tenant relay, refuses bodies over 16 KiB, bounds `eth_getLogs` to
+`PLATFORM_RPC_MAX_LOG_BLOCKS`, and rate-limits each session (`PLATFORM_RPC_RATE_LIMIT_PER_MINUTE`).
+The keyed URL is held by wallet-api alone: this container renders no `/rpc/*` location, whatever
+`GIANO_RPC_PROXY` says, and its nginx configuration never contains the URL.
+
+So an anonymous visitor gets the sign-in view and nothing else: no roster, no balances, and no route
+to the RPC quota. The page itself — `index.html`, `/assets/*` and `/config.json` — is still public,
+on purpose: the bundle is built from this public repository, and `/config.json` names only chains and
+paymaster addresses, which the chain publishes anyway. Hiding the page as well takes access control
+in front of the whole host (an identity-aware proxy or a load balancer's OIDC), which the console
+needs no change to sit behind.
+
+Reading needs a platform admin, which is a row in wallet-api's `platform_admins` table. Holding a role
+on the paymaster is not enough.
+
+When the wallet is asked to add a network, it is offered `walletRpcUrl` if set, else `rpcUrl` — which
+here is a path that answers only with a session, so no wallet can use it. Set `walletRpcUrl` (in the
+chain document, `paymasterAdmin.walletRpcUrl`) to an address you are happy to publish.
+
+### Standalone: without `GIANO_WALLET_API_UPSTREAM`
+
+`rpcUrl` is dialled by the SPA, so a keyed endpoint written into `config.json` would be readable by
+everyone who can open the console. So the container proxies every absolute `rpcUrl` through its own
+origin: one nginx location per chain, `/rpc/<chainId>`, with the keyed URL server-side and
+`/rpc/<chainId>` in the file. `connect-src` is derived from the result, and collapses to `'self'`.
+
+That hides the key, not its quota: nginx cannot read a JSON-RPC body, so **the proxy forwards any
+method the provider sells to whoever can reach it.** It is bounded — bodies over 16 KiB are refused
+with 413, and every client together is held to `GIANO_RPC_PROXY_RATE` (default `20r/s`, burst twice
+that; `600r/m` style also accepted), the excess refused with 429 — but it has no method allowlist and
+no notion of who is asking. **A standalone console must sit behind your own SSO, VPN or IP
+allowlist.** Anyone who can reach it spends your provider quota.
+
+`GIANO_RPC_PROXY=false` opts out of the proxy, for a node that must be dialled directly or an
+upstream nginx cannot reach from where it runs — and then the URL, key and all, is what every visitor
+receives. A relative `rpcUrl` is already same-origin and passes through either way.
 
 ## What is a view call, and what is a window
 
@@ -186,9 +230,9 @@ sample dApp shows up as a falling tenant balance and a new row under **History**
 It waits for the sponsorship provisioner, so it shows a provisioned deployment rather than an empty
 roster that looks like a bug.
 
-Its Platform area is on: anvil's account 0 (`0xf39F…2266`), the devnet's all-roles account, is
-bootstrapped as platform admin `admin-console` for the `e2e` environment. Import that key into a browser wallet, connect, switch to **Platform** and
-sign in.
+It runs in hosted mode (`GIANO_WALLET_API_UPSTREAM` is set), so it opens on the sign-in view: anvil's
+account 0 (`0xf39F…2266`), the devnet's all-roles account, is bootstrapped as platform admin
+`admin-console` for the `e2e` environment. Import that key into a browser wallet and sign in.
 
 ## Built on
 

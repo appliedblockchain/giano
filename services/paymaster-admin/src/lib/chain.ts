@@ -31,10 +31,29 @@ export function toChain(deployment: Deployment): Chain {
 	});
 }
 
-export function createReadClient(deployment: Deployment) {
+/**
+ * A platform admin session to read with. Where the console has the platform API, `rpcUrl` is
+ * wallet-api's platform read relay, which answers nothing without one: the keyed provider URL and
+ * its quota sit behind a sign-in rather than in front of everyone who can open this page.
+ */
+export type ReadAuth = {
+	token: string;
+	/** A 401 means the session is gone; the session layer drops it and the console signs in again. */
+	onUnauthorized: () => void;
+};
+
+export function createReadClient(deployment: Deployment, auth?: ReadAuth) {
 	return createPublicClient({
 		chain: toChain(deployment),
-		transport: http(deployment.rpcUrl),
+		transport: http(
+			deployment.rpcUrl,
+			auth && {
+				fetchOptions: { headers: { authorization: `Bearer ${auth.token}` } },
+				onFetchResponse: (response) => {
+					if (response.status === 401) auth.onUnauthorized();
+				},
+			},
+		),
 	});
 }
 

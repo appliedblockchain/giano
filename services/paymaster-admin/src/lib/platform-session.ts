@@ -25,6 +25,10 @@ import {
  * the wallet it was signed by. So a reload signs in again — one wallet prompt — and the session
  * also ends when the wallet changes account or chain (the console reloads on both), when the
  * deployment changes (the provider is keyed on it and remounts), at its expiry, and on any 401.
+ *
+ * One session serves the whole console: where the platform API is configured, the Paymaster area
+ * reads the chain through wallet-api's platform relay with this same token, so the provider wraps
+ * both areas and switching between them keeps it.
  */
 
 export type PlatformSession = {
@@ -40,6 +44,8 @@ type PlatformAdminContextValue = {
 	session: PlatformSession | undefined;
 	/** Set when a session ended on its own (expiry or 401), so the sign-in view can say so. */
 	endedNotice: string | undefined;
+	/** wallet-api has no platform tier here (challenge answered 404): nothing to sign in to, in either area. */
+	disabled: boolean;
 	signIn: (
 		wallet: ConnectedWallet,
 		chainId: number,
@@ -47,6 +53,11 @@ type PlatformAdminContextValue = {
 		{ ok: true } | { ok: false; reason: SignInFailure; message?: string }
 	>;
 	signOut: () => Promise<void>;
+	/**
+	 * Ends the session because the API refused it — what a 401 on a chain read calls, as {@link run}
+	 * does for the platform routes.
+	 */
+	expire: () => void;
 	/**
 	 * Runs a platform admin call with the session's token. Resolves to undefined when the session ended
 	 * under it, having already dropped the session — callers only ever handle a result.
@@ -63,6 +74,7 @@ const PlatformAdminContext = createContext<
 export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 	const [session, setSession] = useState<PlatformSession>();
 	const [endedNotice, setEndedNotice] = useState<string>();
+	const [disabled, setDisabled] = useState(false);
 
 	const end = useCallback((notice?: string) => {
 		setSession(undefined);
@@ -87,8 +99,10 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 			try {
 				const challenge = await platformAuth.challenge(wallet.address, chainId);
 				if (!challenge.ok) {
-					if (challenge.error.status === 404)
+					if (challenge.error.status === 404) {
+						setDisabled(true);
 						return { ok: false, reason: "disabled" };
+					}
 					return {
 						ok: false,
 						reason: "failed",
@@ -139,6 +153,11 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 		if (token) await platformAuth.logout(token).catch(() => undefined);
 	}, [session, end]);
 
+	const expire = useCallback(
+		() => end("Your platform admin session ended. Sign in again to continue."),
+		[end],
+	);
+
 	const run = useCallback<PlatformAdminContextValue["run"]>(
 		async (call) => {
 			if (!session) return undefined;
@@ -146,18 +165,18 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 				return await call(platformApi(session.token));
 			} catch (cause) {
 				if (cause instanceof PlatformUnauthorized) {
-					end("Your platform admin session ended. Sign in again to continue.");
+					expire();
 					return undefined;
 				}
 				throw cause;
 			}
 		},
-		[session, end],
+		[session, expire],
 	);
 
 	const value = useMemo(
-		() => ({ session, endedNotice, signIn, signOut, run }),
-		[session, endedNotice, signIn, signOut, run],
+		() => ({ session, endedNotice, disabled, signIn, signOut, expire, run }),
+		[session, endedNotice, disabled, signIn, signOut, expire, run],
 	);
 	return createElement(PlatformAdminContext.Provider, { value }, children);
 }
