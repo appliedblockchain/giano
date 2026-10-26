@@ -8,8 +8,17 @@ ERC-4337 user-operation relay. Distributed as `ghcr.io/appliedblockchain/giano-w
 client projects. Every tenant owns its wallet origin, and that origin's host is the tenant's
 WebAuthn RP ID — 1:1 (`specs/DEVELOPER-GUIDE.md` §1). The origin may serve Giano's stock
 wallet-web UI or a UI the tenant built itself; both are the same architecture. Tenants are
-provisioned declaratively via the `TENANTS_SEED` env var (upserted by slug at boot) — no
-dashboard, onboarding is edit-and-restart.
+created and managed only by Giano's platform admins at runtime, through `/v1/platform/*` (the paymaster
+console's Platform area; only where the environment has a console host) — no redeploy. The
+platform admins are rows too, in the `platform_admins` table, and add and remove each other the same way. The
+service boots fine with no tenants. `TENANTS_SEED` is retired and no longer read.
+
+**Init step.** `node dist/init.js` (`src/init.ts`) runs to completion before the API everywhere — an
+`init` service in every compose file, an init container on AWS — and the API runs with
+`RUN_MIGRATIONS=false`. It applies migrations; writes the environment's bootstrap platform admins
+(`src/environments.ts`) **only into an empty `platform_admins` table**; and, on local compose stacks only,
+creates the `TENANT_FIXTURES` tenants (insert-only). Anywhere else it refuses `TENANT_FIXTURES`
+(`specs/PLATFORM-ADMIN-SPECS.md` §4.1, §9).
 
 ## Security model
 
@@ -57,6 +66,9 @@ Swagger UI at `/docs` outside production).
 | `GET /v1/userops/:hash/receipt` | public (deliberately tenant-free) | read-only receipt proxy (thin-SDK receipt waiting) |
 | `GET /.well-known/webauthn` | `Host` → tenant | that tenant's Related Origin Requests document |
 | `GET/POST/DELETE /v1/admin/ror-origins` | tenant admin key | manage the key's tenant's ROR origins |
+| `POST /v1/platform/auth/challenge`, `/verify`, `/logout` | none / platform admin session; any `Origin` refused | platform admin sign-in with a wallet (EIP-4361): a server-issued message, exchanged once for a `gps_` session |
+| `GET/POST /v1/platform/tenants`, `GET/PATCH/DELETE /v1/platform/tenants/:slug`, `…/suspend`, `…/resume`, `…/admin-keys`, `…/history` | platform admin session; any `Origin` refused | runtime tenant CRUD and lifecycle (active → suspended → deleted tombstone), generated admin keys, history |
+| `GET/POST /v1/platform/admins`, `DELETE /v1/platform/admins/:id`, `GET /v1/platform/admins/history` | platform admin session; any `Origin` refused | the platform admins: list, add (can sign in at once), remove (revokes their sessions; `409 self-removal` / `409 last-admin`), and the append-only change history |
 | `GET /healthz`, `GET /readyz` | public | liveness / readiness (DB ping) |
 | `GET /metrics` | open, or bearer when `METRICS_BEARER_TOKEN` set | Prometheus metrics, `tenant`-labelled |
 
@@ -73,12 +85,16 @@ example). Highlights:
 | Variable | Notes |
 | --- | --- |
 | `DATABASE_URL` | required |
-| `RUN_MIGRATIONS` | `true` = apply `migrations/*.sql` before listening (also: `node dist/migrate.js` one-shot) |
-| `TENANTS_SEED` | JSON array of tenants, upserted by slug at boot. Per tenant: `slug`, `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
-| `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | chain wiring (one chain for all tenants) |
+| `GIANO_ENVIRONMENT` | required: `dev`, `stg`, `prd`, `reference`, `e2e`, `local-infra`, `local-dev`, `local-sepolia` or `test`. Selects the entry in `src/environments.ts`: the console host every platform admin sign-in message names (`siweDomain`/`siweUri`, changed only by a release, never stored), the init step's bootstrap platform admins, and whether this is a local stack. An environment with no console host registers no platform route |
+| `RUN_MIGRATIONS` | `true` = apply `migrations/*.sql` before listening. `false` in every compose file and on AWS, where the init step runs them (also: `node dist/migrate.js` one-shot) |
+| `TENANT_FIXTURES` | **read only by the init step (`node dist/init.js`), only on a local-stack environment, never by the API**; init refuses to start if it is set anywhere else (which no longer reads the retired `TENANTS_SEED` either). JSON array of tenants, each created if its slug is missing and otherwise left untouched. Per tenant: `slug`, `id?` (pinned, for a tenant pre-registered on a devnet paymaster), `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
+| `GIANO_CHAINS` + `BUNDLER_BASE_URL` | the chains served: the backend chain document (`packages/contracts/chains.ts`) giano-bundler reads too; each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless its `walletApi.bundlerUrl` names another bundler |
+| `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | single-chain shorthand, mutually exclusive with `GIANO_CHAINS`; `BUNDLER_URL` is the exact endpoint |
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
+| `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800), per-session and per-address limit (60) |
+| `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` | delete refuses a ledger further than this behind the chain head (50); must exceed `PAYMASTER_WATCHER_CONFIRMATIONS` |
 
 CORS is per-tenant (`corsOrigins`) and fail-closed; there is no global CORS allowlist.
 
@@ -95,6 +111,18 @@ pnpm migrate        # apply migrations to DATABASE_URL
 The integration tests exercise real WebAuthn ceremonies end-to-end using generated P-256 keys
 and hand-encoded CBOR attestations — no browser needed.
 
+## Platform admin sign-in from a script
+
+For acceptance on a deployment, with a throwaway EOA a platform admin has added in the console's
+Admins tab (remove it afterwards):
+
+```sh
+PLATFORM_ADMIN_PRIVATE_KEY=0x… pnpm -s --filter @appliedblockchain/giano-wallet-api platform:login --api https://api.dev.giano.appliedblockchain.dev
+```
+
+It prints only the session token on stdout. A real platform admin signs in through the console with
+their own wallet.
+
 ## Docker
 
 Build from the **repo root** (bundles the workspace `giano-contracts` dep, no registry auth):
@@ -104,4 +132,4 @@ docker build -f services/wallet-api/Dockerfile -t ghcr.io/appliedblockchain/gian
 ```
 
 - `deploy/docker-compose.reference.yml` — what client projects copy (postgres + wallet-api).
-- `deploy/docker-compose.dev.yml` — local stack incl. anvil + alto.
+- `deploy/docker-compose.dev.yml` — local stack incl. anvil + giano-bundler.

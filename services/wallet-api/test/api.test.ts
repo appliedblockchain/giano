@@ -2,7 +2,7 @@ import { encodeFunctionData } from 'viem';
 import { gianoSmartWalletAbi } from '@appliedblockchain/giano-contracts';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { seedTenants, validateTenantSeed } from '../src/services/tenants.js';
+import { loadTenantFixtures, parseTenantFixtures } from '../src/services/tenant-fixtures.js';
 import {
   ADMIN_KEY,
   startTestStack,
@@ -761,16 +761,10 @@ describe('tenant isolation', () => {
     expect((fromAAgain.json() as { duplicate?: boolean }).duplicate).toBe(true);
   });
 
-  it('V11 (write path): re-seeding a tenant with a different rp_id is rejected', async () => {
-    await expect(
-      seedTenants(ctx.db, [
-        validateTenantSeed({
-          slug: TENANT_A.slug,
-          walletOrigin: 'http://other.localhost:5000',
-          rpName: 'Mutated',
-          openRegistration: true,
-        }),
-      ]),
-    ).rejects.toThrow(/rp_id is immutable/);
+  it('V11 (write path): a fixture naming an existing tenant never rewrites its rp_id', async () => {
+    const mutated = parseTenantFixtures(JSON.stringify([{ slug: TENANT_A.slug, walletOrigin: 'http://other.localhost:5000', rpName: 'Mutated', openRegistration: true }]));
+    expect(await loadTenantFixtures(ctx.db, mutated)).toEqual({ created: [], existing: [TENANT_A.slug] });
+    const [row] = (await ctx.db.execute(sql`SELECT rp_id, rp_name FROM tenants WHERE slug = ${TENANT_A.slug}`)).rows;
+    expect(row).toEqual({ rp_id: TENANT_A.rpId, rp_name: TENANT_A.rpName });
   });
 });

@@ -5,7 +5,11 @@ metadata:
   name: {{ .Release.Name }}-bundler
   labels: {{- include "giano.labels" . | nindent 4 }}
 spec:
+  # One replica, replaced rather than rolled: executors track their nonces in memory, and two
+  # pods sharing a key would race for them.
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
@@ -22,10 +26,15 @@ spec:
           ports:
             - containerPort: 4337
           env:
-            - name: ALTO_RPC_URL
-              value: {{ .Values.config.rpcUrl | quote }}
-            - name: ALTO_SAFE_MODE
-              value: {{ .Values.bundler.altoSafeMode | quote }}
+            # The chain document wallet-api reads; with the single-chain scalars, its one-entry form.
+            - name: GIANO_CHAINS
+              {{- if .Values.config.chains }}
+              value: {{ toJson .Values.config.chains | quote }}
+              {{- else }}
+              {{- $chain := dict "chainId" .Values.config.chainId "name" (printf "chain %v" .Values.config.chainId) "rpcUrl" .Values.config.rpcUrl }}
+              {{- with .Values.config.entryPointAddress }}{{- $_ := set $chain "entryPoint" . }}{{- end }}
+              value: {{ toJson (list $chain) | quote }}
+              {{- end }}
           envFrom:
             - secretRef:
                 name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}

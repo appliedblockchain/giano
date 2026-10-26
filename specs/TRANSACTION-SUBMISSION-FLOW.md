@@ -74,7 +74,7 @@ sequenceDiagram
 
     actor PK as Passkey authenticator<br/>(RP ID = wallet.a.example)
     participant API as wallet-api<br/>(shared, tenant-resolved)
-    participant Bundler as ERC-4337 bundler<br/>(Alto — shared)
+    participant Bundler as ERC-4337 bundler<br/>(giano-bundler — shared)
     participant PM as Paymaster<br/>(contract)
     participant Node as Blockchain node<br/>(RPC + EntryPoint — shared)
 
@@ -173,10 +173,11 @@ sequenceDiagram
             end
             API->>Bundler: eth_sendUserOperation(rpcOp,<br/>SERVER-configured entryPoint)
             activate Bundler
-            Bundler->>Node: simulateValidation (EntryPoint)
+            Bundler->>Node: eth_estimateGas handleOps([op])<br/>(real EntryPoint, latest state)
             Node->>PM: validatePaymasterUserOp (sponsor check)
             PM-->>Node: sponsorship OK / prefund
             Node-->>Bundler: validation OK
+            Bundler->>Node: broadcast handleOps([op], executor)
             Bundler-->>API: userOpHash
             deactivate Bundler
             Note over API: userop_log → status: submitted<br/>giano_userop_relayed_total{status="submitted",tenant}++<br/>giano_userop_relay_seconds{tenant} observed
@@ -202,7 +203,7 @@ sequenceDiagram
         Bundler-->>API: receipt or null
         API-->>Thin: { receipt }
     end
-    Note over Bundler,Node: meanwhile the bundler batches the op into<br/>EntryPoint.handleOps → mined on-chain
+    Note over Bundler,Node: meanwhile the op's own<br/>EntryPoint.handleOps tx → mined on-chain
     Thin-->>UI: receipt { success }
     deactivate Thin
     UI->>User: notifySuccess("Transfer confirmed") / error if reverted

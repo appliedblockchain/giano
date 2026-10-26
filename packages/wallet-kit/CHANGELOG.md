@@ -1,5 +1,25 @@
 # @appliedblockchain/giano-wallet-kit
 
+## 3.1.1
+
+### Patch Changes
+
+- Updated dependencies [cea82f2]
+  - @appliedblockchain/giano-wallet-core@3.1.1
+  - @appliedblockchain/giano-contracts@3.1.1
+  - @appliedblockchain/giano-wallet-transport@3.1.1
+  - @appliedblockchain/giano-tx-describe@3.1.1
+
+## 3.1.0
+
+### Patch Changes
+
+- Updated dependencies [344a793]
+  - @appliedblockchain/giano-contracts@3.1.0
+  - @appliedblockchain/giano-wallet-core@3.1.0
+  - @appliedblockchain/giano-wallet-transport@3.1.0
+  - @appliedblockchain/giano-tx-describe@3.1.0
+
 ## 3.0.0
 
 ### Major Changes

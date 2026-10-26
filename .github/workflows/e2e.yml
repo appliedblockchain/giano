@@ -130,7 +130,7 @@ jobs:
           pnpm install --frozen-lockfile
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run reference demo operations with bundler safe mode
+      - name: Run reference demo operations
         working-directory: e2e
         run: pnpm test:demo
       - name: Upload traces
