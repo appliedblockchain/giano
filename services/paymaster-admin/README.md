@@ -8,8 +8,8 @@ login, no API key and no database, and it cannot show you anything the chain doe
 That is deliberate: an operational view whose numbers come from a cache can be wrong in the one
 situation where being wrong matters most.
 
-Where the deployment enables it, an **Operator** area sits beside it: wallet-api's tenant registry,
-for Giano's own operators (see [Operator area](#operator-area)).
+Where the deployment enables it, a **Platform** area sits beside it: wallet-api's tenant registry
+and the platform admin list, for Giano's own platform admins (see [Platform area](#platform-area)).
 
 ```bash
 pnpm demo:admin            # from the repo root → http://localhost:4402
@@ -40,15 +40,15 @@ way to sign a treasury withdrawal against the wrong deployment.
 Withdrawing a tenant's balance is deliberately absent. Only that tenant's own registered withdrawal
 address can do it, and no role on the paymaster can — including every role at once.
 
-## Operator area
+## Platform area
 
 Tenants can be created, edited, suspended and deleted at runtime, with no redeploy
-([`specs/OPERATOR-ADMIN-SPECS.md`](../../specs/OPERATOR-ADMIN-SPECS.md)). The Operator area is
-where Giano's operators do it. A header switch moves between **Paymaster** and **Operator**; the
+([`specs/PLATFORM-ADMIN-SPECS.md`](../../specs/PLATFORM-ADMIN-SPECS.md)). The Platform area is
+where Giano's platform admins do it. A header switch moves between **Paymaster** and **Platform**; the
 switch only exists when the container is given `GIANO_WALLET_API_UPSTREAM`.
 
 - **Sign in with wallet.** The connected wallet signs a message wallet-api wrote, naming this
-  console's domain. The address must be in wallet-api's `OPERATOR_ADDRESSES`. The session lives in
+  console's domain. The address must be one of wallet-api's platform admins (its `platform_admins` table). The session lives in
   the page's memory only: a reload, an account or network change, a deployment switch, sign-out or
   its expiry (30 minutes) ends it.
 - **Tenants.** The registry, with each tenant's status and —
@@ -57,6 +57,11 @@ switch only exists when the container is given `GIANO_WALLET_API_UPSTREAM`.
 - **A tenant.** Fields, admin keys (never key material), usage, ledger and history, and the actions
   its state allows: create (keys shown once, then an optional *Register on-chain*), edit,
   suspend (then an optional on-chain disable), resume, delete (type the slug), issue and revoke keys.
+- **Admins.** Who can sign in here: each platform admin's id, address, who added them and when; *Add
+  admin* (they can sign in at once); *Remove* (their sessions end on their next request); and the
+  history of every change. There is no Remove button on your own row, or when only one platform admin
+  is left — wallet-api refuses both anyway. The first platform admins come from wallet-api's init step, per
+  environment (`services/wallet-api/src/environments.ts`), and only into an empty list.
 
 On-chain follow-ups need `TENANT_ADMIN_ROLE` on the paymaster and are always optional: the API action
 has already happened when they are offered.
@@ -117,12 +122,13 @@ either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-dep
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
 `GIANO_REFRESH_SECONDS`.
 
-`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Operator area: the
+`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area: the
 container proxies `/api/*` to wallet-api on its own origin, drops the browser's `Origin` header
-(wallet-api's operator routes refuse any request carrying one), re-resolves the upstream per request
-through the nameserver in `/etc/resolv.conf`, and renders `"operatorApi": true`. Unset, none of that
-exists and the console is exactly the chain view. wallet-api's `OPERATOR_SIWE_DOMAIN` must be this
-console's host.
+(wallet-api's platform routes refuse any request carrying one), re-resolves the upstream per request
+through the nameserver in `/etc/resolv.conf`, and renders `"platformApi": true`. Unset, none of that
+exists and the console is exactly the chain view. This console's host must be the sign-in domain
+wallet-api's environment names (`siweDomain` in `services/wallet-api/src/environments.ts`, chosen by
+its `GIANO_ENVIRONMENT`); changing it is a wallet-api release.
 
 ### The provider key does not reach the browser
 
@@ -180,8 +186,8 @@ sample dApp shows up as a falling tenant balance and a new row under **History**
 It waits for the sponsorship provisioner, so it shows a provisioned deployment rather than an empty
 roster that looks like a bug.
 
-Its Operator area is on: anvil's account 0 (`0xf39F…2266`), the devnet's all-roles account, is listed
-as operator `ops-console`. Import that key into a browser wallet, connect, switch to **Operator** and
+Its Platform area is on: anvil's account 0 (`0xf39F…2266`), the devnet's all-roles account, is
+bootstrapped as platform admin `admin-console` for the `e2e` environment. Import that key into a browser wallet, connect, switch to **Platform** and
 sign in.
 
 ## Built on

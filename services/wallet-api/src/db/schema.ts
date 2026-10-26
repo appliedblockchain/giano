@@ -11,7 +11,7 @@ export const tenants = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     slug: text('slug').notNull().unique(),
     walletOrigin: text('wallet_origin').notNull().unique(),
-    /** IMMUTABLE: passkeys bind to it. The operator API never changes it. */
+    /** IMMUTABLE: passkeys bind to it. The platform API never changes it. */
     rpId: text('rp_id').notNull().unique(),
     rpName: text('rp_name').notNull(),
     expectedOrigins: text('expected_origins').array().notNull(),
@@ -21,11 +21,11 @@ export const tenants = pgTable(
     /** Partial userop PolicyConfig overrides (bigints as decimal strings). */
     policy: jsonb('policy').notNull().default({}),
     branding: jsonb('branding').notNull().default({}),
-    /** Only an active tenant resolves; deleted is a terminal tombstone (operator-tenant-lifecycle). */
+    /** Only an active tenant resolves; deleted is a terminal tombstone (platform admin-tenant-lifecycle). */
     status: text('status', { enum: ['active', 'suspended', 'deleted'] }).notNull().default('active'),
     /**
      * Legacy: 'seed' marked a tenant written by the retired TENANTS_SEED. Every write now sets
-     * 'operator', and the boot-time retirement (services/tenants-seed-retirement.ts) converts what
+     * 'operator' (the role's former name), and the boot-time retirement (services/tenants-seed-retirement.ts) converts what
      * is left; the column goes once that has run everywhere.
      */
     managedBy: text('managed_by', { enum: ['seed', 'operator'] }).notNull().default('seed'),
@@ -48,21 +48,50 @@ export const tenantAdminKeys = pgTable(
     /** sha256 hex of the plaintext key; globally unique so key → tenant is unambiguous. */
     keyHash: text('key_hash').notNull().unique(),
     label: text('label'),
-    /** 'operator:<id>:<address>' | 'fixture' (local stacks) | 'seed' (written by the retired TENANTS_SEED) */
+    /** 'platform-admin:<id>:<address>' | 'fixture' (local stacks) | 'seed' (written by the retired TENANTS_SEED) */
     createdBy: text('created_by').notNull().default('seed'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('tenant_admin_keys_tenant_id_idx').on(t.tenantId)],
 );
 
-// ── Operators ──────────────────────────────────────────────────────────────────
+// ── Platform admins ──────────────────────────────────────────────────────────────────
 //
-// Who is an operator is configuration (OPERATOR_ADDRESSES), never a row: these tables hold only
-// sign-in state, and the guard ignores a session whose address the configuration does not list.
+// Who is a platform admin is the `platform admins` table, seeded once per environment by the init step and
+// managed by the platform admins from then on. The guard ignores a session whose address the table no
+// longer holds, so removing a platform admin ends their sessions on the next request.
+
+/** The platform admins. Written by the init step into an empty table, and by platform admins after that. */
+export const platformAdmins = pgTable('platform_admins', {
+  /** A label for logs and history, e.g. admin-oncall. */
+  id: text('id').primaryKey(),
+  /** lowercase */
+  address: text('address').notNull().unique(),
+  /** 'bootstrap:<environment>' | 'platform-admin:<id>:<address>' */
+  addedBy: text('added_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const platformAdminHistoryActions = ['bootstrap', 'add', 'remove'] as const;
+
+/** Append-only record of every change to the platform admins. Outlives the platform admins it describes. */
+export const platformAdminHistory = pgTable(
+  'platform_admin_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    adminId: text('admin_id').notNull(),
+    address: text('address').notNull(),
+    action: text('action', { enum: platformAdminHistoryActions }).notNull(),
+    actor: text('actor').notNull(),
+    platformAdminSessionId: uuid('platform_admin_session_id').references(() => platformAdminSessions.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('platform_admin_history_created_idx').on(t.createdAt)],
+);
 
 /** EIP-4361 challenges. The exact issued text is kept so verify accepts nothing else. */
-export const operatorChallenges = pgTable(
-  'operator_challenges',
+export const platformAdminChallenges = pgTable(
+  'platform_admin_challenges',
   {
     nonce: text('nonce').primaryKey(),
     /** lowercase */
@@ -72,18 +101,18 @@ export const operatorChallenges = pgTable(
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('operator_challenges_expires_idx').on(t.expiresAt)],
+  (t) => [index('platform_admin_challenges_expires_idx').on(t.expiresAt)],
 );
 
 /** Kept after expiry: the record of who signed in when, referenced by tenant_history. */
-export const operatorSessions = pgTable(
-  'operator_sessions',
+export const platformAdminSessions = pgTable(
+  'platform_admin_sessions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    /** sha256 hex of the gos_ token. */
+    /** sha256 hex of the gps_ token. */
     tokenHash: text('token_hash').notNull().unique(),
-    /** The OPERATOR_ADDRESSES id at sign-in. */
-    operatorId: text('operator_id').notNull(),
+    /** The platform admin's id at sign-in. */
+    adminId: text('admin_id').notNull(),
     /** lowercase */
     address: text('address').notNull(),
     chainId: bigint('chain_id', { mode: 'number' }).notNull(),
@@ -93,7 +122,7 @@ export const operatorSessions = pgTable(
     ip: text('ip'),
     userAgent: text('user_agent'),
   },
-  (t) => [index('operator_sessions_expires_idx').on(t.expiresAt)],
+  (t) => [index('platform_admin_sessions_expires_idx').on(t.expiresAt)],
 );
 
 export const tenantHistoryActions = [
@@ -107,7 +136,7 @@ export const tenantHistoryActions = [
   // written by the retired TENANTS_SEED and kept for the history it left; nothing writes them now
   'seed-apply',
   'seed-takeover',
-  // the operator adopt endpoint (retired) and the one-time TENANTS_SEED retirement at boot
+  // the platform admin adopt endpoint (retired) and the one-time TENANTS_SEED retirement at boot
   'adopt',
 ] as const;
 
@@ -121,9 +150,9 @@ export const tenantHistory = pgTable(
       .notNull()
       .references(() => tenants.id),
     action: text('action', { enum: tenantHistoryActions }).notNull(),
-    /** 'operator:<id>:<address>' | 'fixture' | 'system:tenants-seed-retirement' | 'seed' (retired) */
+    /** 'platform-admin:<id>:<address>' | 'fixture' | 'system:tenants-seed-retirement' | 'seed' (retired) */
     actor: text('actor').notNull(),
-    operatorSessionId: uuid('operator_session_id').references(() => operatorSessions.id),
+    platformAdminSessionId: uuid('platform_admin_session_id').references(() => platformAdminSessions.id),
     before: jsonb('before'),
     after: jsonb('after'),
     detail: jsonb('detail'),
@@ -337,7 +366,7 @@ export const rorOrigins = pgTable(
 // ── Sponsorship ────────────────────────────────────────────────────────────────
 //
 // A tenant's sponsorship *rules* are its own to edit through its admin key, and live in their
-// own table, apart from the tenant row its operators edit. A tenant with no row sponsors nothing, which is deny-by-default in the storage
+// own table, apart from the tenant row its platform admins edit. A tenant with no row sponsors nothing, which is deny-by-default in the storage
 // layer as well as in the rules engine.
 //
 // A tenant's *balance* is not the service's to own: it is chain state, cached here from paymaster

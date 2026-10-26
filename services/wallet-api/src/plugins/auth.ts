@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
-import type { OperatorContext, OperatorSessionService } from '../services/operator-sessions.js';
+import type { PlatformAdminContext, PlatformSessionService } from '../services/platform-sessions.js';
 import type { SessionContext, SessionService } from '../services/sessions.js';
 import type { Tenant, TenantService } from '../services/tenants.js';
 import { sha256hex } from '../services/tenants.js';
@@ -11,20 +11,20 @@ declare module 'fastify' {
     session: SessionContext | null;
     /** Tenant whose admin key authorized this request (set by requireAdmin). */
     adminTenant: Tenant | null;
-    /** The operator whose session authorized this request (set by requireOperator). */
-    operator: OperatorContext | null;
+    /** The platform admin whose session authorized this request (set by requirePlatformAdmin). */
+    platformAdmin: PlatformAdminContext | null;
   }
   interface FastifyInstance {
     requireSession: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     resolveAdminTenant: (request: FastifyRequest) => Promise<Tenant | null>;
-    refuseOperatorOrigin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
-    requireOperator: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    refusePlatformOrigin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requirePlatformAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
-/** One body for every operator authentication failure, whatever the cause (no oracle). */
-export const OPERATOR_UNAUTHORIZED = { error: 'unauthorized', message: 'operator session required' } as const;
+/** One body for every platform admin authentication failure, whatever the cause (no oracle). */
+export const PLATFORM_UNAUTHORIZED = { error: 'unauthorized', message: 'platform admin session required' } as const;
 
 export function bearerToken(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
@@ -33,10 +33,10 @@ export function bearerToken(request: FastifyRequest): string | null {
 }
 
 export default fp(
-  async (app, opts: { sessions: SessionService; tenants: TenantService; operatorSessions?: OperatorSessionService }) => {
+  async (app, opts: { sessions: SessionService; tenants: TenantService; platformAdminSessions?: PlatformSessionService }) => {
     app.decorateRequest('session', null);
     app.decorateRequest('adminTenant', null);
-    app.decorateRequest('operator', null);
+    app.decorateRequest('platformAdmin', null);
 
     /**
      * Admin key → tenant (G2.1/G2.4): sha256 the presented key and look it up by hash —
@@ -92,32 +92,32 @@ export default fp(
     });
 
     /**
-     * Operator routes refuse any request carrying an Origin (specs/OPERATOR-ADMIN-SPECS.md §4.5):
+     * Platform admin routes refuse any request carrying an Origin (specs/PLATFORM-ADMIN-SPECS.md §4.5):
      * no browser page on any origin can call them cross-origin, whatever CORS answers. The
      * console reaches them through its own proxy, which strips the header. A cheap extra layer,
-     * not the access control — operator tokens are never attached by the browser on its own.
+     * not the access control — platform admin tokens are never attached by the browser on its own.
      */
-    app.decorate('refuseOperatorOrigin', async (request: FastifyRequest, reply: FastifyReply) => {
+    app.decorate('refusePlatformOrigin', async (request: FastifyRequest, reply: FastifyReply) => {
       if (request.headers.origin !== undefined) {
-        return reply.code(403).send({ error: 'operator-origin-refused', message: 'operator routes cannot be called from a browser page' });
+        return reply.code(403).send({ error: 'platform-origin-refused', message: 'platform routes cannot be called from a browser page' });
       }
     });
 
     /**
-     * Operator session → operator (§4.4). Never shares a lookup with requireAdmin: a tenant admin
+     * Platform admin session → platform admin (§4.4). Never shares a lookup with requireAdmin: a tenant admin
      * key is not a session hash, and a session token is not in tenant_admin_keys.
      */
-    app.decorate('requireOperator', async (request: FastifyRequest, reply: FastifyReply) => {
-      await app.refuseOperatorOrigin(request, reply);
+    app.decorate('requirePlatformAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
+      await app.refusePlatformOrigin(request, reply);
       if (reply.sent) return reply;
       const token = bearerToken(request);
-      const operator = token && opts.operatorSessions ? await opts.operatorSessions.resolve(token) : null;
-      if (!operator) {
-        app.metrics.operatorAuthFailures.inc({ reason: token ? 'invalid-session' : 'missing-token' });
-        return reply.code(401).send(OPERATOR_UNAUTHORIZED);
+      const admin = token && opts.platformAdminSessions ? await opts.platformAdminSessions.resolve(token) : null;
+      if (!admin) {
+        app.metrics.platformAuthFailures.inc({ reason: token ? 'invalid-session' : 'missing-token' });
+        return reply.code(401).send(PLATFORM_UNAUTHORIZED);
       }
-      request.operator = operator;
-      request.log = request.log.child({ operator: operator.id });
+      request.platformAdmin = admin;
+      request.log = request.log.child({ admin: admin.id });
     });
   },
   { name: 'auth', dependencies: ['tenant', 'metrics'] },

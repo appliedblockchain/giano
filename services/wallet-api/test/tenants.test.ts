@@ -15,7 +15,7 @@ const validateTenantFixture = (input: object) => parseTenantFixtures(JSON.string
 /**
  * The RP/origin invariant (specs/DEVELOPER-GUIDE.md §1) is enforced on the
  * tenant WRITE path — a row that violates it must be impossible to create. These are
- * pure validator tests; the write-path half lives in tenant-fixtures.test.ts and operator-tenants.test.ts.
+ * pure validator tests; the write-path half lives in tenant-fixtures.test.ts and platform-tenants.test.ts.
  */
 describe('tenant validation (V11)', () => {
   const base = {
@@ -75,7 +75,7 @@ describe('tenant validation (V11)', () => {
   });
 });
 
-describe('one validator for every tenant write (operator-tenant-lifecycle)', () => {
+describe('one validator for every tenant write (admin-tenant-lifecycle)', () => {
   const base = {
     slug: 'acme',
     walletOrigin: 'https://wallet.acme.app',
@@ -89,7 +89,7 @@ describe('one validator for every tenant write (operator-tenant-lifecycle)', () 
     expect(tenantPatchSchema.safeParse({ rpname: 'typo' }).success).toBe(false);
   });
 
-  it('applies the same invariants to an operator create as to a fixture', () => {
+  it('applies the same invariants to an admin create as to a fixture', () => {
     const create = (input: object) => tenantCreateSchema.safeParse({ ...base, ...input });
     expect(create({ rpId: 'acme.app' }).error?.issues[0]).toMatchObject({ path: ['rpId'] });
     expect(create({ expectedOrigins: ['https://evil.example.com'] }).error?.issues[0]).toMatchObject({ path: ['expectedOrigins'] });

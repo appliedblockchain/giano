@@ -2,7 +2,7 @@
 
 ### Requirement: Tenants have a lifecycle
 Every tenant SHALL be in exactly one state: `active`, `suspended` or `deleted`. The only transitions SHALL be these:
-- creation, by an operator or, on a local stack, by the tenant fixtures, which yields `active`;
+- creation, by a platform admin or, on a local stack, by the tenant fixtures, which yields `active`;
 - `active → suspended`, through `POST …/suspend` with a required `{ reason }`;
 - `suspended → active`, through `POST …/resume`;
 - `suspended → deleted`, through `DELETE …`.
@@ -10,15 +10,15 @@ Every tenant SHALL be in exactly one state: `active`, `suspended` or `deleted`. 
 `deleted` SHALL be terminal. Any other transition SHALL return `409 invalid-transition`. Transitions SHALL be serialised per tenant, so that two concurrent identical transitions yield one success and one `409`. Existing tenants SHALL be `active` after migration.
 
 #### Scenario: Concurrent suspends
-- **WHEN** two operators suspend the same active tenant at once
+- **WHEN** two platform admins suspend the same active tenant at once
 - **THEN** one receives 200 and the other receives 409 `invalid-transition`
 
 #### Scenario: Resume an active tenant
-- **WHEN** an operator resumes a tenant that is active
+- **WHEN** a platform admin resumes a tenant that is active
 - **THEN** the response is 409 `invalid-transition`
 
 ## REMOVED Requirements
 
-### Requirement: The seed and operators own tenants exclusively
-**Reason**: `TENANTS_SEED` is retired. Tenants have a single owner, the operators.
-**Migration**: At boot, every tenant still marked seed-managed is handed to the operators once (see `tenant-administration`, "Seed-managed tenants are handed to the operators once").
+### Requirement: The seed and platform admins own tenants exclusively
+**Reason**: `TENANTS_SEED` is retired. Tenants have a single owner, the platform admins.
+**Migration**: At boot, every tenant still marked seed-managed is handed to the platform admins once (see `tenant-administration`, "Seed-managed tenants are handed to the platform admins once").

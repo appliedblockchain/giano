@@ -17,8 +17,8 @@ declare module 'fastify' {
       useropLatency: Histogram<'tenant' | 'chain'>;
       /** ALERTABLE: if this ever fires, RP resolution is broken or someone is probing. */
       crossTenantRejections: Counter<'kind' | 'tenant'>;
-      /** Operator sign-in and guard failures by cause. The client always sees one generic 401. */
-      operatorAuthFailures: Counter<'reason'>;
+      /** Platform admin sign-in and guard failures by cause. The client always sees one generic 401. */
+      platformAuthFailures: Counter<'reason'>;
       /**
        * Wallet-management lifecycle events (WM-50…WM-52). ALERTABLE on
        * action="pending-declined": a fingerprint the user refused to confirm is either a
@@ -113,9 +113,9 @@ export default fp(
         labelNames: ['kind', 'tenant'] as const,
         registers: [registry],
       }),
-      operatorAuthFailures: new Counter({
-        name: 'giano_operator_auth_failures_total',
-        help: 'Operator sign-in and session failures by reason; the response is the same 401 whatever the reason',
+      platformAuthFailures: new Counter({
+        name: 'giano_platform_auth_failures_total',
+        help: 'Platform admin sign-in and session failures by reason; the response is the same 401 whatever the reason',
         labelNames: ['reason'] as const,
         registers: [registry],
       }),

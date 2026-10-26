@@ -80,7 +80,7 @@ flowchart TB
 
     subgraph OURS["APPLIED BLOCKCHAIN INFRASTRUCTURE · one deployment · every tenant · every served chain"]
         direction TB
-        SEED[/"Tenant registry — rows written at runtime by Giano's operators<br/>in the console's Operator area (/v1/operator), never at boot<br/>slug · id, which IS the paymaster's bytes16 tenant key<br/>walletOrigin · rpId, immutable, the walletOrigin host · rpName<br/>expectedOrigins · allowedDappOrigins · corsOrigins<br/>openRegistration · adminKeys · policy overrides, per chain<br/>sponsorship rules are NOT here — each tenant writes its own"/]
+        SEED[/"Tenant registry — rows written at runtime by Giano's platform admins<br/>in the console's Platform area (/v1/platform), never at boot<br/>slug · id, which IS the paymaster's bytes16 tenant key<br/>walletOrigin · rpId, immutable, the walletOrigin host · rpName<br/>expectedOrigins · allowedDappOrigins · corsOrigins<br/>openRegistration · adminKeys · policy overrides, per chain<br/>sponsorship rules are NOT here — each tenant writes its own"/]
         CHAINCFG[/"GIANO_CHAINS — the closed list of chains served<br/>one document for wallet-api, the bundler and the console<br/>chainId · rpcUrl · entryPoint · sponsorshipPaymaster<br/>per-service sections: factory · per-chain policy · bundler settings<br/>verified at boot; the API refuses to start on a structural failure"/]
         API["<b>giano-wallet-api</b><br/>holds no key that can move a user's assets<br/>tenant from Origin · Host · session · admin key<br/>chain named by the caller, admitted only by the registry<br/>WebAuthn ceremonies · sessions<br/>UserOp policy gate + per-tenant audit<br/>ERC-7677 sponsorship: rules · ledger · watcher<br/>tenant-labelled metrics"]
         PG[("<b>Postgres 17</b><br/>every row tenant-scoped, and<br/>chain-scoped wherever<br/>it touches a chain")]
@@ -150,9 +150,9 @@ Removing the bundler in favour of direct `EntryPoint` submission has been analys
 
 | Service | Responsibility |
 |---|---|
-| `giano-wallet-api` | The only stateful service. WebAuthn ceremonies, sessions, the credential and wallet registry, the UserOp policy gate and its audit log, the ERC-7677 sponsorship service with its rules engine, ledger, signer and chain watcher, and the per-tenant admin API. Serves `/.well-known/webauthn` for related-origin passkey sharing. |
+| `giano-wallet-api` | The only stateful service. Its init step (`dist/init.js`) runs first: migrations, then the environment's bootstrap platform admins into an empty `platform_admins` table. WebAuthn ceremonies, sessions, the credential and wallet registry, the UserOp policy gate and its audit log, the ERC-7677 sponsorship service with its rules engine, ledger, signer and chain watcher, and the per-tenant admin API. Serves `/.well-known/webauthn` for related-origin passkey sharing. |
 | `giano-wallet-web` | The stock wallet origin: passkey ceremonies, the consent screens, the sponsorship refusal UI, and a same-origin nginx proxy to `/api`, `/rpc` and `/bundler`. Its RP ID comes from the browser's own hostname. |
-| `giano-paymaster-admin` | The operator console. It reads the paymaster contract and nothing else — no backend, no database, no cache that could be wrong about solvency. |
+| `giano-paymaster-admin` | The operator console. Its paymaster view reads the paymaster contract and nothing else — no backend, no database, no cache that could be wrong about solvency. Its Platform area manages tenants and platform admins through `wallet-api`'s `/v1/platform` routes, over a same-origin proxy. |
 | `giano-bundler` | In-house ERC-4337 submission service (`services/bundler`): one `handleOps` transaction per UserOp, no mempool. One instance serves every chain in the backend chain document, each at `POST /<chainId>` and isolated per chain inside the process (its own lanes, estimator and lookup); one executor account, funded on each chain. |
 | `giano-devnet`, `giano-contracts-deployer` | An instant-boot anvil with the contracts pre-baked, and the deployer that puts them on a real chain. |
 
@@ -175,7 +175,7 @@ sources do not overlap. This table is the shortest complete statement of the tru
 | Question | Decided from | Enforced by |
 |---|---|---|
 | Which tenant? | `Origin` for ceremonies; `Host` for `/.well-known/webauthn`; the session for bearer routes; the admin key for admin routes — and only an **active** tenant answers any of them | Fail-closed: no tenant is `403`, an unknown host is `404`. A session whose tenant contradicts the `Origin` is rejected and counted. A suspended or deleted tenant is indistinguishable from an unknown one. |
-| Is this caller a Giano operator? | `OPERATOR_ADDRESSES` — configuration, never rows — and an EIP-4361 signature over a message the server issued, exchanged for a 30-minute operator session | `requireOperator`, a lookup no tenant credential shares; operator routes refuse any request carrying an `Origin`, so no browser page can call them ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §4). |
+| Is this caller a Giano platform admin? | The `platform_admins` table — seeded per environment into an empty table by the init step, then managed only by signed-in platform admins, with history and a guard against removing yourself or the last platform admin — and an EIP-4361 signature, for the environment's console domain, over a message the server issued, exchanged for a 30-minute platform admin session | `requirePlatformAdmin`, a lookup no tenant credential shares; platform routes refuse any request carrying an `Origin`, so no browser page can call them ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §4). |
 | Which chain? | The caller names it — request body, ERC-7677 params, or query — and may omit it only when exactly one chain is configured | The chain registry, built and structurally verified at boot. Unknown is `400`, unreachable is `503`. |
 | Which wallet? | The passkey. Its public key is the owner; the address is CREATE2-derived from the owner set | The chain: the account verifies the signature against its own owner list. |
 | May this operation be relayed? | The tenant's policy, merged from deployment defaults, chain descriptor, tenant base and tenant per-chain overrides | The policy gate, before the bundler ever sees the operation; every decision is written to the audit log. |
@@ -274,9 +274,9 @@ Named here rather than left to be discovered. The requirement numbers are
   and the mechanism is still an open question.
 - **Balances and history in the wallet UI (BR-34).** The wallet appears to ask for approval and is
   not yet somewhere a user can go and look.
-- **A tenant-onboarding interface (BR-35).** Tenants are provisioned only by Giano's operators,
-  through `/v1/operator` and the console's Operator area
-  ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md)); there is no tenant-facing onboarding or
+- **A tenant-onboarding interface (BR-35).** Tenants are provisioned only by Giano's platform admins,
+  through `/v1/platform` and the console's Platform area
+  ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md)); there is no tenant-facing onboarding or
   self-service.
 - **Multi-party approval (BR-36).** The account admits several owners; there is no threshold rule.
 - **Branding (BR-18, partial).** A tenant's `branding` is accepted, validated and stored, and no

@@ -20,18 +20,38 @@ services:
       timeout: 3s
       retries: 10
 
+  # Runs to completion before wallet-api: migrations, then the environment's bootstrap platform admins
+  # (services/wallet-api/src/init.ts). wallet-api waits for it and never migrates itself.
+  init:
+    image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
+    command: ['node', 'dist/init.js']
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
+      GIANO_ENVIRONMENT: reference
+
   wallet-api:
     image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      init:
+        condition: service_completed_successfully
     ports:
       - '8080:8080'
     environment:
       DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
-      # apply pending migrations on boot (or run `node dist/migrate.js` as a one-shot job)
-      RUN_MIGRATIONS: 'true'
+      # the init service ran them
+      RUN_MIGRATIONS: 'false'
+      # Which environment this is (services/wallet-api/src/environments.ts). `reference` has no
+      # platform console of Giano's, so no platform route is registered.
+      GIANO_ENVIRONMENT: reference
       # What this deployment IS, as distinct from how the image was built. Required, with no
       # default: it is what refuses an environment-variable sponsorship signing key, and a default
       # that happened to be permissive is exactly how such a key reaches production.
@@ -47,13 +67,9 @@ services:
       # FACTORY_ADDRESS: ''
 
       # --- tenants ---
-      # Not configured here. The service boots with no tenants; Giano's operators create one per
-      # client project in the paymaster console's Operator area, which signs in against the
-      # operators listed below. rpId is IRREVERSIBLE per tenant (passkeys bind to it).
-      # OPERATOR_ADDRESSES: JSON array of { id, address }; unset registers no operator route.
-      # OPERATOR_SIWE_DOMAIN: the console's host — required when OPERATOR_ADDRESSES is set.
-      # OPERATOR_ADDRESSES: '[{"id":"ops-oncall","address":"0x…"}]'
-      # OPERATOR_SIWE_DOMAIN: paymaster.example.com
+      # Not configured here. Tenants live in the database and are created by platform admins in the
+      # paymaster console's Platform area; the service boots with none. rpId is IRREVERSIBLE per
+      # tenant (passkeys bind to it).
 
       # --- userop relay policy DEFAULTS (integers; fees in wei) — a tenant's policy
       #     jsonb may override any field per tenant ---

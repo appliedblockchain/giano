@@ -29,11 +29,11 @@ module "svc-wallet-api" {
 
   environment = {
     GIANO_DEPLOYMENT_CLASS = "testnet"
-    # No init container: wallet-api runs its own migrations on boot, before it starts
-    # listening, serialised by a Postgres advisory lock — safe under concurrent replicas the
-    # same way every tenant write is. Matches
-    # deploy/docker-compose.infrastructure.yml, which never had an init container either.
-    RUN_MIGRATIONS            = "true"
+    # The workspace IS the environment: services/wallet-api/src/environments.ts keys its platform
+    # sign-in domain and bootstrap platform admins on dev / stg / prd.
+    GIANO_ENVIRONMENT = terraform.workspace
+    # The init container below runs the migrations; the API never does (§9.6).
+    RUN_MIGRATIONS            = "false"
     SPONSORSHIP_ENABLED       = "true"
     SPONSORSHIP_SIGNER_KIND   = "local"
     PAYMASTER_WATCHER_ENABLED = "true"
@@ -56,13 +56,21 @@ module "svc-wallet-api" {
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
 
+  # §9.6 — before the API starts, in every task: migrations, then the environment's bootstrap
+  # platform admins into an empty platform_admins table. Idempotent and safe across concurrent tasks (advisory
+  # locks); a non-zero exit keeps the API from starting. Needs the database and nothing else.
+  init_container = {
+    command     = ["node", "dist/init.js"]
+    secret_keys = ["DATABASE_URL"]
+  }
+
   alb_enabled       = true
   alb_listener_arn  = aws_lb_listener.https.arn
   alb_rule_priority = 10
   alb_host_headers  = [local.hosts.api]
   health_check_path = "/healthz"
-  # Must outlast the slowest migration: migrations run in-process before wallet-api starts
-  # listening, so until they complete /healthz doesn't exist to answer at all.
+  # Must outlast the slowest migration: the init container runs them before wallet-api starts,
+  # so until they complete /healthz doesn't exist to answer at all.
   health_check_grace_period_seconds = 120
 
   vpc_id                 = aws_vpc.vpc.id
@@ -348,6 +356,13 @@ module "svc-paymaster-admin" {
 
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
+
+  # The console's Platform area (specs/PLATFORM-ADMIN-SPECS.md §11.1): nginx proxies /api/* to
+  # wallet-api over Cloud Map, same-origin, with the browser's Origin removed. Without it the
+  # console is the read-only paymaster view and nobody can manage tenants or platform admins here.
+  environment = {
+    GIANO_WALLET_API_UPSTREAM = "http://wallet-api.${local.name_prefix}.local:8080"
+  }
 
   # The single-deployment shorthand (GIANO_CHAIN_ID / GIANO_PAYMASTER_ADDRESS /
   # GIANO_ENVIRONMENT_LABEL / GIANO_REFRESH_SECONDS) is deliberately absent: with

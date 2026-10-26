@@ -7,7 +7,7 @@ import type { PolicyConfig } from './userop-policy.js';
 
 /**
  * Tenancy model (specs/DEVELOPER-GUIDE.md §1): tenant ≡ wallet origin ≡ RP ID, 1:1.
- * Tenants are written at runtime by Giano's operators (specs/OPERATOR-ADMIN-SPECS.md), and on
+ * Tenants are written at runtime by Giano's platform admins (specs/PLATFORM-ADMIN-SPECS.md), and on
  * local stacks by the tenant fixtures (tenant-fixtures.ts). EVERY write passes through
  * checkTenantInvariants and checkOriginClaims, so the RP/origin invariant can never be
  * violated in the database and no origin can ever resolve to two tenants.
@@ -111,7 +111,7 @@ export type TenantIssue = { path: (string | number)[]; message: string };
 
 /**
  * The single-tenant invariants every write must satisfy. Returns issues rather than throwing, so
- * the fixture loader can fail with them and the operator API can return them as a 400.
+ * the fixture loader can fail with them and the platform API can return them as a 400.
  */
 export function checkTenantInvariants(
   fields: Pick<TenantFields, 'walletOrigin' | 'rpId' | 'expectedOrigins' | 'openRegistration'>,
@@ -156,7 +156,7 @@ const addIssues = (ctx: z.RefinementCtx, issues: TenantIssue[]) => {
   for (const issue of issues) ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
 };
 
-/** An operator create: the fields plus labels for admin keys the server generates (H-i). */
+/** A platform admin create: the fields plus labels for admin keys the server generates (H-i). */
 export const tenantCreateSchema = tenantFieldsSchema
   .extend({
     adminKeys: z.array(z.object({ label: z.string().min(1).max(64) }).strict()).default([]),
@@ -220,7 +220,7 @@ export function originClaims(fields: { walletOrigin: string; expectedOrigins?: s
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export type TenantHistoryAction = (typeof tenantHistoryActions)[number];
 
-/** A refused tenant write, carrying the HTTP status and error code the operator API returns. */
+/** A refused tenant write, carrying the HTTP status and error code the platform API returns. */
 export class TenantWriteError extends Error {
   constructor(
     readonly status: number,
@@ -299,7 +299,7 @@ export async function appendTenantHistory(
     tenantId: string;
     action: TenantHistoryAction;
     actor: string;
-    operatorSessionId?: string | null;
+    platformAdminSessionId?: string | null;
     before: Tenant | null;
     after: Tenant | null;
     detail?: Record<string, unknown> | null;
@@ -309,7 +309,7 @@ export async function appendTenantHistory(
     tenantId: entry.tenantId,
     action: entry.action,
     actor: entry.actor,
-    operatorSessionId: entry.operatorSessionId ?? null,
+    platformAdminSessionId: entry.platformAdminSessionId ?? null,
     before: entry.before ? tenantSnapshot(entry.before) : null,
     after: entry.after ? tenantSnapshot(entry.after) : null,
     detail: entry.detail ?? null,
@@ -332,7 +332,7 @@ export type TenantService = ReturnType<typeof createTenantService>;
 /**
  * Every resolver that decides which tenant a REQUEST belongs to answers for active tenants only:
  * a suspended or deleted tenant is indistinguishable from an unknown one everywhere
- * (specs/OPERATOR-ADMIN-SPECS.md §8). Resolution stays per request from the database, with no
+ * (specs/PLATFORM-ADMIN-SPECS.md §8). Resolution stays per request from the database, with no
  * cache, so a lifecycle change is in force on the next request on every replica.
  */
 const isActive = eq(tenants.status, 'active');
@@ -345,7 +345,7 @@ export function createTenantService(db: Db) {
     },
 
     /**
-     * Any lifecycle state — for operator routes and background accounting, never for deciding
+     * Any lifecycle state — for platform admin routes and background accounting, never for deciding
      * whether a request may act as the tenant. Named so that choice is visible at the call site.
      */
     async getByIdAnyStatus(id: string): Promise<Tenant | null> {

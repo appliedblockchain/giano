@@ -13,6 +13,7 @@ import connectorPackage from '../../../packages/connector/package.json' with { t
 const BASE_ENV = {
   NODE_ENV: 'test',
   GIANO_DEPLOYMENT_CLASS: 'development',
+  GIANO_ENVIRONMENT: 'test',
   LOG_LEVEL: 'error',
   DATABASE_URL: 'postgres://u:p@localhost:5432/x',
 } as NodeJS.ProcessEnv;

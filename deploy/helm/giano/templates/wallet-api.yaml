@@ -25,6 +25,9 @@ spec:
               value: {{ include "giano.tag" . | quote }}
             - name: RUN_MIGRATIONS
               value: {{ not .Values.walletApi.runMigrationsJob | quote }}
+            # which entry of services/wallet-api/src/environments.ts this deployment is
+            - name: GIANO_ENVIRONMENT
+              value: {{ .Values.config.environment | quote }}
             - name: RP_ID
               value: {{ .Values.config.rpId | quote }}
             - name: RP_NAME

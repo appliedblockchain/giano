@@ -32,7 +32,7 @@ describe('retireTenantsSeed', () => {
     await db.execute(sql`TRUNCATE tenant_history, tenant_admin_keys, tenants CASCADE`);
   });
 
-  it('hands every seed-managed tenant, in any state, to the operators, keeping fields, keys and state', async () => {
+  it('hands every seed-managed tenant, in any state, to the admins, keeping fields, keys and state', async () => {
     await seeded('acme');
     await seeded('paused', 'suspended');
     const [acme] = await db.select().from(tenants).where(eq(tenants.slug, 'acme'));

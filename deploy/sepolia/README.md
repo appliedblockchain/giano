@@ -126,7 +126,7 @@ consequence directly (`services/wallet-api/src/services/tenants.ts`): a tenant c
 tenant"*. The id is immutable once set; changing it orphans that tenant's on-chain balance.
 
 > ⚠ Never invent tenant ids here. A tenant registered under an id no database holds can never
-> be sponsored for, and its balance can only be withdrawn. A new environment's operators create
+> be sponsored for, and its balance can only be withdrawn. A new environment's platform admins create
 > its tenants in the paymaster console first, then register the ids those tenants were given.
 
 Every role lands on the deployer EOA. That is the development shape the e2e devnet uses too, not a

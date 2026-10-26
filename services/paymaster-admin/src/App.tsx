@@ -5,8 +5,8 @@ import { Copyable, notifyError } from './components/ui';
 import { deploymentKey, getAdminConfig, initialDeployment, rememberDeployment, type Deployment } from './config';
 import { usePaymaster } from './hooks/usePaymaster';
 import { ChainNotAddedError, connectOnChain, getAuthorisedAccount, getInjectedProvider, isUserRejection, networkDetails, type ConnectedWallet } from './lib/chain';
-import { OperatorSessionProvider } from './lib/operator-session';
-import { OperatorArea } from './operator/OperatorArea';
+import { PlatformSessionProvider } from './lib/platform-session';
+import { PlatformArea } from './platform/PlatformArea';
 import { HealthPanel } from './panels/HealthPanel';
 import { HistoryPanel } from './panels/HistoryPanel';
 import { OverviewPanel } from './panels/OverviewPanel';
@@ -15,13 +15,14 @@ import { SettingsPanel } from './panels/SettingsPanel';
 import { TenantsPanel } from './panels/TenantsPanel';
 
 export function App() {
-  const { deployments, operatorApi } = getAdminConfig();
+  const { deployments, platformApi } = getAdminConfig();
   const [deployment, setDeployment] = useState(() => initialDeployment(deployments));
   /**
-   * Paymaster (the chain view, as it always was) or Operator (wallet-api's tenant registry). Not
-   * remembered: a reload lands on Paymaster, and the Operator area asks for a signature anyway.
+   * Paymaster (the chain view, as it always was) or Platform (wallet-api's tenant registry and its
+   * platform admins). Not
+   * remembered: a reload lands on Paymaster, and the Platform area asks for a signature anyway.
    */
-  const [area, setArea] = useState<'paymaster' | 'operator'>('paymaster');
+  const [area, setArea] = useState<'paymaster' | 'platform'>('paymaster');
   const [wallet, setWallet] = useState<ConnectedWallet>();
   const [connecting, setConnecting] = useState(false);
   const [notAdded, setNotAdded] = useState<ChainNotAddedError>();
@@ -130,13 +131,13 @@ export function App() {
               )}
               {deployments.length === 1 && <Badge variant="outline">chain {deployment.chainId}</Badge>}
               {overview && <Field label="Paymaster" value={overview.address} />}
-              {operatorApi && (
+              {platformApi && (
                 <ButtonGroup size="sm" variant="outline" attached aria-label="Area">
                   <Button variant={area === 'paymaster' ? 'solid' : 'outline'} onClick={() => setArea('paymaster')} aria-pressed={area === 'paymaster'}>
                     <LuLayoutDashboard /> Paymaster
                   </Button>
-                  <Button variant={area === 'operator' ? 'solid' : 'outline'} onClick={() => setArea('operator')} aria-pressed={area === 'operator'}>
-                    <LuUserCog /> Operator
+                  <Button variant={area === 'platform' ? 'solid' : 'outline'} onClick={() => setArea('platform')} aria-pressed={area === 'platform'}>
+                    <LuUserCog /> Platform
                   </Button>
                 </ButtonGroup>
               )}
@@ -218,11 +219,11 @@ export function App() {
           </Alert.Root>
         )}
 
-        {area === 'operator' && (
-          // Keyed on the deployment: switching environments remounts the provider, and the operator
+        {area === 'platform' && (
+          // Keyed on the deployment: switching environments remounts the provider, and the platform admin
           // session goes with it — the same reason the wallet is dropped on a switch.
-          <OperatorSessionProvider key={deploymentKey(deployment)}>
-            <OperatorArea
+          <PlatformSessionProvider key={deploymentKey(deployment)}>
+            <PlatformArea
               deployment={deployment}
               wallet={wallet}
               connect={connect}
@@ -232,7 +233,7 @@ export function App() {
               myRoles={myRoles}
               refreshChain={refresh}
             />
-          </OperatorSessionProvider>
+          </PlatformSessionProvider>
         )}
 
         {area === 'paymaster' && !overview && loading && (
@@ -305,7 +306,7 @@ export function App() {
  *
  * Two bare hex strings sat in this header — the paymaster and the connected account — and nothing
  * said which was which. They are the same shape, they are both copyable, and getting them the wrong
- * way round is exactly the mistake an operator cannot afford to make.
+ * way round is exactly the mistake a operator cannot afford to make.
  */
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -325,10 +326,10 @@ function Field({ label, value }: { label: string; value: string }) {
  * address is 42 characters and is never abbreviated here — see {@link Copyable} — so shown inline
  * it wraps the header onto a second row the moment a wallet connects, and every control in it
  * moves. It goes in a panel instead: the button carries the state worth seeing at a glance, and
- * the values an operator actually reads are one click away and full width.
+ * the values a operator actually reads are one click away and full width.
  *
  * The network is named there even though a connected wallet is always on the deployment's chain —
- * that it agrees is the thing worth showing, and it is the half an operator with several
+ * that it agrees is the thing worth showing, and it is the half a operator with several
  * environments open will otherwise assume.
  */
 function WalletCard({ wallet, deployment, roles }: { wallet: ConnectedWallet; deployment: Deployment; roles: number }) {
