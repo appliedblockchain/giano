@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/// <reference types="node" />
 /**
  * giano-paymaster — a management CLI for the Giano sponsorship paymaster.
  *

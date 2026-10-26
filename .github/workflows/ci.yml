@@ -64,6 +64,10 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-paymaster-sdk test
       - name: Build paymaster-admin
         run: pnpm --filter @appliedblockchain/giano-paymaster-admin build
+      - name: Typecheck every package and service (TypeScript 7)
+        # After the builds: dependants resolve each other's dist/ types. GNU time prints wall time
+        # and peak RSS ("Maximum resident set size") so regressions show up in the log.
+        run: /usr/bin/time -v pnpm typecheck
       - name: addresses.ts drift check
         run: |
           pnpm --filter @appliedblockchain/giano-contracts gen:addresses

@@ -20,7 +20,8 @@ A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives 
 
 ## Prerequisites
 
-- **Node 22** (`tsc` needs a big heap on this repo — see Troubleshooting) and **pnpm** (`corepack enable`).
+- **Node 22.18 or later** and **pnpm** (`corepack enable`). The repo typechecks with TypeScript 7 —
+  see [TypeScript toolchain](#typescript-toolchain).
   The E2E demo needs **Node 24**, because [portless](https://github.com/vercel-labs/portless) — which
   serves the demo's `*.localhost` addresses — requires it.
 - **Docker** (Compose) — for the local stacks, wallet-api integration tests, and E2E.
@@ -164,6 +165,10 @@ Stop these dev servers before running the E2E suite — see [Running the tests](
 ## Running the tests
 
 ```sh
+# typecheck every package and service with TypeScript 7 (build the packages first: dependants
+# resolve each other's dist/ types)
+pnpm build && pnpm typecheck
+
 # package unit tests (no Docker)
 pnpm --filter @appliedblockchain/giano-wallet-core test        # signing, fee precedence
 pnpm --filter @appliedblockchain/giano-wallet-transport test   # popup protocol, origin pinning
@@ -292,27 +297,43 @@ The E2E demo is addressed by name rather than by port, via a local portless prox
 `pnpm -F @appliedblockchain/giano-e2e portless:list` shows the active routes and `portless doctor`
 checks proxy, routes, DNS and trust in one go. Full reference: [`e2e/README.md`](./e2e/README.md).
 
-### Heap Out of Memory Error
+### Heap out of memory
 
-If you encounter a "heap out of memory" error when running the build command, this is typically due to Node.js running out of memory during the build process. This can happen when building large projects or when the default memory allocation is insufficient.
+The build no longer needs a bigger Node heap. The old `NODE_OPTIONS='--max-old-space-size=16384'`
+workaround predates the TypeScript 7 port: measured on an M2 Pro (Oct 2026), the largest single
+process in a full `pnpm build` peaks at about 1.5 GB, and `pnpm typecheck` at under 1 GB. If you
+still hit the limit, report it with the command that failed.
 
-**Solution:**
+## TypeScript toolchain
 
-Run the build command with increased memory allocation:
+Every package typechecks with **TypeScript 7** (the native compiler): `pnpm typecheck` runs `tsc
+--noEmit` in each package and service. `services/custom-example` is its own pnpm workspace, so run
+`pnpm typecheck` inside it (its `build` and Docker image run it too). Each package installs two aliases
+([Microsoft's documented setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)):
 
-```sh
-NODE_OPTIONS='--max-old-space-size=16384' pnpm build
-```
+| Alias | Resolves to | Used by |
+| --- | --- | --- |
+| `@typescript/native` | `typescript@7` | the `tsc` binary: `typecheck` scripts, `build` scripts that run `tsc --noEmit`, CI |
+| `typescript` | `@typescript/typescript6` (6.0 API, `tsc6` binary) | tools that `import 'typescript'` as a library |
 
-This increases the maximum heap size to 16GB. You can adjust the value (in MB) based on your system's available memory:
-- `8192` for 8GB
-- `16384` for 16GB  
-- `32768` for 32GB
+TypeScript 7.0 has no programmatic API (it is planned for 7.1), so these tools stay on the 6.0 API
+until they support 7.1's. Each one has its own exit condition:
 
-**Alternative solutions:**
-- Close other memory-intensive applications before building
-- Clear Node.js cache: `pnpm store prune`
-- Restart your development environment
+| Tool | Why it needs the API | Moves to TS 7 when |
+| --- | --- | --- |
+| tsup `dts` (declaration bundling, 7 published packages) | runs the compiler programmatically to emit `.d.ts` | tsup or its successor supports the TS 7.1 API, or the packages emit declarations with `isolatedDeclarations` |
+| ts-node (Hardhat config and `packages/contracts/scripts`) | compiles and typechecks through the API | Hardhat/ts-node support TS 7.1, or the scripts move to a non-typechecking loader such as tsx |
+| typescript-eslint (`services/custom-example` lint) | the parser and type-aware rules use the API | typescript-eslint supports TS 7 |
+
+vite, vitest, tsx and tsup's JavaScript output transpile with esbuild and do not use the compiler.
+
+**Consumers** of the published packages need **TypeScript 5.0.4 or later** (the same floor as
+viem). The declarations are checked with 5.0.4, 5.5, 6.0 and 7.0.
+
+**Editor:** VS Code's built-in TypeScript is not TS 7 yet. Install the
+**TypeScript (Native Preview)** extension (`TypeScriptTeam.native-preview`); once installed it is
+the default, and the command palette's
+"Disable TypeScript 7 Language Server" switches back.
 
 ## Components
 

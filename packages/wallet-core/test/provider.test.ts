@@ -1,6 +1,6 @@
 import { custom, parseGwei, toHex } from 'viem';
 import { createBundlerClient, entryPoint07Address } from 'viem/account-abstraction';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import {
   ChainType,
   createGianoProvider,
@@ -132,7 +132,7 @@ describe('connection', () => {
 
 describe('silent account restore (giano_restoreAccount)', () => {
   /** Pre-registers a resident passkey and returns its rawId for a sign-in/restore injection. */
-  async function registerCredential(): Promise<Uint8Array> {
+  async function registerCredential(): Promise<Uint8Array<ArrayBuffer>> {
     const created = await mock.authenticator.create({
       publicKey: { rp: { id: 'localhost', name: 'g' }, user: { id: new Uint8Array([1]), name: 'a', displayName: 'a' }, challenge: new Uint8Array([1]), pubKeyCredParams: [{ type: 'public-key', alg: -7 }] },
     } as CredentialCreationOptions);
@@ -148,7 +148,7 @@ describe('silent account restore (giano_restoreAccount)', () => {
     const accountsChanged: unknown[] = [];
     provider.on('accountsChanged', (p) => accountsChanged.push(p));
 
-    const [address] = await provider.request({ method: 'giano_restoreAccount' });
+    const [address] = await provider.request({ method: 'giano_restoreAccount', params: [] });
     expect(address.toLowerCase()).toBe(WALLET_ADDRESS.toLowerCase());
     // No sign-in ceremony was run — the account came from the stored public key only.
     expect(onCredentialSignedIn).not.toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe('silent account restore (giano_restoreAccount)', () => {
     const injection = createMockInjection(mock.authenticator, { credentialId });
     const { provider, sentUserOps } = buildProvider(mock.authenticator, { injection });
 
-    await provider.request({ method: 'giano_restoreAccount' });
+    await provider.request({ method: 'giano_restoreAccount', params: [] });
     const hash = await provider.request({ method: 'eth_sendTransaction', params: [{ to: WALLET_ADDRESS, value: '0x0', data: '0x' }] as never });
     expect(hash).toMatch(/^0x/);
     expect(sentUserOps.length).toBeGreaterThan(0);
@@ -169,7 +169,7 @@ describe('silent account restore (giano_restoreAccount)', () => {
 
   it('returns [] when no credential is registered for the user', async () => {
     const { provider } = buildProvider(mock.authenticator); // default injection: credentialId = null
-    expect(await provider.request({ method: 'giano_restoreAccount' })).toEqual([]);
+    expect(await provider.request({ method: 'giano_restoreAccount', params: [] })).toEqual([]);
     expect(provider.getSmartAccount()).toBeNull();
   });
 
@@ -183,14 +183,14 @@ describe('silent account restore (giano_restoreAccount)', () => {
     });
     const { provider } = buildProvider(mock.authenticator, { injection });
 
-    expect(await provider.request({ method: 'giano_restoreAccount' })).toEqual([]);
+    expect(await provider.request({ method: 'giano_restoreAccount', params: [] })).toEqual([]);
     expect(provider.getSmartAccount()).toBeNull();
   });
 
   it('is idempotent — returns the cached address once connected', async () => {
     const { provider } = buildProvider(mock.authenticator);
     const address = await connect(provider);
-    expect(await provider.request({ method: 'giano_restoreAccount' })).toEqual([address]);
+    expect(await provider.request({ method: 'giano_restoreAccount', params: [] })).toEqual([address]);
   });
 });
 
@@ -334,7 +334,8 @@ describe('transactions & user operations', () => {
 
   it('submits a raw signed operation unchanged without preparing or signing again', async () => {
     const { bundler } = createMockBundler();
-    const prepare = vi.spyOn(bundler, 'prepareUserOperation');
+    // prepareUserOperation is generic over its request, which vi.spyOn's typing collapses to never.
+    const prepare = vi.spyOn(bundler, 'prepareUserOperation') as unknown as MockInstance;
     const submitUserOperation = vi.fn(async () => `0x${'ab'.repeat(32)}` as `0x${string}`);
     const { provider } = buildProvider(mock.authenticator, {
       bundler,
@@ -358,7 +359,8 @@ describe('transactions & user operations', () => {
       return `0x${'ab'.repeat(32)}`;
     });
     const bundler = createBundlerClient({ chain: testChain, transport: custom({ request }, { retryCount: 0 }) });
-    const prepare = vi.spyOn(bundler, 'prepareUserOperation');
+    // prepareUserOperation is generic over its request, which vi.spyOn's typing collapses to never.
+    const prepare = vi.spyOn(bundler, 'prepareUserOperation') as unknown as MockInstance;
     const { provider } = buildProvider(mock.authenticator, { bundler });
     const sender = await connect(provider);
     const account = provider.getSmartAccount()!;

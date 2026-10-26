@@ -104,7 +104,7 @@ Everything you must provide, made explicit. "Required" means the minimal working
 
 | Dependency | Needed for | Notes |
 | --- | --- | --- |
-| **Node 22** | building/running any package or service | `tsc` needs a large heap on this repo — see [Troubleshooting](#8-troubleshooting). |
+| **Node 22.18+** | building/running any package or service | 22.18 is tsup 9's floor. Typechecking uses TypeScript 7 (`pnpm typecheck`); see the root README's *TypeScript toolchain* section for the `tsc` / `tsc6` split. |
 | **pnpm** (`corepack enable`) | the monorepo (workspaces, `-r` builds) | version pinned in root `package.json`. |
 | **Docker** (+ Compose) | the local stacks, wallet-api tests, E2E | not required if you consume only published images + npm packages. Also what holds port 80 for the E2E demo's addresses, so that nothing has to run as root. |
 | **Node 24** | *only* the E2E demo/suite | required by [portless](https://github.com/vercel-labs/portless), which serves the demo's `*.localhost` addresses. Installed as a dev dependency of `@appliedblockchain/giano-e2e`; no global install needed. |
@@ -986,7 +986,7 @@ P-256 passkey).
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `heap out of memory` on build | `NODE_OPTIONS='--max-old-space-size=16384' pnpm build` |
+| `heap out of memory` on build | not expected since the TypeScript 7 port (peak ~1.5 GB for a full `pnpm build`, measured Oct 2026); report the failing command rather than raising `--max-old-space-size` |
 | `http://app.localhost` refuses the connection | nothing holds port 80 — start the relay (`pnpm -F @appliedblockchain/giano-e2e portless:port80`) or run the proxy on 80 under sudo. See [`e2e/README.md`](../e2e/README.md) |
 | A demo address returns a portless **404** | the routes are not registered — `pnpm -F @appliedblockchain/giano-e2e portless:up`; inspect with `portless:list` |
 | A demo address returns **502** | the route is registered but its port is dead — the compose stack or that host fixture is not running |

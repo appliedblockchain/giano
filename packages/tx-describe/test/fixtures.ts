@@ -1,5 +1,11 @@
 import type { Mapping } from '../src/index';
 
+/**
+ * The contract context as mappings carry it here. The upstream ERC-7730 type omits `abi`, but this
+ * library requires it inline (see `Mapping`), so fixtures name it explicitly.
+ */
+export type ContractContext = NonNullable<NonNullable<Mapping['context']>['contract']> & { abi: unknown[] };
+
 export const CHAIN = 31337;
 export const USDC = '0x1111111111111111111111111111111111111111';
 export const RECIPIENT = '0x2222222222222222222222222222222222222222';
@@ -35,7 +41,7 @@ export const erc20Abi = [
 /** A tenant descriptor for USDC on the devnet: covers transfer only. */
 export const usdcMapping = (overrides: Partial<Mapping> = {}): Mapping => ({
   $schema: 'https://eips.ethereum.org/assets/eip-7730/erc7730-v1.schema.json',
-  context: { contract: { deployments: [{ chainId: CHAIN, address: USDC }], abi: erc20Abi } },
+  context: { contract: { deployments: [{ chainId: CHAIN, address: USDC }], abi: erc20Abi } as ContractContext },
   metadata: { owner: 'Acme', contractName: 'USD Coin' },
   display: {
     formats: {

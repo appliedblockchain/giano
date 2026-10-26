@@ -15,9 +15,9 @@ type ValidationHook<
 > = (
   this: GianoProviderInjection & {
     // if a safety hook is being used, then the implementation has it defined
-    // thus why the use of NonNullable here (and the hook only needs to know
+    // thus why the use of Required here (and the hook only needs to know
     // that the implementation has that specific hook defined)
-    readonly implementation: NonNullable<GianoProviderInjection[HookKey]>
+    readonly implementation: GianoProviderInjection & Required<Pick<GianoProviderInjection, HookKey>>
   },
   hookKey: HookKey,
   ...args: Parameters<NonNullable<GianoProviderInjection[HookKey]>>

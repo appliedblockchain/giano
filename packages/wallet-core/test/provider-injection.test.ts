@@ -215,7 +215,7 @@ describe('withValidation', () => {
     await expect(wrapped.getNameForCredential()).rejects.toThrow(/non-empty string/);
     await expect(wrapped.onCredentialCreated('n', new Uint8Array([1]), {} as never)).rejects.toThrow(/wallet address/);
     await expect(wrapped.onCredentialSignedIn({} as never)).rejects.toThrow(/must return a boolean/);
-    await expect(wrapped.submitUserOperation!({} as never)).rejects.toThrow(/User operation hash/);
+    await expect(wrapped.submitUserOperation!({} as never, 1)).rejects.toThrow(/User operation hash/);
   });
 
   it('passes valid hook returns through, including a null onCredentialCreated and onCredentialKey', async () => {
@@ -357,7 +357,7 @@ describe('createWalletApiInjection', () => {
     const key = await injection.getPublicKeyByCredentialId(created.rawId);
     expect(key).toEqual({ x, y });
 
-    const hash = await injection.submitUserOperation!({ sender: ADDR, nonce: 0n, callData: '0x', callGasLimit: 1n, verificationGasLimit: 1n, preVerificationGas: 1n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, signature: '0x' } as never);
+    const hash = await injection.submitUserOperation!({ sender: ADDR, nonce: 0n, callData: '0x', callGasLimit: 1n, verificationGasLimit: 1n, preVerificationGas: 1n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, signature: '0x' } as never, 1);
     expect(hash).toBe(HEX32);
 
     await injection.onCredentialKey(created.rawId, { x, y }); // no-op, server already stored the key

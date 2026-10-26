@@ -34,6 +34,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "prepublishOnly": "pnpm build"
@@ -47,9 +48,11 @@
     "uuid": "^11.1.1"
   },
   "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "^4.1.11",
-    "tsup": "^8.3.5",
-    "typescript": "5.5.4",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
     "viem": "2.31.6",
     "vitest": "^4.1.11"
   }
