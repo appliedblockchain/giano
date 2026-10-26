@@ -778,7 +778,7 @@ balance or open reservations from the response.
 | **O-3** | **Devops (`infra/iac/`).** Three asks, none of them H5 deliverables. (1) `OPERATOR_ADDRESSES` and `OPERATOR_SIWE_DOMAIN` as plain environment variables on `wallet-api`; addresses are public, so no ASM secret is needed. (2) `GIANO_WALLET_API_UPSTREAM` on the `paymaster-admin` task. (3) A network restriction **on `/v1/operator/*` at the `api.*` listener**, as an ALB path rule (VPN CIDR or ALB OIDC). Restricting only `paymaster.*` would not cover these routes, because they are equally reachable on `api.*`, as §14.3 itself shows. Wallet sign-in is the control; the restriction is defence in depth for write routes. Restricting `paymaster.*` as well is optional. |
 | **O-4** | **Naming.** `paymaster-admin` now administers more than the paymaster. Renaming the package, image and ECR repository is a separate, mechanical change with an infra component. Not proposed here. |
 | **O-5** | **Serving a runtime tenant's wallet origin** still needs infra (§1.3). The real fix is the Host-resolved `wallet-web` config already listed as unbuilt in [`ARCHITECTURE.md`](./ARCHITECTURE.md). Worth a card of its own, because until it lands "create a tenant at runtime" means "create the backend half at runtime". |
-| **O-6** | **`INFRASTRUCTURE.md` R31** says `paymaster-admin` proxies `/api` to `wallet-api`. The nginx template does not. After D6 it will, and R31 becomes true; the doc should be checked against the template either way. |
+| **O-6** | *Resolved by D6.* **`INFRASTRUCTURE.md` R31** says `paymaster-admin` proxies `/api` to `wallet-api`. It now does, when `GIANO_WALLET_API_UPSTREAM` is set, and R31 says so. |
 | **O-7** | **Branding** is stored and editable through this API, and still read by nothing. Editing it in the console changes no UI. The console labels the field accordingly. |
 | **O-8** | **The AWS dev `tenants-seed` secret** must be checked before D3 deploys, or `wallet-api` will refuse to boot on dev. Check two things: overlapping origin claims (§6.2), and keys outside the field schema, which `.strict()` now refuses (§6.1). Every seed in `deploy/` passes both. |
 | **O-9** | **Wallets that skip the EIP-4361 domain check.** The phishing protection in §4.3 relies on the operator's wallet warning about a `domain` mismatch. MetaMask, Rabby and Ledger Live do; an arbitrary wallet may not. The operator list is small, so the mitigation is a written rule: operators sign in with one of those wallets, on a hardware device. |
@@ -805,7 +805,7 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 
 ### Deliverables
 
-✅ = implemented by the OpenSpec change `operator-tenant-lifecycle` (PR #125).
+✅ = implemented: D1–D4 by the OpenSpec change `operator-tenant-lifecycle` (PR #125), D6's tenant half by `operator-console`.
 
 | # | Files |
 | --- | --- |
@@ -814,7 +814,7 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 | D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`, seed ownership rules) |
 | D4 ✅ | `src/routes/operator-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when `OPERATOR_ADDRESSES` is non-empty), `openapi/` |
 | D5 *(follow-up card)* | `src/routes/operator-chains.ts`, `src/services/chains.ts` (keep last verification and probe), `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts` (prober stores both) |
-| D6 | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/operator-api.ts`, `src/lib/operator-session.ts`, `src/operator/{SignIn,TenantsTab,TenantDrawer}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
+| D6 ✅ (tenant half) | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/operator-api.ts`, `src/lib/operator-session.ts`, `src/operator/{SignIn,TenantsTab,TenantDrawer}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
 
 ---
 

@@ -120,8 +120,59 @@ GIANO_CSP_CONNECT_SRC="${GIANO_CSP_CONNECT_SRC:-$(
 )}"
 export GIANO_RPC_LOCATIONS GIANO_CSP_CONNECT_SRC
 
-envsubst '${GIANO_DEPLOYMENTS}' < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
-envsubst '${GIANO_RPC_LOCATIONS} ${GIANO_CSP_CONNECT_SRC}' \
+# The operator API (specs/OPERATOR-ADMIN-SPECS.md §11.1), only where it is asked for.
+#
+# With GIANO_WALLET_API_UPSTREAM set, /api/* is proxied to wallet-api on this origin, and the
+# console shows its Operator area. Unset, nothing below is rendered and the console is exactly the
+# read-mostly paymaster view it was — so every existing deployment keeps its nginx config byte for
+# byte.
+#
+# The proxy drops the browser's Origin: wallet-api refuses any operator request that carries one,
+# which is what keeps a page on another origin from calling those routes, and this same-origin hop
+# is the one path a browser is meant to take.
+#
+# wallet-api is re-resolved per request, as wallet-web does it and for the same reason: under ECS
+# its address changes on every rollout, and a literal proxy_pass host would be resolved once at
+# config load and held. A variable in proxy_pass is what defers the lookup, and a variable needs a
+# resolver — the container's own nameserver, read from /etc/resolv.conf. First IPv4 match only:
+# the directive takes one address.
+GIANO_API_LOCATION=""
+GIANO_OPERATOR_API=false
+if [ -n "${GIANO_WALLET_API_UPSTREAM:-}" ]; then
+  GIANO_RESOLVER=""
+  while read -r key value _ || [ -n "${key:-}" ]; do
+    if [ "$key" = nameserver ]; then
+      case "$value" in
+        '' | *[!0-9.]*) ;;
+        *) GIANO_RESOLVER=$value; break ;;
+      esac
+    fi
+    key=""
+  done < /etc/resolv.conf
+  : "${GIANO_RESOLVER:?/etc/resolv.conf names no IPv4 nameserver}"
+
+  # Regex, not prefix: a proxy_pass carrying a variable does no URI rewrite, so the /api/ prefix is
+  # captured and the rest re-appended. /api/v1/x → <upstream>/v1/x.
+  # Starts with a newline: the template places it straight after the RPC locations.
+  GIANO_API_LOCATION=$(printf '%s\n' \
+    '' \
+    "    resolver ${GIANO_RESOLVER} valid=10s ipv6=off;" \
+    '    resolver_timeout 5s;' \
+    "    set \$giano_wallet_api ${GIANO_WALLET_API_UPSTREAM};" \
+    '' \
+    '    location ~ ^/api/(?<giano_api_path>.*)$ {' \
+    '        proxy_pass $giano_wallet_api/$giano_api_path$is_args$args;' \
+    '        proxy_http_version 1.1;' \
+    '        proxy_set_header Host $proxy_host;' \
+    '        proxy_set_header Origin "";' \
+    '        add_header Cache-Control "no-store" always;' \
+    '    }')
+  GIANO_OPERATOR_API=true
+fi
+export GIANO_API_LOCATION GIANO_OPERATOR_API
+
+envsubst '${GIANO_DEPLOYMENTS} ${GIANO_OPERATOR_API}' < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
+envsubst '${GIANO_RPC_LOCATIONS} ${GIANO_CSP_CONNECT_SRC} ${GIANO_API_LOCATION}' \
   < /etc/giano/nginx.conf.template > /etc/nginx/conf.d/default.conf
 
 exec nginx -g 'daemon off;'
