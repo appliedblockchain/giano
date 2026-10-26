@@ -862,7 +862,10 @@ async function doctorChain(flags: Record<string, string>) {
 		chainId,
 	);
 
-	const executor = flags.executor ?? process.env.ALTO_EXECUTOR_ADDRESS;
+	const executor =
+		flags.executor ??
+		process.env.BUNDLER_EXECUTOR_ADDRESS ??
+		process.env.ALTO_EXECUTOR_ADDRESS;
 	if (executor) {
 		section("Bundler executor");
 		const executorAddr = requireAddress(executor, "executor");
@@ -877,7 +880,7 @@ async function doctorChain(flags: Record<string, string>) {
 			report(
 				"info",
 				"low executor balance",
-				"the executor fronts gas for every bundle — keep it funded",
+				"the executor fronts gas for every handleOps transaction — keep it funded",
 			);
 		}
 	}

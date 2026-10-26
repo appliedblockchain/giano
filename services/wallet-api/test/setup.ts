@@ -4,14 +4,20 @@ import {
 	PostgreSqlContainer,
 	type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
+import { privateKeyToAccount } from "viem/accounts";
 import { buildApp } from "../src/app.js";
 import { type AppConfig, loadConfig } from "../src/config.js";
 import { createDb, type Db } from "../src/db/index.js";
 import { runMigrations } from "../src/migrate.js";
-import { seedTenants } from "../src/services/tenants.js";
+import { bootstrapAdmins } from "../src/services/platform-admins.js";
+import {
+	loadTenantFixtures,
+	parseTenantFixtures,
+} from "../src/services/tenant-fixtures.js";
+import { stopPostgres } from "./postgres.js";
 
 /**
- * Two seeded tenants. Tenant A keeps the pre-tenancy test values (origin
+ * Two fixture tenants. Tenant A keeps the pre-tenancy test values (origin
  * localhost:4000, rpId localhost) so the webauthn fixtures and most assertions carry
  * over; tenant B exists to prove isolation and runs with closed registration.
  */
@@ -173,25 +179,27 @@ export type TestContext = {
 	chainState: MockChainState;
 };
 
-const tenantSeedJson = JSON.stringify([
-	{
-		slug: TENANT_A.slug,
-		walletOrigin: TENANT_A.walletOrigin,
-		rpId: TENANT_A.rpId,
-		rpName: TENANT_A.rpName,
-		openRegistration: TENANT_A.openRegistration,
-		adminKeys: [TENANT_A.adminKey],
-		corsOrigins: ["http://dapp-a.localhost:4000"],
-	},
-	{
-		slug: TENANT_B.slug,
-		walletOrigin: TENANT_B.walletOrigin,
-		rpId: TENANT_B.rpId,
-		rpName: TENANT_B.rpName,
-		openRegistration: TENANT_B.openRegistration,
-		adminKeys: [TENANT_B.adminKey],
-	},
-]);
+const tenantFixtures = parseTenantFixtures(
+	JSON.stringify([
+		{
+			slug: TENANT_A.slug,
+			walletOrigin: TENANT_A.walletOrigin,
+			rpId: TENANT_A.rpId,
+			rpName: TENANT_A.rpName,
+			openRegistration: TENANT_A.openRegistration,
+			adminKeys: [TENANT_A.adminKey],
+			corsOrigins: ["http://dapp-a.localhost:4000"],
+		},
+		{
+			slug: TENANT_B.slug,
+			walletOrigin: TENANT_B.walletOrigin,
+			rpId: TENANT_B.rpId,
+			rpName: TENANT_B.rpName,
+			openRegistration: TENANT_B.openRegistration,
+			adminKeys: [TENANT_B.adminKey],
+		},
+	]),
+);
 
 export async function startTestStack(
 	envOverrides: Record<string, string> = {},
@@ -207,9 +215,9 @@ export async function startTestStack(
 	const baseEnv: Record<string, string> = {
 		NODE_ENV: "test",
 		GIANO_DEPLOYMENT_CLASS: "development",
+		GIANO_ENVIRONMENT: "test",
 		LOG_LEVEL: "error",
 		DATABASE_URL: databaseUrl,
-		TENANTS_SEED: tenantSeedJson,
 		CHAIN_ID: "31337",
 		RPC_URL: rpc.url,
 		BUNDLER_URL: "http://bundler.test",
@@ -236,8 +244,9 @@ export async function startTestStack(
 	} as NodeJS.ProcessEnv);
 
 	const { db, pool } = createDb(databaseUrl);
-	// the production write path — tenant seeds run the same validation as a real boot
-	await seedTenants(db, config.TENANTS_SEED);
+	// the local stacks' write path — the same validation and origin-claim checks as a platform admin create
+	await loadTenantFixtures(db, tenantFixtures);
+	await bootstrapAdmins(db, "test", TEST_ADMINS);
 	const app = await buildApp({ config, db, fetchImpl });
 	return {
 		container,
@@ -255,7 +264,7 @@ export async function stopTestStack(ctx: TestContext): Promise<void> {
 	await ctx.app.close();
 	await ctx.pool.end();
 	await ctx.rpc.close();
-	await ctx.container.stop();
+	await stopPostgres(ctx.container);
 }
 
 // ── Sponsorship fixtures ───────────────────────────────────────────────────────
@@ -381,9 +390,9 @@ export async function startSponsorshipStack(
 	const config = loadConfig({
 		NODE_ENV: "test",
 		GIANO_DEPLOYMENT_CLASS: "development",
+		GIANO_ENVIRONMENT: "test",
 		LOG_LEVEL: "error",
 		DATABASE_URL: databaseUrl,
-		TENANTS_SEED: tenantSeedJson,
 		CHAIN_ID: "31337",
 		RPC_URL: rpc.url,
 		BUNDLER_URL: "http://bundler.test",
@@ -400,7 +409,8 @@ export async function startSponsorshipStack(
 	} as NodeJS.ProcessEnv);
 
 	const { db, pool } = createDb(databaseUrl);
-	await seedTenants(db, config.TENANTS_SEED);
+	await loadTenantFixtures(db, tenantFixtures);
+	await bootstrapAdmins(db, "test", TEST_ADMINS);
 	const app = await buildApp({
 		config,
 		db,
@@ -418,4 +428,52 @@ export async function startSponsorshipStack(
 		chainState,
 		paymasterState,
 	};
+}
+
+// ── Platform admin fixtures ──────────────────────────────────────────────────────────
+
+/** anvil's default accounts 0–2: two listed platform admins and one stranger. */
+export const ADMIN = privateKeyToAccount(
+	"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+);
+export const SECOND_ADMIN = privateKeyToAccount(
+	"0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+);
+export const STRANGER = privateKeyToAccount(
+	"0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+);
+export type AdminAccount = typeof ADMIN;
+
+/** Platform admin limits high enough not to trip in a suite. Every test stack has the two platform admins below. */
+export const PLATFORM_ENV = {
+	PLATFORM_RATE_LIMIT_PER_MINUTE: "1000",
+};
+
+/** The suite's platform admins, written the way the init step writes an environment's bootstrap list. */
+export const TEST_ADMINS = [
+	{ id: "admin-test", address: ADMIN.address },
+	{ id: "admin-second", address: SECOND_ADMIN.address },
+];
+
+/** Signs in the way the console does: challenge, personal_sign, verify. Returns the session token. */
+export async function platformSignIn(
+	app: TestContext["app"],
+	account: AdminAccount = ADMIN,
+): Promise<string> {
+	const challenge = await app.inject({
+		method: "POST",
+		url: "/v1/platform/auth/challenge",
+		payload: { address: account.address, chainId: 31337 },
+	});
+	const { message } = challenge.json() as { message: string };
+	const verify = await app.inject({
+		method: "POST",
+		url: "/v1/platform/auth/verify",
+		payload: { message, signature: await account.signMessage({ message }) },
+	});
+	if (verify.statusCode !== 200)
+		throw new Error(
+			`admin sign-in failed: ${verify.statusCode} ${verify.body}`,
+		);
+	return (verify.json() as { token: string }).token;
 }

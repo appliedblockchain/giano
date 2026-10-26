@@ -19,6 +19,7 @@
 	"updateInternalDependencies": "patch",
 	"ignore": [
 		"@appliedblockchain/giano-wallet-api",
+		"@appliedblockchain/giano-bundler",
 		"@appliedblockchain/giano-wallet-web",
 		"@appliedblockchain/giano-paymaster-admin",
 		"@appliedblockchain/giano-e2e"

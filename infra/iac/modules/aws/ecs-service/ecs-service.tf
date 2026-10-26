@@ -1,4 +1,4 @@
-# task definition (3 containers), service, service-discovery registration — §9.3, §9.4
+# task definition (app, optional init, and the Datadog pair), service, service-discovery registration — §9.3, §9.4
 
 locals {
   # ECS's DescribeTaskDefinition ALWAYS echoes these back, whether or not we declare them —
@@ -32,11 +32,30 @@ locals {
     environment = [for k, v in var.environment : { name = k, value = v }]
     secrets     = [for k, v in var.secret_arns : { name = k, valueFrom = v }]
 
-    # No init container to depend on — wallet-api runs its own migrations on boot,
-    # RUN_MIGRATIONS=true, serialised by a Postgres advisory lock (§9.6). log_router only
-    # exists when Datadog is on — depending on a container that was never added to
+    # The init container must have EXITED 0 before the application starts (§9.6). log_router
+    # only exists when Datadog is on — depending on a container that was never added to
     # container_definitions is a task-placement failure, not a no-op.
-    dependsOn = var.datadog_enabled ? [{ containerName = "log_router", condition = "START" }] : []
+    dependsOn = concat(
+      var.datadog_enabled ? [{ containerName = "log_router", condition = "START" }] : [],
+      var.init_container != null ? [{ containerName = "init", condition = "SUCCESS" }] : [],
+    )
+
+    logConfiguration = local.firelens_log_configuration
+  })
+
+  # Runs to completion before the application (§9.6). Not essential: exiting is its job, and an
+  # essential container that exits stops the task. The app's SUCCESS dependency is what turns a
+  # failed init into a task that never serves.
+  init_container = var.init_container == null ? null : merge(local.container_defaults, {
+    name        = "init"
+    image       = var.image
+    essential   = false
+    memory      = var.init_container.memory
+    cpu         = 0
+    command     = var.init_container.command
+    environment = [for k, v in var.environment : { name = k, value = v }]
+    secrets     = [for k in var.init_container.secret_keys : { name = k, valueFrom = var.secret_arns[k] }]
+    dependsOn   = var.datadog_enabled ? [{ containerName = "log_router", condition = "START" }] : []
 
     logConfiguration = local.firelens_log_configuration
   })
@@ -47,6 +66,7 @@ locals {
   # role can no longer read, which fails at task launch, not at apply.
   container_definitions = concat(
     [local.app_container],
+    slice([local.init_container], 0, var.init_container != null ? 1 : 0),
     # slice(), not a ternary between two differently-sized tuple literals: [a, b] and [] infer
     # as distinct fixed-length tuple types and HCL's conditional requires both branches of a
     # ternary to unify to one type ("Inconsistent conditional result types"). slice() keeps one

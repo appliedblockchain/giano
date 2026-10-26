@@ -7,7 +7,7 @@
 #   * A WebAuthn RP ID is a HOSTNAME — the port is not part of it. Two tenants reached as
 #     localhost:8081 and localhost:8082 would therefore share the RP ID `localhost`, and
 #     cross-tenant isolation — the thing this stack exists to demonstrate — becomes
-#     unobservable. wallet-api also rejects a seed whose tenants share an rpId.
+#     unobservable. wallet-api also refuses two tenants with one rpId.
 #   * `http://*.localhost` is a secure context in Chromium and Firefox and resolves to
 #     loopback without touching /etc/hosts, so passkeys work with no local CA to mint and
 #     trust. That is the same reason the e2e stack uses these names (see e2e/origins.mjs).

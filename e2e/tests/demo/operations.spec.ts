@@ -34,7 +34,7 @@ async function approve(
 	await popup.getByRole("button", { name: button, exact: true }).click();
 }
 
-// Every transaction is submitted to the safe-mode bundler, and checked via its receipt.
+// Every transaction is submitted through giano-bundler, and checked via its receipt.
 for (const chain of [CHAINS.a, CHAINS.b]) {
 	test(`${chain.name}: sends, token calls, signatures, raw pipeline and authenticated read`, async ({
 		page,

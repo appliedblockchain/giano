@@ -16,7 +16,7 @@ import { tenantTxMappings, tenantTxMappingsHistory } from "../db/schema.js";
  * with per-path issues and nothing partial is ever stored; it is validated *again* when served,
  * because a row written under yesterday's rules must not become today's explanation of a
  * transaction. A row that fails is omitted from what the wallet gets and flagged in what the
- * admin sees, so the operator can fix it while no user is shown a description the service no
+ * admin sees, so the platform admin can fix it while no user is shown a description the service no
  * longer trusts.
  */
 

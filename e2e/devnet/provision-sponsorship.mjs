@@ -1,13 +1,13 @@
 /**
  * Installs the demo tenants' sponsorship rules through the real admin API.
  *
- * Deliberately *not* baked into the devnet state and deliberately *not* part of TENANTS_SEED.
+ * Deliberately *not* baked into the devnet state and deliberately *not* part of the tenant fixtures.
  *
  * Rules are a tenant's own to edit, so they go in the way a tenant would put them in: a `PUT` to
  * `/v1/admin/sponsorship` with the tenant's own admin key. That means there is no dev-only seeding
  * mechanism that would then have to be disabled in production — "a tenant with no configuration
- * gets no sponsorship" stays true for real tenants because it is true here too. It also means
- * `TENANTS_SEED` keeps its declarative meaning: a restart cannot revert a tenant's edit.
+ * gets no sponsorship" stays true for real tenants because it is true here too. It also means a
+ * restart cannot revert a tenant's edit.
  *
  * The configs are deliberately generous — the demo contracts allow-listed, a high cost cap, a
  * large balance — so that fixtures which merely need a sponsored transaction never trip a rule
@@ -63,7 +63,7 @@ const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? "31337,31338")
 	.split(",")
 	.map((id) => Number(id.trim()));
 
-/** Admin keys as `TENANTS_SEED` provisions them in deploy/docker-compose.e2e.yml. */
+/** Admin keys as the init service creates them (TENANT_FIXTURES in deploy/docker-compose.e2e.yml). */
 const TENANT_ADMIN_KEYS = {
 	stock: process.env.STOCK_ADMIN_KEY ?? "e2e-admin-key-stock",
 	byo: process.env.BYO_ADMIN_KEY ?? "e2e-admin-key-byo00",

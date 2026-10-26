@@ -92,6 +92,21 @@ variable "environment" {
   default     = {}
 }
 
+variable "init_container" {
+  description = <<-EOT
+    [OPTIONAL] an init container run to completion before the application starts, from the same
+    image: its command, and which of secret_arns it receives. It gets every plain variable in
+    `environment`. The application container waits for it with condition SUCCESS, so a failed
+    init keeps the task from ever serving. §9.6
+  EOT
+  type = object({
+    command     = list(string)
+    secret_keys = list(string)
+    memory      = optional(number, 256)
+  })
+  default = null
+}
+
 variable "secret_arns" {
   description = "[OPTIONAL] { ENV_VAR_NAME => secret ARN } — resolved by the execution role, §7.5"
   type        = map(string)

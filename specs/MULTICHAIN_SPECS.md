@@ -138,7 +138,7 @@ item here that another team owns.
 | Per-chain services | `wallet-api/src/app.ts` | changed | Bundler service, read client, paymaster reader and sponsorship service per chain (§9.2) |
 | Chain resolution | `wallet-api/src/plugins/chain.ts` | new plugin | Resolves and validates `chainId` on every chain-facing request (§9.3) |
 | Owner sync | `wallet-api/src/services/owner-sync.ts` + migration | new | Durable per-chain application of owner-management operations, and divergence detection (§11) |
-| Two-chain devnet | `e2e/devnet/`, `deploy/docker-compose.e2e.yml` | changed | Two networks, two bundlers, one wallet-api, one wallet origin (§14.1) |
+| Two-chain devnet | `e2e/devnet/`, `deploy/docker-compose.e2e.yml` | changed | Two networks, one bundler serving both, one wallet-api, one wallet origin (§14.1) |
 | Cross-chain demos | `e2e/dapp/`, `services/custom-example/` | changed | Second-chain submission in the fixture and the example app (§14.2, §14.3) |
 
 Tenant resolution, sessions, WebAuthn and the relay's policy engine keep their shape. The chain
@@ -227,19 +227,28 @@ type ChainDescriptor = {
      (S11), and a backend request omits it only when a single chain is configured (§9.3). */
 };
 
-/** wallet-api adds submission and the on-chain addresses it must not take from a request. */
+/**
+ * The backend chain document: one entry per chain, read by wallet-api and giano-bundler
+ * (`GIANO_CHAINS`) and paymaster-admin (`GIANO_DEPLOYMENTS`). Fields more than one service reads
+ * sit at the top; each service's own settings sit in its section, which that service validates
+ * strictly while accepting the others' as-is.
+ */
 type BackendChainDescriptor = ChainDescriptor & {
-  bundlerUrl: string;
-  /** Both default from the contracts registry for `chainId`; explicit values win. */
+  /** Shared. Both default from the contracts registry for `chainId`; explicit values win. */
   entryPoint?: Address;
-  factory?: Address;
   sponsorshipPaymaster?: Address;
-  /** Per-chain policy defaults. Address-valued fields are never inherited across chains (§9.5). */
-  policy?: {
-    maxCallGas?: bigint; maxVerificationGas?: bigint;
-    maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint;
-    allowedTargets?: Address[]; allowedPaymasters?: Address[];
+  walletApi?: {
+    factory?: Address;                    // defaults from the registry
+    /** Per-chain policy defaults. Address-valued fields are never inherited across chains (§9.5). */
+    policy?: {
+      maxCallGas?: bigint; maxVerificationGas?: bigint;
+      maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint;
+      allowedTargets?: Address[]; allowedPaymasters?: Address[];
+    };
+    bundlerUrl?: string;                  // defaults to <BUNDLER_BASE_URL>/<chainId>
   };
+  bundler?: { enabled?: boolean; rpcUrl?: string; chainType?: 'auto' | 'default' | 'op-stack'; maxBlockRange?: number };
+  paymasterAdmin?: { walletRpcUrl?: string; refreshSeconds?: number };
 };
 
 /** wallet-web adds what the browser needs; it never learns an RPC endpoint it may not use. */
@@ -261,12 +270,19 @@ specification generalises it rather than inventing a second idiom.
 
 ```
 GIANO_CHAINS='[
-  { "chainId": 8453,  "name": "Base",        "rpcUrl": "https://…", "bundlerUrl": "https://…" },
-  { "chainId": 10,    "name": "OP Mainnet",  "rpcUrl": "https://…", "bundlerUrl": "https://…" }
+  { "chainId": 8453,  "name": "Base",        "rpcUrl": "https://…" },
+  { "chainId": 10,    "name": "OP Mainnet",  "rpcUrl": "https://…", "walletApi": { "policy": { … } } }
 ]'
+BUNDLER_BASE_URL=http://bundler:4337
 ```
 
-Validated by zod exactly as `TENANTS_SEED` is, with the same failure mode: a bad entry is a start-up
+Each chain submits to `<BUNDLER_BASE_URL>/<chainId>` — the one giano-bundler process serving every
+chain in the same document — unless its `walletApi.bundlerUrl` names another bundler (then
+`bundler.enabled: false`). `BUNDLER_BASE_URL` goes with `GIANO_CHAINS` only. The earlier flat shape,
+with `bundlerUrl`, `factory` and `policy` at the top of each entry, is refused;
+`scripts/migrate-chains-document.mjs` rewrites it.
+
+Validated by zod at boot, with a strict failure mode: a bad entry is a start-up
 error naming the chain and the field, not a warning (MC-42). Rules:
 
 - `chainId` values are unique. A duplicate is a configuration error.
@@ -274,8 +290,8 @@ error naming the chain and the field, not a warning (MC-42). Rules:
   names, and two chains called "Testnet" is an incident waiting to happen.
 - No entry is privileged. There is no default chain: a connection names its chain or is refused
   (MC-11), and a backend request may omit it only when the list has exactly one entry (MC-53).
-- `entryPoint`, `factory` and `sponsorshipPaymaster` default from `gianoAddresses[chainId]`. A chain
-  absent from the registry must supply `entryPoint` and `factory` explicitly, exactly as today.
+- `entryPoint`, `walletApi.factory` and `sponsorshipPaymaster` default from `gianoAddresses[chainId]`.
+  A chain absent from the registry must supply `entryPoint` and `walletApi.factory` explicitly.
 
 ### 3.3 `wallet-web` configuration
 
@@ -1423,7 +1439,7 @@ Two anvil instances, both started by the stack's normal start-up with no opt-in 
 |---|---|---|
 | chain id | `31337` | `31338` |
 | RPC | `:8545` | `:8546` |
-| bundler (Alto) | `:4337` | `:4338` |
+| bundler (giano-bundler) | `:4337/31337` | `:4337/31338` — the same process |
 | state | `e2e/devnet/state.json` | `e2e/devnet/state-31338.json` |
 
 Retaining `31337` as chain A means every existing single-chain test passes unmodified, demonstrating
@@ -1447,9 +1463,11 @@ is unavailable: the pinned anvil provides RIP-7212 natively and it cannot be tog
 state deploys the in-contract fallback verifier regardless. Precompile-availability differences are
 covered by the per-chain verification check instead (§15.3).
 
-`wallet-api` receives both chains through `GIANO_CHAINS`; `wallet-web` receives both through its
-`chains` array. One wallet-api, one wallet origin, one Postgres, two chains — which is the topology
-the standalone profile actually uses.
+`wallet-api` and the bundler receive both chains through the same `GIANO_CHAINS` document;
+`wallet-web` receives both through its `chains` array. One bundler serves both, isolated per chain
+inside the process (its own lanes, estimator and lookup each), with one executor key funded on each
+chain (MC-98). One wallet-api, one bundler, one wallet origin, one Postgres, two chains — which is the
+topology the standalone profile actually uses.
 
 ### 14.2 The demo fixture (`e2e/dapp`)
 
@@ -1530,9 +1548,11 @@ parameter, so a test that used the wrong one fails rather than passes.
 
 | Variable | Component | Notes |
 |---|---|---|
-| `GIANO_CHAINS` | wallet-api, wallet-web, paymaster-admin | JSON array of chain descriptors (§3). One shape across all three (MC-95) |
+| `GIANO_CHAINS` | wallet-api, giano-bundler, wallet-web, paymaster-admin (as `GIANO_DEPLOYMENTS`) | JSON array of chain descriptors (§3). One core shape across all (MC-95); wallet-api, the bundler and paymaster-admin read the same backend document, each validating its own section |
+| `BUNDLER_BASE_URL` | wallet-api | With `GIANO_CHAINS` only: each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless `walletApi.bundlerUrl` is set |
+| `BUNDLER_EXECUTOR_PRIVATE_KEYS` | giano-bundler | Never in the document. One key serves every chain (nonces are per chain), funded on each |
 | `CHAIN_ID`, `RPC_URL`, `BUNDLER_URL` | wallet-api | Single-chain shorthand, normalised to a one-entry list (§3.4). Supplying both these and `GIANO_CHAINS` is a configuration **error**, not a merge |
-| `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS` | wallet-api | Move **into** the chain descriptor's `policy`. Address-valued deployment defaults cannot be chain-agnostic (MC-61) |
+| `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS` | wallet-api | Move **into** the chain descriptor's `walletApi.policy`. Address-valued deployment defaults cannot be chain-agnostic (MC-61) |
 | `SPONSORSHIP_PAYMASTER_ADDRESS` | wallet-api | Moves into the descriptor; the deployment-wide `SPONSORSHIP_ENABLED` master switch stays |
 | `PAYMASTER_WATCHER_*` | wallet-api | Stay deployment-wide; one watcher per chain uses them |
 
@@ -1565,10 +1585,10 @@ operation and must be turnkey rather than tribal knowledge. This checklist is a 
                                                                  signed by the canonical deployer
 5.  Assert addresses == CANONICAL_FACTORY /
     CANONICAL_IMPLEMENTATION, code is canonical               → else FAIL, do not register (§4.3)
-6.  Fund the bundler's executor account
+6.  Fund the bundler's executor account on this chain
 7.  Deploy, stake and fund the paymaster; register tenants on this chain
 8.  giano-doctor chain --chain-id <id>                        → must be green (§3.5)
-9.  Add the descriptor to GIANO_CHAINS; roll the deployment
+9.  Add the entry to GIANO_CHAINS; roll wallet-api and the bundler (no new bundler service)
 10. Verify: /v1/version lists the chain ready; a sponsored transaction succeeds end to end
 ```
 
@@ -1584,9 +1604,11 @@ Steps 1, 2 and 5 are the ones that fail silently if skipped, and are the reason 
   served list until resolved — accounts on it are at risk of address confusion.
 - **Owner-set divergence alert.** Inspect `owner_sync_targets` for the account. Retry if the
   authorisation is live; otherwise the user must re-authorise (§11.4).
-- **Adding a chain.** §15.3. Expect a rolling restart of the wallet-api (one process, D3).
-- **Per-chain funding.** Each chain needs its own funded executor and its own paymaster deposit and
-  stake, monitored separately (MC-98, MC-75). This cost is linear in the number of chains and does not
+- **Adding a chain.** §15.3. Expect a rolling restart of the wallet-api (one process, D3) and of the
+  bundler, which serves the new chain from the same document.
+- **Per-chain funding.** Each chain needs the executor funded on it and its own paymaster deposit and
+  stake, monitored separately (MC-98, MC-75) — the bundler's
+  `giano_bundler_executor_balance_wei` is labelled by chain. This cost is linear in the number of chains and does not
   amortise.
 
 ---
@@ -1714,7 +1736,7 @@ breaks MC-33 and the divergence trap returns, so it should be flagged early rath
 | MC-95 | §3.1 one shape |
 | MC-96 | §9.2 registry is the only route to a chain |
 | MC-97 | §15.3 adoption checklist |
-| MC-98 | §14.1 per-chain bundler · §15.4 |
+| MC-98 | §14.1 per-chain submission resources · §15.4 |
 | MC-99 | §4.3 post-deploy assertion |
 | MC-100 | §3.5 shared with `giano-doctor` |
 | MC-101 | §14.1 topology |

@@ -19,17 +19,7 @@ beforeEach(() => {
 	vi.stubEnv("TENANT_SLUG", "example");
 	vi.stubEnv("CHAIN_ID", "84532,11155111");
 	vi.stubEnv("SPONSORSHIP_CONFIG", JSON.stringify(config));
-	vi.stubEnv(
-		"TENANTS_SEED",
-		JSON.stringify([
-			{
-				slug: "example",
-				walletOrigin: "https://wallet.example.test",
-				rpName: "Example",
-				adminKeys: [adminKey],
-			},
-		]),
-	);
+	vi.stubEnv("ADMIN_API_KEY", adminKey);
 	vi.stubEnv("SPONSORSHIP_PAYMASTER_ADDRESS", paymaster);
 	vi.stubEnv("SPONSORSHIP_REQUIRE_FUNDED", "true");
 	vi.spyOn(process, "exit").mockImplementation(() => {

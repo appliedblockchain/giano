@@ -1,0 +1,17 @@
+{
+  "lib/forge-std": {
+    "rev": "f46d8301cf732f4f83846565aa475628265e51e0"
+  },
+  "lib/p256-verifier": {
+    "rev": "607d3ec8377a3f59d65eca60d87dee8485d2ebcc"
+  },
+  "lib/safe-singleton-deployer-sol": {
+    "rev": "cf2b89c33fed536c4dd6fef2fb84f39053068868"
+  },
+  "lib/solady": {
+    "rev": "b609a9c79ce541c2beca7a7d247665e7c93942a3"
+  },
+  "lib/webauthn-sol": {
+    "rev": "619f20ab0f074fef41066ee4ab24849a913263b2"
+  }
+}

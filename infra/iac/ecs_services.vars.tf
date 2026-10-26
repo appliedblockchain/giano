@@ -53,12 +53,6 @@ variable "chain_b_name" {
   default     = "Ethereum Sepolia"
 }
 
-variable "entrypoint_address" {
-  description = "EntryPoint v0.7 — canonical at the same address on every chain"
-  type        = string
-  default     = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
-}
-
 # ⚠ REQUIRED, no default. §13.1: the GianoPaymaster proxy is not frozen in the contracts
 # registry for 84532, so this must be a real deployed proxy or sponsorship cannot work at all.
 variable "paymaster_address" {

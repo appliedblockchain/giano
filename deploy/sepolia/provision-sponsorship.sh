@@ -24,7 +24,7 @@ set -a; . "$ENV_FILE"; set +a
 
 : "${SPONSORSHIP_PAYMASTER_ADDRESS:?not set — run ./deploy/sepolia/deploy-contracts.sh first}"
 
-# Same defaults as docker-compose.sepolia.yml's TENANTS_SEED — they must name the same tenant.
+# Same defaults as docker-compose.sepolia.yml's TENANT_FIXTURES — they must name the same tenant.
 TENANT_SLUG="${TENANT_SLUG:-example}"
 ADMIN_API_KEY="${ADMIN_API_KEY:-sepolia-admin-key-0000}"
 CHAIN_ID="${CHAIN_ID:-11155111}"

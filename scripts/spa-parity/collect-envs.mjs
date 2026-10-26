@@ -163,6 +163,19 @@ const edge = [
 		},
 	},
 	{
+		// The backend chain document wallet-api and the bundler read, passed straight through: the
+		// console's settings come from its own section, and the other sections never reach the browser.
+		image: "paymaster-admin",
+		name: "shared-chain-document",
+		env: {
+			GIANO_DEPLOYMENTS:
+				'[{"chainId":84532,"name":"Base Sepolia","rpcUrl":"https://base.example/v2/SECRETKEY",' +
+				'"entryPoint":"0x0000000071727De22E5E9d8BAf0edAc6f37da032","sponsorshipPaymaster":"0x00000000000000000000000000000000000000bb",' +
+				'"walletApi":{"policy":{"allowedPaymasters":["0x00000000000000000000000000000000000000bb"]}},"bundler":{"chainType":"op-stack"},' +
+				'"paymasterAdmin":{"walletRpcUrl":"https://sepolia.base.org","refreshSeconds":20}}]',
+		},
+	},
+	{
 		image: "paymaster-admin",
 		name: "multi-proxy-bare-host",
 		env: {

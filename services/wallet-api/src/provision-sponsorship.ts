@@ -10,8 +10,7 @@
  * Rules go in the way a tenant would put them in — a `PUT` with that tenant's own admin key —
  * rather than through a seeding path that would then have to be disabled in production. "A tenant
  * with no configuration gets no sponsorship" therefore stays true for real tenants because it is
- * true here too, and `TENANTS_SEED` keeps its declarative meaning: a restart cannot revert a
- * tenant's edit.
+ * true here too, and a restart cannot revert a tenant's edit.
  *
  * Fails loudly and with a non-zero exit. An environment that cannot sponsor must announce it here,
  * where an operator is watching, rather than at a user's first transaction — where it presents as
@@ -19,7 +18,6 @@
  */
 import { z } from "zod";
 import { sponsorshipConfigSchema } from "./services/sponsorship-config.js";
-import { tenantsSeedSchema } from "./services/tenants.js";
 
 const fail = (message: string): never => {
 	console.error(message);
@@ -88,39 +86,10 @@ const config = (() => {
 })();
 
 /**
- * The admin key is read from the same secret that provisions the tenant, so there is exactly one
- * place a key is written down. Never logged, and never echoed back by the API.
+ * The tenant's admin key, as the platform console issued it. Never logged, and never echoed back by
+ * the API.
  */
-const adminKey = (() => {
-	const raw = required("TENANTS_SEED");
-	let json: unknown;
-	try {
-		json = JSON.parse(raw);
-	} catch (error) {
-		return fail(`TENANTS_SEED is not valid JSON: ${(error as Error).message}`);
-	}
-	const seeds = tenantsSeedSchema.safeParse(json);
-	if (!seeds.success) {
-		return fail(
-			`TENANTS_SEED is not a valid tenant seed:\n${seeds.error.issues
-				.map(
-					(issue) => `  ${issue.path.join(".") || "(root)"}: ${issue.message}`,
-				)
-				.join("\n")}`,
-		);
-	}
-	const tenant = seeds.data.find((seed) => seed.slug === tenantSlug);
-	if (!tenant) {
-		return fail(
-			`TENANTS_SEED has no tenant "${tenantSlug}" — known slugs: ${seeds.data.map((s) => s.slug).join(", ")}`,
-		);
-	}
-	if (tenant.adminKeys.length === 0)
-		fail(
-			`tenant "${tenantSlug}" has no admin keys, so its rules cannot be written`,
-		);
-	return tenant.adminKeys[0]!;
-})();
+const adminKey = required("ADMIN_API_KEY");
 
 /**
  * Optional, and a cross-check rather than an input: the provisioner writes rules, it does not
