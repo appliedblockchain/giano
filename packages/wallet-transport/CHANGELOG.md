@@ -1,5 +1,7 @@
 # @appliedblockchain/giano-wallet-transport
 
+## 3.1.1
+
 ## 3.1.0
 
 ## 3.0.0
