@@ -109,6 +109,29 @@ const envSchema = z
 			.positive()
 			.default(60),
 		/**
+		 * The platform chain read relay (POST /v1/platform/rpc/:chainId), per platform admin session per
+		 * minute. Its own budget, apart from PLATFORM_RATE_LIMIT_PER_MINUTE: a console refresh reads the
+		 * chain many times over, and sharing would let polling lock a platform admin out of the tenant
+		 * routes.
+		 */
+		PLATFORM_RPC_RATE_LIMIT_PER_MINUTE: z.coerce
+			.number()
+			.int()
+			.positive()
+			.default(1200),
+		/**
+		 * The widest eth_getLogs range the platform read relay forwards. At least the paymaster SDK's own
+		 * 9 000-block log window, or the console's History tab could never load.
+		 */
+		PLATFORM_RPC_MAX_LOG_BLOCKS: z.coerce
+			.number()
+			.int()
+			.min(
+				9000,
+				"PLATFORM_RPC_MAX_LOG_BLOCKS must be at least 9000, the paymaster SDK's log window",
+			)
+			.default(10000),
+		/**
 		 * Delete refuses to trust a zero balance read from a ledger more than this many blocks behind
 		 * the chain head (§5.3). Must exceed PAYMASTER_WATCHER_CONFIRMATIONS, which the watcher's
 		 * cursor trails the head by on purpose.

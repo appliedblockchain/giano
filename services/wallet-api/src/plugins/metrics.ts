@@ -18,6 +18,8 @@ declare module "fastify" {
 			bundlerRelay: Counter<"method" | "outcome" | "tenant" | "chain">;
 			/** The chain RPC read relay (POST /v1/rpc), by method and outcome. */
 			rpcRelay: Counter<"method" | "outcome" | "tenant" | "chain">;
+			/** The platform chain read relay (POST /v1/platform/rpc/:chainId) the console reads through. */
+			platformRpcRelay: Counter<"method" | "outcome" | "chain">;
 			policyRejections: Counter<"rule" | "tenant" | "chain">;
 			ceremonyFailures: Counter<"kind" | "tenant">;
 			useropLatency: Histogram<"tenant" | "chain">;
@@ -94,6 +96,12 @@ export default fp(
 				name: "giano_rpc_relay_requests_total",
 				help: "Chain RPC read relay requests (POST /v1/rpc), by method, outcome, tenant and chain",
 				labelNames: ["method", "outcome", "tenant", "chain"] as const,
+				registers: [registry],
+			}),
+			platformRpcRelay: new Counter({
+				name: "giano_platform_rpc_relay_requests_total",
+				help: "Platform chain read relay requests (POST /v1/platform/rpc/:chainId), by method, outcome and chain",
+				labelNames: ["method", "outcome", "chain"] as const,
 				registers: [registry],
 			}),
 			policyRejections: new Counter({
