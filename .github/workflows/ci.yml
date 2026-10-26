@@ -77,6 +77,20 @@ jobs:
           pnpm --filter @appliedblockchain/giano-contracts gen:addresses
           git diff --exit-code packages/contracts/addresses.ts
 
+      - name: Changesets config is valid
+        # The step below exits early when packages/ is untouched, and `changeset publish` is the
+        # next thing to read the config, so without this a bad `ignore` or `fixed` entry (one
+        # naming a package that is not in the workspace) first fails the Release job after merge.
+        run: |
+          node -e "
+            const from = { paths: [require.resolve('@changesets/cli/package.json')] };
+            const { read } = require(require.resolve('@changesets/config', from));
+            const { getPackages } = require(require.resolve('@manypkg/get-packages', from));
+            getPackages(process.cwd())
+              .then((packages) => read(process.cwd(), packages))
+              .then(() => console.log('changesets config ok'))
+              .catch((error) => { console.error(error.message); process.exit(1); });
+          "
       - name: A change to a publishable package carries a changeset
         if: github.event_name == 'pull_request'
         env:
@@ -129,6 +143,30 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-wallet-api test
       - name: OpenAPI drift check
         run: pnpm --filter @appliedblockchain/giano-wallet-api openapi:check
+
+  bundler:
+    name: giano-bundler tests (anvil) + chain document
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # anvil for the integration suite, at the version the repo pins everywhere else.
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build contracts TS surface (the chain document schema)
+        run: pnpm --filter @appliedblockchain/giano-contracts build:ts
+      - name: Typecheck
+        run: pnpm --filter @appliedblockchain/giano-bundler typecheck
+      - name: Vitest (unit + anvil integration, incl. the simulation bytecode drift check)
+        run: pnpm --filter @appliedblockchain/giano-bundler test
+      - name: Chain document migration script
+        run: node --test scripts/migrate-chains-document.test.mjs
 
   generated-drift:
     name: generated.ts drift check (solc)

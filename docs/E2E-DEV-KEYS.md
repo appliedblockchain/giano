@@ -23,8 +23,8 @@ Only **two** private keys appear anywhere in the dev/test surface.
 
 | # | Address | Private key | Used as |
 | --- | --- | --- | --- |
-| anvil 0 | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` | `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` | contract deployer · paymaster `ROLE_ADMIN` · alto **executor** · default key for the SDK CLI & demo |
-| anvil 1 | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` | `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d` | **sponsorship signer** (signs the paymaster's EIP-712 authorisations) · alto **utility** key |
+| anvil 0 | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` | `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` | contract deployer · paymaster `ROLE_ADMIN` · bundler **executor** · default key for the SDK CLI & demo · platform admin `admin-console` (e2e, local-infra) |
+| anvil 1 | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` | `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d` | **sponsorship signer** (signs the paymaster's EIP-712 authorisations) |
 
 Verified with `cast wallet address --private-key <key>`.
 
@@ -32,14 +32,13 @@ Verified with `cast wallet address --private-key <key>`.
 
 | Key | File |
 | --- | --- |
-| anvil 0 | `deploy/docker-compose.e2e.yml:57` (`--executor-private-keys`) |
-| | `deploy/docker-compose.dev.yml:36` (default for `ALTO_EXECUTOR_PRIVATE_KEY`) |
+| anvil 0 | `deploy/docker-compose.e2e.yml` (`BUNDLER_EXECUTOR_PRIVATE_KEYS`, both bundlers) |
+| | `deploy/docker-compose.dev.yml` (default for `BUNDLER_EXECUTOR_PRIVATE_KEYS`) |
 | | `e2e/devnet/generate-state.mjs:58` (`deployer`) |
 | | `packages/contracts/scripts/provision-paymaster.ts:32` (`ANVIL_KEY`) |
 | | `packages/paymaster-sdk/cli/index.ts:41`, `packages/paymaster-sdk/demo/cli.ts:30` |
-| | `services/bundler/entrypoint.sh:10`, `services/wallet-api/test/paymaster-chain.test.ts:76` |
-| anvil 1 | `deploy/docker-compose.e2e.yml:58` (`--utility-private-key`), `:115` (`SPONSORSHIP_SIGNER_KEY_REF`) |
-| | `deploy/docker-compose.dev.yml:37` (default for `ALTO_UTILITY_PRIVATE_KEY`) |
+| | `services/bundler/src/config.ts` (`ANVIL_KEY`, refused outside `GIANO_DEV_MODE`), `services/wallet-api/test/paymaster-chain.test.ts:76` |
+| anvil 1 | `deploy/docker-compose.e2e.yml` (`SPONSORSHIP_SIGNER_KEY_REF`) |
 | | `e2e/devnet/generate-state.mjs:60`, `e2e/devnet/addresses.json:9` (`sponsorshipSignerKey`) |
 | | `packages/wallet-core/test/account.test.ts:15` |
 
@@ -57,11 +56,29 @@ census is complete, not because the stack needs them.
 | # | Address | Used as |
 | --- | --- | --- |
 | anvil 2 | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` | tenant `stock`'s withdrawal address |
-| anvil 3 | `0x90F79bf6EB2c4f870365E785982E1f101E93b906` | tenant `byo`'s withdrawal address |
+| anvil 3 | `0x90F79bf6EB2c4f870365E785982E1f101E93b906` | tenant `byo`'s withdrawal address · platform admin `admin-e2e` (e2e) |
 
 A tenant's withdrawal address is the **only** account that can move that tenant's balance — no
 paymaster role can, including all of them at once. On the devnet these are deliberately different
 from the deployer so that separation is exercised rather than assumed.
+
+### Platform admins
+
+Who may sign in to the paymaster console's Platform area is a row in wallet-api's `platform_admins`
+table, not a compose variable. The first rows come from the environment map in
+`services/wallet-api/src/environments.ts` (selected by `GIANO_ENVIRONMENT`), which the `init`
+service writes **only into an empty table** — so a changed map takes effect after `down -v`, and
+platform admins added or removed in the console survive a restart.
+
+| Environment (`GIANO_ENVIRONMENT`) | Bootstrap platform admins |
+| --- | --- |
+| `e2e` (`docker-compose.e2e.yml`) | `admin-e2e` = anvil 3 (signs in from `e2e/tests/platform-admin.spec.ts`, which holds its private key; no paymaster role) · `admin-console` = anvil 0 (the console's injected test wallet; holds every role) · `giovanni` |
+| `local-infra` (`docker-compose.infrastructure.yml`) | `admin-console` = anvil 0 · `giovanni` |
+| `local-dev`, `local-sepolia` | `giovanni` (these stacks run no console, so no platform route) |
+
+`giovanni` is `0xFebBB1e5b6D66E6281d0d4d4816f76B69365a09d`, a real person's address and not an anvil
+account; it is also the bootstrap platform admin of `dev`, `stg` and `prd`. Neither platform admin account is the
+sponsorship signer.
 
 ---
 
@@ -161,10 +178,10 @@ authenticator, so no credential is ever stored in the repository. There is no pa
 | http://paymaster.localhost | 8083 | paymaster admin console |
 | http://api.localhost | 8080 | `wallet-api` |
 | http://rpc.localhost | 8545 | anvil |
-| http://bundler.localhost | 4337 | alto |
+| http://bundler.localhost | 4337 | giano-bundler |
 
 `e2e/origins.mjs` is the single source of truth. `wallet.localhost` and `wallet-byo.localhost` double
-as WebAuthn **RP IDs**, so renaming either means updating `TENANTS_SEED` and `GIANO_RP_ID` to match.
+as WebAuthn **RP IDs**, so renaming either means updating `TENANT_FIXTURES` (the `init` service) and `GIANO_RP_ID` to match.
 
 ---
 
@@ -172,8 +189,8 @@ as WebAuthn **RP IDs**, so renaming either means updating `TENANTS_SEED` and `GI
 
 Deliberately **not** in this document, and not in the repository.
 
-- `deploy/.env` — gitignored. Holds the real `DEPLOYER_PRIVATE_KEY`, `ALTO_EXECUTOR_PRIVATE_KEY`,
-  `ALTO_UTILITY_PRIVATE_KEY` and `ADMIN_API_KEY` for a testnet deployment. **Never commit it, and
+- `deploy/.env` — gitignored. Holds the real `DEPLOYER_PRIVATE_KEY`, `BUNDLER_EXECUTOR_PRIVATE_KEYS`
+  and `ADMIN_API_KEY` for a testnet deployment. **Never commit it, and
   never copy its values into a document — this one included.**
 - `deploy/sepolia.env.example` — the template. Variable names only, no values. That is the file to
   read to learn what a real deployment needs.

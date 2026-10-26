@@ -69,7 +69,7 @@ const ANVIL = {
 		address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
 		key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 	},
-	/** The sponsorship signing key. Also alto's utility key — deliberate: one fewer moving part. */
+	/** The sponsorship signing key. */
 	sponsorshipSigner: {
 		address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
 		key: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
@@ -80,8 +80,8 @@ const ANVIL = {
 
 /**
  * Tenant ids are UUIDs in the database and `bytes16` on chain, and the paymaster has to be
- * registered against the *same* ids the wallet-api will send. Fixed here and referenced from
- * `TENANTS_SEED`, so the two cannot drift.
+ * registered against the *same* ids the wallet-api will send. Fixed here and pinned in the
+ * `TENANT_FIXTURES` of deploy/docker-compose.e2e.yml, which must carry the same values.
  */
 export const DEMO_TENANTS = [
 	{

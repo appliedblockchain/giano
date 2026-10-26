@@ -75,8 +75,8 @@ prerequisites, per-service environment, delivery, cost, the runbook and the risk
 ### 2.1 What is being built
 
 One AWS account region hosting one Giano deployment per environment, serving **seven public
-hostnames** from **one load balancer**, backed by **eight Fargate services** — two chains, each
-with its own bundler — and **one RDS instance**, provisioned entirely by Terraform from
+hostnames** from **one load balancer**, backed by **seven Fargate services** — two chains, served
+by one bundler — and **one RDS instance**, provisioned entirely by Terraform from
 `infra/iac`.
 
 The hostnames divide by **owner**, and that division is the architecture:
@@ -114,7 +114,8 @@ dev would then never exercise the one onboarding step that costs a client anythi
 **Two tenants, because there are two ways to be one.** `example` takes Giano's stock UI and reaches
 it by `CNAME`; `byoui` serves a wallet SPA it wrote itself
 (`e2e/wallet-byo/`, `DEVELOPER-GUIDE.md` §5.5b) at its own wallet origin, so it points at Giano's
-wallet hostname not at all. Both are ordinary rows in `TENANTS_SEED`, both resolve against the same
+wallet hostname not at all. Both are ordinary tenant rows that Giano's platform admins manage in the
+paymaster console's Platform area, both resolve against the same
 wallet-api, Postgres and bundler, and each has its own irreversible RP ID. A dev environment that
 serves only one of the two shapes cannot show that the other works — and cross-tenant isolation is
 not observable at all with a single tenant.
@@ -141,7 +142,7 @@ nothing in the `dev` workspace values should be mistaken for a production postur
 |---|---|---|---|---|
 | D1 | Compute | **ECS Fargate** | EC2 + compose; EKS; App Runner | No control-plane fee, no hosts to patch, task definitions map ~1:1 onto the existing compose services. EKS costs $73/mo before a pod runs. |
 | D2 | Chain | **Two: Base Sepolia (84532) and Ethereum Sepolia (11155111)**, RPC via QuickNode | Self-hosted anvil devnet; Base Sepolia alone | Persistent state and a realistic, multi-chain stack — "one passkey, one address, every chain" is only demonstrable with more than one chain. The canonical factory and implementation are already registered and deployed on both ([§13](#13-chain-prerequisites)). |
-| D3 | Bundler | **Self-hosted Alto on Fargate, one per chain** | Pimlico hosted; one bundler shared across chains | `services/bundler` already exists, pinned and env-driven. No third-party account, no shared API key. A bundler's executor and submission endpoint are chain-specific — Alto does not multiplex chains inside one process — so two chains need two services ([§14.7](#147-bundler)). Both share one executor and one utility key, funded on both chains; only the RPC endpoint differs between them. |
+| D3 | Bundler | **Self-hosted Alto on Fargate, one per chain** | Pimlico hosted; one bundler shared across chains | `services/bundler` already exists, pinned and env-driven. No third-party account, no shared API key. A bundler's executor and submission endpoint are chain-specific — Alto does not multiplex chains inside one process — so two chains need two services ([§14.7](#147-bundler)). Both share one executor and one utility key, funded on both chains; only the RPC endpoint differs between them. *(Superseded: giano-bundler replaced Alto — still self-hosted, but one process serves every chain in the `chains` document at `POST /<chainId>`, isolated per chain inside it, with one shared executor key and no utility key; one service, `bundler`. See `services/bundler/README.md`.)* |
 | D4 | Database | **RDS Postgres 17, `db.t4g.micro`, single-AZ in `dev`** | Aurora Serverless v2 min-0; Postgres container on EFS | Managed backups for ~$16/mo. Aurora's scale-to-zero is attractive but adds cold-start latency to a stack that is already asleep out of hours (D9). |
 | D5 | Region | **`eu-west-2` (London)** | `eu-west-1`; `us-east-1` | Team latency and UK residency, at ~5–10% over Ireland. |
 | D6 | DNS | **DNSimple, via the `dnsimple/dnsimple` provider** | Route 53 delegated subdomain | The parent domains already live in DNSimple. Delegating a child zone to Route 53 buys an alias record type we do not need and adds a second DNS system, a manual `NS` handover step and a hosted-zone charge. One provider, one zone, no delegation ([§6](#6-dns)). |
@@ -238,7 +239,7 @@ R20 --> TGE
 R25 --> TGE2
 R30 --> TGP
 
-NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 TENANTS_SEED row.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the TENANTS_SEED row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
+NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 tenant created in the console's Platform area.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the tenant row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
 TGW -.- NOTE
 TGBYO -.- NOTE
 
@@ -276,9 +277,8 @@ subgraph VPCX["VPC giano-dev · 10.40.0.0/16 · eu-west-2 · two AZs"]
     SEX["custom-example · nginx :8080<br/>0.25 / 512 — tenant example's dApp"]
     SEX2["custom-example-byoui · nginx :8080<br/>0.25 / 512 — tenant byoui's dApp<br/>same image, GIANO_WALLET_URL differs"]
     SPM["paymaster-admin · nginx :8080<br/>0.25 / 512 — operator console"]
-    SAPI["wallet-api · Fastify :8080<br/>0.5 vCPU / 2048 MB<br/>RUN_MIGRATIONS=true — migrates on boot, before listen<br/>multi-tenant · testnet class · both chains"]
-    SBD["bundler-base-sepolia · Alto :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only"]
-    SBD2["bundler-eth-sepolia · Alto :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only<br/>same image, executor and utility key as bundler-base-sepolia"]
+    SAPI["wallet-api · Fastify :8080<br/>0.5 vCPU / 2048 MB<br/>init container (dist/init.js) migrates and<br/>bootstraps platform admins before the API starts<br/>multi-tenant · testnet class · both chains"]
+    SBD["bundler · giano-bundler :4337<br/>0.5 / 1024 · NO ALB target<br/>SG: 4337 from the tasks SG only<br/>both chains: POST /84532, POST /11155111 · one executor key"]
     ONESHOT["one-shot task definition, no service<br/>provision-sponsorship"]
     RDSX["RDS Postgres 17 · db.t4g.micro<br/>publicly_accessible = false<br/>SG: 5432 from the tasks SG only<br/>KMS CMK giano-dev-rds-kms at rest"]
   end
@@ -304,8 +304,7 @@ ALB --> SAPI
 
 SWEB -->|"same-origin /api and /.well-known/webauthn<br/>wallet-api.giano-dev.local:8080<br/>Host and Origin forwarded untouched"| SAPI
 SBYO -->|"the SAME serving contract, reimplemented<br/>by the tenant in serve.mjs"| SAPI
-SAPI -->|"userop relay after the policy check<br/>bundler-base-sepolia.giano-dev.local:4337"| SBD
-SAPI -->|"userop relay, chain 11155111<br/>bundler-eth-sepolia.giano-dev.local:4337"| SBD2
+SAPI -->|"userop relay after the policy check<br/>bundler.giano-dev.local:4337 · POST /chainId, per chain"| SBD
 SAPI -->|"5432 — the only service with database access"| RDSX
 ONESHOT -->|"PUT /v1/admin/sponsorship"| SAPI
 
@@ -313,8 +312,7 @@ PRIVSUB -->|"rt-priv-a → natgw-a · rt-priv-b → natgw-b<br/>egress only — 
 PRIVSUB --> NATB
 PRIVSUB -.-> S3EP
 SAPI --> CHAINSTACK
-SBD -->|"submits bundles, pays L1 gas — Base Sepolia"| CHAINSTACK
-SBD2 -->|"submits bundles, pays L1 gas — Ethereum Sepolia"| CHAINSTACK
+SBD -->|"submits bundles, pays L1 gas — each chain from the same key"| CHAINSTACK
 SPM -->|"reads paymaster state directly"| CHAINSTACK
 PRIVSUB -.-> PLATFORM
 PRIVSUB -.->|"out through the NATs"| DDOG
@@ -323,7 +321,7 @@ classDef svc fill:#eef7ff,stroke:#3b7cb8
 classDef data fill:#f0f7ee,stroke:#5a8f4e
 classDef net fill:#f4f0fb,stroke:#7a5ea8
 classDef ext fill:#fff6e6,stroke:#c78b2a
-class SWEB,SBYO,SEX,SEX2,SPM,SAPI,SBD,SBD2 svc
+class SWEB,SBYO,SEX,SEX2,SPM,SAPI,SBD svc
 class RDSX,ONESHOT data
 class ALB,NATA,NATB,IGW,S3EP net
 class CHAINSTACK,PLATFORM,DDOG,INTERNET ext
@@ -397,9 +395,9 @@ wallet-web's nginx forwards both untouched (`proxy_set_header Host $host`). One 
 answering on N tenant hostnames therefore resolves N distinct tenants with no shared state — the
 browser's own origin isolation keeps sessions and storage separate for free.
 
-**Neither bundler has a public listener.** Each is reachable only from the tasks security group. The
-wallet origin never talks to either directly; `wallet-api` relays user operations to whichever chain's
-bundler after the policy
+**The bundler has no public listener.** It is reachable only from the tasks security group. The
+wallet origin never talks to it directly; `wallet-api` relays user operations to the bundler's
+path for that chain (`/<chainId>`) after the policy
 check.
 
 **Nothing but the ALB is reachable from the internet.** Every task and the database sit in private
@@ -1082,7 +1080,7 @@ Four, all in `security_groups.tf`, all referencing each other by id rather than 
 |---|---|---|---|
 | ALB | `giano-dev-alb-sg` | 443 and 80 from `0.0.0.0/0` | to `tasks-sg` on 8080 |
 | Tasks | `giano-dev-tasks-sg` | 8080 from `alb-sg` **and from `tasks-sg` itself** | `0.0.0.0/0` — ECR, Secrets Manager, CloudWatch, both chains' RPC |
-| Bundler | `giano-dev-bundler-sg` | 4337 from `tasks-sg` | `0.0.0.0/0` — both chains' RPC. Shared by both bundler services — the boundary is "reachable on 4337 from a task", not one per chain |
+| Bundler | `giano-dev-bundler-sg` | 4337 from `tasks-sg` | `0.0.0.0/0` — both chains' RPC. One group for the one bundler service, which serves both chains — the boundary is "reachable on 4337 from a task", not one per chain |
 | RDS | `giano-dev-app-db-sg` | 5432 from `tasks-sg` | none |
 
 The tasks group is self-referencing on 8080, not just fed from the ALB: the SPA origins each serve
@@ -1474,7 +1472,7 @@ The whole per-tenant cost, and the script dev's own example tenant follows:
 | 2 | Request an ACM certificate for `wallet.<tenant>.com`; tenant adds the validation `CNAME` ACM asks for | Giano + tenant DNS | free |
 | 3 | Attach it to the HTTPS listener as an additional SNI certificate | Terraform | free |
 | 4 | Add the hostname to `var.tenant_wallet_hosts` → the §5.7 rule 40 host list | Terraform | free |
-| 5 | Add the tenant to `TENANTS_SEED` and restart wallet-api | operator | one row |
+| 5 | Create the tenant in the paymaster console's Platform area — no restart | platform admin | one row |
 
 Steps 1 and 2 need the tenant to act, and step 2 needs them to act *again* on certificate renewal
 unless the validation `CNAME` is left in place — ACM renews automatically only while that record
@@ -1487,7 +1485,7 @@ allowlist into one shared list.
 
 **A BYO tenant skips steps 1 to 4 entirely.** It serves its own SPA on its own infrastructure, so
 Giano provisions no DNS record, no certificate and no listener rule for it — only step 5, the
-`TENANTS_SEED` row. All it must do is reproduce the serving contract (`DEVELOPER-GUIDE.md` §5.5b):
+tenant row. All it must do is reproduce the serving contract (`DEVELOPER-GUIDE.md` §5.5b):
 same-origin `/api` and `/.well-known/webauthn` proxies that forward `Origin` untouched and preserve
 the browser's `Host`. Tenant `byoui` is the exception that makes it testable — Giano hosts its UI
 here ([§14.5](#145-wallet-byo)), so in dev those four steps do apply to it.
@@ -1651,35 +1649,38 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | Secret (`giano-dev-…`) | Contents | Consumed by |
 |---|---|---|
 | `database-password` | RDS master password | RDS itself ([§8.3](#83-the-master-password)), and `database-url` |
-| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin (`/rpc` proxy only), custom-example, custom-example-byoui, bundler-base-sepolia |
-| `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui, bundler-eth-sepolia |
-| `chains` | the full `GIANO_CHAINS` JSON — both chain descriptors, RPC URLs embedded (§14.2) | wallet-api, paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
+| `rpc-url-base-sepolia` | Base Sepolia QuickNode endpoint including the API key | paymaster-admin (`/rpc` proxy only), custom-example, custom-example-byoui |
+| `rpc-url-eth-sepolia` | Ethereum Sepolia QuickNode endpoint including the API key | custom-example, custom-example-byoui |
+| `chains` | the backend chain document (`packages/contracts/chains.ts`) — both chain entries, RPC URLs embedded, shared fields plus per-service sections (§14.2) | wallet-api and bundler (as `GIANO_CHAINS`), paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
-| `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)) | bundler-base-sepolia, bundler-eth-sepolia |
-| `alto-utility-key` | 32-byte hex — likewise shared, needs no funding | bundler-base-sepolia, bundler-eth-sepolia |
-| `tenants-seed` | the [§14.2](#142-wallet-api) JSON, carrying `adminKeys` | wallet-api |
+| `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)); keeps its Alto-era name | bundler (as `BUNDLER_EXECUTOR_PRIVATE_KEYS`) |
+| `tenants-seed` | **no longer read**: `TENANTS_SEED` is retired ([§14.2](#142-wallet-api)); safe to delete once every environment has booted the retiring release | nothing |
 | `metrics-bearer-token` | random string | wallet-api |
 
-**`chains` is a composed secret, not a derived one** — the same shape as `tenants-seed`. Most of
-what it carries (chain id, name, entry point, factory, paymaster address, policy, and each chain's
-own bundler's Cloud Map URL) is a plan-time-knowable literal, not a secret at all; but each chain
-descriptor's `rpcUrl` embeds a QuickNode API key, and the ECS `secrets` block can only substitute a
+**`chains` is a composed secret, not a derived one.** Most of
+what it carries (chain id, name, entry point, factory, paymaster address, policy, each service's
+section) is a plan-time-knowable literal, not a secret at all; but each chain
+entry's `rpcUrl` embeds a QuickNode API key, and the ECS `secrets` block can only substitute a
 **whole** environment variable from a **single** secret ARN — it cannot interpolate a secret into
 the middle of a larger JSON string Terraform composes. So the whole array is hand-typed into
-1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys` alongside
-otherwise-literal tenant fields).
+1Password.
 
-There is only the one composed `GIANO_CHAINS` secret, and `paymaster-admin` reads that same value
-rather than a second one of its own ([§14.6](#146-paymaster-admin)). `wallet-web` also sets
+There is only the one composed `GIANO_CHAINS` secret, and the bundler ([§14.7](#147-bundler)) and
+`paymaster-admin` read that same value rather than a second one of their own
+([§14.6](#146-paymaster-admin)). Each service validates the shared top-level fields and its own
+section strictly and accepts the others' sections as-is, so the three cannot disagree about a chain.
+The old flat shape (top-level `bundlerUrl`, `factory`, `policy`) is no longer accepted by wallet-api;
+`scripts/migrate-chains-document.mjs` rewrites it into the sectioned one, dropping `bundlerUrl` and
+listing every URL it dropped. `wallet-web` also sets
 `GIANO_CHAINS`, but as a **literal** — `[{ "chainId": 84532 }, { "chainId": 11155111 }]`, no
 `rpcUrl` — so no secret is needed for it at all: every browser-facing chain descriptor defaults to
 wallet-api's relay ([§14.3](#143-wallet-web)). An earlier revision gave `wallet-web` its own
 composed `chains-web` secret, carrying real `rpcUrl`s in its own field-name schema; it was removed
 once nothing read the RPC URL directly (R3).
 
-`rpc-url-base-sepolia` and `rpc-url-eth-sepolia` are separate secrets from `chains` because three
-other services need a **scalar** RPC URL, not the multichain array: `bundler-*` (each needs only its
-own chain's) and `custom-example`/`custom-example-byoui` (per-chain `GIANO_RPC_URL` /
+`rpc-url-base-sepolia` and `rpc-url-eth-sepolia` are separate secrets from `chains` because two
+other services need a **scalar** RPC URL, not the multichain array:
+`custom-example`/`custom-example-byoui` (per-chain `GIANO_RPC_URL` /
 `GIANO_RPC_B_URL`, since the demo dApp dials its provider directly from the browser — §13.3).
 Splitting them out means those services' task definitions map ordinary scalar `secrets` entries,
 rather than parsing a chain out of a JSON blob meant for a different consumer.
@@ -1979,16 +1980,17 @@ band is not reverted by the next apply.
 ### 8.4 Schema
 
 Terraform creates the instance and **never the schema**. Migrations are owned by
-`services/wallet-api/migrations/` and applied by `wallet-api` itself, in-process, before it starts
-listening ([§9.6](#96-migrations-run-on-boot)) — so no wallet-api container ever starts serving
-against an un-migrated schema. `RUN_MIGRATIONS` is `true` on the application container; the advisory
-lock it takes is what makes that safe under `desired_count = 2` rather than a source of a race.
+`services/wallet-api/migrations/` and applied by `wallet-api`'s own init step before the API starts
+([§9.6](#96-migrations-run-on-boot)) — so no wallet-api container ever starts serving
+against an un-migrated schema. They run in the task's `init` container (`dist/init.js`), and
+`RUN_MIGRATIONS` is `false` on the application container; the advisory lock the init step takes is
+what makes that safe under `desired_count = 2` rather than a source of a race.
 
 ---
 
 ## 9. ECS Fargate
 
-One cluster per environment, `giano-dev-ecs`, with eight services and one one-shot task definition.
+One cluster per environment, `giano-dev-ecs`, with seven services and one one-shot task definition.
 
 ### 9.1 The cluster
 
@@ -2024,7 +2026,7 @@ argument.
 
 The half that is true: Container Insights and the Agent report the same task-level CPU, memory,
 network and I/O. Enabling both means paying CloudWatch custom-metric rates — tens of dollars a month
-at eight services, on the order of the Fargate bill itself — for a second copy of numbers already in
+at seven services, on the order of the Fargate bill itself — for a second copy of numbers already in
 Datadog.
 
 The half that is usually missed: Container Insights is collected by the **ECS control plane, outside
@@ -2049,13 +2051,13 @@ and keyed by workspace.
 
 ### 9.2 The services
 
-Eight, all Fargate, all `ARM64` (`runtime_platform { cpu_architecture = "ARM64" }`) — cheaper per
+Seven, all Fargate, all `ARM64` (`runtime_platform { cpu_architecture = "ARM64" }`) — cheaper per
 vCPU-hour and every image in the repo already builds multi-arch in `docker.yml`.
 
 **Every task runs three containers**, not one: the application, the Datadog Agent and the FireLens
-log router ([§17.3](#173-observability)). Nothing runs a fourth — `wallet-api` migrates its own
-schema on boot, in-process, before it starts listening ([§9.6](#96-migrations-run-on-boot)), rather
-than through a separate init container. The task-level `cpu` and `memory` below are the whole
+log router ([§17.3](#173-observability)). `wallet-api`'s runs a fourth, short-lived one: the `init`
+container, which migrates the schema and bootstraps platform admins and exits 0 before the application
+starts ([§9.6](#96-migrations-run-on-boot)). The task-level `cpu` and `memory` below are the whole
 task's; the split across containers is in [§17.3.3](#1733-the-sidecars).
 
 | Service | Image | Task vCPU / MB | App MB | Port | ALB host | Desired |
@@ -2066,8 +2068,7 @@ task's; the split across containers is in [§17.3.3](#1733-the-sidecars).
 | `custom-example-byoui` | `giano-example` — **same image, different env** | 0.25 / 1024 | 512 | 8080 | `byoui.*` | 1 |
 | `wallet-byo` | `giano-wallet-byo` | 0.25 / 1024 | 512 | 8080 | `wallet.byoui.*` | 1 |
 | `paymaster-admin` | `giano-paymaster-admin` | 0.25 / 1024 | 512 | 8080 | `paymaster.*` | 1 |
-| `bundler-base-sepolia` | `giano-bundler` | 0.5 / 2048 | 1024 | 4337 | **none** — no target group | 1 |
-| `bundler-eth-sepolia` | `giano-bundler` — **same image, different `ALTO_RPC_URL`** | 0.5 / 2048 | 1024 | 4337 | **none** — no target group | 1 |
+| `bundler` | `giano-bundler` — **one task, every chain** (`POST /<chainId>`) | 0.5 / 2048 | 1024 | 4337 | **none** — no target group | 1 |
 
 Per-service environment variables are in [§14](#14-the-services), which is the section to read
 alongside this one when writing the task definitions.
@@ -2083,21 +2084,21 @@ services take; only memory moves, because Fargate bills vCPU-hours and GB-hours 
 nothing here is CPU-bound. The whole change is ~4 GB across the eight tasks — about $14/mo
 ([§17.1](#171-cost)).
 
-Three of the eight exist only because of a second thing this deployment carries. `custom-example-byoui`
+Two of the seven exist only because of a second thing this deployment carries. `custom-example-byoui`
 is not a new image or a new module variant — it is a second instance of `modules/aws/ecs-service`
 with `GIANO_WALLET_URL` pointing at `byoui`'s wallet origin instead of `example`'s, which is the
 entire difference between the two dApps, and gives tenant `byoui` a complete shape. `wallet-byo` is
 the tenant-authored SPA, and it is the only service in this table that Giano would not run in a real
-deployment. `bundler-eth-sepolia` is the same story as `custom-example-byoui` but for chains rather
-than tenants: same image as `bundler-base-sepolia`, one environment value different
-([§14.7](#147-bundler)).
+deployment. The second chain, by contrast, costs no service at all: it is one more entry in the
+`chains` document the single `bundler` already reads ([§14.7](#147-bundler)). *(Superseded: an
+earlier revision ran `bundler-eth-sepolia` beside `bundler-base-sepolia`, one bundler per chain.)*
 
 One task per service. Zero redundancy is deliberate in `dev`: a second task doubles the largest
 variable line in the cost table.
 
 ### 9.3 The `ecs-service` module
 
-This is the module that earns its keep: eight near-identical services differing only in image, size,
+This is the module that earns its keep: seven near-identical services differing only in image, size,
 environment, secrets, and whether they get an ALB target. It owns the whole path from hostname to
 container, so **target groups and listener rules live here**, not in `alb.tf`.
 
@@ -2137,22 +2138,24 @@ module "svc-wallet-api" {
   subnet_ids         = [aws_subnet.subnet-a-priv.id, aws_subnet.subnet-b-priv.id]
   security_group_ids = [aws_security_group.tasks-sg.id]
 
-  environment = { GIANO_DEPLOYMENT_CLASS = "testnet", RUN_MIGRATIONS = "true", /* §14.2 */ }
+  environment = { GIANO_DEPLOYMENT_CLASS = "testnet", GIANO_ENVIRONMENT = terraform.workspace, RUN_MIGRATIONS = "false", /* §14.2 */ }
   secret_arns = {
     DATABASE_URL                 = aws_secretsmanager_secret.database-url.arn
     GIANO_CHAINS                 = module.asm-app.secret_arns["chains"]
     SPONSORSHIP_SIGNER_KEY_REF   = module.asm-app.secret_arns["sponsorship-signer-key"]
-    TENANTS_SEED                 = module.asm-app.secret_arns["tenants-seed"]
     METRICS_BEARER_TOKEN         = module.asm-app.secret_arns["metrics-bearer-token"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
+
+  # §9.6 — migrations and the bootstrap platform admins, before the API starts
+  init_container = { command = ["node", "dist/init.js"], secret_keys = ["DATABASE_URL"] }
 
   alb_enabled            = true
   alb_listener_arn       = aws_lb_listener.https.arn
   alb_rule_priority      = 10
   alb_host_headers       = [local.hosts.api]
   health_check_path      = "/healthz"
-  # migrations run in-process before wallet-api starts listening, so until they complete
+  # the init container runs migrations before wallet-api starts, so until they complete
   # /healthz doesn't exist to answer at all — must outlast the slowest one. §9.6
   health_check_grace_period_seconds = 120
 
@@ -2169,9 +2172,9 @@ module "svc-wallet-api" {
 }
 ```
 
-`bundler-base-sepolia` and `bundler-eth-sepolia` are the same module with `alb_enabled = false`,
-which drops the target group, the listener rule and the load-balancer block on the service — and the
-same `image` as each other, differing only in `ALTO_RPC_URL`. `custom-example-byoui` is the same
+`bundler` is the same module with `alb_enabled = false`,
+which drops the target group, the listener rule and the load-balancer block on the service.
+`custom-example-byoui` is the same
 module with the same `image` as `custom-example` and two different `environment` entries.
 
 Every service definition:
@@ -2241,9 +2244,9 @@ naming a field neither side's config appears to have changed — and the fix is 
 
 ### 9.4 Service discovery
 
-An AWS Cloud Map **private DNS namespace** `giano-dev.local`, so `wallet-api` reaches the two
-bundlers at `http://bundler-base-sepolia.giano-dev.local:4337` and
-`http://bundler-eth-sepolia.giano-dev.local:4337`, and wallet-web's nginx reaches the API at
+An AWS Cloud Map **private DNS namespace** `giano-dev.local`, so `wallet-api` reaches the
+bundler at `http://bundler.giano-dev.local:4337` (its `BUNDLER_BASE_URL`; each chain at
+`/<chainId>`), and wallet-web's nginx reaches the API at
 `http://wallet-api.giano-dev.local:8080`. This replaces compose's service names and is what lets the
 existing `GIANO_WALLET_API_UPSTREAM` contract stay unchanged.
 
@@ -2276,75 +2279,79 @@ group has infinite retention and nothing ever notices.
 
 The **one-shot task** ([§9.7](#97-one-shot-tasks)) is the exception: `provision-sponsorship` uses
 plain `awslogs` to `/ecs/giano-dev/<task>`, not FireLens. A task that lives forty seconds can exit
-before Fluent Bit has flushed its buffer. `wallet-api`'s own migration-on-boot does not have this
-problem — it runs inside the ordinary long-running task, whose router is already up before the
-application process starts — so it ships to Datadog like everything else the application logs
+before Fluent Bit has flushed its buffer. `wallet-api`'s `init` container does not have this
+problem — it runs inside the ordinary long-running task, whose router is already up before init
+starts and keeps running after it exits — so it ships to Datadog like everything else the application logs
 ([§17.3.4](#1734-logs-via-firelens)).
 
 ### 9.6 Migrations run on boot
 
-There is no init container. `wallet-api` migrates its own schema **in-process, before it starts
-listening** — `RUN_MIGRATIONS=true` is the whole mechanism (`services/wallet-api/src/index.ts`):
+`wallet-api`'s task runs an **init container** ahead of the application: the same image, running
+`node dist/init.js` (`services/wallet-api/src/init.ts`), which every deployment runs before the API
+— the `init` service in every compose file, the init container here. In order, it:
 
-```ts
-// services/wallet-api/src/index.ts
-const config = loadConfig();
+1. applies pending migrations (`runMigrations`, `services/wallet-api/src/migrate.ts`);
+2. writes the environment's bootstrap platform admins (`services/wallet-api/src/environments.ts`, keyed by
+   `GIANO_ENVIRONMENT`) **only into an empty `platform_admins` table** — once a database has a platform
+   admin, the platform admins manage the list in the console and a release changing the map touches nothing
+   ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §4.1);
+3. on a local stack only, creates the `TENANT_FIXTURES` tenants that do not exist yet. Anywhere else
+   a set `TENANT_FIXTURES` makes it exit non-zero, so no live configuration creates a tenant.
 
-if (config.RUN_MIGRATIONS) {
-  const applied = await runMigrations(config.DATABASE_URL);
-  if (applied.length > 0) {
-    console.log(`Applied migrations: ${applied.join(', ')}`);
-  }
-}
-// ... createDb, seedTenants, buildApp, listen — all AFTER this point
-```
-
-`runMigrations` (`services/wallet-api/src/migrate.ts`) applies `migrations/*.sql` in filename order
-inside a `pg_advisory_lock`, recording each in a `migrations` table, and is safe to run repeatedly
-and concurrently — the same file also serves as the **standalone** `dist/migrate.js` CLI entry for
-a one-off manual run, but nothing in this deployment invokes it that way. Terraform sets exactly one
-thing to make this happen:
+The application container runs with `RUN_MIGRATIONS = "false"` and never seeds anything. The ECS
+service module (`infra/iac/modules/aws/ecs-service`) takes an optional `init_container` — its
+command, which of `secret_arns` it receives, and `memory` (default 256 MB) — and gives it every
+plain variable in `environment`:
 
 ```hcl
-# ecs_services.tf — wallet-api's environment
-RUN_MIGRATIONS = "true"
+# ecs_services.tf — wallet-api
+environment = {
+  GIANO_ENVIRONMENT = terraform.workspace   # dev / stg / prd in src/environments.ts
+  RUN_MIGRATIONS    = "false"               # the init container runs them
+  # ...
+}
+init_container = {
+  command     = ["node", "dist/init.js"]
+  secret_keys = ["DATABASE_URL"]
+}
 ```
 
-matching `deploy/docker-compose.infrastructure.yml`'s own comment on the same variable: *"No init
-container here, unlike \[an earlier draft of] the AWS stack: one process, one lock, migrations on
-boot. The advisory lock makes it safe either way."* An earlier revision of this deployment used a
-separate `migrate` init container running `dist/migrate.js` as its own process, gated on
-`condition = "SUCCESS"` before the application container was allowed to start. It was removed:
-`RUN_MIGRATIONS=true` gives the identical ordering guarantee — the HTTP server does not bind until
-migrations have returned — with one fewer container, one fewer image reference to keep in sync on
-every deploy ([§15.1](#151-the-deployed-version-is-declared) no longer has a two-image-swap
-concern), and one fewer place `dependsOn`/`condition = "SUCCESS"` semantics can be gotten wrong.
+The init container is **not essential** (exiting is its job, and an essential container that exits
+stops the task); the application container `dependsOn` it with `condition = "SUCCESS"`, so a failed
+init keeps the task from ever serving. With Datadog on, it also waits for `log_router` to `START`
+and ships its logs through FireLens like the application.
 
-Two consequences carry over unchanged from the init-container design, because they are properties of
-migrating at every start, not of *how* that start is gated:
+Every step is idempotent and serialised by Postgres advisory locks, so it is safe to run
+repeatedly and from concurrent tasks. `runMigrations` applies `migrations/*.sql` in filename order
+inside a `pg_advisory_lock`, recording each in a `migrations` table. The same file is the
+standalone `dist/migrate.js` CLI for a one-off manual run; nothing in this deployment invokes it.
+
+An earlier revision migrated in-process with `RUN_MIGRATIONS=true` and no init container. The init
+container came back because the init step now does more than migrate, and the same step has to run
+in every compose stack too; `RUN_MIGRATIONS` remains in `wallet-api`'s config but is `false`
+everywhere.
+
+Two consequences follow from running at every task start:
 
 - **It runs on every task start**, not once per deploy — deployments, health-check replacements,
-  scale events and the 07:00 scale-up ([§17.2](#172-scheduling)). Migrations are tracked, so a
-  re-run is a single query against the migrations table, but application start-up is now coupled to
-  database reachability permanently.
-- **At `desired_count = 2` the replicas race.** The advisory lock serialises them safely, but the
-  second replica waits out the first's migration before it starts listening.
+  scale events and the 07:00 scale-up ([§17.2](#172-scheduling)). Migrations are tracked and the
+  platform admin bootstrap is a no-op on a non-empty table, so a re-run is a few queries, but application
+  start-up is coupled to database reachability permanently.
+- **At `desired_count = 2` the replicas race.** The advisory locks serialise them safely, but the
+  second replica's init waits out the first's migration before its API starts.
   `health_check_grace_period_seconds` must cover the slowest expected migration — 120s in `dev`, and
   worth revisiting before any migration that rebuilds an index.
 
-What it buys is the same guarantee the init container bought, enforced the same way — by ECS's own
-health-check grace period rather than a pipeline step: **no wallet-api container ever answers
-`/healthz` against an un-migrated schema**, because `/healthz` does not exist to answer until
-`buildApp`/`listen` runs, which is after migrations return. The scheduler starts tasks at 07:00
-outside any deploy pipeline, so a Terraform apply carrying a new `image_tag` that never went through
-the workflow would otherwise come up against an old schema with nothing to notice.
+What it buys: **no wallet-api container ever answers `/healthz` against an un-migrated schema**,
+because the application container does not start until init has exited 0. The scheduler starts
+tasks at 07:00 outside any deploy pipeline, so a Terraform apply carrying a new `image_tag` that
+never went through the workflow would otherwise come up against an old schema with nothing to
+notice.
 
-A failed migration now crashes the process outright (`runMigrations` throws, the top-level `await`
-rejects, Node exits non-zero) rather than failing a *separate* container — from ECS's side this is
-indistinguishable from any other application crash: `Essential container in task exited`, the
-service does not stabilise, the circuit breaker rolls back. The evidence is in the same place a
-crash's evidence always is — the application container's own log stream, which is the same stream
-`seedTenants` and everything else logs to, so there is no second container's logs to think to check.
+A failed init (a migration error, an unknown `GIANO_ENVIRONMENT`, `TENANT_FIXTURES` on a live
+environment) exits non-zero, the application container never starts, the service does not
+stabilise and the circuit breaker rolls back. The evidence is in the **`init` container's** log
+stream, not the application's.
 
 ### 9.7 One-shot tasks
 
@@ -2355,6 +2362,10 @@ using the `RUN_TASK_NETWORK` output ([§4.7](#47-outputs)).
 way `e2e/devnet/provision-sponsorship.mjs` does for the e2e stack. Run once at bring-up **per
 tenant** and whenever the rules change. A tenant with no rules gets no sponsorship, so skipping this
 produces an environment where every transaction is refused — which looks exactly like a bug.
+
+The tenant's admin key reaches it as `ADMIN_API_KEY`, passed per run in the overrides next to
+`TENANT_SLUG`, not from a secret. Issue a key for the run in the paymaster console's Platform area
+and revoke it afterwards, because ECS keeps overrides in the task's description.
 
 It uses the same execution role pattern as the services and its own task role, and runs in the
 private subnets with `assign_public_ip = false`.
@@ -2387,7 +2398,7 @@ it has no reason to do.
 
 **Separate task roles per service, not one shared role.** A shared task role means `wallet-web`'s
 nginx carries whatever `wallet-api` needs, and the moment either grows a permission, so does the
-other. Eight roles cost nothing and keep the answer to "what can this container do" per container.
+other. Seven roles cost nothing and keep the answer to "what can this container do" per container.
 
 ### 10.2 What each role gets
 
@@ -2555,10 +2566,9 @@ giano-wallet-api  ·  giano-wallet-web  ·  giano-paymaster-admin
 giano-example     ·  giano-wallet-byo  ·  giano-bundler
 ```
 
-Six repositories for eight services: `custom-example` and `custom-example-byoui` share
-`giano-example`, differing only in environment ([§14.4](#144-custom-example)); `bundler-base-sepolia`
-and `bundler-eth-sepolia` share `giano-bundler` the same way, differing only in which chain's RPC
-endpoint they are given ([§14.7](#147-bundler)).
+Six repositories for seven services: `custom-example` and `custom-example-byoui` share
+`giano-example`, differing only in environment ([§14.4](#144-custom-example)). `giano-bundler` is one
+service serving both chains ([§14.7](#147-bundler)).
 
 ```hcl
 # ecr.tf
@@ -2701,8 +2711,6 @@ hand** and is not managed by Terraform.
   "chains":                 { "value": "[{…},{…}]",             "version": 1 },
   "sponsorship-signer-key": { "value": "0x…",                   "version": 1 },
   "alto-executor-key":      { "value": "0x…",                   "version": 1 },
-  "alto-utility-key":       { "value": "0x…",                   "version": 1 },
-  "tenants-seed":           { "value": "[{…}]",                 "version": 1 },
   "metrics-bearer-token":   { "value": "…",                     "version": 1 }
 }
 ```
@@ -2914,12 +2922,12 @@ match `CANONICAL_SPONSORSHIP_PAYMASTER`.
 
 Two accounts need ETH on **each** chain — four funding operations, not two — and will need topping
 up. Both accounts are dev-only keys that must never have held mainnet value, and both are shared
-across the two bundlers rather than being chain-specific keys ([§14.7](#147-bundler)): the same
+across the two chains rather than being chain-specific keys ([§14.7](#147-bundler)): the same
 private key, funded separately on each network.
 
 | Account | Purpose | Drains when |
 |---|---|---|
-| Alto executor | submits bundles, pays L1 gas — on whichever chain the bundle was submitted to | every sponsored transaction on that chain |
+| Bundler executor | submits one `handleOps` transaction per UserOp, pays L1 gas — on whichever chain it was submitted to; not refilled automatically | every sponsored transaction on that chain |
 | Paymaster deposit | the EntryPoint deposit + stake the paymaster spends from, on that chain | every sponsored transaction on that chain |
 
 The sponsorship signer key ([§10.4](#104-the-sponsorship-signer-constraint)) signs paymaster data and
@@ -2935,12 +2943,13 @@ A **QuickNode** endpoint per chain — one for Base Sepolia, one for Ethereum Se
 tier is ample for a dev environment on either. Each URL embeds its own API key, so each is its own
 secret ([§7.3](#73-the-secrets)): `rpc-url-base-sepolia` and `rpc-url-eth-sepolia`. Direct consumers
 differ by service — `custom-example`/`custom-example-byoui` take both scalar secrets directly;
-`wallet-api` instead takes them pre-composed into its own `GIANO_CHAINS` secret (`chains`,
-[§7.3](#73-the-secrets)); each bundler takes only its own chain's.
+`wallet-api` and the bundler instead take them pre-composed into the `GIANO_CHAINS` secret they
+share (`chains`, [§7.3](#73-the-secrets)).
 
-The bundler's safe mode (`ALTO_SAFE_MODE=true`, [§14.7](#147-bundler)) validates every user operation
-with `debug_traceCall`, so **both** endpoints must be trace-capable — QuickNode's are, on the tiers
-this needs.
+The bundler ([§14.7](#147-bundler)) simulates every user operation with `eth_call` state overrides
+and never calls `debug_traceCall`, so **both** endpoints need state overrides but need not be
+trace-capable. giano-bundler does no ERC-7562 tracing, so nothing in Giano's own stack checks that
+account and paymaster validation stays ERC-7562-compliant.
 
 **The wallet origins never see either key.** `wallet-web` and `wallet-byo` read every chain through
 `wallet-api`'s `/v1/rpc/:chainId` relay (same-origin under `/api`), so both keys stay in
@@ -2960,7 +2969,7 @@ block ([§7.5](#75-how-ecs-reads-them)); everything else is a plain `environment
 
 ### 14.1 Summary
 
-The table of eight services, their images and sizes is [§9.2](#92-the-services).
+The table of seven services, their images and sizes is [§9.2](#92-the-services).
 
 ### 14.2 `wallet-api`
 
@@ -2973,52 +2982,93 @@ and `SPONSORSHIP_PAYMASTER_ADDRESS` as shorthand-only.
 |---|---|---|
 | `GIANO_DEPLOYMENT_CLASS` | `testnet` | literal |
 | `DATABASE_URL` | `postgres://…` | **ASM** `giano-dev-database-url` |
-| `RUN_MIGRATIONS` | `true` — runs migrations in-process before `listen` ([§9.6](#96-migrations-run-on-boot)) | literal |
-| `GIANO_CHAINS` | both chain descriptors, below | **ASM** `giano-dev-chains` (composed — embeds both RPC URLs, [§7.3](#73-the-secrets)) |
+| `GIANO_ENVIRONMENT` | `terraform.workspace` (`dev` / `stg` / `prd`) — selects the platform admin sign-in domain and bootstrap platform admins in `services/wallet-api/src/environments.ts` ([§9.6](#96-migrations-run-on-boot)) | literal |
+| `RUN_MIGRATIONS` | `false` — the `init` container runs them, `node dist/init.js` ([§9.6](#96-migrations-run-on-boot)) | literal |
+| `GIANO_CHAINS` | the backend chain document, both chains, below | **ASM** `giano-dev-chains` (composed — embeds both RPC URLs, [§7.3](#73-the-secrets)) |
+| `BUNDLER_BASE_URL` | `http://bundler.giano-dev.local:4337` — each chain submits to `<BUNDLER_BASE_URL>/<chainId>` ([§9.4](#94-service-discovery)) | literal |
 | `SPONSORSHIP_ENABLED` | `true` | literal |
 | `SPONSORSHIP_SIGNER_KIND` | `local` | literal |
 | `SPONSORSHIP_SIGNER_KEY_REF` | 32-byte hex key | **ASM** `giano-dev-sponsorship-signer-key` |
 | `PAYMASTER_WATCHER_ENABLED` | `true` | literal |
-| `TENANTS_SEED` | two tenants, below | **ASM** `giano-dev-tenants-seed` (carries `adminKeys`) |
 | `METRICS_BEARER_TOKEN` | random | **ASM** `giano-dev-metrics-bearer-token` |
 | `LOG_LEVEL` | `info` | literal |
 
-The `GIANO_CHAINS` array, one entry per chain — `entryPoint`, `factory` and `sponsorshipPaymaster`
-are the same addresses on both, per [§13](#13-chain-prerequisites), and `bundlerUrl` is each chain's
-own Cloud Map hostname ([§9.4](#94-service-discovery)):
+The `GIANO_CHAINS` array — the backend chain document (`packages/contracts/chains.ts`) that the
+bundler ([§14.7](#147-bundler)) and `paymaster-admin` ([§14.6](#146-paymaster-admin)) read too. One
+entry per chain: shared fields at the top (`chainId`, `name`, `rpcUrl`, optional `nativeCurrency`,
+`entryPoint`, `sponsorshipPaymaster`), then one section per service (`walletApi`, `bundler`,
+`paymasterAdmin`). Each service validates the top level and its own section strictly and accepts the
+others' as-is. `entryPoint`, `factory` and `sponsorshipPaymaster` are the same addresses on both, per
+[§13](#13-chain-prerequisites). No entry names a `walletApi.bundlerUrl`: each chain's is derived as
+`<BUNDLER_BASE_URL>/<chainId>`. A chain submitted through some other bundler would set it and
+`"bundler": { "enabled": false }`.
 
 ```json
 [
   {
     "chainId": 84532, "name": "Base Sepolia",
     "rpcUrl": "<base sepolia quicknode endpoint>",
-    "bundlerUrl": "http://bundler-base-sepolia.giano-dev.local:4337",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "factory": "<CANONICAL_FACTORY>",
     "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
-    "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
+    "walletApi": {
+      "factory": "<CANONICAL_FACTORY>",
+      "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
+    }
   },
   {
     "chainId": 11155111, "name": "Ethereum Sepolia",
     "rpcUrl": "<eth sepolia quicknode endpoint>",
-    "bundlerUrl": "http://bundler-eth-sepolia.giano-dev.local:4337",
     "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-    "factory": "<CANONICAL_FACTORY>",
     "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
-    "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
+    "walletApi": {
+      "factory": "<CANONICAL_FACTORY>",
+      "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
+    }
   }
 ]
 ```
 
+The `bundler` section is omitted, so both chains take its defaults (`enabled: true`,
+`chainType: "auto"`, `maxBlockRange: 2000`, the shared `rpcUrl`). The old flat shape — `bundlerUrl`,
+`factory` and `policy` at the top of each entry — is refused by wallet-api;
+`scripts/migrate-chains-document.mjs --bundle` converts it.
+
+**Changing it — through the note, never in Secrets Manager.** The value lives in the `secrets-<env>`
+note ([§12.3](#123-the-bundle)), and ASM is written from it only by `terraform apply`, only when
+`chains.version` moves. `--bundle` takes the whole note on stdin, converts `chains.value` (a JSON
+document inside a string) in place, bumps `chains.version`, and leaves every other entry untouched,
+so its output is pasted back as-is.
+
+The flat-to-sectioned switch cannot be rolled out by `deploy.yml`. That workflow clones the live
+task definitions and swaps only the image, so the new wallet-api would start against the old value.
+It has to be one apply:
+
+1. Merge the code. Images are published; nothing deploys.
+2. Bump `chains` in the note, and
+3. straight away run `terraform apply` from a branch that also bumps `infra/versions.json` to that
+   commit. That single apply writes the new ASM version, replaces the bundler services and rolls
+   every task onto the new image and environment; tasks read secrets when they start.
+4. Merge the version bump. `deploy.yml` re-rolls onto the same tag, which changes nothing.
+
+Between steps 2 and 3 **nobody else applies**. Any apply would push the sectioned value to ASM while
+the old images, which need the flat shape, are still the ones that start.
+
 `allowedPaymasters` is per chain by design: only ops sponsored by our own paymaster on that chain
-reach that chain's bundler through the relay. Because the whole array — including the two embedded
+reach that chain's bundler path through the relay. Because the whole array — including the two embedded
 `rpcUrl`s — is one hand-authored secret rather than something Terraform composes from literals plus
 references, `entryPoint`/`factory`/`sponsorshipPaymaster` are typed here directly rather than left to
 default from the contracts registry the way a single-chain shorthand deployment would; getting one
 wrong here is a drift risk the shorthand shape does not have, and worth double-checking against
 `packages/contracts/canonical.ts` when this secret is authored or updated.
 
-The tenant seed:
+The tenants are not configuration. `TENANTS_SEED` is retired: wallet-api no longer reads it, boots
+fine with no tenants, and Giano's platform admins create and edit them in the paymaster console's Platform
+area ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §9). dev's two were written by the
+retired seed and since handed to the platform admins. The platform admins
+are not configuration either: the init container writes the environment's bootstrap platform admins
+into an empty `platform_admins` table, and from then on the platform admins add and remove each
+other in the console's Admins tab ([`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §4.1). As tenant
+fields, the two tenants are:
 
 ```json
 [
@@ -3048,10 +3098,10 @@ The tenant seed:
 ```
 
 Both rows are tenants of the **app**, never of the environment: each `walletOrigin` is that tenant's
-own hostname and `rpId` equals its host, because `validateTenantSeed` requires it to
-(`services/wallet-api/src/services/tenants.ts` — decision D1 there). The CNAME model is fully
+own hostname and `rpId` equals its host, because `checkTenantInvariants` requires it of every tenant
+write (`services/wallet-api/src/services/tenants.ts` — decision D1 there). The CNAME model is fully
 compatible with that strict rule: the RP ID is still the wallet origin's own host, just the tenant's
-rather than Giano's. Nothing in `wallet.dev.giano.appliedblockchain.dev` appears in this seed, and nothing should
+rather than Giano's. Nothing in `wallet.dev.giano.appliedblockchain.dev` appears in either row, and nothing should
 — a tenant row for Giano's own serving hostname is how a passkey ends up bound to infrastructure.
 
 The two rows are indistinguishable to wallet-api, which is the point: it has no notion of who wrote
@@ -3079,7 +3129,7 @@ env var name, incompatible shape, enforced twice (the entrypoint exits 1 if both
 and the SPA refuses to load). The browser talks to neither node nor bundler for either chain: chain
 reads go through `wallet-api`'s `/api/v1/rpc/:chainId` relay (tenant-bound, read-only allowlist) and
 bundler calls through `/api/v1/bundler/:chainId` (session-bound, submissions through the same policy
-pipeline as `POST /v1/userops`). Both keyed RPC URLs and both bundlers stay private to `wallet-api`,
+pipeline as `POST /v1/userops`). Both keyed RPC URLs and the bundler stay private to `wallet-api`,
 and this task proxies nothing but `/api` and `/.well-known/webauthn`.
 
 | Variable | Value |
@@ -3124,7 +3174,7 @@ origin *did* dial it directly, in every sponsorship mode — viem's bundler clie
 polls receipts through it, and sponsorship mode only swaps the paymaster hooks — which is why
 pointing it at the REST endpoint left the wallet unable to transact. The wallet kit now defaults
 every chain's `bundlerUrl` to wallet-api's JSON-RPC relay and sends the session bearer with each
-call, so neither bundler needs an ALB target group nor a hostname of its own
+call, so the bundler needs neither an ALB target group nor a hostname of its own
 ([R3](#19-risks-and-open-items)). Setting the variable dials a bundler directly and is a
 development posture only.
 
@@ -3225,7 +3275,7 @@ or the `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / … shorthand it wraps into a one-el
 deployment uses the array, so **the shorthand variables are not set and would be ignored if they
 were** — per-chain values live in the descriptors instead.
 
-**The array is `chains`** — the very secret `wallet-api` reads as `GIANO_CHAINS`
+**The array is `chains`** — the very secret `wallet-api` and the bundler read as `GIANO_CHAINS`
 ([§14.2](#142-wallet-api)), handed over unchanged. A chain list authored twice is a chain list that
 disagrees with itself eventually, and the failure is quiet: a console reading one paymaster while
 the API sponsors through another shows a healthy deployment that refuses every transaction. So
@@ -3234,18 +3284,20 @@ there is one authored list, and adding a chain to the deployment adds it to the 
 | Variable | Value |
 |---|---|
 | `GIANO_DEPLOYMENTS` | the chain descriptors (**ASM** `giano-dev-chains` — the same secret as `wallet-api`'s `GIANO_CHAINS`) |
-| *(nothing else)* | the proxy, the CSP and the picker all derive from the array — see below |
+| `GIANO_WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` — nginx proxies `/api/*` to `wallet-api`, same-origin with the browser's `Origin` removed, which is what turns on the console's Platform area (tenants and platform admins; [`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §11) |
+| *(nothing else)* | the RPC proxy, the CSP and the picker all derive from the array — see below |
 
-Nothing is translated on the way in. The console names its fields `chainId`, `name`, `rpcUrl` and
-`sponsorshipPaymaster` — the spelling `packages/contracts/chains.ts` uses — so a descriptor *is* a
-deployment. `refreshSeconds` is the one field it adds, because how often a console polls is not a
-property of a chain, and it defaults to 15 rather than being required of an array authored for
-`wallet-api`.
+Nothing is translated on the way in. The console reads the document's shared fields `chainId`,
+`name`, `rpcUrl` and `sponsorshipPaymaster` — the spelling `packages/contracts/chains.ts` uses — so
+an entry *is* a deployment. Its own settings sit in the entry's `paymasterAdmin` section:
+`refreshSeconds`, because how often a console polls is not a property of a chain, defaulting to 15
+rather than being required of a document authored for `wallet-api`, and `walletRpcUrl`. A standalone
+list may spell both flat instead.
 
-The entrypoint still **projects**: it keeps those five fields and drops the rest. A descriptor also
-carries `bundlerUrl`, `entryPoint`, `factory` and `policy`, and `/config.json` is served to the
-browser, so naming what is kept is what stops the internal Cloud Map bundler hostnames — and
-whatever field a descriptor grows next — from being published to everyone who can open the console.
+The entrypoint still **projects**: it keeps those fields and drops the rest. An entry also
+carries `entryPoint` and the `walletApi` and `bundler` sections, and `/config.json` is served to the
+browser, so naming what is kept is what stops the other services' settings — and
+whatever field an entry grows next — from being published to everyone who can open the console.
 What does reach the browser is each chain's `rpcUrl`, QuickNode key included: unchanged from the
 single-chain configuration, and the reason `wallet-web` was moved off direct RPC entirely (R3).
 
@@ -3352,21 +3404,28 @@ implementation, not of the requirement.
 
 ### 14.7 `bundler`
 
-Two services, `bundler-base-sepolia` and `bundler-eth-sepolia` — the same image
-(`giano-bundler`), the same executor and utility key, differing only in `ALTO_RPC_URL`. A bundler's
-submission endpoint and executor are chain-specific by nature (D3): Alto does not multiplex chains
-inside one process, so one chain means one bundler.
+One service, `bundler` (`giano-bundler`, Cloud Map `http://bundler.giano-dev.local:4337`), serving
+every chain in the `chains` document, each at its own path: `POST /84532`, `POST /11155111` (a bare
+`POST /` only when exactly one chain is served). Inside the process each chain has its own client,
+executor lanes, estimator and receipt lookup; nothing chain-bound is shared between chains, the rule
+wallet-api keeps too (MC-50). A chain that cannot connect is retried in the background and answers
+503 while the others serve. `GET /health` reports each chain and answers 200 while **any** chain is
+ready. One task, stopped before its replacement starts: executors track their nonces in memory.
+*(Superseded: an earlier revision ran two services, `bundler-base-sepolia` and `bundler-eth-sepolia`,
+one per chain — D3.)*
 
-| Variable | `bundler-base-sepolia` | `bundler-eth-sepolia` |
-|---|---|---|
-| `ALTO_RPC_URL` | Base Sepolia endpoint (**ASM** `giano-dev-rpc-url-base-sepolia`) | Ethereum Sepolia endpoint (**ASM** `giano-dev-rpc-url-eth-sepolia`) |
-| `ALTO_ENTRYPOINTS` | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | same |
-| `ALTO_EXECUTOR_PRIVATE_KEYS` | **ASM** `giano-dev-alto-executor-key` | same secret — same key, funded separately on each chain ([§13.2](#132-funded-accounts)) |
-| `ALTO_UTILITY_PRIVATE_KEY` | **ASM** `giano-dev-alto-utility-key` | same secret |
-| `ALTO_SAFE_MODE` | `true` — this is a real chain | same |
-| `GIANO_DEV_MODE` | unset; the entrypoint's Anvil-key guard stays armed | same |
+| Variable | Value |
+|---|---|
+| `GIANO_CHAINS` | the backend chain document — **ASM** `giano-dev-chains`, the same secret as `wallet-api`'s ([§14.2](#142-wallet-api)). Each entry's optional `bundler` section (`enabled`, `rpcUrl`, `chainType`, `maxBlockRange`) is the bundler's own; every RPC must support `eth_call` state overrides |
+| `BUNDLER_EXECUTOR_PRIVATE_KEYS` | **ASM** `giano-dev-alto-executor-key` — one key serving both chains (nonces are per chain), funded separately on each ([§13.2](#132-funded-accounts)) |
+| `GIANO_DEV_MODE` | unset; the Anvil-key guard stays armed |
 
-Sharing one executor key across both rather than minting a second is deliberate: it is one EOA, one
+The executor keys are deliberately **not** in the document: it reaches wallet-api, which must never
+hold the keys that fund submission. The single-chain variables the document replaced —
+`BUNDLER_RPC_URL`, `BUNDLER_ENTRYPOINT`, `BUNDLER_CHAIN_TYPE`, `BUNDLER_MAX_BLOCK_RANGE` and every
+`ALTO_*` variable — are refused at boot, so a stale task definition fails loudly.
+
+Sharing one executor key across both chains rather than minting a second is deliberate: it is one EOA, one
 address, funded on two chains — no different from how the wallet contracts themselves land at the
 same address on both ([§13](#13-chain-prerequisites)) — and it is one fewer key for [§13.2](#132-funded-accounts)'s
 low-balance risk to track, not two unrelated ones.
@@ -3459,7 +3518,7 @@ prefer:
 
 | | |
 |---|---|
-| One redundant rollout | The first apply after a deploy replaces all eight task definitions and restarts all eight services, including re-running `wallet-api`'s migrations — tracked and idempotent, so a re-run is one query ([§9.6](#96-migrations-run-on-boot)) |
+| One redundant rollout | The first apply after a deploy replaces all seven task definitions and restarts all seven services, including re-running `wallet-api`'s migrations — tracked and idempotent, so a re-run is one query ([§9.6](#96-migrations-run-on-boot)) |
 | Noisier plans | That apply shows around sixteen expected changes, which is the kind of noise that trains people to skim plans |
 | A stale checkout downgrades | An apply from a branch cut before a version bump rolls the environment back to the older tag. True of any stale apply; it matters more here because what it reverts is running application code |
 
@@ -3476,15 +3535,17 @@ would not be.
 | | Why |
 |---|---|
 | `DD_VERSION` must be patched | The render action swaps `image` and nothing else, but the Datadog Agent sidecar carries `DD_VERSION` built from the tag ([§17.3.3](#1733-the-sidecars)). Left alone, every trace is attributed to the tag of the last `terraform apply` — worse than no version, because it looks right |
-| Eight services, six repositories | `custom-example` and `custom-example-byoui` are one image run twice ([§14.4](#144-custom-example)); `bundler-base-sepolia` and `bundler-eth-sepolia` likewise ([§14.7](#147-bundler)). `wallet-byo` and `custom-example-byoui` are dev-only (`var.byo_wallet_enabled`) |
+| Seven services, six repositories | `custom-example` and `custom-example-byoui` are one image run twice ([§14.4](#144-custom-example)); one `bundler` serves both chains ([§14.7](#147-bundler)). `wallet-byo` and `custom-example-byoui` are dev-only (`var.byo_wallet_enabled`) |
 
-Only **one** image per service to swap, `wallet-api` included — there is no second, migration-only
-container running a copy of the same image that could fall out of sync with it
-([§9.6](#96-migrations-run-on-boot)).
+Only **one** image per service to swap, except `wallet-api`: its `init` container runs a copy of the
+same image ([§9.6](#96-migrations-run-on-boot)), and the two must be swapped together. A rollout that
+moves the application to a new tag but leaves `init` on the old one starts the new API against the
+old schema, since the application no longer migrates. `deploy.yml`'s matrix row for `wallet-api`
+must therefore name `init_container: "init"` so its *Render the init container* step runs.
 
 `wait-for-service-stability` preserves what `var.ecs_wait_for_steady_state` gives an operator's
-apply: a crash-looping container — including one crashing because `RUN_MIGRATIONS` failed — fails
-the workflow rather than passing it.
+apply: a crash-looping container — including a task whose `init` container failed, so its
+application never started — fails the workflow rather than passing it.
 
 #### The retention floor
 
@@ -3576,8 +3637,8 @@ own schema on boot ([§9.6](#96-migrations-run-on-boot)).
 run by the one-shot task ([§9.7](#97-one-shot-tasks)). Driven entirely by environment:
 `WALLET_API_URL` (an HTTPS endpoint), `TENANT_SLUG`, `CHAIN_ID` (a list — rules are per
 (tenant, chain) and never inherited, so both chains are written in one run), `SPONSORSHIP_CONFIG`
-and the `TENANTS_SEED` secret the admin key
-is looked up in, out to a `PUT /v1/admin/sponsorship` per chain.
+and `ADMIN_API_KEY`, the tenant's admin key, passed per run next to `TENANT_SLUG`
+([§9.7](#97-one-shot-tasks)), out to a `PUT /v1/admin/sponsorship` per chain.
 
 It validates the rules against the same schema the API applies before it writes anything, reads
 the configuration back rather than trusting the write, and checks the tenant's registration and
@@ -3614,7 +3675,7 @@ per-tenant allowlist, which is the actual control, is gone. Branding degrades th
 tenant shows one brand name.
 
 There is no server-side backstop today. wallet-api stores `allowed_dapp_origins` per tenant
-(`db/schema.ts`) and writes it at seed time (`services/tenants.ts`), but **reads it nowhere** — no
+(`db/schema.ts`) and writes it on every tenant write (`services/tenants.ts`), but **reads it nowhere** — no
 route consults it.
 
 The fix is small because the data already exists per tenant. Add a public, `Host`-resolved endpoint
@@ -3625,8 +3686,8 @@ fetches it after `/config.json` and prefers its values, keeping the env values a
 single-tenant and local stacks. Then:
 
 - `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_BRAND_NAME` leave the §14.3 table.
-- The allowlist becomes per tenant again, fail-closed, and provisioned by the same `TENANTS_SEED`
-  entry that provisions everything else about a tenant — so §6.6 step 5 stays one row.
+- The allowlist becomes per tenant again, fail-closed, and provisioned by the same tenant row a
+  platform admin writes for everything else about a tenant — so §6.6 step 5 stays one row.
 - An unknown `Host` gets the same 404 `requireTenantByHost` already returns, so a probe on Giano's
   own serving hostname learns nothing and, correctly, cannot connect any dApp.
 
@@ -3674,7 +3735,7 @@ the Datadog monitor that would catch it. **Nothing emits the metric it watches.*
 
 The gap is small. `wallet-api` already holds a viem public client per served chain and already runs a
 per-chain paymaster watcher on a timer — one instance per entry in `GIANO_CHAINS`, so both chains
-already have one. Have each watcher additionally read the (shared) Alto executor's ETH balance on
+already have one. Have each watcher additionally read the (shared) bundler executor's ETH balance on
 its own chain and that chain's paymaster's EntryPoint deposit, and submit both to DogStatsD as
 `giano.chain.balance` tagged `account:executor` / `account:paymaster` and `chain_id:84532` or
 `chain_id:11155111`, whichever the watcher instance is for. The
@@ -3716,11 +3777,11 @@ under any indirection between how a file is loaded and its lexical invocation pa
 the usual cause, and `pnpm`'s `node_modules` layout is exactly that kind of thing even after
 `pnpm deploy --prod`.
 
-**This is no longer a deployment blocker.** [§9.6](#96-migrations-run-on-boot) replaced the init
-container with `RUN_MIGRATIONS=true`, which calls `runMigrations` directly from
-`services/wallet-api/src/index.ts` — a completely different code path from the one above, which
-`isMain` cannot affect, since `index.ts`'s own top level calls it unconditionally when the flag is
-set. Deployment no longer invokes `dist/migrate.js` as a script at all.
+**This is no longer a deployment blocker.** The init container that came back
+([§9.6](#96-migrations-run-on-boot)) runs `dist/init.js`, not `dist/migrate.js`, and
+`services/wallet-api/src/init.ts` calls `runMigrations` directly at its top level and logs the
+outcome — a completely different code path from the one above, which `isMain` cannot affect.
+Deployment no longer invokes `dist/migrate.js` as a script at all.
 
 What remains, non-blocking: `dist/migrate.js` is still built as its own entry (`tsdown.config.ts`) and
 `migrate.ts`'s own docstring documents it as usable for "a one-off manual run." If `isMain` really is
@@ -3778,9 +3839,11 @@ group for each one.
 (`wallet-byo` and `custom-example-byoui`), about $10/mo scheduled. That is the price of D17, and it
 is a price no real deployment pays, because a real BYO tenant hosts its own UI.
 
-**A second chain is what D2 costs beyond the RPC bill itself** — one extra task
-(`bundler-eth-sepolia`), about $5/mo scheduled ([§14.7](#147-bundler)). Unlike `byoui`, this is not
-a dev-only demonstration cost: a real multi-chain deployment pays it too, once per chain served.
+**A second chain costs no task beyond the RPC bill itself** — it is one more entry in the
+`chains` document the single `bundler` already serves ([§14.7](#147-bundler)); what it does cost is
+the executor's and the paymaster's funding on that chain ([§13.2](#132-funded-accounts)).
+*(Superseded: an earlier revision paid one extra task per chain, `bundler-eth-sepolia`, about $5/mo
+scheduled. The Fargate line above still prices that eight-task shape.)*
 
 **Datadog is not an AWS line and is not priced here.** It bills to the organisation's existing
 contract, per Fargate task-hour plus log ingestion and indexing. The shape of the consumption, so
@@ -3804,8 +3867,8 @@ Two EventBridge Scheduler schedules invoking `ecs:UpdateService` through `giano-
 
 | Schedule | Cron (UTC) | Effect |
 |---|---|---|
-| down | `0 19 ? * MON-FRI *` | `desiredCount = 0` on all eight services |
-| up | `0 7 ? * MON-FRI *` | `desiredCount = 1` on all eight services |
+| down | `0 19 ? * MON-FRI *` | `desiredCount = 0` on all seven services |
+| up | `0 7 ? * MON-FRI *` | `desiredCount = 1` on all seven services |
 
 Weekends stay down: Friday's `down` fires and nothing brings it back until Monday. Gated by
 `var.enable_schedule[terraform.workspace]` — on in `dev`, off in `stg` and `prd`.
@@ -3832,7 +3895,7 @@ carries its own.
 
 That has consequences worth stating before the HCL, because they are the things people trip on:
 
-- **The Agent is per task, not per service.** Eight services means eight Agents. Scale a service to
+- **The Agent is per task, not per service.** Seven services means seven Agents. Scale a service to
   two tasks and you get two Agents.
 - **Sidecars are billed as your Fargate memory.** ~350 MB per task ([§9.2](#92-the-services)).
 - **There is no host-level metric.** `system.cpu.*` and `system.mem.*` describe the task's slice, not
@@ -4313,7 +4376,7 @@ FAIL — the note is not valid JSON
                                              swallows the quote of "version"
 
 FAIL — valid JSON, but a key is missing value or version:
-  alto-utility-key
+  metrics-bearer-token
 ```
 
 A healthy line for comparison — note the `",` that the broken one is missing:
@@ -4366,7 +4429,7 @@ DEPLOYER_PRIVATE_KEY=<canonical deployer key> pnpm --filter @appliedblockchain/g
 ```
 
 Commit both `deployments/<chainId>.json` records and regenerate `addresses.ts` (§13.1). Then fund each chain's EntryPoint
-deposit and the (shared) Alto executor account from that chain's faucet — Base Sepolia and Ethereum
+deposit and the (shared) bundler executor account from that chain's faucet — Base Sepolia and Ethereum
 Sepolia each have their own ([§13.2](#132-funded-accounts)). All four drain with use, and an empty
 one presents as "transactions stopped working" ([R2](#19-risks-and-open-items)) — on whichever chain
 it was.
@@ -4489,8 +4552,9 @@ terraform apply -var 'ecs_wait_for_steady_state=true'
 **If `wallet-api` never stabilises, suspect the migration first.** This is the first time
 `DATABASE_URL` is resolved from Secrets Manager by a real execution role, the first time the
 `tasks-sg` → `app-db-sg` path on 5432 carries traffic, and the first time anything connects to the
-instance. There is no separate init container to check — a failed migration crashes the application
-container itself, so its own exit code is on the stopped task:
+instance. Migrations run in the task's `init` container, so a failed migration shows as `init`
+exiting non-zero and the application container never starting. Check `init`'s exit code on the
+stopped task:
 
 ```bash
 CLUSTER=$(terraform output -raw cluster_name)
@@ -4500,8 +4564,8 @@ aws ecs list-tasks --cluster "${CLUSTER}" \
     --query 'taskArns[]' --output text \
   | xargs -r aws ecs describe-tasks --cluster "${CLUSTER}" --tasks \
   | jq -r '.tasks[] | .containers[]
-           | select(.name == "wallet-api")
-           | "exit=\(.exitCode // "-")  \(.reason // "")"'
+           | select(.name == "init" or .name == "wallet-api")
+           | "\(.name) exit=\(.exitCode // "-")  \(.reason // "")"'
 ```
 
 Its logs are in Datadog under `service:wallet-api`, which is where the actual SQL error will be —
@@ -4532,7 +4596,7 @@ aws ecs list-tasks --cluster "${CLUSTER}" --query 'taskArns[]' --output text \
   | jq -r '.tasks[] | "\(.group)\t\([.containers[].name] | sort | join(","))"'
 ```
 
-🌐 Then in Datadog: all eight services report under `env:dev`, and logs appear for each with a parsed
+🌐 Then in Datadog: all seven services report under `env:dev`, and logs appear for each with a parsed
 `service` and `source`. An unparsed wall of text means `dd_source` is wrong
 ([§17.3.4](#1734-logs-via-firelens)); metrics arriving while logs do not means `DD_SITE` and the
 FireLens `Host` disagree ([R16](#19-risks-and-open-items)). Confirm the five monitors exist and are
@@ -4556,14 +4620,21 @@ NET=$(terraform output -json RUN_TASK_NETWORK)
 SUBNETS=$(jq -r '.subnets | join(",")'       <<<"$NET")
 SGS=$(jq   -r '.security_groups | join(",")' <<<"$NET")
 
-for TENANT in example byoui; do
+# one admin key per tenant, issued for this run in the paymaster console's Platform area;
+# revoke both once the tasks have finished (ECS keeps overrides in the task's description)
+EXAMPLE_ADMIN_KEY='gak_…'
+BYOUI_ADMIN_KEY='gak_…'
+
+for PAIR in "example:${EXAMPLE_ADMIN_KEY}" "byoui:${BYOUI_ADMIN_KEY}"; do
+  TENANT=${PAIR%%:*}
+  ADMIN_API_KEY=${PAIR#*:}
   aws ecs run-task \
     --cluster "${CLUSTER}" \
     --task-definition "${PREFIX}-provision-sponsorship" \
     --launch-type FARGATE \
     --network-configuration \
       "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SGS}],assignPublicIp=DISABLED}" \
-    --overrides "{\"containerOverrides\":[{\"name\":\"provision-sponsorship\",\"environment\":[{\"name\":\"TENANT_SLUG\",\"value\":\"${TENANT}\"}]}]}" \
+    --overrides "{\"containerOverrides\":[{\"name\":\"provision-sponsorship\",\"environment\":[{\"name\":\"TENANT_SLUG\",\"value\":\"${TENANT}\"},{\"name\":\"ADMIN_API_KEY\",\"value\":\"${ADMIN_API_KEY}\"}]}]}" \
     --query 'tasks[0].taskArn' --output text
 done
 ```
@@ -4634,7 +4705,7 @@ touches routing, networking or secrets.
 
 #### Step 13 — Confirm no wallet origin answers as a bundler 🖥️
 
-An open relay here would bypass every policy check wallet-api makes and drain the shared Alto
+An open relay here would bypass every policy check wallet-api makes and drain the shared bundler
 executor on whichever chain it fronts. The `/bundler` location no longer exists on either wallet
 origin, for either chain — every path goes through wallet-api's session-bound relay,
 `/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), [§16.5](#165-a-deployable-byo-wallet-reference))
@@ -4703,7 +4774,7 @@ third is the guarantee everything else in §12 rests on.
 |---|---|---|---|
 | R1 | **`rpId` is irreversible.** Every passkey binds to the *tenant's* host, not Giano's. Renaming it orphans them all. | Total loss of dev accounts | Settle `tenant_wallet_hosts` at runbook step 2. Cheap now, impossible later. Step 10 verifies no passkey bound to Giano's serving hostname instead. |
 | R2 | **Funded accounts drain silently.** An empty executor or paymaster deposit presents as "transactions stopped working". | Environment appears broken, cause non-obvious | **Half-closed.** The Datadog monitor exists ([§17.3.5](#1735-monitors)), but nothing emits `giano.chain.balance` yet — a small scheduled task must submit it over DogStatsD. That is a repository change, listed as the cheapest item in §16. Until it lands, the monitor is declared and never fires. |
-| R3 | **Each chain descriptor's `bundlerUrl` on `wallet-web`.** Required by the entrypoint even in `service` sponsorship mode; unverified whether the browser ever dials it directly. | Both bundlers may need public exposure, not just one | **Closed, for every chain.** The browser did dial it — viem estimates gas and polls receipts through the bundler client in every sponsorship mode — so pointing it at the REST endpoint broke transacting. wallet-api now exposes a JSON-RPC bundler relay (`POST /v1/bundler/:chainId`, session-bound, submissions through the `/v1/userops` pipeline) and the wallet kit defaults every chain's `bundlerUrl` to it. `GIANO_CHAINS`'s entries carry no `bundlerUrl` ([§14.3](#143-wallet-web)); neither bundler is ever exposed. |
+| R3 | **Each chain descriptor's `bundlerUrl` on `wallet-web`.** Required by the entrypoint even in `service` sponsorship mode; unverified whether the browser ever dials it directly. | Both bundlers may need public exposure, not just one | **Closed, for every chain.** The browser did dial it — viem estimates gas and polls receipts through the bundler client in every sponsorship mode — so pointing it at the REST endpoint broke transacting. wallet-api now exposes a JSON-RPC bundler relay (`POST /v1/bundler/:chainId`, session-bound, submissions through the `/v1/userops` pipeline) and the wallet kit defaults every chain's `bundlerUrl` to it. `GIANO_CHAINS`'s entries carry no `bundlerUrl` ([§14.3](#143-wallet-web)); the bundler is never exposed. |
 | R4 | **`openRegistration: true`.** Anyone reaching the hostname can create a wallet. | Unbounded rows, no funds at risk | Accepted for dev. First thing to disable if the hostname circulates. |
 | R5 | **Single task per service.** Any task failure is downtime until ECS replaces it. | Minutes of downtime | Accepted. It is a dev environment. The *network* is two-AZ, so this is a `desired_count` change and not a rebuild. |
 | R6 | **`secret_string_wo_version` is the only rotation signal.** Editing a value in 1Password without bumping its version leaves ASM on the old value, silently. | A rotated credential that never rotated | The version sits next to the value in the JSON. First thing to check when a rotation "did not take" ([§12.6](#126-known-weak-points)). |
@@ -4731,8 +4802,8 @@ third is the guarantee everything else in §12 rests on.
 | R28 | **`container_definitions` diffs as text, not structure.** ECS's `DescribeTaskDefinition` echoes back `mountPoints`, `volumesFrom`, `systemControls`, `portMappings`, `environment` (all `[]`) and, on `log_router` only, `user = "0"`, whether or not a container declared them — and a `jsonencode()`'d string that omits any of them never converges. | `terraform plan` proposes `-/+ destroy and then create replacement` on every service's task definition, on every run, including genuine no-ops — confirmed twice in a row with zero config changes between them | Closed by `local.container_defaults`, merged into all four container shapes ([§9.3.1](#931-every-container-definition-merges-a-shared-normalization-default)). Not something AWS documents as a stable contract — if a future field shows the same symptom (a `~` line naming a field neither side's config appears to touch), the fix is the same: add it to the shared default or, if it is specific to one container the way `user` is, to that container alone. |
 | R29 | **`datadog_enabled` can be, and was, wired to only one of the four things it has to move together.** An earlier revision gated the execution role's `datadog-api-key` grant ([§10.2](#102-what-each-role-gets)) on the variable but never gated the sidecar containers, the log driver, or the CloudWatch group name — so flipping it dropped IAM access to a secret a still-present `datadog-agent` container still declared in its `secrets` block. | Every task fails at placement, silently — `apply` reports success, the plan showed only an IAM policy change, and nothing says why tasks stopped starting until the ECS events are read | Closed: all four now move together ([§17.3.7](#1737-turning-datadog-off)) — the sidecars are conditionally excluded from `container_definitions`, `logConfiguration` switches `awsfirelens`/`awslogs`, `dependsOn` on `log_router` is conditional with it, and the log group's name (and therefore its identity) changes with it. The signal that they have come apart again is the same one that caught this: a plan touching the IAM policy alone. |
 | R30 | **RDS's parameter group family ships `rds.force_ssl = 1` as a system default, and `database-url`'s DSN never requested SSL.** Nothing in this module set `rds.force_ssl` — it was never disabled, just never accounted for — so Postgres rejected `wallet-api`'s plaintext connection outright: `no pg_hba.conf entry ... no encryption`. Fixing that alone traded it for a second, independent failure: plain `sslmode=require` is an alias for `verify-full` on recent `pg-connection-string`, and RDS's certificate chains to Amazon's own RDS CA, not Node's trust store, so the driver then failed with `self-signed certificate in certificate chain` — encrypted, but chain-unverifiable. | `wallet-api` crash-loops on every boot with database errors that read like networking or credentials problems, not a missing query parameter — and `wallet-web`/`custom-example-byoui` cascade from it, since their nginx upstreams (`wallet-api.giano-dev.local`, `bundler.giano-dev.local`) never register in Cloud Map while the service they front never stabilises | Closed: the DSN carries `?sslmode=require&uselibpqcompat=true` ([§7.4](#74-the-derived-secrets)) — the second parameter restores classic libpq semantics, where `require` means encrypt-only, accepted here because the instance is already private-subnet and security-group isolated (§5.6). Required a second, separate fix to actually reach a running task: `secret_string_wo` is never read back, so `secret_string_wo_version` is the only change signal, and it was tied purely to `database-password`'s own 1Password version — a code-only DSN format change moved nothing. Now combined with `local.database_url_format_version`, bumped by hand on every format change (currently `3`), so either trigger rotates the secret. |
-| R31 | **`tasks-sg` only ever allowed 8080 from `alb-sg`, but the SPA origins reach `wallet-api` task-to-task.** `wallet-web`, `custom-example` and `paymaster-admin` each serve `/api` from an nginx `proxy_pass` to `wallet-api` over service discovery; `wallet-byo` does the same through its own minimal Node reverse proxy (`e2e/wallet-byo/serve.mjs`) rather than nginx. Either way it is a hop the ALB is never on the path for, since the ALB only ever targets the SPA's own container, not `wallet-api`'s. | Every `/api` call through any SPA origin hangs until the proxy's own connect timeout and the browser gives up — nginx logs a `499`, `wallet-api` never sees the request — which reads as an application timeout rather than a dropped SYN at the security group | Closed for connectivity: `tasks-from-tasks`, a self-referencing ingress rule on `tasks-sg` for 8080 ([§5.6](#56-security-groups)). The instinct to scope this to "SPA origins → wallet-api only" doesn't fit the security-group model — a self-reference is symmetric by construction — so the rule is task-to-task on 8080 in general, no narrower than the ALB's own grant already was. **Not closed for the `description` string**: `tasks-sg`'s `description` was updated to say so in words too, and that is accepted as-is rather than reverted, on the reasoning that an accurate description is worth more than a cosmetic mismatch. The cost: `aws_security_group.description` has no update API at all, so this edit forces `-/+` replacement of a group referenced by three other groups' rules and attached to every running task's ENI — AWS refuses `DeleteSecurityGroup` with a live ENI attached (`DependencyViolation`), so the replace half of that plan cannot complete while anything is running. Applying this needs a coordinated cutover (drain or replace every task before the destroy step runs), not a plain `terraform apply` — a plain apply will get partway through and fail on the delete. Any future edit to `alb-sg`'s, `bundler-sg`'s or `app-db-sg`'s `description` carries the identical trap. |
-| R32 | **`paymaster-admin` published its QuickNode RPC tokens to every visitor.** A chain descriptor's `rpcUrl` is browser-facing — written into `/config.json` and dialled by the SPA — and both dev endpoints embed their key in the URL path, so the console served both tokens outright and named one of them in its own CSP `connect-src` header. | Anyone who opened `paymaster.dev.giano.appliedblockchain.dev` had two working, unrotated provider endpoints, usable until someone rotated them | Closed: every absolute `rpcUrl` is proxied through the console's own origin by default (`GIANO_RPC_PROXY=true`, opt-out for a node that must be dialled from the browser or an upstream nginx cannot reach) — nginx holds the keyed URL behind a per-chain `/rpc/<chainId>` location, the browser gets a relative path, and `connect-src` derives to `'self'` from the same array ([§14.6](#146-paymaster-admin)). `wallet-web` was moved off direct RPC for the identical reason (R3); this closes the same gap for `paymaster-admin`, which had been left behind. The two already-exposed tokens are **not** being rotated — accepted for `dev`, where the QuickNode endpoints carry no cost worth the coordination of rotating them across every consumer (`custom-example`, `custom-example-byoui`, both bundlers, `wallet-api` via `chains`). Revisit this acceptance before treating any higher environment's tokens the same way. |
+| R31 | **`tasks-sg` only ever allowed 8080 from `alb-sg`, but the SPA origins reach `wallet-api` task-to-task.** `wallet-web`, `custom-example` and `paymaster-admin` each serve `/api` from an nginx `proxy_pass` to `wallet-api` over service discovery (`paymaster-admin` only when `GIANO_WALLET_API_UPSTREAM` is set, for its Platform area — [`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §11); `wallet-byo` does the same through its own minimal Node reverse proxy (`e2e/wallet-byo/serve.mjs`) rather than nginx. Either way it is a hop the ALB is never on the path for, since the ALB only ever targets the SPA's own container, not `wallet-api`'s. | Every `/api` call through any SPA origin hangs until the proxy's own connect timeout and the browser gives up — nginx logs a `499`, `wallet-api` never sees the request — which reads as an application timeout rather than a dropped SYN at the security group | Closed for connectivity: `tasks-from-tasks`, a self-referencing ingress rule on `tasks-sg` for 8080 ([§5.6](#56-security-groups)). The instinct to scope this to "SPA origins → wallet-api only" doesn't fit the security-group model — a self-reference is symmetric by construction — so the rule is task-to-task on 8080 in general, no narrower than the ALB's own grant already was. **Not closed for the `description` string**: `tasks-sg`'s `description` was updated to say so in words too, and that is accepted as-is rather than reverted, on the reasoning that an accurate description is worth more than a cosmetic mismatch. The cost: `aws_security_group.description` has no update API at all, so this edit forces `-/+` replacement of a group referenced by three other groups' rules and attached to every running task's ENI — AWS refuses `DeleteSecurityGroup` with a live ENI attached (`DependencyViolation`), so the replace half of that plan cannot complete while anything is running. Applying this needs a coordinated cutover (drain or replace every task before the destroy step runs), not a plain `terraform apply` — a plain apply will get partway through and fail on the delete. Any future edit to `alb-sg`'s, `bundler-sg`'s or `app-db-sg`'s `description` carries the identical trap. |
+| R32 | **`paymaster-admin` published its QuickNode RPC tokens to every visitor.** A chain descriptor's `rpcUrl` is browser-facing — written into `/config.json` and dialled by the SPA — and both dev endpoints embed their key in the URL path, so the console served both tokens outright and named one of them in its own CSP `connect-src` header. | Anyone who opened `paymaster.dev.giano.appliedblockchain.dev` had two working, unrotated provider endpoints, usable until someone rotated them | Closed: every absolute `rpcUrl` is proxied through the console's own origin by default (`GIANO_RPC_PROXY=true`, opt-out for a node that must be dialled from the browser or an upstream nginx cannot reach) — nginx holds the keyed URL behind a per-chain `/rpc/<chainId>` location, the browser gets a relative path, and `connect-src` derives to `'self'` from the same array ([§14.6](#146-paymaster-admin)). `wallet-web` was moved off direct RPC for the identical reason (R3); this closes the same gap for `paymaster-admin`, which had been left behind. The two already-exposed tokens are **not** being rotated — accepted for `dev`, where the QuickNode endpoints carry no cost worth the coordination of rotating them across every consumer (`custom-example`, `custom-example-byoui`, `wallet-api` and the bundler via `chains`). Revisit this acceptance before treating any higher environment's tokens the same way. |
 
 ---
 

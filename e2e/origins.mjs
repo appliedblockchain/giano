@@ -5,7 +5,7 @@
  * `http://wallet.localhost:8081`. The names are served by portless
  * (https://github.com/vercel-labs/portless), a local reverse proxy that maps
  * `<name>.localhost` to a loopback port. The ports below are plumbing; nothing in the
- * fixtures, the tenant seed, the tests or the docs refers to them.
+ * fixtures, the tenant fixtures, the tests or the docs refers to them.
  *
  * Why HTTP rather than portless's default HTTPS: `http://*.localhost` is already a secure
  * context in Chromium, so passkeys keep working exactly as they did on
@@ -23,7 +23,7 @@
  * another portless project that has claimed `app` or `api` will get a route conflict
  * reported by `portless alias`. Renaming here is the fix — but note that `wallet` and
  * `wallet-byo` are also WebAuthn RP IDs (a tenant's RP ID must equal its wallet origin's
- * host), so renaming those two means updating TENANTS_SEED and GIANO_RP_ID in
+ * host), so renaming those two means updating TENANT_FIXTURES and GIANO_RP_ID in
  * deploy/docker-compose.e2e.yml to match.
  */
 
@@ -117,19 +117,13 @@ export const ROUTES = [
 		name: "bundler",
 		port: 4337,
 		kind: "compose",
-		what: "alto ERC-4337 bundler (chain A)",
+		what: "giano-bundler ERC-4337 bundler (both chains: /31337, /31338)",
 	},
 	{
 		name: "rpc-b",
 		port: 8546,
 		kind: "compose",
 		what: "anvil devnet JSON-RPC (chain B, 31338)",
-	},
-	{
-		name: "bundler-b",
-		port: 4338,
-		kind: "compose",
-		what: "alto ERC-4337 bundler (chain B)",
 	},
 ];
 
@@ -160,7 +154,7 @@ export const portOf = (name) => route(name).port;
 export const loopbackOf = (name) => `http://127.0.0.1:${portOf(name)}`;
 
 /**
- * The demo's browser-visible origins — what the dApps, the wallets, the tenant seed and
+ * The demo's browser-visible origins — what the dApps, the wallets, the tenant fixtures and
  * the tests all agree on.
  */
 export const ORIGINS = {
@@ -174,7 +168,6 @@ export const ORIGINS = {
 	rpc: originOf("rpc"),
 	bundler: originOf("bundler"),
 	rpcB: originOf("rpc-b"),
-	bundlerB: originOf("bundler-b"),
 	paymasterAdmin: originOf("paymaster"),
 };
 

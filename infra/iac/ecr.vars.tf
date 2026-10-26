@@ -13,7 +13,12 @@ variable "ecr_image_tag_mutability" {
 }
 
 variable "ecr_lifecycle_image_count" {
+  # A retention FLOOR under the tag infra/versions.json pins, not a cost knob: the policy counts
+  # `tagStatus: any`, and each main push lands about six images per repository (two arches plus
+  # SBOM/provenance attestations). At 10 that was under two commits, so on 2026-10-20 the
+  # pinned dev image expired and every service failed to pull on the next scale-up. 120 is
+  # about twenty commits between dev deploys. specs/CI-RELEASE-SPECS.md §7.2, O-6.
   description = "keep the last N images"
   type        = map(number)
-  default     = { dev = 10, stg = 10, prd = 10 }
+  default     = { dev = 120, stg = 10, prd = 10 }
 }

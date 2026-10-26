@@ -1,15 +1,18 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
+import * as WebAuthnP256 from "ox/WebAuthnP256";
 import {
 	decodeAbiParameters,
 	encodeFunctionData,
 	hashMessage,
 	hashTypedData,
+	hexToBytes,
 	size,
 	toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	parseDerSignature,
 	sign as signHelper,
 	signTypedData as signTypedDataHelper,
 	toGianoSmartAccount,
@@ -405,6 +408,27 @@ describe("signing helpers", () => {
 		expect(size(encoded)).toBeGreaterThan(100);
 	});
 
+	it("toWebAuthnSignature() takes r and s from the assertion DER when the raw credential is present", () => {
+		const webauthn = {
+			authenticatorData: "0xaabb",
+			clientDataJSON: '{"type":"webauthn.get"}',
+			challengeIndex: 1,
+			typeIndex: 0,
+		} as never;
+		const raw = {
+			response: { signature: bytes(CI_ASSERTION.der).buffer },
+		} as never;
+		// A deliberately wrong pre-parsed signature: the DER bytes must win.
+		const encoded = toWebAuthnSignature({
+			webauthn,
+			raw,
+			signature: `0x${"11".repeat(32)}${"22".repeat(32)}1b`,
+		});
+		const [auth] = decodeAbiParameters(WEBAUTHN_AUTH, encoded);
+		expect(auth.r).toBe(CI_ASSERTION.r);
+		expect(auth.s).toBe(CI_ASSERTION.s);
+	});
+
 	it("wrapSignature(): converts 65-byte ECDSA to packed r||s||v, passes others through", () => {
 		const packed = decodeWrapped(
 			wrapSignature({
@@ -423,7 +447,115 @@ describe("signing helpers", () => {
 	});
 });
 
-// sanity that hashMessage/toHex imports are exercised (keeps the linter honest)
+const P256_N =
+	0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+const bytes = (hex: `0x${string}`) => hexToBytes(hex);
+const WEBAUTHN_AUTH = [
+	{
+		type: "tuple",
+		components: [
+			{ name: "authenticatorData", type: "bytes" },
+			{ name: "clientDataJSON", type: "bytes" },
+			{ name: "challengeIndex", type: "uint256" },
+			{ name: "typeIndex", type: "uint256" },
+			{ name: "r", type: "uint256" },
+			{ name: "s", type: "uint256" },
+		],
+	},
+] as const;
+
+/**
+ * An assertion Chrome's virtual authenticator produced in CI (e2e demo, `signed_eth_call`) whose
+ * `r` has a leading zero byte: 31 significant bytes, DER-encoded as `0x00 ‖ r` since its top bit is
+ * set. ox's `parseAsn1Signature` skipped the sign byte, then still read 32 bytes — `oxR`, the real
+ * `r` shifted left a byte with `s`'s INTEGER tag (0x02) appended — and the account reverted with
+ * `InvalidSignature()`.
+ */
+const CI_ASSERTION = {
+	publicKey: {
+		prefix: 4,
+		x: 0xccfe4b964a95af006a41b2e4c2e2e97d7426804ff6d976d83ec08b8071bd0e98n,
+		y: 0x94f7e191c80ac744305cbcddb843021d299f25eb2e4dec2f05973d2cc95b8ac9n,
+	},
+	challenge:
+		"0x45e5f8a0c5c479242055ec52cbf8fc8f88aa315848cc610f8d2b82dd8d558536",
+	metadata: {
+		authenticatorData:
+			"0x3e577a876bdd38128dfdf43bf76f01dec1224748c490abf31ab00cce0f635a72050000000d",
+		clientDataJSON:
+			'{"type":"webauthn.get","challenge":"ReX4oMXEeSQgVexSy_j8j4iqMVhIzGEPjSuC3Y1VhTY","origin":"http://wallet.localhost","crossOrigin":false,"other_keys_can_be_added_here":"do not compare clientDataJSON against a template. See https://goo.gl/yabPex"}',
+		challengeIndex: 23,
+		typeIndex: 1,
+		userVerificationRequired: false,
+	},
+	der: "0x3044022000d5a2c53a3078628d8793ecd382f49479a5661db3cc3845c287d9a4fb0e3f8f02202a64308b09f3cda68769c70b303ddc738da3decc40e40c81eccb9c05595aab64",
+	r: 0xd5a2c53a3078628d8793ecd382f49479a5661db3cc3845c287d9a4fb0e3f8fn,
+	s: 0x2a64308b09f3cda68769c70b303ddc738da3decc40e40c81eccb9c05595aab64n,
+	oxR: 0xd5a2c53a3078628d8793ecd382f49479a5661db3cc3845c287d9a4fb0e3f8f02n,
+} as const;
+
+describe("parseDerSignature", () => {
+	const verifies = (r: bigint, s: bigint) =>
+		WebAuthnP256.verify({
+			challenge: CI_ASSERTION.challenge,
+			metadata: CI_ASSERTION.metadata,
+			publicKey: CI_ASSERTION.publicKey,
+			signature: { r, s },
+		});
+
+	it("decodes a 31-byte r that ox misreads, into a signature that verifies", () => {
+		const { r, s } = parseDerSignature(bytes(CI_ASSERTION.der));
+		expect(r).toBe(CI_ASSERTION.r);
+		expect(s).toBe(CI_ASSERTION.s);
+		expect(verifies(r, s)).toBe(true);
+		expect(verifies(CI_ASSERTION.oxR, CI_ASSERTION.s)).toBe(false);
+	});
+
+	it("decodes short, sign-padded and full-width integers alike", () => {
+		const der = (r: string, s: string) => {
+			const int = (hex: string) =>
+				`02${(hex.length / 2).toString(16).padStart(2, "0")}${hex}`;
+			const body = int(r) + int(s);
+			return bytes(
+				`0x30${(body.length / 2).toString(16).padStart(2, "0")}${body}`,
+			);
+		};
+		expect(parseDerSignature(der("7f".repeat(32), "01"))).toEqual({
+			r: BigInt(`0x${"7f".repeat(32)}`),
+			s: 1n,
+		});
+		expect(parseDerSignature(der(`00${"80".repeat(32)}`, "1234"))).toEqual({
+			r: BigInt(`0x${"80".repeat(32)}`),
+			s: 0x1234n,
+		});
+	});
+
+	it("normalizes a high s to n - s", () => {
+		const high = P256_N - CI_ASSERTION.s;
+		const body = `0220${CI_ASSERTION.der.slice(10, 74)}0221${high.toString(16).padStart(66, "0")}`;
+		const { s } = parseDerSignature(
+			bytes(`0x30${(body.length / 2).toString(16)}${body}`),
+		);
+		expect(s).toBe(CI_ASSERTION.s);
+	});
+
+	it("rejects malformed DER", () => {
+		expect(() => parseDerSignature(bytes("0x3100"))).toThrow(
+			/not a DER sequence/,
+		);
+		expect(() => parseDerSignature(bytes(`${CI_ASSERTION.der}00`))).toThrow(
+			/not a DER sequence/,
+		);
+		expect(() => parseDerSignature(bytes("0x3006020101030101"))).toThrow(
+			/expected a DER integer/,
+		);
+		expect(() => parseDerSignature(bytes("0x3006020100020101"))).toThrow(
+			/out of range/,
+		);
+	});
+});
+
+// sanity that hashMessage/toHex imports are exercised (keeps eslint honest)
 describe("sanity", () => {
 	it("hashes are 32 bytes", () => {
 		expect(size(hashMessage("x"))).toBe(32);

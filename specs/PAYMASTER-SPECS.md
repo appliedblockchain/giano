@@ -64,7 +64,7 @@ and are the two that changed a position this document had already taken.
 | # | Decision | Consequence in this document |
 |---|---|---|
 | S1 | **The service is new routes on `wallet-api`**, not a fifth service — with the signer behind a narrow interface so the key can leave the process without touching the API or the ledger | §5 adds routes to the existing app; §9 defines `SponsorshipSigner`; no new image, no new per-tenant edge route |
-| S2 | **Sponsorship config lives in its own table**, written only through the tenant's existing admin key. `TENANTS_SEED` never touches it | §6.4 — R-08 self-service without breaking the declarative meaning of `TENANTS_SEED` |
+| S2 | **Sponsorship config lives in its own table**, written only through the tenant's existing admin key. No tenant-row write — platform admin or fixture — touches it | §6.4 — R-08 self-service that no platform admin edit or restart can revert |
 | S3 | **An AWS HSM key from day one, through [`evm-hsm-signer`](https://github.com/appliedblockchain/evm-hsm-signer)**; a local-key implementation of the same interface serves development *and testnet*, and is refused for a production deployment | §9 — the key that authorises spending customer funds never sits in an env var where the funds are real. Requirements D16 / R-66 |
 | S4 | **UUPS proxy; `UPGRADER_ROLE` and a single `ROLE_ADMIN` both held by an OZ `TimelockController` whose proposers are a Safe; `DEFAULT_ADMIN_ROLE` never granted** | §4.3 — R-46 and R-51 become on-chain properties rather than process promises |
 | S5 | **The pre-approval refusal (R-15) is implemented by calling the rules engine from the wallet's review screen** — `pm_getPaymasterStubData` doubles as the read-only pre-flight | §5.2, §10.3. This settles requirements [Q7](./PAYMASTER-REQUIREMENTS.md#7-open-questions) in the affirmative for the wallet's own UI, without a second rules implementation |
@@ -779,7 +779,7 @@ The platform cap is service configuration rather than on-chain state, because it
 own backstops. It is deliberately tight — a passkey addition is a small, predictable operation, and
 a cap that only has to cover that is a cheap bound on the one path a tenant cannot close.
 
-### 6.4 Storage and the seed
+### 6.4 Storage
 
 Per S2, a new table owned by the admin API:
 
@@ -789,8 +789,9 @@ tenant_sponsorship(tenant_id PK → tenants.id, chain_id, config jsonb,
 tenant_sponsorship_history(id, tenant_id, chain_id, config jsonb, created_at, created_by_key_hash)
 ```
 
-`seedTenants` does not touch it — no clause, no default, no replace-set — so `TENANTS_SEED` keeps
-its current declarative meaning and a restart can never revert a tenant's own edit. A tenant with
+Nothing that writes the tenant row touches it — not the platform API, not the local-stack tenant
+fixtures (and not the retired `TENANTS_SEED` before them) — so a restart or a platform admin edit can
+never revert a tenant's own rules. A tenant with
 no row sponsors nothing, which is R-02 in the storage layer as well as in the engine.
 
 Requirements Q5 is closed: **no example configuration is seeded**, for real tenants or for new ones.
@@ -1118,6 +1119,7 @@ New Prometheus series, all `tenant`-labelled to match the existing convention
 | `giano_paymaster_invariant_slack_wei` / `_breach` | gauge | Breach pages; slack growth rate warns (R-34) |
 | `giano_paymaster_deposit_wei` / `_treasury_wei` / `_stake_wei` | gauge | Deposit or stake below the low-water mark (R-24) |
 | `giano_paymaster_watcher_lag_blocks` / `_seconds` | gauge | Watcher stalled |
+| `giano_paymaster_watcher_active{chain}` | gauge | Sum across replicas is 0: no replica holds the chain's watcher lock |
 | `giano_sponsorship_unavailable_total{cause}` | counter | Signer/HSM/database failures — outage, not misconfiguration (R-21) |
 | `giano_paymaster_reconciliation_divergence_wei` | gauge | Unexplained drawdown (R-26) |
 
@@ -1339,10 +1341,11 @@ no credential (R-61), and is refused for a production class (§9.1).
 **Sponsorship configuration through the real write path.** A one-shot `sponsorship-provisioner`
 step in the compose profile (and the equivalent step in the e2e setup script) waits for
 `/readyz`, then `PUT`s each demo tenant's sponsorship config through
-`/v1/admin/sponsorship` using the admin key that tenant already has in `TENANTS_SEED`. It uses the
+`/v1/admin/sponsorship` using the fixed admin key that tenant's fixture gives it (the stack's
+`init` service, [`PLATFORM-ADMIN-SPECS.md`](./PLATFORM-ADMIN-SPECS.md) §9). It uses the
 same endpoint a tenant would, so there is no dev-only seeding mechanism to disable in production and
-R-62 is satisfied by construction rather than by a flag. `TENANTS_SEED` keeps the meaning S2 gave it,
-and §6.4's "no row means no sponsorship" stays true for real tenants.
+R-62 is satisfied by construction rather than by a flag. The tenant fixtures never touch sponsorship
+(S2), and §6.4's "no row means no sponsorship" stays true for real tenants.
 
 **Fail loudly.** The provisioner is a dependency of the stack's readiness, not a fire-and-forget
 container: compose waits for it to complete successfully, and it verifies its own work afterwards by
@@ -1398,6 +1401,7 @@ New `wallet-api` environment, following the existing zod-validated conventions:
 | `SPONSORSHIP_RESERVATION_TTL_SECONDS` | Slightly above the validity window (§7.4) |
 | `SPONSORSHIP_RATE_LIMIT_PER_MINUTE` | Per tenant, overridable like the relay's |
 | `PAYMASTER_WATCHER_ENABLED`, `..._POLL_MS`, `..._CONFIRMATIONS` | Watcher behaviour |
+| `PAYMASTER_WATCHER_LOCK_RETRY_MS` | How often a standby replica retries the per-chain watcher lock |
 | `PAYMASTER_RECONCILE_INTERVAL_MS` | Invariant and drawdown checks |
 | `PAYMASTER_LOW_BALANCE_DEFAULT_WEI` | Default alert threshold when a tenant sets none |
 | `SPONSORSHIP_EMERGENCY_STOP` | Stops issuance immediately without a restart (R-19) |
@@ -1494,7 +1498,7 @@ belongs in the runbook after every deploy, every implementation upgrade and ever
 | R-05 | §6.2 `wallet-management` (sponsored by default) · §6.1 (permissive default) · §6.3 cap resolution |
 | R-06 | §6.5 decision records · §5.6 · §11.3 linkage |
 | R-07 | §3.5 (sender+nonce+domain binding, `validUntil`) · §13.1 validity window |
-| R-08 | §5.5 admin API · §6.4 (seed never clobbers) |
+| R-08 | §5.5 admin API · §6.4 (no tenant-row write clobbers) |
 | R-09 | §6.1 `enabled` · §10.2 `sponsorship: 'off'` fallback |
 | R-10 | §6.1 zod validation at write · §5.5 400 responses · §6.4 |
 | R-11 | §5.3 (1) |
