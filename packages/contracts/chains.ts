@@ -80,7 +80,13 @@ export type ChainPolicy = z.infer<typeof chainPolicySchema>;
  * for `chainId`. `bundlerUrl` defaults to wallet-api's `BUNDLER_BASE_URL` with `/<chainId>`
  * appended; set it for a chain submitted through some other bundler.
  */
-export const walletApiChainSectionSchema = z
+type WalletApiChainSectionShape = {
+  factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
+  policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, 'strict'>>;
+  bundlerUrl: z.ZodOptional<z.ZodString>;
+};
+
+export const walletApiChainSectionSchema: z.ZodObject<WalletApiChainSectionShape, 'strict'> = z
   .object({
     factory: chainAddressSchema.optional(),
     policy: chainPolicySchema.optional(),
@@ -91,7 +97,14 @@ export const walletApiChainSectionSchema = z
 export type WalletApiChainSection = z.infer<typeof walletApiChainSectionSchema>;
 
 /** giano-bundler's section of a backend chain entry. */
-export const bundlerChainSectionSchema = z
+type BundlerChainSectionShape = {
+  enabled: z.ZodDefault<z.ZodBoolean>;
+  rpcUrl: z.ZodOptional<z.ZodString>;
+  chainType: z.ZodDefault<z.ZodEnum<['auto', 'default', 'op-stack']>>;
+  maxBlockRange: z.ZodDefault<z.ZodNumber>;
+};
+
+export const bundlerChainSectionSchema: z.ZodObject<BundlerChainSectionShape, 'strict'> = z
   .object({
     /** `false`: this bundler does not serve the chain, and wallet-api must name another `bundlerUrl`. */
     enabled: z.boolean().default(true),
@@ -111,14 +124,21 @@ export type BundlerChainSection = z.infer<typeof bundlerChainSectionSchema>;
  * has jq, not this schema): where a wallet should dial to add the network, and how often the
  * console refreshes.
  */
-export const paymasterAdminChainSectionSchema = z
+type PaymasterAdminChainSectionShape = {
+  walletRpcUrl: z.ZodOptional<z.ZodString>;
+  refreshSeconds: z.ZodOptional<z.ZodNumber>;
+};
+
+export const paymasterAdminChainSectionSchema: z.ZodObject<PaymasterAdminChainSectionShape, 'strict'> = z
   .object({
     walletRpcUrl: z.string().optional(),
     refreshSeconds: z.number().int().positive().optional(),
   })
   .strict();
 
-const foreignSection = z.record(z.string(), z.unknown()).optional();
+type ForeignSection = z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+
+const foreignSection: ForeignSection = z.record(z.string(), z.unknown()).optional();
 
 /**
  * One backend chain entry — the shape of the chain document wallet-api (`GIANO_CHAINS`),
@@ -130,13 +150,27 @@ const foreignSection = z.record(z.string(), z.unknown()).optional();
  * the others' as-is. `entryPoint` and `sponsorshipPaymaster` default from the contracts registry.
  * Submission keys never appear here: the document reaches wallet-api, which must not hold them.
  */
-const backendChainFields = {
+type BackendChainFields = {
+  entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
+  sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
+};
+
+const backendChainFields: BackendChainFields = {
   entryPoint: chainAddressSchema.optional(),
   sponsorshipPaymaster: chainAddressSchema.optional(),
 };
 
 /** wallet-api's reading of a backend chain entry. */
-export const walletApiChainSchema = chainDescriptorSchema
+type WalletApiChainShape = z.objectUtil.extendShape<
+  ChainDescriptorShape,
+  BackendChainFields & {
+    walletApi: z.ZodDefault<z.ZodObject<WalletApiChainSectionShape, 'strict'>>;
+    bundler: ForeignSection;
+    paymasterAdmin: ForeignSection;
+  }
+>;
+
+export const walletApiChainSchema: z.ZodObject<WalletApiChainShape, 'strict'> = chainDescriptorSchema
   .extend({
     ...backendChainFields,
     walletApi: walletApiChainSectionSchema.default({}),
@@ -147,7 +181,16 @@ export const walletApiChainSchema = chainDescriptorSchema
 export type WalletApiChain = z.infer<typeof walletApiChainSchema>;
 
 /** giano-bundler's reading of a backend chain entry. */
-export const bundlerChainSchema = chainDescriptorSchema
+type BundlerChainShape = z.objectUtil.extendShape<
+  ChainDescriptorShape,
+  BackendChainFields & {
+    walletApi: ForeignSection;
+    bundler: z.ZodDefault<z.ZodObject<BundlerChainSectionShape, 'strict'>>;
+    paymasterAdmin: ForeignSection;
+  }
+>;
+
+export const bundlerChainSchema: z.ZodObject<BundlerChainShape, 'strict'> = chainDescriptorSchema
   .extend({
     ...backendChainFields,
     walletApi: foreignSection,
