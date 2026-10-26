@@ -312,29 +312,26 @@ still hit the limit, report it with the command that failed.
 
 Every package typechecks with **TypeScript 7** (the native compiler): `pnpm typecheck` runs `tsc
 --noEmit` in each package and service. `services/custom-example` is its own pnpm workspace, so run
-`pnpm typecheck` inside it (its `build` and Docker image run it too). Each package installs two aliases
-([Microsoft's documented setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)):
+`pnpm typecheck` inside it (its `build` and Docker image run it too). Each package depends on plain
+`typescript@7`; there is no TypeScript 6 left in the repo.
 
-| Alias | Resolves to | Used by |
-| --- | --- | --- |
-| `@typescript/native` | `typescript@7` | the `tsc` binary: `typecheck` scripts, `build` scripts that run `tsc --noEmit`, CI |
-| `typescript` | `@typescript/typescript6` (6.0 API, `tsc6` binary) | tools that `import 'typescript'` as a library |
+TypeScript 7.0 has no programmatic API (it is planned for 7.1): `import 'typescript'` returns only
+its version. Nothing here needs one:
 
-TypeScript 7.0 has no programmatic API (it is planned for 7.1). No tool in the repo needs one any more:
-typescript-eslint was the last, and linting and formatting moved to [Biome](https://biomejs.dev), a
-native binary with no TypeScript dependency (`pnpm lint`, `pnpm format`; CI runs `biome ci`).
+- **Lint and format**: [Biome](https://biomejs.dev), a native binary with no TypeScript dependency
+  (`pnpm lint`, `pnpm format`; CI runs `biome ci`).
+- **Builds**: every package and service builds with [tsdown](https://tsdown.dev) (tsup is no longer
+  maintained and points there). Declarations come from tsdown's `oxc` generator, which emits each
+  `.d.ts` from its source file alone (`isolatedDeclarations`): every export must carry explicit
+  types, and one that does not **fails the build** with a TS9xxx error. `tsc --noEmit
+  --isolatedDeclarations` in a package lists every such site at once.
+- **Everything else**: vite, vitest and tsx transpile without the compiler, and `@wagmi/cli` generates
+  the ABIs without it.
 
-**Builds use no compiler API.** Every package and service builds with [tsdown](https://tsdown.dev)
-(tsup is no longer maintained and points there). Declarations come from tsdown's `oxc` generator,
-which emits each `.d.ts` from its source file alone (`isolatedDeclarations`): every export must carry
-explicit types, and one that does not **fails the build** with a TS9xxx error. `tsc --noEmit
---isolatedDeclarations` in a package lists every such site at once. vite, vitest and tsx transpile
-without the compiler too.
-
-The `@typescript/typescript6` alias can only be dropped from **every package at once**. viem (and
-abitype) declare `typescript` as a peer, so pnpm installs one viem copy per TypeScript a package
-resolves; a package on plain `typescript@7` gets a different viem than one on the alias, and viem
-types passed between the two stop being assignable.
+Before adding a tool that imports `typescript` as a library, check it works with 7.0's (missing) API.
+Keep **one** TypeScript version across the workspace: viem (and abitype) declare `typescript` as a
+peer, so pnpm installs one viem copy per TypeScript a package resolves, and viem types passed between
+two packages on different TypeScripts stop being assignable.
 
 **Consumers** of the published packages need **TypeScript 5.0.4 or later** (the same floor as
 viem). The declarations are checked with 5.0.4, 5.5, 6.0 and 7.0.
