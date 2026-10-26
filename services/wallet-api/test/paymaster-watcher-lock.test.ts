@@ -7,6 +7,7 @@ import { runMigrations } from '../src/migrate.js';
 import type { PaymasterReader } from '../src/services/paymaster-contract.js';
 import { createPaymasterWatcher, type PaymasterWatcher } from '../src/services/paymaster-watcher.js';
 import type { LedgerService } from '../src/services/sponsorship-ledger.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * The watcher's singleton lock across replicas.
@@ -58,7 +59,7 @@ describe('paymaster watcher lock', () => {
 
   afterAll(async () => {
     await admin?.pool.end();
-    await container?.stop();
+    await stopPostgres(container);
   });
 
   /** One wallet-api replica: its own pool, as each process has. */

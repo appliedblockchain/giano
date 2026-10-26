@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import * as http from 'node:http';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { privateKeyToAccount } from 'viem/accounts';
 import { buildApp } from '../src/app.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
 import { seedTenants } from '../src/services/tenants.js';
+import { stopPostgres } from './postgres.js';
 
 /**
  * Two seeded tenants. Tenant A keeps the pre-tenancy test values (origin
@@ -206,7 +208,7 @@ export async function stopTestStack(ctx: TestContext): Promise<void> {
   await ctx.app.close();
   await ctx.pool.end();
   await ctx.rpc.close();
-  await ctx.container.stop();
+  await stopPostgres(ctx.container);
 }
 
 // ── Sponsorship fixtures ───────────────────────────────────────────────────────
@@ -343,4 +345,32 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
   await seedTenants(db, config.TENANTS_SEED);
   const app = await buildApp({ config, db, fetchImpl, paymasterReader: createFakePaymasterReader(paymasterState) });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState, paymasterState };
+}
+
+// ── Operator fixtures ──────────────────────────────────────────────────────────
+
+/** anvil's default accounts 0–2: two listed operators and one stranger. */
+export const OPERATOR = privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
+export const SECOND_OPERATOR = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+export const STRANGER = privateKeyToAccount('0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a');
+export type OperatorAccount = typeof OPERATOR;
+
+/** Environment that turns the operator tier on, with limits high enough not to trip in a suite. */
+export const OPERATOR_ENV = {
+  OPERATOR_ADDRESSES: JSON.stringify([
+    { id: 'ops-test', address: OPERATOR.address },
+    { id: 'ops-second', address: SECOND_OPERATOR.address },
+  ]),
+  OPERATOR_SIWE_DOMAIN: 'paymaster.localhost',
+  OPERATOR_SIWE_URI: 'http://paymaster.localhost',
+  OPERATOR_RATE_LIMIT_PER_MINUTE: '1000',
+};
+
+/** Signs in the way the console does: challenge, personal_sign, verify. Returns the session token. */
+export async function operatorSignIn(app: TestContext['app'], account: OperatorAccount = OPERATOR): Promise<string> {
+  const challenge = await app.inject({ method: 'POST', url: '/v1/operator/auth/challenge', payload: { address: account.address, chainId: 31337 } });
+  const { message } = challenge.json() as { message: string };
+  const verify = await app.inject({ method: 'POST', url: '/v1/operator/auth/verify', payload: { message, signature: await account.signMessage({ message }) } });
+  if (verify.statusCode !== 200) throw new Error(`operator sign-in failed: ${verify.statusCode} ${verify.body}`);
+  return (verify.json() as { token: string }).token;
 }

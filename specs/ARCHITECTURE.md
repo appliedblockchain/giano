@@ -174,7 +174,8 @@ sources do not overlap. This table is the shortest complete statement of the tru
 
 | Question | Decided from | Enforced by |
 |---|---|---|
-| Which tenant? | `Origin` for ceremonies; `Host` for `/.well-known/webauthn`; the session for bearer routes; the admin key for admin routes | Fail-closed: no tenant is `403`, an unknown host is `404`. A session whose tenant contradicts the `Origin` is rejected and counted. |
+| Which tenant? | `Origin` for ceremonies; `Host` for `/.well-known/webauthn`; the session for bearer routes; the admin key for admin routes — and only an **active** tenant answers any of them | Fail-closed: no tenant is `403`, an unknown host is `404`. A session whose tenant contradicts the `Origin` is rejected and counted. A suspended or deleted tenant is indistinguishable from an unknown one. |
+| Is this caller a Giano operator? | `OPERATOR_ADDRESSES` — configuration, never rows — and an EIP-4361 signature over a message the server issued, exchanged for a 30-minute operator session | `requireOperator`, a lookup no tenant credential shares; operator routes refuse any request carrying an `Origin`, so no browser page can call them ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §4). |
 | Which chain? | The caller names it — request body, ERC-7677 params, or query — and may omit it only when exactly one chain is configured | The chain registry, built and structurally verified at boot. Unknown is `400`, unreachable is `503`. |
 | Which wallet? | The passkey. Its public key is the owner; the address is CREATE2-derived from the owner set | The chain: the account verifies the signature against its own owner list. |
 | May this operation be relayed? | The tenant's policy, merged from deployment defaults, chain descriptor, tenant base and tenant per-chain overrides | The policy gate, before the bundler ever sees the operation; every decision is written to the audit log. |

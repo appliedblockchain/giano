@@ -294,10 +294,10 @@ export async function signTypedData({ typedData, owner }: { typedData: TypedData
 export async function sign({ hash, owner }: { hash: Hash; owner: OneOf<LocalAccount | WebAuthnAccount> }) {
   // WebAuthn Account (Passkey)
   if (owner.type === 'webAuthn') {
-    const { signature, webauthn } = await owner.sign({
+    const { signature, webauthn, raw } = await owner.sign({
       hash,
     });
-    return toWebAuthnSignature({ signature, webauthn });
+    return toWebAuthnSignature({ signature, webauthn, raw });
   }
 
   if (owner.sign) return owner.sign({ hash });
@@ -329,9 +329,60 @@ export function toReplaySafeTypedData({ address, chainId, hash }: { address: Add
   } as const;
 }
 
-/** @internal */
-export function toWebAuthnSignature({ webauthn, signature }: { webauthn: WebAuthnP256.SignMetadata; signature: Hex }) {
-  const { r, s } = Signature.fromHex(signature);
+/** The P-256 group order. */
+const P256_N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+
+/**
+ * Decodes an authenticator's DER `SEQUENCE { INTEGER r, INTEGER s }` into `r` and a low-s `s`
+ * (webauthn-sol rejects `s > n/2`).
+ *
+ * viem's `WebAuthnAccount.sign` already returns a parsed `signature`, but it comes from ox's
+ * `parseAsn1Signature`, which assumes `r` is 32 or 33 bytes. DER integers are minimal, so an `r`
+ * with a leading zero byte — about one signature in 256 — is 31 bytes or fewer, and ox then reads
+ * `s`'s INTEGER tag into `r`: the account rejects the result (AA24 / `InvalidSignature()`).
+ *
+ * @internal
+ */
+export function parseDerSignature(der: Uint8Array): { r: bigint; s: bigint } {
+  // A P-256 signature is at most 72 bytes, so every length here is short-form.
+  if (der.length < 8 || der[0] !== 0x30 || der[1] !== der.length - 2) {
+    throw new BaseError('Malformed WebAuthn signature: not a DER sequence.');
+  }
+  let cursor = 2;
+  const readInteger = () => {
+    const length = der[cursor + 1];
+    if (der[cursor] !== 0x02 || length === undefined || length < 1 || length > 33 || cursor + 2 + length > der.length) {
+      throw new BaseError('Malformed WebAuthn signature: expected a DER integer.');
+    }
+    const value = BigInt(toHex(der.subarray(cursor + 2, cursor + 2 + length)));
+    cursor += 2 + length;
+    if (value === 0n || value >= P256_N) throw new BaseError('Malformed WebAuthn signature: integer out of range.');
+    return value;
+  };
+  const r = readInteger();
+  const s = readInteger();
+  if (cursor !== der.length) throw new BaseError('Malformed WebAuthn signature: trailing bytes.');
+  return { r, s: s > P256_N / 2n ? P256_N - s : s };
+}
+
+/**
+ * ABI-encodes a passkey signature as webauthn-sol's `WebAuthnAuth`. When the authenticator's
+ * assertion (`raw`) is available, `r` and `s` are decoded from its DER bytes rather than taken from
+ * `signature` — see {@link parseDerSignature} for why.
+ *
+ * @internal
+ */
+export function toWebAuthnSignature({
+  webauthn,
+  signature,
+  raw,
+}: {
+  webauthn: WebAuthnP256.SignMetadata;
+  signature: Hex;
+  raw?: WebAuthnP256.sign.ReturnType['raw'] | undefined;
+}) {
+  const der = (raw?.response as AuthenticatorAssertionResponse | undefined)?.signature;
+  const { r, s } = der ? parseDerSignature(new Uint8Array(der)) : Signature.fromHex(signature);
   return encodeAbiParameters(
     [
       {

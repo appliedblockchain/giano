@@ -1,27 +1,38 @@
-import { bigint, boolean, customType, index, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, customType, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',
 });
 
 /** One row per tenant: tenant ≡ wallet origin ≡ RP ID (specs/DEVELOPER-GUIDE.md §1). */
-export const tenants = pgTable('tenants', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  slug: text('slug').notNull().unique(),
-  walletOrigin: text('wallet_origin').notNull().unique(),
-  /** IMMUTABLE once the tenant's first passkey exists — enforced by the seeder. */
-  rpId: text('rp_id').notNull().unique(),
-  rpName: text('rp_name').notNull(),
-  expectedOrigins: text('expected_origins').array().notNull(),
-  allowedDappOrigins: text('allowed_dapp_origins').array().notNull().default([]),
-  corsOrigins: text('cors_origins').array().notNull().default([]),
-  openRegistration: boolean('open_registration').notNull().default(false),
-  /** Partial userop PolicyConfig overrides (bigints as decimal strings). */
-  policy: jsonb('policy').notNull().default({}),
-  branding: jsonb('branding').notNull().default({}),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const tenants = pgTable(
+  'tenants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    slug: text('slug').notNull().unique(),
+    walletOrigin: text('wallet_origin').notNull().unique(),
+    /** IMMUTABLE once the tenant's first passkey exists — enforced by the seeder. */
+    rpId: text('rp_id').notNull().unique(),
+    rpName: text('rp_name').notNull(),
+    expectedOrigins: text('expected_origins').array().notNull(),
+    allowedDappOrigins: text('allowed_dapp_origins').array().notNull().default([]),
+    corsOrigins: text('cors_origins').array().notNull().default([]),
+    openRegistration: boolean('open_registration').notNull().default(false),
+    /** Partial userop PolicyConfig overrides (bigints as decimal strings). */
+    policy: jsonb('policy').notNull().default({}),
+    branding: jsonb('branding').notNull().default({}),
+    /** Only an active tenant resolves; deleted is a terminal tombstone (operator-tenant-lifecycle). */
+    status: text('status', { enum: ['active', 'suspended', 'deleted'] }).notNull().default('active'),
+    /** Who may write this row: the boot seed or the operators, never both. */
+    managedBy: text('managed_by', { enum: ['seed', 'operator'] }).notNull().default('seed'),
+    /** Incremented by every write, seed writes included; the ETag for PATCH. */
+    version: integer('version').notNull().default(1),
+    statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('tenants_status_idx').on(t.status)],
+);
 
 export const tenantAdminKeys = pgTable(
   'tenant_admin_keys',
@@ -33,9 +44,86 @@ export const tenantAdminKeys = pgTable(
     /** sha256 hex of the plaintext key; globally unique so key → tenant is unambiguous. */
     keyHash: text('key_hash').notNull().unique(),
     label: text('label'),
+    /** 'seed' | 'operator:<id>:<address>' */
+    createdBy: text('created_by').notNull().default('seed'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('tenant_admin_keys_tenant_id_idx').on(t.tenantId)],
+);
+
+// ── Operators ──────────────────────────────────────────────────────────────────
+//
+// Who is an operator is configuration (OPERATOR_ADDRESSES), never a row: these tables hold only
+// sign-in state, and the guard ignores a session whose address the configuration does not list.
+
+/** EIP-4361 challenges. The exact issued text is kept so verify accepts nothing else. */
+export const operatorChallenges = pgTable(
+  'operator_challenges',
+  {
+    nonce: text('nonce').primaryKey(),
+    /** lowercase */
+    address: text('address').notNull(),
+    message: text('message').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('operator_challenges_expires_idx').on(t.expiresAt)],
+);
+
+/** Kept after expiry: the record of who signed in when, referenced by tenant_history. */
+export const operatorSessions = pgTable(
+  'operator_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** sha256 hex of the gos_ token. */
+    tokenHash: text('token_hash').notNull().unique(),
+    /** The OPERATOR_ADDRESSES id at sign-in. */
+    operatorId: text('operator_id').notNull(),
+    /** lowercase */
+    address: text('address').notNull(),
+    chainId: bigint('chain_id', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [index('operator_sessions_expires_idx').on(t.expiresAt)],
+);
+
+export const tenantHistoryActions = [
+  'create',
+  'update',
+  'suspend',
+  'resume',
+  'delete',
+  'admin-key-issue',
+  'admin-key-revoke',
+  'seed-apply',
+  'seed-takeover',
+  'adopt',
+] as const;
+
+/** Append-only record of every tenant write. Never carries key material. */
+export const tenantHistory = pgTable(
+  'tenant_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // no cascade: tenants are never hard-deleted
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    action: text('action', { enum: tenantHistoryActions }).notNull(),
+    /** 'seed' | 'operator:<id>:<address>' */
+    actor: text('actor').notNull(),
+    operatorSessionId: uuid('operator_session_id').references(() => operatorSessions.id),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    detail: jsonb('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('tenant_history_tenant_idx').on(t.tenantId, t.createdAt)],
 );
 
 export const users = pgTable(
