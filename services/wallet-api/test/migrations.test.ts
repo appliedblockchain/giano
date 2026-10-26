@@ -116,4 +116,13 @@ describe('migration 0007_tenant_lifecycle', () => {
     expect((await client.query(`SELECT nonce FROM platform_admin_challenges`)).rows.map((r) => r.nonce)).toEqual(['recent']);
   });
 
+
+  it('0009 drops managed_by and keeps every tenant, key and history as it was', async () => {
+    await client.query(`UPDATE tenants SET managed_by = 'operator', version = 2 WHERE slug = 'acme'`);
+    expect(await runMigrations(container.getConnectionUri())).toEqual(['0009_drop_tenant_managed_by.sql']);
+    const { rows } = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'tenants' AND column_name = 'managed_by'`);
+    expect(rows).toEqual([]);
+    expect((await client.query(`SELECT slug, status, version FROM tenants`)).rows).toEqual([{ slug: 'acme', status: 'active', version: 2 }]);
+    expect((await client.query(`SELECT created_by FROM tenant_admin_keys`)).rows).toEqual([{ created_by: 'seed' }]);
+  });
 });

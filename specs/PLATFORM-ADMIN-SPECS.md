@@ -475,9 +475,9 @@ contain key material: admin keys are recorded in `detail` as id, label and the f
 the hash.
 
 `managed_by` and the `seed-apply` and `seed-takeover` actions belong to the retired `TENANTS_SEED`.
-Nothing writes the two actions any more; they stay for the history the seed left. Every write now
-sets `managed_by = 'operator'` (the role's former name), and the column is dropped once the boot-time retirement (§9) has run
-everywhere.
+`managed_by` is dropped by `0009_drop_tenant_managed_by.sql`, after the release whose boot step
+handed every seed-managed tenant to the platform admins (§9). Nothing writes the two actions any
+more; they stay for the history the seed left.
 
 ### 5.3 Delete
 
@@ -660,13 +660,11 @@ seed takeover at boot, the suspend-and-resume-only limit on seed-managed tenants
 `POST …/adopt` route, the `409 seed-managed` and `409 still-seeded` errors, and `managedBy` in
 platform admin responses.
 
-**One-time boot migration.** A database an earlier version wrote still holds the seed's tenants as
-`managed_by = 'seed'`. At boot, `services/tenants-seed-retirement.ts` hands each to the platform admins:
-`managed_by = 'operator'`, `version` + 1, and a history entry `adopt` with actor
-`system:tenants-seed-retirement`. It runs under the tenant-write lock, so concurrent replicas
-convert each row once, and it is a no-op once no seed-managed row is left. It also warns when
-`TENANTS_SEED` is still set. It is transitional: it is deleted, together with the `managed_by`
-column, once every deployment has run it.
+**The handover (done).** For one release, a boot step handed every tenant an earlier version had
+seeded to the platform admins, writing a history entry `adopt` with actor
+`system:tenants-seed-retirement` for each. That boot step and the `managed_by` column are gone
+(`0009_drop_tenant_managed_by.sql`); those history entries remain. A deployment upgrading straight
+past that release loses only those entries.
 
 **Local stacks.** The e2e, dev, loopback and Sepolia compose stacks still have to come up
 deterministic, with fixed tenant ids pre-registered on the devnet paymaster and fixed admin keys the
@@ -854,8 +852,8 @@ intended behaviour. The platform admin who suspends is expected to tell the tena
 | # | Files |
 | --- | --- |
 | D1 ✅ | `src/config.ts` (`GIANO_ENVIRONMENT`, the `PLATFORM_*` tuning variables in §4.1, `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`), `src/environments.ts` (sign-in domain and bootstrap platform admins per environment), `src/routes/platform-auth.ts` (challenge, verify, logout), `src/services/platform-sessions.ts`, `src/services/platform-admins.ts` and `src/routes/platform-admins.ts` (the platform admins and their management routes), `src/plugins/auth.ts` (`requirePlatformAdmin`), `scripts/platform-login.ts` |
-| D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `migrations/0008_platform_admins.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
-| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts` and `src/init.ts` (the init step, which loads local-stack fixtures) and `src/services/tenants-seed-retirement.ts` (one-time) replace the seed (§9) |
+| D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `migrations/0008_platform_admins.sql`, `migrations/0009_drop_tenant_managed_by.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
+| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts` and `src/init.ts` (the init step, which loads local-stack fixtures) replace the seed (§9) |
 | D4 ✅ | `src/routes/platform-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when the environment has a sign-in domain), `openapi/` |
 | D5 *(follow-up card)* | `src/routes/platform-chains.ts`, `src/services/chains.ts` (keep last verification and probe), `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts` (prober stores both) |
 | D6 ✅ (tenant half) | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/platform-api.ts`, `src/lib/platform-session.ts`, `src/platform/{SignIn,TenantsTab,TenantDrawer,AdminsTab}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
@@ -882,10 +880,7 @@ intended behaviour. The platform admin who suspends is expected to tell the tena
   `userop_log` rows intact, slug unusable by a later create.
 - **Housekeeping.** The sweep deletes tenant and platform admin challenges that expired more than a day
   ago, and leaves younger ones.
-- **Seed retirement.** Every seed-managed tenant, in any state, becomes platform-admin-managed with its
-  fields, keys and state kept and one `adopt` entry; a database with none is left alone; two
-  replicas booting at once adopt each tenant once; a still-set `TENANTS_SEED` is warned about and
-  ignored.
+- **`managed_by` dropped.** `0009` removes the column and keeps every tenant, key and history row.
 - **Init.** `TENANT_FIXTURES` outside a local stack, or an unknown `GIANO_ENVIRONMENT`, is refused
   before the database is touched.
 - **Fixtures.** An unknown slug is created with hashed keys and a `create` entry by `fixture`; an

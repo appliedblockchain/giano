@@ -23,12 +23,6 @@ export const tenants = pgTable(
     branding: jsonb('branding').notNull().default({}),
     /** Only an active tenant resolves; deleted is a terminal tombstone (platform admin-tenant-lifecycle). */
     status: text('status', { enum: ['active', 'suspended', 'deleted'] }).notNull().default('active'),
-    /**
-     * Legacy: 'seed' marked a tenant written by the retired TENANTS_SEED. Every write now sets
-     * 'operator' (the role's former name), and the boot-time retirement (services/tenants-seed-retirement.ts) converts what
-     * is left; the column goes once that has run everywhere.
-     */
-    managedBy: text('managed_by', { enum: ['seed', 'operator'] }).notNull().default('seed'),
     /** Incremented by every write; the ETag for PATCH. */
     version: integer('version').notNull().default(1),
     statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),
@@ -136,7 +130,7 @@ export const tenantHistoryActions = [
   // written by the retired TENANTS_SEED and kept for the history it left; nothing writes them now
   'seed-apply',
   'seed-takeover',
-  // the platform admin adopt endpoint (retired) and the one-time TENANTS_SEED retirement at boot
+  // written by the retired adopt endpoint and the one-time TENANTS_SEED retirement
   'adopt',
 ] as const;
 

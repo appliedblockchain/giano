@@ -24,9 +24,9 @@
 
 ## 5. Archive order
 
-- [ ] 5.0 Archive `platform-tenant-lifecycle` and `platform-console` before this change; its MODIFIED/REMOVED deltas target their capabilities.
+- [x] 5.0 Archive `platform-tenant-lifecycle` and `platform-console` before this change; its MODIFIED/REMOVED deltas target their capabilities.
 
 ## 6. Follow-up change (cleanup)
 
-- [ ] 6.1 Delete `tenants-seed-retirement.ts`, its boot call and its tests.
-- [ ] 6.2 Migration: drop `tenants.managed_by`. Remove its schema field and the `managedBy: 'operator'` writes.
+- [x] 6.1 Delete `tenants-seed-retirement.ts`, its boot call and its tests.
+- [x] 6.2 Migration `0009_drop_tenant_managed_by.sql`: drop `tenants.managed_by`. Remove its schema field and the `managedBy: 'operator'` writes.

@@ -7,7 +7,6 @@ import { describeFailure, isFatalFailure, verifyChain } from './services/chain-v
 import { HOUSEKEEPING_INTERVAL_MS, pruneExpiredChallenges } from './services/housekeeping.js';
 import { createPaymasterWatcher, type PaymasterWatcher } from './services/paymaster-watcher.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
-import { retireTenantsSeed } from './services/tenants-seed-retirement.js';
 import { tenants as tenantsTable } from './db/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -21,10 +20,6 @@ if (config.RUN_MIGRATIONS) {
 }
 
 const { db, pool } = createDb(config.DATABASE_URL);
-
-// One-time: hands tenants an earlier version wrote from TENANTS_SEED to the platform admins. A no-op
-// once none is left; removed in the release after every deployment has run it.
-await retireTenantsSeed(db, { info: (message) => console.log(message), warn: (message) => console.warn(`WARNING: ${message}`) });
 
 // Tenants are created by Giano's platform admins at runtime, so a deployment may well boot with none.
 const [{ count: tenantCount }] = (await db.execute(sql`SELECT count(*)::int AS count FROM tenants WHERE status = 'active'`)).rows as [{ count: number }];
