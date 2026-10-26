@@ -6,7 +6,6 @@ import {
   type ChainPolicy,
 } from '@appliedblockchain/giano-contracts';
 import { z } from 'zod';
-import { tenantsSeedSchema } from './services/tenants.js';
 
 const addressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be a 0x-prefixed 20-byte hex address');
 
@@ -74,7 +73,7 @@ export type OperatorEntry = z.infer<typeof operatorAddressesSchema>[number];
 /**
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
- * rows, written by TENANTS_SEED at boot or by operators at runtime — see
+ * rows, written by Giano's operators at runtime — see
  * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
  * jsonb may override per field.
  */
@@ -101,33 +100,6 @@ const envSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((v) => v === 'true'),
-
-    /**
-     * JSON array of tenants, upserted by slug at boot (after migrations, before listen).
-     * Each entry: { slug, walletOrigin, rpId?, rpName, expectedOrigins?, allowedDappOrigins?,
-     * corsOrigins?, openRegistration?, adminKeys?, policy?, branding? }.
-     */
-    TENANTS_SEED: z
-      .string()
-      .optional()
-      .transform((raw, ctx) => {
-        if (!raw) return [];
-        let json: unknown;
-        try {
-          json = JSON.parse(raw);
-        } catch (error) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `not valid JSON: ${(error as Error).message}` });
-          return z.NEVER;
-        }
-        const parsed = tenantsSeedSchema.safeParse(json);
-        if (!parsed.success) {
-          for (const issue of parsed.error.issues) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${issue.path.join('.') || '(root)'}: ${issue.message}` });
-          }
-          return z.NEVER;
-        }
-        return parsed.data;
-      }),
 
     /**
      * Giano's operators (specs/OPERATOR-ADMIN-SPECS.md §4.1): a JSON array of `{ id, address }`.

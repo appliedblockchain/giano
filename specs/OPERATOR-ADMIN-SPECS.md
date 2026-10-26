@@ -3,7 +3,7 @@
 This document is the **how** for H5 (*Admin application for tenants, blockchain status*, 3 SP),
 whose **what** is the requirement reproduced in [§2](#2-the-requirements). It specifies an
 operator tier in `wallet-api`, the tenant lifecycle it manages, how runtime writes keep the
-invariant tenant ≡ wallet origin ≡ RP ID, how they coexist with `TENANTS_SEED`, and the console
+invariant tenant ≡ wallet origin ≡ RP ID, how they replaced `TENANTS_SEED`, and the console
 that drives them.
 
 Everything asserted about the current state in [§3](#3-current-state-verified) was read out of this
@@ -29,7 +29,7 @@ no longer blocks R1.
 6. [Keeping the invariant under runtime writes](#6-keeping-the-invariant-under-runtime-writes)
 7. [Operator API](#7-operator-api)
 8. [Resolution under the lifecycle](#8-resolution-under-the-lifecycle)
-9. [Coexistence with `TENANTS_SEED`](#9-coexistence-with-tenants_seed)
+9. [Retiring `TENANTS_SEED`](#9-retiring-tenants_seed)
 10. [Blockchain status](#10-blockchain-status)
 11. [The console](#11-the-console)
 12. [Risks and open items](#12-risks-and-open-items)
@@ -52,7 +52,7 @@ Concretely, six deliverables:
 | --- | --- | --- |
 | **D1** | Operator sign-in with a wallet (EIP-4361) against a deployment-configured list of operator addresses, short-lived operator sessions, a `requireOperator` guard, and routes that refuse browser cross-origin calls outright | `wallet-api` — [§4](#4-operator-authority) |
 | **D2** | Tenant lifecycle columns, an append-only `tenant_history`, operator challenge and session tables, migration `0007_tenant_lifecycle.sql` | `wallet-api` — [§5](#5-tenant-lifecycle-and-data-model) |
-| **D3** | One validation path for seed and runtime writes, with the cross-tenant origin check the seed does not do today | `services/tenants.ts` — [§6](#6-keeping-the-invariant-under-runtime-writes) |
+| **D3** | One validation path for every tenant write, with the cross-tenant origin check the retired seed never did | `services/tenants.ts` — [§6](#6-keeping-the-invariant-under-runtime-writes) |
 | **D4** | `/v1/operator/tenants/*` routes, and every tenant resolver made lifecycle-aware | `wallet-api` — [§7](#7-operator-api), [§8](#8-resolution-under-the-lifecycle) |
 | **D5** | `/v1/operator/chains`, a server-side status read per served chain. *Follow-up card (H-k).* | `wallet-api` — [§10](#10-blockchain-status) |
 | **D6** | An *Operator* area in the existing console: wallet sign-in, tenant registry, create/edit/suspend/delete, key issue/revoke, chain status | `services/paymaster-admin` — [§11](#11-the-console) |
@@ -78,10 +78,10 @@ Delivery, in order:
 | **H-c** | **Operator routes refuse any request that carries an `Origin` header.** The console reaches them through its own nginx proxy, which strips it. | The CORS plugin grants ACAO to every tenant's `cors_origins` on every route. Refusing `Origin` on `/v1/operator/*` means no browser page on any origin can call these routes cross-origin, whatever CORS says, and the check is one line. [§4.5](#45-no-browser-cross-origin-path). |
 | **H-d** | **Delete is a tombstone.** A deleted tenant's row stays, with `status = 'deleted'`; its slug, id, wallet origin and RP ID are never reusable. | The id keys the tenant's balance on every paymaster, which nothing off-chain can delete. `userop_log`, `wallet_management_log`, `users` and `credentials` reference `tenants` without cascade, and they are records we keep. And an RP ID handed to a new tenant would inherit every passkey users still hold for the old one. [§5.3](#53-delete). |
 | **H-e** | **Suspend before delete, and delete refuses while money is attached.** | Suspend is immediate and reversible, so it is the incident tool. Delete is irreversible, so it requires the reversible step first and a zero balance and no open reservations on every chain. [§5](#5-tenant-lifecycle-and-data-model). |
-| **H-f** | **`slug`, `id`, `walletOrigin` and `rpId` are immutable through the API.** | `rpId` is immutable today (passkeys bind to it); `walletOrigin` must keep its host equal to `rpId` (D1 in `tenants.ts`), so it is immutable with it. `id` is the paymaster key. `slug` is the seed's upsert key. A tenant that needs a new origin is a new tenant. |
-| **H-g** | **Runtime and seed writes go through one validator**, and that validator gains a cross-tenant check: no origin may be claimed by two tenants. | `getByOrigin` resolves `wallet_origin OR origin = ANY(expected_origins)` with `findFirst`. Two tenants claiming the same origin resolve to whichever row Postgres returns first. The seed schema checks duplicate `walletOrigin` and `rpId` but not `expectedOrigins`, so this is a latent gap today that runtime writes would make reachable. [§6.2](#62-origin-claims-are-disjoint). |
-| **H-h** | **A tenant is managed by the seed or by operators, never both.** Through the API, a seed-managed tenant can only be suspended and resumed. A seed entry whose slug matches an operator-managed tenant takes it over at boot and records that in the history. | Without ownership, the next boot silently overwrites operator edits to any seeded tenant. Config wins over runtime state because config is what was reviewed and deployed. [§9](#9-coexistence-with-tenants_seed). |
-| **H-i** | **Admin keys are generated by the server** and returned once. The API never accepts a caller-chosen admin key. | A generated key has full entropy and cannot collide with another tenant's key. The seed keeps accepting plaintext keys, as it does today. |
+| **H-f** | **`slug`, `id`, `walletOrigin` and `rpId` are immutable through the API.** | `rpId` is immutable today (passkeys bind to it); `walletOrigin` must keep its host equal to `rpId` (D1 in `tenants.ts`), so it is immutable with it. `id` is the paymaster key. `slug` is what operators address a tenant by. A tenant that needs a new origin is a new tenant. |
+| **H-g** | **Every tenant write goes through one validator**, and that validator gains a cross-tenant check: no origin may be claimed by two tenants. | `getByOrigin` resolves `wallet_origin OR origin = ANY(expected_origins)` with `findFirst`. Two tenants claiming the same origin resolve to whichever row Postgres returns first. The seed schema checked duplicate `walletOrigin` and `rpId` but not `expectedOrigins`, a latent gap that runtime writes would have made reachable. [§6.2](#62-origin-claims-are-disjoint). |
+| **H-h** | **Operators are the only writers of a live deployment's tenants; `TENANTS_SEED` is retired.** `wallet-api` no longer reads it and boots with zero tenants. Tenants an earlier version seeded are handed to the operators once, at boot. Local stacks get their test tenants from a separate, insert-only `tenant-fixtures` one-shot that no live deployment runs. | Two writers of one row needed an ownership rule: a seed-managed tenant could not be edited without a redeploy, and a seed entry silently took over an operator-managed tenant at the next boot. One writer needs no rule. [§9](#9-retiring-tenants_seed). |
+| **H-i** | **Admin keys are generated by the server** and returned once. The API never accepts a caller-chosen admin key. | A generated key has full entropy and cannot collide with another tenant's key. Only the local-stack fixtures take plaintext keys (§9). |
 | **H-j** | **The console is the existing `paymaster-admin`**, gaining an Operator area. The image and package keep their names. | It is already the operator console, already deployed at `paymaster.*`, and already holds the on-chain roster. Joining the registry to that roster on tenant id is what lets an operator see a tenant that exists in one place and not the other. Renaming the image touches ECR and Terraform, which is devops territory (O-4). |
 | **H-k** | **H5 delivers R1 only. Blockchain status (D5 and the Chains tab) is a separate card.** | The card is estimated at 3 SP and D1–D4 with D6's tenant half already fill it. Blockchain status has no requirement (O-1), and §10 needs new code the original draft did not count: a bundler method, a prober that records its results, a resolver in the console image. Splitting lets R1 ship without waiting on O-1. |
 | **H-l** | **Verify accepts only the exact text the server issued.** The challenge row stores the message, and verify requires the signed text to match it byte for byte. | `validateSiweMessage` in viem 2.31.6 does not check `issuedAt`, `uri`, `version` or `chainId`, and checks no time window at all when `expirationTime` is absent. Matching the stored text checks every field at once, against values only the server chose. [§4.3](#43-what-verify-checks). |
@@ -129,6 +129,9 @@ the real requirement.
 ---
 
 ## 3. Current state, verified
+
+This is the repository H5 started from. The seed rows below describe `TENANTS_SEED`, which has
+since been retired (§9).
 
 | Claim | Verdict | Evidence |
 | --- | --- | --- |
@@ -335,20 +338,14 @@ the console and their own wallet.
 ```
             create (operator)            suspend
    ──────────────────────────► active ◄──────────► suspended ──── delete ───► deleted
-   seed upsert (boot) ───────►         resume                      (terminal)
+   fixture (local stacks) ───►         resume                      (terminal)
 ```
 
-| State | Resolves on ceremony / Host / admin key / session / CORS | Watcher and ledger | Operator actions, operator-managed | Operator actions, seed-managed |
-| --- | --- | --- | --- | --- |
-| `active` | yes | yes | edit fields, issue and revoke keys, suspend | suspend |
-| `suspended` | **no**, as if unknown | yes: settlements and reconciliation keep running, because on-chain events for this tenant still happen | resume, revoke keys, delete | resume |
-| `deleted` | no | yes, for the same reason | none | none (a seed-managed tenant is never deleted) |
-
-Seed-managed tenants get suspend and resume because those are incident tools that must not wait for
-a redeploy, and `seedTenants` never touches `status`. Every other write on a seed-managed tenant is
-refused with `409 seed-managed`, because the next boot would undo it: the seed rewrites fields and
-replaces the admin-key set wholesale. A leaked key on a seeded tenant is handled by suspending the
-tenant, removing the key from the seed and redeploying.
+| State | Resolves on ceremony / Host / admin key / session / CORS | Watcher and ledger | Operator actions |
+| --- | --- | --- | --- |
+| `active` | yes | yes | edit fields, issue and revoke keys, suspend |
+| `suspended` | **no**, as if unknown | yes: settlements and reconciliation keep running, because on-chain events for this tenant still happen | resume, revoke keys, delete |
+| `deleted` | no | yes, for the same reason | none |
 
 Suspension does not delete the tenant's user sessions. Resolution refuses them while suspended, and resume restores
 whatever has not expired. Delete removes the tenant's sessions (found through `users`, since
@@ -378,7 +375,7 @@ ALTER TABLE tenants
 CREATE INDEX tenants_status_idx ON tenants (status);
 
 ALTER TABLE tenant_admin_keys
-  ADD COLUMN created_by text NOT NULL DEFAULT 'seed';   -- 'seed' | 'operator:<id>:<address>'
+  ADD COLUMN created_by text NOT NULL DEFAULT 'seed';   -- 'operator:<id>:<address>' | 'fixture' | 'seed' (retired)
 
 CREATE TABLE operator_challenges (
   nonce       text PRIMARY KEY,
@@ -409,8 +406,9 @@ CREATE TABLE tenant_history (
   tenant_id   uuid NOT NULL REFERENCES tenants(id),     -- no cascade: tenants are never hard-deleted
   action      text NOT NULL,   -- create | update | suspend | resume | delete
                                -- | admin-key-issue | admin-key-revoke | seed-apply | seed-takeover | adopt
-  actor       text NOT NULL,   -- 'seed' | 'operator:<id>:<address>'
-  operator_session_id uuid REFERENCES operator_sessions(id),  -- null for seed writes
+  actor       text NOT NULL,   -- 'operator:<id>:<address>' | 'fixture' | 'system:tenants-seed-retirement'
+                               -- | 'seed' (retired)
+  operator_session_id uuid REFERENCES operator_sessions(id),  -- null unless an operator wrote it
   before      jsonb,           -- the tenant row before; null on create
   after       jsonb,           -- the tenant row after
   detail      jsonb,           -- e.g. { keyId, label, hashPrefix } for key actions
@@ -426,12 +424,14 @@ because the deletes are idempotent. Operator sessions are kept: they are the rec
 in when, `tenant_history` references them, and a handful of operators signing in a few times a day
 produces a negligible number of rows.
 
-`version` increments on every write, seed writes included, and is the ETag for `PATCH` (§7.2). `before` and `after` never
+`version` increments on every write and is the ETag for `PATCH` (§7.2). `before` and `after` never
 contain key material: admin keys are recorded in `detail` as id, label and the first 8 hex chars of
 the hash.
 
-`seedTenants` writes a `seed-apply` history row only when the upsert changed something, so a
-restart does not append a row per tenant.
+`managed_by` and the `seed-apply` and `seed-takeover` actions belong to the retired `TENANTS_SEED`.
+Nothing writes the two actions any more; they stay for the history the seed left. Every write now
+sets `managed_by = 'operator'`, and the column is dropped once the boot-time retirement (§9) has run
+everywhere.
 
 ### 5.3 Delete
 
@@ -439,11 +439,10 @@ restart does not append a row per tenant.
 tenant:
 
 1. `status = 'suspended'` — otherwise `409 tenant-not-suspended`;
-2. `managed_by = 'operator'` — otherwise `409 seed-managed`;
-3. on every chain, `paymaster_tenants.balance_wei = 0` and `deficit_wei = 0`, where a chain with no
+2. on every chain, `paymaster_tenants.balance_wei = 0` and `deficit_wei = 0`, where a chain with no
    row counts as zero — otherwise `409 tenant-has-funds`, with per-chain figures and the
    `last_synced_block` they were read at;
-4. no `sponsorship_reservations` with `state = 'reserved' AND expires_at > now()` — otherwise
+3. no `sponsorship_reservations` with `state = 'reserved' AND expires_at > now()` — otherwise
    `409 tenant-has-reservations`. The `expires_at` condition is needed because only the watcher marks
    reservations `expired` (§3). Without it, a reservation that expired while no watcher ran would
    block the delete forever. The ledger already treats an expired reservation as not counting.
@@ -451,7 +450,7 @@ tenant:
 Then: `status = 'deleted'`; delete `sessions`, `challenges`, `pending_additions` and
 `tenant_admin_keys` for the tenant; append `tenant_history`. Everything else stays.
 
-The ledger in check 3 is a cache rebuilt from events. If, on any sponsoring chain,
+The ledger in check 2 is a cache rebuilt from events. If, on any sponsoring chain,
 `paymaster_state.last_synced_block` is more than `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` (new,
 default 50) behind the chain head, delete refuses with `409 ledger-stale` rather than trusting an
 old zero. A chain that cannot be reached for its head counts as stale. The heads are read before
@@ -477,27 +476,26 @@ with its own on-chain record, and it is never an API action.
 
 ### 6.1 One validator
 
-`tenantSeedSchema` today mixes three things: field shapes, the single-tenant invariant (rpId ≡
+The seed's `tenantSeedSchema` mixed three things: field shapes, the single-tenant invariant (rpId ≡
 walletOrigin host, expectedOrigins under rpId, admin keys required when registration is closed),
-and seed-only input (plaintext `adminKeys`). It splits into:
+and seed-only input (plaintext `adminKeys`). It is split into:
 
 | Piece | Used by |
 | --- | --- |
-| `tenantFieldsSchema` — field shapes only, `.strict()` | seed, create, update |
-| `checkTenantInvariants(fields, { adminKeyCount })` — the single-tenant rules, returning issues with paths | seed, create, update |
-| `tenantSeedSchema` — `tenantFieldsSchema` + `adminKeys: string[]`, calling `checkTenantInvariants` with `adminKeys.length` | seed |
+| `tenantFieldsSchema` — field shapes only, `.strict()` | fixtures, create, update |
+| `checkTenantInvariants(fields, { adminKeyCount })` — the single-tenant rules, returning issues with paths | fixtures, create, update |
+| `tenantFixtureSchema` (`services/tenant-fixtures.ts`) — `tenantFieldsSchema` + `adminKeys: string[]`, calling `checkTenantInvariants` with `adminKeys.length` | local-stack fixtures (§9) |
 | `tenantCreateSchema` — `tenantFieldsSchema` + `adminKeys: { label }[]`, same call | create |
 | `tenantPatchSchema` — the mutable subset, all optional | update |
 
-`.strict()` is a change for the seed. Today `tenantSeedSchema` is a plain `z.object`, so an
-unknown key in a seed entry is silently dropped; after the split it refuses boot. Every seed in
-`deploy/` uses only known keys. The AWS dev secret is checked under O-8.
+`.strict()` means an unknown key in a fixture or a request is refused rather than silently dropped,
+so a typo never reads as "applied".
 
 Update merges the patch onto the stored row and re-runs `tenantFieldsSchema` and
 `checkTenantInvariants` on the result, with `adminKeyCount` taken from the database. So
-`openRegistration: false` on a tenant with no admin keys is refused the same way the seed refuses it.
+`openRegistration: false` on a tenant with no admin keys is refused the same way a create refuses it.
 
-The comment at the top of `tenants.ts` changes to say that **every** write, seed or operator, passes
+The comment at the top of `tenants.ts` says that **every** write, operator or fixture, passes
 through `checkTenantInvariants` and `checkOriginClaims`.
 
 ### 6.2 Origin claims are disjoint
@@ -516,25 +514,15 @@ const clash = await tx.execute(sql`
     AND (wallet_origin = ANY(${claims}) OR expected_origins && ${claims})`);
 ```
 
-Every writer of `wallet_origin` or `expected_origins` (seed, create, update) takes the same lock, so
+Every writer of `wallet_origin` or `expected_origins` (fixtures, create, update) takes the same lock, so
 two concurrent creates claiming the same origin serialise and the second gets
 `409 origin-claimed` naming the origin and the other tenant's slug. The lock is per deployment, not
 per tenant, which is fine at this write rate.
 
-The seed gains the same check. The seeds in `deploy/docker-compose.{e2e,dev,sepolia}.yml` claim
-disjoint origins and boot unchanged. The AWS dev seed is the ASM secret `tenants-seed`
-(`infra/iac/ecs_services.tf:52`), whose contents are not in the repository; it has to be checked
-before this ships (O-8). A seed that overlaps refuses to boot, which is what every other seed violation already does.
-
-**Runtime state can stop a deploy from booting.** The seed is checked against every row, including
-tenants operators created and tenants that were deleted. So a seed entry that claims an origin an
-operator tenant holds refuses boot, and so does one that reuses a deleted slug (§9). This is
-accepted. The alternative is two tenants answering one origin.
-
-During an ECS rolling deploy the old tasks keep serving while the new ones fail, so the cost is a
-failed deploy, not an outage. The boot error names the origin, the other tenant's slug, and that
-tenant's `managed_by` and `status`, so the fix is obvious. The fix is one of: drop the entry from
-the seed, give it another origin, or adopt the operator tenant into the seed by its own slug (§9).
+The local-stack fixtures (§9) get the same check against the database, and are checked against each
+other before any is written. A fixture whose origin another tenant already claims fails the
+one-shot, and with it the stack's bring-up, naming the origin and the other tenant's slug and
+`status`.
 
 `corsOrigins` and `allowedDappOrigins` are not claims: two tenants may list the same dApp, and
 `isCorsOrigin` only answers yes or no.
@@ -561,21 +549,16 @@ because that is what operators type; responses always include the id.
 | `POST /v1/operator/auth/verify` | Session from a signed message (§4.3) | `200 { token, expiresAt, operator }`, `401` |
 | `POST /v1/operator/auth/logout` | Revoke the presented session | `204`, `401` |
 | `GET /v1/operator/tenants?status=` | List, newest first; default excludes `deleted` | `200 { tenants: TenantSummary[] }` |
-| `GET /v1/operator/tenants/:slug` | One tenant: all fields, `managedBy`, `status`, `version`, admin keys (id, label, hash prefix, createdBy, createdAt), user and credential counts, last userop time, per-chain ledger position from `paymaster_tenants` | `404` |
+| `GET /v1/operator/tenants/:slug` | One tenant: all fields, `status`, `version`, admin keys (id, label, hash prefix, createdBy, createdAt), user and credential counts, last userop time, per-chain ledger position from `paymaster_tenants` | `404` |
 | `POST /v1/operator/tenants` | Create. Body `tenantCreateSchema`. `id` optional, for a tenant already registered on-chain under a fixed id | `201 { tenant, adminKeys: [{ id, label, key }] }` — plaintext once. `400` with per-path issues, `409 origin-claimed` / `conflict` |
-| `PATCH /v1/operator/tenants/:slug` | Update mutable fields: `rpName`, `expectedOrigins`, `allowedDappOrigins`, `corsOrigins`, `openRegistration`, `policy`, `branding`. Requires `If-Match: "<version>"` | `200`, `400`, `409 seed-managed`, `409 origin-claimed`, `412 version-mismatch`, `422 immutable-field` if the body names `slug`, `id`, `walletOrigin` or `rpId` |
+| `PATCH /v1/operator/tenants/:slug` | Update mutable fields: `rpName`, `expectedOrigins`, `allowedDappOrigins`, `corsOrigins`, `openRegistration`, `policy`, `branding`. Requires `If-Match: "<version>"` | `200`, `400`, `409 origin-claimed`, `412 version-mismatch`, `422 immutable-field` if the body names `slug`, `id`, `walletOrigin` or `rpId` |
 | `POST /v1/operator/tenants/:slug/suspend` | `active → suspended`. Body `{ reason }`, recorded | `409 invalid-transition` |
 | `POST /v1/operator/tenants/:slug/resume` | `suspended → active` | `409 invalid-transition` |
 | `DELETE /v1/operator/tenants/:slug` | `suspended → deleted`, under §5.3 | `204`, the `409`s in §5.3 |
-| `POST /v1/operator/tenants/:slug/admin-keys` | Issue a key. Body `{ label }`. Active tenants only | `201 { id, label, key }` — plaintext once. `409 seed-managed`, `409 invalid-transition` |
-| `DELETE /v1/operator/tenants/:slug/admin-keys/:keyId` | Revoke. Refused if it is the last key and `openRegistration` is false | `204`, `409 seed-managed`, `409 last-admin-key` |
-| `POST /v1/operator/tenants/:slug/adopt` | `managed_by: seed → operator`. Refused while the slug is still in the running process's `TENANTS_SEED` | `409 still-seeded` |
+| `POST /v1/operator/tenants/:slug/admin-keys` | Issue a key. Body `{ label }`. Active tenants only | `201 { id, label, key }` — plaintext once. `409 invalid-transition` |
+| `DELETE /v1/operator/tenants/:slug/admin-keys/:keyId` | Revoke. Refused if it is the last key and `openRegistration` is false | `204`, `409 last-admin-key` |
 | `GET /v1/operator/tenants/:slug/history?before=` | `tenant_history`, newest first, 50 per page | `200 { entries, next }` |
 | `GET /v1/operator/chains` | Blockchain status (§10). *Follow-up card (H-k); not registered by H5.* | `200` |
-
-On a seed-managed tenant only suspend and resume are allowed (§5.1). The next boot does not
-reactivate a seed-managed tenant an operator suspended, because `seedTenants` never touches
-`status`.
 
 ### 7.2 Concurrency
 
@@ -586,8 +569,8 @@ and check the source state, so two operators suspending at once get one `200` an
 ### 7.3 Generated admin keys
 
 32 random bytes, base64url, prefixed `gak_` so a leaked key is recognisable in a secret scanner.
-The prefix is cosmetic: `resolveAdminTenant` hashes whatever it is given, so seeded keys without
-the prefix keep working.
+The prefix is cosmetic: `resolveAdminTenant` hashes whatever it is given, so keys without the
+prefix (fixture keys, and keys the retired seed wrote) keep working.
 
 ---
 
@@ -620,25 +603,35 @@ suspension still counts as immediate.
 
 ---
 
-## 9. Coexistence with `TENANTS_SEED`
+## 9. Retiring `TENANTS_SEED`
 
-| Situation at boot | Behaviour |
-| --- | --- |
-| Seed slug not in the table | Insert, `managed_by = 'seed'`, history `create` with actor `seed` |
-| Seed slug matches a seed-managed row | Today's upsert; history `seed-apply` only if something changed; `status` untouched |
-| Seed slug matches an **operator-managed** row | Takeover: upsert, set `managed_by = 'seed'`, history `seed-takeover`, `WARN` log naming the slug. The admin-key set becomes the seed's, so operator-issued keys are removed. `status` is untouched. Immutability checks (`rpId`, `id`) still apply and still refuse boot on mismatch. |
-| Seed slug matches a **deleted** row | Refuse boot: `tenant "<slug>" was deleted; a deleted tenant is never re-created` |
-| Seed-managed row whose slug is no longer in the seed | Left as is. It stays seed-managed, limited to suspend and resume, until an operator adopts it (`POST …/adopt`). |
+`TENANTS_SEED` used to upsert tenants by slug at every boot, which made it a second writer next to
+the operators and needed ownership rules between the two (H-h). It is retired. `wallet-api` no
+longer reads it, and boots with zero tenants, logging a warning until an operator creates one. On
+every live deployment (dev, staging, prod) tenants are created, edited, suspended and deleted only
+by Giano's operators, in the console's Operator area (§7, §11). The seed-only rules went with it:
+seed takeover at boot, the suspend-and-resume-only limit on seed-managed tenants, the
+`POST …/adopt` route, the `409 seed-managed` and `409 still-seeded` errors, and `managedBy` in
+operator responses.
 
-The takeover row is the way to move a tenant from runtime management into reviewed config: copy it
-into the seed, deploy, and the seed owns it from then on. Adopt goes the other way.
+**One-time boot migration.** A database an earlier version wrote still holds the seed's tenants as
+`managed_by = 'seed'`. At boot, `services/tenants-seed-retirement.ts` hands each to the operators:
+`managed_by = 'operator'`, `version` + 1, and a history entry `adopt` with actor
+`system:tenants-seed-retirement`. It runs under the tenant-write lock, so concurrent replicas
+convert each row once, and it is a no-op once no seed-managed row is left. It also warns when
+`TENANTS_SEED` is still set. It is transitional: it is deleted, together with the `managed_by`
+column, once every deployment has run it.
 
-Every replica runs `seedTenants` at boot, concurrently. The upsert reads the existing row
-`FOR UPDATE`, so two replicas applying the same change serialise. The second then sees no
-difference and writes no `seed-apply` or `seed-takeover` row.
-
-`TENANTS_SEED` stays the only way to provision tenants in the e2e and devnet stacks, which have to
-come up deterministic with fixed ids pre-registered on the devnet paymaster.
+**Local stacks.** The e2e, dev, loopback and Sepolia compose stacks still have to come up
+deterministic, with fixed tenant ids pre-registered on the devnet paymaster and fixed admin keys the
+provisioners and the e2e suite use. They get them from a separate one-shot compose service,
+`tenant-fixtures` (`node dist/tenant-fixtures.js`, source `src/tenant-fixtures.ts` and
+`src/services/tenant-fixtures.ts`). It reads `TENANT_FIXTURES`, a JSON array with the old seed
+entry's fields, including a pinned `id` and plaintext `adminKeys`; runs migrations; and creates
+each missing tenant through the same invariant and origin-claim checks as every other write (§6),
+with actor `fixture`. `wallet-api` starts only after it completes. It is insert-only: an existing
+slug is left untouched, so console edits survive a restart and `down -v` resets the fixtures. No
+live deployment runs it, and no configuration of `wallet-api` can make it create a tenant.
 
 ---
 
@@ -736,7 +729,7 @@ tabs; the Chains tab belongs to the follow-up card (H-k).
 
 | Tab | Contents |
 | --- | --- |
-| **Tenants** | Registry table: slug, id, status, managed-by, wallet origin, users, and per selected chain an *on-chain* column joined from the paymaster roster by id: `registered · enabled`, `registered · disabled`, or `not registered`. A fourth group lists tenants on the roster with **no** registry row, which today nobody can see. Row → detail drawer with fields, keys, ledger position and history. |
+| **Tenants** | Registry table: slug, id, status, wallet origin, users, and per selected chain an *on-chain* column joined from the paymaster roster by id: `registered · enabled`, `registered · disabled`, or `not registered`. A fourth group lists tenants on the roster with **no** registry row, which today nobody can see. Row → detail drawer with fields, keys, ledger position and history. |
 | **Chains** *(follow-up card)* | One card per served chain from `/v1/operator/chains`, with the thresholds applied and the same ok/check/failing badges as `HealthPanel`. |
 | **Sign-in** | Shown in place of the other two until the operator has a session. One button, *Sign in with wallet*: connects the wallet if needed, then runs §4.2 with the connected address and the selected chain. Shows which operator id and address are signed in and when the session expires. Any `401` returns here. |
 
@@ -763,7 +756,7 @@ what changed.
 chain where the tenant is registered and enabled, and says why (§5.1, the authorisation window).
 **Resume** offers the reverse.
 
-**Delete.** Only on a suspended, operator-managed tenant. Type-the-slug confirmation, which also
+**Delete.** Only on a suspended tenant. Type-the-slug confirmation, which also
 says the slug, wallet origin and RP ID can never be used again (H-d). A `409` shows the per-chain
 balance or open reservations from the response.
 
@@ -780,7 +773,7 @@ balance or open reservations from the response.
 | **O-5** | **Serving a runtime tenant's wallet origin** still needs infra (§1.3). The real fix is the Host-resolved `wallet-web` config already listed as unbuilt in [`ARCHITECTURE.md`](./ARCHITECTURE.md). Worth a card of its own, because until it lands "create a tenant at runtime" means "create the backend half at runtime". |
 | **O-6** | *Resolved by D6.* **`INFRASTRUCTURE.md` R31** says `paymaster-admin` proxies `/api` to `wallet-api`. It now does, when `GIANO_WALLET_API_UPSTREAM` is set, and R31 says so. |
 | **O-7** | **Branding** is stored and editable through this API, and still read by nothing. Editing it in the console changes no UI. The console labels the field accordingly. |
-| **O-8** | **The AWS dev `tenants-seed` secret** must be checked before D3 deploys, or `wallet-api` will refuse to boot on dev. Check two things: overlapping origin claims (§6.2), and keys outside the field schema, which `.strict()` now refuses (§6.1). Every seed in `deploy/` passes both. |
+| **O-8** | *Resolved by retiring `TENANTS_SEED` (§9).* `wallet-api` no longer reads the AWS dev `tenants-seed` secret, so its contents can no longer stop a boot. Terraform no longer injects it anywhere; devops can delete it. |
 | **O-9** | **Wallets that skip the EIP-4361 domain check.** The phishing protection in §4.3 relies on the operator's wallet warning about a `domain` mismatch. MetaMask, Rabby and Ledger Live do; an arbitrary wallet may not. The operator list is small, so the mitigation is a written rule: operators sign in with one of those wallets, on a hardware device. |
 
 Risk worth naming: **a suspended tenant's dApp users see failures, not an explanation.** Ceremonies
@@ -798,7 +791,7 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 | R1 — read | §7.1 `GET` list / detail / history, §11.2 Tenants tab |
 | R1 — update | §7.1 `PATCH`, §6.1 merge-then-validate, §7.2 concurrency |
 | R1 — delete | §5.3 tombstone delete, §5.1 suspend, §7.1 lifecycle routes |
-| R1 — without a redeploy | §8: per-request resolution, no tenant cache; §9: seed no longer the only writer |
+| R1 — without a redeploy | §8: per-request resolution, no tenant cache; §9: operators the only writer |
 | R1 — the tenant ≡ wallet origin ≡ RP ID invariant holds | §6.1 single validator, §6.2 disjoint origin claims, H-f immutable fields |
 | R1 — operator surface, not tenant-facing | §4: configured operator addresses, wallet sign-in, a separate guard, no cross-origin path |
 | Blockchain status | Follow-up card (H-k); §10 and §11.2's Chains tab are its starting point, pending O-1 |
@@ -811,7 +804,7 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
 | --- | --- |
 | D1 ✅ | `src/config.ts` (the `OPERATOR_*` variables in §4.1, `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`), `src/routes/operator-auth.ts` (challenge, verify, logout), `src/services/operator-sessions.ts`, `src/plugins/auth.ts` (`requireOperator`), `scripts/operator-login.ts` |
 | D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
-| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`, seed ownership rules) |
+| D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts`, `src/tenant-fixtures.ts` (local-stack fixtures) and `src/services/tenants-seed-retirement.ts` (one-time) replace the seed (§9) |
 | D4 ✅ | `src/routes/operator-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when `OPERATOR_ADDRESSES` is non-empty), `openapi/` |
 | D5 *(follow-up card)* | `src/routes/operator-chains.ts`, `src/services/chains.ts` (keep last verification and probe), `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts` (prober stores both) |
 | D6 ✅ (tenant half) | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/operator-api.ts`, `src/lib/operator-session.ts`, `src/operator/{SignIn,TenantsTab,TenantDrawer}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
@@ -826,22 +819,25 @@ intended behaviour. The operator who suspends is expected to tell the tenant.
   `rpId` → `400`; `openRegistration: false` with no keys → `400`; `PATCH` that would leave a closed
   tenant keyless → `400`.
 - **Origin claims.** Two concurrent creates claiming the same origin → exactly one `201`, one
-  `409 origin-claimed`. A seed whose `expectedOrigins` overlaps another seed's `walletOrigin`
-  refuses to boot. A deleted tenant's origin stays claimed.
+  `409 origin-claimed`. A fixture whose `expectedOrigins` overlaps another fixture's `walletOrigin`
+  is refused before anything is written. A deleted tenant's origin stays claimed.
 - **Immutability.** `PATCH` naming `walletOrigin`, `rpId`, `id` or `slug` → `422`.
 - **Lifecycle resolution.** For a suspended tenant: `Origin` ceremony → `403`; `/.well-known/webauthn`
   by Host → `404`; its admin key → `401`; an existing session, with and without `Origin` → `401`;
   its CORS origin gets no ACAO. Resume → the same session works again.
-- **Delete.** Active → `409`; seed-managed → `409`; non-zero ledger balance → `409` with figures;
+- **Delete.** Active → `409`; non-zero ledger balance → `409` with figures;
   open reservation → `409`; a reservation still `reserved` but past `expires_at` → allowed; stale
   ledger → `409`; no ledger rows at all → allowed; success → user sessions and keys gone,
   `userop_log` rows intact, slug unusable by a later create.
 - **Housekeeping.** The sweep deletes tenant and operator challenges that expired more than a day
   ago, and leaves younger ones.
-- **Seed-managed writes.** `PATCH`, key issue, key revoke and delete → `409 seed-managed`; suspend
-  and resume → `200`.
-- **Seed coexistence.** Each row of the §9 table, including that a restart does not reactivate a
-  suspended seed-managed tenant and does not write a history row when nothing changed.
+- **Seed retirement.** Every seed-managed tenant, in any state, becomes operator-managed with its
+  fields, keys and state kept and one `adopt` entry; a database with none is left alone; two
+  replicas booting at once adopt each tenant once; a still-set `TENANTS_SEED` is warned about and
+  ignored.
+- **Fixtures.** An unknown slug is created with hashed keys and a `create` entry by `fixture`; an
+  existing slug is left exactly as it is; a deleted slug is never re-created; two loaders at once
+  create the tenant once.
 - **Operator sign-in.** A valid challenge signed by a listed EOA → session. Each of these → `401`
   with identical bodies: a signature by a different key; an address not in the list; a reused nonce;
   an expired challenge; the issued message with any field changed (`domain`, `uri`, `version`,
@@ -901,7 +897,7 @@ set -l slug h5-acceptance-(date +%s)
 curl -s -H $auth -H 'Content-Type: application/json' -X POST $base/tenants -d "{
   \"slug\": \"$slug\", \"walletOrigin\": \"https://$slug.invalid.example\",
   \"rpName\": \"H5 acceptance\", \"adminKeys\": [{ \"label\": \"acceptance\" }] }" | jq '.tenant.id'
-curl -s -H $auth $base/tenants/$slug | jq '{status, managedBy, version}'
+curl -s -H $auth $base/tenants/$slug | jq '{status, version}'
 curl -s -H $auth -H 'Content-Type: application/json' -X POST $base/tenants/$slug/suspend -d '{"reason":"acceptance"}'
 curl -s -H $auth -X DELETE -o /dev/null -w '%{http_code}\n' $base/tenants/$slug   # → 204
 curl -s -H $auth "$base/tenants?status=deleted" | jq '.tenants[].slug'            # includes $slug

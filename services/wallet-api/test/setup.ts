@@ -6,11 +6,11 @@ import { buildApp } from '../src/app.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { createDb, type Db } from '../src/db/index.js';
 import { runMigrations } from '../src/migrate.js';
-import { seedTenants } from '../src/services/tenants.js';
+import { loadTenantFixtures, parseTenantFixtures } from '../src/services/tenant-fixtures.js';
 import { stopPostgres } from './postgres.js';
 
 /**
- * Two seeded tenants. Tenant A keeps the pre-tenancy test values (origin
+ * Two fixture tenants. Tenant A keeps the pre-tenancy test values (origin
  * localhost:4000, rpId localhost) so the webauthn fixtures and most assertions carry
  * over; tenant B exists to prove isolation and runs with closed registration.
  */
@@ -147,7 +147,7 @@ export type TestContext = {
   chainState: MockChainState;
 };
 
-const tenantSeedJson = JSON.stringify([
+const tenantFixtures = parseTenantFixtures(JSON.stringify([
   {
     slug: TENANT_A.slug,
     walletOrigin: TENANT_A.walletOrigin,
@@ -165,7 +165,7 @@ const tenantSeedJson = JSON.stringify([
     openRegistration: TENANT_B.openRegistration,
     adminKeys: [TENANT_B.adminKey],
   },
-]);
+]));
 
 export async function startTestStack(envOverrides: Record<string, string> = {}): Promise<TestContext> {
   const container = await new PostgreSqlContainer('postgres:17-alpine').start();
@@ -181,7 +181,6 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
     GIANO_DEPLOYMENT_CLASS: 'development',
     LOG_LEVEL: 'error',
     DATABASE_URL: databaseUrl,
-    TENANTS_SEED: tenantSeedJson,
     CHAIN_ID: '31337',
     RPC_URL: rpc.url,
     BUNDLER_URL: 'http://bundler.test',
@@ -198,8 +197,8 @@ export async function startTestStack(envOverrides: Record<string, string> = {}):
   const config = loadConfig({ ...baseEnv, ...envOverrides } as NodeJS.ProcessEnv);
 
   const { db, pool } = createDb(databaseUrl);
-  // the production write path — tenant seeds run the same validation as a real boot
-  await seedTenants(db, config.TENANTS_SEED);
+  // the local stacks' write path — the same validation and origin-claim checks as an operator create
+  await loadTenantFixtures(db, tenantFixtures);
   const app = await buildApp({ config, db, fetchImpl });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState };
 }
@@ -325,7 +324,6 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
     GIANO_DEPLOYMENT_CLASS: 'development',
     LOG_LEVEL: 'error',
     DATABASE_URL: databaseUrl,
-    TENANTS_SEED: tenantSeedJson,
     CHAIN_ID: '31337',
     RPC_URL: rpc.url,
     BUNDLER_URL: 'http://bundler.test',
@@ -342,7 +340,7 @@ export async function startSponsorshipStack(envOverrides: Record<string, string>
   } as NodeJS.ProcessEnv);
 
   const { db, pool } = createDb(databaseUrl);
-  await seedTenants(db, config.TENANTS_SEED);
+  await loadTenantFixtures(db, tenantFixtures);
   const app = await buildApp({ config, db, fetchImpl, paymasterReader: createFakePaymasterReader(paymasterState) });
   return { container, db, pool, rpc, config, app, bundlerCalls: calls, chainState, paymasterState };
 }

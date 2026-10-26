@@ -24,11 +24,10 @@ test.describe('operator console', () => {
     await expect(page.getByText('ops-console')).toBeVisible();
   });
 
-  test('the registry shows the seeded tenants joined to the paymaster roster', async ({ page }) => {
+  test('the registry shows the fixture tenants joined to the paymaster roster', async ({ page }) => {
     for (const slug of ['stock', 'byo']) {
       const row = page.getByTestId(`tenant-row-${slug}`);
       await expect(row).toContainText('active');
-      await expect(row).toContainText('seed');
       await expect(row).toContainText('registered · enabled');
     }
   });
@@ -48,7 +47,6 @@ test.describe('operator console', () => {
     await create.getByRole('button', { name: 'Done' }).click();
 
     const row = page.getByTestId(`tenant-row-${slug}`);
-    await expect(row).toContainText('operator');
     await expect(row).toContainText('not registered');
 
     await row.click();

@@ -114,7 +114,8 @@ dev would then never exercise the one onboarding step that costs a client anythi
 **Two tenants, because there are two ways to be one.** `example` takes Giano's stock UI and reaches
 it by `CNAME`; `byoui` serves a wallet SPA it wrote itself
 (`e2e/wallet-byo/`, `DEVELOPER-GUIDE.md` §5.5b) at its own wallet origin, so it points at Giano's
-wallet hostname not at all. Both are ordinary rows in `TENANTS_SEED`, both resolve against the same
+wallet hostname not at all. Both are ordinary tenant rows that Giano's operators manage in the
+paymaster console's Operator area, both resolve against the same
 wallet-api, Postgres and bundler, and each has its own irreversible RP ID. A dev environment that
 serves only one of the two shapes cannot show that the other works — and cross-tenant isolation is
 not observable at all with a single tenant.
@@ -238,7 +239,7 @@ R20 --> TGE
 R25 --> TGE2
 R30 --> TGP
 
-NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 TENANTS_SEED row.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the TENANTS_SEED row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
+NOTE["Adding a STOCK-UI tenant = 1 CNAME + 1 certificate + 1 hostname on rule 40 + 1 tenant created in the console's Operator area.<br/>No new container, task definition, target group or load balancer.<br/>A BYO tenant normally costs Giano only the tenant row — it hosts its own UI.<br/>byoui is hosted here anyway, so the BYO serving contract is exercised rather than described."]
 TGW -.- NOTE
 TGBYO -.- NOTE
 
@@ -1471,7 +1472,7 @@ The whole per-tenant cost, and the script dev's own example tenant follows:
 | 2 | Request an ACM certificate for `wallet.<tenant>.com`; tenant adds the validation `CNAME` ACM asks for | Giano + tenant DNS | free |
 | 3 | Attach it to the HTTPS listener as an additional SNI certificate | Terraform | free |
 | 4 | Add the hostname to `var.tenant_wallet_hosts` → the §5.7 rule 40 host list | Terraform | free |
-| 5 | Add the tenant to `TENANTS_SEED` and restart wallet-api | operator | one row |
+| 5 | Create the tenant in the paymaster console's Operator area — no restart | operator | one row |
 
 Steps 1 and 2 need the tenant to act, and step 2 needs them to act *again* on certificate renewal
 unless the validation `CNAME` is left in place — ACM renews automatically only while that record
@@ -1484,7 +1485,7 @@ allowlist into one shared list.
 
 **A BYO tenant skips steps 1 to 4 entirely.** It serves its own SPA on its own infrastructure, so
 Giano provisions no DNS record, no certificate and no listener rule for it — only step 5, the
-`TENANTS_SEED` row. All it must do is reproduce the serving contract (`DEVELOPER-GUIDE.md` §5.5b):
+tenant row. All it must do is reproduce the serving contract (`DEVELOPER-GUIDE.md` §5.5b):
 same-origin `/api` and `/.well-known/webauthn` proxies that forward `Origin` untouched and preserve
 the browser's `Host`. Tenant `byoui` is the exception that makes it testable — Giano hosts its UI
 here ([§14.5](#145-wallet-byo)), so in dev those four steps do apply to it.
@@ -1653,17 +1654,16 @@ The inventory for `dev`, all values hand-authored in the 1Password note:
 | `chains` | the backend chain document (`packages/contracts/chains.ts`) — both chain entries, RPC URLs embedded, shared fields plus per-service sections (§14.2) | wallet-api and bundler (as `GIANO_CHAINS`), paymaster-admin (as `GIANO_DEPLOYMENTS`, §14.6) |
 | `sponsorship-signer-key` | 32-byte hex | wallet-api |
 | `alto-executor-key` | 32-byte hex — **the same key on both chains**, funded separately on each ([§13.2](#132-funded-accounts)); keeps its Alto-era name | bundler (as `BUNDLER_EXECUTOR_PRIVATE_KEYS`) |
-| `tenants-seed` | the [§14.2](#142-wallet-api) JSON, carrying `adminKeys` | wallet-api |
+| `tenants-seed` | **no longer read**: `TENANTS_SEED` is retired ([§14.2](#142-wallet-api)); safe to delete once every environment has booted the retiring release | nothing |
 | `metrics-bearer-token` | random string | wallet-api |
 
-**`chains` is a composed secret, not a derived one** — the same shape as `tenants-seed`. Most of
+**`chains` is a composed secret, not a derived one.** Most of
 what it carries (chain id, name, entry point, factory, paymaster address, policy, each service's
 section) is a plan-time-knowable literal, not a secret at all; but each chain
 entry's `rpcUrl` embeds a QuickNode API key, and the ECS `secrets` block can only substitute a
 **whole** environment variable from a **single** secret ARN — it cannot interpolate a secret into
 the middle of a larger JSON string Terraform composes. So the whole array is hand-typed into
-1Password, exactly as `tenants-seed` already is for the same reason (it embeds `adminKeys` alongside
-otherwise-literal tenant fields).
+1Password.
 
 There is only the one composed `GIANO_CHAINS` secret, and the bundler ([§14.7](#147-bundler)) and
 `paymaster-admin` read that same value rather than a second one of their own
@@ -2142,7 +2142,6 @@ module "svc-wallet-api" {
     DATABASE_URL                 = aws_secretsmanager_secret.database-url.arn
     GIANO_CHAINS                 = module.asm-app.secret_arns["chains"]
     SPONSORSHIP_SIGNER_KEY_REF   = module.asm-app.secret_arns["sponsorship-signer-key"]
-    TENANTS_SEED                 = module.asm-app.secret_arns["tenants-seed"]
     METRICS_BEARER_TOKEN         = module.asm-app.secret_arns["metrics-bearer-token"]
   }
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
@@ -2296,7 +2295,7 @@ if (config.RUN_MIGRATIONS) {
     console.log(`Applied migrations: ${applied.join(', ')}`);
   }
 }
-// ... createDb, seedTenants, buildApp, listen — all AFTER this point
+// ... createDb, buildApp, listen — all AFTER this point
 ```
 
 `runMigrations` (`services/wallet-api/src/migrate.ts`) applies `migrations/*.sql` in filename order
@@ -2344,7 +2343,7 @@ rejects, Node exits non-zero) rather than failing a *separate* container — fro
 indistinguishable from any other application crash: `Essential container in task exited`, the
 service does not stabilise, the circuit breaker rolls back. The evidence is in the same place a
 crash's evidence always is — the application container's own log stream, which is the same stream
-`seedTenants` and everything else logs to, so there is no second container's logs to think to check.
+everything else logs to, so there is no second container's logs to think to check.
 
 ### 9.7 One-shot tasks
 
@@ -2355,6 +2354,10 @@ using the `RUN_TASK_NETWORK` output ([§4.7](#47-outputs)).
 way `e2e/devnet/provision-sponsorship.mjs` does for the e2e stack. Run once at bring-up **per
 tenant** and whenever the rules change. A tenant with no rules gets no sponsorship, so skipping this
 produces an environment where every transaction is refused — which looks exactly like a bug.
+
+The tenant's admin key reaches it as `ADMIN_API_KEY`, passed per run in the overrides next to
+`TENANT_SLUG`, not from a secret. Issue a key for the run in the paymaster console's Operator area
+and revoke it afterwards, because ECS keeps overrides in the task's description.
 
 It uses the same execution role pattern as the services and its own task role, and runs in the
 private subnets with `assign_public_ip = false`.
@@ -2700,7 +2703,6 @@ hand** and is not managed by Terraform.
   "chains":                 { "value": "[{…},{…}]",             "version": 1 },
   "sponsorship-signer-key": { "value": "0x…",                   "version": 1 },
   "alto-executor-key":      { "value": "0x…",                   "version": 1 },
-  "tenants-seed":           { "value": "[{…}]",                 "version": 1 },
   "metrics-bearer-token":   { "value": "…",                     "version": 1 }
 }
 ```
@@ -2986,7 +2988,6 @@ and `SPONSORSHIP_PAYMASTER_ADDRESS` as shorthand-only.
 | `SPONSORSHIP_SIGNER_KIND` | `local` | literal |
 | `SPONSORSHIP_SIGNER_KEY_REF` | 32-byte hex key | **ASM** `giano-dev-sponsorship-signer-key` |
 | `PAYMASTER_WATCHER_ENABLED` | `true` | literal |
-| `TENANTS_SEED` | two tenants, below | **ASM** `giano-dev-tenants-seed` (carries `adminKeys`) |
 | `METRICS_BEARER_TOKEN` | random | **ASM** `giano-dev-metrics-bearer-token` |
 | `LOG_LEVEL` | `info` | literal |
 
@@ -3058,7 +3059,11 @@ default from the contracts registry the way a single-chain shorthand deployment 
 wrong here is a drift risk the shorthand shape does not have, and worth double-checking against
 `packages/contracts/canonical.ts` when this secret is authored or updated.
 
-The tenant seed:
+The tenants are not configuration. `TENANTS_SEED` is retired: wallet-api no longer reads it, boots
+fine with no tenants, and Giano's operators create and edit them in the paymaster console's Operator
+area ([`OPERATOR-ADMIN-SPECS.md`](./OPERATOR-ADMIN-SPECS.md) §9). dev's two were written by the
+retired seed and handed to the operators at the first boot of the retiring release. As tenant
+fields, they are:
 
 ```json
 [
@@ -3088,10 +3093,10 @@ The tenant seed:
 ```
 
 Both rows are tenants of the **app**, never of the environment: each `walletOrigin` is that tenant's
-own hostname and `rpId` equals its host, because `validateTenantSeed` requires it to
-(`services/wallet-api/src/services/tenants.ts` — decision D1 there). The CNAME model is fully
+own hostname and `rpId` equals its host, because `checkTenantInvariants` requires it of every tenant
+write (`services/wallet-api/src/services/tenants.ts` — decision D1 there). The CNAME model is fully
 compatible with that strict rule: the RP ID is still the wallet origin's own host, just the tenant's
-rather than Giano's. Nothing in `wallet.dev.giano.appliedblockchain.dev` appears in this seed, and nothing should
+rather than Giano's. Nothing in `wallet.dev.giano.appliedblockchain.dev` appears in either row, and nothing should
 — a tenant row for Giano's own serving hostname is how a passkey ends up bound to infrastructure.
 
 The two rows are indistinguishable to wallet-api, which is the point: it has no notion of who wrote
@@ -3624,8 +3629,8 @@ own schema on boot ([§9.6](#96-migrations-run-on-boot)).
 run by the one-shot task ([§9.7](#97-one-shot-tasks)). Driven entirely by environment:
 `WALLET_API_URL` (an HTTPS endpoint), `TENANT_SLUG`, `CHAIN_ID` (a list — rules are per
 (tenant, chain) and never inherited, so both chains are written in one run), `SPONSORSHIP_CONFIG`
-and the `TENANTS_SEED` secret the admin key
-is looked up in, out to a `PUT /v1/admin/sponsorship` per chain.
+and `ADMIN_API_KEY`, the tenant's admin key, passed per run next to `TENANT_SLUG`
+([§9.7](#97-one-shot-tasks)), out to a `PUT /v1/admin/sponsorship` per chain.
 
 It validates the rules against the same schema the API applies before it writes anything, reads
 the configuration back rather than trusting the write, and checks the tenant's registration and
@@ -3662,7 +3667,7 @@ per-tenant allowlist, which is the actual control, is gone. Branding degrades th
 tenant shows one brand name.
 
 There is no server-side backstop today. wallet-api stores `allowed_dapp_origins` per tenant
-(`db/schema.ts`) and writes it at seed time (`services/tenants.ts`), but **reads it nowhere** — no
+(`db/schema.ts`) and writes it on every tenant write (`services/tenants.ts`), but **reads it nowhere** — no
 route consults it.
 
 The fix is small because the data already exists per tenant. Add a public, `Host`-resolved endpoint
@@ -3673,8 +3678,8 @@ fetches it after `/config.json` and prefers its values, keeping the env values a
 single-tenant and local stacks. Then:
 
 - `GIANO_ALLOWED_DAPP_ORIGINS` and `GIANO_BRAND_NAME` leave the §14.3 table.
-- The allowlist becomes per tenant again, fail-closed, and provisioned by the same `TENANTS_SEED`
-  entry that provisions everything else about a tenant — so §6.6 step 5 stays one row.
+- The allowlist becomes per tenant again, fail-closed, and provisioned by the same tenant row an
+  operator writes for everything else about a tenant — so §6.6 step 5 stays one row.
 - An unknown `Host` gets the same 404 `requireTenantByHost` already returns, so a probe on Giano's
   own serving hostname learns nothing and, correctly, cannot connect any dApp.
 
@@ -4606,14 +4611,21 @@ NET=$(terraform output -json RUN_TASK_NETWORK)
 SUBNETS=$(jq -r '.subnets | join(",")'       <<<"$NET")
 SGS=$(jq   -r '.security_groups | join(",")' <<<"$NET")
 
-for TENANT in example byoui; do
+# one admin key per tenant, issued for this run in the paymaster console's Operator area;
+# revoke both once the tasks have finished (ECS keeps overrides in the task's description)
+EXAMPLE_ADMIN_KEY='gak_…'
+BYOUI_ADMIN_KEY='gak_…'
+
+for PAIR in "example:${EXAMPLE_ADMIN_KEY}" "byoui:${BYOUI_ADMIN_KEY}"; do
+  TENANT=${PAIR%%:*}
+  ADMIN_API_KEY=${PAIR#*:}
   aws ecs run-task \
     --cluster "${CLUSTER}" \
     --task-definition "${PREFIX}-provision-sponsorship" \
     --launch-type FARGATE \
     --network-configuration \
       "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SGS}],assignPublicIp=DISABLED}" \
-    --overrides "{\"containerOverrides\":[{\"name\":\"provision-sponsorship\",\"environment\":[{\"name\":\"TENANT_SLUG\",\"value\":\"${TENANT}\"}]}]}" \
+    --overrides "{\"containerOverrides\":[{\"name\":\"provision-sponsorship\",\"environment\":[{\"name\":\"TENANT_SLUG\",\"value\":\"${TENANT}\"},{\"name\":\"ADMIN_API_KEY\",\"value\":\"${ADMIN_API_KEY}\"}]}]}" \
     --query 'tasks[0].taskArn' --output text
 done
 ```

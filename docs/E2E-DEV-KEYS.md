@@ -161,7 +161,7 @@ authenticator, so no credential is ever stored in the repository. There is no pa
 | http://bundler.localhost | 4337 | giano-bundler |
 
 `e2e/origins.mjs` is the single source of truth. `wallet.localhost` and `wallet-byo.localhost` double
-as WebAuthn **RP IDs**, so renaming either means updating `TENANTS_SEED` and `GIANO_RP_ID` to match.
+as WebAuthn **RP IDs**, so renaming either means updating `TENANT_FIXTURES` (the `tenant-fixtures` service) and `GIANO_RP_ID` to match.
 
 ---
 

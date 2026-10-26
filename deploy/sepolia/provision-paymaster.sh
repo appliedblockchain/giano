@@ -35,7 +35,7 @@ CHAIN_ID="${CHAIN_ID:-11155111}"
 # serves (infra/iac/_locals.tf `tenant_hosts`). Each gets TENANT_FUND_ETH, so the deployer spends
 # that amount once per tenant.
 #
-# The ids must equal the ones in that deployment's TENANTS_SEED: the paymaster keys a tenant's
+# The ids must equal the ones in that deployment's database: the paymaster keys a tenant's
 # balance on the 16 bytes of its UUID, and a tenant whose database id differs from its on-chain id
 # has every sponsorship refused as an unknown tenant.
 PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:cf0d5345-0fdb-4688-b1db-9a288c9d9aed,byoui:743480a4-bdc8-4792-8ddf-625e074bd6c2}"

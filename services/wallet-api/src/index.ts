@@ -7,7 +7,7 @@ import { describeFailure, isFatalFailure, verifyChain } from './services/chain-v
 import { HOUSEKEEPING_INTERVAL_MS, pruneExpiredChallenges } from './services/housekeeping.js';
 import { createPaymasterWatcher, type PaymasterWatcher } from './services/paymaster-watcher.js';
 import { createLedgerService } from './services/sponsorship-ledger.js';
-import { seedTenants } from './services/tenants.js';
+import { retireTenantsSeed } from './services/tenants-seed-retirement.js';
 import { tenants as tenantsTable } from './db/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -22,15 +22,14 @@ if (config.RUN_MIGRATIONS) {
 
 const { db, pool } = createDb(config.DATABASE_URL);
 
-// Declarative tenant provisioning (after migrations, before listen). A malformed seed
-// already failed loadConfig; violations of the RP/origin invariants throw here.
-if (config.TENANTS_SEED.length > 0) {
-  await seedTenants(db, config.TENANTS_SEED);
-  console.log(`Seeded tenants: ${config.TENANTS_SEED.map((t) => t.slug).join(', ')}`);
-}
-const [{ count: tenantCount }] = (await db.execute(sql`SELECT count(*)::int AS count FROM tenants`)).rows as [{ count: number }];
+// One-time: hands tenants an earlier version wrote from TENANTS_SEED to the operators. A no-op
+// once none is left; removed in the release after every deployment has run it.
+await retireTenantsSeed(db, { info: (message) => console.log(message), warn: (message) => console.warn(`WARNING: ${message}`) });
+
+// Tenants are created by Giano's operators at runtime, so a deployment may well boot with none.
+const [{ count: tenantCount }] = (await db.execute(sql`SELECT count(*)::int AS count FROM tenants WHERE status = 'active'`)).rows as [{ count: number }];
 if (tenantCount === 0) {
-  console.warn('WARNING: no tenants configured — every tenant-scoped route will refuse requests (set TENANTS_SEED)');
+  console.warn('No active tenants yet — tenant-scoped routes refuse requests until an operator creates one in the paymaster console');
 }
 
 const app = await buildApp({ config, db });

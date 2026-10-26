@@ -34,7 +34,7 @@
 #
 #   * A WebAuthn RP ID is a hostname and does not include the port. Two tenants on
 #     localhost:8081 and localhost:8082 share the RP ID `localhost`, so cross-tenant
-#     isolation stops being observable — and wallet-api refuses a seed with duplicate rpIds.
+#     isolation stops being observable — and wallet-api refuses two tenants with one rpId.
 #   * `http://*.localhost` is a secure context in Chromium and Firefox and resolves to
 #     loopback with no /etc/hosts edit and no local CA, so passkeys just work.
 #
@@ -209,11 +209,9 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   # postgres — wallet-api's database, and the only service that has one.
   #
-  # On a named volume, so wallets and passkeys survive a restart. `down -v` is what discards
-  # them, and it is also the fix when the seed no longer matches what is in the database:
-  # TENANTS_SEED is upserted BY SLUG, so changing a tenant's hostname updates that row, but
-  # the passkeys already bound to the old rpId are orphaned. That is the local rehearsal of
-  # the one mistake a real deployment cannot undo.
+  # On a named volume, so wallets, passkeys and tenants survive a restart. `down -v` is what
+  # discards them, and it is also how a changed tenant fixture takes effect: fixtures only
+  # ever create, so an existing tenant keeps the values it was created with.
   # ════════════════════════════════════════════════════════════════════════════════════════
   postgres:
     image: postgres:17-alpine
@@ -231,6 +229,68 @@ services:
       retries: 10
 
   # ════════════════════════════════════════════════════════════════════════════════════════
+  # tenant-fixtures — the two tenants, created before wallet-api starts.
+  #
+  # wallet-api never creates a tenant itself: on a live deployment its operators do, in the
+  # paymaster console. A loopback stack needs its tenants without that ceremony, so this
+  # one-shot (services/wallet-api/src/tenant-fixtures.ts) creates them. Insert-only — an
+  # existing tenant is left as it is, so a restart never reverts an edit made in the console.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  tenant-fixtures:
+    build: &wallet-api-build
+      context: ..
+      dockerfile: services/wallet-api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['node', 'dist/tenant-fixtures.js']
+    restart: 'no'
+    # the image's healthcheck probes the API, which this container never starts
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgres://giano:giano@postgres:5432/giano
+      NODE_ENV: test
+      # ⚠ `rpId` is IRREVERSIBLE per tenant: passkeys bind to it, and it must equal the
+      # `walletOrigin` host (the fixture schema enforces the second part, and there is no
+      # enforcing the first). Note what is NOT here and must never be: a row for
+      # `wallet.giano.localhost`, the shared serving host. It is where the stock UI is
+      # served from and it is never a relying party.
+      #
+      # ⚠ The `id`s are the on-chain paymaster tenant ids from e2e/devnet/state.json. Change
+      # one and that tenant has no funded balance, which presents as every transaction being
+      # refused rather than as a wrong id.
+      #
+      # `corsOrigins` carries each tenant's dApp origin because the thin connector polls the
+      # public receipt endpoint from the dApp origin, cross-origin. `openRegistration` is
+      # defensible on loopback and nowhere else: anyone who can reach it can create a wallet.
+      TENANT_FIXTURES: |
+        [
+          {
+            "slug": "stock",
+            "walletOrigin": "http://wallet.stock.giano.localhost",
+            "rpId": "wallet.stock.giano.localhost",
+            "rpName": "Giano Local (stock UI)",
+            "allowedDappOrigins": ["http://stock.giano.localhost"],
+            "corsOrigins": ["http://stock.giano.localhost"],
+            "openRegistration": true,
+            "adminKeys": ["e2e-admin-key-stock"],
+            "id": "11111111-1111-4111-8111-111111111111"
+          },
+          {
+            "slug": "byo",
+            "walletOrigin": "http://wallet.byo.giano.localhost",
+            "rpId": "wallet.byo.giano.localhost",
+            "rpName": "Giano Local (BYO UI)",
+            "allowedDappOrigins": ["http://byo.giano.localhost"],
+            "corsOrigins": ["http://byo.giano.localhost"],
+            "openRegistration": true,
+            "adminKeys": ["e2e-admin-key-byo00"],
+            "id": "22222222-2222-4222-8222-222222222222"
+          }
+        ]
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
   # wallet-api — one backend, both tenants, both chains.
   #
   # The only service with database access. It resolves the tenant PER REQUEST — from `Origin`
@@ -238,13 +298,13 @@ services:
   # never per container. That is what lets one wallet-web task serve N relying parties.
   # ════════════════════════════════════════════════════════════════════════════════════════
   wallet-api:
-    build:
-      context: ..
-      dockerfile: services/wallet-api/Dockerfile
+    build: *wallet-api-build
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      tenant-fixtures:
+        condition: service_completed_successfully
     ports:
       # For `curl` against the admin API. The browser reaches this at api.giano.localhost,
       # and the wallet origins proxy it same-origin under /api, which is the path the SPA
@@ -290,50 +350,6 @@ services:
       PAYMASTER_WATCHER_POLL_MS: '1000'
       PAYMASTER_WATCHER_CONFIRMATIONS: '0'
       PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
-
-      # ── The two tenants ────────────────────────────────────────────────────────────────
-      # Declarative, and upserted BY SLUG at boot — after migrations, before listen. A
-      # restart therefore cannot revert a tenant's own sponsorship edits, because those live
-      # behind the admin API rather than here.
-      #
-      # ⚠ `rpId` is IRREVERSIBLE per tenant: passkeys bind to it, and it must equal the
-      # `walletOrigin` host (validateTenantSeed enforces the second part, and there is no
-      # enforcing the first). Note what is NOT here and must never be: a row for
-      # `wallet.giano.localhost`, the shared serving host. It is where the stock UI is
-      # served from and it is never a relying party.
-      #
-      # ⚠ The `id`s are the on-chain paymaster tenant ids from e2e/devnet/state.json. Change
-      # one and that tenant has no funded balance, which presents as every transaction being
-      # refused rather than as a wrong id.
-      #
-      # `corsOrigins` carries each tenant's dApp origin because the thin connector polls the
-      # public receipt endpoint from the dApp origin, cross-origin. `openRegistration` is
-      # defensible on loopback and nowhere else: anyone who can reach it can create a wallet.
-      TENANTS_SEED: |
-        [
-          {
-            "slug": "stock",
-            "walletOrigin": "http://wallet.stock.giano.localhost",
-            "rpId": "wallet.stock.giano.localhost",
-            "rpName": "Giano Local (stock UI)",
-            "allowedDappOrigins": ["http://stock.giano.localhost"],
-            "corsOrigins": ["http://stock.giano.localhost"],
-            "openRegistration": true,
-            "adminKeys": ["e2e-admin-key-stock"],
-            "id": "11111111-1111-4111-8111-111111111111"
-          },
-          {
-            "slug": "byo",
-            "walletOrigin": "http://wallet.byo.giano.localhost",
-            "rpId": "wallet.byo.giano.localhost",
-            "rpName": "Giano Local (BYO UI)",
-            "allowedDappOrigins": ["http://byo.giano.localhost"],
-            "corsOrigins": ["http://byo.giano.localhost"],
-            "openRegistration": true,
-            "adminKeys": ["e2e-admin-key-byo00"],
-            "id": "22222222-2222-4222-8222-222222222222"
-          }
-        ]
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # sponsorship-provisioner — installs each tenant's sponsorship RULES, then verifies them.

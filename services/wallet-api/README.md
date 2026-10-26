@@ -8,9 +8,12 @@ ERC-4337 user-operation relay. Distributed as `ghcr.io/appliedblockchain/giano-w
 client projects. Every tenant owns its wallet origin, and that origin's host is the tenant's
 WebAuthn RP ID — 1:1 (`specs/DEVELOPER-GUIDE.md` §1). The origin may serve Giano's stock
 wallet-web UI or a UI the tenant built itself; both are the same architecture. Tenants are
-provisioned declaratively via the `TENANTS_SEED` env var (upserted by slug at boot) or, when
-`OPERATOR_ADDRESSES` is set, by Giano's operators at runtime through `/v1/operator/*`
-(`specs/OPERATOR-ADMIN-SPECS.md`) — no redeploy needed for the latter.
+created and managed only by Giano's operators at runtime, through `/v1/operator/*` (the paymaster
+console's Operator area; needs `OPERATOR_ADDRESSES`) — no redeploy. The service boots fine with no
+tenants. `TENANTS_SEED` is retired and no longer read; a one-time boot step hands tenants it wrote
+to the operators (`src/services/tenants-seed-retirement.ts`). Local compose stacks get their test
+tenants from the separate `node dist/tenant-fixtures.js` one-shot (`TENANT_FIXTURES`, insert-only),
+which no live deployment runs (`specs/OPERATOR-ADMIN-SPECS.md` §9).
 
 ## Security model
 
@@ -59,7 +62,7 @@ Swagger UI at `/docs` outside production).
 | `GET /.well-known/webauthn` | `Host` → tenant | that tenant's Related Origin Requests document |
 | `GET/POST/DELETE /v1/admin/ror-origins` | tenant admin key | manage the key's tenant's ROR origins |
 | `POST /v1/operator/auth/challenge`, `/verify`, `/logout` | none / operator session; any `Origin` refused | operator sign-in with a wallet (EIP-4361): a server-issued message, exchanged once for a `gos_` session |
-| `GET/POST /v1/operator/tenants`, `GET/PATCH/DELETE /v1/operator/tenants/:slug`, `…/suspend`, `…/resume`, `…/admin-keys`, `…/adopt`, `…/history` | operator session; any `Origin` refused | runtime tenant CRUD and lifecycle (active → suspended → deleted tombstone), generated admin keys, history |
+| `GET/POST /v1/operator/tenants`, `GET/PATCH/DELETE /v1/operator/tenants/:slug`, `…/suspend`, `…/resume`, `…/admin-keys`, `…/history` | operator session; any `Origin` refused | runtime tenant CRUD and lifecycle (active → suspended → deleted tombstone), generated admin keys, history |
 | `GET /healthz`, `GET /readyz` | public | liveness / readiness (DB ping) |
 | `GET /metrics` | open, or bearer when `METRICS_BEARER_TOKEN` set | Prometheus metrics, `tenant`-labelled |
 
@@ -77,7 +80,7 @@ example). Highlights:
 | --- | --- |
 | `DATABASE_URL` | required |
 | `RUN_MIGRATIONS` | `true` = apply `migrations/*.sql` before listening (also: `node dist/migrate.js` one-shot) |
-| `TENANTS_SEED` | JSON array of tenants, upserted by slug at boot. Per tenant: `slug`, `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
+| `TENANT_FIXTURES` | **read only by the `node dist/tenant-fixtures.js` one-shot of the local compose stacks, never by the API** (which no longer reads the retired `TENANTS_SEED` either). JSON array of tenants, each created if its slug is missing and otherwise left untouched. Per tenant: `slug`, `id?` (pinned, for a tenant pre-registered on a devnet paymaster), `walletOrigin`, `rpId?` (defaults to and must equal the walletOrigin host — **irreversible per tenant**), `rpName`, `expectedOrigins?`, `allowedDappOrigins?`, `corsOrigins?`, `openRegistration?`, `adminKeys?` (plaintext in, stored sha256-hashed), `policy?` (partial `USEROP_*` overrides, bigints as decimal strings, plus `relayRateLimitPerMinute`), `branding?` |
 | `GIANO_CHAINS` + `BUNDLER_BASE_URL` | the chains served: the backend chain document (`packages/contracts/chains.ts`) giano-bundler reads too; each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless its `walletApi.bundlerUrl` names another bundler |
 | `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | single-chain shorthand, mutually exclusive with `GIANO_CHAINS`; `BUNDLER_URL` is the exact endpoint |
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |

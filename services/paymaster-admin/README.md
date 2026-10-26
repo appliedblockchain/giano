@@ -51,13 +51,12 @@ switch only exists when the container is given `GIANO_WALLET_API_UPSTREAM`.
   console's domain. The address must be in wallet-api's `OPERATOR_ADDRESSES`. The session lives in
   the page's memory only: a reload, an account or network change, a deployment switch, sign-out or
   its expiry (30 minutes) ends it.
-- **Tenants.** The registry, with each tenant's status, owner (`TENANTS_SEED` or operators) and —
+- **Tenants.** The registry, with each tenant's status and —
   matched on tenant id — its state on the selected paymaster: *registered · enabled*, *registered ·
   disabled* or *not registered*. Roster entries with no registry row are listed on their own.
 - **A tenant.** Fields, admin keys (never key material), usage, ledger and history, and the actions
-  its state and owner allow: create (keys shown once, then an optional *Register on-chain*), edit,
-  suspend (then an optional on-chain disable), resume, delete (type the slug), issue and revoke keys,
-  adopt. A seed-managed tenant offers only suspend, resume and adopt.
+  its state allows: create (keys shown once, then an optional *Register on-chain*), edit,
+  suspend (then an optional on-chain disable), resume, delete (type the slug), issue and revoke keys.
 
 On-chain follow-ups need `TENANT_ADMIN_ROLE` on the paymaster and are always optional: the API action
 has already happened when they are offered.

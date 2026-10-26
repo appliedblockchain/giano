@@ -1,14 +1,14 @@
 import { Alert, Badge, Box, Button, CloseButton, DataList, Drawer, HStack, Portal, Separator, Spinner, Stack, Table, Text, Wrap } from '@chakra-ui/react';
 import { useCallback, useEffect, useState } from 'react';
-import { LuKeyRound, LuPause, LuPencil, LuPlay, LuTrash2, LuUserCheck } from 'react-icons/lu';
+import { LuKeyRound, LuPause, LuPencil, LuPlay, LuTrash2 } from 'react-icons/lu';
 import { Copyable } from '../components/ui';
 import { eth } from '../lib/format';
 import type { HistoryEntry, TenantDetail } from '../lib/operator-api';
 import { useOperator } from '../lib/operator-session';
 import { EditTenantDialog } from './EditTenantDialog';
-import { AdoptDialog, DeleteDialog, IssueKeyDialog, ResumeDialog, RevokeKeyDialog, SuspendDialog } from './LifecycleDialogs';
+import { DeleteDialog, IssueKeyDialog, ResumeDialog, RevokeKeyDialog, SuspendDialog } from './LifecycleDialogs';
 import type { OperatorAreaProps } from './OperatorArea';
-import { LifecycleBadge, OnChainBadge, OwnerBadge, type OnChainState } from './shared';
+import { actorLabel, LifecycleBadge, OnChainBadge, type OnChainState } from './shared';
 
 type Props = OperatorAreaProps & {
   slug: string;
@@ -19,12 +19,11 @@ type Props = OperatorAreaProps & {
   onChain: (tenantId: string) => OnChainState;
 };
 
-type Open = 'edit' | 'suspend' | 'resume' | 'delete' | 'adopt' | 'issue-key' | { revoke: string; label: string } | undefined;
+type Open = 'edit' | 'suspend' | 'resume' | 'delete' | 'issue-key' | { revoke: string; label: string } | undefined;
 
 /**
  * One tenant in full (specs/OPERATOR-ADMIN-SPECS.md §11.2): fields, keys, usage, ledger and
- * history, and the actions its state and owner allow — no more. A seed-managed tenant offers only
- * the incident tools (suspend, resume) and adopt, because the next boot would undo anything else.
+ * history, and the actions its state allows — no more.
  */
 export function TenantDrawer(props: Props) {
   const { slug, onClose, onChanged, canAdminister, onChain, client, refreshChain } = props;
@@ -66,7 +65,6 @@ export function TenantDrawer(props: Props) {
   };
 
   const tenant = detail?.tenant;
-  const operatorManaged = tenant?.managedBy === 'operator';
   const onChainState = tenant ? onChain(tenant.id) : 'unknown';
   const chainProps = { client, canAdminister, onChain: onChainState, refreshChain };
 
@@ -93,30 +91,17 @@ export function TenantDrawer(props: Props) {
                 <Stack gap="5">
                   <Wrap gap="2">
                     <LifecycleBadge status={tenant.status} />
-                    <OwnerBadge managedBy={tenant.managedBy} />
                     <OnChainBadge state={onChainState} />
                     <Badge variant="outline">version {tenant.version}</Badge>
                   </Wrap>
 
-                  {tenant.managedBy === 'seed' && tenant.status !== 'deleted' && (
-                    <Alert.Root status="info" size="sm">
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Description>
-                          Managed by TENANTS_SEED. Suspend and resume work here because they are incident tools; every other change belongs in the
-                          seed, since the next boot rewrites the tenant from it. Adopt moves it to operator management once its seed entry is gone.
-                        </Alert.Description>
-                      </Alert.Content>
-                    </Alert.Root>
-                  )}
-
                   <Wrap gap="2" data-testid="tenant-actions">
-                    {tenant.status === 'active' && operatorManaged && (
+                    {tenant.status === 'active' && (
                       <Button size="sm" variant="outline" onClick={() => setOpen('edit')}>
                         <LuPencil /> Edit
                       </Button>
                     )}
-                    {tenant.status === 'active' && operatorManaged && (
+                    {tenant.status === 'active' && (
                       <Button size="sm" variant="outline" onClick={() => setOpen('issue-key')}>
                         <LuKeyRound /> Issue key
                       </Button>
@@ -131,14 +116,9 @@ export function TenantDrawer(props: Props) {
                         <LuPlay /> Resume
                       </Button>
                     )}
-                    {tenant.status === 'suspended' && operatorManaged && (
+                    {tenant.status === 'suspended' && (
                       <Button size="sm" variant="outline" colorPalette="red" onClick={() => setOpen('delete')}>
                         <LuTrash2 /> Delete
-                      </Button>
-                    )}
-                    {tenant.managedBy === 'seed' && tenant.status !== 'deleted' && (
-                      <Button size="sm" variant="ghost" onClick={() => setOpen('adopt')}>
-                        <LuUserCheck /> Adopt
                       </Button>
                     )}
                   </Wrap>
@@ -187,10 +167,10 @@ export function TenantDrawer(props: Props) {
                                 {key.hashPrefix}…
                               </Table.Cell>
                               <Table.Cell fontSize="xs" color="fg.muted">
-                                {key.createdBy === 'seed' ? 'seed' : key.createdBy.split(':')[1]} · {new Date(key.createdAt).toLocaleDateString()}
+                                {actorLabel(key.createdBy)} · {new Date(key.createdAt).toLocaleDateString()}
                               </Table.Cell>
                               <Table.Cell textAlign="end">
-                                {operatorManaged && tenant.status !== 'deleted' && (
+                                {tenant.status !== 'deleted' && (
                                   <Button size="xs" variant="ghost" colorPalette="red" onClick={() => setOpen({ revoke: key.id, label: key.label ?? key.hashPrefix })}>
                                     Revoke
                                   </Button>
@@ -232,7 +212,7 @@ export function TenantDrawer(props: Props) {
                             {entry.action}
                           </Badge>
                           <Box>
-                            <Text fontSize="sm">{entry.actor === 'seed' ? 'TENANTS_SEED' : entry.actor.split(':')[1]}</Text>
+                            <Text fontSize="sm">{actorLabel(entry.actor)}</Text>
                             <Text fontSize="xs" color="fg.muted">
                               {new Date(entry.createdAt).toLocaleString()}
                               {typeof entry.detail?.reason === 'string' && ` · “${entry.detail.reason}”`}
@@ -265,7 +245,6 @@ export function TenantDrawer(props: Props) {
           <SuspendDialog open={open === 'suspend'} onClose={() => setOpen(undefined)} onDone={changed} tenant={tenant} {...chainProps} />
           <ResumeDialog open={open === 'resume'} onClose={() => setOpen(undefined)} onDone={changed} tenant={tenant} {...chainProps} />
           <DeleteDialog open={open === 'delete'} onClose={() => setOpen(undefined)} onDone={changed} tenant={tenant} />
-          <AdoptDialog open={open === 'adopt'} onClose={() => setOpen(undefined)} onDone={changed} tenant={tenant} />
           <IssueKeyDialog open={open === 'issue-key'} onClose={() => setOpen(undefined)} onDone={changed} tenant={tenant} />
           {typeof open === 'object' && (
             <RevokeKeyDialog open onClose={() => setOpen(undefined)} onDone={changed} tenant={tenant} keyId={open.revoke} keyLabel={open.label} />

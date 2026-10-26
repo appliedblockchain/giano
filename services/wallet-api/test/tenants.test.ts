@@ -4,18 +4,20 @@ import {
   mergePolicy,
   tenantCreateSchema,
   tenantPatchSchema,
-  tenantsSeedSchema,
-  validateTenantSeed,
   validateTenantUpdate,
   type Tenant,
 } from '../src/services/tenants.js';
+import { parseTenantFixtures, tenantFixturesSchema } from '../src/services/tenant-fixtures.js';
+
+/** One fixture through the full parser, the way the fixture loader takes it. */
+const validateTenantFixture = (input: object) => parseTenantFixtures(JSON.stringify([input]))[0];
 
 /**
  * The RP/origin invariant (specs/DEVELOPER-GUIDE.md §1) is enforced on the
  * tenant WRITE path — a row that violates it must be impossible to create. These are
- * pure validator tests; the seed-upsert immutability half lives in api.test.ts.
+ * pure validator tests; the write-path half lives in tenant-fixtures.test.ts and operator-tenants.test.ts.
  */
-describe('tenant seed validation (V11)', () => {
+describe('tenant validation (V11)', () => {
   const base = {
     slug: 'acme',
     walletOrigin: 'https://wallet.acme.app',
@@ -24,7 +26,7 @@ describe('tenant seed validation (V11)', () => {
   };
 
   it('accepts a minimal tenant and derives rpId from the wallet origin host', () => {
-    const tenant = validateTenantSeed(base);
+    const tenant = validateTenantFixture(base);
     expect(tenant.rpId).toBe('wallet.acme.app');
     // walletOrigin is auto-included in expectedOrigins
     expect(tenant.expectedOrigins).toContain('https://wallet.acme.app');
@@ -32,40 +34,40 @@ describe('tenant seed validation (V11)', () => {
 
   it('rejects an expectedOrigins entry whose host is not at-or-under the rpId', () => {
     expect(() =>
-      validateTenantSeed({ ...base, expectedOrigins: ['https://evil.example.com'] }),
+      validateTenantFixture({ ...base, expectedOrigins: ['https://evil.example.com'] }),
     ).toThrow(/not valid for rpId/);
   });
 
   it('accepts subdomain expectedOrigins', () => {
-    const tenant = validateTenantSeed({ ...base, expectedOrigins: ['https://pay.wallet.acme.app'] });
+    const tenant = validateTenantFixture({ ...base, expectedOrigins: ['https://pay.wallet.acme.app'] });
     expect(tenant.expectedOrigins).toEqual(expect.arrayContaining(['https://wallet.acme.app', 'https://pay.wallet.acme.app']));
   });
 
   it('rejects an rpId that is not the wallet origin host (D1: wallet-host rule)', () => {
-    expect(() => validateTenantSeed({ ...base, rpId: 'acme.app' })).toThrow(/must equal the walletOrigin host/);
+    expect(() => validateTenantFixture({ ...base, rpId: 'acme.app' })).toThrow(/must equal the walletOrigin host/);
   });
 
   it('rejects a walletOrigin that is not a bare origin', () => {
-    expect(() => validateTenantSeed({ ...base, walletOrigin: 'https://wallet.acme.app/path' })).toThrow(/bare origin/);
+    expect(() => validateTenantFixture({ ...base, walletOrigin: 'https://wallet.acme.app/path' })).toThrow(/bare origin/);
   });
 
   it('requires admin keys when registration is closed', () => {
-    expect(() => validateTenantSeed({ ...base, openRegistration: false })).toThrow(/adminKeys is required/);
-    expect(() => validateTenantSeed({ ...base, openRegistration: false, adminKeys: ['long-enough-admin-key'] })).not.toThrow();
+    expect(() => validateTenantFixture({ ...base, openRegistration: false })).toThrow(/adminKeys is required/);
+    expect(() => validateTenantFixture({ ...base, openRegistration: false, adminKeys: ['long-enough-admin-key'] })).not.toThrow();
   });
 
   it('rejects unknown policy fields and malformed bigint strings', () => {
-    expect(() => validateTenantSeed({ ...base, policy: { maxCallGas: '0x123' } })).toThrow(/decimal string/);
-    expect(() => validateTenantSeed({ ...base, policy: { totallyUnknown: true } })).toThrow();
+    expect(() => validateTenantFixture({ ...base, policy: { maxCallGas: '0x123' } })).toThrow(/decimal string/);
+    expect(() => validateTenantFixture({ ...base, policy: { totallyUnknown: true } })).toThrow();
   });
 
-  it('rejects duplicate slugs, origins and admin keys across the seed array', () => {
+  it('rejects duplicate slugs, origins and admin keys across the fixture array', () => {
     const other = { ...base, slug: 'other', walletOrigin: 'https://wallet.other.app' };
-    expect(tenantsSeedSchema.safeParse([base, { ...other, slug: 'acme' }]).success).toBe(false);
-    expect(tenantsSeedSchema.safeParse([base, { ...other, walletOrigin: base.walletOrigin }]).success).toBe(false);
+    expect(tenantFixturesSchema.safeParse([base, { ...other, slug: 'acme' }]).success).toBe(false);
+    expect(tenantFixturesSchema.safeParse([base, { ...other, walletOrigin: base.walletOrigin }]).success).toBe(false);
     const sharedKey = 'shared-key-16-chars-min';
     expect(
-      tenantsSeedSchema.safeParse([
+      tenantFixturesSchema.safeParse([
         { ...base, adminKeys: [sharedKey] },
         { ...other, adminKeys: [sharedKey] },
       ]).success,
@@ -81,13 +83,13 @@ describe('one validator for every tenant write (operator-tenant-lifecycle)', () 
     openRegistration: true,
   };
 
-  it('refuses an unknown field on the seed, create and patch paths alike', () => {
-    expect(() => validateTenantSeed({ ...base, rpname: 'typo' })).toThrow(/Unrecognized key/);
+  it('refuses an unknown field on the fixture, create and patch paths alike', () => {
+    expect(() => validateTenantFixture({ ...base, rpname: 'typo' })).toThrow(/Unrecognized key/);
     expect(tenantCreateSchema.safeParse({ ...base, rpname: 'typo' }).success).toBe(false);
     expect(tenantPatchSchema.safeParse({ rpname: 'typo' }).success).toBe(false);
   });
 
-  it('applies the same invariants to an operator create as to a seed entry', () => {
+  it('applies the same invariants to an operator create as to a fixture', () => {
     const create = (input: object) => tenantCreateSchema.safeParse({ ...base, ...input });
     expect(create({ rpId: 'acme.app' }).error?.issues[0]).toMatchObject({ path: ['rpId'] });
     expect(create({ expectedOrigins: ['https://evil.example.com'] }).error?.issues[0]).toMatchObject({ path: ['expectedOrigins'] });
@@ -95,7 +97,7 @@ describe('one validator for every tenant write (operator-tenant-lifecycle)', () 
     expect(create({ openRegistration: false, adminKeys: [{ label: 'ops' }] }).success).toBe(true);
   });
 
-  it('normalises a create the way the seed does', () => {
+  it('normalises a create the way a fixture is normalised', () => {
     const created = tenantCreateSchema.parse(base);
     expect(created.rpId).toBe('wallet.acme.app');
     expect(created.expectedOrigins).toEqual(['https://wallet.acme.app']);
@@ -130,9 +132,9 @@ describe('one validator for every tenant write (operator-tenant-lifecycle)', () 
     expect(replaced.ok && replaced.fields.expectedOrigins).toEqual(['https://wallet.acme.app', 'https://pay.wallet.acme.app']);
   });
 
-  it('refuses a seed in which one entry claims an origin another entry claims', () => {
+  it('refuses fixtures in which one entry claims an origin another entry claims', () => {
     const other = { ...base, slug: 'other', walletOrigin: 'https://pay.wallet.acme.app' };
-    const parsed = tenantsSeedSchema.safeParse([{ ...base, expectedOrigins: ['https://pay.wallet.acme.app'] }, { ...other, rpId: undefined }]);
+    const parsed = tenantFixturesSchema.safeParse([{ ...base, expectedOrigins: ['https://pay.wallet.acme.app'] }, { ...other, rpId: undefined }]);
     expect(parsed.success).toBe(false);
     expect(parsed.error?.issues.map((issue) => issue.message)).toContainEqual(expect.stringMatching(/claimed by both "acme" and "other"/));
   });
@@ -141,7 +143,7 @@ describe('one validator for every tenant write (operator-tenant-lifecycle)', () 
     const other = { ...base, slug: 'other', walletOrigin: 'https://wallet.other.app' };
     const dapp = 'https://dapp.example.com';
     expect(
-      tenantsSeedSchema.safeParse([
+      tenantFixturesSchema.safeParse([
         { ...base, corsOrigins: [dapp], allowedDappOrigins: [dapp] },
         { ...other, corsOrigins: [dapp], allowedDappOrigins: [dapp] },
       ]).success,
@@ -209,29 +211,29 @@ describe('pinned tenant ids', () => {
    * agree, or every sponsorship for that tenant is refused as "unknown tenant".
    */
   it('accepts a pinned uuid', () => {
-    const seed = validateTenantSeed({
+    const fixture = validateTenantFixture({
       id: '11111111-1111-4111-8111-111111111111',
       slug: 'pinned',
       walletOrigin: 'https://wallet.pinned.example',
       rpName: 'Pinned',
       openRegistration: true,
     });
-    expect(seed.id).toBe('11111111-1111-4111-8111-111111111111');
+    expect(fixture.id).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   it('rejects anything that is not a uuid', () => {
     expect(() =>
-      validateTenantSeed({ id: 'not-a-uuid', slug: 'bad', walletOrigin: 'https://w.example', rpName: 'B', openRegistration: true }),
+      validateTenantFixture({ id: 'not-a-uuid', slug: 'bad', walletOrigin: 'https://w.example', rpName: 'B', openRegistration: true }),
     ).toThrow(/id/);
   });
 
   it('leaves the id to the database when unset, as it always did', () => {
-    const seed = validateTenantSeed({ slug: 'unpinned', walletOrigin: 'https://w2.example', rpName: 'U', openRegistration: true });
-    expect(seed.id).toBeUndefined();
+    const fixture = validateTenantFixture({ slug: 'unpinned', walletOrigin: 'https://w2.example', rpName: 'U', openRegistration: true });
+    expect(fixture.id).toBeUndefined();
   });
 
   it('rejects two tenants pinning the same id', () => {
-    const result = tenantsSeedSchema.safeParse([
+    const result = tenantFixturesSchema.safeParse([
       { id: '11111111-1111-4111-8111-111111111111', slug: 'a', walletOrigin: 'https://a.example', rpName: 'A', openRegistration: true },
       { id: '11111111-1111-4111-8111-111111111111', slug: 'b', walletOrigin: 'https://b.example', rpName: 'B', openRegistration: true },
     ]);
