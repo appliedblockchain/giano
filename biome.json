@@ -18,6 +18,7 @@
 			"!**/packages/contracts/deployments/*.json",
 			"!**/packages/contracts/storage-layout",
 			"!**/services/wallet-api/openapi/openapi.json",
+			"!**/services/bundler/src/generated",
 			"!**/e2e/devnet/state.json",
 			"!**/e2e/devnet/addresses.json",
 			"!**/scripts/spa-parity/fixtures",
