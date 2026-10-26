@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync } from "node:fs";
 
 /**
  * The release version `/v1/version` reports.
@@ -13,6 +13,16 @@ import { readFileSync } from 'node:fs';
 declare const __GIANO_RELEASE_VERSION__: string | undefined;
 
 export const releaseVersion: string =
-  typeof __GIANO_RELEASE_VERSION__ === 'string'
-    ? __GIANO_RELEASE_VERSION__
-    : (JSON.parse(readFileSync(new URL('../../../packages/connector/package.json', import.meta.url), 'utf8')) as { version: string }).version;
+	typeof __GIANO_RELEASE_VERSION__ === "string"
+		? __GIANO_RELEASE_VERSION__
+		: (
+				JSON.parse(
+					readFileSync(
+						new URL(
+							"../../../packages/connector/package.json",
+							import.meta.url,
+						),
+						"utf8",
+					),
+				) as { version: string }
+			).version;

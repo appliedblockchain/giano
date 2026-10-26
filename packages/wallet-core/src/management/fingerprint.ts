@@ -1,5 +1,5 @@
-import type { Hex } from 'viem';
-import { hexToBytes, keccak256 } from 'viem';
+import type { Hex } from "viem";
+import { hexToBytes, keccak256 } from "viem";
 
 /**
  * The fingerprint both devices display during a cross-device addition (WM-20, D8).
@@ -15,16 +15,16 @@ import { hexToBytes, keccak256 } from 'viem';
  * on the fly against a fingerprint already on the user's other screen, small enough that
  * a person actually compares all of it.
  */
-const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 export function ownerFingerprint(ownerBytes: Hex): string {
-  const digest = hexToBytes(keccak256(ownerBytes));
-  let bits = 0n;
-  for (let i = 0; i < 5; i++) bits = (bits << 8n) | BigInt(digest[i]);
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code = ALPHABET[Number(bits & 31n)] + code;
-    bits >>= 5n;
-  }
-  return `${code.slice(0, 3)}-${code.slice(3)}`;
+	const digest = hexToBytes(keccak256(ownerBytes));
+	let bits = 0n;
+	for (let i = 0; i < 5; i++) bits = (bits << 8n) | BigInt(digest[i]);
+	let code = "";
+	for (let i = 0; i < 6; i++) {
+		code = ALPHABET[Number(bits & 31n)] + code;
+		bits >>= 5n;
+	}
+	return `${code.slice(0, 3)}-${code.slice(3)}`;
 }

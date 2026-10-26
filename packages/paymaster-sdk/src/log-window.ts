@@ -1,4 +1,4 @@
-import type { PaymasterPublicClient } from './client';
+import type { PaymasterPublicClient } from "./client";
 
 /**
  * One `eth_getLogs`, and the block range it actually covered.
@@ -25,8 +25,8 @@ const MIN_LOG_WINDOW = 250n;
 
 /** A block range, inclusive at both ends. */
 export type BlockRange = {
-  fromBlock: bigint;
-  toBlock: bigint;
+	fromBlock: bigint;
+	toBlock: bigint;
 };
 
 /**
@@ -36,11 +36,11 @@ export type BlockRange = {
  * blocks it is showing rather than implying it has everything.
  */
 export type Page = BlockRange & {
-  /**
-   * The window before this one, or `undefined` at the genesis end. Pass it back as `range` to step
-   * further into the past — this is the whole of the paging protocol.
-   */
-  older?: BlockRange;
+	/**
+	 * The window before this one, or `undefined` at the genesis end. Pass it back as `range` to step
+	 * further into the past — this is the whole of the paging protocol.
+	 */
+	older?: BlockRange;
 };
 
 /** A page, alongside the logs found in it. */
@@ -54,31 +54,40 @@ export type Windowed<T> = Page & { logs: readonly T[] };
  * failures by someone. The messages all name the range.
  */
 export function isBlockRangeError(error: unknown): boolean {
-  const message = flatten(error).toLowerCase();
-  if (!message) return false;
-  return (
-    /limited to a[^.]*range/.test(message) ||
-    /block range/.test(message) ||
-    /range is too large|range too large|too wide|too many blocks|exceeds? the maximum|max(imum)? (block )?range/.test(message) ||
-    /query returned more than|response size exceeded|log response size/.test(message)
-  );
+	const message = flatten(error).toLowerCase();
+	if (!message) return false;
+	return (
+		/limited to a[^.]*range/.test(message) ||
+		/block range/.test(message) ||
+		/range is too large|range too large|too wide|too many blocks|exceeds? the maximum|max(imum)? (block )?range/.test(
+			message,
+		) ||
+		/query returned more than|response size exceeded|log response size/.test(
+			message,
+		)
+	);
 }
 
 /** Every message in the error's cause chain, so a viem-wrapped RPC error still matches. */
 function flatten(error: unknown): string {
-  if (typeof error === 'string') return error;
-  const parts: string[] = [];
-  const seen = new Set<unknown>();
-  let current: unknown = error;
-  while (current && typeof current === 'object' && !seen.has(current)) {
-    seen.add(current);
-    const record = current as { message?: unknown; details?: unknown; shortMessage?: unknown; cause?: unknown };
-    for (const field of [record.shortMessage, record.details, record.message]) {
-      if (typeof field === 'string') parts.push(field);
-    }
-    current = record.cause;
-  }
-  return parts.join(' ');
+	if (typeof error === "string") return error;
+	const parts: string[] = [];
+	const seen = new Set<unknown>();
+	let current: unknown = error;
+	while (current && typeof current === "object" && !seen.has(current)) {
+		seen.add(current);
+		const record = current as {
+			message?: unknown;
+			details?: unknown;
+			shortMessage?: unknown;
+			cause?: unknown;
+		};
+		for (const field of [record.shortMessage, record.details, record.message]) {
+			if (typeof field === "string") parts.push(field);
+		}
+		current = record.cause;
+	}
+	return parts.join(" ");
 }
 
 /**
@@ -91,18 +100,23 @@ function flatten(error: unknown): string {
  * mined — rather than an error about arithmetic the caller never did.
  */
 export async function resolveWindow(
-  publicClient: PaymasterPublicClient,
-  range: Partial<BlockRange> | undefined,
-  window: bigint,
+	publicClient: PaymasterPublicClient,
+	range: Partial<BlockRange> | undefined,
+	window: bigint,
 ): Promise<BlockRange> {
-  // A non-positive window is a misconfiguration, not a range: it would put `fromBlock` above
-  // `toBlock` on the *default* path, where the caller named nothing and so has nothing to debug.
-  if (window <= 0n) throw new RangeError(`a log window must span at least one block, got ${window}`);
+	// A non-positive window is a misconfiguration, not a range: it would put `fromBlock` above
+	// `toBlock` on the *default* path, where the caller named nothing and so has nothing to debug.
+	if (window <= 0n)
+		throw new RangeError(
+			`a log window must span at least one block, got ${window}`,
+		);
 
-  const head = await publicClient.getBlockNumber();
-  const toBlock = range?.toBlock === undefined || range.toBlock > head ? head : range.toBlock;
-  const fromBlock = range?.fromBlock ?? (toBlock >= window ? toBlock - window + 1n : 0n);
-  return { fromBlock: fromBlock < 0n ? 0n : fromBlock, toBlock };
+	const head = await publicClient.getBlockNumber();
+	const toBlock =
+		range?.toBlock === undefined || range.toBlock > head ? head : range.toBlock;
+	const fromBlock =
+		range?.fromBlock ?? (toBlock >= window ? toBlock - window + 1n : 0n);
+	return { fromBlock: fromBlock < 0n ? 0n : fromBlock, toBlock };
 }
 
 /**
@@ -115,35 +129,40 @@ export async function resolveWindow(
  * letting the caller assume it got what it requested.
  */
 export async function readWindow<T>(
-  range: BlockRange,
-  query: (range: BlockRange) => Promise<readonly T[]>,
-  onNarrow?: (window: bigint) => void,
+	range: BlockRange,
+	query: (range: BlockRange) => Promise<readonly T[]>,
+	onNarrow?: (window: bigint) => void,
 ): Promise<Windowed<T>> {
-  let { fromBlock } = range;
-  const { toBlock } = range;
+	let { fromBlock } = range;
+	const { toBlock } = range;
 
-  // An empty range holds no logs by definition, so answering it costs nothing and sending it to a
-  // node would only earn an error about a request this library built.
-  if (fromBlock > toBlock) return { fromBlock, toBlock, logs: [] };
+	// An empty range holds no logs by definition, so answering it costs nothing and sending it to a
+	// node would only earn an error about a request this library built.
+	if (fromBlock > toBlock) return { fromBlock, toBlock, logs: [] };
 
-  for (;;) {
-    try {
-      const logs = await query({ fromBlock, toBlock });
-      return { fromBlock, toBlock, logs, older: olderThan(fromBlock, toBlock - fromBlock + 1n) };
-    } catch (cause) {
-      const span = toBlock - fromBlock + 1n;
-      if (!isBlockRangeError(cause) || span <= MIN_LOG_WINDOW) throw cause;
+	for (;;) {
+		try {
+			const logs = await query({ fromBlock, toBlock });
+			return {
+				fromBlock,
+				toBlock,
+				logs,
+				older: olderThan(fromBlock, toBlock - fromBlock + 1n),
+			};
+		} catch (cause) {
+			const span = toBlock - fromBlock + 1n;
+			if (!isBlockRangeError(cause) || span <= MIN_LOG_WINDOW) throw cause;
 
-      const narrowed = span / 2n < MIN_LOG_WINDOW ? MIN_LOG_WINDOW : span / 2n;
-      onNarrow?.(narrowed);
-      fromBlock = toBlock - narrowed + 1n;
-    }
-  }
+			const narrowed = span / 2n < MIN_LOG_WINDOW ? MIN_LOG_WINDOW : span / 2n;
+			onNarrow?.(narrowed);
+			fromBlock = toBlock - narrowed + 1n;
+		}
+	}
 }
 
 /** The window of the same width immediately below `fromBlock`, or nothing at genesis. */
 function olderThan(fromBlock: bigint, width: bigint): BlockRange | undefined {
-  if (fromBlock === 0n) return undefined;
-  const toBlock = fromBlock - 1n;
-  return { fromBlock: toBlock >= width ? toBlock - width + 1n : 0n, toBlock };
+	if (fromBlock === 0n) return undefined;
+	const toBlock = fromBlock - 1n;
+	return { fromBlock: toBlock >= width ? toBlock - width + 1n : 0n, toBlock };
 }

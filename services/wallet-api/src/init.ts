@@ -14,54 +14,70 @@
  * Every step is safe to repeat and to run from several tasks at once. Exits non-zero on any
  * failure, which keeps the API from starting on a database that is not ready.
  */
-import { createDb } from './db/index.js';
-import { resolveEnvironment } from './environments.js';
-import { runMigrations } from './migrate.js';
-import { bootstrapAdmins } from './services/platform-admins.js';
-import { loadTenantFixtures, parseTenantFixtures } from './services/tenant-fixtures.js';
+import { createDb } from "./db/index.js";
+import { resolveEnvironment } from "./environments.js";
+import { runMigrations } from "./migrate.js";
+import { bootstrapAdmins } from "./services/platform-admins.js";
+import {
+	loadTenantFixtures,
+	parseTenantFixtures,
+} from "./services/tenant-fixtures.js";
 
 const fail = (message: string): never => {
-  console.error(message);
-  process.exit(1);
+	console.error(message);
+	process.exit(1);
 };
 
-const databaseUrl = process.env.DATABASE_URL ?? fail('DATABASE_URL is required');
+const databaseUrl =
+	process.env.DATABASE_URL ?? fail("DATABASE_URL is required");
 let environment!: ReturnType<typeof resolveEnvironment>;
 try {
-  environment = resolveEnvironment(process.env.GIANO_ENVIRONMENT);
+	environment = resolveEnvironment(process.env.GIANO_ENVIRONMENT);
 } catch (error) {
-  fail((error as Error).message);
+	fail((error as Error).message);
 }
 
 const rawFixtures = process.env.TENANT_FIXTURES;
 if (rawFixtures && !environment.localStack) {
-  fail(`TENANT_FIXTURES is set, but "${environment.name}" is not a local stack — only platform admins create tenants there`);
+	fail(
+		`TENANT_FIXTURES is set, but "${environment.name}" is not a local stack — only platform admins create tenants there`,
+	);
 }
 let fixtures: ReturnType<typeof parseTenantFixtures> = [];
 try {
-  if (rawFixtures) fixtures = parseTenantFixtures(rawFixtures);
+	if (rawFixtures) fixtures = parseTenantFixtures(rawFixtures);
 } catch (error) {
-  fail((error as Error).message);
+	fail((error as Error).message);
 }
 
 const applied = await runMigrations(databaseUrl);
-console.log(applied.length > 0 ? `Applied migrations: ${applied.join(', ')}` : 'Migrations: up to date');
+console.log(
+	applied.length > 0
+		? `Applied migrations: ${applied.join(", ")}`
+		: "Migrations: up to date",
+);
 
 const { db, pool } = createDb(databaseUrl);
 try {
-  const seeded = await bootstrapAdmins(db, environment.name, environment.bootstrapAdmins);
-  console.log(
-    seeded.length > 0
-      ? `Bootstrapped platform admins for ${environment.name}: ${seeded.join(', ')}`
-      : `Platform admins: already present, or none to bootstrap for ${environment.name}`,
-  );
-  if (fixtures.length > 0) {
-    const { created, existing } = await loadTenantFixtures(db, fixtures);
-    if (created.length > 0) console.log(`Created fixture tenants: ${created.join(', ')}`);
-    if (existing.length > 0) console.log(`Already present, left as they are: ${existing.join(', ')}`);
-  }
+	const seeded = await bootstrapAdmins(
+		db,
+		environment.name,
+		environment.bootstrapAdmins,
+	);
+	console.log(
+		seeded.length > 0
+			? `Bootstrapped platform admins for ${environment.name}: ${seeded.join(", ")}`
+			: `Platform admins: already present, or none to bootstrap for ${environment.name}`,
+	);
+	if (fixtures.length > 0) {
+		const { created, existing } = await loadTenantFixtures(db, fixtures);
+		if (created.length > 0)
+			console.log(`Created fixture tenants: ${created.join(", ")}`);
+		if (existing.length > 0)
+			console.log(`Already present, left as they are: ${existing.join(", ")}`);
+	}
 } catch (error) {
-  fail((error as Error).message);
+	fail((error as Error).message);
 } finally {
-  await pool.end();
+	await pool.end();
 }

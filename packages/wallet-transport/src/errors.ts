@@ -1,14 +1,14 @@
-import type { HandshakeNackReason, RpcError } from './protocol';
-import { RPC_ERRORS } from './protocol';
+import type { HandshakeNackReason, RpcError } from "./protocol";
+import { RPC_ERRORS } from "./protocol";
 
 export type TransportErrorCode =
-  | 'POPUP_BLOCKED'
-  | 'POPUP_CLOSED'
-  | 'HANDSHAKE_TIMEOUT'
-  | 'HANDSHAKE_REFUSED'
-  | 'REQUEST_TIMEOUT'
-  | 'DISCONNECTED'
-  | 'NOT_CONNECTED';
+	| "POPUP_BLOCKED"
+	| "POPUP_CLOSED"
+	| "HANDSHAKE_TIMEOUT"
+	| "HANDSHAKE_REFUSED"
+	| "REQUEST_TIMEOUT"
+	| "DISCONNECTED"
+	| "NOT_CONNECTED";
 
 /**
  * Transport-layer failure (popup/channel), as opposed to an in-band RPC error.
@@ -18,29 +18,29 @@ export type TransportErrorCode =
  * `same-origin-allow-popups` (or no COOP header).
  */
 export class TransportError extends Error {
-  constructor(
-    public readonly code: TransportErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'TransportError';
-  }
+	constructor(
+		public readonly code: TransportErrorCode,
+		message: string,
+	) {
+		super(message);
+		this.name = "TransportError";
+	}
 }
 
 /** In-band EIP-1193 RPC error relayed from the wallet (e.g. 4001 user rejected). */
 export class TransportRpcError extends Error {
-  constructor(
-    public readonly code: number,
-    message: string,
-    public readonly data?: unknown,
-  ) {
-    super(message);
-    this.name = 'TransportRpcError';
-  }
+	constructor(
+		public readonly code: number,
+		message: string,
+		public readonly data?: unknown,
+	) {
+		super(message);
+		this.name = "TransportRpcError";
+	}
 
-  static from(error: RpcError): TransportRpcError {
-    return new TransportRpcError(error.code, error.message, error.data);
-  }
+	static from(error: RpcError): TransportRpcError {
+		return new TransportRpcError(error.code, error.message, error.data);
+	}
 }
 
 /**
@@ -50,14 +50,14 @@ export class TransportRpcError extends Error {
  * access to the wallet origin's configuration.
  */
 export class HandshakeRefusedError extends TransportError {
-  constructor(
-    public readonly reason: HandshakeNackReason,
-    message: string,
-    public readonly supportedChainIds: readonly number[] = [],
-  ) {
-    super('HANDSHAKE_REFUSED', message);
-    this.name = 'HandshakeRefusedError';
-  }
+	constructor(
+		public readonly reason: HandshakeNackReason,
+		message: string,
+		public readonly supportedChainIds: readonly number[] = [],
+	) {
+		super("HANDSHAKE_REFUSED", message);
+		this.name = "HandshakeRefusedError";
+	}
 }
 
 /**
@@ -67,21 +67,22 @@ export class HandshakeRefusedError extends TransportError {
  * because the code is an EIP-1193 numeric, not a transport-channel failure.
  */
 export class UnsupportedChainError extends TransportRpcError {
-  public readonly reason: HandshakeNackReason;
-  constructor(
-    public readonly requestedChainId: number | undefined,
-    public readonly supportedChainIds: readonly number[],
-    message?: string,
-  ) {
-    super(
-      RPC_ERRORS.UNSUPPORTED_CHAIN,
-      message ??
-        (requestedChainId === undefined
-          ? `the connection named no chain — this wallet serves: ${supportedChainIds.join(', ')}`
-          : `this wallet does not serve chain ${requestedChainId} — it serves: ${supportedChainIds.join(', ')}`),
-      { supportedChainIds },
-    );
-    this.reason = requestedChainId === undefined ? 'chain-required' : 'unsupported-chain';
-    this.name = 'UnsupportedChainError';
-  }
+	public readonly reason: HandshakeNackReason;
+	constructor(
+		public readonly requestedChainId: number | undefined,
+		public readonly supportedChainIds: readonly number[],
+		message?: string,
+	) {
+		super(
+			RPC_ERRORS.UNSUPPORTED_CHAIN,
+			message ??
+				(requestedChainId === undefined
+					? `the connection named no chain — this wallet serves: ${supportedChainIds.join(", ")}`
+					: `this wallet does not serve chain ${requestedChainId} — it serves: ${supportedChainIds.join(", ")}`),
+			{ supportedChainIds },
+		);
+		this.reason =
+			requestedChainId === undefined ? "chain-required" : "unsupported-chain";
+		this.name = "UnsupportedChainError";
+	}
 }

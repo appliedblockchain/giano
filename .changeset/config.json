@@ -1,27 +1,27 @@
 {
-  "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
-  "changelog": "@changesets/cli/changelog",
-  "commit": false,
-  "fixed": [
-    [
-      "@appliedblockchain/giano-contracts",
-      "@appliedblockchain/giano-wallet-core",
-      "@appliedblockchain/giano-wallet-transport",
-      "@appliedblockchain/giano-connector",
-      "@appliedblockchain/giano-tx-describe",
-      "@appliedblockchain/giano-wallet-kit",
-      "@appliedblockchain/giano-paymaster-sdk"
-    ]
-  ],
-  "linked": [],
-  "access": "restricted",
-  "baseBranch": "main",
-  "updateInternalDependencies": "patch",
-  "ignore": [
-    "@appliedblockchain/giano-wallet-api",
-    "@appliedblockchain/giano-bundler",
-    "@appliedblockchain/giano-wallet-web",
-    "@appliedblockchain/giano-paymaster-admin",
-    "@appliedblockchain/giano-e2e"
-  ]
+	"$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
+	"changelog": "@changesets/cli/changelog",
+	"commit": false,
+	"fixed": [
+		[
+			"@appliedblockchain/giano-contracts",
+			"@appliedblockchain/giano-wallet-core",
+			"@appliedblockchain/giano-wallet-transport",
+			"@appliedblockchain/giano-connector",
+			"@appliedblockchain/giano-tx-describe",
+			"@appliedblockchain/giano-wallet-kit",
+			"@appliedblockchain/giano-paymaster-sdk"
+		]
+	],
+	"linked": [],
+	"access": "restricted",
+	"baseBranch": "main",
+	"updateInternalDependencies": "patch",
+	"ignore": [
+		"@appliedblockchain/giano-wallet-api",
+		"@appliedblockchain/giano-bundler",
+		"@appliedblockchain/giano-wallet-web",
+		"@appliedblockchain/giano-paymaster-admin",
+		"@appliedblockchain/giano-e2e"
+	]
 }

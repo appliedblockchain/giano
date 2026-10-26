@@ -3,14 +3,17 @@
 // (specs/MULTICHAIN_SPECS.md §3, MC-95). Each consumer validates the same core and extends
 // it with what only it needs.
 
-import { z } from 'zod';
-import { gianoAddresses } from './addresses';
+import { z } from "zod";
+import { gianoAddresses } from "./addresses";
 
 const addressPattern = /^0x[0-9a-fA-F]{40}$/;
 
 export const chainAddressSchema: z.ZodType<`0x${string}`> = z
-  .string()
-  .regex(addressPattern, 'must be a 0x-prefixed 20-byte hex address') as z.ZodType<`0x${string}`>;
+	.string()
+	.regex(
+		addressPattern,
+		"must be a 0x-prefixed 20-byte hex address",
+	) as z.ZodType<`0x${string}`>;
 
 /**
  * The core every consumer shares. There is deliberately no `default` field: there is no
@@ -20,58 +23,72 @@ export const chainAddressSchema: z.ZodType<`0x${string}`> = z
 // Each schema's shape is spelled out so its type can be read without inference (isolatedDeclarations);
 // zod derives the parsed and input types from the shape exactly as it would from the inferred one.
 type ChainDescriptorShape = {
-  chainId: z.ZodNumber;
-  name: z.ZodString;
-  rpcUrl: z.ZodString;
-  nativeCurrency: z.ZodOptional<z.ZodObject<{ symbol: z.ZodString; decimals: z.ZodNumber; name: z.ZodOptional<z.ZodString> }, 'strip'>>;
+	chainId: z.ZodNumber;
+	name: z.ZodString;
+	rpcUrl: z.ZodString;
+	nativeCurrency: z.ZodOptional<
+		z.ZodObject<
+			{
+				symbol: z.ZodString;
+				decimals: z.ZodNumber;
+				name: z.ZodOptional<z.ZodString>;
+			},
+			"strip"
+		>
+	>;
 };
 
-export const chainDescriptorSchema: z.ZodObject<ChainDescriptorShape, 'strip'> = z.object({
-  chainId: z.number().int().positive(),
-  /** Human-readable, shown to users and operators. Required — MC-81 forbids bare ids in the UI. */
-  name: z.string().min(1),
-  /** Read path. */
-  rpcUrl: z.string().url(),
-  /**
-   * What `value` is denominated in on this chain, for anything that shows an amount to a user.
-   * Optional: absent means ETH with 18 decimals, which is what every chain Giano ships with uses.
-   */
-  nativeCurrency: z
-    .object({
-      symbol: z.string().min(1),
-      decimals: z.number().int().min(0).max(36),
-      name: z.string().min(1).optional(),
-    })
-    .optional(),
-});
+export const chainDescriptorSchema: z.ZodObject<ChainDescriptorShape, "strip"> =
+	z.object({
+		chainId: z.number().int().positive(),
+		/** Human-readable, shown to users and operators. Required — MC-81 forbids bare ids in the UI. */
+		name: z.string().min(1),
+		/** Read path. */
+		rpcUrl: z.string().url(),
+		/**
+		 * What `value` is denominated in on this chain, for anything that shows an amount to a user.
+		 * Optional: absent means ETH with 18 decimals, which is what every chain Giano ships with uses.
+		 */
+		nativeCurrency: z
+			.object({
+				symbol: z.string().min(1),
+				decimals: z.number().int().min(0).max(36),
+				name: z.string().min(1).optional(),
+			})
+			.optional(),
+	});
 
-export type NativeCurrency = NonNullable<ChainDescriptor['nativeCurrency']>;
+export type NativeCurrency = NonNullable<ChainDescriptor["nativeCurrency"]>;
 
 /** The default when a descriptor names no native currency. */
-export const DEFAULT_NATIVE_CURRENCY = { symbol: 'ETH', decimals: 18, name: 'Ether' } as const;
+export const DEFAULT_NATIVE_CURRENCY = {
+	symbol: "ETH",
+	decimals: 18,
+	name: "Ether",
+} as const;
 
 export type ChainDescriptor = z.infer<typeof chainDescriptorSchema>;
 
 /** Per-chain policy defaults. Address-valued fields are never inherited across chains (MC-61). */
 type ChainPolicyShape = {
-  maxCallGas: z.ZodOptional<z.ZodString>;
-  maxVerificationGas: z.ZodOptional<z.ZodString>;
-  maxFeePerGas: z.ZodOptional<z.ZodString>;
-  maxPriorityFeePerGas: z.ZodOptional<z.ZodString>;
-  allowedTargets: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
-  allowedPaymasters: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
+	maxCallGas: z.ZodOptional<z.ZodString>;
+	maxVerificationGas: z.ZodOptional<z.ZodString>;
+	maxFeePerGas: z.ZodOptional<z.ZodString>;
+	maxPriorityFeePerGas: z.ZodOptional<z.ZodString>;
+	allowedTargets: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
+	allowedPaymasters: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
 };
 
-export const chainPolicySchema: z.ZodObject<ChainPolicyShape, 'strict'> = z
-  .object({
-    maxCallGas: z.string().regex(/^\d+$/).optional(),
-    maxVerificationGas: z.string().regex(/^\d+$/).optional(),
-    maxFeePerGas: z.string().regex(/^\d+$/).optional(),
-    maxPriorityFeePerGas: z.string().regex(/^\d+$/).optional(),
-    allowedTargets: z.array(chainAddressSchema).optional(),
-    allowedPaymasters: z.array(chainAddressSchema).optional(),
-  })
-  .strict();
+export const chainPolicySchema: z.ZodObject<ChainPolicyShape, "strict"> = z
+	.object({
+		maxCallGas: z.string().regex(/^\d+$/).optional(),
+		maxVerificationGas: z.string().regex(/^\d+$/).optional(),
+		maxFeePerGas: z.string().regex(/^\d+$/).optional(),
+		maxPriorityFeePerGas: z.string().regex(/^\d+$/).optional(),
+		allowedTargets: z.array(chainAddressSchema).optional(),
+		allowedPaymasters: z.array(chainAddressSchema).optional(),
+	})
+	.strict();
 
 export type ChainPolicy = z.infer<typeof chainPolicySchema>;
 
@@ -81,41 +98,47 @@ export type ChainPolicy = z.infer<typeof chainPolicySchema>;
  * appended; set it for a chain submitted through some other bundler.
  */
 type WalletApiChainSectionShape = {
-  factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
-  policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, 'strict'>>;
-  bundlerUrl: z.ZodOptional<z.ZodString>;
+	factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
+	policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, "strict">>;
+	bundlerUrl: z.ZodOptional<z.ZodString>;
 };
 
-export const walletApiChainSectionSchema: z.ZodObject<WalletApiChainSectionShape, 'strict'> = z
-  .object({
-    factory: chainAddressSchema.optional(),
-    policy: chainPolicySchema.optional(),
-    bundlerUrl: z.string().url().optional(),
-  })
-  .strict();
+export const walletApiChainSectionSchema: z.ZodObject<
+	WalletApiChainSectionShape,
+	"strict"
+> = z
+	.object({
+		factory: chainAddressSchema.optional(),
+		policy: chainPolicySchema.optional(),
+		bundlerUrl: z.string().url().optional(),
+	})
+	.strict();
 
 export type WalletApiChainSection = z.infer<typeof walletApiChainSectionSchema>;
 
 /** giano-bundler's section of a backend chain entry. */
 type BundlerChainSectionShape = {
-  enabled: z.ZodDefault<z.ZodBoolean>;
-  rpcUrl: z.ZodOptional<z.ZodString>;
-  chainType: z.ZodDefault<z.ZodEnum<['auto', 'default', 'op-stack']>>;
-  maxBlockRange: z.ZodDefault<z.ZodNumber>;
+	enabled: z.ZodDefault<z.ZodBoolean>;
+	rpcUrl: z.ZodOptional<z.ZodString>;
+	chainType: z.ZodDefault<z.ZodEnum<["auto", "default", "op-stack"]>>;
+	maxBlockRange: z.ZodDefault<z.ZodNumber>;
 };
 
-export const bundlerChainSectionSchema: z.ZodObject<BundlerChainSectionShape, 'strict'> = z
-  .object({
-    /** `false`: this bundler does not serve the chain, and wallet-api must name another `bundlerUrl`. */
-    enabled: z.boolean().default(true),
-    /** Overrides the shared `rpcUrl` for submission and simulation only. */
-    rpcUrl: z.string().url().optional(),
-    /** `auto` detects an OP-stack chain from its GasPriceOracle predeploy. */
-    chainType: z.enum(['auto', 'default', 'op-stack']).default('auto'),
-    /** Receipt lookback, in blocks, for operations this process did not submit. */
-    maxBlockRange: z.number().int().positive().default(2000),
-  })
-  .strict();
+export const bundlerChainSectionSchema: z.ZodObject<
+	BundlerChainSectionShape,
+	"strict"
+> = z
+	.object({
+		/** `false`: this bundler does not serve the chain, and wallet-api must name another `bundlerUrl`. */
+		enabled: z.boolean().default(true),
+		/** Overrides the shared `rpcUrl` for submission and simulation only. */
+		rpcUrl: z.string().url().optional(),
+		/** `auto` detects an OP-stack chain from its GasPriceOracle predeploy. */
+		chainType: z.enum(["auto", "default", "op-stack"]).default("auto"),
+		/** Receipt lookback, in blocks, for operations this process did not submit. */
+		maxBlockRange: z.number().int().positive().default(2000),
+	})
+	.strict();
 
 export type BundlerChainSection = z.infer<typeof bundlerChainSectionSchema>;
 
@@ -125,20 +148,25 @@ export type BundlerChainSection = z.infer<typeof bundlerChainSectionSchema>;
  * console refreshes.
  */
 type PaymasterAdminChainSectionShape = {
-  walletRpcUrl: z.ZodOptional<z.ZodString>;
-  refreshSeconds: z.ZodOptional<z.ZodNumber>;
+	walletRpcUrl: z.ZodOptional<z.ZodString>;
+	refreshSeconds: z.ZodOptional<z.ZodNumber>;
 };
 
-export const paymasterAdminChainSectionSchema: z.ZodObject<PaymasterAdminChainSectionShape, 'strict'> = z
-  .object({
-    walletRpcUrl: z.string().optional(),
-    refreshSeconds: z.number().int().positive().optional(),
-  })
-  .strict();
+export const paymasterAdminChainSectionSchema: z.ZodObject<
+	PaymasterAdminChainSectionShape,
+	"strict"
+> = z
+	.object({
+		walletRpcUrl: z.string().optional(),
+		refreshSeconds: z.number().int().positive().optional(),
+	})
+	.strict();
 
 type ForeignSection = z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 
-const foreignSection: ForeignSection = z.record(z.string(), z.unknown()).optional();
+const foreignSection: ForeignSection = z
+	.record(z.string(), z.unknown())
+	.optional();
 
 /**
  * One backend chain entry — the shape of the chain document wallet-api (`GIANO_CHAINS`),
@@ -151,53 +179,55 @@ const foreignSection: ForeignSection = z.record(z.string(), z.unknown()).optiona
  * Submission keys never appear here: the document reaches wallet-api, which must not hold them.
  */
 type BackendChainFields = {
-  entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
-  sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
+	entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
+	sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
 };
 
 const backendChainFields: BackendChainFields = {
-  entryPoint: chainAddressSchema.optional(),
-  sponsorshipPaymaster: chainAddressSchema.optional(),
+	entryPoint: chainAddressSchema.optional(),
+	sponsorshipPaymaster: chainAddressSchema.optional(),
 };
 
 /** wallet-api's reading of a backend chain entry. */
 type WalletApiChainShape = z.objectUtil.extendShape<
-  ChainDescriptorShape,
-  BackendChainFields & {
-    walletApi: z.ZodDefault<z.ZodObject<WalletApiChainSectionShape, 'strict'>>;
-    bundler: ForeignSection;
-    paymasterAdmin: ForeignSection;
-  }
+	ChainDescriptorShape,
+	BackendChainFields & {
+		walletApi: z.ZodDefault<z.ZodObject<WalletApiChainSectionShape, "strict">>;
+		bundler: ForeignSection;
+		paymasterAdmin: ForeignSection;
+	}
 >;
 
-export const walletApiChainSchema: z.ZodObject<WalletApiChainShape, 'strict'> = chainDescriptorSchema
-  .extend({
-    ...backendChainFields,
-    walletApi: walletApiChainSectionSchema.default({}),
-    bundler: foreignSection,
-    paymasterAdmin: foreignSection,
-  })
-  .strict();
+export const walletApiChainSchema: z.ZodObject<WalletApiChainShape, "strict"> =
+	chainDescriptorSchema
+		.extend({
+			...backendChainFields,
+			walletApi: walletApiChainSectionSchema.default({}),
+			bundler: foreignSection,
+			paymasterAdmin: foreignSection,
+		})
+		.strict();
 export type WalletApiChain = z.infer<typeof walletApiChainSchema>;
 
 /** giano-bundler's reading of a backend chain entry. */
 type BundlerChainShape = z.objectUtil.extendShape<
-  ChainDescriptorShape,
-  BackendChainFields & {
-    walletApi: ForeignSection;
-    bundler: z.ZodDefault<z.ZodObject<BundlerChainSectionShape, 'strict'>>;
-    paymasterAdmin: ForeignSection;
-  }
+	ChainDescriptorShape,
+	BackendChainFields & {
+		walletApi: ForeignSection;
+		bundler: z.ZodDefault<z.ZodObject<BundlerChainSectionShape, "strict">>;
+		paymasterAdmin: ForeignSection;
+	}
 >;
 
-export const bundlerChainSchema: z.ZodObject<BundlerChainShape, 'strict'> = chainDescriptorSchema
-  .extend({
-    ...backendChainFields,
-    walletApi: foreignSection,
-    bundler: bundlerChainSectionSchema.default({}),
-    paymasterAdmin: foreignSection,
-  })
-  .strict();
+export const bundlerChainSchema: z.ZodObject<BundlerChainShape, "strict"> =
+	chainDescriptorSchema
+		.extend({
+			...backendChainFields,
+			walletApi: foreignSection,
+			bundler: bundlerChainSectionSchema.default({}),
+			paymasterAdmin: foreignSection,
+		})
+		.strict();
 export type BundlerChain = z.infer<typeof bundlerChainSchema>;
 
 /**
@@ -205,44 +235,52 @@ export type BundlerChain = z.infer<typeof bundlerChainSchema>;
  * gained per-service sections. Kept so existing importers keep compiling.
  */
 type BackendChainDescriptorShape = z.objectUtil.extendShape<
-  ChainDescriptorShape,
-  {
-    bundlerUrl: z.ZodString;
-    entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
-    factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
-    sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
-    policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, 'strict'>>;
-  }
+	ChainDescriptorShape,
+	{
+		bundlerUrl: z.ZodString;
+		entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
+		factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
+		sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
+		policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, "strict">>;
+	}
 >;
 
-export const backendChainDescriptorSchema: z.ZodObject<BackendChainDescriptorShape, 'strip'> = chainDescriptorSchema.extend({
-  bundlerUrl: z.string().url(),
-  entryPoint: chainAddressSchema.optional(),
-  factory: chainAddressSchema.optional(),
-  sponsorshipPaymaster: chainAddressSchema.optional(),
-  policy: chainPolicySchema.optional(),
+export const backendChainDescriptorSchema: z.ZodObject<
+	BackendChainDescriptorShape,
+	"strip"
+> = chainDescriptorSchema.extend({
+	bundlerUrl: z.string().url(),
+	entryPoint: chainAddressSchema.optional(),
+	factory: chainAddressSchema.optional(),
+	sponsorshipPaymaster: chainAddressSchema.optional(),
+	policy: chainPolicySchema.optional(),
 });
 
-export type BackendChainDescriptor = z.infer<typeof backendChainDescriptorSchema>;
+export type BackendChainDescriptor = z.infer<
+	typeof backendChainDescriptorSchema
+>;
 
 /** wallet-web's extension: what the browser needs; it never learns an endpoint it may not use. */
 type WalletChainDescriptorShape = z.objectUtil.extendShape<
-  ChainDescriptorShape,
-  {
-    bundlerUrl: z.ZodString;
-    factoryAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
-    sponsorship: z.ZodOptional<z.ZodEnum<['service', 'test-paymaster', 'off']>>;
-    paymasterServiceUrl: z.ZodOptional<z.ZodString>;
-    testPaymasterAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
-  }
+	ChainDescriptorShape,
+	{
+		bundlerUrl: z.ZodString;
+		factoryAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
+		sponsorship: z.ZodOptional<z.ZodEnum<["service", "test-paymaster", "off"]>>;
+		paymasterServiceUrl: z.ZodOptional<z.ZodString>;
+		testPaymasterAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
+	}
 >;
 
-export const walletChainDescriptorSchema: z.ZodObject<WalletChainDescriptorShape, 'strip'> = chainDescriptorSchema.extend({
-  bundlerUrl: z.string().url(),
-  factoryAddress: chainAddressSchema.optional(),
-  sponsorship: z.enum(['service', 'test-paymaster', 'off']).optional(),
-  paymasterServiceUrl: z.string().optional(),
-  testPaymasterAddress: chainAddressSchema.optional(),
+export const walletChainDescriptorSchema: z.ZodObject<
+	WalletChainDescriptorShape,
+	"strip"
+> = chainDescriptorSchema.extend({
+	bundlerUrl: z.string().url(),
+	factoryAddress: chainAddressSchema.optional(),
+	sponsorship: z.enum(["service", "test-paymaster", "off"]).optional(),
+	paymasterServiceUrl: z.string().optional(),
+	testPaymasterAddress: chainAddressSchema.optional(),
 });
 
 export type WalletChainDescriptor = z.infer<typeof walletChainDescriptorSchema>;
@@ -252,39 +290,44 @@ export type WalletChainDescriptor = z.infer<typeof walletChainDescriptorSchema>;
  * at least one entry, unique chain ids, and no privileged entry (the shape has no way to
  * express one — that is the point). Returns readable errors naming the chain and field.
  */
-export function validateChainList<T extends ChainDescriptor>(descriptors: T[]): { errors: string[]; warnings: string[] } {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  if (descriptors.length === 0) errors.push('at least one chain must be configured');
-  const seenIds = new Set<number>();
-  const seenNames = new Set<string>();
-  for (const descriptor of descriptors) {
-    if (seenIds.has(descriptor.chainId)) errors.push(`duplicate chainId ${descriptor.chainId}`);
-    seenIds.add(descriptor.chainId);
-    // Operators read names; two chains called "Testnet" is an incident waiting to happen.
-    if (seenNames.has(descriptor.name)) warnings.push(`duplicate chain name "${descriptor.name}"`);
-    seenNames.add(descriptor.name);
-  }
-  return { errors, warnings };
+export function validateChainList<T extends ChainDescriptor>(
+	descriptors: T[],
+): { errors: string[]; warnings: string[] } {
+	const errors: string[] = [];
+	const warnings: string[] = [];
+	if (descriptors.length === 0)
+		errors.push("at least one chain must be configured");
+	const seenIds = new Set<number>();
+	const seenNames = new Set<string>();
+	for (const descriptor of descriptors) {
+		if (seenIds.has(descriptor.chainId))
+			errors.push(`duplicate chainId ${descriptor.chainId}`);
+		seenIds.add(descriptor.chainId);
+		// Operators read names; two chains called "Testnet" is an incident waiting to happen.
+		if (seenNames.has(descriptor.name))
+			warnings.push(`duplicate chain name "${descriptor.name}"`);
+		seenNames.add(descriptor.name);
+	}
+	return { errors, warnings };
 }
 
 /** Well-known chain names, used when a single-chain shorthand supplies no name. */
 const KNOWN_CHAIN_NAMES: Record<number, string> = {
-  1: 'Ethereum',
-  10: 'OP Mainnet',
-  8453: 'Base',
-  84532: 'Base Sepolia',
-  11155111: 'Sepolia',
-  31337: 'Local devnet A',
-  31338: 'Local devnet B',
+	1: "Ethereum",
+	10: "OP Mainnet",
+	8453: "Base",
+	84532: "Base Sepolia",
+	11155111: "Sepolia",
+	31337: "Local devnet A",
+	31338: "Local devnet B",
 };
 
 /** A display name for a chain: registry/known name, else "chain <id>" (never a bare number). */
 export function defaultChainName(chainId: number): string {
-  return KNOWN_CHAIN_NAMES[chainId] ?? `chain ${chainId}`;
+	return KNOWN_CHAIN_NAMES[chainId] ?? `chain ${chainId}`;
 }
 
 /** True when the chain has a registry entry the descriptor's addresses may default from. */
 export function hasRegistryEntry(chainId: number): boolean {
-  return chainId in gianoAddresses;
+	return chainId in gianoAddresses;
 }

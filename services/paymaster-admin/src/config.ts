@@ -23,50 +23,50 @@
  * administering a paymaster, and are dropped before they reach the browser (§14.6).
  */
 export type Deployment = {
-  /** How an operator tells this environment apart. Shown in the header. */
-  name: string;
-  chainId: number;
-  rpcUrl: string;
-  /**
-   * The paymaster proxy.
-   *
-   * Optional in the type because the SDK can resolve it from the contracts registry — but no chain
-   * in that registry currently declares a `sponsorshipPaymaster`, so in practice this must be set.
-   * Leaving it out fails loudly rather than silently reading the wrong contract.
-   */
-  sponsorshipPaymaster?: `0x${string}`;
-  /**
-   * Where a *wallet* should reach this chain, when that is not where the console reads.
-   *
-   * The console reads through its own origin — `rpcUrl` is normally `/rpc/<chainId>`, a proxy that
-   * keeps a keyed provider endpoint server-side. A wallet asked to add the network has to dial it
-   * itself, from outside this page, and cannot use either a path on this origin or, in MetaMask's
-   * case, anything that is not HTTPS or literal localhost. So the address to hand a wallet is
-   * stated rather than derived: deriving it from `rpcUrl` would mean publishing the keyed endpoint
-   * to every operator's wallet, which is the thing the proxy exists to prevent.
-   *
-   * Optional, and only used when the wallet does not already know the chain. Unset, the console
-   * offers `rpcUrl` and reports what the wallet says if it refuses.
-   */
-  walletRpcUrl?: string;
-  /**
-   * Seconds between automatic refreshes. 0 disables polling.
-   *
-   * The one field a chain descriptor has no opinion about — how often a console polls is not a
-   * property of the chain — so it defaults rather than being required of an array authored for
-   * `wallet-api`.
-   */
-  refreshSeconds: number;
+	/** How an operator tells this environment apart. Shown in the header. */
+	name: string;
+	chainId: number;
+	rpcUrl: string;
+	/**
+	 * The paymaster proxy.
+	 *
+	 * Optional in the type because the SDK can resolve it from the contracts registry — but no chain
+	 * in that registry currently declares a `sponsorshipPaymaster`, so in practice this must be set.
+	 * Leaving it out fails loudly rather than silently reading the wrong contract.
+	 */
+	sponsorshipPaymaster?: `0x${string}`;
+	/**
+	 * Where a *wallet* should reach this chain, when that is not where the console reads.
+	 *
+	 * The console reads through its own origin — `rpcUrl` is normally `/rpc/<chainId>`, a proxy that
+	 * keeps a keyed provider endpoint server-side. A wallet asked to add the network has to dial it
+	 * itself, from outside this page, and cannot use either a path on this origin or, in MetaMask's
+	 * case, anything that is not HTTPS or literal localhost. So the address to hand a wallet is
+	 * stated rather than derived: deriving it from `rpcUrl` would mean publishing the keyed endpoint
+	 * to every operator's wallet, which is the thing the proxy exists to prevent.
+	 *
+	 * Optional, and only used when the wallet does not already know the chain. Unset, the console
+	 * offers `rpcUrl` and reports what the wallet says if it refuses.
+	 */
+	walletRpcUrl?: string;
+	/**
+	 * Seconds between automatic refreshes. 0 disables polling.
+	 *
+	 * The one field a chain descriptor has no opinion about — how often a console polls is not a
+	 * property of the chain — so it defaults rather than being required of an array authored for
+	 * `wallet-api`.
+	 */
+	refreshSeconds: number;
 };
 
 export type AdminConfig = {
-  deployments: readonly Deployment[];
-  /**
-   * Whether this console can reach wallet-api's platform tier through its own `/api` proxy — true
-   * exactly when the container was given GIANO_WALLET_API_UPSTREAM. False hides the Platform area
-   * entirely, which is what every deployment that sets nothing new gets.
-   */
-  platformApi: boolean;
+	deployments: readonly Deployment[];
+	/**
+	 * Whether this console can reach wallet-api's platform tier through its own `/api` proxy — true
+	 * exactly when the container was given GIANO_WALLET_API_UPSTREAM. False hides the Platform area
+	 * entirely, which is what every deployment that sets nothing new gets.
+	 */
+	platformApi: boolean;
 };
 
 /**
@@ -77,69 +77,93 @@ export type AdminConfig = {
  * let those empty strings through as real addresses.
  */
 type RawDeployment = {
-  name?: string;
-  chainId?: number | string;
-  rpcUrl?: string;
-  walletRpcUrl?: string;
-  sponsorshipPaymaster?: string;
-  refreshSeconds?: number | string;
+	name?: string;
+	chainId?: number | string;
+	rpcUrl?: string;
+	walletRpcUrl?: string;
+	sponsorshipPaymaster?: string;
+	refreshSeconds?: number | string;
 };
 
 type RawAdminConfig = RawDeployment & {
-  deployments?: RawDeployment[];
-  /** Accepted at the top level for the single-deployment shape. */
-  environmentLabel?: string;
-  platformApi?: boolean;
+	deployments?: RawDeployment[];
+	/** Accepted at the top level for the single-deployment shape. */
+	environmentLabel?: string;
+	platformApi?: boolean;
 };
 
 let config: AdminConfig | undefined;
 
 const DEFAULT_REFRESH_SECONDS = 15;
 
-function toDeployment(raw: RawDeployment, fallbackName: string, index: number): Deployment {
-  const chainId = Number(raw.chainId);
-  if (!chainId || Number.isNaN(chainId)) throw new Error(`deployment ${index + 1} (${raw.name ?? fallbackName}) has no chainId`);
-  if (!raw.rpcUrl) throw new Error(`deployment ${index + 1} (${raw.name ?? fallbackName}) has no rpcUrl`);
+function toDeployment(
+	raw: RawDeployment,
+	fallbackName: string,
+	index: number,
+): Deployment {
+	const chainId = Number(raw.chainId);
+	if (!chainId || Number.isNaN(chainId))
+		throw new Error(
+			`deployment ${index + 1} (${raw.name ?? fallbackName}) has no chainId`,
+		);
+	if (!raw.rpcUrl)
+		throw new Error(
+			`deployment ${index + 1} (${raw.name ?? fallbackName}) has no rpcUrl`,
+		);
 
-  return {
-    name: raw.name || fallbackName || `chain ${chainId}`,
-    chainId,
-    rpcUrl: raw.rpcUrl,
-    walletRpcUrl: raw.walletRpcUrl || undefined,
-    sponsorshipPaymaster: raw.sponsorshipPaymaster ? (raw.sponsorshipPaymaster as `0x${string}`) : undefined,
-    refreshSeconds: raw.refreshSeconds === undefined || raw.refreshSeconds === '' ? DEFAULT_REFRESH_SECONDS : Number(raw.refreshSeconds),
-  };
+	return {
+		name: raw.name || fallbackName || `chain ${chainId}`,
+		chainId,
+		rpcUrl: raw.rpcUrl,
+		walletRpcUrl: raw.walletRpcUrl || undefined,
+		sponsorshipPaymaster: raw.sponsorshipPaymaster
+			? (raw.sponsorshipPaymaster as `0x${string}`)
+			: undefined,
+		refreshSeconds:
+			raw.refreshSeconds === undefined || raw.refreshSeconds === ""
+				? DEFAULT_REFRESH_SECONDS
+				: Number(raw.refreshSeconds),
+	};
 }
 
 export async function loadAdminConfig(): Promise<AdminConfig> {
-  if (config) return config;
+	if (config) return config;
 
-  const response = await fetch('/config.json', { cache: 'no-store' });
-  if (!response.ok) throw new Error(`failed to load /config.json: ${response.status}`);
-  const raw = (await response.json()) as RawAdminConfig;
+	const response = await fetch("/config.json", { cache: "no-store" });
+	if (!response.ok)
+		throw new Error(`failed to load /config.json: ${response.status}`);
+	const raw = (await response.json()) as RawAdminConfig;
 
-  // Two accepted shapes. The single-deployment one is kept because it is what a container
-  // rendering one set of environment variables produces, and because most deployments really do
-  // administer one chain — making them declare a one-element array would be ceremony.
-  const rawDeployments = raw.deployments && raw.deployments.length > 0 ? raw.deployments : [{ ...raw, name: raw.name ?? raw.environmentLabel }];
+	// Two accepted shapes. The single-deployment one is kept because it is what a container
+	// rendering one set of environment variables produces, and because most deployments really do
+	// administer one chain — making them declare a one-element array would be ceremony.
+	const rawDeployments =
+		raw.deployments && raw.deployments.length > 0
+			? raw.deployments
+			: [{ ...raw, name: raw.name ?? raw.environmentLabel }];
 
-  const deployments = rawDeployments.map((entry, index) => toDeployment(entry, entry.name ?? '', index));
+	const deployments = rawDeployments.map((entry, index) =>
+		toDeployment(entry, entry.name ?? "", index),
+	);
 
-  const seen = new Set<string>();
-  for (const deployment of deployments) {
-    const key = deploymentKey(deployment);
-    if (seen.has(key)) throw new Error(`two deployments share chain ${deployment.chainId} and the same paymaster address; give them distinct addresses`);
-    seen.add(key);
-  }
+	const seen = new Set<string>();
+	for (const deployment of deployments) {
+		const key = deploymentKey(deployment);
+		if (seen.has(key))
+			throw new Error(
+				`two deployments share chain ${deployment.chainId} and the same paymaster address; give them distinct addresses`,
+			);
+		seen.add(key);
+	}
 
-  config = { deployments, platformApi: raw.platformApi === true };
-  return config;
+	config = { deployments, platformApi: raw.platformApi === true };
+	return config;
 }
 
 /** The loaded config. Throws if called before {@link loadAdminConfig} has resolved. */
 export function getAdminConfig(): AdminConfig {
-  if (!config) throw new Error('admin config accessed before it was loaded');
-  return config;
+	if (!config) throw new Error("admin config accessed before it was loaded");
+	return config;
 }
 
 /**
@@ -150,27 +174,31 @@ export function getAdminConfig(): AdminConfig {
  * would be worse than not remembering it at all.
  */
 export function deploymentKey(deployment: Deployment): string {
-  return `${deployment.chainId}:${deployment.sponsorshipPaymaster?.toLowerCase() ?? 'registry'}`;
+	return `${deployment.chainId}:${deployment.sponsorshipPaymaster?.toLowerCase() ?? "registry"}`;
 }
 
-const STORAGE_KEY = 'giano:paymaster-admin:deployment';
+const STORAGE_KEY = "giano:paymaster-admin:deployment";
 
 /** The deployment to open with: the one last chosen, when it is still declared, else the first. */
-export function initialDeployment(deployments: readonly Deployment[]): Deployment {
-  try {
-    const remembered = localStorage.getItem(STORAGE_KEY);
-    const match = deployments.find((deployment) => deploymentKey(deployment) === remembered);
-    if (match) return match;
-  } catch {
-    // Storage can be unavailable (private mode, blocked cookies). Not remembering is fine.
-  }
-  return deployments[0];
+export function initialDeployment(
+	deployments: readonly Deployment[],
+): Deployment {
+	try {
+		const remembered = localStorage.getItem(STORAGE_KEY);
+		const match = deployments.find(
+			(deployment) => deploymentKey(deployment) === remembered,
+		);
+		if (match) return match;
+	} catch {
+		// Storage can be unavailable (private mode, blocked cookies). Not remembering is fine.
+	}
+	return deployments[0];
 }
 
 export function rememberDeployment(deployment: Deployment): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, deploymentKey(deployment));
-  } catch {
-    // As above — a console that cannot remember the choice still works.
-  }
+	try {
+		localStorage.setItem(STORAGE_KEY, deploymentKey(deployment));
+	} catch {
+		// As above — a console that cannot remember the choice still works.
+	}
 }

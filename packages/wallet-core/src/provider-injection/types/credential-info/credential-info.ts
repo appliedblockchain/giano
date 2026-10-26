@@ -1,58 +1,64 @@
-import { isNonEmptyBufferSource } from '../buffer-source'
-import { assertBaseCredentialInfo, BaseCredentialInfo } from './base-credential-info'
-import { assertResidentKeyRequirement } from './resident-key-requirement'
-
+import { isNonEmptyBufferSource } from "../buffer-source";
+import {
+	assertBaseCredentialInfo,
+	type BaseCredentialInfo,
+} from "./base-credential-info";
 // JSDocs links
 import {
-  DEFAULT_RESIDENT_KEY_REQUIREMENT, // `CredentialInfoCreate.residentKey`
-} from './defaults'
+	DEFAULT_RESIDENT_KEY_REQUIREMENT, // `CredentialInfoCreate.residentKey`
+} from "./defaults";
+import { assertResidentKeyRequirement } from "./resident-key-requirement";
 
 export type CredentialInfoUse = BaseCredentialInfo & {
-  credentialId: BufferSource | BufferSource[]
-}
+	credentialId: BufferSource | BufferSource[];
+};
 export type CredentialInfoCreate = BaseCredentialInfo & {
-  credentialId: null
-  /**
-   * When not provided, defaults to {@link DEFAULT_RESIDENT_KEY_REQUIREMENT}
-   */
-  residentKey?: ResidentKeyRequirement
-}
+	credentialId: null;
+	/**
+	 * When not provided, defaults to {@link DEFAULT_RESIDENT_KEY_REQUIREMENT}
+	 */
+	residentKey?: ResidentKeyRequirement;
+};
 export type CredentialInfoUserPick = BaseCredentialInfo & {
-  credentialId: 'user-pick'
-}
-export type CredentialInfo = (
-  | CredentialInfoUse
-  | CredentialInfoCreate
-  | CredentialInfoUserPick
-)
+	credentialId: "user-pick";
+};
+export type CredentialInfo =
+	| CredentialInfoUse
+	| CredentialInfoCreate
+	| CredentialInfoUserPick;
 
-export function assertCredentialInfo(value: unknown): asserts value is CredentialInfo {
-  if (typeof value !== 'object' || value === null) {
-    throw new Error('Credential info must be an object')
-  }
+export function assertCredentialInfo(
+	value: unknown,
+): asserts value is CredentialInfo {
+	if (typeof value !== "object" || value === null) {
+		throw new Error("Credential info must be an object");
+	}
 
-  assertBaseCredentialInfo(value)
+	assertBaseCredentialInfo(value);
 
-  const info = value as CredentialInfo
-  const { credentialId } = info
+	const info = value as CredentialInfo;
+	const { credentialId } = info;
 
-  if (credentialId === null) {
-    if (info.residentKey !== undefined) {
-      assertResidentKeyRequirement(info.residentKey, { descriptor: 'residentKey' })
-    }
-    return
-  }
+	if (credentialId === null) {
+		if (info.residentKey !== undefined) {
+			assertResidentKeyRequirement(info.residentKey, {
+				descriptor: "residentKey",
+			});
+		}
+		return;
+	}
 
-  if (
-    credentialId === 'user-pick' ||
-    isNonEmptyBufferSource(credentialId) ||
-    ( // array of non-empty BufferSource items
-      credentialId instanceof Array &&
-      credentialId.every(x => isNonEmptyBufferSource(x))
-    )
-  ) {
-    return
-  }
+	if (
+		credentialId === "user-pick" ||
+		isNonEmptyBufferSource(credentialId) ||
+		// array of non-empty BufferSource items
+		(credentialId instanceof Array &&
+			credentialId.every((x) => isNonEmptyBufferSource(x)))
+	) {
+		return;
+	}
 
-  throw new Error('`credentialId` must be one of: `\'user-pick\'`, `null`, non-empty `BufferSource`, or an array of non-empty `BufferSource`')
+	throw new Error(
+		"`credentialId` must be one of: `'user-pick'`, `null`, non-empty `BufferSource`, or an array of non-empty `BufferSource`",
+	);
 }

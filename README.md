@@ -320,12 +320,9 @@ Every package typechecks with **TypeScript 7** (the native compiler): `pnpm type
 | `@typescript/native` | `typescript@7` | the `tsc` binary: `typecheck` scripts, `build` scripts that run `tsc --noEmit`, CI |
 | `typescript` | `@typescript/typescript6` (6.0 API, `tsc6` binary) | tools that `import 'typescript'` as a library |
 
-TypeScript 7.0 has no programmatic API (it is planned for 7.1). One tool still needs one, so it
-stays on the 6.0 API until it supports 7.1's:
-
-| Tool | Why it needs the API | Moves to TS 7 when |
-| --- | --- | --- |
-| typescript-eslint (`services/custom-example` lint) | the parser and type-aware rules use the API | typescript-eslint supports TS 7, or the lint moves to oxlint |
+TypeScript 7.0 has no programmatic API (it is planned for 7.1). No tool in the repo needs one any more:
+typescript-eslint was the last, and linting and formatting moved to [Biome](https://biomejs.dev), a
+native binary with no TypeScript dependency (`pnpm lint`, `pnpm format`; CI runs `biome ci`).
 
 **Builds use no compiler API.** Every package and service builds with [tsdown](https://tsdown.dev)
 (tsup is no longer maintained and points there). Declarations come from tsdown's `oxc` generator,

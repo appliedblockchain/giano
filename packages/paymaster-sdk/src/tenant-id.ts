@@ -1,5 +1,5 @@
-import type { Hex } from 'viem';
-import { PaymasterSdkError } from './errors';
+import type { Hex } from "viem";
+import { PaymasterSdkError } from "./errors";
 
 /**
  * Tenant identifiers.
@@ -16,7 +16,8 @@ import { PaymasterSdkError } from './errors';
 /** A tenant id in the contract's spelling: `0x` followed by exactly 32 hex characters. */
 export type TenantIdHex = Hex;
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID_PATTERN =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BYTES16_PATTERN = /^0x[0-9a-f]{32}$/;
 
 /**
@@ -27,14 +28,16 @@ const BYTES16_PATTERN = /^0x[0-9a-f]{32}$/;
  * different tenant, and the contract would report it only as `UnknownTenant`.
  */
 export function toTenantId(id: string): TenantIdHex {
-  const trimmed = id.trim().toLowerCase();
+	const trimmed = id.trim().toLowerCase();
 
-  if (BYTES16_PATTERN.test(trimmed)) return trimmed as TenantIdHex;
+	if (BYTES16_PATTERN.test(trimmed)) return trimmed as TenantIdHex;
 
-  const undashed = trimmed.replace(/-/g, '');
-  if (/^[0-9a-f]{32}$/.test(undashed)) return `0x${undashed}`;
+	const undashed = trimmed.replace(/-/g, "");
+	if (/^[0-9a-f]{32}$/.test(undashed)) return `0x${undashed}`;
 
-  throw new PaymasterSdkError(`"${id}" is not a tenant id: expected a UUID or a 16-byte hex string (0x + 32 hex characters)`);
+	throw new PaymasterSdkError(
+		`"${id}" is not a tenant id: expected a UUID or a 16-byte hex string (0x + 32 hex characters)`,
+	);
 }
 
 /**
@@ -42,20 +45,22 @@ export function toTenantId(id: string): TenantIdHex {
  * the backend's tenant table, dashboards, support tickets.
  */
 export function toTenantUuid(id: TenantIdHex): string {
-  const hex = id.trim().toLowerCase();
-  if (!BYTES16_PATTERN.test(hex)) {
-    throw new PaymasterSdkError(`"${id}" is not a 16-byte hex string, so it cannot be rendered as a UUID`);
-  }
-  const body = hex.slice(2);
-  return `${body.slice(0, 8)}-${body.slice(8, 12)}-${body.slice(12, 16)}-${body.slice(16, 20)}-${body.slice(20)}`;
+	const hex = id.trim().toLowerCase();
+	if (!BYTES16_PATTERN.test(hex)) {
+		throw new PaymasterSdkError(
+			`"${id}" is not a 16-byte hex string, so it cannot be rendered as a UUID`,
+		);
+	}
+	const body = hex.slice(2);
+	return `${body.slice(0, 8)}-${body.slice(8, 12)}-${body.slice(12, 16)}-${body.slice(16, 20)}-${body.slice(20)}`;
 }
 
 /** True when `value` is a UUID in the canonical dashed form. */
 export function isTenantUuid(value: string): boolean {
-  return UUID_PATTERN.test(value.trim().toLowerCase());
+	return UUID_PATTERN.test(value.trim().toLowerCase());
 }
 
 /** True when `value` is already a `bytes16` tenant id. */
 export function isTenantIdHex(value: string): boolean {
-  return BYTES16_PATTERN.test(value.trim().toLowerCase());
+	return BYTES16_PATTERN.test(value.trim().toLowerCase());
 }

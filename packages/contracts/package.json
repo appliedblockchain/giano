@@ -1,82 +1,82 @@
 {
-  "name": "@appliedblockchain/giano-contracts",
-  "version": "3.1.1",
-  "description": "Giano smart wallet contracts: ABIs, deployed address registry and Solidity sources",
-  "license": "MIT",
-  "type": "commonjs",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/appliedblockchain/giano.git",
-    "directory": "packages/contracts"
-  },
-  "author": "Applied Blockchain",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      }
-    }
-  },
-  "sideEffects": false,
-  "files": [
-    "dist",
-    "src/**/*.sol",
-    "vendor/**/*.sol",
-    "index.ts",
-    "generated.ts",
-    "addresses.ts",
-    "canonical.ts",
-    "chains.ts",
-    "address-overrides.json",
-    "remappings.txt"
-  ],
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  },
-  "scripts": {
-    "build": "pnpm gen:abis && pnpm gen:addresses && pnpm build:ts",
-    "build:ts": "tsdown",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm build:ts",
-    "compile": "forge build",
-    "test": "forge test",
-    "gen:abis": "forge build src --out out-abi && wagmi generate",
-    "gen:canonical": "tsx scripts/generate-canonical.ts",
-    "gen:addresses": "tsx scripts/generate-addresses.ts",
-    "release:cut": "tsx scripts/release.ts cut",
-    "release:verify": "tsx scripts/release.ts verify",
-    "release:status": "tsx scripts/release.ts status",
-    "deploy:cli": "tsx deploy/cli.ts",
-    "local:node": "anvil --enable-trace-printing",
-    "local:deploy": "tsx scripts/deploy-local.ts",
-    "doctor": "tsx scripts/doctor.ts",
-    "provision:paymaster": "tsx scripts/provision-paymaster.ts",
-    "storage": "node scripts/storage-layout.mjs",
-    "storage:check": "node scripts/storage-layout.mjs --check"
-  },
-  "dependencies": {
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "@account-abstraction/contracts": "0.7.0",
-    "@openzeppelin/contracts": "5.4.0",
-    "@openzeppelin/contracts-upgradeable": "5.4.0",
-    "@types/node": "^22.7.5",
-    "@typescript/native": "npm:typescript@7.0.2",
-    "@wagmi/cli": "^2.2.1",
-    "ethers": "6.13.2",
-    "tsdown": "0.23.1",
-    "tsx": "^4.19.4",
-    "typescript": "npm:@typescript/typescript6@6.0.2",
-    "viem": "2.31.6"
-  }
+	"name": "@appliedblockchain/giano-contracts",
+	"version": "3.1.1",
+	"description": "Giano smart wallet contracts: ABIs, deployed address registry and Solidity sources",
+	"license": "MIT",
+	"type": "commonjs",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/appliedblockchain/giano.git",
+		"directory": "packages/contracts"
+	},
+	"author": "Applied Blockchain",
+	"main": "./dist/index.js",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
+			"require": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			}
+		}
+	},
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"src/**/*.sol",
+		"vendor/**/*.sol",
+		"index.ts",
+		"generated.ts",
+		"addresses.ts",
+		"canonical.ts",
+		"chains.ts",
+		"address-overrides.json",
+		"remappings.txt"
+	],
+	"publishConfig": {
+		"registry": "https://npm.pkg.github.com",
+		"access": "restricted"
+	},
+	"scripts": {
+		"build": "pnpm gen:abis && pnpm gen:addresses && pnpm build:ts",
+		"build:ts": "tsdown",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "pnpm build:ts",
+		"compile": "forge build",
+		"test": "forge test",
+		"gen:abis": "forge build src --out out-abi && wagmi generate",
+		"gen:canonical": "tsx scripts/generate-canonical.ts",
+		"gen:addresses": "tsx scripts/generate-addresses.ts",
+		"release:cut": "tsx scripts/release.ts cut",
+		"release:verify": "tsx scripts/release.ts verify",
+		"release:status": "tsx scripts/release.ts status",
+		"deploy:cli": "tsx deploy/cli.ts",
+		"local:node": "anvil --enable-trace-printing",
+		"local:deploy": "tsx scripts/deploy-local.ts",
+		"doctor": "tsx scripts/doctor.ts",
+		"provision:paymaster": "tsx scripts/provision-paymaster.ts",
+		"storage": "node scripts/storage-layout.mjs",
+		"storage:check": "node scripts/storage-layout.mjs --check"
+	},
+	"dependencies": {
+		"zod": "^3.23.8"
+	},
+	"devDependencies": {
+		"@account-abstraction/contracts": "0.7.0",
+		"@openzeppelin/contracts": "5.4.0",
+		"@openzeppelin/contracts-upgradeable": "5.4.0",
+		"@types/node": "^22.7.5",
+		"@typescript/native": "npm:typescript@7.0.2",
+		"@wagmi/cli": "^2.2.1",
+		"ethers": "6.13.2",
+		"tsdown": "0.23.1",
+		"tsx": "^4.19.4",
+		"typescript": "npm:@typescript/typescript6@6.0.2",
+		"viem": "2.31.6"
+	}
 }

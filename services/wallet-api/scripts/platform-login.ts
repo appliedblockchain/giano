@@ -11,41 +11,63 @@
  * The token goes to stdout alone, so it can be captured: `set -l token (… platform:login …)`.
  * Everything else goes to stderr.
  */
-import type { Hex } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import type { Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required`);
-  return value;
+	const value = process.env[name];
+	if (!value) throw new Error(`${name} is required`);
+	return value;
 }
 
 function argument(flag: string): string | undefined {
-  const index = process.argv.indexOf(flag);
-  return index === -1 ? undefined : process.argv[index + 1];
+	const index = process.argv.indexOf(flag);
+	return index === -1 ? undefined : process.argv[index + 1];
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
-  // no Origin header: platform admin routes refuse any request that carries one
-  const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`${url} answered ${response.status}: ${await response.text()}`);
-  return (await response.json()) as T;
+	// no Origin header: platform admin routes refuse any request that carries one
+	const response = await fetch(url, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+	if (!response.ok)
+		throw new Error(
+			`${url} answered ${response.status}: ${await response.text()}`,
+		);
+	return (await response.json()) as T;
 }
 
 async function main(): Promise<void> {
-  const api = (argument('--api') ?? process.env.WALLET_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-  const chainId = Number(argument('--chain-id') ?? '1');
-  const account = privateKeyToAccount(required('PLATFORM_ADMIN_PRIVATE_KEY') as Hex);
+	const api = (
+		argument("--api") ??
+		process.env.WALLET_API_URL ??
+		"http://localhost:3000"
+	).replace(/\/$/, "");
+	const chainId = Number(argument("--chain-id") ?? "1");
+	const account = privateKeyToAccount(
+		required("PLATFORM_ADMIN_PRIVATE_KEY") as Hex,
+	);
 
-  const { message } = await post<{ message: string }>(`${api}/v1/platform/auth/challenge`, { address: account.address, chainId });
-  const signature = await account.signMessage({ message });
-  const session = await post<{ token: string; expiresAt: string; admin: { id: string } }>(`${api}/v1/platform/auth/verify`, { message, signature });
+	const { message } = await post<{ message: string }>(
+		`${api}/v1/platform/auth/challenge`,
+		{ address: account.address, chainId },
+	);
+	const signature = await account.signMessage({ message });
+	const session = await post<{
+		token: string;
+		expiresAt: string;
+		admin: { id: string };
+	}>(`${api}/v1/platform/auth/verify`, { message, signature });
 
-  console.error(`signed in as ${session.admin.id} (${account.address}) until ${session.expiresAt}`);
-  console.log(session.token);
+	console.error(
+		`signed in as ${session.admin.id} (${account.address}) until ${session.expiresAt}`,
+	);
+	console.log(session.token);
 }
 
 main().catch((error: Error) => {
-  console.error(error.message);
-  process.exit(1);
+	console.error(error.message);
+	process.exit(1);
 });

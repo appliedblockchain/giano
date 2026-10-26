@@ -15,15 +15,15 @@
  * Usage:  pnpm storage         (write)
  *         pnpm storage:check   (verify)
  */
-import { execFileSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(dir, '..');
-const outDir = path.join(root, 'storage-layout');
-const outPath = path.join(outDir, 'GianoPaymaster.json');
+const root = path.resolve(dir, "..");
+const outDir = path.join(root, "storage-layout");
+const outPath = path.join(outDir, "GianoPaymaster.json");
 
 /*
  * `PaymasterStorageProbe`, not `GianoPaymaster`.
@@ -33,16 +33,20 @@ const outPath = path.join(outDir, 'GianoPaymaster.json');
  * forever. The probe declares the same struct as an ordinary state variable purely so the layout
  * that actually matters becomes inspectable.
  */
-const raw = execFileSync('forge', ['inspect', 'PaymasterStorageProbe', 'storageLayout', '--json'], { cwd: root, encoding: 'utf8' });
+const raw = execFileSync(
+	"forge",
+	["inspect", "PaymasterStorageProbe", "storageLayout", "--json"],
+	{ cwd: root, encoding: "utf8" },
+);
 const layout = JSON.parse(raw);
 
 if ((layout.storage ?? []).length === 0) {
-  console.error(
-    'forge reported an empty storage layout for PaymasterStorageProbe.\n' +
-      'That almost certainly means the probe no longer references GianoPaymaster.PaymasterStorage —\n' +
-      'in which case this check would silently pass forever. Fix the probe rather than the snapshot.\n',
-  );
-  process.exit(1);
+	console.error(
+		"forge reported an empty storage layout for PaymasterStorageProbe.\n" +
+			"That almost certainly means the probe no longer references GianoPaymaster.PaymasterStorage —\n" +
+			"in which case this check would silently pass forever. Fix the probe rather than the snapshot.\n",
+	);
+	process.exit(1);
 }
 
 /**
@@ -54,56 +58,58 @@ if ((layout.storage ?? []).length === 0) {
  * nothing. Stripping them leaves exactly the property that must not change: which field sits in
  * which slot, at which offset, with which type.
  */
-const stripAstIds = (value) => value.replace(/\)\d+/g, ')');
+const stripAstIds = (value) => value.replace(/\)\d+/g, ")");
 const normalised = {
-  storage: (layout.storage ?? []).map((entry) => ({
-    label: entry.label,
-    slot: entry.slot,
-    offset: entry.offset,
-    type: stripAstIds(entry.type),
-  })),
-  types: Object.fromEntries(
-    Object.entries(layout.types ?? {})
-      .sort(([a], [b]) => stripAstIds(a).localeCompare(stripAstIds(b)))
-      .map(([key, value]) => [
-        stripAstIds(key),
-        {
-          label: value.label,
-          numberOfBytes: value.numberOfBytes,
-          encoding: value.encoding,
-          ...(value.key ? { key: stripAstIds(value.key) } : {}),
-          ...(value.value ? { value: stripAstIds(value.value) } : {}),
-          ...(value.members
-            ? {
-                members: value.members.map((m) => ({
-                  label: m.label,
-                  slot: m.slot,
-                  offset: m.offset,
-                  type: stripAstIds(m.type),
-                })),
-              }
-            : {}),
-        },
-      ]),
-  ),
+	storage: (layout.storage ?? []).map((entry) => ({
+		label: entry.label,
+		slot: entry.slot,
+		offset: entry.offset,
+		type: stripAstIds(entry.type),
+	})),
+	types: Object.fromEntries(
+		Object.entries(layout.types ?? {})
+			.sort(([a], [b]) => stripAstIds(a).localeCompare(stripAstIds(b)))
+			.map(([key, value]) => [
+				stripAstIds(key),
+				{
+					label: value.label,
+					numberOfBytes: value.numberOfBytes,
+					encoding: value.encoding,
+					...(value.key ? { key: stripAstIds(value.key) } : {}),
+					...(value.value ? { value: stripAstIds(value.value) } : {}),
+					...(value.members
+						? {
+								members: value.members.map((m) => ({
+									label: m.label,
+									slot: m.slot,
+									offset: m.offset,
+									type: stripAstIds(m.type),
+								})),
+							}
+						: {}),
+				},
+			]),
+	),
 };
 
 const serialised = `${JSON.stringify(normalised, null, 2)}\n`;
 
-if (process.argv.includes('--check')) {
-  const committed = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
-  if (committed !== serialised) {
-    console.error(
-      'The paymaster storage layout has changed.\n\n' +
-        'If this is an intentional, append-only addition, run `pnpm storage` and commit the diff —\n' +
-        'and say so in the pull request. If it reorders, removes or narrows an existing field, it is\n' +
-        'not upgrade-safe: it would silently re-attribute funds already recorded in those slots.\n',
-    );
-    process.exit(1);
-  }
-  console.log('storage-layout/GianoPaymaster.json is up to date');
+if (process.argv.includes("--check")) {
+	const committed = fs.existsSync(outPath)
+		? fs.readFileSync(outPath, "utf8")
+		: "";
+	if (committed !== serialised) {
+		console.error(
+			"The paymaster storage layout has changed.\n\n" +
+				"If this is an intentional, append-only addition, run `pnpm storage` and commit the diff —\n" +
+				"and say so in the pull request. If it reorders, removes or narrows an existing field, it is\n" +
+				"not upgrade-safe: it would silently re-attribute funds already recorded in those slots.\n",
+		);
+		process.exit(1);
+	}
+	console.log("storage-layout/GianoPaymaster.json is up to date");
 } else {
-  fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(outPath, serialised);
-  console.log(`Wrote ${path.relative(process.cwd(), outPath)}`);
+	fs.mkdirSync(outDir, { recursive: true });
+	fs.writeFileSync(outPath, serialised);
+	console.log(`Wrote ${path.relative(process.cwd(), outPath)}`);
 }

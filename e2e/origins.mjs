@@ -28,7 +28,7 @@
  */
 
 /** The suffix portless serves. Also the eTLD that makes these names a secure context. */
-export const TLD = 'localhost';
+export const TLD = "localhost";
 
 /**
  * The port the names are served on. A URL with no port *is* port 80, so this is not a choice
@@ -56,29 +56,87 @@ export const PORTLESS_LISTEN_PORT = 1355;
 
 /** @type {Route[]} */
 export const ROUTES = [
-  { name: 'app', port: 4400, kind: 'fixture', what: "tenant stock's demo dApp (thin SDK only)" },
-  { name: 'app-byo', port: 4401, kind: 'fixture', what: "tenant byo's demo dApp (same fixture, other wallet)" },
-  // The reference dApp (services/custom-example) has its OWN names, distinct from the fixture's:
-  // the two used to share 4400/4401, and Playwright's `reuseExistingServer` would silently adopt
-  // the demo instead of the fixture. Started by `pnpm demo:stock` / `pnpm demo:byo` at the root.
-  { name: 'demo', port: 4410, kind: 'fixture', what: "tenant stock's reference dApp (services/custom-example)" },
-  { name: 'demo-byo', port: 4411, kind: 'fixture', what: "tenant byo's reference dApp (same image, other wallet)" },
-  { name: 'wallet-byo', port: 8082, kind: 'fixture', what: "tenant byo's wallet origin (BYO UI + /api proxy)" },
-  { name: 'wallet', port: 8081, kind: 'compose', what: "tenant stock's wallet-web" },
-  { name: 'paymaster', port: 8083, kind: 'compose', what: 'paymaster admin console (read-only without a wallet)' },
-  { name: 'api', port: 8080, kind: 'compose', what: 'wallet-api (public + admin)' },
-  { name: 'rpc', port: 8545, kind: 'compose', what: 'anvil devnet JSON-RPC (chain A, 31337)' },
-  { name: 'bundler', port: 4337, kind: 'compose', what: 'giano-bundler ERC-4337 bundler (both chains: /31337, /31338)' },
-  { name: 'rpc-b', port: 8546, kind: 'compose', what: 'anvil devnet JSON-RPC (chain B, 31338)' },
+	{
+		name: "app",
+		port: 4400,
+		kind: "fixture",
+		what: "tenant stock's demo dApp (thin SDK only)",
+	},
+	{
+		name: "app-byo",
+		port: 4401,
+		kind: "fixture",
+		what: "tenant byo's demo dApp (same fixture, other wallet)",
+	},
+	// The reference dApp (services/custom-example) has its OWN names, distinct from the fixture's:
+	// the two used to share 4400/4401, and Playwright's `reuseExistingServer` would silently adopt
+	// the demo instead of the fixture. Started by `pnpm demo:stock` / `pnpm demo:byo` at the root.
+	{
+		name: "demo",
+		port: 4410,
+		kind: "fixture",
+		what: "tenant stock's reference dApp (services/custom-example)",
+	},
+	{
+		name: "demo-byo",
+		port: 4411,
+		kind: "fixture",
+		what: "tenant byo's reference dApp (same image, other wallet)",
+	},
+	{
+		name: "wallet-byo",
+		port: 8082,
+		kind: "fixture",
+		what: "tenant byo's wallet origin (BYO UI + /api proxy)",
+	},
+	{
+		name: "wallet",
+		port: 8081,
+		kind: "compose",
+		what: "tenant stock's wallet-web",
+	},
+	{
+		name: "paymaster",
+		port: 8083,
+		kind: "compose",
+		what: "paymaster admin console (read-only without a wallet)",
+	},
+	{
+		name: "api",
+		port: 8080,
+		kind: "compose",
+		what: "wallet-api (public + admin)",
+	},
+	{
+		name: "rpc",
+		port: 8545,
+		kind: "compose",
+		what: "anvil devnet JSON-RPC (chain A, 31337)",
+	},
+	{
+		name: "bundler",
+		port: 4337,
+		kind: "compose",
+		what: "giano-bundler ERC-4337 bundler (both chains: /31337, /31338)",
+	},
+	{
+		name: "rpc-b",
+		port: 8546,
+		kind: "compose",
+		what: "anvil devnet JSON-RPC (chain B, 31338)",
+	},
 ];
 
 const byName = new Map(ROUTES.map((route) => [route.name, route]));
 
 /** @param {string} name */
 function route(name) {
-  const found = byName.get(name);
-  if (!found) throw new Error(`unknown e2e route "${name}" — known routes: ${[...byName.keys()].join(', ')}`);
-  return found;
+	const found = byName.get(name);
+	if (!found)
+		throw new Error(
+			`unknown e2e route "${name}" — known routes: ${[...byName.keys()].join(", ")}`,
+		);
+	return found;
 }
 
 /** The public origin for a route: a name, never a port. @param {string} name */
@@ -100,21 +158,21 @@ export const loopbackOf = (name) => `http://127.0.0.1:${portOf(name)}`;
  * the tests all agree on.
  */
 export const ORIGINS = {
-  dapp: originOf('app'),
-  dappByo: originOf('app-byo'),
-  demo: originOf('demo'),
-  demoByo: originOf('demo-byo'),
-  wallet: originOf('wallet'),
-  walletByo: originOf('wallet-byo'),
-  api: originOf('api'),
-  rpc: originOf('rpc'),
-  bundler: originOf('bundler'),
-  rpcB: originOf('rpc-b'),
-  paymasterAdmin: originOf('paymaster'),
+	dapp: originOf("app"),
+	dappByo: originOf("app-byo"),
+	demo: originOf("demo"),
+	demoByo: originOf("demo-byo"),
+	wallet: originOf("wallet"),
+	walletByo: originOf("wallet-byo"),
+	api: originOf("api"),
+	rpc: originOf("rpc"),
+	bundler: originOf("bundler"),
+	rpcB: originOf("rpc-b"),
+	paymasterAdmin: originOf("paymaster"),
 };
 
 /** The two chains the e2e stack runs (S10): distinct ids that cannot be confused. */
 export const CHAINS = {
-  a: { chainId: 31337, name: 'Devnet A', rpc: originOf('rpc') },
-  b: { chainId: 31338, name: 'Devnet B', rpc: originOf('rpc-b') },
+	a: { chainId: 31337, name: "Devnet A", rpc: originOf("rpc") },
+	b: { chainId: 31338, name: "Devnet B", rpc: originOf("rpc-b") },
 };

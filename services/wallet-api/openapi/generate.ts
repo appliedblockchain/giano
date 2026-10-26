@@ -3,15 +3,21 @@
  * definitions. `--check` exits non-zero on drift (CI gate). The app is built with a
  * dummy config and never connects to anything.
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { CANONICAL_FACTORY, ENTRYPOINT_V07_ADDRESS } from '@appliedblockchain/giano-contracts';
-import { buildApp } from '../src/app.js';
-import { loadConfig } from '../src/config.js';
-import { createDb } from '../src/db/index.js';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+	CANONICAL_FACTORY,
+	ENTRYPOINT_V07_ADDRESS,
+} from "@appliedblockchain/giano-contracts";
+import { buildApp } from "../src/app.js";
+import { loadConfig } from "../src/config.js";
+import { createDb } from "../src/db/index.js";
 
-const outPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'openapi.json');
+const outPath = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"openapi.json",
+);
 
 // No tenants: buildApp never reads the tenants table at registration time
 // (tenant resolution is strictly per-request), so no tenant data is needed here.
@@ -19,52 +25,57 @@ const outPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'open
 // are part of the published contract a tenant integrates against, and a spec that omitted them
 // would send tenants to the source to find out what the service speaks.
 const config = loadConfig({
-  NODE_ENV: 'production',
-  GIANO_DEPLOYMENT_CLASS: 'production',
-  LOG_LEVEL: 'error',
-  DATABASE_URL: 'postgres://user:pass@localhost:5432/openapi-codegen',
-  CHAIN_ID: '84532',
-  // Explicit rather than from the contracts registry, which only lists chains with a committed
-  // deployment: the document must not depend on which chains happen to be deployed.
-  ENTRYPOINT_ADDRESS: ENTRYPOINT_V07_ADDRESS,
-  FACTORY_ADDRESS: CANONICAL_FACTORY,
-  RPC_URL: 'http://localhost:8545',
-  BUNDLER_URL: 'http://localhost:4337',
-  SPONSORSHIP_ENABLED: 'true',
-  SPONSORSHIP_PAYMASTER_ADDRESS: '0x0000000000000000000000000000000000000001',
-  // `local` is refused for a production deployment class, which is the point — so the document is
-  // generated against the production signer shape.
-  SPONSORSHIP_SIGNER_KIND: 'hsm',
-  SPONSORSHIP_SIGNER_KEY_REF: 'arn:aws:kms:eu-west-1:000000000000:key/giano-sponsorship',
-  // The platform admin routes are registered only where the environment has a sign-in domain; the
-  // document describes them, so it is generated as a live environment that has one.
-  GIANO_ENVIRONMENT: 'prd',
+	NODE_ENV: "production",
+	GIANO_DEPLOYMENT_CLASS: "production",
+	LOG_LEVEL: "error",
+	DATABASE_URL: "postgres://user:pass@localhost:5432/openapi-codegen",
+	CHAIN_ID: "84532",
+	// Explicit rather than from the contracts registry, which only lists chains with a committed
+	// deployment: the document must not depend on which chains happen to be deployed.
+	ENTRYPOINT_ADDRESS: ENTRYPOINT_V07_ADDRESS,
+	FACTORY_ADDRESS: CANONICAL_FACTORY,
+	RPC_URL: "http://localhost:8545",
+	BUNDLER_URL: "http://localhost:4337",
+	SPONSORSHIP_ENABLED: "true",
+	SPONSORSHIP_PAYMASTER_ADDRESS: "0x0000000000000000000000000000000000000001",
+	// `local` is refused for a production deployment class, which is the point — so the document is
+	// generated against the production signer shape.
+	SPONSORSHIP_SIGNER_KIND: "hsm",
+	SPONSORSHIP_SIGNER_KEY_REF:
+		"arn:aws:kms:eu-west-1:000000000000:key/giano-sponsorship",
+	// The platform admin routes are registered only where the environment has a sign-in domain; the
+	// document describes them, so it is generated as a live environment that has one.
+	GIANO_ENVIRONMENT: "prd",
 } as NodeJS.ProcessEnv);
 
 const { db, pool } = createDb(config.DATABASE_URL);
 const app = await buildApp({
-  config,
-  db,
-  // Never called: generating the document touches no route handler.
-  hsmSignerAdapter: {
-    keyId: 'openapi-codegen',
-    getAddress: async () => '0x0000000000000000000000000000000000000002',
-    signDigest: async () => `0x${'00'.repeat(65)}`,
-  },
+	config,
+	db,
+	// Never called: generating the document touches no route handler.
+	hsmSignerAdapter: {
+		keyId: "openapi-codegen",
+		getAddress: async () => "0x0000000000000000000000000000000000000002",
+		signDigest: async () => `0x${"00".repeat(65)}`,
+	},
 });
 await app.ready();
-const spec = JSON.stringify(app.swagger(), null, 2) + '\n';
+const spec = JSON.stringify(app.swagger(), null, 2) + "\n";
 await app.close();
 await pool.end();
 
-if (process.argv.includes('--check')) {
-  const committed = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
-  if (committed !== spec) {
-    console.error('openapi/openapi.json is out of date — run `pnpm openapi` and commit the result');
-    process.exit(1);
-  }
-  console.log('openapi/openapi.json is up to date');
+if (process.argv.includes("--check")) {
+	const committed = fs.existsSync(outPath)
+		? fs.readFileSync(outPath, "utf8")
+		: "";
+	if (committed !== spec) {
+		console.error(
+			"openapi/openapi.json is out of date — run `pnpm openapi` and commit the result",
+		);
+		process.exit(1);
+	}
+	console.log("openapi/openapi.json is up to date");
 } else {
-  fs.writeFileSync(outPath, spec);
-  console.log(`Wrote ${outPath}`);
+	fs.writeFileSync(outPath, spec);
+	console.log(`Wrote ${outPath}`);
 }
