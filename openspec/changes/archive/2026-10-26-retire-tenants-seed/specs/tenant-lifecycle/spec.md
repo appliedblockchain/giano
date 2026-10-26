@@ -21,4 +21,4 @@ Every tenant SHALL be in exactly one state: `active`, `suspended` or `deleted`. 
 
 ### Requirement: The seed and platform admins own tenants exclusively
 **Reason**: `TENANTS_SEED` is retired. Tenants have a single owner, the platform admins.
-**Migration**: At boot, every tenant still marked seed-managed is handed to the platform admins once (see `tenant-administration`, "Seed-managed tenants are handed to the platform admins once").
+**Migration**: None needed. Every tenant is platform-admin-managed.

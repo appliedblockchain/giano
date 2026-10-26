@@ -24,7 +24,7 @@
 
 ## 5. Archive order
 
-- [ ] 5.0 Archive `platform-tenant-lifecycle` and `platform-console` before this change; its MODIFIED/REMOVED deltas target their capabilities.
+- [x] 5.0 Archive `platform-tenant-lifecycle` and `platform-console` before this change; its MODIFIED/REMOVED deltas target their capabilities.
 
 ## 6. Follow-up change (cleanup)
 
