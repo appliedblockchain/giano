@@ -33,7 +33,7 @@
     "access": "restricted"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -51,7 +51,7 @@
     "@types/node": "^22.7.5",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "^4.1.11",
-    "tsup": "^9.0.0",
+    "tsdown": "0.23.1",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "viem": "2.31.6",
     "vitest": "^4.1.11"

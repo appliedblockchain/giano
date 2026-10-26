@@ -41,14 +41,14 @@ jobs:
       - name: wallet-core unit tests
         run: pnpm --filter @appliedblockchain/giano-wallet-core test
       - name: Build wallet-transport
-        # connector's dts build resolves this via its dist/ types — must precede it
+        # connector's tests and the typecheck below resolve this via its dist/ types
         run: pnpm --filter @appliedblockchain/giano-wallet-transport build
       - name: wallet-transport unit tests
         run: pnpm --filter @appliedblockchain/giano-wallet-transport test
       - name: Build connector
         run: pnpm --filter @appliedblockchain/giano-connector build
       - name: Build tx-describe
-        # wallet-kit's dts build resolves this via its dist/ types — must precede it
+        # wallet-kit's tests and the typecheck below resolve this via its dist/ types
         run: pnpm --filter @appliedblockchain/giano-tx-describe build
       - name: tx-describe unit tests (incl. the R1 independence check)
         run: pnpm --filter @appliedblockchain/giano-tx-describe test

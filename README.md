@@ -320,15 +320,24 @@ Every package typechecks with **TypeScript 7** (the native compiler): `pnpm type
 | `@typescript/native` | `typescript@7` | the `tsc` binary: `typecheck` scripts, `build` scripts that run `tsc --noEmit`, CI |
 | `typescript` | `@typescript/typescript6` (6.0 API, `tsc6` binary) | tools that `import 'typescript'` as a library |
 
-TypeScript 7.0 has no programmatic API (it is planned for 7.1), so these tools stay on the 6.0 API
-until they support 7.1's. Each one has its own exit condition:
+TypeScript 7.0 has no programmatic API (it is planned for 7.1). One tool still needs one, so it
+stays on the 6.0 API until it supports 7.1's:
 
 | Tool | Why it needs the API | Moves to TS 7 when |
 | --- | --- | --- |
-| tsup `dts` (declaration bundling, 7 published packages) | runs the compiler programmatically to emit `.d.ts` | tsup or its successor supports the TS 7.1 API, or the packages emit declarations with `isolatedDeclarations` |
-| typescript-eslint (`services/custom-example` lint) | the parser and type-aware rules use the API | typescript-eslint supports TS 7 |
+| typescript-eslint (`services/custom-example` lint) | the parser and type-aware rules use the API | typescript-eslint supports TS 7, or the lint moves to oxlint |
 
-vite, vitest, tsx and tsup's JavaScript output transpile with esbuild and do not use the compiler.
+**Builds use no compiler API.** Every package and service builds with [tsdown](https://tsdown.dev)
+(tsup is no longer maintained and points there). Declarations come from tsdown's `oxc` generator,
+which emits each `.d.ts` from its source file alone (`isolatedDeclarations`): every export must carry
+explicit types, and one that does not **fails the build** with a TS9xxx error. `tsc --noEmit
+--isolatedDeclarations` in a package lists every such site at once. vite, vitest and tsx transpile
+without the compiler too.
+
+The `@typescript/typescript6` alias can only be dropped from **every package at once**. viem (and
+abitype) declare `typescript` as a peer, so pnpm installs one viem copy per TypeScript a package
+resolves; a package on plain `typescript@7` gets a different viem than one on the alias, and viem
+types passed between the two stop being assignable.
 
 **Consumers** of the published packages need **TypeScript 5.0.4 or later** (the same floor as
 viem). The declarations are checked with 5.0.4, 5.5, 6.0 and 7.0.

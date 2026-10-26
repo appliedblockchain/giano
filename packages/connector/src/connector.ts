@@ -1,7 +1,7 @@
 import type { Address, Chain, TransactionRequest, Transport } from 'viem'
 import { Hash } from 'viem'
 import { UserOperationReceipt } from 'viem/account-abstraction'
-import { createConnector } from 'wagmi'
+import { createConnector, type CreateConnectorFn } from 'wagmi'
 import type { GianoWalletProvider } from './thin/create-giano-wallet-provider'
 
 export type SendTransactionFnParams = {
@@ -42,7 +42,7 @@ type GianoConnectorProperties = {
   waitForUserOperationReceipt: (hash: Hash) => Promise<UserOperationReceipt>;
 }
 
-export function createGianoConnector({ provider }: CreateGianoConnectorParams) {
+export function createGianoConnector({ provider }: CreateGianoConnectorParams): CreateConnectorFn<GianoProviderLike, GianoConnectorProperties> {
   return createConnector<
     GianoProviderLike,
     GianoConnectorProperties

@@ -16,7 +16,7 @@ COPY services/bundler/package.json services/bundler/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-bundler...
 COPY packages/contracts packages/contracts
 COPY services/bundler services/bundler
-# contracts: committed generated.ts/addresses.ts -> tsup only, no solc. `deploy --prod` is the prune
+# contracts: committed generated.ts/addresses.ts -> tsdown only, no solc. `deploy --prod` is the prune
 # step: /out holds dist/ and production dependencies only.
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-bundler build \

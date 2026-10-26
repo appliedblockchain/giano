@@ -283,7 +283,13 @@ export type GianoSmartAccount = Awaited<ReturnType<typeof toGianoSmartAccount>>
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 /** @internal */
-export async function signTypedData({ typedData, owner }: { typedData: TypedDataDefinition; owner: OneOf<LocalAccount | WebAuthnAccount> }) {
+export async function signTypedData({
+  typedData,
+  owner,
+}: {
+  typedData: TypedDataDefinition;
+  owner: OneOf<LocalAccount | WebAuthnAccount>;
+}): Promise<Hex> {
   if (owner.type === 'local' && owner.signTypedData) return owner.signTypedData(typedData);
 
   const hash = hashTypedData(typedData);
@@ -291,7 +297,7 @@ export async function signTypedData({ typedData, owner }: { typedData: TypedData
 }
 
 /** @internal */
-export async function sign({ hash, owner }: { hash: Hash; owner: OneOf<LocalAccount | WebAuthnAccount> }) {
+export async function sign({ hash, owner }: { hash: Hash; owner: OneOf<LocalAccount | WebAuthnAccount> }): Promise<Hex> {
   // WebAuthn Account (Passkey)
   if (owner.type === 'webAuthn') {
     const { signature, webauthn, raw } = await owner.sign({
@@ -305,8 +311,21 @@ export async function sign({ hash, owner }: { hash: Hash; owner: OneOf<LocalAcco
   throw new BaseError('`owner` does not support raw sign.');
 }
 
+/** The EIP-712 envelope the wallet signs instead of a raw hash (ERC1271.sol `replaySafeHash`). */
+export type ReplaySafeTypedData = {
+  readonly domain: {
+    readonly chainId: number;
+    readonly name: 'Giano Smart Wallet';
+    readonly verifyingContract: Address;
+    readonly version: '1';
+  };
+  readonly types: { readonly GianoSmartWalletMessage: readonly [{ readonly name: 'hash'; readonly type: 'bytes32' }] };
+  readonly primaryType: 'GianoSmartWalletMessage';
+  readonly message: { readonly hash: Hash };
+};
+
 /** @internal */
-export function toReplaySafeTypedData({ address, chainId, hash }: { address: Address; chainId: number; hash: Hash }) {
+export function toReplaySafeTypedData({ address, chainId, hash }: { address: Address; chainId: number; hash: Hash }): ReplaySafeTypedData {
   return {
     domain: {
       chainId,
@@ -380,7 +399,7 @@ export function toWebAuthnSignature({
   webauthn: WebAuthnP256.SignMetadata;
   signature: Hex;
   raw?: WebAuthnP256.sign.ReturnType['raw'] | undefined;
-}) {
+}): Hex {
   const der = (raw?.response as AuthenticatorAssertionResponse | undefined)?.signature;
   const { r, s } = der ? parseDerSignature(new Uint8Array(der)) : Signature.fromHex(signature);
   return encodeAbiParameters(
@@ -420,7 +439,7 @@ export function toWebAuthnSignature({
 }
 
 /** @internal */
-export function wrapSignature(parameters: { ownerBytes: Hex; signature: Hex }) {
+export function wrapSignature(parameters: { ownerBytes: Hex; signature: Hex }): Hex {
   const { ownerBytes } = parameters;
   const signatureData = (() => {
     if (size(parameters.signature) !== 65) return parameters.signature;
@@ -456,6 +475,6 @@ export function wrapSignature(parameters: { ownerBytes: Hex; signature: Hex }) {
 // Constants
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-const abi = gianoSmartWalletAbi;
+const abi: typeof gianoSmartWalletAbi = gianoSmartWalletAbi;
 
-const factoryAbi = gianoSmartWalletFactoryAbi;
+const factoryAbi: typeof gianoSmartWalletFactoryAbi = gianoSmartWalletFactoryAbi;

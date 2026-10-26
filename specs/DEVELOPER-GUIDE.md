@@ -105,7 +105,7 @@ Everything you must provide, made explicit. "Required" means the minimal working
 
 | Dependency | Needed for | Notes |
 | --- | --- | --- |
-| **Node 22.18+** | building/running any package or service | 22.18 is tsup 9's floor. Typechecking uses TypeScript 7 (`pnpm typecheck`); see the root README's *TypeScript toolchain* section for the `tsc` / `tsc6` split. |
+| **Node 22.18+** | building/running any package or service | 22.18 is tsdown's floor. Typechecking uses TypeScript 7 (`pnpm typecheck`); see the root README's *TypeScript toolchain* section for the `tsc` / `tsc6` split. |
 | **pnpm** (`corepack enable`) | the monorepo (workspaces, `-r` builds) | version pinned in root `package.json`. |
 | **Docker** (+ Compose) | the local stacks, wallet-api tests, E2E | not required if you consume only published images + npm packages. Also what holds port 80 for the E2E demo's addresses, so that nothing has to run as root. |
 | **Node 24** | *only* the E2E demo/suite | required by [portless](https://github.com/vercel-labs/portless), which serves the demo's `*.localhost` addresses. Installed as a dev dependency of `@appliedblockchain/giano-e2e`; no global install needed. |

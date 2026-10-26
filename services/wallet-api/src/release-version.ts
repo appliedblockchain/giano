@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
  * versions only the SDK packages, so the api reports theirs. A dApp's preflight compares it with
  * its connector, and a hardcoded fallback made every SDK look ahead of the api.
  *
- * The build inlines it (tsup.config.ts); running from source (tests, `pnpm dev`) reads it from the
+ * The build inlines it (tsdown.config.ts); running from source (tests, `pnpm dev`) reads it from the
  * connector package instead.
  */
 declare const __GIANO_RELEASE_VERSION__: string | undefined;

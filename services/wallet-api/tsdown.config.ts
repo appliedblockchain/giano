@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'tsup';
+import { defineConfig } from 'tsdown';
 
 // The shared release version /v1/version reports (src/release-version.ts). The image build copies
 // the connector's package.json outside the workspace, where pnpm would take it for a package with
@@ -18,9 +18,13 @@ export default defineConfig({
     init: 'src/init.ts',
   },
   format: ['esm'],
+  platform: 'node',
   target: 'node22',
   sourcemap: true,
   clean: true,
+  // An application, not a library: no declarations. `.js` because the package is "type": "module".
+  dts: false,
+  outExtensions: () => ({ js: '.js' }),
   // workspace dep is bundled at image build via `pnpm deploy`; keep runtime deps external
   tsconfig: './tsconfig.json',
   define: { __GIANO_RELEASE_VERSION__: JSON.stringify(releaseVersion) },
