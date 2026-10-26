@@ -1,5 +1,59 @@
 # @appliedblockchain/giano-contracts
 
+## 4.0.0
+
+### Major Changes
+
+- bc75e86: Canonical contracts are now deployed with CREATE3 through CreateX, from committed releases, by a
+  dedicated canonical deployer. Every canonical address is a function of that deployer and a fixed
+  label only, so no future compiler, toolchain or contract release moves it again.
+
+  Breaking:
+
+  - **New canonical addresses.** `CANONICAL_FACTORY`, `CANONICAL_IMPLEMENTATION`,
+    `CANONICAL_SPONSORSHIP_PAYMASTER` and `CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION` all change.
+    They still derive from a placeholder deployer and change once more when the real one is set.
+  - **The address registry is empty** (`gianoAddresses`, `getGianoDeployment`) until the chains are
+    redeployed under the new scheme; the old Base, Base Sepolia and Sepolia deployments are dropped.
+  - Removed: `CANONICAL_PAYMASTER_DEPLOYER`, `gianoPaymasterDeployerAbi` and `create2Abi`. CreateX's
+    `deployCreate3AndInit` deploys and initialises the paymaster proxy atomically, so
+    `GianoPaymasterDeployer` is gone.
+  - `PrivateERC20` and `PermissivePaymaster` (test fixtures) take their holder and owner as
+    constructor arguments.
+
+  Added: `CANONICAL_DEPLOYER`, `CANONICAL_LABELS`, `CANONICAL_CODE` (the runtime codehash each
+  release leaves at each canonical address) and `canonicalCodeAt(address, codehash)`. An address no
+  longer proves which code sits there; check the code too.
+
+### Patch Changes
+
+- 01b008f: Source linted and formatted with Biome (its default configuration) instead of ESLint. No change to
+  any export or its behaviour: event listeners are still called the same way, now from callbacks that
+  return nothing.
+- 762221a: Built with tsdown instead of tsup (which is no longer maintained). Declarations are generated from
+  source by oxc (`isolatedDeclarations`) rather than by the TypeScript compiler, so exported functions
+  and constants now carry explicit types. Same entry points, file names and runtime exports; every
+  export's type is equivalent to before (checked by mutual assignability, and member by member for
+  classes), and the declarations compile with TypeScript 5.0.4 through 7.0.
+
+  - `giano-wallet-core`: `createGianoProvider(...).gianoClient` is typed as viem's `PublicClient`.
+    The previous declaration printed an expansion of it that viem's `PublicClient` did not accept, so
+    passing it to anything typed `PublicClient` failed to compile. It also exports the
+    `ReplaySafeTypedData` type that `toReplaySafeTypedData` returns.
+  - Bundles keep their JSDoc comments, and `giano-paymaster-sdk`'s library bundle no longer shares a
+    chunk with its CLI.
+
+- bb23680: Built and typechecked with TypeScript 7 only. No API changes. Consumers need TypeScript 5.0.4 or later, as before.
+
+  - `giano-wallet-core`'s declarations no longer import viem internals by relative path
+    (`../../types/misc.js` and three more), which failed to resolve in a consuming project with
+    `skipLibCheck` off. The inferred `createGianoProvider` return type is printed in a different
+    member order; the type is the same.
+  - Classes with constructor parameter properties (the SDK error classes, `TransportRpcError` and
+    friends) now declare those fields in the emitted JavaScript, as `tsc` does for an ES2022 target.
+    Each field is assigned in the same constructor, so instances are unchanged.
+  - Declaration bundles list type-only exports in a separate `export type { … }` clause.
+
 ## 3.1.1
 
 ## 3.1.0
