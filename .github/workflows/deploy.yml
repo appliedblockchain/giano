@@ -115,7 +115,7 @@ jobs:
 
             rows=$(jq -n --arg env "$env" --arg tag "$tag" --argjson byo "$has_byo" '
               [
-                # wallet-api's `init` container (dist/init.js: migrations, then bootstrap
+                # The `init` container of wallet-api (dist/init.js: migrations, then bootstrap
                 # platform admins) runs before the API, which has RUN_MIGRATIONS=false (§9.6). It is
                 # the same image, so it MUST roll with the app: left on the old tag, the new
                 # API would start against an un-migrated schema. Requires the task definition
