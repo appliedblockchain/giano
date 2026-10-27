@@ -76,11 +76,12 @@ overrides:
   # Critical — ethereum-cryptography (hardhat), create-hash/create-hmac and @coinbase/wallet-sdk.
   "sha.js@>=2.0.0 <2.4.12": "^2.4.12"
 
-# Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
-minimumReleaseAge: 1440
-minimumReleaseAgeExclude:
-  - baseline-browser-mapping
-  - postcss
+# Supply-chain policy (ABIP-6, docs/abip-compliance.md): reject any package version published less
+# than 7 days ago — the ABIP's tier for projects that handle financial transactions. No package is
+# exempt by name or scope. The only allowed exclusion is one exact version (name@x.y.z) of a direct
+# dependency carrying a critical security fix, with its advisory and removal date in a comment;
+# scripts/check-release-age.mjs enforces all of this in CI.
+minimumReleaseAge: 10080
 # Native deps left unbuilt (matches pre-pnpm-11 behavior — none were built before).
 # Flip any to `true` and reinstall if its build scripts are needed.
 allowBuilds:

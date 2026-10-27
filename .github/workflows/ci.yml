@@ -122,6 +122,22 @@ jobs:
       - name: Check every published Dockerfile
         run: node scripts/check-dockerfiles.mjs
 
+  release-age-policy:
+    # ABIP-6 (docs/abip-compliance.md): both pnpm workspaces reject versions younger than 7 days,
+    # exclude only exact versions, and every CI and Dockerfile install is frozen. --registry also
+    # fails on an exclusion that has outlived the window; with no exclusions it fetches nothing.
+    name: Release-age policy (ABIP-6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Policy check unit tests
+        run: node --test scripts/check-release-age.test.mjs
+      - name: Check both workspaces, every workflow and Dockerfile
+        run: node scripts/check-release-age.mjs --registry
+
   wallet-api:
     name: wallet-api tests + OpenAPI drift
     runs-on: ubuntu-latest

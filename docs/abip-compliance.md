@@ -16,7 +16,7 @@ delivered as one stacked PR per ABIP.
 | ABIP-1 | Branch Protection Rules | In progress (`apply-abips`) |
 | ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) and one out-of-scope image (`giano-contracts-deployer`) |
 | ABIP-5 | External resources in AGENTS.md file | Adopted |
-| ABIP-6 | Enforce Minimum Package Age | In progress (`apply-abips`) |
+| ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces, no exclusions |
 | ABIP-7 | Pin Exact Dependency Versions | In progress (`apply-abips`) |
 | ABIP-8 | Key Generation Ceremony | In progress (`apply-abips`) |
 
@@ -37,6 +37,37 @@ in OpenSpec.
 
 Keep `AGENTS.md` current: a change to the team, the external systems or the PR conventions updates it in the same PR.
 When Giano gets a teamspace or a Jira board, add them there.
+
+## ABIP-6: Enforce Minimum Package Age (adopted)
+
+Giano is a wallet, so it takes the ABIP's 7-day tier for projects that handle financial transactions, rather than the
+3-day floor. The repository-level contract is the `dependency-security` capability in OpenSpec.
+
+| Workspace | `minimumReleaseAge` | Active exclusions |
+|-----------|---------------------|-------------------|
+| root (`pnpm-workspace.yaml`) | 10080 (7 days) | none |
+| `services/custom-example` | 10080 (7 days) | none |
+
+- **No exemption by name or scope.** The blanket entries `postcss`, `baseline-browser-mapping` and
+  `@appliedblockchain/*` were removed. Our own releases wait out the window like any other package: the example
+  dApp can install a new Giano release only 7 days after it is published.
+- **Exclusions.** Only one exact version (`name@x.y.z`) of a direct dependency carrying a critical security fix may be
+  excluded. The entry carries a comment with the advisory and the removal date, and the PR description gives the
+  reason. List every active exclusion in the table above, and remove it once the version has aged past the window.
+- **Lockfiles.** Both lockfiles are committed, and every install in CI and in the Dockerfiles uses
+  `--frozen-lockfile`. pnpm 11 checks every lockfile entry against the policy on a frozen install ("Lockfile passes
+  supply-chain policies"), so the window also covers versions that are already locked.
+- **Package manager.** pnpm 11.15.1, pinned through `packageManager`. ABIP-6 requires at least pnpm 10.16, and 10.19
+  for version-specific exclusions.
+
+### Enforcement
+
+`scripts/check-release-age.mjs` runs in CI (`ci.yml`, job "Release-age policy (ABIP-6)"). It fails on any of the
+following:
+- either workspace with `minimumReleaseAge` below 10080, or unset;
+- an exclusion that is not one exact version;
+- a `pnpm install` without `--frozen-lockfile` in a workflow or a Dockerfile;
+- with `--registry`, which CI passes: an excluded version older than the window, or one that does not exist.
 
 ## ABIP-2: Docker Hardened Images (adopted)
 

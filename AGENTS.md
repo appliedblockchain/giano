@@ -52,7 +52,9 @@ To mention someone in a message, write `<@USER_ID>`. A plain `@Name` notifies no
 
 Trunk-based. `main` is the default branch and the trunk. All work happens on short-lived branches off `main` and lands through a pull request; do not commit directly to `main`. Related changes that build on each other go in a stack of PRs managed with `gh stack` (`gh extension install github/gh-stack`), one PR per layer, merged bottom-up.
 
-A change to a published `@appliedblockchain/*` package needs a changeset (`pnpm changeset`). Larger changes are planned as an OpenSpec change under `openspec/changes/` before they are implemented.
+A change to a published `@appliedblockchain/*` package needs a changeset (`pnpm changeset`).
+
+Dependencies follow ABIP-6: both pnpm workspaces reject any version published less than 7 days ago, with no exemption by name or scope, our own `@appliedblockchain/*` releases included. So `services/custom-example` can install a new Giano release only 7 days after it is published. Never lower `minimumReleaseAge` or add a name to `minimumReleaseAgeExclude`. The only allowed exclusion is one exact version of a direct dependency that carries a critical security fix, with the advisory and a removal date in a comment and the reason in the PR description. Install with `--frozen-lockfile`. Commit a lockfile change on its own, together with the manifest change that caused it, and nothing else. Larger changes are planned as an OpenSpec change under `openspec/changes/` before they are implemented.
 
 - **Pre-commit:** `pnpm lint` (Biome) must pass. Also run the tests and type check of each package you touched (`pnpm -F <package> test`, `pnpm -F <package> typecheck`).
 - **Pre-merge:** `gh pr checks <number>` must show every required check green. Agents must not merge until all required checks pass, and must not merge at all unless the user asks.
