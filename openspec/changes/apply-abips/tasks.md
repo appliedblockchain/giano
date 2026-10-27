@@ -207,8 +207,9 @@
   - confirm that the development team has no read access to the `Giano prd` 1Password vault;
   - generate the prd sponsorship-signer and executor keys by ceremony, when prd is provisioned.
 
-  Drafted 2026-10-27 as a Slack draft in the user's self-DM (one attached draft per channel), for the user to post in
-  #devops-requests after the ABIP-1 request. Contacts: Diogo Palhais and Giovanni Pinto. Due 2026-11-06.
+  Drafted 2026-10-27. The request text is in PR #167's description, under "DevOps request (ABIP-8)". It is not filed:
+  the team posts it in #devops-requests, after the ABIP-1 request, when it decides to move on it. Contacts: Diogo
+  Palhais and Giovanni Pinto. Due 2026-11-06.
 - [x] 5.7 Update `docs/abip-compliance.md` with the ABIP-8 section: inventory link, the DevOps-owned ceremony, and the
   pending ceremony for the canonical deployer. Gates: the contracts tests, the e2e `deploy` profile with no key against
   an already-deployed devnet, and `pnpm lint`. Open PR 5.
@@ -249,8 +250,9 @@
   - confirming whether an org ruleset already targets `production`;
   - the prd OIDC `terraform apply` when the prd workspace is provisioned.
 
-  Drafted 2026-10-27 as a Slack draft in #devops-requests (`GAMH9610T`), not sent. Contacts: Diogo Palhais and Giovanni
-  Pinto. Due 2026-11-06.
+  Drafted 2026-10-27. The request text is in PR #168's description, under "DevOps request (ABIP-1)". It is not filed:
+  the team posts it in #devops-requests (`GAMH9610T`) when it decides to move on it. Contacts: Diogo Palhais and
+  Giovanni Pinto. Due 2026-11-06.
 - [ ] 6.7 Open PR 6. After it merges, with the user's go-ahead, create the branch with `git push origin main:production`
   and confirm that `gh api repos/appliedblockchain/giano/rules/branches/production` shows the ruleset once DevOps has
   applied it.
