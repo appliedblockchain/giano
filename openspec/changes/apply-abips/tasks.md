@@ -118,7 +118,7 @@
   `dependencies` are now exact under ABIP-7.
 - [x] 3.6 Wire the check and its tests into `ci.yml`.
 - [ ] 3.7 Gates (local, 2026-10-27): build passes, except the contracts' forge-based `gen:abis`, since Foundry is not
-  installed locally. The package tests pass (452), wallet-api passes (387), and typecheck passes. forge, determinism,
+  installed locally. The package tests pass (402), wallet-api passes (387), and typecheck passes. forge, determinism,
   `release:verify` and e2e run in this PR's CI; `determinism.yml` triggers on `packages/contracts/package.json`.
   Required:
   - `pnpm build`, the package tests and the wallet-api tests;
