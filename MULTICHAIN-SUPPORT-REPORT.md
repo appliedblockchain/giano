@@ -163,7 +163,7 @@ matters:
   `deploy/helm/giano/values.yaml` and `templates/*.yaml` all assume one.
 - `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_BUNDLER_URL` flow as scalars through
   `wallet-web/docker/entrypoint.sh` into the rendered `config.json`.
-- The contracts-deployer job (`deployer-job.yaml`, `deployer-entrypoint.sh`) is one-chain-per-run.
+- The contracts-deployer job (`deployer-job.yaml`, `deployer-entrypoint.mjs`) is one-chain-per-run.
 - Each chain's bundler needs its own funded executor EOA; each chain's paymaster needs its own
   EntryPoint deposit and stake. This is a real, recurring operational cost per added chain, not a
   config change.

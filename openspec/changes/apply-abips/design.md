@@ -160,6 +160,11 @@ The new layout:
   with tsdown at build time, is better. It is chosen if the CLI bundles cleanly, decided at apply time, and it removes
   `tsx` from the runtime.
 
+  **Decided at apply time: bundle.** `tsdown.deployer.config.mts` bundles `deploy/cli.ts`, viem and zod into
+  `dist-deployer/cli.mjs`. That directory sits one level below the package root, so every
+  `import.meta.dirname`-relative path (`releases/`, `vendor/createx/`) still resolves. The final stage holds only that
+  file, the releases, the CreateX data and the entrypoint.
+
 The whole-file `*` exemption line is removed from the `abip-2-exceptions` block. `docs/abip-compliance.md` drops the
 "out of scope" paragraph.
 
