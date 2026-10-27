@@ -56,6 +56,7 @@
 		"release:verify": "tsx scripts/release.ts verify",
 		"release:status": "tsx scripts/release.ts status",
 		"deploy:cli": "tsx deploy/cli.ts",
+		"test:deploy": "node --import tsx --test deploy/*.test.ts",
 		"local:node": "anvil --enable-trace-printing",
 		"local:deploy": "tsx scripts/deploy-local.ts",
 		"doctor": "tsx scripts/doctor.ts",

@@ -70,18 +70,19 @@ async function main(): Promise<void> {
 	// Sent by the impersonated deployer, so anvil account 0 (the operator) keeps a clean nonce.
 	await installEntryPoint(publicClient, testClient, CANONICAL_DEPLOYER, log);
 	await impersonate(testClient, CANONICAL_DEPLOYER);
+	const walletClient = createWalletClient({
+		chain,
+		transport,
+		account: CANONICAL_DEPLOYER,
+	});
 	const ctx: DeployContext = {
 		publicClient,
-		walletClient: createWalletClient({
-			chain,
-			transport,
-			account: CANONICAL_DEPLOYER,
-		}),
+		walletClient,
 		deployer: CANONICAL_DEPLOYER,
 		record: readRecord(chainId, CANONICAL_DEPLOYER),
 		log,
 	};
-	await deployP256Verifier(publicClient, ctx.walletClient, log);
+	await deployP256Verifier(publicClient, walletClient, log);
 	await deployCore(ctx, release, {
 		entryPoint: ENTRY_POINT_V07,
 		roleAdmin: ANVIL_ACCOUNT_0,

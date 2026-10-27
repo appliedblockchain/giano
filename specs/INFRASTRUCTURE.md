@@ -2898,13 +2898,20 @@ placeholder, and the deploy CLI refuses every non-local chain until the real dep
 one-off chain operation performed with the contracts package's deploy CLI, before the first
 `terraform apply`:
 
-```
-DEPLOYER_PRIVATE_KEY=<canonical deployer key> \
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
-pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
+**The canonical deployer key is a production key, even here.** One key owns every canonical salt
+on every chain, testnets included, so it is in ABIP-8 scope with no testnet exception. It is generated
+in a Key Generation Ceremony and held by DevOps only; the development team never sees it
+([`docs/key-ceremony.md`](../docs/key-ceremony.md)). The two `core` runs below are therefore a DevOps
+operation, run with the key read from the secret store, with shell history off, and never exported in
+a developer's shell. Anyone can check the result without the key: `deploy:cli core` with no
+`DEPLOYER_PRIVATE_KEY` verifies every contract and code, and sends nothing.
 
-DEPLOYER_PRIVATE_KEY=<canonical deployer key> \
+```
+# DevOps, canonical deployer key from the secret store (docs/key-ceremony.md):
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
 pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
+
+# anyone, no key:
 pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
 ```
 
@@ -4443,14 +4450,16 @@ rather than a paragraph.
 #### Step 3 — Deploy the contracts and fund the accounts, on both chains 🖥️
 
 A chain operation, not an infrastructure one, done twice
-([§13.1](#131-the-canonical-contracts-must-be-deployed-on-both-chains)):
+([§13.1](#131-the-canonical-contracts-must-be-deployed-on-both-chains)). DevOps run it with the
+ceremony-generated canonical deployer key from the secret store ([`docs/key-ceremony.md`](../docs/key-ceremony.md));
+nobody else holds that key:
 
 ```bash
-DEPLOYER_PRIVATE_KEY=<canonical deployer key> pnpm --filter @appliedblockchain/giano-contracts \
-  deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
-DEPLOYER_PRIVATE_KEY=<canonical deployer key> pnpm --filter @appliedblockchain/giano-contracts \
-  deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
 ```
+
+Run without the key, the same commands verify the result.
 
 Commit both `deployments/<chainId>.json` records and regenerate `addresses.ts` (§13.1). Then fund each chain's EntryPoint
 deposit and the (shared) bundler executor account from that chain's faucet — Base Sepolia and Ethereum

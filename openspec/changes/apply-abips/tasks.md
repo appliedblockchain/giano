@@ -71,8 +71,8 @@
 
   **Result (2026-10-27):** of the 1069 versions in the root lockfile and the 629 in the example's, none on npm is
   younger than 7 days. The example's `@appliedblockchain/giano-connector@4.0.0` and `giano-wallet-transport@4.0.0`
-  were published around 2026-10-27 08:03 UTC. Downgrading to 3.x would undo #159's move to CREATE3 addresses, so
-  **PR 2 waits: it merges no earlier than 2026-11-03 08:05 UTC.**
+  were published at 2026-10-27 08:06:34 UTC. Downgrading to 3.x would undo #159's move to CREATE3 addresses, so
+  **PR 2 waits: it merges no earlier than 2026-11-03 08:07 UTC (published at 08:06:34 UTC, per CI).**
 - [x] 2.4 Set `minimumReleaseAge: 10080` in both workspace files, with an ABIP-6 comment. Remove `postcss`,
   `baseline-browser-mapping` and `'@appliedblockchain/*'`. Where removing one breaks `pnpm install`, replace it with a
   version-specific entry, and give the advisory or reason and a removal date.
@@ -172,34 +172,45 @@
 
 ## 5. ABIP-8: key ceremony (PR 5, `chore/abip-8-key-ceremony`)
 
-- [ ] 5.1 Write `docs/key-ceremony.md`.
+- [x] 5.1 Write `docs/key-ceremony.md`.
   - The inventory table has a row for each key: canonical deployer, sponsorship signer, bundler executor, paymaster
     `ROLE_ADMIN` and its timelock proposers and executors, and platform-admin API keys (out of scope, not private
     keys). Dev and testnet keys are listed as out of scope.
   - Each row gives the key's scope, its store per environment class and the service that consumes it.
   - The runbook gives, for each in-scope key, the vault item and field or the KMS/HSM resource, and the address
     publication step. It links ABIP-8 and the README's canonical-deployer switch procedure.
-- [ ] 5.2 Add a verify-only path to `deploy/cli.ts core`:
+- [x] 5.2 Add a verify-only path to `deploy/cli.ts core`:
   - when every canonical contract is present with the expected code, no `DEPLOYER_PRIVATE_KEY` is needed;
   - when a contract is missing and there is no key, it fails with the "adoption is a DevOps operation" message.
 
   Add unit tests for all three paths: all present with no key, missing with no key, missing with a key.
-- [ ] 5.3 Make `DEPLOYER_PRIVATE_KEY` optional in the deployer entrypoint from 4.3. In the Helm chart, document in the
+- [x] 5.3 Make `DEPLOYER_PRIVATE_KEY` optional in the deployer entrypoint from 4.3. In the Helm chart, document in the
   README and in `values.yaml` comments that clients must never put the canonical deployer key in
   `secrets.existingSecret` for a live chain.
-- [ ] 5.4 Rewrite the key-handling docs: `specs/INFRASTRUCTURE.md` §13.1, the "Deploying" section of
+- [x] 5.4 Rewrite the key-handling docs: `specs/INFRASTRUCTURE.md` §13.1, the "Deploying" section of
   `packages/contracts/README.md`, `deploy/contracts/README.md` (if #160 has merged), and the CLI usage text. Mark
   `DEPLOYER_PRIVATE_KEY=…` commands as local/testnet only, and point mainnet adoption to `docs/key-ceremony.md`.
-- [ ] 5.5 Confirm that wallet-api's existing refusal of `SPONSORSHIP_SIGNER_KIND=local` under
-  `GIANO_DEPLOYMENT_CLASS=production` has a test. Add one if it is missing.
+
+  **Wider than planned:** `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md` and `specs/CHAIN-ADOPTION.md` also handed
+  integrators the key, so they were rewritten too, and the spec's document list was updated. Also, one key owns every
+  chain's salts, so the canonical deployer is in scope on testnets as well. `deploy/sepolia/` is left to #160, which
+  removes it, and `docs/key-ceremony.md` flags it as superseded.
+- [x] 5.5 Confirm that wallet-api's existing refusal of `SPONSORSHIP_SIGNER_KIND=local` under
+  `GIANO_DEPLOYMENT_CLASS=production` has a test. Add one if it is missing. It was missing: added to
+  `test/sponsorship-signer.test.ts`, refused in production and accepted on testnet, both with sponsorship on (the
+  check is gated on `SPONSORSHIP_ENABLED`).
 - [ ] 5.6 Draft the DevOps request with the `ae-devops-request` skill and show it to the user before filing. It asks
   DevOps to:
   - run the ABIP-8 ceremony for the permanent canonical deployer;
   - confirm that the development team has no read access to the `Giano prd` 1Password vault;
   - generate the prd sponsorship-signer and executor keys by ceremony, when prd is provisioned.
-- [ ] 5.7 Update `docs/abip-compliance.md` with the ABIP-8 section: inventory link, the DevOps-owned ceremony, and the
+- [x] 5.7 Update `docs/abip-compliance.md` with the ABIP-8 section: inventory link, the DevOps-owned ceremony, and the
   pending ceremony for the canonical deployer. Gates: the contracts tests, the e2e `deploy` profile with no key against
   an already-deployed devnet, and `pnpm lint`. Open PR 5.
+
+  Results: `test:deploy` passes 4/4 (wired into `ci.yml`), the contracts typecheck passes, and the wallet-api signer
+  tests pass 23/23. The image with no key, against `giano-devnet`, verifies all four contracts and writes `/out`
+  (exit 0). Against a blank chain it fails with the DevOps message (exit 1). Biome is clean on the changed files.
 
 ## 6. ABIP-1: production branch (PR 6, `chore/abip-1-production-branch`)
 

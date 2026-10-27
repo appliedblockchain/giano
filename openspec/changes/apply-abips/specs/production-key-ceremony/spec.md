@@ -86,8 +86,19 @@ DevOps from a ceremony, and is never exported.
 ### Requirement: Key-handling instructions point to the ceremony
 Every document that tells a reader to set an in-scope key on a command line, in an env file or in a shell SHALL be
 rewritten. It SHALL either name the ceremony and the secret store as the only source of the key, or limit itself to
-local and testnet use. The documents are `specs/INFRASTRUCTURE.md` §13.1, `packages/contracts/README.md`,
-`deploy/contracts/README.md` (once #160 adds it), and the deploy CLI's usage text.
+local and testnet use. Because one canonical deployer key owns the salts on every chain, it is in scope on testnets
+too. The documents are:
+- `specs/INFRASTRUCTURE.md` (§13.1 and the runbook);
+- `specs/INTEGRATION.md`;
+- `specs/DEVELOPER-GUIDE.md`;
+- `specs/CHAIN-ADOPTION.md`;
+- `packages/contracts/README.md`;
+- the Helm `values.yaml`;
+- the deploy CLI's usage text;
+- `deploy/contracts/README.md`, once #160 adds it.
+
+`deploy/sepolia/`, which keeps `CANONICAL_DEPLOYER_PRIVATE_KEY` in a developer's `deploy/.env`, is removed by #160.
+Until then, `docs/key-ceremony.md` flags it as superseded, and DevOps must run it.
 
 #### Scenario: README instruction
 - **WHEN** a reader follows the contracts README's deploy section for a mainnet chain

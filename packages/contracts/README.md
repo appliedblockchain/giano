@@ -94,12 +94,29 @@ The deploy CLI (`deploy/cli.ts`) is idempotent: a contract already at its addres
 recorded, never redeployed. It cross-checks its address math against CreateX before every deploy,
 and refuses to sign with any key but the canonical deployer's.
 
+**The canonical deployer key is a production key on every chain.** One key owns every canonical
+salt, so the key that adopts a testnet is the key that adopts mainnet. It is generated in an ABIP-8
+Key Generation Ceremony and held by Applied Blockchain DevOps only, and the development team never
+sees it ([`docs/key-ceremony.md`](../../docs/key-ceremony.md)). So:
+
+- **Verifying a chain needs no key.** Without `DEPLOYER_PRIVATE_KEY`, `core` and `testing` check that
+  every contract is already in place with a release's code, record it, and send nothing. A missing
+  contract fails the run.
+- **Adopting a chain** (`core`, `testing` or `upgrade` that actually deploys) **is a DevOps
+  operation**, run by the key's operator from the secret store, never from a developer's shell or a
+  client's deployment config.
+- **Local chains** (31337/31338) impersonate the canonical deployer with `--impersonate` and need
+  no key at all.
+
 ```bash
 pnpm deploy:cli addresses                                          # the canonical addresses
-DEPLOYER_PRIVATE_KEY=… pnpm deploy:cli core --rpc <url> --role-admin <timelock>
-DEPLOYER_PRIVATE_KEY=… pnpm deploy:cli testing --rpc <url> --holder <0x…> --owner <0x…>  # never on 8453/84532/11155111
-DEPLOYER_PRIVATE_KEY=… pnpm deploy:cli upgrade --rpc <url> --contract paymaster --release v2
+pnpm deploy:cli core --rpc <url> --role-admin <timelock>           # no key: verify only
+pnpm deploy:cli core --rpc <local url> --role-admin <0x…> --impersonate   # local chains
 pnpm deploy:cli p256 --rpc <url>                                   # P-256 verifier, where RIP-7212 is missing
+# DevOps only, with the ceremony key from the secret store (docs/key-ceremony.md):
+#   core --rpc <url> --role-admin <timelock>
+#   testing --rpc <url> --holder <0x…> --owner <0x…>               # never on 8453/84532/11155111
+#   upgrade --rpc <url> --contract paymaster --release v2
 ```
 
 `core` deploys the wallet implementation, the factory, the paymaster implementation and the
@@ -119,7 +136,9 @@ transactions. **Commit it** for every chain except the local ones; `pnpm gen:add
 extras the CLI does not deploy (e.g. a non-default EntryPoint) go in `address-overrides.json`.
 
 The `giano-contracts-deployer` image (`Dockerfile.deployer`) runs `core` (and `testing` with
-`DEPLOY_TESTING=true`) from environment variables; see `scripts/deployer-entrypoint.mjs`.
+`DEPLOY_TESTING=true`) from environment variables; see `scripts/deployer-entrypoint.mjs`. Without
+`DEPLOYER_PRIVATE_KEY` it only verifies, which is how the Helm pre-install Job runs in a client's
+cluster. Never give it the canonical deployer key there.
 
 ### Local chains
 
