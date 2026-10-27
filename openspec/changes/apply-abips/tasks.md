@@ -199,11 +199,14 @@
   `GIANO_DEPLOYMENT_CLASS=production` has a test. Add one if it is missing. It was missing: added to
   `test/sponsorship-signer.test.ts`, refused in production and accepted on testnet, both with sponsorship on (the
   check is gated on `SPONSORSHIP_ENABLED`).
-- [ ] 5.6 Draft the DevOps request with the `ae-devops-request` skill and show it to the user before filing. It asks
+- [x] 5.6 Draft the DevOps request with the `ae-devops-request` skill and show it to the user before filing. It asks
   DevOps to:
   - run the ABIP-8 ceremony for the permanent canonical deployer;
   - confirm that the development team has no read access to the `Giano prd` 1Password vault;
   - generate the prd sponsorship-signer and executor keys by ceremony, when prd is provisioned.
+
+  Drafted 2026-10-27 as a Slack draft in the user's self-DM (one attached draft per channel), for the user to post in
+  #devops-requests after the ABIP-1 request. Contacts: Diogo Palhais and Giovanni Pinto. Due 2026-11-06.
 - [x] 5.7 Update `docs/abip-compliance.md` with the ABIP-8 section: inventory link, the DevOps-owned ceremony, and the
   pending ceremony for the canonical deployer. Gates: the contracts tests, the e2e `deploy` profile with no key against
   an already-deployed devnet, and `pnpm lint`. Open PR 5.
@@ -238,11 +241,14 @@
   trust sentence is updated too.
 - [x] 6.5 Update `docs/abip-compliance.md` with the ABIP-1 section: branch, ruleset settings, who can change them, and
   prd being the only environment on `production`.
-- [ ] 6.6 Draft the DevOps request and show it to the user before filing. It covers:
+- [x] 6.6 Draft the DevOps request and show it to the user before filing. It covers:
   - the `production` ruleset: PR required, 1 approval, stale approvals dismissed, required CI checks, no force push
     or deletion, no bypass;
   - confirming whether an org ruleset already targets `production`;
   - the prd OIDC `terraform apply` when the prd workspace is provisioned.
+
+  Drafted 2026-10-27 as a Slack draft in #devops-requests (`GAMH9610T`), not sent. Contacts: Diogo Palhais and Giovanni
+  Pinto. Due 2026-11-06.
 - [ ] 6.7 Open PR 6. After it merges, with the user's go-ahead, create the branch with `git push origin main:production`
   and confirm that `gh api repos/appliedblockchain/giano/rules/branches/production` shows the ruleset once DevOps has
   applied it.
