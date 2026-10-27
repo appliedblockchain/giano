@@ -48,7 +48,7 @@
 - [x] 1.4 Run a secret-shape scan over both files (32-byte hex, `ghp_`, `xox`, PEM): there must be no hits.
 - [x] 1.5 Create `docs/abip-compliance.md`'s summary table rows for ABIP-1, 5, 6, 7 and 8 as "in progress (apply-abips)",
   and add the ABIP-5 section.
-- [ ] 1.6 Open PR 1 as a draft against `main`, with no AI attribution, per `AGENTS.md`.
+- [x] 1.6 Open PR 1 as a draft against `main`, with no AI attribution, per `AGENTS.md`.
 
 ## 2. ABIP-6: minimum release age (PR 2, `chore/abip-6-release-age`)
 
