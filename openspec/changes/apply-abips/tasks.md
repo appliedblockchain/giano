@@ -91,28 +91,40 @@
 
 ## 3. ABIP-7: exact pins (PR 3, `chore/abip-7-exact-pins`)
 
-- [ ] 3.1 Write `scripts/check-pinned-versions.mjs` and `scripts/check-pinned-versions.test.mjs`, dependency-free.
+- [x] 3.1 Write `scripts/check-pinned-versions.mjs` and `scripts/check-pinned-versions.test.mjs`, dependency-free.
   - Scope: every tracked `package.json` outside `node_modules`, `vendor/` and `packages/contracts/lib/`, plus both
     `overrides` maps.
   - Accepted: exact versions, `workspace:` and `catalog:`. Git dependencies must use a 40-character SHA.
   - Peer ranges are allowed only in non-private packages under `packages/*` that have `publishConfig`.
 
   Write the tests first, covering every specifier form in the delta spec.
-- [ ] 3.2 Run the check on the current tree. Confirm 81 manifest violations, 7 accepted library peer ranges, and every
+- [x] 3.2 Run the check on the current tree. Confirm 81 manifest violations, 7 accepted library peer ranges, and every
   caret override value.
-- [ ] 3.3 With a one-off script that is not committed, rewrite each violating specifier to the version its importer
+- [x] 3.3 With a one-off script that is not committed, rewrite each violating specifier to the version its importer
   resolves in `pnpm-lock.yaml`, or in the example's lockfile. Rewrite each override value to its locked version. Do not
   upgrade anything.
 - [ ] 3.4 Run `pnpm install` in both workspaces. Confirm that the lockfile diff touches only specifiers and no resolved
   versions. Then run `pnpm install --frozen-lockfile` and confirm it passes.
-- [ ] 3.5 Add a patch changeset for contracts, tx-describe, wallet-core and wallet-transport, explaining that runtime
+
+  **Finding:** a plain `pnpm install` re-resolves the whole tree when override values change. It dropped 6 older
+  duplicates (`debug@4.4.1`, `fdir@6.4.4`, `hasown@2.0.2`, `picomatch@4.0.5`, `process-warning@5.0.0`,
+  `semver@7.7.2`) and moved one dev-only peer context. To keep the change specifier-only, the original lockfile's
+  `specifier:` and `overrides:` lines were rewritten instead: 104 lines in the root, 62 in the example.
+
+  **Root:** `pnpm install --frozen-lockfile` passes, and a following plain `pnpm install` leaves it byte-identical;
+  `packages` and `snapshots` are unchanged. **Example:** this needs a `read:packages` token (see 2.5), and is verified
+  by the `giano-example` image build in CI.
+- [x] 3.5 Add a patch changeset for contracts, tx-describe, wallet-core and wallet-transport, explaining that runtime
   `dependencies` are now exact under ABIP-7.
-- [ ] 3.6 Wire the check and its tests into `ci.yml`.
-- [ ] 3.7 Gates:
+- [x] 3.6 Wire the check and its tests into `ci.yml`.
+- [ ] 3.7 Gates (local, 2026-10-27): build passes, except the contracts' forge-based `gen:abis`, since Foundry is not
+  installed locally. The package tests pass (452), wallet-api passes (387), and typecheck passes. forge, determinism,
+  `release:verify` and e2e run in this PR's CI; `determinism.yml` triggers on `packages/contracts/package.json`.
+  Required:
   - `pnpm build`, the package tests and the wallet-api tests;
   - `forge test`, the determinism workflow and `release:verify`, with canonical addresses unchanged;
   - the e2e suite, run once.
-- [ ] 3.8 Update the docs:
+- [x] 3.8 Update the docs:
   - `AGENTS.md`: the upgrade workflow, meaning edit the pin, commit the lockfile in the same PR, and include no
     unrelated changes;
   - `docs/abip-compliance.md`: the ABIP-7 section, covering the peer exemption, the override rule and the `catalog:`

@@ -51,12 +51,12 @@
 		"@appliedblockchain/giano-contracts": "workspace:*"
 	},
 	"devDependencies": {
-		"@types/node": "^22.7.5",
-		"@vitest/coverage-v8": "^4.1.11",
+		"@types/node": "22.7.5",
+		"@vitest/coverage-v8": "4.1.12",
 		"tsdown": "0.23.1",
-		"tsx": "^4.19.4",
+		"tsx": "4.19.4",
 		"typescript": "7.0.2",
 		"viem": "2.31.6",
-		"vitest": "^4.1.11"
+		"vitest": "4.1.12"
 	}
 }

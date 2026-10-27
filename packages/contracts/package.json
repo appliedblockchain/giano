@@ -64,17 +64,17 @@
 		"storage:check": "node scripts/storage-layout.mjs --check"
 	},
 	"dependencies": {
-		"zod": "^3.23.8"
+		"zod": "3.24.4"
 	},
 	"devDependencies": {
 		"@account-abstraction/contracts": "0.7.0",
 		"@openzeppelin/contracts": "5.4.0",
 		"@openzeppelin/contracts-upgradeable": "5.4.0",
-		"@types/node": "^22.7.5",
-		"@wagmi/cli": "^2.2.1",
+		"@types/node": "22.7.5",
+		"@wagmi/cli": "2.3.1",
 		"ethers": "6.13.2",
 		"tsdown": "0.23.1",
-		"tsx": "^4.19.4",
+		"tsx": "4.19.4",
 		"typescript": "7.0.2",
 		"viem": "2.31.6"
 	}

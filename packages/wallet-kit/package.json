@@ -64,12 +64,12 @@
 		"@appliedblockchain/giano-wallet-transport": "workspace:*"
 	},
 	"devDependencies": {
-		"@types/react": "^19.0.6",
-		"happy-dom": "^20.8.9",
-		"react": "^19.0.0",
+		"@types/react": "19.1.4",
+		"happy-dom": "20.14.6",
+		"react": "19.1.0",
 		"tsdown": "0.23.1",
 		"typescript": "7.0.2",
 		"viem": "2.31.6",
-		"vitest": "^4.1.11"
+		"vitest": "4.1.12"
 	}
 }

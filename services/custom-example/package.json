@@ -16,26 +16,26 @@
 	},
 	"dependencies": {
 		"@appliedblockchain/giano-connector": "4.0.0",
-		"@chakra-ui/react": "~3.36.1",
-		"@emotion/react": "^11.11.4",
-		"@rainbow-me/rainbowkit": "^2.2.5",
-		"@tanstack/react-query": "^5.76.1",
-		"next-themes": "^0.4.6",
-		"react": "^19.0.0",
-		"react-dom": "^19.0.0",
-		"react-icons": "^5.7.0",
+		"@chakra-ui/react": "3.36.1",
+		"@emotion/react": "11.14.0",
+		"@rainbow-me/rainbowkit": "2.2.5",
+		"@tanstack/react-query": "5.76.1",
+		"next-themes": "0.4.6",
+		"react": "19.1.0",
+		"react-dom": "19.1.0",
+		"react-icons": "5.7.0",
 		"viem": "2.31.6",
 		"wagmi": "2.15.6",
-		"zod": "^3.25.1"
+		"zod": "3.25.1"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
-		"@types/node": "^20.14.8",
-		"@types/react": "^19.0.6",
-		"@types/react-dom": "^19.0.3",
-		"@vitejs/plugin-react": "^4.4.1",
+		"@types/node": "20.17.48",
+		"@types/react": "19.1.4",
+		"@types/react-dom": "19.2.3",
+		"@vitejs/plugin-react": "4.7.0",
 		"typescript": "7.0.2",
-		"vite": "^6.3.5"
+		"vite": "6.4.3"
 	},
 	"packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
 }

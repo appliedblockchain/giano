@@ -58,8 +58,8 @@ resolutions it replaces, such as `"undici@>=5.0.0 <6.28.0"`.
 - **THEN** the check fails and names the override key
 
 ### Requirement: The range check runs in CI on every pull request
-A dependency-free repository check SHALL scan every manifest and both override maps, and SHALL run in `ci.yml` on every
-pull request and on pushes to `main` and `production`. It SHALL have its own unit tests, covering each accepted and
+A dependency-free repository check SHALL scan every manifest and both override maps. It SHALL run in `ci.yml` on every
+pull request, including PRs into `main` and `production`, and in the CI run that `release.yml` calls before publishing. It SHALL have its own unit tests, covering each accepted and
 rejected specifier form. Transitive ranges inside dependencies are out of scope, because the lockfile pins them.
 
 #### Scenario: Check on a clean tree
