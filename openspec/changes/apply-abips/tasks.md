@@ -76,7 +76,7 @@
 - [x] 2.4 Set `minimumReleaseAge: 10080` in both workspace files, with an ABIP-6 comment. Remove `postcss`,
   `baseline-browser-mapping` and `'@appliedblockchain/*'`. Where removing one breaks `pnpm install`, replace it with a
   version-specific entry, and give the advisory or reason and a removal date.
-- [ ] 2.5 Run `pnpm install --frozen-lockfile` in both workspaces and confirm the lockfiles are unchanged. The root
+- [x] 2.5 Run `pnpm install --frozen-lockfile` in both workspaces and confirm the lockfiles are unchanged. The root
   passes, unchanged, with the line "Lockfile passes supply-chain policies (1069 entries)". The example needs a
   `read:packages` token, which this machine lacks; it is verified by the `giano-example` image build in CI. If 2.3
   forced a change, commit it alone, as `chore(deps): …`, per the lockfile-discipline requirement.
@@ -103,7 +103,7 @@
 - [x] 3.3 With a one-off script that is not committed, rewrite each violating specifier to the version its importer
   resolves in `pnpm-lock.yaml`, or in the example's lockfile. Rewrite each override value to its locked version. Do not
   upgrade anything.
-- [ ] 3.4 Run `pnpm install` in both workspaces. Confirm that the lockfile diff touches only specifiers and no resolved
+- [x] 3.4 Run `pnpm install` in both workspaces. Confirm that the lockfile diff touches only specifiers and no resolved
   versions. Then run `pnpm install --frozen-lockfile` and confirm it passes.
 
   **Finding:** a plain `pnpm install` re-resolves the whole tree when override values change. It dropped 6 older
@@ -113,7 +113,9 @@
 
   **Root:** `pnpm install --frozen-lockfile` passes, and a following plain `pnpm install` leaves it byte-identical;
   `packages` and `snapshots` are unchanged. **Example:** this needs a `read:packages` token (see 2.5), and is verified
-  by the `giano-example` image build in CI.
+  by the `giano-example` image build in CI. **CI (#162, #164):** the example's frozen install accepts the lockfile,
+  and fails only on the 2 expected age entries (`giano-connector`/`giano-wallet-transport@4.0.0`, published
+  2026-10-27T08:06:34Z).
 - [x] 3.5 Add a patch changeset for contracts, tx-describe, wallet-core and wallet-transport, explaining that runtime
   `dependencies` are now exact under ABIP-7.
 - [x] 3.6 Wire the check and its tests into `ci.yml`.
