@@ -6,12 +6,11 @@ import { promisify } from "node:util";
 import { type Address, type PublicClient, zeroAddress } from "viem";
 import { CANONICAL_DEPLOYER, DEPLOYER_IS_PLACEHOLDER, LABELS } from "./config";
 import { create3Address } from "./create3";
-import {
-	inspectTestnet,
-	networkFor,
-	roleAdmin,
-	verifyCoreState,
-} from "./testnet-checks";
+import { inspectDeployment, roleAdmin, verifyCoreState } from "./preflight";
+
+import { loadProfile } from "./profiles";
+
+const profile = loadProfile({ chain: "base-sepolia" }).profile;
 
 const admin = "0x1111111111111111111111111111111111111111" as Address;
 function client(overrides: object = {}): PublicClient {
@@ -23,25 +22,21 @@ function client(overrides: object = {}): PublicClient {
 	} as unknown as PublicClient;
 }
 
-test("target selection refuses unsupported networks and object prototype keys", () => {
-	assert.equal(networkFor("base-sepolia"), "base-sepolia");
-	assert.equal(networkFor("ethereum-sepolia"), "ethereum-sepolia");
-	for (const name of ["base", "mainnet", "8453", "__proto__", "toString", ""])
-		assert.throws(() => networkFor(name));
+test("role admin must be a valid nonzero address", () => {
 	assert.throws(() => roleAdmin(zeroAddress));
 	assert.throws(() => roleAdmin("invalid"));
 });
 
 test("wrong-chain RPC stops before inspecting addresses or balances", async () => {
 	let reads = 0;
-	const checks = await inspectTestnet(
+	const checks = await inspectDeployment(
 		client({
 			getChainId: async () => 1,
 			getCode: async () => {
 				reads++;
 			},
 		}),
-		"base-sepolia",
+		profile,
 		"v1",
 		admin,
 	);
@@ -52,7 +47,7 @@ test("wrong-chain RPC stops before inspecting addresses or balances", async () =
 });
 
 test("missing dependencies and foreign bytecode are reported together", async () => {
-	const checks = await inspectTestnet(
+	const checks = await inspectDeployment(
 		client({
 			getCode: async ({ address }: { address: Address }) =>
 				address ===
@@ -60,7 +55,7 @@ test("missing dependencies and foreign bytecode are reported together", async ()
 					? "0x6000"
 					: "0x",
 		}),
-		"base-sepolia",
+		profile,
 		"v1",
 		admin,
 	);
@@ -70,13 +65,13 @@ test("missing dependencies and foreign bytecode are reported together", async ()
 });
 
 test("RPC errors cannot disclose provider credentials", async () => {
-	const checks = await inspectTestnet(
+	const checks = await inspectDeployment(
 		client({
 			getChainId: async () => {
 				throw new Error("https://provider.invalid/SECRET_API_KEY");
 			},
 		}),
-		"base-sepolia",
+		profile,
 		"v1",
 		admin,
 	);
@@ -86,12 +81,7 @@ test("RPC errors cannot disclose provider credentials", async () => {
 });
 
 test("stale generated release data blocks adoption", async () => {
-	const checks = await inspectTestnet(
-		client(),
-		"base-sepolia",
-		"v99999",
-		admin,
-	);
+	const checks = await inspectDeployment(client(), profile, "v99999", admin);
 	assert.equal(
 		checks.filter(
 			(c) => !c.ok && /Canonical release data is stale/.test(c.message),
@@ -101,7 +91,7 @@ test("stale generated release data blocks adoption", async () => {
 });
 
 test("absent contracts require no storage reads, including providers returning 0x", async () => {
-	await verifyCoreState(client({ getCode: async () => "0x" }), admin);
+	await verifyCoreState(client({ getCode: async () => "0x" }), admin, profile);
 });
 
 test("existing proxy storage must point to the planned implementation", async () => {
@@ -114,6 +104,7 @@ test("existing proxy storage must point to the planned implementation", async ()
 				getStorageAt: async () => `0x${"0".repeat(64)}`,
 			}),
 			admin,
+			profile,
 		),
 		/unexpected implementation/,
 	);
@@ -136,6 +127,7 @@ test("an existing paymaster with the wrong role admin is rejected", async () => 
 					functionName === "hasRole" ? false : 0n,
 			}),
 			admin,
+			profile,
 		),
 	);
 });
@@ -171,9 +163,9 @@ test("CLI --plan is read-only and reports the placeholder on both supported netw
 				[
 					"--import",
 					"tsx",
-					"deploy/testnet.ts",
+					"deploy/guided.ts",
 					"--plan",
-					"--network",
+					"--chain",
 					chainId === 84532 ? "base-sepolia" : "ethereum-sepolia",
 					"--rpc",
 					`http://127.0.0.1:${address.port}`,

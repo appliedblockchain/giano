@@ -1,4 +1,4 @@
-# Testnet deployment and address cutover
+# Configurable contract deployment and address cutover
 
 Reviewed against main `73059bf` (27 October 2026): [#130](https://github.com/appliedblockchain/giano/pull/130)
 ports TypeScript; [#132](https://github.com/appliedblockchain/giano/pull/132) replaces Hardhat/Ignition
@@ -19,10 +19,12 @@ From the repository root:
 # Node 24+; use the pnpm version pinned by package.json.
 corepack enable
 corepack pnpm install --frozen-lockfile
-pnpm testnet:deploy
+pnpm contracts:deploy
 ```
 
-The wizard asks for a supported network, RPC URL and the **public** paymaster ROLE_ADMIN address.
+The wizard loads a persisted chain profile, then asks for missing public operator inputs and the
+release to deploy. It can save the public ROLE_ADMIN and release back to that profile for the next
+run. Runtime RPC overrides and keys are never saved. `--plan` never changes a profile or signs.
 It prints the release, address plan and fee parameters, checks requirements, explains failures,
 and requires `deploy <network> <release>` before signing. Cancelling sends nothing. No key is
 requested in a prompt, printed, or saved. Export `CANONICAL_DEPLOYER_PRIVATE_KEY` from your normal
@@ -32,15 +34,15 @@ used by provisioning; these are separate accounts.
 For a read-only preflight, no deployment key is required:
 
 ```sh
-pnpm testnet:deploy --plan --network base-sepolia --release v1 --role-admin "$PAYMASTER_ROLE_ADMIN"
-pnpm testnet:deploy --plan --network ethereum-sepolia --release v1 --role-admin "$PAYMASTER_ROLE_ADMIN"
+pnpm contracts:deploy --plan --chain base-sepolia --release v1 --role-admin "$PAYMASTER_ROLE_ADMIN"
+pnpm contracts:deploy --plan --chain ethereum-sepolia --release v1 --role-admin "$PAYMASTER_ROLE_ADMIN"
 ```
 
 Set `PAYMASTER_ROLE_ADMIN` to the intended operator address first. Use `DEPLOY_RPC_URL` for a keyed
 endpoint without putting its credentials in shell arguments. Without it, plans use the public
 network default. RPC identity must match the selected network; failures suppress provider error
 bodies because they may contain credentials. Noninteractive runs only print a plan and never sign.
-The checked-in bootstrap script (`bash deploy/testnet/deploy.sh`) also explains missing Node,
+The checked-in bootstrap script (`bash deploy/contracts/run.sh deploy`) also explains missing Node,
 pnpm or installed dependencies before loading TypeScript. Use it if pnpm itself is unavailable.
 No Foundry installation or Solidity compilation is needed to deploy the committed release.
 
@@ -55,6 +57,46 @@ Fund the correct network separately; Ethereum Sepolia ETH is not Base Sepolia ET
 Use [Base's funding instructions](https://docs.base.org/get-started/get-funds) and
 [Ethereum's testnet resources](https://ethereum.org/en/developers/docs/networks/).
 Public RPCs are defaults, not availability guarantees; prefer a reliable provider during deployment.
+
+## Persisted profiles and generic commands
+
+Network-specific data lives in `deploy/chains/base-sepolia.json` and
+`deploy/chains/ethereum-sepolia.json`, not in executable scripts. The tool discovers profiles from
+that directory. Add another chain by adding JSON with the same validated shape, or select an
+external profile with `--config <file>`. No new TypeScript branch or shell wrapper is needed.
+
+A profile persists chain ID/name, a public RPC fallback and its credential environment-variable
+name, committed release, public ROLE_ADMIN, minimum deployer balance and paymaster fee parameters.
+The shipped profiles leave ROLE_ADMIN unset until a custodian supplies it. Interactive deployment
+can persist that address and the chosen release after showing the destination file. Review/commit
+those public changes for reproducibility. For a private environment, use an ignored custom profile
+such as `deploy/contracts/my-environment.local.json`. Do not put credential-bearing URLs in JSON;
+set the referenced environment variable instead. Runtime `--rpc` overrides are deliberately ephemeral.
+Unknown profile fields (including keys/passwords) are refused. `--plan` never writes configuration.
+
+Operator-specific inputs are separate dotenv data, selected explicitly:
+
+```sh
+cp deploy/contracts/operator.env.example deploy/contracts/base-sepolia.local.env
+pnpm contracts:deploy --chain base-sepolia --env-file deploy/contracts/base-sepolia.local.env
+pnpm contracts:funding --chain base-sepolia --env-file deploy/contracts/base-sepolia.local.env
+pnpm contracts:provision --chain base-sepolia --env-file deploy/contracts/base-sepolia.local.env
+pnpm contracts:sponsorship --chain base-sepolia --env-file deploy/contracts/base-sepolia.local.env
+pnpm contracts:doctor --chain base-sepolia --env-file deploy/contracts/base-sepolia.local.env
+```
+
+All commands accept `--config <file>` in place of `--chain`. Operator commands support `--plan` to
+verify the selected target without invoking their underlying workflow. Provisioning and policy
+writes require exact-text confirmation; noninteractive writes are refused. Existing exported
+variables take precedence over dotenv data. Conflicting CHAIN_ID/DEPLOY_CHAIN_ID inputs stop the
+operation. The selected profile's RPC environment reference takes precedence over DEPLOY_RPC_URL,
+then the public profile fallback is used. No command executes a shell sourced from a profile or
+operator dotenv file. No secret values are added to deployment records or generated address fragments.
+
+Use `contracts:provision` for the EOA-admin testnet topology; a timelock needs its own transaction
+workflow. Provisioning reruns add tenant funding again. `contracts:sponsorship` installs the demo
+policy for the configured tenant through the real API; use the admin console/API for other policies.
+The same chain-adoption/code gates apply to an added chain. A new profile is not proof of readiness.
 
 ## 1. Fix the permanent address inputs once, before either network
 
@@ -87,12 +129,12 @@ same release, deployer and admin. Keep the old service configuration intact unti
 
 Provide the public ROLE_ADMIN address and canonical deployer key; the operator, sponsorship signer,
 executor, and existing tenant UUIDs will be needed for the later provisioning stage. Use separate
-local environment files per network (for example `deploy/testnet/base-sepolia.local.env` and
+local environment files per network (for example `deploy/contracts/base-sepolia.local.env` and
 `ethereum-sepolia.local.env`, gitignored). Never put keys in committed examples.
 
 The wizard gates signing on:
 
-- Explicit supported network and matching `eth_chainId`; no generic mainnet target.
+- Validated profile with explicit chain identity and a matching RPC `eth_chainId`; no implicit chain default.
 - Real canonical deployer and a matching signing key at execution time.
 - Committed release with generated canonical hashes for all four core contracts.
 - CreateX at `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, with the
@@ -102,8 +144,8 @@ The wizard gates signing on:
 - Every target address either empty or containing the selected release's runtime code. Existing
   factory implementation, paymaster implementation slot, ROLE_ADMIN membership, EntryPoint and fee
   parameters must match. An upgraded proxy or unexpected bytecode stops adoption.
-- At least **0.05 test ETH** on the real canonical deployer when a contract is missing. This is a
-  conservative reserve, not an exact cost estimate. Check gas conditions and maintain headroom,
+- The configured gas reserve (**0.05 test ETH** in both shipped profiles) on the real canonical
+  deployer when a contract is missing. This is a conservative reserve, not an exact cost estimate. Check gas conditions and maintain headroom,
   including Base's L1 data fee. A fully deployed rerun needs no deployment balance.
 
 Missing public-chain prerequisites require investigation or the upstream deployment procedure;
@@ -114,8 +156,8 @@ protected list despite being testnets. Production GianoPaymaster provides sponso
 ## 3. Deploy and verify core contracts
 
 ```sh
-pnpm testnet:deploy --network base-sepolia --release v1
-# After Base is validated, use --network ethereum-sepolia --release v1.
+pnpm contracts:deploy --chain base-sepolia --release v1
+# After Base is validated, use --chain ethereum-sepolia --release v1.
 ```
 
 The four core addresses are wallet implementation, factory, paymaster implementation and paymaster
@@ -125,11 +167,12 @@ after each completed contract. After deployment it checks all runtime hashes and
 configuration again, then runs `gen:addresses`.
 
 Review and commit the chain record and regenerated `packages/contracts/addresses.ts`. The wizard also
-writes a gitignored, **public-address-only** `deploy/testnet/<chainId>.addresses.env`, including blank
+writes a gitignored, **public-address-only** `deploy/contracts/<chainId>.addresses.env`, including blank
 legacy fixture overrides. Source this **after** loading your network environment to use its addresses
 with provisioning tools. It never overwrites `deploy/.env` or changes serving configuration.
-For the old `deploy/sepolia/deploy-contracts.sh` entry point, `deploy/.env` still supplies inputs;
-it now delegates to the wizard and validates CHAIN_ID/DEPLOY_CHAIN_ID instead of signing unattended.
+`deploy/sepolia` has been removed. Shared funding/provisioning/policy tools use the same selected
+profile and an explicit operator dotenv file; they never load an implicit `deploy/.env`. The generic
+external-chain demo is documented in [DEMO.md](DEMO.md).
 
 ## 4. Provision sponsorship and pass the adoption gate
 
@@ -151,7 +194,7 @@ sponsorship signer's **public** address and real tenant IDs/withdrawal destinati
 
 ```sh
 set -a
-. deploy/testnet/84532.addresses.env   # use 11155111 for Ethereum Sepolia
+. deploy/contracts/84532.addresses.env   # use 11155111 for Ethereum Sepolia
 set +a
 pnpm -F @appliedblockchain/giano-contracts provision:paymaster -- \
   --paymaster "$SPONSORSHIP_PAYMASTER_ADDRESS" \
@@ -170,9 +213,9 @@ pnpm -F @appliedblockchain/giano-contracts doctor -- chain \
   --tenants "$TENANT_ID"
 ```
 
-Read [the existing provisioning guide](../sepolia/README.md#4-provision-the-paymaster-one-time) for
-multi-tenant details. Existing provision-paymaster/provision-sponsorship shell wrappers specifically
-load `deploy/.env`: configure that file for the selected network if using them. The core wizard's
+Read [the external-chain demo guide](DEMO.md) for
+multi-tenant details. The shared operator commands load `--env-file` explicitly, validate the selected RPC identity and
+require interactive confirmation before provisioning transactions or sponsorship-policy writes. The core wizard's
 public address fragment is not a replacement for provisioning credentials or tenant configuration.
 A timelock-admin deployment requires that admin's transaction workflow rather than the EOA script.
 
@@ -241,12 +284,12 @@ Recheck after the real deployer is configured; those will be different target ad
 | Gap found | Work in this PR / remaining closure |
 | --- | --- |
 | Placeholder deployer prevents all public deployments | Wizard reports the blocker before signing. Custodian must select the permanent address; release owner regenerates/reviews artifacts before either chain. |
-| Noninteractive shell deployment trusted CHAIN_ID separately from RPC | Supported-network wizard verifies RPC identity; old shell entry point delegates and rejects conflicting chain IDs. |
-| No guided checklist/address preview or secret-safe plan | Root `pnpm testnet:deploy`, bootstrap checks, prompts, aggregated actionable checks, read-only plans, exact-text confirmation and per-chain public address output. |
+| Noninteractive shell deployment trusted CHAIN_ID separately from RPC | Profile-driven wizard verifies RPC identity; shared commands use the selected profile and reject conflicting environment chain IDs. |
+| No guided checklist/address preview or secret-safe plan | Root `pnpm contracts:deploy`, validated JSON profiles, saved public choices, bootstrap checks, prompts, aggregated actionable checks, read-only plans, exact-text confirmation and per-chain public address output. |
 | Existing code accepted without matching selected release; proxy runtime hides state | Wizard verifies release-specific hashes, EntryPoint/CreateX code, factory linkage, implementation slot and initialization parameters before signing and after deployment. Low-level `deploy:cli` remains an expert primitive; use the wizard for these testnets. |
 | Partial core runs saved only after all four contracts | Optional per-contract persistence hook plus interrupted-run/retry regression tests. |
 | Stale public registry and legacy environment addresses | Generate registry after verification; explicit coordinated package/configuration cutover above. Actual records must come from actual deployments, not invented addresses. |
-| Provisioning and policy setup are separate operator tools | Concrete sequence and required inputs above. A unified guided provisioning/policy workflow remains follow-up work; this PR automates core deployment and checks, not tenant administration. |
+| Provisioning and policy setup are separate operator tools | Shared `contracts:funding`, `contracts:provision`, `contracts:sponsorship` and `contracts:doctor` launchers use the same profiles and explicit operator dotenv files. Tenant credentials, policies and any timelock workflow remain environment/operator inputs. |
 | Direct KMS/HSM signing and exact Base-inclusive gas quote absent | Environment-key adapter and conservative reserve only; custody adapter required if key export is prohibited. No promise that the reserve equals transaction cost. |
 | Explorer source publication absent | Release standard-input.json supports reproducible compilation; explorer upload/verification is still an operator task. Runtime verification is automated. |
 | Live migration and readiness not demonstrated | Custody, funding, actual deployments, configuration rollout and sponsored smoke tests require the real operator inputs; no public-chain transactions are sent by this development PR. |

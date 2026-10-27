@@ -17,7 +17,11 @@
 		"local:node": "pnpm --filter @appliedblockchain/giano-contracts local:node",
 		"local:deploy": "pnpm --filter @appliedblockchain/giano-contracts local:deploy",
 		"doctor": "pnpm --filter @appliedblockchain/giano-contracts run doctor --",
-		"testnet:deploy": "bash deploy/testnet/deploy.sh"
+		"contracts:deploy": "bash deploy/contracts/run.sh deploy",
+		"contracts:funding": "bash deploy/contracts/run.sh funding",
+		"contracts:provision": "bash deploy/contracts/run.sh provision",
+		"contracts:sponsorship": "bash deploy/contracts/run.sh sponsorship",
+		"contracts:doctor": "bash deploy/contracts/run.sh doctor"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",

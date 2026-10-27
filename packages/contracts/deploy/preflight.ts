@@ -16,32 +16,14 @@ import {
 	LABELS,
 } from "./config";
 import { CREATEX_ADDRESS, create3Address } from "./create3";
+import { type ChainProfile, paymasterParams } from "./profiles";
 
-export const TESTNETS = {
-	"base-sepolia": {
-		id: 84532,
-		name: "Base Sepolia",
-		rpc: "https://sepolia.base.org",
-	},
-	"ethereum-sepolia": {
-		id: 11155111,
-		name: "Ethereum Sepolia",
-		rpc: "https://ethereum-sepolia-rpc.publicnode.com",
-	},
-} as const;
-export type Network = keyof typeof TESTNETS;
 export const CORE_KEYS = [
 	"walletImplementation",
 	"factory",
 	"paymasterImplementation",
 	"paymasterProxy",
 ] as const;
-export const PAYMASTER_DEFAULTS = {
-	defaultFeeWei: 100_000_000_000_000n,
-	postOpGasAllowance: 40000,
-	penaltyBps: 1000,
-};
-export const MIN_DEPLOYER_BALANCE = parseEther("0.05");
 // Same reference as giano-doctor: includes the canonical SenderCreator immutable.
 export const ENTRY_POINT_CODEHASH =
 	"0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58";
@@ -50,14 +32,6 @@ export const CREATEX_CODEHASH =
 	"0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f";
 export const IMPLEMENTATION_SLOT =
 	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
-
-export function networkFor(value: string): Network {
-	if (!(value in TESTNETS) || !Object.hasOwn(TESTNETS, value))
-		throw new Error(
-			"Choose base-sepolia or ethereum-sepolia (only supported targets).",
-		);
-	return value as Network;
-}
 
 export function roleAdmin(value: string): Address {
 	const address = getAddress(value);
@@ -85,6 +59,7 @@ export function expectedCodehash(
 export async function verifyCoreState(
 	client: PublicClient,
 	admin: Address,
+	profile: ChainProfile,
 ): Promise<void> {
 	const factory = create3Address(CANONICAL_DEPLOYER, LABELS.factory);
 	const proxy = create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy);
@@ -134,9 +109,9 @@ export async function verifyCoreState(
 	if (
 		!allowed ||
 		getAddress(entryPoint) !== getAddress(ENTRY_POINT_V07) ||
-		fee !== PAYMASTER_DEFAULTS.defaultFeeWei ||
-		allowance !== PAYMASTER_DEFAULTS.postOpGasAllowance ||
-		penalty !== PAYMASTER_DEFAULTS.penaltyBps
+		fee !== paymasterParams(profile).defaultFeeWei ||
+		allowance !== profile.paymaster.postOpGasAllowance ||
+		penalty !== profile.paymaster.penaltyBps
 	)
 		throw new Error(
 			"Existing paymaster admin, EntryPoint or fee parameters differ from this plan. Review its configuration before continuing.",
@@ -144,9 +119,9 @@ export async function verifyCoreState(
 }
 
 export type Check = { ok: boolean; message: string };
-export async function inspectTestnet(
+export async function inspectDeployment(
 	client: PublicClient,
-	network: Network,
+	profile: ChainProfile,
 	release: string,
 	admin: Address,
 ): Promise<Check[]> {
@@ -166,15 +141,12 @@ export async function inspectTestnet(
 			});
 		}
 	}
-	await check(
-		`RPC is ${TESTNETS[network].name} (${TESTNETS[network].id})`,
-		async () => {
-			if ((await client.getChainId()) !== TESTNETS[network].id)
-				throw new GateError(
-					"Wrong chain: provide the selected network's RPC URL. No transactions sent.",
-				);
-		},
-	);
+	await check(`RPC is ${profile.name} (${profile.chainId})`, async () => {
+		if ((await client.getChainId()) !== profile.chainId)
+			throw new GateError(
+				"Wrong chain: provide the selected network's RPC URL. No transactions sent.",
+			);
+	});
 	if (!checks[0].ok) return checks;
 	await check(`CreateX exists at ${CREATEX_ADDRESS}`, async () => {
 		const code = await client.getCode({ address: CREATEX_ADDRESS });
@@ -222,7 +194,7 @@ export async function inspectTestnet(
 		"Existing factory/paymaster configuration matches the plan (when present)",
 		async () => {
 			try {
-				await verifyCoreState(client, admin);
+				await verifyCoreState(client, admin, profile);
 			} catch {
 				throw new GateError(
 					"Configuration could not be verified or differs from this plan. Review factory implementation, proxy implementation slot, ROLE_ADMIN, EntryPoint and fee parameters.",
@@ -232,14 +204,14 @@ export async function inspectTestnet(
 	);
 	if (missing && !DEPLOYER_IS_PLACEHOLDER)
 		await check(
-			`Canonical deployer has at least 0.05 test ETH (conservative gas reserve)`,
+			`Canonical deployer has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
 			async () => {
 				if (
 					(await client.getBalance({ address: CANONICAL_DEPLOYER })) <
-					MIN_DEPLOYER_BALANCE
+					parseEther(profile.minDeployerBalanceEth)
 				)
 					throw new GateError(
-						`Fund ${CANONICAL_DEPLOYER} on ${TESTNETS[network].name}, then rerun. Reserve is not a gas quote; Base L1 data fees and changing gas prices need headroom.`,
+						`Fund ${CANONICAL_DEPLOYER} on ${profile.name}, then rerun. Reserve is not a gas quote; L1 data fees and changing gas prices need headroom.`,
 					);
 			},
 		);

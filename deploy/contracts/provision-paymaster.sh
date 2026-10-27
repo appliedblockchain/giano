@@ -1,44 +1,39 @@
 #!/usr/bin/env bash
-# Provisions the sponsorship paymaster deployed by ./deploy/sepolia/deploy-contracts.sh:
+# Provisions the sponsorship paymaster deployed by pnpm contracts:deploy:
 # grants roles, registers the sponsorship signing key, stakes with the EntryPoint, registers every
 # tenant in PAYMASTER_TENANTS and funds each balance. Then verifies its own work with
 # `giano-doctor chain`.
 #
-# Separate from deploy-contracts.sh on purpose, and the split is the same one the Ignition module
+# Separate from pnpm contracts:deploy on purpose, and the split is the same one the Ignition module
 # argues for: the deployed addresses must be identical for every operator, while everything here
 # is operator-specific. specs/CHAIN-ADOPTION.md step 7.
 #
 # ⚠ Costs real testnet ETH: the stake, the tenant's funded balance, and gas for ~10 transactions.
 #
-# Usage:  ./deploy/sepolia/provision-paymaster.sh
+# Usage: pnpm contracts:provision --chain <profile> --env-file <file>
 #   Idempotent for roles, signer and stake. NOT for funding: re-running adds TENANT_FUND_ETH to
 #   each tenant's balance again rather than topping it up to that figure.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ENV_FILE="$REPO_ROOT/deploy/.env"
+: "${GIANO_PROFILE_LOADED:?use pnpm contracts:funding, contracts:provision or contracts:sponsorship with --chain <profile>}"
+: "${CHAIN_ID:?select a chain profile}"
+: "${RPC_URL:?provide a chain RPC}"
 
-[ -f "$ENV_FILE" ] || { echo "ERROR: $ENV_FILE not found. Run: cp deploy/sepolia.env.example deploy/.env"; exit 1; }
-# shellcheck disable=SC1090
-set -a; . "$ENV_FILE"; set +a
-
-: "${DEPLOYER_PRIVATE_KEY:?set DEPLOYER_PRIVATE_KEY in deploy/.env}"
-: "${SPONSORSHIP_PAYMASTER_ADDRESS:?not set — run ./deploy/sepolia/deploy-contracts.sh first}"
-: "${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in deploy/.env (the key wallet-api signs sponsorships with)}"
+: "${DEPLOYER_PRIVATE_KEY:?set DEPLOYER_PRIVATE_KEY in the selected operator environment}"
+: "${SPONSORSHIP_PAYMASTER_ADDRESS:?not set — run pnpm contracts:deploy first}"
+: "${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in the selected operator environment (the key wallet-api signs sponsorships with)}"
 
 # Provisioning writes to the chain, so it uses the DEPLOYMENT rpc, not the stack's serving one.
-export RPC_URL="${DEPLOY_RPC_URL:-${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}}"
-CHAIN_ID="${CHAIN_ID:-11155111}"
+export RPC_URL="${DEPLOY_RPC_URL:-$RPC_URL}"
 
-# The tenants to register, as `slug:uuid` pairs. Defaults to the two the development environment
-# serves (infra/iac/_locals.tf `tenant_hosts`). Each gets TENANT_FUND_ETH, so the deployer spends
+# The tenants to register, as `slug:uuid` pairs. Explicitly supplied from the selected environment.
+# Each gets TENANT_FUND_ETH, so the deployer spends
 # that amount once per tenant.
 #
 # The ids must equal the ones in that deployment's database: the paymaster keys a tenant's
 # balance on the 16 bytes of its UUID, and a tenant whose database id differs from its on-chain id
 # has every sponsorship refused as an unknown tenant.
-PAYMASTER_TENANTS="${PAYMASTER_TENANTS:-example:cf0d5345-0fdb-4688-b1db-9a288c9d9aed,byoui:743480a4-bdc8-4792-8ddf-625e074bd6c2}"
+: "${PAYMASTER_TENANTS:?provide slug:existing-database-uuid pairs in the selected operator environment}"
 # Per-tenant balance, and the paymaster's EntryPoint stake.
 #
 # STAKE_ETH must be at least 0.1: that is MIN_STAKE_WEI in scripts/doctor.ts, and the doctor
@@ -51,7 +46,7 @@ STAKE_ETH="${STAKE_ETH:-0.1}"
 UNSTAKE_DELAY="${UNSTAKE_DELAY:-86400}"
 
 DERIVED="$(pnpm --filter @appliedblockchain/giano-contracts exec node -e \
-  "const {Wallet}=require('ethers');console.log(new Wallet(process.env.DEPLOYER_PRIVATE_KEY).address+' '+new Wallet(process.env.SPONSORSHIP_SIGNER_KEY).address)")"
+  "try { const {Wallet}=require('ethers');console.log(new Wallet(process.env.DEPLOYER_PRIVATE_KEY).address+' '+new Wallet(process.env.SPONSORSHIP_SIGNER_KEY).address) } catch { console.error('Invalid operator/sponsorship key or missing dependencies.'); process.exit(1) }")"
 DEPLOYER_ADDR="${DERIVED%% *}"
 SIGNER_ADDR="${DERIVED##* }"
 # Where a tenant withdraws its unspent balance to. The deployer by default — this is a demo stack
@@ -82,7 +77,7 @@ done
 
 echo "==> Provisioning the sponsorship paymaster"
 echo "    chain id   : $CHAIN_ID"
-echo "    rpc        : $RPC_URL"
+echo "    network    : $CHAIN_NAME ($CHAIN_ID)"
 echo "    paymaster  : $SPONSORSHIP_PAYMASTER_ADDRESS"
 echo "    role admin : $DEPLOYER_ADDR   (every role — a development shape, see below)"
 echo "    signer     : $SIGNER_ADDR"
@@ -109,7 +104,7 @@ echo "==> Verifying on-chain (adoption checklist step 8)"
 pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
   --rpc "$RPC_URL" \
   --chain-id "$CHAIN_ID" \
-  --factory "${FACTORY_ADDRESS:?not set — run deploy-contracts.sh first}" \
+  --factory "${FACTORY_ADDRESS:?not set — run pnpm contracts:deploy first}" \
   --sponsorship-paymaster "$SPONSORSHIP_PAYMASTER_ADDRESS" \
   ${TEST_PAYMASTER_ADDRESS:+--test-paymaster "$TEST_PAYMASTER_ADDRESS"} \
   --tenants "$TENANT_BYTES16" \
@@ -118,6 +113,6 @@ pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
 
 echo
 echo "==> Done. Next:"
-echo "    1. docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml up --build"
+echo "    1. Start the demo using deploy/contracts/DEMO.md."
 echo "    2. Install each tenant's sponsorship rules (a tenant with no rules gets no sponsorship):"
-echo "         ./deploy/sepolia/provision-sponsorship.sh"
+echo "         pnpm contracts:sponsorship --chain <profile> --env-file <operator-file>"

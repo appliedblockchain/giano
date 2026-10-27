@@ -1,0 +1,14 @@
+{
+	"chainId": 84532,
+	"name": "Base Sepolia",
+	"rpcUrl": "https://sepolia.base.org",
+	"rpcUrlEnv": "BASE_SEPOLIA_RPC_URL",
+	"release": "v1",
+	"roleAdmin": null,
+	"minDeployerBalanceEth": "0.05",
+	"paymaster": {
+		"defaultFeeWei": "100000000000000",
+		"postOpGasAllowance": 40000,
+		"penaltyBps": 1000
+	}
+}

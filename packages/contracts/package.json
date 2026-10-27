@@ -63,9 +63,10 @@
 		"provision:paymaster": "tsx scripts/provision-paymaster.ts",
 		"storage": "node scripts/storage-layout.mjs",
 		"storage:check": "node scripts/storage-layout.mjs --check",
-		"deploy:testnet": "tsx deploy/testnet.ts",
-		"test:deploy": "tsx --test deploy/testnet-checks.test.ts",
-		"test:deploy:integration": "tsx --test deploy/testnet-integration.test.ts"
+		"test:deploy": "node --import tsx --test deploy/preflight.test.ts deploy/profiles.test.ts deploy/operations.test.ts",
+		"test:deploy:integration": "node --import tsx --test deploy/integration.test.ts",
+		"deploy:guided": "node --import tsx deploy/guided.ts",
+		"deploy:operate": "node --import tsx deploy/operations.ts"
 	},
 	"dependencies": {
 		"zod": "3.24.4"

@@ -1,2 +1,3 @@
 *.addresses.env
 *.local.env
+*.local.json

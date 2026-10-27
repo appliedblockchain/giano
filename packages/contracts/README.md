@@ -184,8 +184,10 @@ pnpm test        # forge test (needs the submodules: pnpm git:init at the repo r
 pnpm storage:check
 ```
 
-## Guided testnet deployment
+## Guided contract deployment
 
-For Base Sepolia and Ethereum Sepolia, run `pnpm testnet:deploy` from the repository root.
-See [the deployment and address-cutover runbook](../../deploy/testnet/README.md) for prerequisites,
-read-only plans, permanent deployer setup, per-chain provisioning, verification and recovery.
+Run `pnpm contracts:deploy` from the repository root. Public chain configuration persists in
+`deploy/chains/*.json`; use `--chain <profile>` or `--config <file>` to choose a deployment.
+The same profile drives `contracts:funding`, `contracts:provision`, `contracts:sponsorship` and
+`contracts:doctor`. See [the deployment and address-cutover runbook](../../deploy/contracts/README.md)
+for prerequisites, saved operator choices, read-only plans, provisioning, verification and recovery.

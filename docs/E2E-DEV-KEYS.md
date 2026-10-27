@@ -189,10 +189,10 @@ as WebAuthn **RP IDs**, so renaming either means updating `TENANT_FIXTURES` (the
 
 Deliberately **not** in this document, and not in the repository.
 
-- `deploy/.env` — gitignored. Holds the real `DEPLOYER_PRIVATE_KEY`, `BUNDLER_EXECUTOR_PRIVATE_KEYS`
+- `deploy/contracts/*.local.env` — gitignored operator files selected explicitly by `--env-file`. Hold the real `DEPLOYER_PRIVATE_KEY`, `BUNDLER_EXECUTOR_PRIVATE_KEYS`
   and `ADMIN_API_KEY` for a testnet deployment. **Never commit it, and
   never copy its values into a document — this one included.**
-- `deploy/sepolia.env.example` — the template. Variable names only, no values. That is the file to
+- `deploy/contracts/operator.env.example` — the template. Variable names only, no values. That is the file to
   read to learn what a real deployment needs.
 - Production role holders are timelocks and the sponsorship signer lives in a KMS, so there is no
   raw production private key for anyone to write down.

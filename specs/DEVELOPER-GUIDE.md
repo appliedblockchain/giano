@@ -404,9 +404,9 @@ on purpose.
 
 ## 5. Part C — Stand up the wallet stack on a new chain
 
-The worked example below is Ethereum Sepolia, but every value is env-driven — point it at any EVM
-chain by changing `CHAIN_ID` + `RPC_URL` + the addresses. The full runbook is
-[`deploy/sepolia/README.md`](../deploy/sepolia/README.md).
+The worked example below is Ethereum Sepolia. Public chain settings persist in `deploy/chains/*.json`;
+select a profile with `--chain` or provide another JSON profile with `--config`. The full runbook is
+[`deploy/contracts/DEMO.md`](../deploy/contracts/DEMO.md).
 
 ### 5.1 Contracts
 
@@ -417,10 +417,10 @@ chain by changing `CHAIN_ID` + `RPC_URL` + the addresses. The full runbook is
   the key comes from an ABIP-8 ceremony and is never handed to developers or clients
   (`docs/key-ceremony.md`). The scripted testnet flow below is the one DevOps run:
   ```sh
-  cp deploy/sepolia.env.example deploy/.env   # set DEPLOYER_PRIVATE_KEY etc.
-  ./deploy/sepolia/print-funding.sh           # shows the EOAs to fund + balances + faucets
-  ./deploy/sepolia/deploy-contracts.sh        # deploys factory + impl + paymaster (+ test fixtures off
-                                              # production chains), writes addresses back to .env
+  cp deploy/contracts/operator.env.example deploy/contracts/ethereum-sepolia.local.env
+  # Configure operator inputs; public chain settings persist in deploy/chains/ethereum-sepolia.json.
+  pnpm contracts:funding --chain ethereum-sepolia --env-file deploy/contracts/ethereum-sepolia.local.env
+  pnpm contracts:deploy --chain ethereum-sepolia --env-file deploy/contracts/ethereum-sepolia.local.env
   ```
   It uses `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy and `DEPLOYER_PRIVATE_KEY` as the demo's
   operator (the paymaster's `ROLE_ADMIN`). The canonical deployer key is an Applied Blockchain
@@ -1044,5 +1044,5 @@ P-256 passkey).
 | [`PAYMASTER-SPECS.md`](./PAYMASTER-SPECS.md) | gas sponsorship: the technical design — contract, service, ledger, watcher |
 | [`e2e/README.md`](../e2e/README.md) | the two-tenant demo: its four origins, how portless serves them without root, and how to add or rename one |
 | [`packages/connector/README.md`](../packages/connector/README.md) | full SDK API + 0.x → 1.x (embedded) migration |
-| [`deploy/sepolia/README.md`](../deploy/sepolia/README.md) | end-to-end real-chain deploy runbook (any EVM chain) |
+| [`deploy/contracts/DEMO.md`](../deploy/contracts/DEMO.md) | end-to-end real-chain deploy runbook (any EVM chain) |
 | [`README-ROR.md`](../README-ROR.md) | Related Origin Requests (cross-origin passkeys) |

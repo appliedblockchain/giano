@@ -24,7 +24,7 @@
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
  *
  * Uses ethers (already a dependency of this package) — no build step required, mirrors
- * scripts/p256_deploy.ts and deploy/sepolia/print-funding.sh.
+ * scripts/p256_deploy.ts and deploy/contracts/print-funding.sh.
  */
 import {
 	Contract,

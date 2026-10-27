@@ -38,7 +38,7 @@ jobs:
         # Read-only: fails on any formatting difference or lint error. `pnpm format` fixes both
         # locally. services/custom-example has its own config and is checked by its own build.
         run: pnpm exec biome ci .
-      - name: Test guided testnet deployment gates
+      - name: Test profile-driven deployment gates
         run: pnpm --filter @appliedblockchain/giano-contracts test:deploy
       - name: Build contracts TS surface (committed artifacts only)
         run: pnpm --filter @appliedblockchain/giano-contracts build:ts

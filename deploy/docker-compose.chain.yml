@@ -1,40 +1,23 @@
-# Sepolia (or any EVM chain) e2e demo stack.
-#
-# Unlike docker-compose.e2e.yml (which runs a local anvil devnet with pre-baked contract
-# state), this stack talks to a REAL chain over an external RPC. It defaults to Ethereum
-# Sepolia but is fully env-driven — point it at any EVM chain by editing the .env file.
-#
-# One-time prerequisites (see deploy/sepolia/README.md for the full runbook):
-#   1. cp deploy/sepolia.env.example deploy/.env  and fill in the keys/RPC
-#   2. Fund the deployer + bundler executor EOAs with testnet ETH (./deploy/sepolia/print-funding.sh)
-#   3. Deploy the Giano contracts once:  ./deploy/sepolia/deploy-contracts.sh
-#      (writes FACTORY_ADDRESS / SPONSORSHIP_PAYMASTER_ADDRESS / TEST_PAYMASTER_ADDRESS /
-#       TEST_ERC20_ADDRESS back into deploy/.env, and refuses to continue if any address
-#       diverges from the canonical freeze)
-#   4. Provision the paymaster:  ./deploy/sepolia/provision-paymaster.sh
-#      (roles, signer, stake, tenant registration and funding)
-#
-# Run:
-#   docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml up --build
-#   ./deploy/sepolia/provision-sponsorship.sh          # the tenant's rules — REQUIRED, see below
-#   pnpm --filter @appliedblockchain/giano-e2e dapp    # sample dApp on http://app.localhost:4400
-name: giano-sepolia
+# Local demo against any configured external EVM chain.
+# See deploy/contracts/DEMO.md. Supply the operator dotenv file and generated address fragment.
+# Deployment/provisioning use pnpm contracts:* --chain <profile> (deploy/chains/*.json).
+name: giano-chain-demo
 
 # The backend chain document wallet-api and the bundler both read (packages/contracts/chains.ts),
-# interpolated from deploy/.env. The chain is not in the committed contracts registry, so its
+# interpolated from the selected operator file and public address fragment. The chain is not in the committed contracts registry, so its
 # addresses are explicit. Only our own paymaster's operations are relayed (allowedPaymasters).
 x-giano-chains: &giano-chains |
   [
     {
-      "chainId": ${CHAIN_ID:-11155111}, "name": "${CHAIN_NAME:-Sepolia}",
-      "rpcUrl": "${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}",
-      "entryPoint": "${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}",
-      "sponsorshipPaymaster": "${SPONSORSHIP_PAYMASTER_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set SPONSORSHIP_PAYMASTER_ADDRESS}",
+      "chainId": ${CHAIN_ID:?set CHAIN_ID from the selected profile}, "name": "${CHAIN_NAME:?set CHAIN_NAME from the selected profile}",
+      "rpcUrl": "${RPC_URL:?set the selected chain serving RPC_URL}",
+      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "sponsorshipPaymaster": "${SPONSORSHIP_PAYMASTER_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set SPONSORSHIP_PAYMASTER_ADDRESS}",
       "walletApi": {
-        "factory": "${FACTORY_ADDRESS:?run deploy/sepolia/deploy-contracts.sh, then set FACTORY_ADDRESS}",
+        "factory": "${FACTORY_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set FACTORY_ADDRESS}",
         "policy": { "allowedPaymasters": ["${SPONSORSHIP_PAYMASTER_ADDRESS}"] }
       },
-      "bundler": { "rpcUrl": "${BUNDLER_NODE_RPC_URL:-${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}}" }
+      "bundler": { "rpcUrl": "${BUNDLER_NODE_RPC_URL:-${RPC_URL:?set the selected chain serving RPC_URL}}" }
     }
   ]
 
@@ -42,7 +25,7 @@ services:
   # Self-hosted giano-bundler. Its executor EOA signs and pays for every handleOps transaction,
   # so it must be funded with testnet ETH. It simulates operations with eth_call (state
   # overrides, no debug_traceCall), so BUNDLER_NODE_RPC_URL can be a plain public RPC — it
-  # defaults to RPC_URL (publicnode).
+  # defaults to the explicitly configured RPC_URL.
   bundler:
     build:
       context: ..
@@ -50,7 +33,7 @@ services:
     restart: unless-stopped
     environment:
       GIANO_CHAINS: *giano-chains
-      BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS in deploy/.env}
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS in the selected operator file}
     ports:
       - '4337:4337'
 
@@ -68,7 +51,7 @@ services:
       retries: 10
 
   # The init step every deployment runs before wallet-api (services/wallet-api/src/init.ts):
-  # migrations, the local-sepolia bootstrap platform admins into an empty platform_admins table, and the demo
+  # migrations, the selected environment bootstrap platform admins into an empty platform_admins table, and the demo
   # tenant. wallet-api never seeds anything itself. Insert-only, so an existing platform admin or tenant
   # is left as it is and `down -v` is what resets them.
   init:
@@ -85,23 +68,23 @@ services:
       disable: true
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
-      GIANO_ENVIRONMENT: local-sepolia
-      # single demo tenant, interpolated from deploy/.env (validate the rendered JSON
-      # with `docker compose --env-file deploy/.env -f deploy/docker-compose.sepolia.yml config`)
+      GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:?set the application environment identity}
+      # single demo tenant, interpolated from the selected operator file and public address fragment (validate the rendered JSON
+      # with `docker compose --env-file <operator-file> --env-file <address-fragment> -f deploy/docker-compose.chain.yml config`)
       #
       # The `id` is load-bearing and must equal the TENANT_ID provision-paymaster.sh registered on
       # the paymaster: it is the key the tenant's on-chain balance is held under. Let it default
       # and the tenant gets a fresh id, whose balance is zero.
       TENANT_FIXTURES: >-
         [{"slug":"${TENANT_SLUG:-example}",
-        "id":"${TENANT_ID:-cf0d5345-0fdb-4688-b1db-9a288c9d9aed}",
+        "id":"${TENANT_ID:?set the existing database tenant UUID}",
         "walletOrigin":"${WALLET_ORIGIN:-http://wallet.localhost:8081}",
         "rpId":"${RP_ID:-wallet.localhost}",
         "rpName":"${RP_NAME:-Giano Example}",
         "allowedDappOrigins":${GIANO_ALLOWED_DAPP_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
         "corsOrigins":${TENANT_CORS_ORIGINS:-["http://app.localhost:4400","http://localhost:4400","http://127.0.0.1:4400"]},
         "openRegistration":${OPEN_REGISTRATION:-true},
-        "adminKeys":["${ADMIN_API_KEY:-sepolia-admin-key-0000}"]}]
+        "adminKeys":["${ADMIN_API_KEY:?set the tenant admin API key}"]}]
 
   wallet-api:
     build: *wallet-api-build
@@ -113,7 +96,7 @@ services:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
-      GIANO_ENVIRONMENT: local-sepolia
+      GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:?set the application environment identity}
       # the init service ran them
       RUN_MIGRATIONS: 'false'
       # A testnet: the balances at risk are worthless, so an environment-variable signing key is
@@ -126,7 +109,7 @@ services:
       # ── Sponsorship — the production GianoPaymaster, not the permissive test one ───────────
       # The demo sponsors the way a real deployment does: wallet-api signs an ERC-7677 sponsorship
       # against the tenant's funded balance on the paymaster. The permissive test paymaster is
-      # still deployed (Testing.ts) but nothing here points at it — the two are kept structurally
+      # never deployed by the guided tooling — the two are kept structurally
       # apart so neither can stand in for the other.
       #
       # Both halves are required. provision-paymaster.sh registers and funds the tenant ON CHAIN;
@@ -136,7 +119,7 @@ services:
       # `local` is refused outright when GIANO_DEPLOYMENT_CLASS is `production`; a testnet key
       # guarding worthless balances is the case the distinction exists to allow.
       SPONSORSHIP_SIGNER_KIND: local
-      SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in deploy/.env}
+      SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in the selected operator file}
       # Credits tenant balances from on-chain deposits. Without it a funded tenant stays at zero.
       PAYMASTER_WATCHER_ENABLED: 'true'
 
@@ -150,7 +133,7 @@ services:
     ports:
       - '8081:8080'
     environment:
-      GIANO_CHAIN_ID: ${CHAIN_ID:-11155111}
+      GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID from the selected profile}
       # No RPC or bundler URL: the wallet reads through wallet-api's /api/v1/rpc/<chainId> and
       # submits through /api/v1/bundler/<chainId>, so RPC_URL above never reaches the browser.
       # wallet-api base URL nginx proxies /api to

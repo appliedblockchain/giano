@@ -74,7 +74,7 @@ export const ENVIRONMENTS = {
 		bootstrapAdmins: [ANVIL_0, GIOVANNI],
 		localStack: true,
 	},
-	// docker-compose.dev.yml and docker-compose.sepolia.yml run no console
+	// docker-compose.dev.yml and docker-compose.chain.yml run no console
 	"local-dev": {
 		siweDomain: null,
 		bootstrapAdmins: [GIOVANNI],

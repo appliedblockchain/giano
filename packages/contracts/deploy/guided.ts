@@ -1,6 +1,7 @@
-/** Guided public-testnet deployment. No secret is read from a prompt or written to disk. */
+/** Guided profile-driven deployment. No secret is read from a prompt or written to disk. */
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import {
@@ -21,25 +22,31 @@ import {
 } from "./config";
 import { create3Address } from "./create3";
 import { deployCore } from "./deploy";
-import { readRecord, writeRecord } from "./records";
-import { latestRelease, loadRelease } from "./release";
 import {
 	CORE_KEYS,
 	expectedCodehash,
-	inspectTestnet,
-	networkFor,
-	PAYMASTER_DEFAULTS,
+	inspectDeployment,
 	roleAdmin,
-	TESTNETS,
 	verifyCoreState,
-} from "./testnet-checks";
+} from "./preflight";
+import {
+	listProfiles,
+	loadProfile,
+	paymasterParams,
+	REPO_ROOT,
+	savePublicChoices,
+} from "./profiles";
+import { readRecord, writeRecord } from "./records";
+import { loadRelease } from "./release";
 
 class GuidanceError extends Error {}
 
 async function main() {
 	const { values } = parseArgs({
 		options: {
-			network: { type: "string" },
+			chain: { type: "string" },
+			config: { type: "string" },
+			"env-file": { type: "string" },
 			rpc: { type: "string" },
 			"role-admin": { type: "string" },
 			release: { type: "string" },
@@ -49,7 +56,7 @@ async function main() {
 	});
 	if (values.help) {
 		console.log(
-			"pnpm testnet:deploy [--network base-sepolia|ethereum-sepolia] [--rpc URL] [--role-admin ADDRESS] [--release v1] [--plan]\nInteractive by default; --plan is read-only and works without a signing key.\nSet CANONICAL_DEPLOYER_PRIVATE_KEY securely in the environment to deploy. Never paste keys into arguments.\nBootstrap: Node 24+, corepack pnpm install --frozen-lockfile. See deploy/testnet/README.md.",
+			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
 		);
 		return;
 	}
@@ -68,40 +75,61 @@ async function main() {
 		);
 	};
 	try {
-		let network: ReturnType<typeof networkFor>;
+		let selected: ReturnType<typeof loadProfile>;
 		try {
-			network = networkFor(
-				values.network ??
-					(await ask(
-						"Network: base-sepolia or ethereum-sepolia",
-						"base-sepolia",
-					)),
+			selected = loadProfile(
+				values.chain || values.config
+					? { chain: values.chain, config: values.config }
+					: {
+							chain: await ask(`Chain profile (${listProfiles().join(", ")})`),
+						},
 			);
-		} catch {
+		} catch (error) {
 			throw new GuidanceError(
-				"Choose --network base-sepolia or ethereum-sepolia, or run interactively.",
+				error instanceof Error
+					? error.message
+					: "Choose a valid chain profile.",
 			);
+		}
+		const { profile } = selected;
+		if (values["env-file"]) {
+			try {
+				process.loadEnvFile(resolve(REPO_ROOT, values["env-file"]));
+			} catch {
+				throw new GuidanceError(
+					"Cannot load --env-file. Provide a dotenv file with operator credentials; shell commands are not evaluated.",
+				);
+			}
+		}
+		for (const field of ["CHAIN_ID", "DEPLOY_CHAIN_ID"]) {
+			if (process.env[field] && Number(process.env[field]) !== profile.chainId)
+				throw new GuidanceError(
+					`${field} in the environment differs from the selected profile. Correct the environment before continuing.`,
+				);
 		}
 		const rpc =
 			values.rpc ??
+			process.env[profile.rpcUrlEnv] ??
 			process.env.DEPLOY_RPC_URL ??
 			(await ask(
-				"RPC URL (provider key stays in memory)",
-				TESTNETS[network].rpc,
+				`RPC URL (or provide ${profile.rpcUrlEnv} securely)`,
+				profile.rpcUrl,
 			));
 		try {
 			const url = new URL(rpc);
 			if (!["https:", "http:"].includes(url.protocol)) throw new Error();
 		} catch {
 			throw new GuidanceError(
-				"Provide an HTTP(S) RPC URL with --rpc or DEPLOY_RPC_URL.",
+				"Provide an HTTP(S) RPC URL through the profile's environment reference or --rpc.",
 			);
 		}
+
 		let admin: ReturnType<typeof roleAdmin>;
 		try {
 			admin = roleAdmin(
 				values["role-admin"] ??
 					process.env.PAYMASTER_ROLE_ADMIN ??
+					profile.roleAdmin ??
 					(await ask(
 						"Paymaster ROLE_ADMIN address (operator address, not its private key)",
 					)),
@@ -111,10 +139,12 @@ async function main() {
 				"Provide a nonzero paymaster ROLE_ADMIN address with --role-admin or PAYMASTER_ROLE_ADMIN.",
 			);
 		}
-		const version = values.release ?? latestRelease();
+		const version =
+			values.release ??
+			(await ask("Committed contract release", profile.release));
 		if (version === "dev")
 			throw new GuidanceError(
-				"Public testnets require a committed release, not dev.",
+				"Public chains require a committed release, not dev.",
 			);
 		let release: ReturnType<typeof loadRelease>;
 		try {
@@ -125,12 +155,24 @@ async function main() {
 			);
 		}
 		console.log(
-			`\n${TESTNETS[network].name} (${TESTNETS[network].id}) / release ${version}\nCanonical deployer: ${CANONICAL_DEPLOYER}\nPaymaster ROLE_ADMIN: ${admin}\nFee: 0.0001 ETH; post-op allowance: 40000 gas; penalty: 1000 bps.\nNo test ERC-20 or permissive paymaster will be deployed (R-29).`,
+			`\n${profile.name} (${profile.chainId}) / release ${version}\nCanonical deployer: ${CANONICAL_DEPLOYER}\nPaymaster ROLE_ADMIN: ${admin}\nFee: ${profile.paymaster.defaultFeeWei} wei; post-op allowance: ${profile.paymaster.postOpGasAllowance} gas; penalty: ${profile.paymaster.penaltyBps} bps.\nNo test ERC-20 or permissive paymaster will be deployed (R-29).`,
 		);
+		if (
+			rl &&
+			(await ask(
+				`Save public ROLE_ADMIN and release to ${selected.file}? (yes/no)`,
+				"yes",
+			)) === "yes"
+		) {
+			savePublicChoices(selected, admin, version);
+			console.log(
+				"Saved public configuration. Runtime RPC overrides and keys were not persisted.",
+			);
+		}
 		const transport = http(rpc, { timeout: 15000, retryCount: 1 });
 		const chain = defineChain({
-			id: TESTNETS[network].id,
-			name: TESTNETS[network].name,
+			id: profile.chainId,
+			name: profile.name,
 			nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
 			rpcUrls: { default: { http: [rpc] } },
 		});
@@ -138,7 +180,7 @@ async function main() {
 		const blockers: string[] = [];
 		if (DEPLOYER_IS_PLACEHOLDER)
 			blockers.push(
-				"Canonical deployer is still the placeholder. Choose the permanent deployer address in deploy/config.ts; regenerate canonical.ts and devnet state, review and commit them before either testnet. Do not fund the placeholder.",
+				"Canonical deployer is still the placeholder. Choose the permanent deployer address in deploy/config.ts; regenerate canonical.ts and devnet state, review and commit them before public deployment. Do not fund the placeholder.",
 			);
 		let account: ReturnType<typeof privateKeyToAccount> | undefined;
 		const key = process.env.CANONICAL_DEPLOYER_PRIVATE_KEY;
@@ -170,7 +212,7 @@ async function main() {
 				"Existing deployment record is invalid or belongs to another deployer. Archive and review it before adopting the new address family; do not overwrite it blindly.",
 			);
 		}
-		const checks = await inspectTestnet(client, network, version, admin);
+		const checks = await inspectDeployment(client, profile, version, admin);
 		for (const check of checks)
 			console.log(`${check.ok ? "OK" : "BLOCKED"}: ${check.message}`);
 		for (const blocker of blockers) console.log(`BLOCKED: ${blocker}`);
@@ -179,7 +221,7 @@ async function main() {
 			return;
 		}
 		console.log(
-			"\nRequirements passed. This is a new address family: existing wallets, balances, tenant funding and sponsorship policies do not migrate automatically. See deploy/testnet/README.md for cutover and recovery.",
+			"\nRequirements passed. This is a new address family: existing wallets, balances, tenant funding and sponsorship policies do not migrate automatically. See deploy/contracts/README.md for cutover and recovery.",
 		);
 		if (!rl || values.plan) {
 			console.log(
@@ -191,7 +233,7 @@ async function main() {
 			throw new GuidanceError(
 				"Set CANONICAL_DEPLOYER_PRIVATE_KEY securely in the environment and rerun. No transactions sent.",
 			);
-		const confirmation = `deploy ${network} ${version}`;
+		const confirmation = `deploy ${profile.chainId} ${version}`;
 		if (
 			(await ask(
 				`Type '${confirmation}' to send transactions (anything else cancels)`,
@@ -201,7 +243,7 @@ async function main() {
 			return;
 		}
 		// Recheck after the operator has reviewed the plan; balances/code may have changed.
-		const fresh = await inspectTestnet(client, network, version, admin);
+		const fresh = await inspectDeployment(client, profile, version, admin);
 		if (fresh.some((check) => !check.ok))
 			throw new GuidanceError(
 				"Requirements changed during review. Rerun the plan. No transactions sent.",
@@ -217,7 +259,11 @@ async function main() {
 				onRecord: () => writeRecord(record),
 			},
 			release,
-			{ entryPoint: ENTRY_POINT_V07, roleAdmin: admin, ...PAYMASTER_DEFAULTS },
+			{
+				entryPoint: ENTRY_POINT_V07,
+				roleAdmin: admin,
+				...paymasterParams(profile),
+			},
 		);
 		for (const key of CORE_KEYS) {
 			const code = await client.getCode({
@@ -228,15 +274,15 @@ async function main() {
 					`Post-deployment code verification failed for ${key}. Do not serve this chain.`,
 				);
 		}
-		await verifyCoreState(client, admin);
+		await verifyCoreState(client, admin, profile);
 		writeRecord(record);
 		const addressEnv = new URL(
-			`../../../deploy/testnet/${chain.id}.addresses.env`,
+			`../../../deploy/contracts/${chain.id}.addresses.env`,
 			import.meta.url,
 		);
 		writeFileSync(
 			addressEnv,
-			`# Public addresses only; source after the environment configuration.\nCHAIN_ID=${chain.id}\nDEPLOY_CHAIN_ID=${chain.id}\nFACTORY_ADDRESS=${record.contracts.factory?.address}\nSPONSORSHIP_PAYMASTER_ADDRESS=${record.contracts.paymasterProxy?.address}\nTEST_PAYMASTER_ADDRESS=\nTEST_ERC20_ADDRESS=\n`,
+			`# Public addresses only; source after the environment configuration.\nCHAIN_ID=${chain.id}\nCHAIN_NAME=${JSON.stringify(profile.name)}\nDEPLOY_CHAIN_ID=${chain.id}\nFACTORY_ADDRESS=${record.contracts.factory?.address}\nSPONSORSHIP_PAYMASTER_ADDRESS=${record.contracts.paymasterProxy?.address}\nTEST_PAYMASTER_ADDRESS=\nTEST_ERC20_ADDRESS=\n`,
 		);
 		execFileSync(
 			process.execPath,
@@ -244,7 +290,7 @@ async function main() {
 			{ cwd: new URL("..", import.meta.url), stdio: "inherit" },
 		);
 		console.log(
-			`\nCore deployment verified; registry regenerated. Public address configuration: deploy/testnet/${chain.id}.addresses.env. Commit deployments/${chain.id}.json and addresses.ts.\nNext: provision the new paymaster with the existing tenant UUIDs and sponsorship signer; fund operator/executor on this chain; run doctor --require-paymaster; update GIANO_CHAINS and all address overrides; roll the services; verify a sponsored transaction.\nCore deployment alone is NOT a ready-to-serve chain. Follow deploy/testnet/README.md.`,
+			`\nCore deployment verified; registry regenerated. Public address configuration: deploy/contracts/${chain.id}.addresses.env. Commit deployments/${chain.id}.json and addresses.ts.\nNext: provision the new paymaster with the existing tenant UUIDs and sponsorship signer; fund operator/executor on this chain; run doctor --require-paymaster; update GIANO_CHAINS and all address overrides; roll the services; verify a sponsored transaction.\nCore deployment alone is NOT a ready-to-serve chain. Follow deploy/contracts/README.md.`,
 		);
 	} finally {
 		rl?.close();
@@ -258,7 +304,7 @@ main().catch((error: unknown) => {
 	}
 	// Avoid leaking a provider URL or private key through a viem error or argument dump.
 	console.error(
-		"Deployment stopped. Check network/RPC access, address inputs and committed release/record files. No further transactions will be sent. Inspect transaction receipts and rerun the same network/release to recover; see deploy/testnet/README.md. Provider error details are suppressed to protect credentials.",
+		"Deployment stopped. Check network/RPC access, address inputs and committed release/record files. No further transactions will be sent. Inspect transaction receipts and rerun the same network/release to recover; see deploy/contracts/README.md. Provider error details are suppressed to protect credentials.",
 	);
 	process.exitCode = 1;
 });

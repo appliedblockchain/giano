@@ -18,9 +18,12 @@ import {
 import { CANONICAL_DEPLOYER, ENTRY_POINT_V07 } from "./config";
 import { type DeployContext, deployCore } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
+import { inspectDeployment } from "./preflight";
+import { loadProfile, paymasterParams } from "./profiles";
 import { readRecord, writeRecord } from "./records";
 import { loadRelease } from "./release";
-import { inspectTestnet, PAYMASTER_DEFAULTS } from "./testnet-checks";
+
+const profile = loadProfile({ chain: "base-sepolia" }).profile;
 
 test("real CREATE3 release deploy, interrupted checkpoint recovery, verification and idempotent rerun", {
 	timeout: 90000,
@@ -94,7 +97,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		const params = {
 			entryPoint: ENTRY_POINT_V07,
 			roleAdmin: CANONICAL_DEPLOYER,
-			...PAYMASTER_DEFAULTS,
+			...paymasterParams(profile),
 		};
 		await assert.rejects(
 			deployCore(ctx, loadRelease("v1"), params),
@@ -111,9 +114,9 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		await deployCore(ctx, loadRelease("v1"), params);
 		assert.equal(ctx.record.contracts.factory?.transactionHash, firstHash);
 		assert.equal(Object.keys(ctx.record.contracts).length, 4);
-		const checks = await inspectTestnet(
+		const checks = await inspectDeployment(
 			client,
-			"base-sepolia",
+			profile,
 			"v1",
 			CANONICAL_DEPLOYER,
 		);
