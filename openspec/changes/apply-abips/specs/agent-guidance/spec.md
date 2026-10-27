@@ -29,8 +29,8 @@ and required fields:
 
 ### Requirement: The scope rule and per-system permissions are explicit
 `AGENTS.md` SHALL open with the ABIP-5 scope rule: an agent may read and write only the resources listed in the file.
-Each external system section SHALL state the agent's permission, using the ABIP-5 default unless the team has recorded
-a narrower one:
+Each external system section SHALL state the agent's permission. It SHALL use the ABIP-5 default, unless the team has
+decided otherwise; any deviation SHALL be stated in that section, naming its exact scope:
 
 | System | Default permission |
 |--------|--------------------|
@@ -38,7 +38,9 @@ a narrower one:
 | Notion | read and write within the named teamspaces |
 | Slack | read only, no posting |
 
-If posting to a Slack channel is allowed, the section SHALL say so for that channel by name.
+If posting to a Slack channel is allowed, the section SHALL say so for that channel by name. If force-updating a branch
+is allowed, for example the branches of one's own stack after `gh stack rebase`, the GitHub section SHALL say so and
+SHALL exclude `main` and `production`.
 
 #### Scenario: Agent asked to post in an unlisted channel
 - **WHEN** an agent working in this repository is asked to post in a Slack channel that `AGENTS.md` does not list

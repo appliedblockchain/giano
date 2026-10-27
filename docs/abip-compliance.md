@@ -6,9 +6,37 @@ reads as a decision rather than an oversight.
 
 ## Summary
 
+The register is the Notion database
+[ABIPs](https://app.notion.com/p/applied-blockchain/ABIPs-31ab61bd7d5280aca3a9dd968a77b062). Its adopted ABIPs are 1, 2,
+5, 6, 7 and 8; ABIP-3 and ABIP-4 do not exist. Bringing the remaining ones in is the OpenSpec change `apply-abips`,
+delivered as one stacked PR per ABIP.
+
 | ABIP | Title | Status |
 |------|-------|--------|
+| ABIP-1 | Branch Protection Rules | In progress (`apply-abips`) |
 | ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) and one out-of-scope image (`giano-contracts-deployer`) |
+| ABIP-5 | External resources in AGENTS.md file | Adopted |
+| ABIP-6 | Enforce Minimum Package Age | In progress (`apply-abips`) |
+| ABIP-7 | Pin Exact Dependency Versions | In progress (`apply-abips`) |
+| ABIP-8 | Key Generation Ceremony | In progress (`apply-abips`) |
+
+## ABIP-5: External resources in AGENTS.md (adopted)
+
+[`AGENTS.md`](../AGENTS.md) at the repository root follows the ABIP-5 template, and `CLAUDE.md` is the single line
+`@AGENTS.md`, so Claude Code loads it at session start. The repository-level contract is the `agent-guidance` capability
+in OpenSpec.
+
+| Template section | Disposition |
+|------------------|-------------|
+| Team | Applied Blockchain team only; there is no client contact to list |
+| GitHub | Present. Default permission, with one recorded exception: force-updating the branches of a stack you own after `gh stack rebase` (never `main` or `production`) |
+| Jira | Omitted: Giano has no Jira project yet |
+| Notion | Present. Giano has no teamspace yet, so the in-scope resources are the `Giano` coordination page and its tickets database (read + write) and the ABIPs register (read only). PM dashboard and Decision Log: none yet |
+| Slack | `#giano-dev` only, read only; a PR announcement may be posted only when the user asks |
+| Pull requests | Present: trunk-based on `main`, `gh stack` for stacked work, `pnpm lint` before committing, `gh pr checks` before merging, merge commits, Conventional Commits, no AI attribution |
+
+Keep `AGENTS.md` current: a change to the team, the external systems or the PR conventions updates it in the same PR.
+When Giano gets a teamspace or a Jira board, add them there.
 
 ## ABIP-2: Docker Hardened Images (adopted)
 

@@ -23,14 +23,14 @@
 
 ## 1. ABIP-5: AGENTS.md (PR 1, `chore/abip-5-agents-md`)
 
-- [ ] 1.1 Ask the user for the values design D2 lists as unknown:
+- [x] 1.1 Ask the user for the values design D2 lists as unknown:
   - the team table (name and role);
   - client contacts;
   - the Notion teamspace name, ID and URL;
   - the Decision Log URL and the PM dashboard URL;
   - whether #giano-mgt or #giano-portafino-integration are in scope;
   - confirmation that the default merge strategy is a merge commit.
-- [ ] 1.2 Write `AGENTS.md` from the ABIP-5 template:
+- [x] 1.2 Write `AGENTS.md` from the ABIP-5 template:
   - the scope rule;
   - Team;
   - GitHub, with its permission note;
@@ -39,11 +39,14 @@
   - Pull requests: lifecycle, `pnpm lint`, `gh pr checks`, merge strategy, branch, commit and PR-title naming, and the
     no-AI-attribution rule moved from `CLAUDE.md`.
 
-  Omit Jira. Add a line about the 7-day lag for consuming our own releases, as a placeholder that PR 2 fills in.
-- [ ] 1.3 Replace `CLAUDE.md` with `@AGENTS.md`. Verify that a fresh Claude Code session loads it and that the
+  Omit Jira. The line about the 7-day lag for consuming our own releases is added by PR 2 (task 2.7), not as a
+  placeholder here. Notion has no teamspace yet, so the in-scope resources are the `Giano` coordination page and its
+  tickets database (read + write) and the ABIPs register (read only). There are no client contacts. GitHub permission
+  has one recorded exception: `gh stack` may force-update the branches of a stack you own.
+- [x] 1.3 Replace `CLAUDE.md` with `@AGENTS.md`. Verify that a fresh Claude Code session loads it and that the
   attribution rule still reaches the agent.
-- [ ] 1.4 Run a secret-shape scan over both files (32-byte hex, `ghp_`, `xox`, PEM): there must be no hits.
-- [ ] 1.5 Create `docs/abip-compliance.md`'s summary table rows for ABIP-1, 5, 6, 7 and 8 as "in progress (apply-abips)",
+- [x] 1.4 Run a secret-shape scan over both files (32-byte hex, `ghp_`, `xox`, PEM): there must be no hits.
+- [x] 1.5 Create `docs/abip-compliance.md`'s summary table rows for ABIP-1, 5, 6, 7 and 8 as "in progress (apply-abips)",
   and add the ABIP-5 section.
 - [ ] 1.6 Open PR 1 as a draft against `main`, with no AI attribution, per `AGENTS.md`.
 
