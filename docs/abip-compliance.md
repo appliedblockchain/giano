@@ -13,12 +13,38 @@ delivered as one stacked PR per ABIP.
 
 | ABIP | Title | Status |
 |------|-------|--------|
-| ABIP-1 | Branch Protection Rules | In progress (`apply-abips`) |
+| ABIP-1 | Branch Protection Rules | Adopted in the repository; the `production` ruleset and the prd OIDC apply are pending with DevOps |
 | ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`, tracked in #165) |
 | ABIP-5 | External resources in AGENTS.md file | Adopted |
 | ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces; one deviation, `@appliedblockchain/*` excluded in the example |
 | ABIP-7 | Pin Exact Dependency Versions | Adopted: every manifest entry and override exact; library peers keep ranges |
 | ABIP-8 | Key Generation Ceremony | Adopted: inventory and runbook in [`key-ceremony.md`](key-ceremony.md); the canonical deployer's ceremony is pending with DevOps |
+
+## ABIP-1: Branch Protection Rules (adopted)
+
+The repository-level contract is the `production-release-branch` capability in OpenSpec. The full procedure is in
+`specs/INFRASTRUCTURE.md` §15.1.
+
+| ABIP-1 rule | Giano |
+|-------------|-------|
+| A branch named `production` | Created from `main` once this change merges |
+| Production deploys from `production` | Only prd does. `deploy.yml` rolls prd only on a push to, or a dispatch from, `production`, and the `.prd` tag must be a commit on it. The prd OIDC role trusts only `refs/heads/production`. dev and stg keep deploying from `main` |
+| Branch protection on `production` | A ruleset: pull request required, 1 approval (stale approvals dismissed), the CI status checks required, no force-push, no deletion, **no bypass actors** |
+| The default branch is not `production` | The default branch stays `main` |
+| The tech lead may add rules | The tech lead (`AGENTS.md`) may add rules to the ruleset; only repository admins, i.e. DevOps, can edit it |
+
+**Promotion.** Bump `.prd` in a PR into `main`, which deploys nothing to prd. Then open a PR from `main` into
+`production`, get it approved, and merge it with a merge commit; that rolls prd. Hotfixes land on `main` first.
+Run a prd `terraform apply` only from a `production` checkout, because Terraform reads the tag from
+`infra/versions.json`.
+
+**Enforcement.** `scripts/deploy-envs.mjs` decides which branch may roll which environment. It has unit tests in CI
+(job "Deploy branch rules (ABIP-1)"). The ancestor check and the OIDC subject condition back it at run time.
+
+| Pending | Owner |
+|---------|-------|
+| Create the `production` ruleset with the settings above, and confirm whether an org ruleset already targets `production` | DevOps (repository admin) |
+| `terraform apply` of `var.gha_allowed_refs.prd = ["production"]` when the prd workspace is provisioned | DevOps |
 
 ## ABIP-5: External resources in AGENTS.md (adopted)
 

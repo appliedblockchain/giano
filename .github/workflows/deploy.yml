@@ -11,6 +11,11 @@ name: Deploy
 # from what is newest. Deploying is a one-line reviewed diff to that file; rolling
 # back is reverting it. specs/INFRASTRUCTURE.md §15.1.
 #
+# ABIP-1: prd deploys ONLY from the protected `production` branch; dev and stg from `main`. A
+# prd bump is merged into main first (which deploys nothing to prd), then promoted by a reviewed
+# PR main → production; the push to production rolls prd. Which branch may roll which environment
+# is scripts/deploy-envs.mjs (tested), and the prd tag must be a commit on production.
+#
 # NO TERRAFORM RUNS HERE, by requirement — the rollout is the ECS API directly.
 #
 # Terraform writes the same attribute this workflow does, and the services do NOT
@@ -21,7 +26,7 @@ name: Deploy
 # is for, and why the base is the live definition rather than one built here. §15.1
 on:
   push:
-    branches: [main]
+    branches: [main, production]
     paths: ['infra/versions.json']
   # Re-roll one environment's current declared tag without changing it: to
   # replace tasks after an out-of-band change, or to recover a service the
@@ -38,7 +43,8 @@ on:
 permissions:
   contents: read
   # AWS OIDC. The role's own `sub` condition is what restricts who may use it —
-  # `ref:refs/heads/main` only, which is also why there is no PR half here.
+  # `ref:refs/heads/main` for dev/stg and `ref:refs/heads/production` for prd
+  # (infra/iac/github_oidc.vars.tf), which is also why there is no PR half here.
   id-token: write
 
 env:
@@ -72,21 +78,20 @@ jobs:
           # so every environment whose value actually changed is deployed —
           # `paths: ['infra/versions.json']` above only proves the FILE
           # changed, not which key, and a formatting-only diff must deploy
-          # nothing.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            envs=("${{ inputs.environment }}")
-          else
+          # nothing. Only the environments this branch may deploy count
+          # (ABIP-1: prd from production, dev/stg from main); a dispatch for
+          # another branch's environment fails.
+          if [[ "${{ github.event_name }}" == "push" ]]; then
             git show "${{ github.event.before }}:infra/versions.json" > /tmp/before.json 2>/dev/null || echo '{}' > /tmp/before.json
-            envs=()
-            for e in dev stg prd; do
-              before=$(jq -r --arg e "$e" '.[$e] // ""' /tmp/before.json)
-              after=$(jq -r --arg e "$e" '.[$e] // ""' infra/versions.json)
-              [[ "$before" != "$after" ]] && envs+=("$e")
-            done
           fi
+          envs_json=$(EVENT="${{ github.event_name }}" REF="${{ github.ref }}" \
+            BEFORE=/tmp/before.json AFTER=infra/versions.json \
+            INPUT_ENVIRONMENT="${{ inputs.environment }}" \
+            node scripts/deploy-envs.mjs)
+          mapfile -t envs < <(jq -r '.[]' <<< "$envs_json")
 
           if [[ ${#envs[@]} -eq 0 ]]; then
-            echo "::notice::no environment's declared tag changed — nothing to deploy"
+            echo "::notice::no environment this branch deploys has a new declared tag — nothing to deploy"
             echo "include=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -106,6 +111,11 @@ jobs:
             tag=$(jq -er --arg e "$env" '.[$e]' infra/versions.json)
             if ! [[ "$tag" =~ ^[0-9a-f]{40}$ ]]; then
               echo "::error::infra/versions.json .$env is not a 40-character commit SHA: '$tag'"
+              exit 1
+            fi
+            # ABIP-1: what reaches production is code on the production branch.
+            if [[ "$env" == "prd" ]] && ! git merge-base --is-ancestor "$tag" HEAD 2>/dev/null; then
+              echo "::error::infra/versions.json .prd = $tag is not a commit on the production branch"
               exit 1
             fi
             echo "::notice::deploying $env @ $tag"

@@ -50,7 +50,9 @@ To mention someone in a message, write `<@USER_ID>`. A plain `@Name` notifies no
 
 #### Lifecycle
 
-Trunk-based. `main` is the default branch and the trunk. All work happens on short-lived branches off `main` and lands through a pull request; do not commit directly to `main`. Related changes that build on each other go in a stack of PRs managed with `gh stack` (`gh extension install github/gh-stack`), one PR per layer, merged bottom-up.
+Trunk-based. `main` is the default branch and the trunk. All work happens on short-lived branches off `main` and lands through a pull request; do not commit directly to `main`.
+
+`production` is the protected release branch (ABIP-1). Only prd deploys from it; dev and stg deploy from `main`. To release to prd: (1) bump `.prd` in `infra/versions.json` in a PR into `main`, which deploys nothing to prd; (2) open a PR from `main` into `production`, get it approved, and merge it with a merge commit, which rolls prd. Never push or force-push to `production`, never open a PR into it from any branch but `main`, and never run a prd `terraform apply` from anything but a `production` checkout. The full procedure is in `specs/INFRASTRUCTURE.md` §15.1. Related changes that build on each other go in a stack of PRs managed with `gh stack` (`gh extension install github/gh-stack`), one PR per layer, merged bottom-up.
 
 A change to a published `@appliedblockchain/*` package needs a changeset (`pnpm changeset`).
 

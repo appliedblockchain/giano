@@ -2548,7 +2548,8 @@ condition {
 
 An unpinned `repo:appliedblockchain/giano:*` subject would let a workflow on any branch — including
 one opened by a fork's pull request — assume the role. The allowed refs are a workspace-keyed
-variable so `dev` can trust a feature branch and `prd` only `main`.
+variable so `dev` can trust a feature branch and `prd` only the protected `production` branch
+(ABIP-1, [§15.1](#151-the-deployed-version-is-declared)).
 
 No static credentials anywhere in CI, and no `iam:PassRole` beyond the task and execution roles.
 
@@ -3500,6 +3501,35 @@ So the two halves of delivery have different triggers, and that separation is th
 A deployment is therefore a reviewed diff naming a version — the property a GitOps controller like
 ArgoCD provides — and a rollback is a revert. The commit running in an environment is a fact
 recorded in the repository rather than in a pipeline's history.
+
+#### prd deploys only from the `production` branch (ABIP-1)
+
+ABIP-1 requires production to be deployed from a protected branch named `production`. `main` stays
+the default branch and the trunk, and dev and stg keep deploying from it. The protection is a ruleset
+on `production`: changes only through a pull request, one approving review, the CI checks required, no
+force-push, no deletion, and no bypass for anyone, administrators included.
+`docs/abip-compliance.md` records the settings and who may change them.
+
+| Step | Where | What deploys |
+|---|---|---|
+| 1. Bump `.prd` in `infra/versions.json` to a SHA whose images exist | PR into `main`, reviewed | nothing: `deploy.yml` on `main` ignores `.prd`, with a notice |
+| 2. Promote | PR `main` → `production`, approved, merged with a **merge commit** | `deploy.yml` on `production` rolls prd onto the new tag |
+
+`deploy.yml` enforces it. Which branch may roll which environment is `scripts/deploy-envs.mjs`,
+which is unit-tested in CI. The `.prd` tag must be a commit on `production` (`git merge-base
+--is-ancestor`), or the run fails before assuming any role. A `workflow_dispatch` for prd is refused
+unless it runs from `production`. The prd OIDC role trusts only `ref:refs/heads/production`
+(`var.gha_allowed_refs`, [§10.5](#105-the-github-actions-oidc-role)), so a workflow on `main` cannot
+assume it at all.
+
+A hotfix lands on `main` first and is promoted the same way. Every non-merge commit on `production`
+is therefore also on `main`. If one is not, a merge-back PR into `main` comes before the next
+promotion. Images need no extra build: everything promoted is a `main` commit that `docker.yml`
+already published.
+
+**Run a prd `terraform apply` from a checkout of `production`, never `main`.** Terraform reads the
+tag from `infra/versions.json` ([§15.1](#151-the-deployed-version-is-declared)). An apply from `main`
+would roll a prd bump that has not been promoted yet, and skip the review ABIP-1 requires.
 
 It is a **JSON file rather than a Terraform variable** because it has two readers and only one of
 them is Terraform. `_locals.tf` takes it with `jsondecode(file(...))`; `deploy.yml` takes it with

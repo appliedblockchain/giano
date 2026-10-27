@@ -156,6 +156,19 @@ jobs:
       - name: Check every manifest and override
         run: node scripts/check-pinned-versions.mjs
 
+  deploy-plan:
+    # ABIP-1 (docs/abip-compliance.md): deploy.yml rolls prd only from the protected `production`
+    # branch, and dev/stg only from `main`. scripts/deploy-envs.mjs decides which; this tests it.
+    name: Deploy branch rules (ABIP-1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Deploy plan unit tests
+        run: node --test scripts/deploy-envs.test.mjs
+
   wallet-api:
     name: wallet-api tests + OpenAPI drift
     runs-on: ubuntu-latest

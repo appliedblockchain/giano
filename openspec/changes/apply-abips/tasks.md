@@ -214,20 +214,29 @@
 
 ## 6. ABIP-1: production branch (PR 6, `chore/abip-1-production-branch`)
 
-- [ ] 6.1 `deploy.yml`:
+- [x] 6.1 `deploy.yml`:
   - add `production` to `push.branches`;
   - make the plan step branch-aware (`main` → dev/stg, `production` → prd), with a notice for keys that are ignored;
   - add the prd ancestor check (`git merge-base --is-ancestor`);
   - make a `workflow_dispatch` for prd refuse any ref other than `refs/heads/production`;
   - update the header comment.
-- [ ] 6.2 Test the plan logic locally against fixture `before` and `after` files. Cover a prd bump on main (no rows), a
+- [x] 6.2 Test the plan logic locally against fixture `before` and `after` files. Cover a prd bump on main (no rows), a
   prd bump on production (prd rows), a non-ancestor tag (fails), and a dispatch from main for prd (fails). If it
   cannot be run directly, extract the plan into a script that can be tested.
-- [ ] 6.3 Set `gha_allowed_refs.prd = ["production"]` in `infra/iac/github_oidc.vars.tf`. `terraform fmt` and
-  `validate` must pass (glibc container, per the repository's gotcha).
-- [ ] 6.4 Document the promotion flow (bump on main, then a PR main → production, then a merge commit, then the deploy)
-  in `specs/INFRASTRUCTURE.md` §15.1 and in `AGENTS.md`'s Pull requests lifecycle.
-- [ ] 6.5 Update `docs/abip-compliance.md` with the ABIP-1 section: branch, ruleset settings, who can change them, and
+
+  Done both ways. `scripts/deploy-envs.mjs` has 11 `node --test` cases (CI job "Deploy branch rules (ABIP-1)"). The
+  real `plan` step was also run under bash 5 (`node:24-bookworm`) through 7 scenarios: a prd bump on main rolls
+  nothing; a prd bump on production rolls 5 prd rows; a non-ancestor tag gives exit 1; a dispatch for prd from main
+  gives exit 1; a dev bump on main rolls dev; a dispatch for prd from production rolls prd; a format-only change
+  rolls nothing. macOS bash 3.2 has no `mapfile`, but the runners use bash 5.
+- [x] 6.3 Set `gha_allowed_refs.prd = ["production"]` in `infra/iac/github_oidc.vars.tf`. `terraform fmt` and
+  `validate` must pass (glibc container, per the repository's gotcha). `fmt` passes locally; `validate` runs in CI's
+  `terraform-check`.
+- [x] 6.4 Document the promotion flow (bump on main, then a PR main → production, then a merge commit, then the deploy)
+  in `specs/INFRASTRUCTURE.md` §15.1 and in `AGENTS.md`'s Pull requests lifecycle. Also documented: a prd
+  `terraform apply` must run from a `production` checkout, because Terraform reads `infra/versions.json`. §10.5's prd
+  trust sentence is updated too.
+- [x] 6.5 Update `docs/abip-compliance.md` with the ABIP-1 section: branch, ruleset settings, who can change them, and
   prd being the only environment on `production`.
 - [ ] 6.6 Draft the DevOps request and show it to the user before filing. It covers:
   - the `production` ruleset: PR required, 1 approval, stale approvals dismissed, required CI checks, no force push
