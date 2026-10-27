@@ -44,6 +44,8 @@ export type DeployContext = {
 	deployer: Address;
 	record: DeploymentRecord;
 	log: (line: string) => void;
+	/** Persist each completed contract, so interrupted runs retain transaction provenance. */
+	onRecord?: () => void;
 };
 
 export type PaymasterParams = {
@@ -179,6 +181,7 @@ export async function deployLabel(
 		);
 
 	const transactionHash = await walletClient.writeContract(request);
+	ctx.log(`  → ${label}: submitted ${transactionHash}; waiting for receipt`);
 	const receipt = await ctx.publicClient.waitForTransactionReceipt({
 		hash: transactionHash,
 	});
@@ -210,6 +213,7 @@ function record(
 			? { ...previous, codehash: deployed.codehash }
 			: deployed;
 	ctx.record.contracts[key] = merged;
+	ctx.onRecord?.();
 	return merged;
 }
 

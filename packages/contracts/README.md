@@ -183,3 +183,9 @@ pnpm build       # gen:abis + gen:addresses + tsdown (needs forge and the submod
 pnpm test        # forge test (needs the submodules: pnpm git:init at the repo root)
 pnpm storage:check
 ```
+
+## Guided testnet deployment
+
+For Base Sepolia and Ethereum Sepolia, run `pnpm testnet:deploy` from the repository root.
+See [the deployment and address-cutover runbook](../../deploy/testnet/README.md) for prerequisites,
+read-only plans, permanent deployer setup, per-chain provisioning, verification and recovery.

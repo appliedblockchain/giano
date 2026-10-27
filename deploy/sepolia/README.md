@@ -1,5 +1,12 @@
 # Giano demo on Sepolia (or any EVM chain)
 
+> For the post-TypeScript-7 / CREATE3 address cutover on **Base Sepolia and Ethereum Sepolia**,
+> start with [the guided deployment runbook](../testnet/README.md) and `pnpm testnet:deploy`.
+> The compatibility deploy script now uses that wizard and writes a per-chain public address
+> fragment under `deploy/testnet/`, rather than editing `deploy/.env`; merge/source those addresses
+> into the selected network configuration before following the provisioning steps below.
+> The remaining demo-stack instructions below describe the existing single-chain environment.
+
 A second local demo stack that runs the full Giano system against a **real chain** instead of a
 local anvil devnet. It defaults to **Ethereum Sepolia** but is entirely env-driven — point it at
 any EVM chain by changing the values in `deploy/.env`.
@@ -102,8 +109,8 @@ from the latest release, signed with `CANONICAL_DEPLOYER_PRIVATE_KEY`):
 | `core` | `GianoSmartWallet` (implementation) + `GianoSmartWalletFactory` + the sponsorship paymaster (implementation, and proxy initialised in the same transaction with the operator as `ROLE_ADMIN`) |
 | `testing` | `PrivateERC20` (the demo token) + `PermissivePaymaster` (fixture) — skipped on production chains |
 
-It then writes `FACTORY_ADDRESS`, `SPONSORSHIP_PAYMASTER_ADDRESS`, `TEST_PAYMASTER_ADDRESS` and
-`TEST_ERC20_ADDRESS` back into `deploy/.env`, and records the deployment in
+It writes a public-address-only `deploy/testnet/<chainId>.addresses.env` fragment. Copy its values
+into `deploy/.env` before using the demo provisioning wrappers. It records the deployment in
 `packages/contracts/deployments/<chainId>.json`. Re-running is idempotent: contracts already in place
 are checked and recorded, never redeployed.
 
