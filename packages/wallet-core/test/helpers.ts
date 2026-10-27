@@ -10,11 +10,15 @@ import {
 	encodeFunctionResult,
 	getAbiItem,
 	type Hex,
+	type PublicClient,
 	toFunctionSelector,
 } from "viem";
 import type { WebAuthnAccount } from "viem/account-abstraction";
 import { toWebAuthnAccount } from "viem/account-abstraction";
-import { toGianoSmartAccount } from "../src/account";
+import {
+	type ToGianoSmartAccountReturnType,
+	toGianoSmartAccount,
+} from "../src/account";
 import type { GianoProviderInjection } from "../src/provider-injection";
 import type { MockAuthenticator } from "./webauthn-mock";
 
@@ -132,7 +136,10 @@ export function createMockTransport(options: MockClientOptions = {}) {
 /**
  * A viem PublicClient backed by {@link createMockTransport}.
  */
-export function createMockClient(options: MockClientOptions = {}) {
+export function createMockClient(options: MockClientOptions = {}): {
+	client: PublicClient<ReturnType<typeof custom>, Chain>;
+	getCodeCallCount: () => number;
+} {
 	const { transport, getCodeCallCount } = createMockTransport(options);
 	const client = createPublicClient({
 		chain: testChain,
@@ -234,7 +241,10 @@ export async function createWebAuthnOwner(
 export async function createTestGianoAccount(
 	authenticator: MockAuthenticator,
 	clientOptions: MockClientOptions = {},
-) {
+): Promise<{
+	account: ToGianoSmartAccountReturnType;
+	client: PublicClient<ReturnType<typeof custom>, Chain>;
+}> {
 	const { client } = createMockClient(clientOptions);
 	const { owner } = await createWebAuthnOwner(authenticator);
 	const account = await toGianoSmartAccount({

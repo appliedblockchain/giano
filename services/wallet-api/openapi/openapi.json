@@ -3681,6 +3681,15 @@
                         "type": "string",
                         "pattern": "^0x[0-9a-fA-F]{40}$"
                       },
+                      "authorization": {
+                        "not": {}
+                      },
+                      "eip7702Auth": {
+                        "not": {}
+                      },
+                      "paymasterSignature": {
+                        "not": {}
+                      },
                       "nonce": {
                         "type": "string",
                         "pattern": "^0x[0-9a-fA-F]+$"

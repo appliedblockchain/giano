@@ -46,7 +46,7 @@ pnpm install
 ### Option A — full stack in Docker (recommended)
 
 The E2E compose stack brings up the **entire system** with contracts pre-deployed into an
-instant-boot devnet (EntryPoint v0.7 + Giano factory + testing paymaster baked into the anvil
+instant-boot devnet (EntryPoint v0.9 + Giano factory + testing paymaster baked into the anvil
 state), so there is nothing to deploy by hand:
 
 ```sh

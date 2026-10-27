@@ -1,4 +1,4 @@
-# giano-devnet — anvil pre-loaded with a baked state (CreateX + EntryPoint v0.7 + the Giano
+# giano-devnet — anvil pre-loaded with a baked state (CreateX + EntryPoint v0.9 + the Giano
 # factory, implementation and provisioned paymaster + testing paymaster/ERC20, all at their
 # canonical CREATE3 addresses). Instant-boot deterministic local chain.
 #   docker build -f services/devnet/Dockerfile -t ghcr.io/appliedblockchain/giano-devnet .

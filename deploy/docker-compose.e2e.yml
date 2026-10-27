@@ -1,4 +1,4 @@
-# E2E stack: instant-boot devnet (pre-baked state: EntryPoint v0.7 + Giano factory +
+# E2E stack: instant-boot devnet (pre-baked state: EntryPoint v0.9 + Giano factory +
 # testing contracts), giano-bundler, ONE multi-tenant wallet-api, and tenant A's stock
 # wallet-web. Two tenants, created by the init service:
 #   - "stock": Giano's stock UI at http://wallet.localhost (wallet-web container)
@@ -19,7 +19,7 @@ x-giano-chains: &giano-chains |
   [
     {
       "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://anvil:8545",
-      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
@@ -28,7 +28,7 @@ x-giano-chains: &giano-chains |
     },
     {
       "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://anvil-b:8545",
-      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
@@ -56,10 +56,9 @@ services:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
     entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31338', '--load-state', '/devnet/state.json']
     volumes:
-      # Chain B loads the SAME baked state file as chain A: `anvil_dumpState` output carries
-      # accounts, code and storage but not the chain id, which anvil takes from --chain-id.
-      # One committed artefact, two chains, and address identity holds by construction.
-      - ../e2e/devnet/state.json:/devnet/state.json:ro
+      # v0.9 caches its EIP-712 chain ID/domain in runtime code. Generate each chain
+      # separately; the generator verifies that all Giano contract addresses still agree.
+      - ../e2e/devnet/state-31338.json:/devnet/state.json:ro
     ports:
       - '8546:8545'
 
@@ -291,7 +290,7 @@ services:
       # directly — which also means anvil's missing CORS headers do not matter here.
       #
       # sponsorshipPaymaster is explicit because the devnet has no contracts-registry entry. Both
-      # chains load the same baked state, so it is the same address on each, and the one
+      # states use identical canonical Giano addresses, so this is the one
       # wallet-api sponsors through above.
       #
       # walletRpcUrl is where a WALLET reaches the same node — the host ports anvil publishes,

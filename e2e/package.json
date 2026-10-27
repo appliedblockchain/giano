@@ -32,6 +32,6 @@
 		"@playwright/test": "1.61.1",
 		"esbuild": "0.25.4",
 		"portless": "0.15.5",
-		"viem": "2.31.6"
+		"viem": "2.57.11"
 	}
 }

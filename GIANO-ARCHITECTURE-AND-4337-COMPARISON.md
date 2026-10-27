@@ -229,7 +229,7 @@ ERC-4337 inserts a shared, standardised singleton between the user and their acc
 | Dimension | Giano (as on `main`) | ERC-4337 |
 |---|---|---|
 | **Standard** | Bespoke. Only ERC-1271/165/721/1155 receivers are standard | ERC-4337 (+ ERC-7677 paymaster RPC, ERC-7579/6900 modules) |
-| **Entry point** | None — call `Account.execute` directly | Audited singleton `EntryPoint` (v0.7 at `0x0000000071727De22E5E9d8BAf0edAc6f37da032`) |
+| **Entry point** | None — call `Account.execute` directly | Audited singleton `EntryPoint` (v0.9 at `0x433709009B8330FDa32311DF1C2AFA402eD8D009`) |
 | **Op format** | `SignedCall{Call, signature}` | `PackedUserOperation` |
 | **Who submits** | Any EOA; you must run the relayer | Bundler network (Pimlico, Alto, Stackup, Biconomy, …) or your own |
 | **Gas sponsorship** | Implicit: the relayer pays, unconditionally | Explicit `Paymaster` with EntryPoint deposit/stake, `validatePaymasterUserOp` + `postOp`, ERC-20 and verifying paymasters |

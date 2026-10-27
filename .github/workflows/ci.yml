@@ -227,6 +227,8 @@ jobs:
       - name: Recompile and regenerate ABIs
         working-directory: packages/contracts
         run: pnpm gen:abis
+      - name: Verify final v0.9 upstream artifacts
+        run: node packages/contracts/scripts/generate-entrypoint-artifacts.mjs --check
       - name: Fail on drift
         run: git diff --exit-code packages/contracts/generated.ts
 

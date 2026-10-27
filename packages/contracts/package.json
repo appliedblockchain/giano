@@ -36,7 +36,8 @@
 		"canonical.ts",
 		"chains.ts",
 		"address-overrides.json",
-		"remappings.txt"
+		"remappings.txt",
+		"entrypoint.ts"
 	],
 	"publishConfig": {
 		"registry": "https://npm.pkg.github.com",
@@ -68,10 +69,11 @@
 		"deploy:operate": "node --import tsx deploy/operations.ts"
 	},
 	"dependencies": {
-		"zod": "3.24.4"
+		"zod": "3.24.4",
+		"viem": "2.57.11"
 	},
 	"devDependencies": {
-		"@account-abstraction/contracts": "0.7.0",
+		"@account-abstraction/contracts": "file:vendor/account-abstraction",
 		"@openzeppelin/contracts": "5.4.0",
 		"@openzeppelin/contracts-upgradeable": "5.4.0",
 		"@types/node": "22.7.5",
@@ -79,7 +81,6 @@
 		"ethers": "6.13.2",
 		"tsdown": "0.23.1",
 		"tsx": "4.19.4",
-		"typescript": "7.0.2",
-		"viem": "2.31.6"
+		"typescript": "7.0.2"
 	}
 }

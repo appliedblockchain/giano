@@ -2,7 +2,7 @@
  * One command to give a local anvil chain everything Giano expects of a public chain, then the
  * canonical contracts and the test fixtures at their canonical addresses:
  *
- *   CreateX, EntryPoint v0.7, the P-256 verifier, the wallet factory + implementation, the paymaster
+ *   CreateX, EntryPoint v0.9, the P-256 verifier, the wallet factory + implementation, the paymaster
  *   (proxy initialised with ROLE_ADMIN on anvil account 0), PrivateERC20 and PermissivePaymaster.
  *
  * The canonical deployer is impersonated, so no key is involved. Writes deployments/<chainId>.json
@@ -23,7 +23,7 @@ import {
 } from "viem";
 import {
 	CANONICAL_DEPLOYER,
-	ENTRY_POINT_V07,
+	ENTRY_POINT_V09,
 	LOCAL_CHAIN_IDS,
 } from "../deploy/config";
 import {
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
 	};
 	await deployP256Verifier(publicClient, walletClient, log);
 	await deployCore(ctx, release, {
-		entryPoint: ENTRY_POINT_V07,
+		entryPoint: ENTRY_POINT_V09,
 		roleAdmin: ANVIL_ACCOUNT_0,
 		defaultFeeWei: 100_000_000_000_000n,
 		postOpGasAllowance: 40_000,
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
 	await deployTesting(ctx, release, {
 		holder: ANVIL_ACCOUNT_0,
 		owner: ANVIL_ACCOUNT_0,
-		entryPoint: ENTRY_POINT_V07,
+		entryPoint: ENTRY_POINT_V09,
 		fundWei: parseEther(process.env.PAYMASTER_FUND_ETH ?? "500"),
 	});
 	log(`recorded in ${writeRecord(ctx.record)}`);

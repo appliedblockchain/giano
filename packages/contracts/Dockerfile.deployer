@@ -18,6 +18,7 @@ RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/contracts/vendor/account-abstraction packages/contracts/vendor/account-abstraction
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-contracts
 COPY packages/contracts packages/contracts
 # /out is the record volume: created here because the runtime has no shell to mkdir with, and owned by

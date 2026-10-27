@@ -564,7 +564,7 @@ MUST NOT present "not yet deployed on this chain" as an error.
 served chain, that funds sent to it on any served chain are controlled by the same passkey, and what
 the limits of that guarantee are.
 
-**MC-141** — EntryPoint v0.7 MUST be present at its canonical address on every served chain. The
+**MC-141** — EntryPoint v0.9 MUST be present at its canonical address on every served chain. The
 account implementation hardcodes that address, so a chain carrying a different EntryPoint produces
 different account bytecode and therefore different addresses for everything downstream — which is
 precisely how the pre-freeze registry came to hold divergent entries. Where a chain lacks it, most

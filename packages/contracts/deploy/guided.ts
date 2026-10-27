@@ -17,7 +17,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V07,
+	ENTRY_POINT_V09,
 	LABELS,
 } from "./config";
 import { create3Address } from "./create3";
@@ -260,7 +260,7 @@ async function main() {
 			},
 			release,
 			{
-				entryPoint: ENTRY_POINT_V07,
+				entryPoint: ENTRY_POINT_V09,
 				roleAdmin: admin,
 				...paymasterParams(profile),
 			},

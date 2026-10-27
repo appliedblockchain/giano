@@ -16,13 +16,17 @@ const hexQuantity = z.string().regex(/^0x[0-9a-fA-F]+$/) as z.ZodType<Hex>;
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/) as z.ZodType<Address>;
 
 /**
- * EntryPoint v0.7 user operation in JSON-RPC (hex) encoding. The EntryPoint address
+ * EntryPoint v0.9 user operation in JSON-RPC (hex) encoding. The EntryPoint address
  * is NEVER taken from the request — the server submits against its configured one.
  * (The old demo trusted `signedUserOp.account.entryPoint.address` — that hole is closed.)
  */
 export const rpcUserOpSchema = z
 	.object({
 		sender: address,
+		// Giano uses factory-deployed passkey accounts and its existing sponsorship envelope.
+		authorization: z.never().optional(),
+		eip7702Auth: z.never().optional(),
+		paymasterSignature: z.never().optional(),
 		nonce: hexQuantity,
 		callData: hexData,
 		callGasLimit: hexQuantity,
@@ -193,7 +197,7 @@ export function createUseropRelay({
 			const useropHash = getUserOperationHash({
 				chainId: chain.chainId,
 				entryPointAddress: chain.entryPoint,
-				entryPointVersion: "0.7",
+				entryPointVersion: "0.9",
 				userOperation: userOp as never,
 			});
 

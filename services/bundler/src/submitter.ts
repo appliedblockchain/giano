@@ -7,7 +7,7 @@ import {
 	type PublicClient,
 	type RpcTransactionReceipt,
 } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { entryPoint09Abi } from "viem/account-abstraction";
 import type { PrivateKeyAccount } from "viem/accounts";
 import {
 	decodeEntryPointRevert,
@@ -95,7 +95,7 @@ export function createSubmitter(options: SubmitterOptions) {
 
 	const handleOpsData = (op: UserOp, beneficiary: Address) =>
 		encodeFunctionData({
-			abi: entryPoint07Abi,
+			abi: entryPoint09Abi,
 			functionName: "handleOps",
 			args: [[packUserOp(op)], beneficiary],
 		});
@@ -220,7 +220,7 @@ export function createSubmitter(options: SubmitterOptions) {
 	): Promise<Sent> => {
 		const { op } = entry;
 		const block = await client.getBlock({ blockTag: "latest" });
-		// EntryPoint v0.7 aborts the whole transaction (AA95) unless 63/64 of the gas left at the
+		// EntryPoint v0.9 aborts the whole transaction (AA95) unless 63/64 of the gas left at the
 		// inner call covers the execution limits, so the estimate is floored at what that needs.
 		const floor =
 			((op.callGasLimit + (op.paymasterPostOpGasLimit ?? 0n) + 10_000n) * 64n) /

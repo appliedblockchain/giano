@@ -130,7 +130,7 @@ sequenceDiagram
     participant Ledger as Ledger (Postgres)
     participant Signer as Signer (HSM)
     participant Relay as wallet-api<br/>/v1/userops
-    participant EP as EntryPoint v0.7
+    participant EP as EntryPoint v0.9
     participant PM as GianoPaymaster
     participant Watch as Watcher
 
@@ -190,7 +190,7 @@ be unbounded.
 
 ```solidity
 contract GianoPaymaster is
-    IPaymaster,                              // @account-abstraction 0.7
+    IPaymaster,                              // @account-abstraction 0.9
     Initializable,                           // OZ
     AccessControlEnumerableUpgradeable,      // OZ — roles, enumerable holders
     PausableUpgradeable,                     // OZ — emergency stop

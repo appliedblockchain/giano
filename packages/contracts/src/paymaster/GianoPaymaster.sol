@@ -595,7 +595,7 @@ contract GianoPaymaster is
         if (requiredCharge > t.balance) revert InsufficientTenantBalance(auth.tenantId, requiredCharge, t.balance);
 
         return (
-            abi.encode(auth.tenantId, auth.feeWei, executionGasLimit, userOp.getSender(), userOpHash),
+            abi.encode(auth.tenantId, auth.feeWei, executionGasLimit, userOp.sender, userOpHash),
             _packValidationData(false, auth.validUntil, auth.validAfter)
         );
     }
@@ -696,7 +696,7 @@ contract GianoPaymaster is
         bytes32 structHash = keccak256(
             abi.encode(
                 SPONSORSHIP_AUTHORISATION_TYPEHASH,
-                userOp.getSender(),
+                userOp.sender,
                 userOp.nonce,
                 keccak256(userOp.callData),
                 userOp.accountGasLimits,

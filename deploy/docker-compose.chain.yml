@@ -11,7 +11,7 @@ x-giano-chains: &giano-chains |
     {
       "chainId": ${CHAIN_ID:?set CHAIN_ID from the selected profile}, "name": "${CHAIN_NAME:?set CHAIN_NAME from the selected profile}",
       "rpcUrl": "${RPC_URL:?set the selected chain serving RPC_URL}",
-      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "entryPoint": "${ENTRYPOINT_ADDRESS:-0x433709009B8330FDa32311DF1C2AFA402eD8D009}",
       "sponsorshipPaymaster": "${SPONSORSHIP_PAYMASTER_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set SPONSORSHIP_PAYMASTER_ADDRESS}",
       "walletApi": {
         "factory": "${FACTORY_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set FACTORY_ADDRESS}",

@@ -39,7 +39,7 @@ import { gianoPaymasterAbi } from "../generated";
 import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V07,
+	ENTRY_POINT_V09,
 	LABELS,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
@@ -72,7 +72,7 @@ const { positionals, values } = parseArgs({
 		"record-dir": { type: "string" },
 		// core
 		"role-admin": { type: "string" },
-		"entry-point": { type: "string", default: ENTRY_POINT_V07 },
+		"entry-point": { type: "string", default: ENTRY_POINT_V09 },
 		"default-fee-wei": { type: "string", default: "100000000000000" }, // 0.0001 ETH per sponsored op
 		// Gas units charged for settlement's own gas: ~9.7k warm, ~49k cold (test/GianoPaymaster/Gas.t.sol).
 		"post-op-gas-allowance": { type: "string", default: "40000" },

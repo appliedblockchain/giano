@@ -60,7 +60,7 @@ An integration has **two halves**:
                                                         policied userop relay              │
                                                                  └──────────┬──────────────┘
                                                                             ▼
-                                                              EVM chain: EntryPoint v0.7 →
+                                                              EVM chain: EntryPoint v0.9 →
                                                               GianoSmartWallet (passkey account)
 ```
 
@@ -86,7 +86,7 @@ isolated per tenant, and cross-tenant use is both structurally impossible at the
   at canonical CREATE3 addresses (a function of the canonical deployer and fixed labels) — the same
   address on every chain.
 - **Transactions → UserOps.** The SDK repackages `eth_sendTransaction` into an ERC-4337 UserOp
-  (EntryPoint v0.7). Gas is sponsorable by a paymaster.
+  (EntryPoint v0.9). Gas is sponsorable by a paymaster.
 - **Works on any EVM chain.** P-256 signatures verify via the **RIP-7212 precompile** where present
   (cheap), falling back to an **in-contract FreshCryptoLib verifier** where it isn't. (Don't assume
   which — [`giano-doctor`](#6-part-d--verify--operate-giano-doctor) probes it live.)
@@ -206,7 +206,7 @@ relay-to-proxy chain, the `portless:*` scripts, how to add or rename a name (and
 | Service | URL | Notes |
 | --- | --- | --- |
 | devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler (giano-bundler) | http://bundler.localhost | EntryPoint v0.7 |
+| bundler (giano-bundler) | http://bundler.localhost | EntryPoint v0.9 |
 | wallet-web (tenant `stock`) | http://wallet.localhost | Giano's stock wallet UI (open directly for the Settings view) |
 | wallet-api | http://api.localhost | shared multi-tenant backend (also reached via each wallet origin's `/api` proxy) |
 
@@ -450,7 +450,7 @@ front the ETH). Env ([`services/bundler/README.md`](../services/bundler/README.m
 
 - `GIANO_CHAINS` (required) — the backend chain document wallet-api reads too
   (`packages/contracts/chains.ts`): per chain `chainId`, `name`, `rpcUrl`, optional `entryPoint`
-  (default canonical v0.7), and an optional `bundler` section (`enabled`, `rpcUrl`, `chainType`,
+  (default canonical v0.9), and an optional `bundler` section (`enabled`, `rpcUrl`, `chainType`,
   `maxBlockRange`). One process serves every chain in it, at `POST /<chainId>`, each isolated in its
   own lanes, estimator and lookup; point wallet-api's `BUNDLER_BASE_URL` at it.
 - `BUNDLER_EXECUTOR_PRIVATE_KEYS` (required, **funded on every chain served**, comma-separated — one
@@ -894,7 +894,7 @@ pnpm run doctor chain --rpc <url> --chain-id <id> \
   [--factory 0x..] [--sponsorship-paymaster 0x..] [--test-paymaster 0x..] \
   [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]
 ```
-Checks: RPC reachable and chain id matches; EntryPoint v0.7, factory, and implementation have code;
+Checks: RPC reachable and chain id matches; EntryPoint v0.9, factory, and implementation have code;
 executor native balance (if given); and P-256 support (RIP-7212 precompile → FreshCryptoLib verifier
 → none).
 
@@ -912,7 +912,7 @@ output:
 
 ```
 Contracts
-  ✓ EntryPoint v0.7 deployed: 0x0000000071727De22E5E9d8BAf0edAc6f37da032
+  ✓ EntryPoint v0.9 deployed: 0x433709009B8330FDa32311DF1C2AFA402eD8D009
   ✓ GianoSmartWalletFactory deployed: 0x9c01925D07527A7920031196396A9c37421715A2
   ✓ factory address is canonical: 0x9c01925D07527A7920031196396A9c37421715A2
   ✓ factory runs canonical code: release v1 (giano.factory)

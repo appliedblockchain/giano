@@ -454,7 +454,7 @@ describe("userop relay", () => {
 		);
 		expect(send).toBeTruthy();
 		// EntryPoint param comes from server config, never the request
-		expect(send!.params[1]).toBe("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
+		expect(send!.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 
 		// status endpoint sees it under the server-computed hash
 		const opRow = await ctx.app.inject({
@@ -538,7 +538,7 @@ describe("userop relay", () => {
 		const send = ctx.bundlerCalls
 			.filter((c) => c.method === "eth_sendUserOperation")
 			.at(-1)!;
-		expect(send.params[1]).toBe("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
+		expect(send.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 	});
 
 	it("serves receipts publicly (read-only)", async () => {
@@ -557,7 +557,7 @@ describe("userop relay", () => {
  * door, so every assertion here is about the two doors being the same door.
  */
 describe("bundler relay (JSON-RPC)", () => {
-	const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+	const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 	const target = "0x4444444444444444444444444444444444444444";
 	let sessionToken: string;
 	let walletAddress: string;

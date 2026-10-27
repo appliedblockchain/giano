@@ -230,7 +230,7 @@ export function describeFailure(
 		case "chain-id-mismatch":
 			return `chain ${chainId}: the RPC endpoint reports chain ${failure.reported}, not ${failure.declared} — the endpoint and the declaration disagree; fix the configuration`;
 		case "entrypoint-missing":
-			return `chain ${chainId}: no EntryPoint at ${failure.address} — deploy EntryPoint v0.7 at its canonical address before any Giano contract (adoption checklist step 2)`;
+			return `chain ${chainId}: no EntryPoint at ${failure.address} — deploy EntryPoint v0.9 at its canonical address before any Giano contract (adoption checklist step 2)`;
 		case "factory-missing":
 			return `chain ${chainId}: no account factory at ${failure.address} — deploy the canonical contracts (adoption checklist step 4)`;
 		case "factory-not-canonical":

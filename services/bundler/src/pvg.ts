@@ -12,7 +12,7 @@ import {
 	serializeTransaction,
 	size,
 } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { entryPoint09Abi } from "viem/account-abstraction";
 import { packUserOp, type UserOp } from "./userop.js";
 
 /**
@@ -119,7 +119,7 @@ export async function l1FeeGas(
 		type: "eip1559",
 		to: entryPoint,
 		data: encodeFunctionData({
-			abi: entryPoint07Abi,
+			abi: entryPoint09Abi,
 			functionName: "handleOps",
 			args: [[packUserOp(priced)], beneficiary],
 		}),

@@ -139,8 +139,8 @@ The wizard gates signing on:
 - Committed release with generated canonical hashes for all four core contracts.
 - CreateX at `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, with the
   [upstream runtime hash](https://github.com/pcaversaccio/createx#security-considerations).
-- Canonical EntryPoint v0.7 runtime, including its SenderCreator immutable, at
-  `0x0000000071727De22E5E9d8BAf0edAc6f37da032`.
+- Canonical EntryPoint v0.9 runtime, including its SenderCreator immutable, at
+  `0x433709009B8330FDa32311DF1C2AFA402eD8D009`.
 - Every target address either empty or containing the selected release's runtime code. Existing
   factory implementation, paymaster implementation slot, ROLE_ADMIN membership, EntryPoint and fee
   parameters must match. An upgraded proxy or unexpected bytecode stops adoption.
@@ -273,7 +273,7 @@ out of this evidence.
 ## Read-only public-network evidence
 
 On 27 October 2026, the new preflight reached both default public RPCs and confirmed the expected
-chain IDs, pinned CreateX runtime and canonical EntryPoint v0.7 runtime on **both networks**. The
+chain IDs, pinned CreateX runtime and canonical EntryPoint v0.9 runtime on **both networks**. The
 four provisional target addresses were empty on each chain. Both plans correctly exited nonzero
 because the deployer is still the placeholder. The admin supplied to these checks was an illustrative
 public address, not an operational choice. No key was used and no public transaction was sent.

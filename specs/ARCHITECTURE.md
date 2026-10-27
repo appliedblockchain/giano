@@ -97,7 +97,7 @@ flowchart TB
 
     subgraph CHAINS["SERVED CHAINS · the same canonical addresses on every one"]
         direction LR
-        CA["<b>Chain A</b><br/>EntryPoint v0.7 · GianoSmartWalletFactory · GianoPaymaster proxy<br/>P-256 via the RIP-7212 precompile, else the in-contract FCL verifier"]
+        CA["<b>Chain A</b><br/>EntryPoint v0.9 · GianoSmartWalletFactory · GianoPaymaster proxy<br/>P-256 via the RIP-7212 precompile, else the in-contract FCL verifier"]
         CB["<b>Chain B … Chain N</b><br/>the same three contracts at the same addresses<br/>its own RPC, its own bundler lanes and executor funding, its own paymaster deposit"]
     end
 

@@ -1,7 +1,7 @@
 import {
 	CANONICAL_FACTORY,
 	CANONICAL_IMPLEMENTATION,
-	ENTRYPOINT_V07_ADDRESS,
+	ENTRYPOINT_V09_ADDRESS,
 	gianoAddresses,
 } from "@appliedblockchain/giano-contracts";
 import Fastify from "fastify";
@@ -40,7 +40,7 @@ describe("config: the chain list", () => {
 			CHAIN_ID: "31337",
 			RPC_URL: "http://a:8545",
 			BUNDLER_URL: "http://a:4337",
-			ENTRYPOINT_ADDRESS: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			ENTRYPOINT_ADDRESS: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 			FACTORY_ADDRESS: "0x2222222222222222222222222222222222222222",
 			USEROP_ALLOWED_PAYMASTERS: "0x1000000000000000000000000000000000000001",
 		});
@@ -62,7 +62,7 @@ describe("config: the chain list", () => {
 		// The registry holds a chain once its deployment record is committed; stand one in for Base
 		// the way gen:addresses would write it.
 		gianoAddresses[8453] = {
-			entryPoint: ENTRYPOINT_V07_ADDRESS,
+			entryPoint: ENTRYPOINT_V09_ADDRESS,
 			factory: CANONICAL_FACTORY,
 			implementation: CANONICAL_IMPLEMENTATION,
 		};
@@ -80,7 +80,7 @@ describe("config: the chain list", () => {
 						chainId: 31338,
 						name: "Devnet B",
 						rpcUrl: "http://b:8545",
-						entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+						entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 						walletApi: {
 							bundlerUrl: "http://b:4337",
 							factory: CANONICAL_FACTORY,
@@ -121,7 +121,7 @@ describe("config: the chain list", () => {
 			chainId: 31337,
 			name: "A",
 			rpcUrl: "http://a:8545",
-			entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 			walletApi: { factory: CANONICAL_FACTORY },
 			...extra,
 		});
@@ -250,7 +250,7 @@ describe("config: the chain list", () => {
 			chainId: 31337,
 			name: "A",
 			rpcUrl: "http://a:8545",
-			entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 			walletApi: { bundlerUrl: "http://a:4337", factory: CANONICAL_FACTORY },
 		};
 		expect(() =>
@@ -267,7 +267,7 @@ describe("config: the chain list", () => {
 						chainId: 31337,
 						name: "A",
 						rpcUrl: "http://a:8545",
-						entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+						entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 						walletApi: {
 							bundlerUrl: "http://a:4337",
 							factory: CANONICAL_FACTORY,
@@ -435,7 +435,7 @@ const descriptor = {
 	name: "A",
 	rpcUrl: "http://a",
 	bundlerUrl: "http://a-b",
-	entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as const,
+	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as const,
 	factory: CANONICAL_FACTORY,
 	policy: { allowedTargets: [], allowedPaymasters: [] },
 };
@@ -560,7 +560,7 @@ describe("two-chain relay", () => {
 					// because buildApp does not verify (index.ts does), and the relay path is what
 					// this suite exercises
 					rpcUrl: "http://rpc-a.invalid",
-					entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+					entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 					walletApi: {
 						bundlerUrl: CHAIN_A_BUNDLER,
 						factory: "0x2222222222222222222222222222222222222222",
@@ -570,7 +570,7 @@ describe("two-chain relay", () => {
 					chainId: 31338,
 					name: "Devnet B",
 					rpcUrl: "http://rpc-b.invalid",
-					entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+					entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 					walletApi: {
 						bundlerUrl: CHAIN_B_BUNDLER,
 						factory: "0x2222222222222222222222222222222222222222",
@@ -705,7 +705,7 @@ describe("two-chain relay", () => {
 	});
 
 	it("the JSON-RPC bundler relay routes by the chain in its PATH, to that chain's bundler (MC-58)", async () => {
-		const entryPoint = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+		const entryPoint = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 		const relay = (url: string, method: string, params: unknown[] = []) =>
 			ctx.app.inject({
 				method: "POST",

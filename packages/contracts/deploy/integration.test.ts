@@ -15,7 +15,7 @@ import {
 	http,
 	type PublicClient,
 } from "viem";
-import { CANONICAL_DEPLOYER, ENTRY_POINT_V07 } from "./config";
+import { CANONICAL_DEPLOYER, ENTRY_POINT_V09 } from "./config";
 import { type DeployContext, deployCore } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { inspectDeployment } from "./preflight";
@@ -95,7 +95,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			},
 		};
 		const params = {
-			entryPoint: ENTRY_POINT_V07,
+			entryPoint: ENTRY_POINT_V09,
 			roleAdmin: CANONICAL_DEPLOYER,
 			...paymasterParams(profile),
 		};

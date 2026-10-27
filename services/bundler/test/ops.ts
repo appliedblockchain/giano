@@ -8,7 +8,7 @@ import {
 	toHex,
 } from "viem";
 import {
-	entryPoint07Abi,
+	entryPoint09Abi,
 	getUserOperationHash,
 	toPackedUserOperation,
 } from "viem/account-abstraction";
@@ -52,7 +52,7 @@ export function createOps(devnet: Devnet, url: string) {
 		const code = await client.getCode({ address: sender });
 		const nonce = await client.readContract({
 			address: entryPoint,
-			abi: entryPoint07Abi,
+			abi: entryPoint09Abi,
 			functionName: "getNonce",
 			args: [sender, 0n],
 		});
@@ -152,10 +152,10 @@ export function createOps(devnet: Devnet, url: string) {
 		const hash = getUserOperationHash({
 			chainId: devnet.chainId,
 			entryPointAddress: devnet.entryPoint,
-			entryPointVersion: "0.7",
+			entryPointVersion: "0.9",
 			userOperation: toOp(op) as never,
 		});
-		op.signature = await owner.signMessage({ message: { raw: hash } });
+		op.signature = await owner.sign({ hash });
 		return { op, hash };
 	}
 

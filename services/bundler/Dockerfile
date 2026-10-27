@@ -12,6 +12,7 @@ RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/contracts/vendor/account-abstraction packages/contracts/vendor/account-abstraction
 COPY services/bundler/package.json services/bundler/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-bundler...
 COPY packages/contracts packages/contracts

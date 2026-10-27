@@ -36,7 +36,7 @@ describe("toTenantId", () => {
 		["non-hex characters", "0x3f2504e04f8911d39a0c0305e82c33zz"],
 		[
 			"an address rather than a tenant id",
-			"0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			"0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 		],
 		["empty", ""],
 		["a slug", "tenant-a"],

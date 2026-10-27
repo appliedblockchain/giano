@@ -23,7 +23,7 @@ Key properties visible in the flow:
   origin-partitioned and, in the SDK, additionally namespaced per wallet origin; ④ the
   relay cross-checks the request `Origin`'s tenant against the session's tenant and
   rejects a mismatch as a plain 401 while incrementing an alertable metric.
-- **Tx → UserOp.** `eth_sendTransaction` is repackaged into an EntryPoint v0.7
+- **Tx → UserOp.** `eth_sendTransaction` is repackaged into an EntryPoint v0.9
   UserOperation inside the wallet (`wallet-core` provider), gas-estimated and prepared
   through wallet-api's session-bound bundler relay (`/api/v1/bundler/:chainId`), signed by
   the passkey, then relayed.
@@ -136,7 +136,7 @@ sequenceDiagram
     %% ---------- 5. Sign with the passkey ----------
     GP->>Acct: signUserOperation(preparedWithGas)
     activate Acct
-    Note over Acct: hash = getUserOperationHash(chainId,<br/>EntryPoint v0.7, userOp)<br/>wrapped in replay-safe EIP-712
+    Note over Acct: hash = getUserOperationHash(chainId,<br/>EntryPoint v0.9, userOp)<br/>wrapped in replay-safe EIP-712
     Acct->>PK: navigator.credentials.get(challenge = hash)
     Note over PK: assertion is only produced for RP ID<br/>wallet.a.example ⇒ tenant B's passkeys are<br/>structurally unusable here
     PK->>User: Biometric / PIN prompt
@@ -259,7 +259,7 @@ browser), the merged UserOp policy and the relay rate-limit window, the `userop_
 and every metric label.
 
 **Shared:** the `wallet-api` process, Postgres, the bundler and its funded executor EOA, the
-chain, EntryPoint v0.7, `GianoSmartWalletFactory`, the implementation and the paymaster
+chain, EntryPoint v0.9, `GianoSmartWalletFactory`, the implementation and the paymaster
 contract — so all tenants' accounts are plain `GianoSmartWallet` clones from the one factory,
 and `userop_hash` is globally unique (it binds chain id + EntryPoint + op, so two tenants
 cannot legitimately collide).
@@ -306,7 +306,7 @@ sequenceDiagram
     participant Review as wallet-web<br/>ReviewTransaction
     participant SVC as wallet-api<br/>/v1/paymaster
     participant Ledger as Reservation ledger
-    participant EP as EntryPoint v0.7
+    participant EP as EntryPoint v0.9
     participant PM as GianoPaymaster
 
     User->>Review: transaction arrives

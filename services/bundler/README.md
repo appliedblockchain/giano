@@ -3,7 +3,7 @@
 Giano's own ERC-4337 submission service, replacing the pinned Pimlico Alto it was a drop-in for.
 It is deliberately not a general-purpose bundler: there is no mempool, no bundling and no
 peer-to-peer network. Every user operation it accepts is sent at once as its own
-`EntryPoint.handleOps([op], executor)` transaction. EntryPoint v0.7 only.
+`EntryPoint.handleOps([op], executor)` transaction. EntryPoint v0.9 only.
 
 One process serves every chain in its chain document, each with its own executor lanes,
 estimator and lookup. Nothing chain-bound is shared between chains, the rule wallet-api keeps too
@@ -51,12 +51,12 @@ chain's outage, or a fresh devnet still waiting for its contracts, never holds u
 **Estimation.** The EntryPoint's code is swapped for the eth-infinitism `EntryPointSimulations`
 in an `eth_call` state override, so simulation runs against the real EntryPoint's storage and
 needs nothing deployed. The bytecode is generated from the pinned
-`@account-abstraction/contracts@0.7.0` (`pnpm generate`; a test fails if it drifts). The SenderCreator
-is overridden too, because devnets whose EntryPoint was installed with `anvil_setCode` lack one.
+vendored final `@account-abstraction/contracts@0.9.0` (`pnpm generate`; a test fails if it drifts). The SenderCreator
+is overridden too, with its immutable caller bound to the canonical v0.9 address.
 
 - Simulations price the operation at 1 wei per gas, so the EntryPoint's `paid` is in gas units and
-  execution gas follows exactly from v0.7's 10% unused-gas penalty.
-- `verificationGasLimit` is the measured validation gas plus 30%.
+  execution gas is bounded conservatively after accounting for v0.9's unused-gas penalty threshold.
+- `verificationGasLimit` includes a 30,000 gas prefunding allowance, then a 30% margin.
 - `callGasLimit` is the measured execution plus 10%. It is re-simulated at that limit to catch calls
   that need more than they use, and raised if they do.
 - Paymaster gas limits the caller supplied (Giano's ERC-7677 stub always does) are kept.
@@ -171,3 +171,5 @@ does, deploys a SimpleAccount factory and a VerifyingPaymaster, and drives the J
 wallet-api does. It covers deployment by the first operation, sponsorship, rejections,
 idempotency, lookups after a restart, and re-pricing and cancellation with automine off. The e2e
 suite exercises the real path: GianoSmartWallet, WebAuthn and the production paymaster.
+
+See [v0.9 upgrade and chain support](../../docs/ENTRYPOINT-V09-UPGRADE.md) for compatibility and migration requirements.

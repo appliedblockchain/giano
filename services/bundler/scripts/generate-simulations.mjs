@@ -1,4 +1,4 @@
-// Writes src/generated/simulations.ts from the eth-infinitism v0.7 release artifacts: the runtime
+// Writes src/generated/simulations.ts from the eth-infinitism v0.9 release artifacts: the runtime
 // code the estimator installs at the EntryPoint address with an eth_call state override, and the
 // two simulation functions it calls. `--check` fails instead of writing when the file is stale.
 //

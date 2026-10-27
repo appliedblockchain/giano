@@ -48,8 +48,8 @@ describe("defaultGianoLogger", () => {
 });
 
 describe("giano entry point constants", () => {
-	it("pins EntryPoint v0.7", () => {
-		expect(GianoEntryPointVersion).toBe("0.7");
+	it("pins EntryPoint v0.9", () => {
+		expect(GianoEntryPointVersion).toBe("0.9");
 		expect(GianoEntryPointAddress).toMatch(/^0x[0-9a-fA-F]{40}$/);
 	});
 });

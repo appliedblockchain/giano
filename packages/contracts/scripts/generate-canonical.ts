@@ -26,7 +26,7 @@ import { anvil as anvilChain } from "viem/chains";
 import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V07,
+	ENTRY_POINT_V09,
 	LABELS,
 	upgradeLabel,
 } from "../deploy/config";
@@ -131,7 +131,7 @@ async function main(): Promise<void> {
 			};
 			// The paymaster's configuration lives in proxy storage, so these values do not reach any codehash.
 			await deployCore(ctx, release, {
-				entryPoint: ENTRY_POINT_V07,
+				entryPoint: ENTRY_POINT_V09,
 				roleAdmin: CANONICAL_DEPLOYER,
 				defaultFeeWei: 0n,
 				postOpGasAllowance: 0,

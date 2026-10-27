@@ -37,7 +37,7 @@ import {
 import { packUints } from "../src/services/sponsorship-service.js";
 import { createLocalSponsorshipSigner } from "../src/services/sponsorship-signer.js";
 
-const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as Address;
+const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as Address;
 
 function required(name: string): string {
 	const value = process.env[name];

@@ -91,7 +91,7 @@ state is regenerated.
 
 | Contract | Address |
 | --- | --- |
-| EntryPoint v0.7 (canonical, all chains) | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
+| EntryPoint v0.9 (canonical, all chains) | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
 | `GianoSmartWalletFactory` | `0x9c01925D07527A7920031196396A9c37421715A2` |
 | `GianoSmartWallet` implementation | `0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6` |
 | **`GianoPaymaster` (proxy)** | `0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96` |

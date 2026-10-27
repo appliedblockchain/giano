@@ -93,7 +93,7 @@ const ANVIL_IMAGE =
 const ANVIL_CONTAINER = "giano-paymaster-chain-test";
 const RPC_URL = `http://127.0.0.1:${ANVIL_PORT}`;
 const CHAIN_ID = 31337;
-const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as Address;
+const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as Address;
 
 const hasState = fs.existsSync(STATE_PATH);
 if (!hasState) {

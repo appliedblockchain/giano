@@ -8,7 +8,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V07,
+	ENTRY_POINT_V09,
 	LABELS,
 } from "./config";
 import { create3Address } from "./create3";
@@ -180,7 +180,7 @@ async function main() {
 		const env = {
 			...process.env,
 			GIANO_PROFILE_LOADED: "1",
-			ENTRYPOINT_ADDRESS: ENTRY_POINT_V07,
+			ENTRYPOINT_ADDRESS: ENTRY_POINT_V09,
 			CHAIN_ID: String(profile.chainId),
 			CHAIN_NAME: profile.name,
 			RPC_URL: rpc,

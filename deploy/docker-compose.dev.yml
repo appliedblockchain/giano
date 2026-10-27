@@ -10,7 +10,7 @@ x-giano-chains: &giano-chains |
   [
     {
       "chainId": 31337, "name": "Local devnet", "rpcUrl": "http://anvil:8545",
-      "entryPoint": "${ENTRYPOINT_ADDRESS:-0x0000000071727De22E5E9d8BAf0edAc6f37da032}",
+      "entryPoint": "${ENTRYPOINT_ADDRESS:-0x433709009B8330FDa32311DF1C2AFA402eD8D009}",
       "walletApi": { "factory": "${FACTORY_ADDRESS:?run pnpm local:deploy and export FACTORY_ADDRESS}" }
     }
   ]

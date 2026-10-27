@@ -1,5 +1,9 @@
 import { type Address, type Hex, keccak256, parseEther } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import {
+	entryPoint09Abi,
+	getUserOperationHash,
+	toPackedUserOperation,
+} from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -52,6 +56,36 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		expect(
 			(await rpc(bundler.url, "pimlico_getUserOperationGasPrice")).error?.code,
 		).toBe(-32601);
+	});
+
+	it("matches v0.9 EIP-712 hashing on chain and rejects a v0.7 signature", async () => {
+		const { op, hash } = await prepare(900n, "0x", true);
+		const userOperation = ops().toOp(op);
+		expect(
+			await devnet.client.readContract({
+				address: devnet.entryPoint,
+				abi: entryPoint09Abi,
+				functionName: "getUserOpHash",
+				args: [toPackedUserOperation(userOperation)],
+			}),
+		).toBe(hash);
+		const legacyHash = getUserOperationHash({
+			chainId: devnet.chainId,
+			entryPointAddress: devnet.entryPoint,
+			entryPointVersion: "0.7",
+			userOperation,
+		});
+		expect(legacyHash).not.toBe(hash);
+		const owner = privateKeyToAccount(KEYS.owner);
+		const signature = await owner.sign({ hash: legacyHash });
+		expect(
+			(
+				await rpc(bundler.url, "eth_sendUserOperation", [
+					{ ...op, signature },
+					devnet.entryPoint,
+				])
+			).error?.message,
+		).toMatch(/AA24/);
 	});
 
 	it("deploys a self-funded account with its first operation, and the executor is reimbursed", async () => {
@@ -116,7 +150,7 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		).toBe(0n);
 		const deposit = await devnet.client.readContract({
 			address: devnet.entryPoint,
-			abi: entryPoint07Abi,
+			abi: entryPoint09Abi,
 			functionName: "balanceOf",
 			args: [devnet.paymaster],
 		});
@@ -138,7 +172,7 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 			deposit -
 			(await devnet.client.readContract({
 				address: devnet.entryPoint,
-				abi: entryPoint07Abi,
+				abi: entryPoint09Abi,
 				functionName: "balanceOf",
 				args: [devnet.paymaster],
 			}));

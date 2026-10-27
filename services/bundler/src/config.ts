@@ -11,7 +11,7 @@ import { z } from "zod";
 export const ANVIL_KEY =
 	"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 export const DEFAULT_ENTRYPOINT: Address =
-	"0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+	"0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 
 export class ConfigError extends Error {}
 

@@ -37,7 +37,7 @@ import {
 	toBeHex,
 } from "ethers";
 import {
-	ENTRYPOINT_V07_ADDRESS,
+	ENTRYPOINT_V09_ADDRESS,
 	type GianoDeployment,
 	getGianoDeployment,
 } from "../addresses";
@@ -47,6 +47,7 @@ import {
 	CANONICAL_SPONSORSHIP_PAYMASTER,
 	canonicalCodeAt,
 } from "../canonical";
+import { entryPointRuntimeCode } from "../entrypoint";
 import {
 	gianoPaymasterAbi,
 	gianoSmartWalletFactoryAbi,
@@ -71,14 +72,6 @@ const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n; // 0.02 ETH
 /** A validating paymaster needs a stake before bundlers will accept its operations at all. */
 const MIN_STAKE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
 
-/**
- * keccak256 of EntryPoint v0.7's runtime code where it was deployed canonically (Arachnid proxy,
- * published salt) — identical on Ethereum Sepolia and Base, checked Oct 2026. The runtime embeds
- * the address of the SenderCreator its constructor deploys, so a copy of the code made any other
- * way differs here and cannot create accounts (MC-141).
- */
-const ENTRY_POINT_V07_CODEHASH =
-	"0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58";
 /** Tenants per `getTenants` page — the roster is read in pages so a large one cannot blow the call. */
 const TENANT_PAGE_SIZE = 50;
 
@@ -166,7 +159,7 @@ function resolveDeployment(
 		entryPoint: pick(
 			"entrypoint",
 			"ENTRYPOINT_ADDRESS",
-			registry?.entryPoint ?? ENTRYPOINT_V07_ADDRESS,
+			registry?.entryPoint ?? ENTRYPOINT_V09_ADDRESS,
 		),
 		factory: pick("factory", "FACTORY_ADDRESS", registry?.factory),
 		implementation: registry?.implementation,
@@ -725,17 +718,18 @@ async function doctorChain(flags: Record<string, string>) {
 	const entryPointCode = await provider.getCode(entryPoint);
 	report(
 		entryPointCode && entryPointCode !== "0x" ? "ok" : "fail",
-		"EntryPoint v0.7 deployed",
+		"EntryPoint v0.9 deployed",
 		entryPoint,
 	);
 	if (entryPointCode && entryPointCode !== "0x") {
 		const hash = keccak256(entryPointCode);
+		const expectedCodehash = keccak256(entryPointRuntimeCode(chainId));
 		report(
-			hash === ENTRY_POINT_V07_CODEHASH ? "ok" : "fail",
-			"EntryPoint runs the canonical v0.7 code",
-			hash === ENTRY_POINT_V07_CODEHASH
+			hash === expectedCodehash ? "ok" : "fail",
+			"EntryPoint runs the canonical v0.9 code",
+			hash === expectedCodehash
 				? hash
-				: `${hash}, expected ${ENTRY_POINT_V07_CODEHASH} — not the canonical deployment; account creation may fail (MC-141)`,
+				: `${hash}, expected ${expectedCodehash} — not the canonical deployment; account creation may fail (MC-141)`,
 		);
 	}
 

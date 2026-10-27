@@ -57,6 +57,6 @@ export const LOCAL_CHAIN_IDS = [31337, 31338] as const;
 /** Production chains never carry the test fixtures (R-29). */
 export const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111] as const;
 
-/** ERC-4337 EntryPoint v0.7; the wallet implementation hardcodes it. */
-export const ENTRY_POINT_V07: Address =
-	"0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+/** ERC-4337 EntryPoint v0.9; the wallet implementation hardcodes it. */
+export const ENTRY_POINT_V09: Address =
+	"0x433709009B8330FDa32311DF1C2AFA402eD8D009";

@@ -234,7 +234,7 @@ subgraph VPCX["VPC 10.40.0.0/16 — eu-west-2 · Internet Gateway, NO NAT Gatewa
   end
 end
 
-CHAINSTACK["Base Sepolia — chain 84532<br/>RPC via Alchemy, key in SSM<br/>EntryPoint v0.7 · GianoSmartWalletFactory · GianoPaymaster proxy"]
+CHAINSTACK["Base Sepolia — chain 84532<br/>RPC via Alchemy, key in SSM<br/>EntryPoint v0.9 · GianoSmartWalletFactory · GianoPaymaster proxy"]
 PLATFORM["ECR, 6 repos tagged by commit SHA · SSM Parameter Store /giano/dev/*<br/>CloudWatch Logs /ecs/giano-dev/*, 7 days · EventBridge Scheduler, desiredCount 0 or 1<br/>all reached over the task's public IP — the reason D8 needs no NAT"]
 
 INGRESS --> SWEB
@@ -529,7 +529,7 @@ otherwise. Base Sepolia satisfies this today:
 
 | Contract | Address | On 84532? |
 |---|---|---|
-| EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | yes (canonical, everywhere) |
+| EntryPoint v0.9 | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` | yes (canonical, everywhere) |
 | `GianoSmartWalletFactory` | `0x26dCd29390eba3B22BcCbd2143989E5994Ac7050` | **yes** — `ignition/deployments/chain-84532` |
 | `GianoSmartWallet` implementation | `0x15cC758f7D3188c2361f6141CEaa9Ab2792bea56` | **yes** — same |
 | `GianoPaymaster` proxy | *not frozen; CREATE2 from the fixed salt* | **no** |
@@ -809,7 +809,7 @@ only person who can change anything through it.
 | Variable | Value |
 |---|---|
 | `ALTO_RPC_URL` | Base Sepolia endpoint (SSM) |
-| `ALTO_ENTRYPOINTS` | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
+| `ALTO_ENTRYPOINTS` | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
 | `ALTO_EXECUTOR_PRIVATE_KEYS` | SSM SecureString |
 | `ALTO_UTILITY_PRIVATE_KEY` | SSM SecureString |
 | `ALTO_SAFE_MODE` | `true` — this is a real chain |

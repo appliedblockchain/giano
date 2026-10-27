@@ -1,6 +1,6 @@
 /**
  * Setup that only makes sense on a local anvil chain: the infrastructure a public chain already has
- * (CreateX, EntryPoint v0.7), and impersonating the canonical deployer so no key is needed.
+ * (CreateX, EntryPoint v0.9), and impersonating the canonical deployer so no key is needed.
  */
 import { createRequire } from "node:module";
 import {
@@ -12,7 +12,8 @@ import {
 	parseEther,
 	type TestClient,
 } from "viem";
-import { ENTRY_POINT_V07 } from "./config";
+import { entryPointRuntimeCode } from "../entrypoint";
+import { ENTRY_POINT_V09 } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
 import { presignedDeployment } from "./createx";
 import { ARACHNID_PRESIGNED_TX, ARACHNID_PROXY, ARACHNID_SIGNER } from "./p256";
@@ -53,9 +54,9 @@ export async function installCreateX(
 	log(`  + CreateX at ${CREATEX_ADDRESS}`);
 }
 
-/** The salt EntryPoint v0.7 was deployed with through the Arachnid proxy on every public chain. */
-const ENTRY_POINT_V07_SALT: Hex =
-	"0x90d8084deab30c2a37c45e8d47f49f2f7965183cb6990a98943ef94940681de3";
+/** The salt EntryPoint v0.9 was deployed with through the Arachnid proxy on every public chain. */
+const ENTRY_POINT_V09_SALT: Hex =
+	"0x7702864008ddeab30aa67b7adc3d2653bc8d162714b1fe8fe4582df814f3bf61";
 
 /** The Arachnid CREATE2 proxy, through its keyless deployment if the chain lacks it. */
 async function ensureArachnidProxy(
@@ -76,7 +77,7 @@ async function ensureArachnidProxy(
 }
 
 /**
- * EntryPoint v0.7 at its canonical address, deployed the way it was on every public chain: its
+ * EntryPoint v0.9 at its canonical address, deployed the way it was on every public chain: its
  * published creation code through the Arachnid proxy with its published salt. Not a code copy —
  * the constructor deploys the SenderCreator that account creation goes through and records its
  * address in an immutable, so only a real deployment yields a working EntryPoint.
@@ -87,9 +88,14 @@ export async function installEntryPoint(
 	from: Address,
 	log: (line: string) => void,
 ): Promise<void> {
-	const existing = await publicClient.getCode({ address: ENTRY_POINT_V07 });
+	const existing = await publicClient.getCode({ address: ENTRY_POINT_V09 });
 	if (existing && existing !== "0x") {
-		log(`  = EntryPoint v0.7 already at ${ENTRY_POINT_V07}`);
+		if (
+			existing.toLowerCase() !==
+			entryPointRuntimeCode(await publicClient.getChainId()).toLowerCase()
+		)
+			throw new Error("EntryPoint v0.9 code mismatch");
+		log(`  = EntryPoint v0.9 already at ${ENTRY_POINT_V09}`);
 		return;
 	}
 	await ensureArachnidProxy(publicClient, testClient);
@@ -103,18 +109,18 @@ export async function installEntryPoint(
 	const hash = await testClient.sendUnsignedTransaction({
 		from,
 		to: ARACHNID_PROXY,
-		data: concat([ENTRY_POINT_V07_SALT, artifact.bytecode]),
+		data: concat([ENTRY_POINT_V09_SALT, artifact.bytecode]),
 		gas: 8_000_000n,
 	});
 	const receipt = await publicClient.waitForTransactionReceipt({ hash });
-	const code = await publicClient.getCode({ address: ENTRY_POINT_V07 });
+	const code = await publicClient.getCode({ address: ENTRY_POINT_V09 });
 	if (receipt.status !== "success" || !code || code === "0x") {
 		throw new Error(
-			`EntryPoint v0.7 did not land at ${ENTRY_POINT_V07} (${hash}); the @account-abstraction/contracts artifact may not be the canonical build`,
+			`EntryPoint v0.9 did not land at ${ENTRY_POINT_V09} (${hash}); the @account-abstraction/contracts artifact may not be the canonical build`,
 		);
 	}
 	log(
-		`  + EntryPoint v0.7 at ${ENTRY_POINT_V07} (${keccak256(code).slice(0, 10)}…)`,
+		`  + EntryPoint v0.9 at ${ENTRY_POINT_V09} (${keccak256(code).slice(0, 10)}…)`,
 	);
 }
 

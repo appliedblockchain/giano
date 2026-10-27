@@ -63,7 +63,7 @@ function overview(
 		address: "0x3333333333333333333333333333333333333333",
 		chainId: 31337,
 		config: {
-			entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 			defaultFeeWei: parseEther("0.0001"),
 			postOpGasAllowance: 40_000,
 			penaltyBps: 1000,

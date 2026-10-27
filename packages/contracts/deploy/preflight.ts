@@ -8,11 +8,12 @@ import {
 	zeroAddress,
 } from "viem";
 import { CANONICAL_CODE } from "../canonical";
+import { entryPointRuntimeCode } from "../entrypoint";
 import { gianoPaymasterAbi, gianoSmartWalletFactoryAbi } from "../generated";
 import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V07,
+	ENTRY_POINT_V09,
 	LABELS,
 } from "./config";
 import { CREATEX_ADDRESS, create3Address } from "./create3";
@@ -24,9 +25,9 @@ export const CORE_KEYS = [
 	"paymasterImplementation",
 	"paymasterProxy",
 ] as const;
-// Same reference as giano-doctor: includes the canonical SenderCreator immutable.
-export const ENTRY_POINT_CODEHASH =
-	"0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58";
+// Includes the canonical SenderCreator and chain-specific EIP-712 immutables.
+export const entryPointCodehash = (chainId: number) =>
+	keccak256(entryPointRuntimeCode(chainId));
 // CreateX upstream README, Security Considerations (pinned runtime hash).
 export const CREATEX_CODEHASH =
 	"0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f";
@@ -108,7 +109,7 @@ export async function verifyCoreState(
 	]);
 	if (
 		!allowed ||
-		getAddress(entryPoint) !== getAddress(ENTRY_POINT_V07) ||
+		getAddress(entryPoint) !== getAddress(ENTRY_POINT_V09) ||
 		fee !== paymasterParams(profile).defaultFeeWei ||
 		allowance !== profile.paymaster.postOpGasAllowance ||
 		penalty !== profile.paymaster.penaltyBps
@@ -155,9 +156,9 @@ export async function inspectDeployment(
 				"Missing or unrecognised CreateX runtime. Follow https://github.com/pcaversaccio/createx; do not install local-chain substitutes.",
 			);
 	});
-	await check("Canonical EntryPoint v0.7 runtime", async () => {
-		const code = await client.getCode({ address: ENTRY_POINT_V07 });
-		if (!code || keccak256(code) !== ENTRY_POINT_CODEHASH)
+	await check("Canonical EntryPoint v0.9 runtime", async () => {
+		const code = await client.getCode({ address: ENTRY_POINT_V09 });
+		if (!code || keccak256(code) !== entryPointCodehash(profile.chainId))
 			throw new GateError(
 				"Missing or noncanonical EntryPoint. Do not deploy or serve this chain.",
 			);
