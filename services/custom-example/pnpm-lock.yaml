@@ -63,8 +63,8 @@ importers:
   .:
     dependencies:
       '@appliedblockchain/giano-connector':
-        specifier: 3.1.1
-        version: 3.1.1(529250c4ee4688bb5ac2ec7d0479953f)
+        specifier: 4.0.0
+        version: 4.0.0(529250c4ee4688bb5ac2ec7d0479953f)
       '@chakra-ui/react':
         specifier: ~3.36.1
         version: 3.36.1(@emotion/react@11.14.0(@types/react@19.1.4)(react@19.1.0)(supports-color@8.1.1))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -126,15 +126,15 @@ packages:
   '@adraffy/ens-normalize@1.11.0':
     resolution: {integrity: sha512-/3DDPKHqqIqxUULp8yP4zODUY1i+2xvVWsv8A79xGWdCAG+8sb0hRh0Rk2QyOJUnnbyPUAZYcpBuRe3nS2OIUg==}
 
-  '@appliedblockchain/giano-connector@3.1.1':
-    resolution: {integrity: sha512-ebFMSmAgumi+bYWftRxQ0CroHyR17FRuMLs9n5486xU9ArSPfhvumgXNcdgFup3Q+hmdOB4r8zjrDP6m1KLmIg==, tarball: https://npm.pkg.github.com/download/@appliedblockchain/giano-connector/3.1.1/7418c04d929c6208eeff631aea2a0156e6dc67f1}
+  '@appliedblockchain/giano-connector@4.0.0':
+    resolution: {integrity: sha512-pvaxHpUjp7yD+M9A49dJ8LqYvpiZnRG2TmeAFFOO+HNJXTRNu7Q5/DkXXBrHYnDfBRhHWFCVBpGMib5Nd4P7tA==, tarball: https://npm.pkg.github.com/download/@appliedblockchain/giano-connector/4.0.0/3162e21ec3830286746036453aea139299ac1b6e}
     peerDependencies:
       '@rainbow-me/rainbowkit': ^2.2.0
       viem: ^2.31.0
       wagmi: ^2.15.0
 
-  '@appliedblockchain/giano-wallet-transport@3.1.1':
-    resolution: {integrity: sha512-U9w+Ak/MBi7V3kGdcMe0hqKkRWvKHHqxbFwwMf8MoPrtjV66KPLhdA5BmhNUAIRa/xTSol1YwSJD186sM7+tbw==, tarball: https://npm.pkg.github.com/download/@appliedblockchain/giano-wallet-transport/3.1.1/804ae56f10e94ef968e798f28b23a6c0d4f1b9fe}
+  '@appliedblockchain/giano-wallet-transport@4.0.0':
+    resolution: {integrity: sha512-fuF9cEDvZb/nTyNhtYINP8FjYsk3yKDUL0qnQaU8me0od9HZoFYaXn+rjOae7xv2di1XdYDTCjvwMpAA9xfbBQ==, tarball: https://npm.pkg.github.com/download/@appliedblockchain/giano-wallet-transport/4.0.0/fc3bcb2cec0021edbbd88bba2dc0b89adf9a63a7}
 
   '@ark-ui/react@5.37.2':
     resolution: {integrity: sha512-Q0R2Ah50kUhup0Ljxg65zGJq5yBV52BLm1coRkjHHid40d1yclaDGfhPL48kcF/xtjAFlGLkL6SiENkGvfh+mw==}
@@ -2831,14 +2831,14 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.0': {}
 
-  '@appliedblockchain/giano-connector@3.1.1(529250c4ee4688bb5ac2ec7d0479953f)':
+  '@appliedblockchain/giano-connector@4.0.0(529250c4ee4688bb5ac2ec7d0479953f)':
     dependencies:
-      '@appliedblockchain/giano-wallet-transport': 3.1.1
+      '@appliedblockchain/giano-wallet-transport': 4.0.0
       '@rainbow-me/rainbowkit': 2.2.5(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(babel-plugin-macros@3.1.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(viem@2.31.6(bufferutil@4.0.9)(typescript@7.0.2)(utf-8-validate@5.0.10)(zod@3.25.1))(wagmi@2.15.6(@tanstack/query-core@5.76.0)(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(bufferutil@4.0.9)(immer@10.0.2)(ioredis@5.6.1(supports-color@8.1.1))(react@19.1.0)(supports-color@8.1.1)(typescript@7.0.2)(utf-8-validate@5.0.10)(viem@2.31.6(bufferutil@4.0.9)(typescript@7.0.2)(utf-8-validate@5.0.10)(zod@3.25.1))(zod@3.25.1))
       viem: 2.31.6(bufferutil@4.0.9)(typescript@7.0.2)(utf-8-validate@5.0.10)(zod@3.25.1)
       wagmi: 2.15.6(@tanstack/query-core@5.76.0)(@tanstack/react-query@5.76.1(react@19.1.0))(@types/react@19.1.4)(bufferutil@4.0.9)(immer@10.0.2)(ioredis@5.6.1(supports-color@8.1.1))(react@19.1.0)(supports-color@8.1.1)(typescript@7.0.2)(utf-8-validate@5.0.10)(viem@2.31.6(bufferutil@4.0.9)(typescript@7.0.2)(utf-8-validate@5.0.10)(zod@3.25.1))(zod@3.25.1)
 
-  '@appliedblockchain/giano-wallet-transport@3.1.1':
+  '@appliedblockchain/giano-wallet-transport@4.0.0':
     dependencies:
       ulid: 3.0.2
       zod: 3.24.4

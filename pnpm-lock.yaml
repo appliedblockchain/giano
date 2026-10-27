@@ -293,7 +293,7 @@ importers:
   services/bundler:
     dependencies:
       '@appliedblockchain/giano-contracts':
-        specifier: workspace:^
+        specifier: workspace:^4.0.0
         version: link:../../packages/contracts
       pino:
         specifier: ^9.6.0
@@ -333,7 +333,7 @@ importers:
   services/paymaster-admin:
     dependencies:
       '@appliedblockchain/giano-paymaster-sdk':
-        specifier: workspace:^
+        specifier: workspace:^4.0.0
         version: link:../../packages/paymaster-sdk
       '@chakra-ui/react':
         specifier: ^3.2.0
@@ -376,10 +376,10 @@ importers:
   services/wallet-api:
     dependencies:
       '@appliedblockchain/giano-contracts':
-        specifier: workspace:^
+        specifier: workspace:^4.0.0
         version: link:../../packages/contracts
       '@appliedblockchain/giano-tx-describe':
-        specifier: workspace:^
+        specifier: workspace:^4.0.0
         version: link:../../packages/tx-describe
       '@fastify/cors':
         specifier: ^10.0.1
@@ -452,7 +452,7 @@ importers:
   services/wallet-web:
     dependencies:
       '@appliedblockchain/giano-wallet-kit':
-        specifier: workspace:^
+        specifier: workspace:^4.0.0
         version: link:../../packages/wallet-kit
       react:
         specifier: ^19.0.0
