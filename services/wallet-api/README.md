@@ -94,6 +94,7 @@ example). Highlights:
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
 | `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800), per-session and per-address limit (60) |
+| `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` / `PLATFORM_RPC_MAX_LOG_BLOCKS` | the platform chain read relay (`/v1/platform/rpc/:chainId`): forwarded reads per session per minute (1200, a budget separate from the one above), and the widest `eth_getLogs` range it forwards (10000; at least 9000, the paymaster SDK's log window) |
 | `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` | delete refuses a ledger further than this behind the chain head (50); must exceed `PAYMASTER_WATCHER_CONFIRMATIONS` |
 
 CORS is per-tenant (`corsOrigins`) and fail-closed; there is no global CORS allowlist.

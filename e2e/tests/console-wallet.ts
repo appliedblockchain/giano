@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-import { ORIGINS } from "../origins.mjs";
+import { CHAINS, ORIGINS } from "../origins.mjs";
 
 /**
  * The scripted browser wallet the paymaster console is driven with, shared by the console's
@@ -9,8 +9,12 @@ import { ORIGINS } from "../origins.mjs";
  * A real extension cannot be driven, so an EIP-1193 wallet is injected before any page script
  * runs, shaped like MetaMask where the console's behaviour depends on it. Its accounts are anvil's
  * own, unlocked on the devnet: anything it does not answer itself — eth_sendTransaction,
- * personal_sign — is forwarded through the console's same-origin /rpc/<chainId> proxy and signed
- * by the node.
+ * personal_sign — is sent to the node and signed there.
+ *
+ * Not through the console's own read path: a wallet dials its own RPC, and the console's is
+ * wallet-api's platform relay, which forwards reads only and only for a signed-in platform admin.
+ * So the wallet posts to `/__wallet-rpc/<chainId>` on the page's origin — same-origin, which the
+ * console's CSP allows — and Playwright answers it from the test runner by forwarding to the devnet.
  */
 
 /** anvil's first account, which holds every role on the devnet paymaster. */
@@ -59,7 +63,7 @@ export async function installWallet(
 
 			const forward = async (method: string, params: unknown[]) => {
 				const response = await fetch(
-					`${location.origin}/rpc/${parseInt(chainId, 16)}`,
+					`${location.origin}/__wallet-rpc/${parseInt(chainId, 16)}`,
 					{
 						method: "POST",
 						headers: { "content-type": "application/json" },
@@ -152,6 +156,22 @@ export async function installWallet(
 		},
 		{ operator: OPERATOR, elsewhere: ELSEWHERE, known, refuseAdd },
 	);
+	// The wallet's own connection to the chain, outside the page — see the header.
+	await page.route(/\/__wallet-rpc\/(\d+)$/, async (route) => {
+		const chainId = Number(/(\d+)$/.exec(route.request().url())?.[1]);
+		const chain = Object.values(CHAINS).find((c) => c.chainId === chainId);
+		if (!chain) return route.fulfill({ status: 404 });
+		const response = await fetch(chain.rpc, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: route.request().postData() ?? "",
+		});
+		await route.fulfill({
+			status: response.status,
+			contentType: "application/json",
+			body: await response.text(),
+		});
+	});
 }
 
 export const walletCalls = (page: Page) =>
@@ -176,8 +196,27 @@ export async function chooseDeployment(page: Page, chainId: number) {
 	).toBeVisible();
 }
 
+/**
+ * Opens the console, which in this stack has the platform API — so it opens on the sign-in view,
+ * having read nothing from the chain.
+ */
 export async function openConsole(page: Page) {
 	await page.goto(ORIGINS.paymasterAdmin);
-	// The console reads without a wallet, and the panels only render once that read lands.
+	await expect(
+		page.getByRole("button", { name: /Sign in with wallet/ }),
+	).toBeVisible();
+}
+
+/**
+ * Signs in as the console's wallet — anvil account 0, bootstrapped as `admin-console` — connecting
+ * it first if needed. In the Paymaster area the panels render once the first read lands.
+ */
+export async function signIn(page: Page) {
+	await page.getByRole("button", { name: /Sign in with wallet/ }).click();
+	await expect(page.getByText("admin-console")).toBeVisible();
+}
+
+export async function signInToPaymaster(page: Page) {
+	await signIn(page);
 	await expect(page.getByRole("tab", { name: /Overview/ })).toBeVisible();
 }

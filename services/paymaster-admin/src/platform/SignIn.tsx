@@ -6,10 +6,20 @@ import { type SignInFailure, usePlatform } from "../lib/platform-session";
 import type { PlatformAreaProps } from "./PlatformArea";
 
 /**
- * The Platform area without a session (specs/PLATFORM-ADMIN-SPECS.md §11.3): one button that
- * connects the wallet if needed, then signs the message wallet-api issued. A refusal in the wallet
- * is the platform admin changing their mind, not an error.
+ * Either area without a session, where the console has the platform API (specs/PLATFORM-ADMIN-SPECS.md
+ * §11.3; openspec platform-console-access): one button that connects the wallet if needed, then signs
+ * the message wallet-api issued. A refusal in the wallet is the platform admin changing their mind,
+ * not an error.
+ *
+ * It gates the Paymaster area too: there the console reads the chain through wallet-api's platform
+ * relay, which serves nobody without a session — so the roster, balances and keyed RPC quota are not
+ * one click away for anyone who finds the page.
  */
+export type SignInProps = Pick<
+	PlatformAreaProps,
+	"deployment" | "wallet" | "connect" | "connecting"
+>;
+
 const FAILURE_TEXT: Record<
 	Exclude<SignInFailure, "rejected" | "failed">,
 	{ title: string; description: string }
@@ -31,8 +41,8 @@ export function SignIn({
 	wallet,
 	connect,
 	connecting,
-}: PlatformAreaProps) {
-	const { signIn, endedNotice } = usePlatform();
+}: SignInProps) {
+	const { signIn, endedNotice, disabled } = usePlatform();
 	const [busy, setBusy] = useState(false);
 	const [failure, setFailure] = useState<{
 		title: string;
@@ -64,7 +74,7 @@ export function SignIn({
 	return (
 		<SectionCard
 			title="Platform admin sign-in"
-			subtitle="Tenant administration is for Giano's platform admins. Sign in with the wallet that holds your platform admin address."
+			subtitle="This console is for Giano's platform admins. Sign in with the wallet that holds your platform admin address."
 		>
 			<Stack gap="4" maxW="2xl">
 				{endedNotice && (
@@ -75,7 +85,18 @@ export function SignIn({
 						</Alert.Content>
 					</Alert.Root>
 				)}
-				{failure && (
+				{disabled && (
+					<Alert.Root status="warning" size="sm">
+						<Alert.Indicator />
+						<Alert.Content>
+							<Alert.Title>{FAILURE_TEXT.disabled.title}</Alert.Title>
+							<Alert.Description>
+								{FAILURE_TEXT.disabled.description}
+							</Alert.Description>
+						</Alert.Content>
+					</Alert.Root>
+				)}
+				{failure && !disabled && (
 					<Alert.Root status="warning" size="sm">
 						<Alert.Indicator />
 						<Alert.Content>
@@ -84,29 +105,35 @@ export function SignIn({
 						</Alert.Content>
 					</Alert.Root>
 				)}
-				<Text fontSize="sm" color="fg.muted">
-					Your wallet is asked to sign a message naming this console's domain.
-					Nothing is sent on-chain and no gas is spent. The session lasts until
-					it expires, you sign out, reload, or change account, network or
-					deployment.
-				</Text>
-				<Box>
-					<Button
-						colorPalette="brand"
-						onClick={() => void start()}
-						loading={busy || connecting}
-						loadingText={connecting ? "Connecting" : "Waiting for signature"}
-					>
-						<LuLogIn /> Sign in with wallet
-					</Button>
-				</Box>
-				{wallet && (
-					<HStack gap="2">
-						<Text fontSize="xs" color="fg.muted">
-							Signing as
+				{!disabled && (
+					<>
+						<Text fontSize="sm" color="fg.muted">
+							Your wallet is asked to sign a message naming this console's
+							domain. Nothing is sent on-chain and no gas is spent. The session
+							lasts until it expires, you sign out, reload, or change account,
+							network or deployment.
 						</Text>
-						<Copyable value={wallet.address} label="Connected account" />
-					</HStack>
+						<Box>
+							<Button
+								colorPalette="brand"
+								onClick={() => void start()}
+								loading={busy || connecting}
+								loadingText={
+									connecting ? "Connecting" : "Waiting for signature"
+								}
+							>
+								<LuLogIn /> Sign in with wallet
+							</Button>
+						</Box>
+						{wallet && (
+							<HStack gap="2">
+								<Text fontSize="xs" color="fg.muted">
+									Signing as
+								</Text>
+								<Copyable value={wallet.address} label="Connected account" />
+							</HStack>
+						)}
+					</>
 				)}
 			</Stack>
 		</SectionCard>

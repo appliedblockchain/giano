@@ -26,6 +26,7 @@ import healthRoutes from "./routes/health.js";
 import paymasterRoutes from "./routes/paymaster.js";
 import platformAdminRoutes from "./routes/platform-admins.js";
 import platformAuthRoutes from "./routes/platform-auth.js";
+import platformRpcRoutes from "./routes/platform-rpc.js";
 import platformTenantRoutes from "./routes/platform-tenants.js";
 import rpcRelayRoutes from "./routes/rpc-relay.js";
 import txMappingRoutes from "./routes/tx-mappings.js";
@@ -284,6 +285,7 @@ export async function buildApp({
 		});
 		await app.register(platformTenantRoutes, { db, config, registry });
 		await app.register(platformAdminRoutes, { admins, config });
+		await app.register(platformRpcRoutes, { config });
 	}
 
 	return app;

@@ -482,6 +482,7 @@ Full schema in `services/wallet-api/src/config.ts`. Required and notable vars:
 | `CHALLENGE_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `CEREMONY_RATE_LIMIT_PER_MINUTE`, `METRICS_BEARER_TOKEN` | — | TTLs / rate limit / metrics auth |
 | `GIANO_ENVIRONMENT` | ✓ | which environment this is: `dev`, `stg`, `prd`, `reference`, `e2e`, `local-infra`, `local-dev`, `local-sepolia` or `test`. Selects, from `services/wallet-api/src/environments.ts`, the console host platform admins sign in for and the init step's bootstrap platform admins. An environment with no console host (`reference`, `local-dev`, `local-sepolia`) registers no platform route, and so has no way to create a tenant |
 | `PLATFORM_CHALLENGE_TTL_SECONDS`, `PLATFORM_SESSION_TTL_SECONDS`, `PLATFORM_RATE_LIMIT_PER_MINUTE` | — | platform admin sign-in tuning. The platform admins themselves are rows in the `platform_admins` table, managed by platform admins in the console's Admins tab |
+| `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE`, `PLATFORM_RPC_MAX_LOG_BLOCKS` | — | the platform chain read relay the paymaster console reads through: forwarded reads per platform admin session per minute (default `1200`), and the widest `eth_getLogs` range forwarded (default `10000`, at least `9000`) |
 
 **Onboarding a tenant** happens at runtime, with no redeploy. wallet-api boots with no tenants
 (and says so in its log); a Giano platform admin creates, edits, suspends and deletes them in the

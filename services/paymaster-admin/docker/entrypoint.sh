@@ -83,11 +83,52 @@ export GIANO_DEPLOYMENTS
 # One generated location per chain, each with a literal upstream, so nginx resolves every host at
 # config load: a name that does not resolve stops the container here rather than failing the first
 # call an operator makes.
+#
+# But an nginx proxy can only hide the key, not ration it: it cannot read a JSON-RPC body, so it
+# forwards any method the provider sells to whoever can reach this page. So where wallet-api is
+# configured, the console reads through wallet-api's platform read relay instead
+# (/api/v1/platform/rpc/<chainId>, openspec platform-chain-reads): a platform admin session, a
+# read-only allowlist, and per-session limits, with the keyed URL held by wallet-api alone. No
+# /rpc location is rendered then, whatever GIANO_RPC_PROXY says — the keyed URL never reaches
+# this container's nginx configuration at all.
+#
+# Without wallet-api the proxy below stays, rate- and size-limited, and the console must sit
+# behind the operator's own SSO or VPN (README, "Access").
 GIANO_RPC_PROXY="${GIANO_RPC_PROXY:-true}"
 GIANO_RPC_LOCATIONS=""
+GIANO_RPC_LIMIT_ZONE=""
+
+if [ -n "${GIANO_WALLET_API_UPSTREAM:-}" ]; then
+  GIANO_RPC_PROXY=false
+  GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
+    [ .[] | .rpcUrl = "/api/v1/platform/rpc/\(.chainId)" ]')
+  export GIANO_DEPLOYMENTS
+fi
 
 if [ "$GIANO_RPC_PROXY" = "true" ]; then
-  GIANO_RPC_LOCATIONS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -r '
+  # One budget for every client together: what is being protected is the provider's quota, not
+  # fairness between visitors. `20r/s` or `600r/m`; the burst absorbs one console refresh.
+  GIANO_RPC_PROXY_RATE="${GIANO_RPC_PROXY_RATE:-20r/s}"
+  GIANO_RPC_RATE_NUMBER="${GIANO_RPC_PROXY_RATE%r/?}"
+  case "${GIANO_RPC_PROXY_RATE#"$GIANO_RPC_RATE_NUMBER"}:$GIANO_RPC_RATE_NUMBER" in
+    r/s:[1-9]* | r/m:[1-9]*)
+      case "$GIANO_RPC_RATE_NUMBER" in
+        *[!0-9]*) GIANO_RPC_RATE_NUMBER="" ;;
+      esac ;;
+    *) GIANO_RPC_RATE_NUMBER="" ;;
+  esac
+  if [ -z "$GIANO_RPC_RATE_NUMBER" ]; then
+    echo "FATAL: GIANO_RPC_PROXY_RATE must look like 20r/s or 600r/m (got \"$GIANO_RPC_PROXY_RATE\")" >&2
+    exit 1
+  fi
+  GIANO_RPC_BURST=$((GIANO_RPC_RATE_NUMBER * 2))
+
+  # limit_req_zone keys on a variable, so a map gives it one that is the same for every request.
+  GIANO_RPC_LIMIT_ZONE=$(printf '%s\n' \
+    'map "" $giano_rpc_limit_key { default rpc; }' \
+    "limit_req_zone \$giano_rpc_limit_key zone=giano_rpc:1m rate=${GIANO_RPC_PROXY_RATE};")
+
+  GIANO_RPC_LOCATIONS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -r --arg burst "$GIANO_RPC_BURST" '
     .[]
     | select(.rpcUrl | test("^https?://"))
     | "    location = /rpc/\(.chainId) {\n" +
@@ -98,6 +139,10 @@ if [ "$GIANO_RPC_PROXY" = "true" ]; then
       "        proxy_http_version 1.1;\n" +
       "        proxy_ssl_server_name on;\n" +
       "        proxy_set_header Host $proxy_host;\n" +
+      # A JSON-RPC read is a few hundred bytes; nothing the console sends comes near this.
+      "        client_max_body_size 16k;\n" +
+      "        limit_req zone=giano_rpc burst=\($burst) nodelay;\n" +
+      "        limit_req_status 429;\n" +
       "    }\n"')
 
   GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
@@ -118,7 +163,7 @@ GIANO_CSP_CONNECT_SRC="${GIANO_CSP_CONNECT_SRC:-$(
   printf '%s' "$GIANO_DEPLOYMENTS" |
     jq -r '[ .[].rpcUrl // empty | capture("^(?<origin>[a-z]+://[^/]+)").origin ] | unique | join(" ")'
 )}"
-export GIANO_RPC_LOCATIONS GIANO_CSP_CONNECT_SRC
+export GIANO_RPC_LOCATIONS GIANO_RPC_LIMIT_ZONE GIANO_CSP_CONNECT_SRC
 
 # The platform API (specs/PLATFORM-ADMIN-SPECS.md §11.1), only where it is asked for.
 #
@@ -172,7 +217,7 @@ fi
 export GIANO_API_LOCATION GIANO_PLATFORM_API
 
 envsubst '${GIANO_DEPLOYMENTS} ${GIANO_PLATFORM_API}' < /etc/giano/config.json.template > /usr/share/nginx/html/config.json
-envsubst '${GIANO_RPC_LOCATIONS} ${GIANO_CSP_CONNECT_SRC} ${GIANO_API_LOCATION}' \
+envsubst '${GIANO_RPC_LIMIT_ZONE} ${GIANO_RPC_LOCATIONS} ${GIANO_CSP_CONNECT_SRC} ${GIANO_API_LOCATION}' \
   < /etc/giano/nginx.conf.template > /etc/nginx/conf.d/default.conf
 
 exec nginx -g 'daemon off;'

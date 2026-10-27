@@ -605,6 +605,7 @@ because that is what platform admins type; responses always include the id.
 | `DELETE /v1/platform/tenants/:slug/admin-keys/:keyId` | Revoke. Refused if it is the last key and `openRegistration` is false | `204`, `409 last-admin-key` |
 | `GET /v1/platform/tenants/:slug/history?before=` | `tenant_history`, newest first, 50 per page | `200 { entries, next }` |
 | `GET /v1/platform/chains` | Blockchain status (§10). *Follow-up card (H-k); not registered by H5.* | `200` |
+| `POST /v1/platform/rpc/:chainId` | Chain read relay for the console (G10, openspec `platform-chain-reads`): the `/v1/rpc` read allowlist behind a platform admin session, bodies ≤ 16 KiB, `eth_getLogs` bounded to `PLATFORM_RPC_MAX_LOG_BLOCKS`, `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` per session (separate from the routes above) | `200` JSON-RPC (`-32601`, `-32602`, `-32021`, `-32023` as errors), `400`, `401`, `403`, `413` |
 
 ### 7.2 Concurrency
 
@@ -762,6 +763,12 @@ and whether it should also alert.
 - `deploy/docker-compose.e2e.yml`: the `paymaster-admin` service gains `GIANO_WALLET_API_UPSTREAM` and
   `depends_on: wallet-api`. Its comment says it "needs neither wallet-api nor a database", and that
   comment changes too.
+- **Reads (G10).** With `GIANO_WALLET_API_UPSTREAM` set, the console also reads the chain through
+  `/api/v1/platform/rpc/<chainId>` with the session token, and renders no `/rpc/*` proxy: the
+  entrypoint rewrites each `rpcUrl` to that path. One session, held by a provider around both areas,
+  serves the Paymaster and the Platform area, and nothing is read before sign-in. A standalone
+  console (no upstream) keeps its rate- and size-limited `/rpc/<chainId>` proxy and must sit behind
+  the operator's own access control.
 - `services/paymaster-admin/src/lib/platform-api.ts`: a typed client over the routes in §7, with
   hand-written request and response types. Nothing in the repository generates types from OpenAPI
   today, and adding a generator is new tooling for one small client. `openapi:check` in CI keeps
