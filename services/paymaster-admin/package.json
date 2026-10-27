@@ -12,7 +12,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@appliedblockchain/giano-paymaster-sdk": "workspace:^",
+		"@appliedblockchain/giano-paymaster-sdk": "workspace:^4.0.0",
 		"@chakra-ui/react": "^3.2.0",
 		"@emotion/react": "^11.11.4",
 		"react": "^19.0.0",
