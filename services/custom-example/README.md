@@ -95,10 +95,12 @@ same-origin` on this page (else the popup handshake times out — the preflight'
   release from GitHub Packages, pinned exactly (`4.0.0`), not the workspace copy — this app shows
   what an integrator actually installs. Bump the pin after each release; a connector change on `main`
   reaches this app only once it is published (the `e2e/dapp` fixture keeps covering the workspace
-  copy). Under ABIP-6 the bump waits **7 days after publication**: `minimumReleaseAge` here is
-  10080 with no exemption for `@appliedblockchain/*`, so a younger release fails to install. To keep that true the app is **its own pnpm workspace** (`pnpm-workspace.yaml`,
+  copy). To keep that true the app is **its own pnpm workspace** (`pnpm-workspace.yaml`,
   `pnpm-lock.yaml`, `.npmrc` here), excluded from the repo's: install it with
   `pnpm -C services/custom-example install`, with a `read:packages` token in `~/.npmrc`.
+  `minimumReleaseAge` here is 10080 (ABIP-6, 7 days), but our own `@appliedblockchain/*` scope is
+  excluded, a recorded deviation (`docs/abip-compliance.md`), so the pin can follow a release
+  straight away.
 - **No custom CSS.** No stylesheets, no `css` prop, no `style` attribute — Chakra components and the
   tokens in `src/theme.ts` (the only place brand appears). Lint-enforced; RainbowKit's own stylesheet
   is the one allowed import.

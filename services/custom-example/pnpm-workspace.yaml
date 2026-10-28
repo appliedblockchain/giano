@@ -92,13 +92,15 @@ overrides:
   "sha.js@>=2.0.0 <2.4.12": "^2.4.12"
 
 # Supply-chain policy (ABIP-6, docs/abip-compliance.md): reject any package version published less
-# than 7 days ago — the ABIP's tier for projects that handle financial transactions. No package is
-# exempt by name or scope. The only allowed exclusion is one exact version (name@x.y.z) of a direct
-# dependency carrying a critical security fix, with its advisory and removal date in a comment;
-# scripts/check-release-age.mjs enforces all of this in CI.
+# than 7 days ago — the ABIP's tier for projects that handle financial transactions. No third-party
+# package is exempt by name or scope. The only allowed exclusion for one is an exact version
+# (name@x.y.z) of a direct dependency carrying a critical security fix, with its advisory and
+# removal date in a comment; scripts/check-release-age.mjs enforces all of this in CI.
 minimumReleaseAge: 10080
-# That includes our own @appliedblockchain/* releases: a new Giano version can be installed here
-# 7 days after it is published, like in any integrator's project.
+minimumReleaseAgeExclude:
+  # Deviation from ABIP-6 (docs/abip-compliance.md): our own releases, published by this
+  # repository's release.yml, so the example can install a Giano release as soon as it is out.
+  - '@appliedblockchain/*'
 allowBuilds:
   bufferutil: false
   esbuild: false

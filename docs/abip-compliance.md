@@ -16,7 +16,7 @@ delivered as one stacked PR per ABIP.
 | ABIP-1 | Branch Protection Rules | In progress (`apply-abips`) |
 | ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) and one out-of-scope image (`giano-contracts-deployer`) |
 | ABIP-5 | External resources in AGENTS.md file | Adopted |
-| ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces, no exclusions |
+| ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces; one deviation, `@appliedblockchain/*` excluded in the example |
 | ABIP-7 | Pin Exact Dependency Versions | In progress (`apply-abips`) |
 | ABIP-8 | Key Generation Ceremony | In progress (`apply-abips`) |
 
@@ -46,12 +46,22 @@ Giano is a wallet, so it takes the ABIP's 7-day tier for projects that handle fi
 | Workspace | `minimumReleaseAge` | Active exclusions |
 |-----------|---------------------|-------------------|
 | root (`pnpm-workspace.yaml`) | 10080 (7 days) | none |
-| `services/custom-example` | 10080 (7 days) | none |
+| `services/custom-example` | 10080 (7 days) | `@appliedblockchain/*` (deviation, below) |
 
-- **No exemption by name or scope.** The blanket entries `postcss`, `baseline-browser-mapping` and
-  `@appliedblockchain/*` were removed. Our own releases wait out the window like any other package: the example
-  dApp can install a new Giano release only 7 days after it is published.
-- **Exclusions.** Only one exact version (`name@x.y.z`) of a direct dependency carrying a critical security fix may be
+- **No exemption by name or scope for third-party packages.** The blanket entries `postcss` and
+  `baseline-browser-mapping` were removed.
+- **Deviation: our own `@appliedblockchain/*` scope.** ABIP-6 says internal packages are not exempt and that blanket
+  exclusions must not be used. Giano departs from that for its own scope, in `services/custom-example` only (the root
+  workspace links its packages with `workspace:` and installs none from the registry):
+  - **Why.** These packages are built and published by this repository's `release.yml` from reviewed commits on
+    `main`, so the window guards against nothing a third-party package would bring. Without the entry the example,
+    which shows what an integrator installs, lags every Giano release by 7 days, and so do the `giano-example` image
+    and the e2e suite that install it.
+  - **Bounds.** The checker allows exactly `@appliedblockchain/*`; any other name or scope still fails, as does a
+    single internal package by name. Third-party dependencies of our packages still face the full window.
+  - **Approval.** Decided by the team on 2026-10-28 (PR #162). It needs the tech lead's sign-off, and it is to be
+    raised with the ABIPs owners as an amendment to ABIP-6. Remove the entry if that amendment is rejected.
+- **Exclusions.** For a third-party package, only one exact version (`name@x.y.z`) of a direct dependency carrying a critical security fix may be
   excluded. The entry carries a comment with the advisory and the removal date, and the PR description gives the
   reason. List every active exclusion in the table above, and remove it once the version has aged past the window.
 - **Lockfiles.** Both lockfiles are committed, and every install in CI and in the Dockerfiles uses
@@ -65,7 +75,7 @@ Giano is a wallet, so it takes the ABIP's 7-day tier for projects that handle fi
 `scripts/check-release-age.mjs` runs in CI (`ci.yml`, job "Release-age policy (ABIP-6)"). It fails on any of the
 following:
 - either workspace with `minimumReleaseAge` below 10080, or unset;
-- an exclusion that is not one exact version;
+- an exclusion that is not one exact version, other than `@appliedblockchain/*`;
 - a `pnpm install` without `--frozen-lockfile` in a workflow or a Dockerfile;
 - with `--registry`, which CI passes: an excluded version older than the window, or one that does not exist.
 

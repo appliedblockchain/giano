@@ -6,7 +6,8 @@
 //
 // Both pnpm workspaces (the root and services/custom-example) must set minimumReleaseAge to at
 // least seven days, and may exclude only exact versions (name@x.y.z) — never a package by name or
-// scope. Every `pnpm install` in CI or in a Dockerfile must be frozen. No dependencies, and no
+// scope, except our own @appliedblockchain/* scope (a recorded deviation from ABIP-6, see
+// docs/abip-compliance.md). Every `pnpm install` in CI or in a Dockerfile must be frozen. No dependencies, and no
 // registry access unless --registry is given, so it runs on fork PRs too.
 
 import { execFileSync } from "node:child_process";
@@ -23,6 +24,11 @@ export const WORKSPACES = [
 	"pnpm-workspace.yaml",
 	"services/custom-example/pnpm-workspace.yaml",
 ];
+
+// Deviation from ABIP-6 (docs/abip-compliance.md): our own releases are built and published by
+// this repository's release.yml, so the quarantine window adds nothing for them. The only
+// name-based exclusion allowed.
+export const INTERNAL_SCOPE_EXCLUSION = "@appliedblockchain/*";
 
 // `name@x.y.z` or `@scope/name@x.y.z`, with an optional pre-release suffix.
 const EXACT_EXCLUSION =
@@ -76,12 +82,12 @@ export function checkWorkspace(text, file) {
 		});
 	}
 	for (const { entry, line } of config.excludes) {
-		if (!EXACT_EXCLUSION.test(entry)) {
+		if (entry !== INTERNAL_SCOPE_EXCLUSION && !EXACT_EXCLUSION.test(entry)) {
 			errs.push({
 				file,
 				line,
 				rule: "exclusion-not-versioned",
-				message: `'${entry}' exempts a package by name or scope; ABIP-6 allows only an exact version (name@x.y.z)`,
+				message: `'${entry}' exempts a package by name or scope; ABIP-6 allows only an exact version (name@x.y.z), and Giano's only deviation is '${INTERNAL_SCOPE_EXCLUSION}'`,
 			});
 		}
 	}

@@ -61,7 +61,26 @@ describe("check-release-age: workspace config", () => {
 
 	it("rejects a scope-wide exclusion", () => {
 		assert.deepEqual(
+			rules(checkWorkspace(workspace(10080, ["'@wagmi/*'"]), "f")),
+			["exclusion-not-versioned"],
+		);
+	});
+
+	it("accepts our own @appliedblockchain/* scope, the recorded deviation", () => {
+		assert.deepEqual(
 			rules(checkWorkspace(workspace(10080, ["'@appliedblockchain/*'"]), "f")),
+			[],
+		);
+	});
+
+	it("rejects a single @appliedblockchain package by name", () => {
+		assert.deepEqual(
+			rules(
+				checkWorkspace(
+					workspace(10080, ["'@appliedblockchain/giano-connector'"]),
+					"f",
+				),
+			),
 			["exclusion-not-versioned"],
 		);
 	});
