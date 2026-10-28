@@ -30,10 +30,11 @@ dependencies come first and anything blocked on DevOps sits at the top: **5 → 
   Slack (#giano-dev, read-only) and the pull-request lifecycle and naming. `CLAUDE.md` becomes `@AGENTS.md`, and its
   no-attribution rule moves into `AGENTS.md`. The values the repo can't supply are collected from the user at apply
   time.
-- **ABIP-6 (PR 2):** raise `minimumReleaseAge` to **10080 (7 days)** in both pnpm workspaces. Drop every blanket
-  `minimumReleaseAgeExclude` entry, `@appliedblockchain/*` included. Only version-specific exclusions (`name@x.y.z`) are
-  allowed, each with a reason and a removal date. A CI check enforces the floor and the exclusion format. **BREAKING
-  (workflow):** a new Giano release can be installed by `services/custom-example` only 7 days after publication.
+- **ABIP-6 (PR 2):** raise `minimumReleaseAge` to **10080 (7 days)** in both pnpm workspaces. Drop the third-party
+  blanket `minimumReleaseAgeExclude` entries. Only version-specific exclusions (`name@x.y.z`) are allowed for those,
+  each with a reason and a removal date. A CI check enforces the floor and the exclusion format. Our own
+  `@appliedblockchain/*` scope stays excluded in `services/custom-example`, as a recorded deviation from ABIP-6, so the
+  example can install a Giano release as soon as it is published.
 - **ABIP-7 (PR 3):** pin every `dependencies`, `devDependencies` and `optionalDependencies` entry to an exact version,
   in all 14 manifests. Pin `peerDependencies` exactly in private packages. Keep peer ranges only in the seven published
   `@appliedblockchain/*` libraries. Pin override values to exact versions. A new `scripts/check-pinned-versions.mjs`
@@ -100,7 +101,8 @@ dependencies come first and anything blocked on DevOps sits at the top: **5 → 
   - DevOps creates the `production` ruleset and runs `terraform apply` for the prd OIDC role;
   - DevOps runs the ceremony that produces the real `CANONICAL_DEPLOYER`, which then unblocks #160's public
     deployment;
-  - ABIP-6 adds a 7-day lag for consuming our own releases.
+  - ABIP-6's 7-day window applies to every third-party package; our own releases are exempt by a recorded
+    deviation.
 - **Out of scope:**
   - actually running a key ceremony, or rotating any key;
   - stg/prd infrastructure rollout;

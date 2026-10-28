@@ -85,10 +85,10 @@ The user is asked at apply time for the team table, client contacts, the Notion 
 Decision Log URL and the PM dashboard. #giano-mgt and #giano-portafino-integration are included only if the user wants
 them in scope.
 
-### D3 — ABIP-6: 10080 minutes, no blanket exclusions, a small dependency-free checker
+### D3 — ABIP-6: 10080 minutes, no third-party blanket exclusions, a small dependency-free checker
 - `minimumReleaseAge: 10080` goes in both workspace files. The comment states ABIP-6 and the 7-day tier.
-- The three blanket exclusions go: `postcss` and `baseline-browser-mapping` in both workspaces, and `@appliedblockchain/*`
-  in the example. `postcss` and `baseline-browser-mapping` were added for a too-new security floor and a
+- Two blanket exclusions go: `postcss` and `baseline-browser-mapping`, in both workspaces. `@appliedblockchain/*` in
+  the example stays (see "Our own releases" below). `postcss` and `baseline-browser-mapping` were added for a too-new security floor and a
   browserslist data package. Both resolve to versions older than 7 days today, which is verified at apply time. If
   either is still too young, it gets a version-specific entry with a removal date.
 - `scripts/check-release-age.mjs` plus `.test.mjs`, in the same style as `check-dockerfiles.mjs`: no dependencies,
@@ -100,10 +100,14 @@ them in scope.
 
   The stale-exclusion check needs the registry (`npm view <name>@<v> time`), so it runs only when exclusions exist, and
   only with network access. It is a separate `--registry` mode called from CI. Unit tests stub it.
-- **Our own releases.** The example cannot install a Giano release until 7 days after it is published. The
-  `chore(example): install the published giano-connector` PRs (like #156) wait out the window. `AGENTS.md` and the
-  example's README say so. No exclusion is allowed: ABIP-6 says "no packages, including `@appliedblockchain/*`, are
-  exempt", and a release is not a zero-day CVE fix.
+- **Our own releases: a recorded deviation (amended 2026-10-28).** ABIP-6 says "no packages, including
+  `@appliedblockchain/*`, are exempt". The first version of this change followed that, and every layer's
+  `giano-example` build and e2e install then failed on the 4.0.0 release published the same day. The user decided that
+  internal packages do not need the window: release.yml publishes them from reviewed commits on `main`, so the
+  quarantine guards against nothing, and the lag only delays the example, its image and the e2e suite. So
+  `services/custom-example` keeps `'@appliedblockchain/*'` in `minimumReleaseAgeExclude`, and the checker allows exactly
+  that entry. `docs/abip-compliance.md` records the deviation; it needs the tech lead's sign-off and is to be raised
+  as an amendment to ABIP-6. The root workspace needs no entry, because it links its packages with `workspace:`.
 - **The existing lockfile.** pnpm checks the age only when it resolves, so the current lockfile can hold versions
   younger than 7 days. A known case is giano-connector 4.0.0 in the example, published 2026-10-27. Before PR 2
   merges, a one-off audit lists every lockfile entry younger than 7 days. Each one is either downgraded to the previous
@@ -241,8 +245,9 @@ Alternative: stg also deploys from `production`. Rejected by the user, because o
 - [The 7-day window blocks a critical fix in a transitive dependency] → ABIP-6 allows exclusions only for direct
   dependencies. For a transitive fix, the override mechanism (security floors) is used once the fixed version is 7
   days old. Until then, the advisory goes into the dependency-security accepted residuals with its date.
-- [The example lags our own releases by 7 days] → This is accepted and documented. The example demonstrates the
-  integrator path, and integrators under ABIP-6 face the same lag.
+- [Exempting `@appliedblockchain/*` departs from ABIP-6] → It is bounded to that one scope in the example workspace,
+  enforced by the checker, recorded in `docs/abip-compliance.md`, and to be signed off by the tech lead. Integrators
+  under ABIP-6 still face the 7-day lag on our releases; the example no longer shows that lag.
 - [The existing lockfile has entries younger than 7 days when PR 2 lands] → The one-off lockfile age audit runs before
   merge, and the merge is timed so that no entry is too young. Merge after 2026-11-03 for the 4.0.0 release.
 - [Pinning published-library `dependencies` causes duplicate installs for integrators] → A patch changeset explains it.

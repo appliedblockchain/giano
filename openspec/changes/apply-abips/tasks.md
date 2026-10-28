@@ -87,6 +87,13 @@
   - the `services/custom-example` README: "a new Giano release can be installed 7 days after publication";
   - `docs/abip-compliance.md`: the ABIP-6 section, giving the window per workspace and the active exclusions, of which
     there should be none.
+- [x] 2.9 (added 2026-10-28) Exempt our own `@appliedblockchain/*` scope, as a recorded deviation from ABIP-6:
+  - `services/custom-example/pnpm-workspace.yaml` gets back `'@appliedblockchain/*'`, with a comment;
+  - `check-release-age.mjs` allows exactly that entry, with tests for it and for a single internal package by name;
+  - `AGENTS.md`, the example's README and `docs/abip-compliance.md` record the deviation, its reason, its bounds and
+    the tech lead's sign-off, which is still needed.
+
+  This lifts the 2026-11-03 merge gate from 2.3.
 - [ ] 2.8 Gates: `pnpm build`, `pnpm lint` and the CI job set all pass. Open PR 2 on top of PR 1.
 
 ## 3. ABIP-7: exact pins (PR 3, `chore/abip-7-exact-pins`)

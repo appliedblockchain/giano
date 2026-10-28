@@ -3,7 +3,11 @@
 ### Requirement: The release-age cooldown is preserved
 Both pnpm workspaces SHALL set `minimumReleaseAge` to at least **10080 minutes (7 days)**: the repository root and
 `services/custom-example`. This is the ABIP-6 value for projects that handle financial transactions. The value SHALL
-NOT be lowered. No package SHALL be exempt by name or by scope, `@appliedblockchain/*` included.
+NOT be lowered. No third-party package SHALL be exempt by name or by scope.
+
+The one exemption is our own `@appliedblockchain/*` scope, as the entry `'@appliedblockchain/*'` in
+`services/custom-example`'s `minimumReleaseAgeExclude`. It is a recorded deviation from ABIP-6, which names internal
+packages as not exempt. `docs/abip-compliance.md` SHALL state the deviation, its reason, its bounds and its approval.
 
 `minimumReleaseAgeExclude` MAY hold only version-specific entries (`name@x.y.z`). Such an entry is allowed only when a
 critical security fix for a **direct** dependency must be consumed before its age window ends. Each entry SHALL be:
@@ -11,8 +15,8 @@ critical security fix for a **direct** dependency must be consumed before its ag
 - listed in the PR description;
 - removed once that version is older than the minimum release age.
 
-A CI check SHALL fail when either workspace has a value below 10080, a name-only or scope-wide exclusion, or a
-version-specific exclusion whose version is already older than the window.
+A CI check SHALL fail when either workspace has a value below 10080, a name-only or scope-wide exclusion other than
+exactly `'@appliedblockchain/*'`, or a version-specific exclusion whose version is already older than the window.
 
 #### Scenario: A patched version is too new
 - **WHEN** installing a patched version fails because it was published less than 7 days ago
@@ -20,21 +24,22 @@ version-specific exclusion whose version is already older than the window.
   reason and a removal date; the cooldown value itself is unchanged
 
 #### Scenario: Blanket exclusion rejected
-- **WHEN** `minimumReleaseAgeExclude` contains `postcss` or `'@appliedblockchain/*'`
+- **WHEN** `minimumReleaseAgeExclude` contains `postcss`, `'@wagmi/*'` or `'@appliedblockchain/giano-connector'`
 - **THEN** the release-age check fails CI and names the workspace file and the entry
 
 #### Scenario: Stale exclusion rejected
 - **WHEN** an excluded `name@x.y.z` was published more than 7 days ago
 - **THEN** the release-age check fails CI and asks for the entry's removal
 
-#### Scenario: Our own release is too new
-- **WHEN** `services/custom-example` tries to install a giano-connector version published less than 7 days ago
-- **THEN** the install is refused, and the example keeps its previous pinned version until the window passes
+#### Scenario: Our own release installs straight away
+- **WHEN** `services/custom-example` installs a giano-connector version published less than 7 days ago
+- **THEN** the install succeeds, because of the `'@appliedblockchain/*'` entry, while each third-party dependency it
+  pulls in is still held to the 7-day window
 
 #### Scenario: Cooldown status is reported
 - **WHEN** `docs/abip-compliance.md` is read
-- **THEN** it states the configured minimum release age of each workspace and lists every active version-specific
-  exclusion with its removal date
+- **THEN** it states the configured minimum release age of each workspace, lists every active version-specific
+  exclusion with its removal date, and records the `@appliedblockchain/*` deviation
 
 ## ADDED Requirements
 
