@@ -36,6 +36,16 @@ export type Deployment = {
 	 */
 	sponsorshipPaymaster?: `0x${string}`;
 	/**
+	 * The paymaster's GianoTimelock (G9), when it has been handed off to one.
+	 *
+	 * Optional: a devnet, where one key holds every role, has none. Set, the console reads its delays
+	 * and pending operations in the Timelock tab, and a timelocked action the connected wallet cannot
+	 * send (a fee, a withdrawal address, a role change) opens a proposal for the timelock instead of
+	 * offering a transaction that would revert. The paymaster cannot name its timelock — a role holder
+	 * is just an address — so it is configured beside it.
+	 */
+	timelockAddress?: `0x${string}`;
+	/**
 	 * Where a *wallet* should reach this chain, when that is not where the console reads.
 	 *
 	 * The console reads through its own origin — `rpcUrl` is normally `/rpc/<chainId>`, a proxy that
@@ -82,6 +92,7 @@ type RawDeployment = {
 	rpcUrl?: string;
 	walletRpcUrl?: string;
 	sponsorshipPaymaster?: string;
+	timelockAddress?: string;
 	refreshSeconds?: number | string;
 };
 
@@ -110,6 +121,10 @@ function toDeployment(
 		throw new Error(
 			`deployment ${index + 1} (${raw.name ?? fallbackName}) has no rpcUrl`,
 		);
+	if (raw.timelockAddress && !/^0x[0-9a-fA-F]{40}$/.test(raw.timelockAddress))
+		throw new Error(
+			`deployment ${index + 1} (${raw.name ?? fallbackName}) has a timelockAddress that is not an address: ${raw.timelockAddress}`,
+		);
 
 	return {
 		name: raw.name || fallbackName || `chain ${chainId}`,
@@ -118,6 +133,9 @@ function toDeployment(
 		walletRpcUrl: raw.walletRpcUrl || undefined,
 		sponsorshipPaymaster: raw.sponsorshipPaymaster
 			? (raw.sponsorshipPaymaster as `0x${string}`)
+			: undefined,
+		timelockAddress: raw.timelockAddress
+			? (raw.timelockAddress as `0x${string}`)
 			: undefined,
 		refreshSeconds:
 			raw.refreshSeconds === undefined || raw.refreshSeconds === ""

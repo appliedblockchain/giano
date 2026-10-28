@@ -26,9 +26,26 @@ pnpm demo:admin            # from the repo root → http://localhost:4402
 - **Tenants** — the whole roster with balances, deficits and effective fees, enumerated on-chain.
 - **Roles** — who holds what, and what each role may and may **not** do. `DEFAULT_ADMIN_ROLE` is
   shown precisely because it should be empty.
+  Each role is marked **timelocked** or **immediate**.
 - **Settings** — signing keys, fees, parameters, stake, treasury, pause.
+- **Timelock** — with `timelockAddress` configured: the timelock's minimum delay and each timelocked
+  function's own delay, whether it holds the timelocked roles yet, and its operations (waiting,
+  ready, done, cancelled) with their ETA, read from its logs. A proposal builder for every
+  timelocked action. Where executors are open, **Execute** sends a ready operation from the
+  connected wallet; otherwise it saves the Safe execute batch.
 - **History** — settled sponsorships, with gas, fee and overhead separately.
 - **Health** — the checks `giano-doctor` runs, at the same thresholds.
+
+### Timelocked actions
+
+Fees, withdrawal addresses, role changes and upgrades are timelocked (G9): on a handed-off
+deployment only the timelock holds their roles, and its proposer is a Safe. So where the connected
+wallet holds the role — a devnet, where one key holds everything — the console sends them directly as
+before; where it does not and a timelock is configured, the same control says **Propose** and opens
+the proposal instead of a transaction that would revert. A proposal shows the operation id, the
+delay read from the timelock, when it would be ready, and the schedule / execute / cancel calldata
+(click to copy), and saves the Safe Transaction Builder batch. Nothing is sent: building a proposal
+needs no wallet and no role.
 
 ## Connecting a wallet
 
@@ -98,6 +115,7 @@ console at an arbitrary chain by typing into it.
 | `chainId` | required |
 | `rpcUrl` | required. With `GIANO_WALLET_API_UPSTREAM` set it is replaced by wallet-api's platform read relay, `/api/v1/platform/rpc/<chainId>`; otherwise proxied through this origin unless `GIANO_RPC_PROXY=false` |
 | `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
+| `timelockAddress` | optional: the paymaster's GianoTimelock. Enables the Timelock tab's reads and the proposal flow |
 | `refreshSeconds` | poll interval; `0` disables polling |
 
 `name`, `chainId`, `rpcUrl` and `sponsorshipPaymaster` are the shared fields of the backend chain
@@ -105,8 +123,9 @@ document (`packages/contracts/chains.ts`) that wallet-api and giano-bundler read
 So a deployment running them can hand `GIANO_DEPLOYMENTS` that same value and have one authored
 chain list instead of three.
 
-In that document the console's own settings sit in its section: `paymasterAdmin.walletRpcUrl` and
-`paymasterAdmin.refreshSeconds`. A standalone list may spell them flat, as in the table above.
+In that document the console's own settings sit in its section: `paymasterAdmin.walletRpcUrl`,
+`paymasterAdmin.timelockAddress` and `paymasterAdmin.refreshSeconds`. A standalone list may spell
+them flat, as in the table above.
 
 The container keeps the keys above and drops everything else rather than publishing it in a file
 served to the browser: `entryPoint`, the `walletApi` and `bundler` sections, and anything added
@@ -126,8 +145,8 @@ deployment now on screen. Reconnecting is one click.
 
 `public/config.json` is the dev copy. The container renders `docker/config.json.template` from
 either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-deployment shorthand
-`GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_ENVIRONMENT_LABEL` /
-`GIANO_REFRESH_SECONDS`.
+`GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_TIMELOCK_ADDRESS` /
+`GIANO_ENVIRONMENT_LABEL` / `GIANO_REFRESH_SECONDS`.
 
 `GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area and gates
 every read: the container proxies `/api/*` to wallet-api on its own origin, drops the browser's

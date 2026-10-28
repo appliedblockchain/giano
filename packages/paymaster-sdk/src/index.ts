@@ -4,4 +4,5 @@ export * from "./health";
 export * from "./log-window";
 export * from "./roles";
 export * from "./tenant-id";
+export * from "./timelock";
 export * from "./types";

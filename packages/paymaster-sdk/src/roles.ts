@@ -1,3 +1,4 @@
+import { TIMELOCKED_ROLES } from "@appliedblockchain/giano-contracts";
 import { type Hex, keccak256, toBytes } from "viem";
 
 /**
@@ -23,6 +24,7 @@ export const PAYMASTER_ROLE_NAMES = [
 	"FEE_COLLECTOR_ROLE",
 	"STAKE_ADMIN_ROLE",
 	"TENANT_ADMIN_ROLE",
+	"WITHDRAW_ADDRESS_ADMIN_ROLE",
 	"PARAM_ADMIN_ROLE",
 	"PAUSER_ROLE",
 	"UPGRADER_ROLE",
@@ -55,6 +57,18 @@ export function roleName(
 	return NAME_BY_HASH.get(role.toLowerCase() as Hex);
 }
 
+/**
+ * Whether a role's functions wait out a timelock delay (G9).
+ *
+ * The policy is `TIMELOCKED_ROLES` from `@appliedblockchain/giano-contracts`, which the deploy CLI
+ * and giano-doctor read too, so the SDK cannot disagree with them about which roles the timelock
+ * holds. On a deployment that has been handed off, a timelocked role is held by the timelock alone
+ * and its functions are proposed, waited out and executed — never sent from a key.
+ */
+export function isTimelockedRole(name: string): boolean {
+	return (TIMELOCKED_ROLES as readonly string[]).includes(name);
+}
+
 export type RoleDescription = {
 	name: PaymasterRoleName;
 	role: Hex;
@@ -62,6 +76,11 @@ export type RoleDescription = {
 	may: string;
 	/** The bound that matters — what it deliberately cannot do. Half the design lives here. */
 	mayNot: string;
+	/**
+	 * True when, on a handed-off deployment, the timelock holds this role and its functions wait out
+	 * a public delay. False roles stay on operational keys and take effect immediately.
+	 */
+	timelocked: boolean;
 };
 
 /**
@@ -78,18 +97,21 @@ export const ROLE_DESCRIPTIONS: Record<PaymasterRoleName, RoleDescription> = {
 		may: "grant and revoke every role, including itself",
 		mayNot:
 			"move funds, or act on any other role directly. Held by the timelock in production",
+		timelocked: isTimelockedRole("ROLE_ADMIN"),
 	},
 	SIGNER_ADMIN_ROLE: {
 		name: "SIGNER_ADMIN_ROLE",
 		role: PAYMASTER_ROLES.SIGNER_ADMIN_ROLE,
 		may: "add and revoke sponsorship signing keys",
 		mayNot: "move funds",
+		timelocked: isTimelockedRole("SIGNER_ADMIN_ROLE"),
 	},
 	FEE_ADMIN_ROLE: {
 		name: "FEE_ADMIN_ROLE",
 		role: PAYMASTER_ROLES.FEE_ADMIN_ROLE,
 		may: "set the platform fee and per-tenant overrides",
 		mayNot: "collect the fees it sets",
+		timelocked: isTimelockedRole("FEE_ADMIN_ROLE"),
 	},
 	FEE_COLLECTOR_ROLE: {
 		name: "FEE_COLLECTOR_ROLE",
@@ -97,24 +119,37 @@ export const ROLE_DESCRIPTIONS: Record<PaymasterRoleName, RoleDescription> = {
 		may: "withdraw accrued treasury, capped at what has accrued",
 		mayNot:
 			"change the fee rate, or reach tenant balances — the cap is what guarantees that",
+		timelocked: isTimelockedRole("FEE_COLLECTOR_ROLE"),
 	},
 	STAKE_ADMIN_ROLE: {
 		name: "STAKE_ADMIN_ROLE",
 		role: PAYMASTER_ROLES.STAKE_ADMIN_ROLE,
 		may: "add, unlock and withdraw the EntryPoint stake",
 		mayNot: "touch the deposit",
+		timelocked: isTimelockedRole("STAKE_ADMIN_ROLE"),
 	},
 	TENANT_ADMIN_ROLE: {
 		name: "TENANT_ADMIN_ROLE",
 		role: PAYMASTER_ROLES.TENANT_ADMIN_ROLE,
-		may: "register tenants, enable and disable them, and set their withdrawal addresses",
-		mayNot: "move their funds",
+		may: "register tenants, and enable and disable them",
+		mayNot:
+			"move their funds, or change where they withdraw to — that is WITHDRAW_ADDRESS_ADMIN_ROLE, behind the timelock",
+		timelocked: isTimelockedRole("TENANT_ADMIN_ROLE"),
+	},
+	WITHDRAW_ADDRESS_ADMIN_ROLE: {
+		name: "WITHDRAW_ADDRESS_ADMIN_ROLE",
+		role: PAYMASTER_ROLES.WITHDRAW_ADDRESS_ADMIN_ROLE,
+		may: "change a tenant's withdrawal address",
+		mayNot:
+			"withdraw anything itself. It redirects where a tenant's balance can go, so it waits out the timelock where tenants can see it coming",
+		timelocked: isTimelockedRole("WITHDRAW_ADDRESS_ADMIN_ROLE"),
 	},
 	PARAM_ADMIN_ROLE: {
 		name: "PARAM_ADMIN_ROLE",
 		role: PAYMASTER_ROLES.PARAM_ADMIN_ROLE,
 		may: "set the overhead allowance and the penalty basis points",
 		mayNot: "move funds",
+		timelocked: isTimelockedRole("PARAM_ADMIN_ROLE"),
 	},
 	PAUSER_ROLE: {
 		name: "PAUSER_ROLE",
@@ -122,6 +157,7 @@ export const ROLE_DESCRIPTIONS: Record<PaymasterRoleName, RoleDescription> = {
 		may: "halt acceptance of new sponsorships",
 		mayNot:
 			"move funds or alter configuration. Withdrawals keep working while paused",
+		timelocked: isTimelockedRole("PAUSER_ROLE"),
 	},
 	UPGRADER_ROLE: {
 		name: "UPGRADER_ROLE",
@@ -129,5 +165,6 @@ export const ROLE_DESCRIPTIONS: Record<PaymasterRoleName, RoleDescription> = {
 		may: "replace the implementation",
 		mayNot:
 			"be held by anything but the timelock — this is the one power that can override custody",
+		timelocked: isTimelockedRole("UPGRADER_ROLE"),
 	},
 };

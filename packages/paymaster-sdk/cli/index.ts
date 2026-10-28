@@ -9,8 +9,15 @@
  * Signing is by raw EOA private key, which is a development affordance and is treated as one. A
  * key on the command line lands in shell history and in the process table, so outside a local
  * devnet the CLI warns before it signs, and every state-changing command asks for confirmation
- * unless `--yes` is passed. Production role holders are timelocks, and a timelock is not driven
- * from here — see `provision-paymaster.ts` for the same caveat.
+ * unless `--yes` is passed.
+ *
+ * Production role holders for the timelocked functions (G9: fees, withdrawal addresses, role
+ * changes, upgrades) are a timelock whose proposer is a Safe, and neither is driven by a key here.
+ * With `--timelock <address>` those commands send nothing: they print the timelock proposal — its
+ * operation id, the delay the timelock demands, when it would be ready, and the schedule / execute /
+ * cancel calldata — and with `--safe-json <file>` write the Safe Transaction Builder batch that
+ * schedules it. `timelock status`, `timelock pending` and `timelock execute <id>` read the delays,
+ * list operations with their ETA, and execute a ready one where executors are open.
  *
  * Usage:
  *   giano-paymaster <command> [args] [flags]
@@ -20,11 +27,13 @@
  *   --rpc <url>           RPC_URL, default http://localhost:8545
  *   --paymaster <0x..>    SPONSORSHIP_PAYMASTER_ADDRESS, else the contracts registry for the chain
  *   --private-key <0x..>  PAYMASTER_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY, else anvil key 0 on 31337
+ *   --timelock <0x..>     GIANO_PAYMASTER_TIMELOCK; timelocked commands propose instead of sending
  *   --json                machine-readable output (implies --yes for reads)
  *   --yes                 skip the confirmation prompt on state-changing commands
  *
  * Run `giano-paymaster help` for the command list.
  */
+import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import {
 	type Address,
@@ -39,12 +48,21 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+	formatDuration,
 	GianoPaymasterClient,
+	type GianoTimelockClient,
+	MissingRoleError,
 	PAYMASTER_ROLE_NAMES,
 	type PaymasterRoleName,
 	PaymasterSdkError,
+	type ProposeOptions,
+	parseDuration,
 	ROLE_DESCRIPTIONS,
 	type SponsorshipRecord,
+	TIMELOCKED_OPERATIONS,
+	type TimelockedFunctionName,
+	type TimelockOperation,
+	type TimelockProposalDraft,
 	toTenantId,
 	type WriteResult,
 } from "../src/index";
@@ -134,6 +152,7 @@ async function confirm(context: Context, action: string): Promise<boolean> {
 			`    chain     ${context.chainId}${context.isLocal ? " (local devnet)" : ""}`,
 		);
 		out(`    paymaster ${context.paymaster.address}`);
+		if (context.timelock) out(`    timelock  ${context.timelock.address}`);
 		out(`    signer    ${context.account}`);
 		const answer = await rl.question("  Proceed? [y/N] ");
 		return (
@@ -218,6 +237,9 @@ async function findSlug(
 
 type Context = {
 	paymaster: GianoPaymasterClient;
+	/** Set by `--timelock` / GIANO_PAYMASTER_TIMELOCK. Timelocked commands then propose, not send. */
+	timelock?: GianoTimelockClient;
+	/** The signer, or the zero address when no key was supplied (reads and proposals). */
 	account: Address;
 	chainId: number;
 	isLocal: boolean;
@@ -228,10 +250,160 @@ type Context = {
 type Command = {
 	usage: string;
 	summary: string;
-	/** True when the command sends a transaction; those require a signer and a confirmation. */
-	writes?: boolean;
+	/**
+	 * True when the command sends a transaction; those require a signer and a confirmation. A
+	 * function for a command whose subcommands differ (`timelock status` reads, `timelock execute`
+	 * sends).
+	 */
+	writes?: boolean | ((args: Args) => boolean);
+	/**
+	 * True for commands that call a timelocked paymaster function (G9). With `--timelock` they send
+	 * nothing and so need no key; they print the proposal instead.
+	 */
+	timelocked?: boolean;
 	run: (context: Context) => Promise<void>;
 };
+
+// --- the timelock (G9) --------------------------------------------------------------------------
+
+/** `--salt` and `--delay`, for reproducing or lengthening a proposal. */
+function proposeOptions(context: Context): ProposeOptions {
+	const { salt, delay } = context.args.flags;
+	if (salt !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(salt))
+		throw new PaymasterSdkError(
+			"--salt must be a 0x-prefixed 32-byte hex value",
+		);
+	return {
+		salt: salt as Hex | undefined,
+		delay: delay === undefined ? undefined : BigInt(parseDuration(delay)),
+	};
+}
+
+const when = (unixSeconds: number): string => {
+	const seconds = unixSeconds - Math.floor(Date.now() / 1000);
+	const at = new Date(unixSeconds * 1000).toISOString();
+	if (seconds <= 0) return `${at} (passed)`;
+	return `${at} (in ${formatDuration(seconds > 3600 ? Math.ceil(seconds / 60) * 60 : seconds)})`;
+};
+
+/**
+ * Prints a timelock proposal and, with `--safe-json`, writes the Safe batch that schedules it.
+ *
+ * Sends nothing. The proposer is a Safe in production (R3), and a key in this process would be the
+ * wrong signer for it even where it happens to hold PROPOSER_ROLE.
+ */
+async function printProposal(
+	context: Context,
+	build: (timelock: GianoTimelockClient) => Promise<TimelockProposalDraft>,
+): Promise<void> {
+	const timelock = context.timelock;
+	if (!timelock) throw new PaymasterSdkError("no --timelock given");
+	const proposal = await build(timelock);
+	const batch = timelock.safeBatch(proposal, "schedule");
+	const file = context.args.flags["safe-json"];
+	if (file && file !== "true") {
+		writeFileSync(file, `${JSON.stringify(batch, null, 2)}\n`);
+	}
+	emit({ ...proposal, safeBatch: batch, safeJson: file });
+
+	heading(`Timelock proposal ${proposal.id}`);
+	bullet(`what       ${proposal.summary}`);
+	bullet(`timelock   ${proposal.timelock} (chain ${proposal.chainId})`);
+	bullet(
+		`delay      ${formatDuration(proposal.delay)}${proposal.delay > proposal.requiredDelay ? ` (the timelock requires ${formatDuration(proposal.requiredDelay)})` : ""}`,
+	);
+	bullet(`ready      ${when(proposal.readyAtIfScheduledNow)} if scheduled now`);
+	bullet(`salt       ${proposal.salt}`);
+	out();
+	out(`  1. A proposer (the Safe) sends to ${proposal.timelock}:`);
+	out(`     ${proposal.schedule}`);
+	out(`  2. Once ready, an executor sends to ${proposal.timelock}:`);
+	out(`     ${proposal.execute}`);
+	out(
+		"     (or run `giano-paymaster timelock execute <id>` where executors are open)",
+	);
+	out("  To cancel while it is pending, a canceller sends:");
+	out(`     ${proposal.cancel}`);
+	out();
+	if (file && file !== "true")
+		ok(`Safe Transaction Builder batch (schedule) written to ${file}`);
+	else bullet("pass --safe-json <file> for the Safe Transaction Builder batch");
+	bullet("nothing was sent");
+}
+
+/**
+ * Runs a timelocked command: the proposal with `--timelock`, otherwise a direct send — which works
+ * only where the signer still holds the role, as on a devnet.
+ *
+ * The role is checked before the confirmation prompt, so an operator on a handed-off deployment is
+ * told to use `--timelock` straight away rather than after confirming a send that cannot succeed.
+ */
+async function timelocked(
+	context: Context,
+	functionName: TimelockedFunctionName,
+	action: string,
+	send: () => Promise<WriteResult>,
+	propose: (
+		timelock: GianoTimelockClient,
+		options: ProposeOptions,
+	) => Promise<TimelockProposalDraft>,
+): Promise<void> {
+	if (context.timelock)
+		return printProposal(context, (timelock) =>
+			propose(timelock, proposeOptions(context)),
+		);
+
+	const role = TIMELOCKED_OPERATIONS[functionName].role;
+	const hint = `${functionName} is timelocked (${role}): pass --timelock <address> (or set GIANO_PAYMASTER_TIMELOCK) to print the proposal and Safe batch instead of sending.`;
+	if (!(await context.paymaster.hasRole(role, context.account)))
+		throw new PaymasterSdkError(
+			`${context.account} does not hold ${role}, so it cannot ${action}. ${hint}`,
+		);
+	try {
+		await submit(context, action, send);
+	} catch (error) {
+		if (error instanceof MissingRoleError && error.timelocked)
+			throw new PaymasterSdkError(`${error.message}\n  ${hint}`, {
+				cause: error,
+			});
+		throw error;
+	}
+}
+
+const requireTimelock = (context: Context): GianoTimelockClient => {
+	if (!context.timelock)
+		throw new PaymasterSdkError(
+			"this needs the timelock's address: pass --timelock <address> or set GIANO_PAYMASTER_TIMELOCK",
+		);
+	return context.timelock;
+};
+
+function printOperation(operation: TimelockOperation): void {
+	// Ready is the contract's word, measured against the chain's clock — which on a devnet can run
+	// ahead of this machine's, so a ready operation is not described as "in 50s".
+	const eta =
+		operation.state === "ready" && operation.readyAt !== undefined
+			? `executable since ${new Date(operation.readyAt * 1000).toISOString()}`
+			: operation.readyAt !== undefined
+				? when(operation.readyAt)
+				: operation.state === "done"
+					? `executed in block ${operation.executedBlock ?? "?"}`
+					: operation.state === "cancelled"
+						? `cancelled in block ${operation.cancelledBlock ?? "?"}`
+						: "—";
+	out(`  ${operation.id}`);
+	out(
+		`    ${pad(operation.state, 10)}${eta}${operation.delay !== undefined ? `  (delay ${formatDuration(operation.delay)})` : ""}`,
+	);
+	for (const call of operation.calls)
+		out(
+			`    • ${call.decoded?.summary ?? `call ${call.target} with ${call.data.slice(0, 10)}…`}`,
+		);
+	if (!operation.complete)
+		out(
+			"    scheduled before the blocks read — raise --windows to see its full scheduling",
+		);
+}
 
 const requireArg = (context: Context, index: number, name: string): string => {
 	const value = context.args.positional[index];
@@ -455,21 +627,29 @@ const commands: Record<string, Command> = {
 
 	"set-withdraw-address": {
 		usage: "set-withdraw-address <tenant-id> <address>",
-		summary: "move a tenant's exit (TENANT_ADMIN_ROLE)",
+		summary: "move a tenant's exit (WITHDRAW_ADDRESS_ADMIN_ROLE, timelocked)",
 		writes: true,
+		timelocked: true,
 		run: async (context) => {
 			const id = requireArg(context, 0, "tenant-id");
 			const address = requireAddress(context, 1, "address");
-			await submit(context, `point ${id} at ${address}`, () =>
-				context.paymaster.setTenantWithdrawAddress(id, address),
+			await timelocked(
+				context,
+				"setTenantWithdrawAddress",
+				`point ${id} at ${address}`,
+				() => context.paymaster.setTenantWithdrawAddress(id, address),
+				(timelock, options) =>
+					timelock.proposeSetTenantWithdrawAddress(id, address, options),
 			);
 		},
 	},
 
 	"set-fee": {
 		usage: "set-fee [<tenant-id>] <eth> | <tenant-id> --clear",
-		summary: "set the default fee, or a per-tenant override (FEE_ADMIN_ROLE)",
+		summary:
+			"set the default fee, or a per-tenant override (FEE_ADMIN_ROLE, timelocked)",
 		writes: true,
+		timelocked: true,
 		run: async (context) => {
 			const [first, second] = context.args.positional;
 			if (!first)
@@ -480,20 +660,34 @@ const commands: Record<string, Command> = {
 			// One positional means the deployment-wide default; two means a tenant override.
 			if (!second && context.args.flags.clear !== "true") {
 				const amount = requireEth(context, 0, "eth");
-				await submit(context, `set the default fee to ${eth(amount)}`, () =>
-					context.paymaster.setDefaultFee(amount),
+				await timelocked(
+					context,
+					"setDefaultFee",
+					`set the default fee to ${eth(amount)}`,
+					() => context.paymaster.setDefaultFee(amount),
+					(timelock, options) => timelock.proposeSetDefaultFee(amount, options),
 				);
 				return;
 			}
 			if (context.args.flags.clear === "true") {
-				await submit(context, `clear the fee override on ${first}`, () =>
-					context.paymaster.setTenantFee(first, false, 0n),
+				await timelocked(
+					context,
+					"setTenantFee",
+					`clear the fee override on ${first}`,
+					() => context.paymaster.setTenantFee(first, false, 0n),
+					(timelock, options) =>
+						timelock.proposeSetTenantFee(first, false, 0n, options),
 				);
 				return;
 			}
 			const amount = requireEth(context, 1, "eth");
-			await submit(context, `set ${first}'s fee to ${eth(amount)}`, () =>
-				context.paymaster.setTenantFee(first, true, amount),
+			await timelocked(
+				context,
+				"setTenantFee",
+				`set ${first}'s fee to ${eth(amount)}`,
+				() => context.paymaster.setTenantFee(first, true, amount),
+				(timelock, options) =>
+					timelock.proposeSetTenantFee(first, true, amount, options),
 			);
 		},
 	},
@@ -573,26 +767,146 @@ const commands: Record<string, Command> = {
 
 	grant: {
 		usage: "grant <ROLE> <address>",
-		summary: "grant a role (ROLE_ADMIN)",
+		summary: "grant a role (ROLE_ADMIN, timelocked)",
 		writes: true,
+		timelocked: true,
 		run: async (context) => {
 			const role = requireRole(requireArg(context, 0, "ROLE"));
 			const account = requireAddress(context, 1, "address");
-			await submit(context, `grant ${role} to ${account}`, () =>
-				context.paymaster.grantRole(role, account),
+			await timelocked(
+				context,
+				"grantRole",
+				`grant ${role} to ${account}`,
+				() => context.paymaster.grantRole(role, account),
+				(timelock, options) =>
+					timelock.proposeGrantRole(role, account, options),
 			);
 		},
 	},
 
 	revoke: {
 		usage: "revoke <ROLE> <address>",
-		summary: "revoke a role (ROLE_ADMIN)",
+		summary: "revoke a role (ROLE_ADMIN, timelocked)",
 		writes: true,
+		timelocked: true,
 		run: async (context) => {
 			const role = requireRole(requireArg(context, 0, "ROLE"));
 			const account = requireAddress(context, 1, "address");
-			await submit(context, `revoke ${role} from ${account}`, () =>
-				context.paymaster.revokeRole(role, account),
+			await timelocked(
+				context,
+				"revokeRole",
+				`revoke ${role} from ${account}`,
+				() => context.paymaster.revokeRole(role, account),
+				(timelock, options) =>
+					timelock.proposeRevokeRole(role, account, options),
+			);
+		},
+	},
+
+	upgrade: {
+		usage: "upgrade <implementation> [--call <0x..>] --timelock <0x..>",
+		summary:
+			"propose upgrading the paymaster (UPGRADER_ROLE, timelocked; proposal only)",
+		timelocked: true,
+		// Deploying the implementation and a key-held upgrade are the deploy CLI's job
+		// (`deploy:cli upgrade`); this is only the proposal, so it sends nothing either way.
+		run: async (context) => {
+			const implementation = requireAddress(context, 0, "implementation");
+			const call = context.args.flags.call;
+			if (call !== undefined && !/^0x([0-9a-fA-F]{2})*$/.test(call))
+				throw new PaymasterSdkError("--call must be 0x-prefixed calldata");
+			requireTimelock(context);
+			await printProposal(context, (timelock) =>
+				timelock.proposeUpgrade(
+					implementation,
+					(call ?? "0x") as Hex,
+					proposeOptions(context),
+				),
+			);
+		},
+	},
+
+	timelock: {
+		usage: "timelock status | pending [--all] [--windows <n>] | execute <id>",
+		summary:
+			"the timelock's delays, its operations with their ETA, or execute a ready one",
+		writes: (args) => args.positional[0] === "execute",
+		run: async (context) => {
+			const timelock = requireTimelock(context);
+			const [sub = "status", id] = context.args.positional;
+
+			if (sub === "status") {
+				const config = await timelock.getConfig();
+				emit(config);
+				heading(`Timelock ${config.address} (chain ${config.chainId})`);
+				bullet(`paymaster        ${config.paymaster}`);
+				bullet(`minimum delay    ${formatDuration(config.minDelay)}`);
+				bullet(
+					`executors        ${config.executorsOpen ? "open — anyone may execute a ready operation" : "restricted to EXECUTOR_ROLE holders"}`,
+				);
+				heading("Delays");
+				for (const entry of config.functions) {
+					bullet(
+						`${pad(entry.functionName, 26)}${pad(formatDuration(entry.effectiveDelay), 8)}${pad(entry.role, 29)}${entry.functionDelay === 0n ? "(no delay of its own: the minimum)" : ""}`,
+					);
+				}
+				heading("Roles held");
+				for (const [role, held] of Object.entries(config.holdsRole)) {
+					if (held) ok(`${role} held by the timelock`);
+					else
+						warn(
+							`${role} NOT held by the timelock — its functions are still sent from a key`,
+						);
+				}
+				return;
+			}
+
+			if (sub === "pending") {
+				const windows = count(context.args.flags.windows, 5, "--windows");
+				const all = context.args.flags.all === "true";
+				const page = await timelock.getOperations({ windows });
+				const shown = page.operations.filter(
+					(operation) =>
+						all || operation.state === "waiting" || operation.state === "ready",
+				);
+				emit({ ...page, operations: shown });
+				heading(
+					`Timelock operations in blocks ${page.fromBlock}–${page.toBlock} (${shown.length}${all ? "" : " pending"})`,
+				);
+				if (shown.length === 0)
+					bullet(
+						all
+							? "none in these blocks"
+							: "nothing waiting or ready — pass --all for done and cancelled ones",
+					);
+				for (const operation of shown) printOperation(operation);
+				if (page.older)
+					bullet(
+						`operations scheduled before block ${page.fromBlock} are not shown — raise --windows to reach them`,
+					);
+				return;
+			}
+
+			if (sub === "execute") {
+				if (!id || !/^0x[0-9a-fA-F]{64}$/.test(id))
+					throw new PaymasterSdkError(
+						"missing <id>: the operation id, as `timelock pending` prints it",
+					);
+				const windows = count(context.args.flags.windows, 5, "--windows");
+				const operation = await timelock.findOperation(id as Hex, { windows });
+				if (!operation)
+					throw new PaymasterSdkError(
+						`operation ${id} is not in the last ${windows} window(s) of blocks — raise --windows`,
+					);
+				printOperation(operation);
+				await submit(context, `execute timelock operation ${id}`, () =>
+					timelock.executeOperation(operation),
+				);
+				return;
+			}
+
+			throw new PaymasterSdkError(
+				`unknown timelock command "${sub}": status, pending or execute`,
 			);
 		},
 	},
@@ -830,7 +1144,32 @@ const commands: Record<string, Command> = {
 			}
 			out();
 			out("\x1b[1mRoles\x1b[0m");
-			out(`  ${PAYMASTER_ROLE_NAMES.join(", ")}`);
+			out(
+				`  timelocked: ${PAYMASTER_ROLE_NAMES.filter((role) => ROLE_DESCRIPTIONS[role].timelocked).join(", ")}`,
+			);
+			out(
+				`  immediate:  ${PAYMASTER_ROLE_NAMES.filter((role) => !ROLE_DESCRIPTIONS[role].timelocked).join(", ")}`,
+			);
+			out();
+			out("\x1b[1mTimelocked commands\x1b[0m");
+			out(
+				"  set-fee, set-withdraw-address, grant, revoke and upgrade call functions only the timelock",
+			);
+			out(
+				"  may call once a deployment is handed off. With --timelock they send nothing and print the",
+			);
+			out(
+				"  proposal instead: operation id, delay, ETA and the schedule / execute / cancel calldata.",
+			);
+			out(
+				"  --safe-json <file>    also write the Safe Transaction Builder batch that schedules it",
+			);
+			out(
+				"  --salt <0x..>         reproduce a proposal exactly (default: a random salt)",
+			);
+			out(
+				"  --delay <duration>    schedule with a longer delay than required, e.g. 2d",
+			);
 			out();
 			out("\x1b[1mGlobal flags\x1b[0m");
 			out("  --rpc <url>           RPC_URL, default http://localhost:8545");
@@ -839,6 +1178,9 @@ const commands: Record<string, Command> = {
 			);
 			out(
 				"  --private-key <0x..>  PAYMASTER_PRIVATE_KEY, else anvil key 0 on chain 31337",
+			);
+			out(
+				"  --timelock <0x..>     GIANO_PAYMASTER_TIMELOCK: the paymaster's GianoTimelock",
 			);
 			out("  --json                machine-readable output");
 			out("  --yes                 skip the confirmation prompt");
@@ -897,6 +1239,19 @@ async function main(): Promise<void> {
 	});
 	const publicClient = createPublicClient({ chain, transport });
 
+	const timelockAddress =
+		args.flags.timelock ?? process.env.GIANO_PAYMASTER_TIMELOCK;
+	if (timelockAddress && !/^0x[0-9a-fA-F]{40}$/.test(timelockAddress))
+		throw new PaymasterSdkError(
+			`--timelock is not an address: ${timelockAddress}`,
+		);
+	// With a timelock, a timelocked command proposes rather than sends, so it needs no key at all.
+	const writes =
+		!(timelockAddress && command.timelocked) &&
+		(typeof command.writes === "function"
+			? command.writes(args)
+			: command.writes === true);
+
 	// The key is read here and turned into a signer here. The SDK is handed a wallet client that can
 	// already sign and never sees the key itself — the same seam a browser wallet or a KMS uses.
 	const rawKey =
@@ -916,18 +1271,21 @@ async function main(): Promise<void> {
 		account = signer.address;
 		walletClient = createWalletClient({ account: signer, chain, transport });
 
-		if (!isLocal && command.writes) {
+		if (!isLocal && writes) {
 			warn("signing with a raw private key on a non-local chain.");
 			warn(
 				"This CLI is a development tool: a key passed here is in your shell history and process",
 			);
 			warn(
-				"list. Production role holders are timelocks, which are not driven from here.",
+				"list. Timelocked changes are proposed with --timelock, not signed here.",
 			);
 		}
-	} else if (command.writes) {
+	} else if (writes) {
 		throw new PaymasterSdkError(
-			`${name} sends a transaction, so it needs --private-key (or PAYMASTER_PRIVATE_KEY).`,
+			`${name} sends a transaction, so it needs --private-key (or PAYMASTER_PRIVATE_KEY).` +
+				(command.timelocked
+					? " It is timelocked: pass --timelock <address> to print the proposal instead, which needs no key."
+					: ""),
 		);
 	}
 
@@ -939,6 +1297,9 @@ async function main(): Promise<void> {
 
 	await command.run({
 		paymaster,
+		timelock: timelockAddress
+			? paymaster.timelock(timelockAddress as Address)
+			: undefined,
 		account,
 		chainId,
 		isLocal,

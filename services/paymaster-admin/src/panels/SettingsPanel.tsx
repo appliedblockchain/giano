@@ -19,12 +19,15 @@ import { type Address, parseEther } from "viem";
 import { Copyable, SectionCard } from "../components/ui";
 import { useWrite } from "../hooks/useWrite";
 import { eth, exactEth } from "../lib/format";
+import type { Propose } from "../lib/proposals";
 
 type Props = {
 	client: GianoPaymasterClient;
 	overview: PaymasterOverview;
 	myRoles: readonly PaymasterRoleName[];
 	refresh: () => Promise<void>;
+	/** Set when the deployment has a timelock: timelocked changes the wallet cannot send are proposed. */
+	propose?: Propose;
 };
 
 /**
@@ -34,18 +37,42 @@ type Props = {
  * operator who cannot do something should still be able to see that the control exists and which
  * role would let them — hiding it just produces a support ticket.
  */
-export function SettingsPanel({ client, overview, myRoles, refresh }: Props) {
+export function SettingsPanel({
+	client,
+	overview,
+	myRoles,
+	refresh,
+	propose,
+}: Props) {
 	const { run, busy } = useWrite(refresh);
 	const has = (role: PaymasterRoleName) => myRoles.includes(role);
 
 	const [signer, setSigner] = useState("");
 	const [defaultFee, setDefaultFee] = useState("");
+	const [feeProblem, setFeeProblem] = useState<string>();
 	const [postOpGas, setPostOpGas] = useState("");
 	const [penalty, setPenalty] = useState("");
 	const [stakeAmount, setStakeAmount] = useState("1");
 	const [stakeDelay, setStakeDelay] = useState("86400");
 	const [feeTo, setFeeTo] = useState("");
 	const [feeAmount, setFeeAmount] = useState("");
+
+	// The fee is timelocked (G9). A wallet holding FEE_ADMIN_ROLE — a devnet key — still sets it
+	// directly; on a handed-off deployment only the timelock holds it, so the change is proposed
+	// rather than offered as a transaction that would revert.
+	const feeViaTimelock = propose !== undefined && !has("FEE_ADMIN_ROLE");
+	const proposeDefaultFee = () => {
+		if (!propose) return;
+		try {
+			const feeWei = parseEther(defaultFee.trim());
+			setFeeProblem(undefined);
+			propose({ kind: "setDefaultFee", feeWei });
+		} catch {
+			const message = `"${defaultFee}" is not an amount in ETH.`;
+			setFeeProblem(message);
+			console.error(`[paymaster-admin] Could not propose the fee: ${message}`);
+		}
+	};
 
 	return (
 		<Stack gap="4">
@@ -131,20 +158,40 @@ export function SettingsPanel({ client, overview, myRoles, refresh }: Props) {
 									inputMode="decimal"
 								/>
 							</Field.Root>
-							<Button
-								size="sm"
-								colorPalette="brand"
-								disabled={!has("FEE_ADMIN_ROLE") || busy || !defaultFee}
-								onClick={() =>
-									void run("Set default fee", () =>
-										client.setDefaultFee(parseEther(defaultFee)),
-									)
-								}
-							>
-								Set
-							</Button>
+							{feeViaTimelock ? (
+								<Button
+									size="sm"
+									colorPalette="brand"
+									disabled={!defaultFee}
+									onClick={proposeDefaultFee}
+								>
+									Propose
+								</Button>
+							) : (
+								<Button
+									size="sm"
+									colorPalette="brand"
+									disabled={!has("FEE_ADMIN_ROLE") || busy || !defaultFee}
+									onClick={() =>
+										void run("Set default fee", () =>
+											client.setDefaultFee(parseEther(defaultFee)),
+										)
+									}
+								>
+									Set
+								</Button>
+							)}
 						</HStack>
-						<RoleHint requires="FEE_ADMIN_ROLE" has={has("FEE_ADMIN_ROLE")} />
+						{feeProblem && (
+							<Text fontSize="xs" color="red.fg">
+								{feeProblem}
+							</Text>
+						)}
+						<RoleHint
+							requires="FEE_ADMIN_ROLE"
+							has={has("FEE_ADMIN_ROLE")}
+							proposable={propose !== undefined}
+						/>
 					</Stack>
 				</SectionCard>
 
@@ -349,14 +396,19 @@ export function SettingsPanel({ client, overview, myRoles, refresh }: Props) {
 function RoleHint({
 	requires,
 	has,
+	proposable = false,
 }: {
 	requires: PaymasterRoleName;
 	has: boolean;
+	/** True when the role is timelocked and a timelock is configured, so the action is proposed. */
+	proposable?: boolean;
 }) {
 	if (has) return null;
 	return (
 		<Text fontSize="xs" color="fg.muted" mt="2">
-			Requires {requires}, which the connected account does not hold.
+			{proposable
+				? `Requires ${requires}, which is timelocked: Propose builds the timelock proposal and Safe batch instead of sending.`
+				: `Requires ${requires}, which the connected account does not hold.`}
 		</Text>
 	);
 }

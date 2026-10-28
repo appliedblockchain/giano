@@ -114,7 +114,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			...paymasterParams(profile),
 		};
 		await assert.rejects(
-			deployCore(ctx, loadRelease("v1"), params),
+			deployCore(ctx, loadRelease("v2"), params),
 			/test interruption/,
 		);
 		const interrupted = readRecord(84532, CANONICAL_DEPLOYER, dir);
@@ -125,13 +125,13 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		ctx.onRecord = () => {
 			writeRecord(ctx.record, dir);
 		};
-		await deployCore(ctx, loadRelease("v1"), params);
+		await deployCore(ctx, loadRelease("v2"), params);
 		assert.equal(ctx.record.contracts.factory?.transactionHash, firstHash);
 		assert.equal(Object.keys(ctx.record.contracts).length, 4);
 		const checks = await inspectDeployment(
 			client,
 			profile,
-			"v1",
+			"v2",
 			CANONICAL_DEPLOYER,
 		);
 		assert.deepEqual(
@@ -142,7 +142,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		const nonceBefore = await client.getTransactionCount({
 			address: CANONICAL_DEPLOYER,
 		});
-		await deployCore(ctx, loadRelease("v1"), params);
+		await deployCore(ctx, loadRelease("v2"), params);
 		assert.equal(
 			await client.getTransactionCount({ address: CANONICAL_DEPLOYER }),
 			nonceBefore,

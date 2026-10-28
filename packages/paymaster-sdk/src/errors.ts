@@ -5,6 +5,7 @@ import {
 	formatEther,
 	type Hex,
 } from "viem";
+import { isTimelockedRole } from "./roles";
 
 /**
  * Errors.
@@ -55,8 +56,18 @@ export class SignerRequiredError extends PaymasterSdkError {
 	}
 }
 
-/** The connected account does not hold the role the operation is gated by. */
+/**
+ * The connected account does not hold the role the operation is gated by.
+ *
+ * For a timelocked role (G9) the likely reason is not a missing grant at all: on a handed-off
+ * deployment the timelock holds that role alone, so the call has to be proposed through it and
+ * executed after its delay. The message says so, rather than sending the operator off to ask for a
+ * grant that the design deliberately never gives a key.
+ */
 export class MissingRoleError extends PaymasterSdkError {
+	/** True when the role is one the timelock holds, so the action must be proposed through it. */
+	public readonly timelocked: boolean;
+
 	constructor(
 		public readonly account: Address,
 		public readonly role: Hex,
@@ -65,11 +76,15 @@ export class MissingRoleError extends PaymasterSdkError {
 		public readonly operation: string,
 		options?: PaymasterSdkErrorOptions,
 	) {
+		const timelocked = roleName !== undefined && isTimelockedRole(roleName);
 		super(
 			`${account} cannot ${operation}: it does not hold ${roleName ?? role}. ` +
-				"Roles are granted by the ROLE_ADMIN holder, which in a production deployment is a timelock.",
+				(timelocked
+					? `${roleName} is timelocked: on a handed-off deployment only the timelock holds it, so propose the call through the timelock and execute it once its delay has passed.`
+					: "Roles are granted by the ROLE_ADMIN holder, which in a production deployment is a timelock."),
 			options,
 		);
+		this.timelocked = timelocked;
 	}
 }
 
@@ -165,6 +180,26 @@ export class PaymasterPausedError extends PaymasterSdkError {
 	}
 }
 
+/**
+ * The timelock refused an operation because of the state it is in: executing one that is still
+ * waiting (or already done), scheduling an id that exists, cancelling one that is not pending.
+ */
+export class TimelockOperationStateError extends PaymasterSdkError {
+	constructor(
+		public readonly operationId: Hex,
+		/** The states the call needed, decoded from the contract's bitmap. */
+		public readonly expected: readonly string[],
+		operation: string,
+		options?: PaymasterSdkErrorOptions,
+	) {
+		super(
+			`cannot ${operation}: the timelock needs operation ${operationId} to be ${expected.join(" or ") || "in another state"}, and it is not. ` +
+				"Check its state and ETA with the timelock's pending operations.",
+			options,
+		);
+	}
+}
+
 /** A revert the SDK recognised but has no dedicated class for. */
 export class PaymasterRevertError extends PaymasterSdkError {
 	constructor(
@@ -253,6 +288,20 @@ export function translateContractError(
 		case "PaymasterPaused":
 		case "EnforcedPause":
 			return new PaymasterPausedError(cause);
+		case "TimelockUnexpectedOperationState": {
+			// OpenZeppelin encodes the expected states as a bitmap, one bit per OperationState.
+			const [id, bitmap] = args as [Hex, Hex];
+			const bits = BigInt(bitmap);
+			const expected = ["unset", "waiting", "ready", "done"].filter(
+				(_, index) => (bits >> BigInt(index)) & 1n,
+			);
+			return new TimelockOperationStateError(
+				id,
+				expected,
+				context.operation,
+				cause,
+			);
+		}
 		case "TenantDisabled":
 			return new PaymasterRevertError(
 				"TenantDisabled",
