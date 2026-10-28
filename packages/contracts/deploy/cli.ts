@@ -33,6 +33,8 @@
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
  * Commit that file for any chain other than 31337/31338.
  */
+
+import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
 	type Account,
@@ -49,7 +51,6 @@ import {
 	type Transport,
 	type WalletClient,
 } from "viem";
-import { writeFileSync } from "node:fs";
 import { privateKeyToAccount } from "viem/accounts";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
 import {

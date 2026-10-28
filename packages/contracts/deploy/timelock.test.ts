@@ -11,9 +11,9 @@ import {
 	delayPolicyProblems,
 	encodeTimelockProposal,
 	formatDuration,
+	parseDuration,
 	paymasterFunctionDelays,
 	paymasterSelector,
-	parseDuration,
 	safeTransactionBatch,
 	TIMELOCKED_FUNCTION_NAMES,
 	TIMELOCKED_ROLES,
@@ -71,7 +71,9 @@ test("selectors are the paymaster's own", () => {
 	assert.ok(entries.every((entry) => entry.target === PAYMASTER));
 	assert.equal(
 		entries.find(
-			(entry) => entry.selector === toFunctionSelector("setTenantFee(bytes16,bool,uint128)"),
+			(entry) =>
+				entry.selector ===
+				toFunctionSelector("setTenantFee(bytes16,bool,uint128)"),
 		)?.delay,
 		BigInt(2 * DAY),
 	);
@@ -80,13 +82,25 @@ test("selectors are the paymaster's own", () => {
 test("a role change must wait at least as long as anything it could bypass", () => {
 	assert.deepEqual(delayPolicyProblems(policy), []);
 	const short = { ...policy, grantRole: DAY };
-	assert.match(delayPolicyProblems(short).join("\n"), /grantRole waits 1d, shorter than .* \(7d\)/);
+	assert.match(
+		delayPolicyProblems(short).join("\n"),
+		/grantRole waits 1d, shorter than .* \(7d\)/,
+	);
 	// The floor counts: a function below minDelay waits minDelay.
 	assert.deepEqual(
-		delayPolicyProblems({ ...policy, minDelay: 7 * DAY, grantRole: 0, revokeRole: 0, renounceRole: 0 }),
+		delayPolicyProblems({
+			...policy,
+			minDelay: 7 * DAY,
+			grantRole: 0,
+			revokeRole: 0,
+			renounceRole: 0,
+		}),
 		[],
 	);
-	assert.match(delayPolicyProblems({ ...policy, setTenantFee: -1 }).join(), /whole number/);
+	assert.match(
+		delayPolicyProblems({ ...policy, setTenantFee: -1 }).join(),
+		/whole number/,
+	);
 });
 
 test("durations", () => {
@@ -111,12 +125,28 @@ test("a single-call proposal encodes schedule, execute and cancel for the same o
 		calls: [{ target: PAYMASTER, data }],
 		delay: BigInt(3 * DAY),
 	});
-	const schedule = decodeFunctionData({ abi: gianoTimelockAbi, data: proposal.schedule });
+	const schedule = decodeFunctionData({
+		abi: gianoTimelockAbi,
+		data: proposal.schedule,
+	});
 	assert.equal(schedule.functionName, "schedule");
-	assert.deepEqual(schedule.args, [PAYMASTER, 0n, data, proposal.predecessor, proposal.salt, BigInt(3 * DAY)]);
-	const execute = decodeFunctionData({ abi: gianoTimelockAbi, data: proposal.execute });
+	assert.deepEqual(schedule.args, [
+		PAYMASTER,
+		0n,
+		data,
+		proposal.predecessor,
+		proposal.salt,
+		BigInt(3 * DAY),
+	]);
+	const execute = decodeFunctionData({
+		abi: gianoTimelockAbi,
+		data: proposal.execute,
+	});
 	assert.equal(execute.functionName, "execute");
-	const cancel = decodeFunctionData({ abi: gianoTimelockAbi, data: proposal.cancel });
+	const cancel = decodeFunctionData({
+		abi: gianoTimelockAbi,
+		data: proposal.cancel,
+	});
 	assert.deepEqual(cancel.args, [proposal.id]);
 
 	const batch = safeTransactionBatch(proposal, {
@@ -125,13 +155,22 @@ test("a single-call proposal encodes schedule, execute and cancel for the same o
 		description: "set the default fee",
 		createdAt: 1,
 	});
-	assert.deepEqual(batch.transactions, [{ to: TIMELOCK, value: "0", data: proposal.schedule }]);
+	assert.deepEqual(batch.transactions, [
+		{ to: TIMELOCK, value: "0", data: proposal.schedule },
+	]);
 	assert.equal(batch.chainId, "84532");
 });
 
 test("a multi-call proposal uses the batch entry points, and a salt changes the id", () => {
 	const calls = [
-		{ target: PAYMASTER, data: encodeFunctionData({ abi: gianoPaymasterAbi, functionName: "setDefaultFee", args: [1n] }) },
+		{
+			target: PAYMASTER,
+			data: encodeFunctionData({
+				abi: gianoPaymasterAbi,
+				functionName: "setDefaultFee",
+				args: [1n],
+			}),
+		},
 		{
 			target: PAYMASTER,
 			data: encodeFunctionData({
@@ -148,8 +187,17 @@ test("a multi-call proposal uses the batch entry points, and a salt changes the 
 		delay: 1n,
 		salt: `0x${"11".repeat(32)}`,
 	});
-	assert.equal(decodeFunctionData({ abi: gianoTimelockAbi, data: a.schedule }).functionName, "scheduleBatch");
-	assert.equal(decodeFunctionData({ abi: gianoTimelockAbi, data: a.execute }).functionName, "executeBatch");
+	assert.equal(
+		decodeFunctionData({ abi: gianoTimelockAbi, data: a.schedule })
+			.functionName,
+		"scheduleBatch",
+	);
+	assert.equal(
+		decodeFunctionData({ abi: gianoTimelockAbi, data: a.execute }).functionName,
+		"executeBatch",
+	);
 	assert.notEqual(a.id, b.id);
-	assert.throws(() => encodeTimelockProposal({ timelock: TIMELOCK, calls: [], delay: 1n }));
+	assert.throws(() =>
+		encodeTimelockProposal({ timelock: TIMELOCK, calls: [], delay: 1n }),
+	);
 });

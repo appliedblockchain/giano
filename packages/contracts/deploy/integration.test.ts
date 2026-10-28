@@ -12,11 +12,25 @@ import {
 	createTestClient,
 	createWalletClient,
 	defineChain,
+	encodeFunctionData,
+	getAddress,
 	http,
 	type PublicClient,
 } from "viem";
+import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import {
+	encodeTimelockProposal,
+	paymasterSelector,
+	TIMELOCKED_FUNCTION_NAMES,
+	type TimelockDelays,
+} from "../timelock";
 import { CANONICAL_DEPLOYER, ENTRY_POINT_V09 } from "./config";
-import { type DeployContext, deployCore } from "./deploy";
+import {
+	type DeployContext,
+	deployCore,
+	deployTimelock,
+	planHandOff,
+} from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { inspectDeployment } from "./preflight";
 import { loadProfile, paymasterParams } from "./profiles";
@@ -25,7 +39,7 @@ import { loadRelease } from "./release";
 
 const profile = loadProfile({ chain: "base-sepolia" }).profile;
 
-test("real CREATE3 release deploy, interrupted checkpoint recovery, verification and idempotent rerun", {
+test("real CREATE3 release deploy, interrupted checkpoint recovery, verification, idempotent rerun and timelock hand-off", {
 	timeout: 90000,
 }, async () => {
 	const socket = createServer();
@@ -134,6 +148,89 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			nonceBefore,
 		);
 		assert.equal(readFileSync(join(dir, "84532.json"), "utf8"), before);
+
+		// G9: the release's GianoTimelock with the profile's published delays, then the hand-off.
+		const proxy = ctx.record.contracts.paymasterProxy?.address;
+		assert.ok(proxy && profile.timelock);
+		const proposer = getAddress("0x00000000000000000000000000000000000Ca5e0");
+		const delays = profile.timelock.delays as TimelockDelays;
+		const timelock = await deployTimelock(ctx, loadRelease("v2"), {
+			paymaster: proxy,
+			proposers: [proposer],
+			executors: [],
+			delays,
+		});
+		for (const name of TIMELOCKED_FUNCTION_NAMES)
+			assert.equal(
+				await client.readContract({
+					address: timelock.address,
+					abi: gianoTimelockAbi,
+					functionName: "getEffectiveDelay",
+					args: [proxy, paymasterSelector(name)],
+				}),
+				BigInt(Math.max(delays.minDelay, delays[name])),
+			);
+		const handOff = await planHandOff(
+			client,
+			proxy,
+			timelock.address,
+			CANONICAL_DEPLOYER,
+		);
+		assert.equal(
+			handOff.at(-1)?.description.startsWith("renounce ROLE_ADMIN"),
+			true,
+		);
+		for (const call of handOff) {
+			const hash = await walletClient.sendTransaction({
+				to: proxy,
+				data: call.data,
+			});
+			await client.waitForTransactionReceipt({ hash });
+		}
+		assert.deepEqual(
+			await planHandOff(client, proxy, timelock.address, CANONICAL_DEPLOYER),
+			[],
+		);
+		// The old admin is out, and a fee change must wait setDefaultFee's own delay.
+		await assert.rejects(
+			client.simulateContract({
+				account: CANONICAL_DEPLOYER,
+				address: proxy,
+				abi: gianoPaymasterAbi,
+				functionName: "setDefaultFee",
+				args: [1n],
+			}),
+		);
+		const fee = encodeFunctionData({
+			abi: gianoPaymasterAbi,
+			functionName: "setDefaultFee",
+			args: [1n],
+		});
+		await impersonate(testClient, proposer);
+		await testClient.setBalance({ address: proposer, value: 10n ** 18n });
+		const tooSoon = encodeTimelockProposal({
+			timelock: timelock.address,
+			calls: [{ target: proxy, data: fee }],
+			delay: BigInt(delays.setDefaultFee - 1),
+		});
+		await assert.rejects(
+			client.call({
+				account: proposer,
+				to: timelock.address,
+				data: tooSoon.schedule,
+			}),
+			/TimelockInsufficientDelay|reverted/,
+		);
+		const onTime = encodeTimelockProposal({
+			timelock: timelock.address,
+			calls: [{ target: proxy, data: fee }],
+			delay: BigInt(delays.setDefaultFee),
+		});
+		await client.call({
+			account: proposer,
+			to: timelock.address,
+			data: onTime.schedule,
+		});
 	} finally {
 		anvil.kill();
 		rmSync(dir, { recursive: true, force: true });

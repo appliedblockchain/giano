@@ -6,18 +6,18 @@ import { parseArgs } from "node:util";
 import { createPublicClient, getAddress, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+	delayPolicyProblems,
+	formatDuration,
+	TIMELOCKED_FUNCTION_NAMES,
+	type TimelockDelays,
+} from "../timelock";
+import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
 	ENTRY_POINT_V09,
 	LABELS,
 } from "./config";
 import { create3Address } from "./create3";
-import {
-	delayPolicyProblems,
-	formatDuration,
-	TIMELOCKED_FUNCTION_NAMES,
-	type TimelockDelays,
-} from "../timelock";
 import { inspectDeployment } from "./preflight";
 import {
 	listProfiles,
@@ -313,7 +313,10 @@ async function timelockWorkflow(
 		throw new OperatorError(
 			"Writes require an interactive terminal. Use --plan to inspect the target first.",
 		);
-	if ((await rl.question(`Type '${confirmation}' to continue: `)).trim() !== confirmation) {
+	if (
+		(await rl.question(`Type '${confirmation}' to continue: `)).trim() !==
+		confirmation
+	) {
 		console.log("Cancelled. No operation invoked.");
 		return;
 	}
@@ -334,7 +337,14 @@ async function timelockWorkflow(
 						`${name}=${delays[name]}`,
 					]),
 				]
-			: ["handoff", "--rpc", rpc, "--timelock", timelock.address as string, "--execute"];
+			: [
+					"handoff",
+					"--rpc",
+					rpc,
+					"--timelock",
+					timelock.address as string,
+					"--execute",
+				];
 	const result = spawnSync(
 		process.execPath,
 		["--import", "tsx", "deploy/cli.ts", ...args],

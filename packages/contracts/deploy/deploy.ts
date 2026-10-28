@@ -407,7 +407,9 @@ export async function deployTimelock(
 	if (problems.length)
 		throw new Error(`refusing the delay policy:\n  ${problems.join("\n  ")}`);
 	if (params.proposers.length === 0)
-		throw new Error("a timelock needs at least one proposer (a Safe in production)");
+		throw new Error(
+			"a timelock needs at least one proposer (a Safe in production)",
+		);
 
 	const initCode = withArgs(
 		release.contracts.GianoTimelock.creationCode,
@@ -488,7 +490,12 @@ export async function planHandOff(
 		for (let i = 0n; i < count; i++)
 			holders.push(getAddress(await read<Address>("getRoleMember", [role, i])));
 		if (!holders.includes(getAddress(timelock)))
-			call(`grant ${name} to the timelock ${timelock}`, "grantRole", role, timelock);
+			call(
+				`grant ${name} to the timelock ${timelock}`,
+				"grantRole",
+				role,
+				timelock,
+			);
 		for (const holder of holders) {
 			if (holder === getAddress(timelock)) continue;
 			if (name === "ROLE_ADMIN" && holder === getAddress(from)) continue;
