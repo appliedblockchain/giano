@@ -277,5 +277,8 @@
   items called out.
 - [ ] 7.2 Run `openspec validate apply-abips --strict`. Then sync the specs and archive the change, in PR 6 or in a
   follow-up if PR 6 is still waiting on DevOps.
-- [ ] 7.3 Mark PRs ready and request review through the team's flow (`ae-ask-pr-review`, #giano-dev), bottom-up, only
+- [x] 7.3 Mark PRs ready and request review through the team's flow (`ae-ask-pr-review`, #giano-dev), bottom-up, only
   when the user asks.
+
+  Done 2026-10-28: all six marked ready, jophj requested on each, and the stack announced in #giano-dev, asking
+  Giovanni to sign off on the ABIP-6 deviation in #162.
