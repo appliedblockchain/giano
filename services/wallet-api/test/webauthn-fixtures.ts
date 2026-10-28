@@ -95,12 +95,18 @@ function coseKey(auth: TestAuthenticator): Buffer {
 	return cborEncode(map);
 }
 
+/** authenticatorData flag bits (WebAuthn §6.1). */
+export const FLAG_UP = 0x01;
+export const FLAG_UV = 0x04;
+const FLAG_AT = 0x40;
+
 function authDataForRegistration(
 	rpId: string,
 	auth: TestAuthenticator,
+	flagBits: number,
 ): Buffer {
 	const rpIdHash = sha256(rpId);
-	const flags = Buffer.from([0x45]); // UP | UV | AT
+	const flags = Buffer.from([flagBits | FLAG_AT]);
 	const counter = Buffer.alloc(4);
 	const aaguid = Buffer.alloc(16);
 	const credIdLen = Buffer.alloc(2);
@@ -118,7 +124,13 @@ function authDataForRegistration(
 
 export function makeRegistrationResponse(
 	auth: TestAuthenticator,
-	opts: { challenge: string; origin: string; rpId: string },
+	opts: {
+		challenge: string;
+		origin: string;
+		rpId: string;
+		/** UP/UV bits; defaults to a user-verified response. */
+		flags?: number;
+	},
 ) {
 	const clientDataJSON = Buffer.from(
 		JSON.stringify({
@@ -131,7 +143,11 @@ export function makeRegistrationResponse(
 	const attestationObject = cborEncode({
 		fmt: "none",
 		attStmt: {},
-		authData: authDataForRegistration(opts.rpId, auth),
+		authData: authDataForRegistration(
+			opts.rpId,
+			auth,
+			opts.flags ?? FLAG_UP | FLAG_UV,
+		),
 	});
 	return {
 		id: b64url(auth.credentialId),
@@ -148,7 +164,14 @@ export function makeRegistrationResponse(
 
 export function makeAuthenticationResponse(
 	auth: TestAuthenticator,
-	opts: { challenge: string; origin: string; rpId: string; counter?: number },
+	opts: {
+		challenge: string;
+		origin: string;
+		rpId: string;
+		counter?: number;
+		/** UP/UV bits; defaults to a user-verified response. */
+		flags?: number;
+	},
 ) {
 	const clientDataJSON = Buffer.from(
 		JSON.stringify({
@@ -159,7 +182,7 @@ export function makeAuthenticationResponse(
 		}),
 	);
 	const rpIdHash = sha256(opts.rpId);
-	const flags = Buffer.from([0x05]); // UP | UV
+	const flags = Buffer.from([opts.flags ?? FLAG_UP | FLAG_UV]);
 	const counter = Buffer.alloc(4);
 	counter.writeUInt32BE(opts.counter ?? 0);
 	const authenticatorData = Buffer.concat([rpIdHash, flags, counter]);

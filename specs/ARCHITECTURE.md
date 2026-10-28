@@ -234,6 +234,17 @@ tenant's origin, and a challenge redeemed under another tenant, are both rejecte
 error — no enumeration oracle — and counted on a per-tenant metric so the attempt is visible.
 Sponsorship balances never pool: per tenant, and per chain within that tenant.
 
+**User verification, at both verifiers.** Every passkey ceremony asks the authenticator to verify
+the user (PIN, biometric or device passcode), and both parties that check a passkey signature
+require the UV flag in the signed `authenticatorData`: the wallet-api at registration, sign-in and
+owner addition, and the wallet contract on every UserOperation and ERC-1271 signature (BR-37). The
+contract check is the one that protects assets, because anyone can submit a signed operation to the
+EntryPoint without passing through the wallet-api. The backend check keeps credentials that cannot
+verify the user out of Giano's flows, so a wallet never gains an owner that could not sign. What
+neither can detect is an authenticator that sets UV without verifying anyone (some password-manager
+extensions do). Evidence and threat model: [`docs/G4-WEBAUTHN-USER-VERIFICATION.md`](../docs/G4-WEBAUTHN-USER-VERIFICATION.md)
+and the [G4 report](https://claude.ai/artifact/KDXpKqiifSnZTCpjA3ecEa).
+
 **What is not isolated, by design.** Every tenant sees every configured chain, and shares the
 EntryPoint, the factory, the bundler and the paymaster contract. Session and challenge TTLs and the
 ceremony rate limit are deployment-wide. The relay rate limit is per tenant but shared across that

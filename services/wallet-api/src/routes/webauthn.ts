@@ -301,7 +301,9 @@ export default async function webauthnRoutes(
 					expectedChallenge: challenge,
 					expectedOrigin: tenant.expectedOrigins,
 					expectedRPID: tenant.rpId,
-					requireUserVerification: false,
+					// G4: the client always asks for 'required', so a response without the UV flag came
+					// from something other than a genuine Giano client. See docs/G4-WEBAUTHN-USER-VERIFICATION.md.
+					requireUserVerification: true,
 				});
 			} catch (error) {
 				throw new ApiError(
@@ -501,7 +503,9 @@ export default async function webauthnRoutes(
 						counter: Number(credential.counter),
 						transports: (credential.transports ?? undefined) as never,
 					},
-					requireUserVerification: false,
+					// G4: the client always asks for 'required', so a response without the UV flag came
+					// from something other than a genuine Giano client. See docs/G4-WEBAUTHN-USER-VERIFICATION.md.
+					requireUserVerification: true,
 				});
 			} catch (error) {
 				throw new ApiError(

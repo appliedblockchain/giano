@@ -57,11 +57,11 @@ export type CanonicalCode = { label: string; release: string; codehash: `0x${str
 export const CANONICAL_CODE: Record<`0x${string}`, readonly CanonicalCode[]> = {
   '0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6': [
     { label: 'giano.wallet.impl', release: 'v1', codehash: '0xbefa2ac705d180d8d5481c700738f8de6d1f9462ec1aad6abeeb286a5397e1de' },
-    { label: 'giano.wallet.impl', release: 'v2', codehash: '0x5f4fad6f02d23b1cf05e354219dc38c46cb792849d621894aa6efdcbcb6dec52' },
+    { label: 'giano.wallet.impl', release: 'v2', codehash: '0x40bc91e1c8e877c8d6a8ad5a04b3db311917bef0734a2f880ecb8a2f68e28da9' },
   ],
   '0x9c01925D07527A7920031196396A9c37421715A2': [
     { label: 'giano.factory', release: 'v1', codehash: '0xf167db1d27487465602e13ad9e5514cbdee0fc70018b236c01868ae9558558f8' },
-    { label: 'giano.factory', release: 'v2', codehash: '0x3b81f219dc967f72e0fa71932bf82ec16c2be1dabc37da9bbe4023d2554c5a70' },
+    { label: 'giano.factory', release: 'v2', codehash: '0xc1727efd8340d9a5d941522b88e8e43a9b0a53526387725d49059331da30e1d4' },
   ],
   '0x326549c3600BFA31CB44213Df0576AE79E70E4aC': [
     { label: 'giano.paymaster.impl', release: 'v1', codehash: '0xba3d012125286c88b035a63e7567be7a6d519e6bec06f65fd7e1140fe1bbba68' },
@@ -75,7 +75,7 @@ export const CANONICAL_CODE: Record<`0x${string}`, readonly CanonicalCode[]> = {
     { label: 'giano.paymaster.impl@v2', release: 'v2', codehash: '0x653b60b4dd5ca1cfbe7261840af8963e657fd4ac682ad1a98b3447491d5a2860' },
   ],
   '0x8B93fBc1Ff322dDF9f70dcb6728DE5F32d6bDF1E': [
-    { label: 'giano.wallet.impl@v2', release: 'v2', codehash: '0xc09f22d6f5f9f9d4db02221fb61356580fe3d521d7af75f490eee5c63133a328' },
+    { label: 'giano.wallet.impl@v2', release: 'v2', codehash: '0x358264f41531a8511462514082306e2c7d3ae9172c15752fdc168e01cfbe5c3b' },
   ],
 };
 

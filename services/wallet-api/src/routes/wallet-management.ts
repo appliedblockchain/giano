@@ -604,7 +604,9 @@ export default async function walletManagementRoutes(
 					expectedChallenge: challenge,
 					expectedOrigin: tenant.expectedOrigins,
 					expectedRPID: tenant.rpId,
-					requireUserVerification: false,
+					// G4: the client always asks for 'required', so a response without the UV flag came
+					// from something other than a genuine Giano client. See docs/G4-WEBAUTHN-USER-VERIFICATION.md.
+					requireUserVerification: true,
 				});
 			} catch (error) {
 				throw new ApiError(

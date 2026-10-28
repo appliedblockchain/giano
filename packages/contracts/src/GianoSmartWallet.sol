@@ -340,7 +340,10 @@ contract GianoSmartWallet is ERC1271, IAccount, MultiOwnable, UUPSUpgradeable, R
 
             WebAuthn.WebAuthnAuth memory auth = abi.decode(sigWrapper.signatureData, (WebAuthn.WebAuthnAuth));
 
-            return WebAuthn.verify({challenge: abi.encode(hash), requireUV: false, webAuthnAuth: auth, x: x, y: y});
+            // Requires the UV flag, not just UP: every Giano ceremony asks for user verification, and
+            // a presence-only assertion (e.g. a stolen security key used without its PIN) must not
+            // authorise anything. See docs/G4-WEBAUTHN-USER-VERIFICATION.md.
+            return WebAuthn.verify({challenge: abi.encode(hash), requireUV: true, webAuthnAuth: auth, x: x, y: y});
         }
 
         revert InvalidOwnerBytesLength(ownerBytes);

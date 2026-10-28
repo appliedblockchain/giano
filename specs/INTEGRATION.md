@@ -431,6 +431,28 @@ The kit adds no privileged path: it is a thin layer over `giano-wallet-core`,
 `giano-wallet-transport` and the documented endpoints above, which remain directly drivable
 (WM-60) and directly exercised by the wallet-api's own integration suite (WK-29).
 
+### Passkeys and user verification
+
+Giano requires **user verification** (BR-37): every passkey signature must carry the UV flag, which
+the authenticator sets only after checking a PIN, biometric or device passcode. The wallet-api
+rejects registration, sign-in and owner-addition responses without it, and the wallet contract
+(release v2 onward) rejects any passkey signature without it. What this means for you:
+
+- **Supported authenticators** are those that verify the user, for example iCloud Keychain, Google
+  Password Manager, Windows Hello, a phone over the cross-device QR flow, and FIDO2 security keys
+  **with a PIN set**. U2F-only keys, and FIDO2 keys without a PIN on platforms that cannot prompt for one (iOS
+  Safari), cannot be used.
+- `BaseCredentialInfo.userVerification` accepts only `'required'`. A bring-your-own wallet cannot
+  ask for less; it would only move the refusal from the browser to the server or the chain.
+- **Adding a passkey owner directly on chain** (`addOwnerPublicKey`, outside the wallet-api's add
+  flow) is your responsibility: the contract cannot tell whether that key's authenticator can verify
+  the user, and an owner that cannot will never produce a valid signature.
+- Some password-manager extensions report UV without verifying anyone. No verifier can detect
+  this; it is an accepted residual risk.
+
+Background, evidence and threat model: [`docs/G4-WEBAUTHN-USER-VERIFICATION.md`](../docs/G4-WEBAUTHN-USER-VERIFICATION.md)
+and the [G4 report](https://claude.ai/artifact/KDXpKqiifSnZTCpjA3ecEa).
+
 ## 10. Upgrade runbook
 
 All artifacts share one version (Changesets fixed mode). Upgrade order: **wallet-api

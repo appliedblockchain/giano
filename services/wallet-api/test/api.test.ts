@@ -18,6 +18,7 @@ import {
 } from "./setup.js";
 import {
 	createAuthenticator,
+	FLAG_UP,
 	makeAuthenticationResponse,
 	makeRegistrationResponse,
 	type TestAuthenticator,
@@ -292,6 +293,28 @@ describe("registration ceremony", () => {
 		expect((res.json() as { error: string }).error).toBe("verification-failed");
 	});
 
+	it("rejects a response without user verification (UP only)", async () => {
+		const options = await getOptions("user-no-uv", "registration");
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TEST_ORIGIN },
+			payload: {
+				externalUserId: "user-no-uv",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TEST_ORIGIN,
+					rpId: TEST_RP_ID,
+					flags: FLAG_UP,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe("verification-failed");
+		// Nothing was registered: the user still has no credential.
+		expect((await getOptions("user-no-uv")).credentialIds).toEqual([]);
+	});
+
 	it("rejects a challenge bound to a different user (challenge-user-mismatch)", async () => {
 		// 'user-1' exists, so a registration challenge for them is user-bound
 		const options = await getOptions("user-1", "registration");
@@ -381,6 +404,30 @@ describe("authentication ceremony", () => {
 			headers: { authorization: `Bearer ${body.session.token}` },
 		});
 		expect(afterLogout.statusCode).toBe(401);
+	});
+
+	it("rejects an assertion without user verification (UP only) and issues no session", async () => {
+		const auth = createAuthenticator();
+		await register("user-auth-no-uv", auth);
+		const options = await getOptions("user-auth-no-uv");
+
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/authentication/verify",
+			headers: { origin: TEST_ORIGIN },
+			payload: {
+				response: makeAuthenticationResponse(auth, {
+					challenge: options.challenge,
+					origin: TEST_ORIGIN,
+					rpId: TEST_RP_ID,
+					flags: FLAG_UP,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		const body = res.json() as { error: string; session?: unknown };
+		expect(body.error).toBe("verification-failed");
+		expect(body.session).toBeUndefined();
 	});
 
 	it("rejects an assertion whose challenge was never issued", async () => {

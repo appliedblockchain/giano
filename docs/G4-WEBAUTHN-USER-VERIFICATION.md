@@ -1,17 +1,36 @@
 # G4: WebAuthn user verification
 
-Investigation record for Notion item **G4: Decide whether WebAuthn user verification can be enforced,
-or document why not** (production-readiness gap report, item B4). This branch contains no code change.
-It records the evidence and the recommended decision. Enforcement is follow-up work.
+Decision record for Notion item **G4: Decide whether WebAuthn user verification can be enforced,
+or document why not** (production-readiness gap report, item B4).
 
-Investigated on 28 October 2026 against `feat/entrypoint-v09` (PR #169, commit `2c16094`).
+**Decision (28 October 2026): Giano requires user verification at both verifiers.** It is
+implemented in PR #170, stacked on #169. The newcomer-friendly report with the same evidence is the
+[G4 report artifact](https://claude.ai/artifact/KDXpKqiifSnZTCpjA3ecEa).
 
-## Recommendation
+The investigation ran against `feat/entrypoint-v09` (PR #169, commit `2c16094`). Sections R1 to R3
+describe the code **before** this change, which is why they say "not enforced".
 
-| Layer | Recommendation | Why |
+## What changed
+
+| Where | Change |
+| --- | --- |
+| `packages/contracts/src/GianoSmartWallet.sol` | `requireUV: true`. Release v2 re-cut (`releases/v2/*`), `canonical.ts` code hashes regenerated, both devnet states regenerated with the pinned anvil. Canonical addresses and `e2e/devnet/addresses.json` are unchanged. |
+| `packages/contracts/test/GianoSmartWallet/UserVerification.t.sol` | New: UP+UV accepted; UP only, no flags and UV without UP rejected, through `isValidSignature` and `validateUserOp`. |
+| `services/wallet-api/src/routes/webauthn.ts`, `wallet-management.ts` | `requireUserVerification: true` at registration, sign-in and claim/fill. |
+| `services/wallet-api/test/` | Fixtures take a `flags` option. New tests: a UP-only registration, sign-in and claim/fill are each refused with `verification-failed`; a refused fill leaves the slot open. |
+| `packages/wallet-core` | `BaseCredentialInfo.userVerification` is typed `'required'`. `'preferred'` and `'discouraged'` are refused by validation (major changeset). |
+| Specs and docs | BR-37, `specs/ARCHITECTURE.md` §6, `specs/INTEGRATION.md` ("Passkeys and user verification"), `docs/ENTRYPOINT-V09-UPGRADE.md`. |
+
+Release v2 was re-cut rather than a v3 cut. v2 exists only in the unmerged #169 and was never
+deployed to a public chain, and a v3 would have left v2 as a canonical release that new wallets on
+some chain could be born on without the check.
+
+## Decision
+
+| Layer | Decision | Why |
 | --- | --- | --- |
-| wallet-api (registration, sign-in, wallet-management claim) | **Enforce UV** (`requireUserVerification: true`) | Every genuine Giano client already asks for `'required'`, so a compliant platform either returns UV=1 or fails before the request reaches the server. All 406 wallet-api tests pass with enforcement on. It is also `@simplewebauthn/server`'s default; Giano turns it off explicitly. |
-| `GianoSmartWallet` (UserOperations, ERC-1271 messages, `signedStaticCall`) | **Enforce UV** (`requireUV: true`), shipped in contract release **v2**, before PR #169's release reaches any public chain | This is the only layer that protects assets (BR-02: the backend can never authorise a transaction). All 181 Foundry tests pass with the flag on. Wallet addresses do not change, because canonical addresses come from CREATE3 labels rather than bytecode. No public chain holds a Giano deployment yet, so there are no wallets to migrate. |
+| wallet-api (registration, sign-in, wallet-management claim) | **Enforce UV** (`requireUserVerification: true`) | Every genuine Giano client already asks for `'required'`, so a compliant platform either returns UV=1 or fails before the request reaches the server. All wallet-api tests pass with enforcement on, plus new tests that UP-only responses are refused. It is also `@simplewebauthn/server`'s default; Giano turns it off explicitly. |
+| `GianoSmartWallet` (UserOperations, ERC-1271 messages, `signedStaticCall`) | **Enforce UV** (`requireUV: true`), shipped in contract release **v2**, before PR #169's release reaches any public chain | This is the only layer that protects assets (BR-02: the backend can never authorise a transaction). All Foundry tests pass with the flag on, 185 including the new UV tests. Wallet addresses do not change, because canonical addresses come from CREATE3 labels rather than bytecode. No public chain holds a Giano deployment yet, so there are no wallets to migrate. |
 
 Residual risk that enforcement cannot remove: some third-party passkey managers report UV=1 without
 verifying anyone. The passkeys.dev known-issues list names the 1Password and Bitwarden browser
@@ -209,9 +228,9 @@ already-fixed browser bugs. So enforcement excludes no authenticator that curren
 | Daimo | No |
 | Porto (Ithaca) | No |
 
-## R4: decision to record
+## R4: where the decision is recorded
 
-Once the team signs this off, the decision belongs in the specs. Proposed wording:
+Applied in PR #170, in this wording:
 
 - **`specs/ARCHITECTURE.md`, §6 Isolation, new paragraph "User verification":** Every passkey
   ceremony asks for user verification, and both verifiers require it: wallet-api rejects
@@ -219,11 +238,11 @@ Once the team signs this off, the decision belongs in the specs. Proposed wordin
   rejects any passkey signature without it. The contract check is the one that protects assets.
   The backend check keeps credentials that cannot verify the user out of the system, so that no
   wallet gains an owner it cannot use.
-- **New requirement, `specs/BUSINESS-REQUIREMENTS.md` §2.1 (next free number):** Every use of a
+- **New requirement BR-37, `specs/BUSINESS-REQUIREMENTS.md` §2.1:** Every use of a
   passkey to sign MUST require user verification by the authenticator (PIN, biometric or device
   passcode). Presence alone MUST NOT be sufficient to authorise a transaction, sign a message, or
   open a session.
-- **Integrator docs (`docs/INTEGRATION.md`):** state that U2F-only keys and FIDO2 keys without a
+- **Integrator docs (`specs/INTEGRATION.md`, "Passkeys and user verification"):** state that U2F-only keys and FIDO2 keys without a
   PIN are unsupported, and that adding a passkey owner directly on chain is the integrator's
   responsibility to check.
 
@@ -240,14 +259,17 @@ Once the team signs this off, the decision belongs in the specs. Proposed wordin
 
 ## Follow-up items
 
-1. Backend: shadow metric, then flip the three flags, add negative tests, and narrow the
-   `userVerification` override.
-2. Contract: flip `requireUV`, re-cut release v2 (or v3 if PR #169 has shipped), add a Foundry
-   test that rejects UP-only signatures, regenerate the devnet states and code hashes.
-3. E2E: a negative case with `isUserVerified: false` against the stack.
-4. Run the R2 device matrix on real devices.
-5. Spec and integrator-doc updates (R4) and risk sign-off (R5).
-6. Coordinate with G1 (registration identity binding), which edits the same `webauthn.ts` handlers.
+Done in PR #170: backend enforcement with negative tests, the `userVerification` override narrowed,
+contract enforcement with release v2 re-cut and devnet states regenerated, a Foundry test that
+rejects UP-only signatures, and the spec and integrator-doc updates (R4). The team chose to enforce
+directly, without the shadow-metric phase.
+
+Still open:
+
+1. Run the R2 device matrix on real devices.
+2. An e2e negative case with `isUserVerified: false` against the stack.
+3. Risk sign-off (R5): a named owner for the residual risk.
+4. Coordinate with G1 (registration identity binding), which edits the same `webauthn.ts` handlers.
 
 ## Not verified
 

@@ -15,6 +15,10 @@ wallet, API, bundler and deployment configuration. It does not migrate a live de
   labels and addresses remain the same for fresh deployments. Both baked local-chain states
   are regenerated with the pinned Anvil image; chain B loads its own state because the
   EntryPoint runtime caches the chain ID.
+- The v2 wallet implementation also **requires WebAuthn user verification** (G4): a passkey
+  signature without the UV flag is rejected. Accounts that upgrade from v1 gain this check. See
+  [`G4-WEBAUTHN-USER-VERIFICATION.md`](./G4-WEBAUTHN-USER-VERIFICATION.md) and the
+  [G4 report](https://claude.ai/artifact/KDXpKqiifSnZTCpjA3ecEa).
 - The estimator runs the final v0.9 simulation code. SenderCreator's immutable caller is bound
   to the canonical EntryPoint. Gas estimates account for the 40,000 unused-gas threshold and
   for prefunding that becomes necessary at the real gas price. Limits and settlement allowances
