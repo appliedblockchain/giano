@@ -1,4 +1,105 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// AccessControl
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const accessControlAbi = [
+  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getRoleAdmin',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'grantRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'hasRole',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'callerConfirmation', internalType: 'address', type: 'address' },
+    ],
+    name: 'renounceRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'revokeRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+    ],
+    name: 'RoleAdminChanged',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'account', internalType: 'address', type: 'address', indexed: true },
+      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'RoleGranted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'account', internalType: 'address', type: 'address', indexed: true },
+      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'RoleRevoked',
+  },
+  { type: 'error', inputs: [], name: 'AccessControlBadConfirmation' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'account', internalType: 'address', type: 'address' },
+      { name: 'neededRole', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'AccessControlUnauthorizedAccount',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AccessControlEnumerableUpgradeable
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -483,6 +584,46 @@ export const eip712UpgradeableAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ERC1155Holder
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const erc1155HolderAbi = [
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: '', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155BatchReceived',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ERC1271
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -545,6 +686,20 @@ export const erc1271InputGeneratorAbi = [
       { name: 'returned', internalType: 'address', type: 'address' },
     ],
     name: 'ReturnedAddressDoesNotMatchAccount',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ERC165
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const erc165Abi = [
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
   },
 ] as const
 
@@ -699,6 +854,25 @@ export const erc20Abi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ERC721Holder
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const erc721HolderAbi = [
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC721Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Errors
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -734,6 +908,13 @@ export const gianoPaymasterAbi = [
   { type: 'function', inputs: [], name: 'TENANT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'UPGRADER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'UPGRADE_INTERFACE_VERSION', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'WITHDRAW_ADDRESS_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   { type: 'function', inputs: [{ name: 'signer', internalType: 'address', type: 'address' }], name: 'addSigner', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
@@ -1667,6 +1848,434 @@ export const gianoSmartWalletFactoryAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// GianoTimelock
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const gianoTimelockAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: 'minDelay', internalType: 'uint256', type: 'uint256' },
+      { name: 'proposers', internalType: 'address[]', type: 'address[]' },
+      { name: 'executors', internalType: 'address[]', type: 'address[]' },
+      {
+        name: 'functionDelays',
+        internalType: 'struct GianoTimelock.FunctionDelay[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', internalType: 'address', type: 'address' },
+          { name: 'selector', internalType: 'bytes4', type: 'bytes4' },
+          { name: 'delay', internalType: 'uint256', type: 'uint256' },
+        ],
+      },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  { type: 'receive', stateMutability: 'payable' },
+  { type: 'function', inputs: [], name: 'CANCELLER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'EXECUTOR_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'PROPOSER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }], name: 'cancel', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'payload', internalType: 'bytes', type: 'bytes' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'execute',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'executeBatch',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+    ],
+    name: 'getBatchDelay',
+    outputs: [{ name: 'delay', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'getDelay',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'selector', internalType: 'bytes4', type: 'bytes4' },
+    ],
+    name: 'getEffectiveDelay',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'selector', internalType: 'bytes4', type: 'bytes4' },
+    ],
+    name: 'getFunctionDelay',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  { type: 'function', inputs: [], name: 'getMinDelay', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getOperationState',
+    outputs: [{ name: '', internalType: 'enum TimelockController.OperationState', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getRoleAdmin',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getTimestamp',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'grantRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'hasRole',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'hashOperation',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'hashOperationBatch',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperation',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperationDone',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperationPending',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperationReady',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: '', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155BatchReceived',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC721Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'callerConfirmation', internalType: 'address', type: 'address' },
+    ],
+    name: 'renounceRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'revokeRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'delay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'schedule',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'delay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'scheduleBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'selector', internalType: 'bytes4', type: 'bytes4' },
+      { name: 'newDelay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'setFunctionDelay',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'newDelay', internalType: 'uint256', type: 'uint256' }],
+    name: 'updateDelay',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      { name: 'target', internalType: 'address', type: 'address', indexed: false },
+      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
+    ],
+    name: 'CallExecuted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32', indexed: false },
+    ],
+    name: 'CallSalt',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      { name: 'target', internalType: 'address', type: 'address', indexed: false },
+      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32', indexed: false },
+      { name: 'delay', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'CallScheduled',
+  },
+  { type: 'event', anonymous: false, inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true }], name: 'Cancelled' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address', indexed: true },
+      { name: 'selector', internalType: 'bytes4', type: 'bytes4', indexed: true },
+      { name: 'oldDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'newDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'FunctionDelayChange',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'oldDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'newDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'MinDelayChange',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+    ],
+    name: 'RoleAdminChanged',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'account', internalType: 'address', type: 'address', indexed: true },
+      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'RoleGranted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'account', internalType: 'address', type: 'address', indexed: true },
+      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'RoleRevoked',
+  },
+  { type: 'error', inputs: [], name: 'AccessControlBadConfirmation' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'account', internalType: 'address', type: 'address' },
+      { name: 'neededRole', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'AccessControlUnauthorizedAccount',
+  },
+  { type: 'error', inputs: [], name: 'FailedCall' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'delay', internalType: 'uint256', type: 'uint256' },
+      { name: 'minDelay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'TimelockInsufficientDelay',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'targets', internalType: 'uint256', type: 'uint256' },
+      { name: 'payloads', internalType: 'uint256', type: 'uint256' },
+      { name: 'values', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'TimelockInvalidOperationLength',
+  },
+  { type: 'error', inputs: [{ name: 'caller', internalType: 'address', type: 'address' }], name: 'TimelockUnauthorizedCaller' },
+  { type: 'error', inputs: [{ name: 'predecessorId', internalType: 'bytes32', type: 'bytes32' }], name: 'TimelockUnexecutedPredecessor' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'operationId', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'expectedStates', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'TimelockUnexpectedOperationState',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // IAccessControl
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2028,6 +2637,46 @@ export const ierc1155ErrorsAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// IERC1155Receiver
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const ierc1155ReceiverAbi = [
+  {
+    type: 'function',
+    inputs: [
+      { name: 'operator', internalType: 'address', type: 'address' },
+      { name: 'from', internalType: 'address', type: 'address' },
+      { name: 'ids', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155BatchReceived',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'operator', internalType: 'address', type: 'address' },
+      { name: 'from', internalType: 'address', type: 'address' },
+      { name: 'id', internalType: 'uint256', type: 'uint256' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // IERC1271
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2319,6 +2968,25 @@ export const ierc721ErrorsAbi = [
   { type: 'error', inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }], name: 'ERC721InvalidReceiver' },
   { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'ERC721InvalidSender' },
   { type: 'error', inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }], name: 'ERC721NonexistentToken' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// IERC721Receiver
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const ierc721ReceiverAbi = [
+  {
+    type: 'function',
+    inputs: [
+      { name: 'operator', internalType: 'address', type: 'address' },
+      { name: 'from', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC721Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3619,6 +4287,363 @@ export const stringsAbi = [
   },
   { type: 'error', inputs: [], name: 'StringsInvalidAddressFormat' },
   { type: 'error', inputs: [], name: 'StringsInvalidChar' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// TimelockController
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const timelockControllerAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: 'minDelay', internalType: 'uint256', type: 'uint256' },
+      { name: 'proposers', internalType: 'address[]', type: 'address[]' },
+      { name: 'executors', internalType: 'address[]', type: 'address[]' },
+      { name: 'admin', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  { type: 'receive', stateMutability: 'payable' },
+  { type: 'function', inputs: [], name: 'CANCELLER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'EXECUTOR_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'PROPOSER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }], name: 'cancel', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'payload', internalType: 'bytes', type: 'bytes' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'execute',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'executeBatch',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  { type: 'function', inputs: [], name: 'getMinDelay', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getOperationState',
+    outputs: [{ name: '', internalType: 'enum TimelockController.OperationState', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getRoleAdmin',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'getTimestamp',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'grantRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'hasRole',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'hashOperation',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'hashOperationBatch',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperation',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperationDone',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperationPending',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'isOperationReady',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: '', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155BatchReceived',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC1155Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'onERC721Received',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'callerConfirmation', internalType: 'address', type: 'address' },
+    ],
+    name: 'renounceRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'account', internalType: 'address', type: 'address' },
+    ],
+    name: 'revokeRole',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'delay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'schedule',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'targets', internalType: 'address[]', type: 'address[]' },
+      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'payloads', internalType: 'bytes[]', type: 'bytes[]' },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'delay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'scheduleBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'newDelay', internalType: 'uint256', type: 'uint256' }],
+    name: 'updateDelay',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      { name: 'target', internalType: 'address', type: 'address', indexed: false },
+      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
+    ],
+    name: 'CallExecuted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32', indexed: false },
+    ],
+    name: 'CallSalt',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      { name: 'target', internalType: 'address', type: 'address', indexed: false },
+      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
+      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32', indexed: false },
+      { name: 'delay', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'CallScheduled',
+  },
+  { type: 'event', anonymous: false, inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true }], name: 'Cancelled' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'oldDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'newDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'MinDelayChange',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+    ],
+    name: 'RoleAdminChanged',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'account', internalType: 'address', type: 'address', indexed: true },
+      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'RoleGranted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      { name: 'account', internalType: 'address', type: 'address', indexed: true },
+      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'RoleRevoked',
+  },
+  { type: 'error', inputs: [], name: 'AccessControlBadConfirmation' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'account', internalType: 'address', type: 'address' },
+      { name: 'neededRole', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'AccessControlUnauthorizedAccount',
+  },
+  { type: 'error', inputs: [], name: 'FailedCall' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'delay', internalType: 'uint256', type: 'uint256' },
+      { name: 'minDelay', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'TimelockInsufficientDelay',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'targets', internalType: 'uint256', type: 'uint256' },
+      { name: 'payloads', internalType: 'uint256', type: 'uint256' },
+      { name: 'values', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'TimelockInvalidOperationLength',
+  },
+  { type: 'error', inputs: [{ name: 'caller', internalType: 'address', type: 'address' }], name: 'TimelockUnauthorizedCaller' },
+  { type: 'error', inputs: [{ name: 'predecessorId', internalType: 'bytes32', type: 'bytes32' }], name: 'TimelockUnexecutedPredecessor' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'operationId', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'expectedStates', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'TimelockUnexpectedOperationState',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

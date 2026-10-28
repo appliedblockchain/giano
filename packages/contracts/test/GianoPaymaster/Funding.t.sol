@@ -118,7 +118,7 @@ contract FundingTest is PaymasterTestBase {
         _fund(TENANT_A, 1 ether);
         address newExit = makeAddr('newExit');
 
-        vm.prank(tenantAdmin);
+        vm.prank(withdrawAddressAdmin);
         paymaster.setTenantWithdrawAddress(TENANT_A, newExit);
 
         vm.expectRevert(abi.encodeWithSelector(GianoPaymaster.NotWithdrawAddress.selector, TENANT_A, tenantAWithdraw));

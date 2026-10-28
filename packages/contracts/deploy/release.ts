@@ -25,6 +25,7 @@ export const RELEASE_CONTRACTS = {
 	GianoSmartWallet: "src/GianoSmartWallet.sol",
 	GianoSmartWalletFactory: "src/GianoSmartWalletFactory.sol",
 	GianoPaymaster: "src/paymaster/GianoPaymaster.sol",
+	GianoTimelock: "src/paymaster/GianoTimelock.sol",
 	ERC1967Proxy:
 		"node_modules/@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
 	PrivateERC20: "src/testing/PrivateERC20.sol",

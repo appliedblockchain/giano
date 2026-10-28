@@ -64,8 +64,13 @@ contract GianoPaymaster is
     bytes32 public constant FEE_COLLECTOR_ROLE = keccak256('giano.paymaster.FEE_COLLECTOR_ROLE');
     /// @notice May add, unlock and withdraw the EntryPoint stake. May not touch the deposit.
     bytes32 public constant STAKE_ADMIN_ROLE = keccak256('giano.paymaster.STAKE_ADMIN_ROLE');
-    /// @notice May register tenants and set their withdrawal addresses. May not move their funds.
+    /// @notice May register tenants and enable or disable them. May not move their funds, and may
+    ///         not change where they withdraw to.
     bytes32 public constant TENANT_ADMIN_ROLE = keccak256('giano.paymaster.TENANT_ADMIN_ROLE');
+    /// @notice May change a tenant's withdrawal address. Separate from TENANT_ADMIN_ROLE because it
+    ///         can redirect a tenant's funds, so it is held by the timelock while onboarding stays
+    ///         immediate (R-48, G9).
+    bytes32 public constant WITHDRAW_ADDRESS_ADMIN_ROLE = keccak256('giano.paymaster.WITHDRAW_ADDRESS_ADMIN_ROLE');
     /// @notice May set the overhead allowance and operational limits. May not move funds.
     bytes32 public constant PARAM_ADMIN_ROLE = keccak256('giano.paymaster.PARAM_ADMIN_ROLE');
     /// @notice May halt acceptance of new sponsorships. May not move funds or alter configuration.
@@ -275,6 +280,7 @@ contract GianoPaymaster is
         _setRoleAdmin(FEE_COLLECTOR_ROLE, ROLE_ADMIN);
         _setRoleAdmin(STAKE_ADMIN_ROLE, ROLE_ADMIN);
         _setRoleAdmin(TENANT_ADMIN_ROLE, ROLE_ADMIN);
+        _setRoleAdmin(WITHDRAW_ADDRESS_ADMIN_ROLE, ROLE_ADMIN);
         _setRoleAdmin(PARAM_ADMIN_ROLE, ROLE_ADMIN);
         _setRoleAdmin(PAUSER_ROLE, ROLE_ADMIN);
         _setRoleAdmin(UPGRADER_ROLE, ROLE_ADMIN);
@@ -407,7 +413,9 @@ contract GianoPaymaster is
         emit TenantRegistered(tenantId, withdrawAddress, slug);
     }
 
-    function setTenantWithdrawAddress(bytes16 tenantId, address withdrawAddress) external onlyRole(TENANT_ADMIN_ROLE) {
+    /// @notice Redirects where a tenant's balance can be withdrawn to. Held by the timelock in
+    ///         production, so a change is public for the whole delay before it can take effect.
+    function setTenantWithdrawAddress(bytes16 tenantId, address withdrawAddress) external onlyRole(WITHDRAW_ADDRESS_ADMIN_ROLE) {
         if (withdrawAddress == address(0)) revert ZeroAddress();
         Tenant storage t = _requireTenant(tenantId);
         address old = t.withdrawAddress;

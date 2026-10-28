@@ -29,6 +29,7 @@ contract RolesTest is PaymasterTestBase {
         assertEq(paymaster.getRoleAdmin(paymaster.FEE_COLLECTOR_ROLE()), roleAdminRole);
         assertEq(paymaster.getRoleAdmin(paymaster.STAKE_ADMIN_ROLE()), roleAdminRole);
         assertEq(paymaster.getRoleAdmin(paymaster.TENANT_ADMIN_ROLE()), roleAdminRole);
+        assertEq(paymaster.getRoleAdmin(paymaster.WITHDRAW_ADDRESS_ADMIN_ROLE()), roleAdminRole);
         assertEq(paymaster.getRoleAdmin(paymaster.PARAM_ADMIN_ROLE()), roleAdminRole);
         assertEq(paymaster.getRoleAdmin(paymaster.PAUSER_ROLE()), roleAdminRole);
         assertEq(paymaster.getRoleAdmin(paymaster.UPGRADER_ROLE()), roleAdminRole);
@@ -103,9 +104,24 @@ contract RolesTest is PaymasterTestBase {
         paymaster.registerTenant(bytes16(uint128(9)), outsider, 'x');
 
         _expectUnauthorised(outsider, paymaster.TENANT_ADMIN_ROLE());
-        paymaster.setTenantWithdrawAddress(TENANT_A, outsider);
+        paymaster.setTenantEnabled(TENANT_A, false);
+    }
 
-        _expectUnauthorised(outsider, paymaster.TENANT_ADMIN_ROLE());
+    /// @dev G9. Redirecting a tenant's exit is timelocked; onboarding is not. They are separate
+    ///      roles so the timelock can hold one while an operational key holds the other.
+    function test_theTenantAdminCannotRedirectAWithdrawal() public {
+        _expectUnauthorised(tenantAdmin, paymaster.WITHDRAW_ADDRESS_ADMIN_ROLE());
+        paymaster.setTenantWithdrawAddress(TENANT_A, tenantAdmin);
+
+        _expectUnauthorised(outsider, paymaster.WITHDRAW_ADDRESS_ADMIN_ROLE());
+        paymaster.setTenantWithdrawAddress(TENANT_A, outsider);
+    }
+
+    function test_theWithdrawAddressAdminCannotOnboardTenants() public {
+        _expectUnauthorised(withdrawAddressAdmin, paymaster.TENANT_ADMIN_ROLE());
+        paymaster.registerTenant(bytes16(uint128(9)), withdrawAddressAdmin, 'x');
+
+        _expectUnauthorised(withdrawAddressAdmin, paymaster.TENANT_ADMIN_ROLE());
         paymaster.setTenantEnabled(TENANT_A, false);
     }
 
@@ -132,12 +148,23 @@ contract RolesTest is PaymasterTestBase {
     // No role reaches a tenant balance (R-48)
     // -----------------------------------------------------------------------------------------
 
-    /// @dev The tenant-admin role can change where a tenant withdraws to. That is a real power and
-    ///      worth naming: it cannot move funds itself, but it can point the exit somewhere else,
-    ///      which is why it belongs behind the same timelocked grant as every other role.
+    /// @dev The withdraw-address admin can change where a tenant withdraws to. That is a real power
+    ///      and worth naming: it cannot move funds itself, but it can point the exit somewhere
+    ///      else, which is why the timelock holds it (G9).
     function test_noRoleCanWithdrawATenantsBalance() public {
         _fund(TENANT_A, 1 ether);
-        address[9] memory holders = [roleAdmin, signerAdmin, feeAdmin, feeCollector, stakeAdmin, tenantAdmin, paramAdmin, pauser, upgrader];
+        address[10] memory holders = [
+            roleAdmin,
+            signerAdmin,
+            feeAdmin,
+            feeCollector,
+            stakeAdmin,
+            tenantAdmin,
+            withdrawAddressAdmin,
+            paramAdmin,
+            pauser,
+            upgrader
+        ];
 
         for (uint256 i = 0; i < holders.length; i++) {
             vm.expectRevert(abi.encodeWithSelector(GianoPaymaster.NotWithdrawAddress.selector, TENANT_A, holders[i]));

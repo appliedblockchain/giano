@@ -42,6 +42,7 @@ contract PaymasterTestBase is CreateXFixture {
     address internal feeCollector = makeAddr('feeCollector');
     address internal stakeAdmin = makeAddr('stakeAdmin');
     address internal tenantAdmin = makeAddr('tenantAdmin');
+    address internal withdrawAddressAdmin = makeAddr('withdrawAddressAdmin');
     address internal paramAdmin = makeAddr('paramAdmin');
     address internal pauser = makeAddr('pauser');
     address internal upgrader = makeAddr('upgrader');
@@ -87,6 +88,7 @@ contract PaymasterTestBase is CreateXFixture {
         paymaster.grantRole(paymaster.FEE_COLLECTOR_ROLE(), feeCollector);
         paymaster.grantRole(paymaster.STAKE_ADMIN_ROLE(), stakeAdmin);
         paymaster.grantRole(paymaster.TENANT_ADMIN_ROLE(), tenantAdmin);
+        paymaster.grantRole(paymaster.WITHDRAW_ADDRESS_ADMIN_ROLE(), withdrawAddressAdmin);
         paymaster.grantRole(paymaster.PARAM_ADMIN_ROLE(), paramAdmin);
         paymaster.grantRole(paymaster.PAUSER_ROLE(), pauser);
         paymaster.grantRole(paymaster.UPGRADER_ROLE(), upgrader);
