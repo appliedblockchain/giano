@@ -153,7 +153,7 @@ since been retired (§9).
 | `tenants` has no status column; every row is live | ✅ | `src/db/schema.ts:8-24` |
 | `users`, `credentials`, `challenges`, `pending_additions`, `wallet_management_log`, `userop_log`, `ror_origins` reference `tenants` without `ON DELETE CASCADE` | ✅ | `src/db/schema.ts` |
 | `paymaster_tenants`, `sponsorship_reservations`, `tenant_sponsorship*`, `tenant_tx_mappings*` cascade | ✅ | `src/db/schema.ts` |
-| The paymaster exposes `registerTenant`, `setTenantEnabled`, `setTenantWithdrawAddress` under `TENANT_ADMIN_ROLE`; nothing deregisters | ✅ | `packages/contracts/src/paymaster/GianoPaymaster.sol:394-419` |
+| The paymaster exposes `registerTenant`, `setTenantEnabled` under `TENANT_ADMIN_ROLE` and `setTenantWithdrawAddress` under `WITHDRAW_ADDRESS_ADMIN_ROLE` (timelocked since G9); nothing deregisters | ✅ | `packages/contracts/src/paymaster/GianoPaymaster.sol:394-419` |
 | `paymaster-admin` reads the chain only; it has no route to `wallet-api` | ✅ | `services/paymaster-admin/docker/nginx.conf.template` has `/rpc/<chainId>` locations and no `/api`, and its comment says a variable `proxy_pass` "would need a resolver this image cannot assume". `wallet-web` already solves that by taking the resolver from `/etc/resolv.conf` (`services/wallet-web/docker/entrypoint.sh`). [`INFRASTRUCTURE.md`](./INFRASTRUCTURE.md) R31 says the console proxies `/api`; the template disagrees. |
 | The console reloads when the wallet changes | ✅ | `services/paymaster-admin/src/App.tsx` reloads on `accountsChanged` **and** `chainChanged`; switching deployment drops the wallet connection |
 | Per-chain status is already tracked: boot verification, a background prober, `/v1/version` exposing `ready`/`unavailable` | ⚠️ partly | `src/services/chain-verify.ts`, `src/index.ts:87-130`, `src/routes/health.ts`. For a `ready` chain the prober only calls `getChainId()` and keeps no result; a full `ChainVerification` exists only from boot and from recovery attempts. |
@@ -511,10 +511,12 @@ The API cannot move an on-chain balance, and the normal path is the tenant's: on
 withdraw address can call `withdrawTenant`. So a tenant with funds is deleted by asking the tenant
 to withdraw, which is the correct order of events anyway.
 
-There is an on-chain exception. A holder of `TENANT_ADMIN_ROLE` can call `setTenantWithdrawAddress`
-(`GianoPaymaster.sol:411`), so the role can redirect a tenant's withdrawal and then withdraw. That
-is the recovery path for a balance its tenant has abandoned. It is a wallet-signed console action
-with its own on-chain record, and it is never an API action.
+There is an on-chain exception. A holder of `WITHDRAW_ADDRESS_ADMIN_ROLE` can call
+`setTenantWithdrawAddress`, so the role can redirect a tenant's withdrawal and then withdraw. That
+is the recovery path for a balance its tenant has abandoned. Since G9 the role is held by the
+paymaster's timelock in production, so a redirect is a public, queued proposal that waits its
+published delay; the console builds the proposal rather than sending it. It is never an API
+action.
 
 ---
 

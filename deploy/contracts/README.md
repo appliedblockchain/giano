@@ -93,8 +93,11 @@ operation. The selected profile's RPC environment reference takes precedence ove
 then the public profile fallback is used. No command executes a shell sourced from a profile or
 operator dotenv file. No secret values are added to deployment records or generated address fragments.
 
-Use `contracts:provision` for the EOA-admin testnet topology; a timelock needs its own transaction
-workflow. Provisioning reruns add tenant funding again. `contracts:sponsorship` installs the demo
+Use `contracts:provision` for the EOA-admin bootstrap topology, then `contracts:timelock` and
+`contracts:handoff` to move the timelocked roles (ROLE_ADMIN, upgrader, fee admin, withdraw-address
+admin) to the profile's `GianoTimelock` (G9; see [the timelock runbook](../../docs/PAYMASTER-TIMELOCK-RUNBOOK.md)).
+The profile's `timelock` section publishes the proposer Safe and one delay per timelocked function;
+`contracts:doctor` then asserts both. Provisioning reruns add tenant funding again. `contracts:sponsorship` installs the demo
 policy for the configured tenant through the real API; use the admin console/API for other policies.
 The same chain-adoption/code gates apply to an added chain. A new profile is not proof of readiness.
 
@@ -217,7 +220,10 @@ Read [the external-chain demo guide](DEMO.md) for
 multi-tenant details. The shared operator commands load `--env-file` explicitly, validate the selected RPC identity and
 require interactive confirmation before provisioning transactions or sponsorship-policy writes. The core wizard's
 public address fragment is not a replacement for provisioning credentials or tenant configuration.
-A timelock-admin deployment requires that admin's transaction workflow rather than the EOA script.
+Provisioning runs while the operator EOA still holds ROLE_ADMIN. Hand the timelocked roles to the
+timelock afterwards (`pnpm contracts:timelock`, then `pnpm contracts:handoff`); from then on fee,
+withdrawal-address, role and upgrade changes are timelock proposals signed by the Safe
+([runbook](../../docs/PAYMASTER-TIMELOCK-RUNBOOK.md)).
 
 ## 5. Cut over services and clients together
 
@@ -289,7 +295,7 @@ Recheck after the real deployer is configured; those will be different target ad
 | Existing code accepted without matching selected release; proxy runtime hides state | Wizard verifies release-specific hashes, EntryPoint/CreateX code, factory linkage, implementation slot and initialization parameters before signing and after deployment. Low-level `deploy:cli` remains an expert primitive; use the wizard for these testnets. |
 | Partial core runs saved only after all four contracts | Optional per-contract persistence hook plus interrupted-run/retry regression tests. |
 | Stale public registry and legacy environment addresses | Generate registry after verification; explicit coordinated package/configuration cutover above. Actual records must come from actual deployments, not invented addresses. |
-| Provisioning and policy setup are separate operator tools | Shared `contracts:funding`, `contracts:provision`, `contracts:sponsorship` and `contracts:doctor` launchers use the same profiles and explicit operator dotenv files. Tenant credentials, policies and any timelock workflow remain environment/operator inputs. |
+| Provisioning and policy setup are separate operator tools | Shared `contracts:funding`, `contracts:provision`, `contracts:sponsorship` and `contracts:doctor` launchers use the same profiles and explicit operator dotenv files. Tenant credentials and policies remain environment/operator inputs. The timelock is deployed and handed the timelocked roles by `contracts:timelock` / `contracts:handoff` from the profile (G9). |
 | Direct KMS/HSM signing and exact Base-inclusive gas quote absent | Environment-key adapter and conservative reserve only; custody adapter required if key export is prohibited. No promise that the reserve equals transaction cost. |
 | Explorer source publication absent | Release standard-input.json supports reproducible compilation; explorer upload/verification is still an operator task. Runtime verification is automated. |
 | Live migration and readiness not demonstrated | Custody, funding, actual deployments, configuration rollout and sponsored smoke tests require the real operator inputs; no public-chain transactions are sent by this development PR. |

@@ -678,7 +678,8 @@ The contract has **no owner and no superuser**. Each privileged action has its o
 | `FEE_ADMIN_ROLE` | Set the fee and per-tenant overrides | Collect the fees it sets |
 | `FEE_COLLECTOR_ROLE` | Withdraw accrued treasury, capped at what accrued | Change the rate; touch tenant balances |
 | `STAKE_ADMIN_ROLE` | Add, unlock and withdraw the stake | Touch the deposit or any balance |
-| `TENANT_ADMIN_ROLE` | Register tenants and their withdrawal addresses | Move a registered tenant's funds |
+| `TENANT_ADMIN_ROLE` | Register, enable and disable tenants | Move a registered tenant's funds; change where it withdraws to |
+| `WITHDRAW_ADDRESS_ADMIN_ROLE` | Change a tenant's withdrawal address (timelocked) | Move funds; onboard tenants |
 | `PARAM_ADMIN_ROLE` | Set the overhead allowance and limits | Move funds |
 | `PAUSER_ROLE` | Halt new sponsorships | Move funds; alter configuration |
 | `UPGRADER_ROLE` | Replace the implementation | — (see the custody note below) |
@@ -769,8 +770,9 @@ State this to tenants plainly rather than letting the shorter version stand:
   tenant that objects to withdraw its balance first. There is no bypass, including for changes
   presented as urgent.
 - **A tenant that loses its withdrawal key strands that balance permanently**, because by design
-  nobody else can move it. Rotation via `setTenantWithdrawAddress` (`TENANT_ADMIN_ROLE`) exists and
-  should be used *before* a key is lost.
+  nobody else can move it. Rotation via `setTenantWithdrawAddress` (`WITHDRAW_ADDRESS_ADMIN_ROLE`, held by the
+  timelock in production, so a rotation waits its published delay) exists and should be used
+  *before* a key is lost.
 
 "Giano cannot take your funds" is therefore true of Giano's day-to-day operation and conditional on
 the upgrade controls. Anything stronger would be a claim the architecture does not support.
