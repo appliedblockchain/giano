@@ -130,10 +130,13 @@ separation the contract exists to enforce — `provision-paymaster.ts` says so l
 
 | Role | Devnet holder | Production |
 | --- | --- | --- |
-| `ROLE_ADMIN` | anvil 0 | timelock |
-| `UPGRADER_ROLE` | anvil 0 | timelock |
-| `SIGNER_ADMIN_ROLE`, `FEE_ADMIN_ROLE`, `FEE_COLLECTOR_ROLE`, `STAKE_ADMIN_ROLE`, `TENANT_ADMIN_ROLE`, `PARAM_ADMIN_ROLE`, `PAUSER_ROLE` | anvil 0 | separate holders |
+| `ROLE_ADMIN`, `UPGRADER_ROLE`, `FEE_ADMIN_ROLE`, `WITHDRAW_ADDRESS_ADMIN_ROLE` | anvil 0 | the GianoTimelock alone (G9) |
+| `SIGNER_ADMIN_ROLE`, `FEE_COLLECTOR_ROLE`, `STAKE_ADMIN_ROLE`, `TENANT_ADMIN_ROLE`, `PARAM_ADMIN_ROLE`, `PAUSER_ROLE` | anvil 0 | separate holders, immediate |
 | `DEFAULT_ADMIN_ROLE` | **nobody — by design** | nobody |
+
+The devnet has no timelock: a suite that had to wait out a delay to change a fee would be
+untestable. `giano-doctor chain` reports the timelocked roles on a key there as info, not a failure;
+docs/PAYMASTER-TIMELOCK-RUNBOOK.md covers the production topology.
 
 `DEFAULT_ADMIN_ROLE` being empty is asserted by the contract tests, by `giano-doctor`, and by the
 admin console's health check. A holder would be a superuser by another name.

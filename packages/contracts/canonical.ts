@@ -65,14 +65,14 @@ export const CANONICAL_CODE: Record<`0x${string}`, readonly CanonicalCode[]> = {
   ],
   '0x326549c3600BFA31CB44213Df0576AE79E70E4aC': [
     { label: 'giano.paymaster.impl', release: 'v1', codehash: '0xba3d012125286c88b035a63e7567be7a6d519e6bec06f65fd7e1140fe1bbba68' },
-    { label: 'giano.paymaster.impl', release: 'v2', codehash: '0xe0763f82a83c9c0b1676dc2c9aae54497a5e835059553ff103a49f62f67a537b' },
+    { label: 'giano.paymaster.impl', release: 'v2', codehash: '0x272e0fcb12edd02deb170aa0446881de698ed992b05b12249329f00e56f17ade' },
   ],
   '0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96': [
     { label: 'giano.paymaster.proxy', release: 'v1', codehash: '0xcb6e416014c6c966865c173b402a66ec847e562f47f89a400a33416359f232fe' },
     { label: 'giano.paymaster.proxy', release: 'v2', codehash: '0x1d07a8c854ec774527639ab90876f40d91eca6075a8f85e1f6c981eaf1c5bfe3' },
   ],
   '0x7C6aDB755f078Aabed46E4AE5865795d46BA1822': [
-    { label: 'giano.paymaster.impl@v2', release: 'v2', codehash: '0x653b60b4dd5ca1cfbe7261840af8963e657fd4ac682ad1a98b3447491d5a2860' },
+    { label: 'giano.paymaster.impl@v2', release: 'v2', codehash: '0x86ae79598aba161883f009f9faa467cb3990b6e6b70c2eb728e1355812cc8d35' },
   ],
   '0x8B93fBc1Ff322dDF9f70dcb6728DE5F32d6bDF1E': [
     { label: 'giano.wallet.impl@v2', release: 'v2', codehash: '0x358264f41531a8511462514082306e2c7d3ae9172c15752fdc168e01cfbe5c3b' },

@@ -84,14 +84,19 @@ function foundryBuild(): BuildInfo {
 	}
 }
 
+/**
+ * Creation code of `names` (default: every contract a release carries today). An older release
+ * may carry fewer — v1 predates GianoTimelock — so `verify` passes the release's own list.
+ */
 function creationCodes(
 	output: BuildInfo["output"],
+	names: readonly ReleaseContract[] = Object.keys(
+		RELEASE_CONTRACTS,
+	) as ReleaseContract[],
 ): Record<ReleaseContract, Hex> {
 	const codes = {} as Record<ReleaseContract, Hex>;
-	for (const [name, source] of Object.entries(RELEASE_CONTRACTS) as [
-		ReleaseContract,
-		string,
-	][]) {
+	for (const name of names) {
+		const source = RELEASE_CONTRACTS[name];
 		const object = output.contracts[source]?.[name]?.evm.bytecode.object;
 		if (!object)
 			throw new Error(
@@ -202,8 +207,9 @@ function verify(): void {
 			throw new Error(
 				`${version}: solc reported errors:\n${errors.map((e: { formattedMessage: string }) => e.formattedMessage).join("\n")}`,
 			);
-		const codes = creationCodes(output);
-		for (const name of Object.keys(RELEASE_CONTRACTS) as ReleaseContract[]) {
+		const names = Object.keys(release.contracts) as ReleaseContract[];
+		const codes = creationCodes(output, names);
+		for (const name of names) {
 			if (
 				codes[name].toLowerCase() !==
 				release.contracts[name].creationCode.toLowerCase()
