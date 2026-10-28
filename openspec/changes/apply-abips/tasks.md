@@ -94,7 +94,11 @@
     the tech lead's sign-off, which is still needed.
 
   This lifts the 2026-11-03 merge gate from 2.3.
-- [ ] 2.8 Gates: `pnpm build`, `pnpm lint` and the CI job set all pass. Open PR 2 on top of PR 1.
+- [x] 2.8 Gates: `pnpm build`, `pnpm lint` and the CI job set all pass. Open PR 2 on top of PR 1.
+
+  CI on 2026-10-28, after 2.9: every job passes, including both `giano-example` builds and the e2e suite. The only red
+  entry is `Build ${{ matrix.image.name }}`, left by a Docker images run that its concurrency group cancelled; the newer
+  run passed.
 
 ## 3. ABIP-7: exact pins (PR 3, `chore/abip-7-exact-pins`)
 
@@ -126,13 +130,16 @@
 - [x] 3.5 Add a patch changeset for contracts, tx-describe, wallet-core and wallet-transport, explaining that runtime
   `dependencies` are now exact under ABIP-7.
 - [x] 3.6 Wire the check and its tests into `ci.yml`.
-- [ ] 3.7 Gates (local, 2026-10-27): build passes, except the contracts' forge-based `gen:abis`, since Foundry is not
+- [x] 3.7 Gates (local, 2026-10-27): build passes, except the contracts' forge-based `gen:abis`, since Foundry is not
   installed locally. The package tests pass (402), wallet-api passes (387), and typecheck passes. forge, determinism,
   `release:verify` and e2e run in this PR's CI; `determinism.yml` triggers on `packages/contracts/package.json`.
   Required:
   - `pnpm build`, the package tests and the wallet-api tests;
   - `forge test`, the determinism workflow and `release:verify`, with canonical addresses unchanged;
   - the e2e suite, run once.
+
+  CI on 2026-10-28 (#164): the package build and typecheck, the Foundry tests, the wallet-api tests, "Canonical
+  releases, addresses and code" and the e2e suite all pass.
 - [x] 3.8 Update the docs:
   - `AGENTS.md`: the upgrade workflow, meaning edit the pin, commit the lockfile in the same PR, and include no
     unrelated changes;
