@@ -10,5 +10,20 @@
 		"defaultFeeWei": "100000000000000",
 		"postOpGasAllowance": 40000,
 		"penaltyBps": 1000
+	},
+	"timelock": {
+		"address": null,
+		"proposers": [],
+		"executors": [],
+		"delays": {
+			"minDelay": 300,
+			"upgradeToAndCall": 3600,
+			"grantRole": 3600,
+			"revokeRole": 3600,
+			"renounceRole": 3600,
+			"setTenantWithdrawAddress": 1800,
+			"setDefaultFee": 1200,
+			"setTenantFee": 600
+		}
 	}
 }

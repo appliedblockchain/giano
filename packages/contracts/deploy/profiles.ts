@@ -18,6 +18,38 @@ const uint128 = z
 			return false;
 		}
 	});
+const nonzeroAddress = z.string().refine((value) => {
+	try {
+		return getAddress(value) !== zeroAddress;
+	} catch {
+		return false;
+	}
+});
+const seconds = z.number().int().min(0);
+/**
+ * The paymaster timelock this chain publishes (G9 R2): its address once deployed, its proposers (a
+ * Safe in production), its executors (empty: anyone may execute a ready operation) and one delay
+ * per timelocked function, in seconds. These delays are a promise to tenants.
+ */
+const timelockSchema = z
+	.object({
+		address: nonzeroAddress.nullable(),
+		proposers: z.array(nonzeroAddress),
+		executors: z.array(nonzeroAddress),
+		delays: z
+			.object({
+				minDelay: seconds,
+				upgradeToAndCall: seconds,
+				grantRole: seconds,
+				revokeRole: seconds,
+				renounceRole: seconds,
+				setTenantWithdrawAddress: seconds,
+				setDefaultFee: seconds,
+				setTenantFee: seconds,
+			})
+			.strict(),
+	})
+	.strict();
 export const profileSchema = z
 	.object({
 		chainId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -73,6 +105,7 @@ export const profileSchema = z
 				penaltyBps: z.number().int().min(0).max(5000),
 			})
 			.strict(),
+		timelock: timelockSchema.optional(),
 	})
 	.strict();
 export type ChainProfile = z.infer<typeof profileSchema>;
@@ -108,7 +141,7 @@ export function loadProfile(options: {
 	} catch {
 		// Do not print parser errors: an operator may accidentally paste a credential into a field.
 		throw new Error(
-			"Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance and paymaster parameters. Unknown/secret fields are refused.",
+			"Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance, paymaster parameters and optionally the timelock. Unknown/secret fields are refused.",
 		);
 	}
 }
@@ -130,6 +163,26 @@ export function savePublicChoices(
 	});
 	renameSync(temporary, selected.file);
 }
+/** Persists the deployed timelock's address (a public value) into the profile. */
+export function saveTimelockAddress(
+	selected: ProfileFile,
+	address: string,
+): void {
+	if (!selected.profile.timelock)
+		throw new Error(
+			"the profile has no timelock section to record the address in",
+		);
+	const profile = profileSchema.parse({
+		...selected.profile,
+		timelock: { ...selected.profile.timelock, address: getAddress(address) },
+	});
+	const temporary = `${selected.file}.${process.pid}.tmp`;
+	writeFileSync(temporary, `${JSON.stringify(profile, null, "\t")}\n`, {
+		flag: "wx",
+	});
+	renameSync(temporary, selected.file);
+}
+
 export function paymasterParams(profile: ChainProfile) {
 	return {
 		...profile.paymaster,

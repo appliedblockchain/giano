@@ -18,9 +18,17 @@ import {
 	parseAbiParameters,
 	type Transport,
 	type WalletClient,
+	zeroAddress,
 } from "viem";
 import { CANONICAL_CODE, canonicalCodeAt } from "../canonical";
-import { gianoPaymasterAbi } from "../generated";
+import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import {
+	delayPolicyProblems,
+	encodeTimelockProposal,
+	paymasterFunctionDelays,
+	TIMELOCKED_ROLES,
+	type TimelockDelays,
+} from "../timelock";
 import { LABELS, type LabelKey, upgradeLabel } from "./config";
 import {
 	CREATEX_ADDRESS,
@@ -374,5 +382,143 @@ export function paymasterUpgradeCalldata(implementation: Address): Hex {
 		abi: gianoPaymasterAbi,
 		functionName: "upgradeToAndCall",
 		args: [implementation, "0x"],
+	});
+}
+
+export type TimelockParams = {
+	paymaster: Address;
+	/** May schedule and cancel: a Safe in production (G9 R3). */
+	proposers: Address[];
+	/** May execute a ready operation. Empty opens execution to anyone. */
+	executors: Address[];
+	delays: TimelockDelays;
+};
+
+/**
+ * Deploys a GianoTimelock for the paymaster with plain CREATE. It is not canonical: its proposers
+ * and delays are the operator's, so its address differs per deployment and is recorded instead.
+ */
+export async function deployTimelock(
+	ctx: Pick<DeployContext, "publicClient" | "walletClient" | "log">,
+	release: Release,
+	params: TimelockParams,
+): Promise<DeployedContract> {
+	const problems = delayPolicyProblems(params.delays);
+	if (problems.length)
+		throw new Error(`refusing the delay policy:\n  ${problems.join("\n  ")}`);
+	if (params.proposers.length === 0)
+		throw new Error("a timelock needs at least one proposer (a Safe in production)");
+
+	const initCode = withArgs(
+		release.contracts.GianoTimelock.creationCode,
+		"uint256, address[], address[], (address target, bytes4 selector, uint256 delay)[]",
+		[
+			BigInt(params.delays.minDelay),
+			params.proposers,
+			params.executors.length ? params.executors : [zeroAddress],
+			paymasterFunctionDelays(params.paymaster, params.delays),
+		],
+	);
+	if (!ctx.walletClient) throw new Error("Timelock deployment needs a signer");
+	const hash = await ctx.walletClient.sendTransaction({ data: initCode });
+	ctx.log(`  → GianoTimelock: submitted ${hash}; waiting for receipt`);
+	const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash });
+	if (receipt.status !== "success" || !receipt.contractAddress)
+		throw new Error(`deploying GianoTimelock reverted (${hash})`);
+	const address = getAddress(receipt.contractAddress);
+	const code = await ctx.publicClient.getCode({ address });
+	if (!code || code === "0x")
+		throw new Error(`no code at ${address} after deploying GianoTimelock`);
+	ctx.log(`  + ${"GianoTimelock".padEnd(28)} ${address}  ${hash}`);
+	return {
+		address,
+		label: "giano.paymaster.timelock",
+		release: release.version,
+		codehash: keccak256(code),
+		transactionHash: hash,
+	};
+}
+
+/** One call in the hand-off, in the order it must be sent. */
+export type HandOffCall = { description: string; data: Hex };
+
+/**
+ * The calls that give the timelock every timelocked role and take them from everyone else, sent
+ * by the current ROLE_ADMIN holder (`from`). ROLE_ADMIN is renounced last: after it, only the
+ * timelock can change a role, and only after the role delay. Already-correct state yields no call.
+ */
+export async function planHandOff(
+	publicClient: PublicClient,
+	paymaster: Address,
+	timelock: Address,
+	from: Address,
+): Promise<HandOffCall[]> {
+	const read = <T>(functionName: string, args: readonly unknown[] = []) =>
+		publicClient.readContract({
+			address: paymaster,
+			abi: gianoPaymasterAbi,
+			functionName: functionName as never,
+			args: args as never,
+		}) as Promise<T>;
+	const calls: HandOffCall[] = [];
+	const call = (
+		description: string,
+		functionName: "grantRole" | "revokeRole" | "renounceRole",
+		role: Hex,
+		account: Address,
+	) =>
+		calls.push({
+			description,
+			data: encodeFunctionData({
+				abi: gianoPaymasterAbi,
+				functionName,
+				args: [role, account],
+			}),
+		});
+
+	// ROLE_ADMIN last, so the sender keeps the power to make every other change first.
+	const order = [
+		...TIMELOCKED_ROLES.filter((role) => role !== "ROLE_ADMIN"),
+		"ROLE_ADMIN" as const,
+	];
+	for (const name of order) {
+		const role = await read<Hex>(name);
+		const count = await read<bigint>("getRoleMemberCount", [role]);
+		const holders: Address[] = [];
+		for (let i = 0n; i < count; i++)
+			holders.push(getAddress(await read<Address>("getRoleMember", [role, i])));
+		if (!holders.includes(getAddress(timelock)))
+			call(`grant ${name} to the timelock ${timelock}`, "grantRole", role, timelock);
+		for (const holder of holders) {
+			if (holder === getAddress(timelock)) continue;
+			if (name === "ROLE_ADMIN" && holder === getAddress(from)) continue;
+			call(`revoke ${name} from ${holder}`, "revokeRole", role, holder);
+		}
+		if (name === "ROLE_ADMIN" && holders.includes(getAddress(from)))
+			call(`renounce ${name} (${from})`, "renounceRole", role, from);
+	}
+	return calls;
+}
+
+/** `upgradeToAndCall(implementation, '')` as a timelock proposal, with the delay the timelock requires. */
+export async function paymasterUpgradeProposal(
+	publicClient: PublicClient,
+	timelock: Address,
+	proxy: Address,
+	implementation: Address,
+	salt?: Hex,
+) {
+	const data = paymasterUpgradeCalldata(implementation);
+	const delay = (await publicClient.readContract({
+		address: timelock,
+		abi: gianoTimelockAbi,
+		functionName: "getDelay",
+		args: [proxy, data],
+	})) as bigint;
+	return encodeTimelockProposal({
+		timelock,
+		calls: [{ target: proxy, data }],
+		delay,
+		salt,
 	});
 }

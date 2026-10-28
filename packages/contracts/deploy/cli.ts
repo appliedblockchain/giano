@@ -5,6 +5,10 @@
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
+ *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
+ *   pnpm deploy:cli timelock --rpc <url> --proposer <safe> [--proposer …] [--executor <0x…> …]
+ *                            --min-delay <dur> --delay <function>=<dur> … [--release vN]
+ *   pnpm deploy:cli handoff  --rpc <url> --timelock <0x…> [--execute] [--safe-json <file>]
  *   pnpm deploy:cli p256     --rpc <url>
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
@@ -12,8 +16,19 @@
  * chain. With neither, `core` and `testing` only verify: every contract must already be in place
  * with a release's code, and nothing is sent. The canonical deployer key is a production key: it
  * comes from an ABIP-8 ceremony and is held by Applied Blockchain DevOps (docs/key-ceremony.md);
- * set it only for a local or testnet chain, or as that operator. `upgrade --execute` sends the paymaster's upgradeToAndCall from UPGRADER_PRIVATE_KEY;
- * without --execute it prints the calldata for whoever holds UPGRADER_ROLE (the timelock).
+ * set it only for a local or testnet chain, or as that operator.
+ * `upgrade --execute` sends the paymaster's upgradeToAndCall from UPGRADER_PRIVATE_KEY;
+ * without --execute it prints the calldata for whoever holds UPGRADER_ROLE. With --timelock it
+ * prints the timelock proposal instead (schedule / execute / cancel calldata, and with --safe-json
+ * a Safe Transaction Builder file for the proposer Safe).
+ *
+ * Timelock (G9): `timelock` deploys a GianoTimelock with one delay per timelocked paymaster
+ * function (timelock.ts lists them; durations like 7d or 12h). It signs with
+ * ROLE_ADMIN_PRIVATE_KEY, or --impersonate --role-admin <0x…> on a local chain. `handoff` gives the
+ * timelock every timelocked role and takes them from every other holder, renouncing the sender's
+ * ROLE_ADMIN last. Without --execute it prints the calls (with --safe-json it also writes them as
+ * a Safe batch, for a ROLE_ADMIN that is itself a Safe); with --execute it sends them from
+ * ROLE_ADMIN_PRIVATE_KEY. Only the timelock can undo the hand-off.
  *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
  * Commit that file for any chain other than 31337/31338.
@@ -34,8 +49,17 @@ import {
 	type Transport,
 	type WalletClient,
 } from "viem";
+import { writeFileSync } from "node:fs";
 import { privateKeyToAccount } from "viem/accounts";
-import { gianoPaymasterAbi } from "../generated";
+import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import {
+	formatDuration,
+	parseDuration,
+	safeTransactionBatch,
+	TIMELOCKED_FUNCTION_NAMES,
+	type TimelockDelays,
+	type TimelockedFunctionName,
+} from "../timelock";
 import {
 	CANONICAL_DEPLOYER,
 	DEPLOYER_IS_PLACEHOLDER,
@@ -50,12 +74,20 @@ import {
 	type DeployContext,
 	deployCore,
 	deployTesting,
+	deployTimelock,
 	deployUpgradeTarget,
 	paymasterUpgradeCalldata,
+	paymasterUpgradeProposal,
+	planHandOff,
 } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { deployP256Verifier } from "./p256";
-import { DEPLOYMENTS_DIR, readRecord, writeRecord } from "./records";
+import {
+	DEPLOYMENTS_DIR,
+	type DeploymentRecord,
+	readRecord,
+	writeRecord,
+} from "./records";
 import {
 	DEV_RELEASE,
 	latestRelease,
@@ -85,6 +117,14 @@ const { positionals, values } = parseArgs({
 		// upgrade
 		contract: { type: "string" },
 		execute: { type: "boolean", default: false },
+		// timelock / handoff
+		timelock: { type: "string" },
+		salt: { type: "string" },
+		"safe-json": { type: "string" },
+		proposer: { type: "string", multiple: true },
+		executor: { type: "string", multiple: true },
+		"min-delay": { type: "string" },
+		delay: { type: "string", multiple: true },
 	},
 });
 
@@ -100,6 +140,73 @@ function required(name: keyof typeof values): string {
 
 function address(name: keyof typeof values): Address {
 	return getAddress(required(name));
+}
+
+/** `--min-delay` and one `--delay <function>=<duration>` per timelocked paymaster function. */
+function timelockDelays(): TimelockDelays {
+	const delays: Partial<TimelockDelays> = {
+		minDelay: parseDuration(required("min-delay")),
+	};
+	for (const entry of values.delay ?? []) {
+		const [name, duration] = entry.split("=");
+		if (!TIMELOCKED_FUNCTION_NAMES.includes(name as TimelockedFunctionName))
+			throw new Error(
+				`--delay ${entry}: the timelocked functions are ${TIMELOCKED_FUNCTION_NAMES.join(", ")}`,
+			);
+		delays[name as TimelockedFunctionName] = parseDuration(duration ?? "");
+	}
+	const missing = TIMELOCKED_FUNCTION_NAMES.filter(
+		(name) => delays[name] === undefined,
+	);
+	if (missing.length)
+		throw new Error(
+			`every timelocked function needs its own delay; missing --delay for ${missing.join(", ")}`,
+		);
+	return delays as TimelockDelays;
+}
+
+/**
+ * The account that holds ROLE_ADMIN before the hand-off: ROLE_ADMIN_PRIVATE_KEY, or on a local
+ * chain --impersonate with --role-admin.
+ */
+async function roleAdminClient(
+	chain: Chain,
+	transport: Transport,
+	local: boolean,
+): Promise<WalletClient<Transport, Chain, Account>> {
+	if (values.impersonate) {
+		localOnly(local, "--impersonate");
+		const admin = address("role-admin");
+		await impersonate(
+			createTestClient({ chain, transport, mode: "anvil" }),
+			admin,
+		);
+		return createWalletClient({ chain, transport, account: admin });
+	}
+	const key = process.env.ROLE_ADMIN_PRIVATE_KEY;
+	if (!key)
+		throw new Error(
+			"set ROLE_ADMIN_PRIVATE_KEY (the paymaster's current ROLE_ADMIN), or pass --impersonate --role-admin <0x…> on a local chain",
+		);
+	return createWalletClient({
+		chain,
+		transport,
+		account: privateKeyToAccount(key as `0x${string}`),
+	});
+}
+
+function paymasterProxy(record: DeploymentRecord | undefined): Address {
+	return (
+		record?.contracts.paymasterProxy?.address ??
+		create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy)
+	);
+}
+
+function writeSafeJson(contents: unknown): void {
+	const file = values["safe-json"];
+	if (!file) return;
+	writeFileSync(file, `${JSON.stringify(contents, null, 2)}\n`);
+	log(`wrote the Safe Transaction Builder batch to ${file}`);
 }
 
 async function connect(): Promise<{
@@ -294,10 +401,28 @@ async function main(): Promise<void> {
 				);
 				return;
 			}
-			const proxy =
-				ctx.record.contracts.paymasterProxy?.address ??
-				create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy);
+			const proxy = paymasterProxy(ctx.record);
 			const calldata = paymasterUpgradeCalldata(target.address);
+			if (values.timelock) {
+				const proposal = await paymasterUpgradeProposal(
+					ctx.publicClient,
+					address("timelock"),
+					proxy,
+					target.address,
+					values.salt as `0x${string}` | undefined,
+				);
+				log(
+					`Timelock proposal ${proposal.id} (delay ${formatDuration(proposal.delay)}):\n  1. a proposer sends to ${proposal.timelock}:\n     ${proposal.schedule}\n  2. after the delay, an executor sends to ${proposal.timelock}:\n     ${proposal.execute}\n  To cancel while it is pending, a canceller sends:\n     ${proposal.cancel}`,
+				);
+				writeSafeJson(
+					safeTransactionBatch(proposal, {
+						chainId: ctx.chainId,
+						step: "schedule",
+						description: `Upgrade the Giano paymaster ${proxy} to ${target.address}`,
+					}),
+				);
+				return;
+			}
 			if (!values.execute) {
 				log(
 					`To upgrade, the UPGRADER_ROLE holder sends to ${proxy}:\n  ${calldata}`,
@@ -343,9 +468,133 @@ async function main(): Promise<void> {
 			log(`Upgraded ${proxy} to ${target.address} (${hash})`);
 			return;
 		}
+		case "timelock": {
+			const { chainId, chain, transport, publicClient, local } =
+				await connect();
+			const walletClient = await roleAdminClient(chain, transport, local);
+			const record = readRecord(
+				chainId,
+				CANONICAL_DEPLOYER,
+				values["record-dir"] ?? DEPLOYMENTS_DIR,
+			);
+			const params = {
+				paymaster: paymasterProxy(record),
+				proposers: (values.proposer ?? []).map((p) => getAddress(p)),
+				executors: (values.executor ?? []).map((e) => getAddress(e)),
+				delays: timelockDelays(),
+			};
+			for (const proposer of params.proposers) {
+				const code = await publicClient.getCode({ address: proposer });
+				if (!code || code === "0x")
+					log(
+						`  ⚠ proposer ${proposer} has no code: an EOA proposer is one key that can queue anything. Use a Safe outside local testing (G9 R3).`,
+					);
+			}
+			log(
+				`timelock for ${params.paymaster}: minDelay ${formatDuration(params.delays.minDelay)}; ${TIMELOCKED_FUNCTION_NAMES.map((n) => `${n} ${formatDuration(params.delays[n])}`).join(", ")}`,
+			);
+			const deployed = await deployTimelock(
+				{ publicClient, walletClient, log },
+				release(local),
+				params,
+			);
+			record.timelock = {
+				...deployed,
+				proposers: params.proposers,
+				executors: params.executors,
+				delays: params.delays,
+			};
+			log(
+				`recorded in ${writeRecord(record, values["record-dir"] ?? DEPLOYMENTS_DIR)}`,
+			);
+			log(
+				`Next: \`handoff --timelock ${deployed.address}\` gives it the timelocked roles; then run doctor chain --timelock ${deployed.address}.`,
+			);
+			return;
+		}
+		case "handoff": {
+			const { chainId, chain, transport, publicClient, local } =
+				await connect();
+			const record = readRecord(
+				chainId,
+				CANONICAL_DEPLOYER,
+				values["record-dir"] ?? DEPLOYMENTS_DIR,
+			);
+			const proxy = paymasterProxy(record);
+			const timelock = address("timelock");
+			// A typo here would hand the paymaster to an address nobody controls, irreversibly.
+			try {
+				await publicClient.readContract({
+					address: timelock,
+					abi: gianoTimelockAbi,
+					functionName: "getEffectiveDelay",
+					args: [proxy, "0x00000000"],
+				});
+			} catch {
+				throw new Error(
+					`${timelock} is not a GianoTimelock on chain ${chainId}; refusing to hand it the paymaster`,
+				);
+			}
+			const walletClient =
+				values.execute || values.impersonate
+					? await roleAdminClient(chain, transport, local)
+					: undefined;
+			const from = walletClient
+				? walletClient.account.address
+				: address("role-admin");
+			const calls = await planHandOff(publicClient, proxy, timelock, from);
+			if (calls.length === 0) {
+				log(
+					`nothing to do: ${timelock} already holds every timelocked role alone`,
+				);
+				return;
+			}
+			log(`hand-off of ${proxy} to ${timelock}, sent by ${from}:`);
+			for (const [i, call] of calls.entries())
+				log(`  ${i + 1}. ${call.description}\n     ${call.data}`);
+			writeSafeJson({
+				version: "1.0",
+				chainId: String(chainId),
+				createdAt: Date.now(),
+				meta: {
+					name: "Giano paymaster timelock hand-off",
+					description: `Give ${timelock} every timelocked role on ${proxy}; the sender renounces ROLE_ADMIN last.`,
+				},
+				transactions: calls.map((call) => ({
+					to: proxy,
+					value: "0",
+					data: call.data,
+				})),
+			});
+			if (!values.execute || !walletClient) {
+				log(
+					"Not sent. Rerun with --execute to send these from ROLE_ADMIN_PRIVATE_KEY.",
+				);
+				return;
+			}
+			for (const call of calls) {
+				const hash = await walletClient.sendTransaction({
+					to: proxy,
+					data: call.data,
+				});
+				const receipt = await publicClient.waitForTransactionReceipt({ hash });
+				if (receipt.status !== "success")
+					throw new Error(`${call.description} reverted (${hash})`);
+				log(`  + ${call.description}  ${hash}`);
+			}
+			const remaining = await planHandOff(publicClient, proxy, timelock, from);
+			if (remaining.length)
+				throw new Error(
+					`the hand-off did not complete: ${remaining.map((c) => c.description).join("; ")}`,
+				);
+			log(
+				`${timelock} now holds every timelocked role alone. Verify with doctor chain --timelock ${timelock}.`,
+			);
+			return;
+		}
 		default:
 			console.error(
-				"usage: giano-deploy addresses | core | testing | upgrade | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
+				"usage: giano-deploy addresses | core | testing | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
 			);
 			process.exit(2);
 	}

@@ -12,8 +12,21 @@ import {
 	LABELS,
 } from "./config";
 import { create3Address } from "./create3";
+import {
+	delayPolicyProblems,
+	formatDuration,
+	TIMELOCKED_FUNCTION_NAMES,
+	type TimelockDelays,
+} from "../timelock";
 import { inspectDeployment } from "./preflight";
-import { listProfiles, loadProfile, REPO_ROOT } from "./profiles";
+import {
+	listProfiles,
+	loadProfile,
+	type ProfileFile,
+	REPO_ROOT,
+	saveTimelockAddress,
+} from "./profiles";
+import { readRecord } from "./records";
 
 class OperatorError extends Error {}
 
@@ -31,13 +44,22 @@ async function main() {
 	const [command] = positionals;
 	if (values.help) {
 		console.log(
-			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor --chain <profile> [--env-file <dotenv-file>] [--plan]\n--config <file> selects a custom chain profile. Provisioning/policy writes require interactive confirmation.",
+			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.",
 		);
 		return;
 	}
-	if (!["funding", "provision", "sponsorship", "doctor"].includes(command))
+	if (
+		![
+			"funding",
+			"provision",
+			"sponsorship",
+			"doctor",
+			"timelock",
+			"handoff",
+		].includes(command)
+	)
 		throw new OperatorError(
-			"Choose funding, provision, sponsorship or doctor.",
+			"Choose funding, provision, sponsorship, doctor, timelock or handoff.",
 		);
 	const rl =
 		process.stdin.isTTY && process.stdout.isTTY
@@ -90,6 +112,10 @@ async function main() {
 			console.log(
 				"Read-only plan; no operation invoked. Provide operator credentials through --env-file or the environment. See deploy/contracts/README.md.",
 			);
+			return;
+		}
+		if (command === "timelock" || command === "handoff") {
+			await timelockWorkflow(command, selected, rpc, rl);
 			return;
 		}
 		if (["provision", "sponsorship"].includes(command)) {
@@ -188,6 +214,15 @@ async function main() {
 			DEPLOYER_MIN_ETH: profile.minDeployerBalanceEth,
 			PAYMASTER_ROLE_ADMIN:
 				process.env.PAYMASTER_ROLE_ADMIN ?? profile.roleAdmin ?? "",
+			// The published timelock (G9), so doctor asserts the topology and delays (R4).
+			PAYMASTER_TIMELOCK:
+				process.env.PAYMASTER_TIMELOCK ?? profile.timelock?.address ?? "",
+			PAYMASTER_TIMELOCK_DELAYS: profile.timelock
+				? Object.entries(profile.timelock.delays)
+						.map(([name, seconds]) => `${name}=${seconds}`)
+						.join(",")
+				: "",
+			PAYMASTER_TIMELOCK_PROPOSERS: profile.timelock?.proposers.join(",") ?? "",
 			FACTORY_ADDRESS: create3Address(CANONICAL_DEPLOYER, LABELS.factory),
 			SPONSORSHIP_PAYMASTER_ADDRESS: create3Address(
 				CANONICAL_DEPLOYER,
@@ -228,6 +263,102 @@ async function main() {
 		rl?.close();
 	}
 }
+/**
+ * `timelock` deploys the profile's GianoTimelock (G9) and records its address in the profile;
+ * `handoff` gives it every timelocked role and renounces the operator's ROLE_ADMIN. Both sign with
+ * the current ROLE_ADMIN key: ROLE_ADMIN_PRIVATE_KEY, or DEPLOYER_PRIVATE_KEY as provisioning uses.
+ */
+async function timelockWorkflow(
+	command: "timelock" | "handoff",
+	selected: ProfileFile,
+	rpc: string,
+	rl: ReturnType<typeof createInterface> | undefined,
+): Promise<void> {
+	const { profile } = selected;
+	const timelock = profile.timelock;
+	if (!timelock)
+		throw new OperatorError(
+			"Add a timelock section (proposers, executors and delays) to the chain profile first. See docs/PAYMASTER-TIMELOCK-RUNBOOK.md.",
+		);
+	const delays = timelock.delays as TimelockDelays;
+	const problems = delayPolicyProblems(delays);
+	if (problems.length)
+		throw new OperatorError(
+			`The profile's delay policy is unsafe:\n  ${problems.join("\n  ")}`,
+		);
+	if (command === "timelock" && timelock.proposers.length === 0)
+		throw new OperatorError(
+			"List the proposer Safe under timelock.proposers in the chain profile.",
+		);
+	if (command === "handoff" && !timelock.address)
+		throw new OperatorError(
+			"Deploy the timelock first (contracts:timelock); its address is then saved in the profile.",
+		);
+	const key =
+		process.env.ROLE_ADMIN_PRIVATE_KEY ?? process.env.DEPLOYER_PRIVATE_KEY;
+	if (!key)
+		throw new OperatorError(
+			"Provide the current ROLE_ADMIN operator key as ROLE_ADMIN_PRIVATE_KEY (or DEPLOYER_PRIVATE_KEY).",
+		);
+
+	console.log(
+		`Delays: ${["minDelay", ...TIMELOCKED_FUNCTION_NAMES].map((name) => `${name} ${formatDuration(delays[name as keyof TimelockDelays])}`).join(", ")}`,
+	);
+	if (command === "handoff")
+		console.log(
+			`The hand-off gives ${timelock.address} every timelocked role and renounces your ROLE_ADMIN. Only the timelock can undo it, after the role delay.`,
+		);
+	const confirmation = `${command} ${profile.chainId}`;
+	if (!rl)
+		throw new OperatorError(
+			"Writes require an interactive terminal. Use --plan to inspect the target first.",
+		);
+	if ((await rl.question(`Type '${confirmation}' to continue: `)).trim() !== confirmation) {
+		console.log("Cancelled. No operation invoked.");
+		return;
+	}
+	const args =
+		command === "timelock"
+			? [
+					"timelock",
+					"--rpc",
+					rpc,
+					"--release",
+					profile.release,
+					...timelock.proposers.flatMap((p) => ["--proposer", p]),
+					...timelock.executors.flatMap((e) => ["--executor", e]),
+					"--min-delay",
+					String(delays.minDelay),
+					...TIMELOCKED_FUNCTION_NAMES.flatMap((name) => [
+						"--delay",
+						`${name}=${delays[name]}`,
+					]),
+				]
+			: ["handoff", "--rpc", rpc, "--timelock", timelock.address as string, "--execute"];
+	const result = spawnSync(
+		process.execPath,
+		["--import", "tsx", "deploy/cli.ts", ...args],
+		{
+			cwd: resolve(REPO_ROOT, "packages/contracts"),
+			env: { ...process.env, ROLE_ADMIN_PRIVATE_KEY: key },
+			stdio: "inherit",
+		},
+	);
+	if (result.status !== 0) {
+		process.exitCode = result.status ?? 1;
+		return;
+	}
+	if (command === "timelock") {
+		const record = readRecord(profile.chainId, CANONICAL_DEPLOYER);
+		if (!record.timelock)
+			throw new OperatorError("The timelock deployment was not recorded.");
+		saveTimelockAddress(selected, record.timelock.address);
+		console.log(
+			`Saved the timelock address ${record.timelock.address} in ${selected.file}. Next: contracts:handoff, then contracts:doctor.`,
+		);
+	}
+}
+
 main().catch((error: unknown) => {
 	console.error(
 		error instanceof OperatorError

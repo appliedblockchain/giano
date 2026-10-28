@@ -37,7 +37,8 @@
 		"chains.ts",
 		"address-overrides.json",
 		"remappings.txt",
-		"entrypoint.ts"
+		"entrypoint.ts",
+		"timelock.ts"
 	],
 	"publishConfig": {
 		"registry": "https://npm.pkg.github.com",
