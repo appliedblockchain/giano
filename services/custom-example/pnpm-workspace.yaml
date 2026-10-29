@@ -91,13 +91,16 @@ overrides:
   "pbkdf2@>=3.0.0 <3.1.3": "^3.1.3"
   "sha.js@>=2.0.0 <2.4.12": "^2.4.12"
 
-# Supply-chain policy (pnpm 11+): reject deps published within the last 24h.
-minimumReleaseAge: 1440
+# Supply-chain policy (ABIP-6, docs/abip-compliance.md): reject any package version published less
+# than 7 days ago — the ABIP's tier for projects that handle financial transactions. No third-party
+# package is exempt by name or scope. The only allowed exclusion for one is an exact version
+# (name@x.y.z) of a direct dependency carrying a critical security fix, with its advisory and
+# removal date in a comment; scripts/check-release-age.mjs enforces all of this in CI.
+minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
-  # Our own scope: the pin targets the release this repo just published, always younger than 24h.
+  # Deviation from ABIP-6 (docs/abip-compliance.md): our own releases, published by this
+  # repository's release.yml, so the example can install a Giano release as soon as it is out.
   - '@appliedblockchain/*'
-  - baseline-browser-mapping
-  - postcss
 allowBuilds:
   bufferutil: false
   esbuild: false

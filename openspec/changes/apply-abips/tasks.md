@@ -52,7 +52,7 @@
 
 ## 2. ABIP-6: minimum release age (PR 2, `chore/abip-6-release-age`)
 
-- [ ] 2.1 Write `scripts/check-release-age.mjs` and `scripts/check-release-age.test.mjs`, dependency-free and run with
+- [x] 2.1 Write `scripts/check-release-age.mjs` and `scripts/check-release-age.test.mjs`, dependency-free and run with
   `node --test`. The check:
   - parses both `pnpm-workspace.yaml` files;
   - fails on `minimumReleaseAge < 10080`;
@@ -62,20 +62,27 @@
 
   Write the tests first. They cover the exact `postcss`, `'@appliedblockchain/*'` and frozen-lockfile cases from the
   delta spec.
-- [ ] 2.2 Run the check on the current tree and confirm it fails with the expected findings: 1440 in both files, and
+- [x] 2.2 Run the check on the current tree and confirm it fails with the expected findings: 1440 in both files, and
   the three blanket exclusions.
-- [ ] 2.3 Audit the lockfile age for both lockfiles: list every resolved `name@version` published less than 7 days ago,
+- [x] 2.3 Audit the lockfile age for both lockfiles: list every resolved `name@version` published less than 7 days ago,
   using a one-off script that is not committed. For each one, downgrade it to the newest version older than 7 days, or
   record that the merge waits until it ages. Known case: the example's `@appliedblockchain/giano-connector@4.0.0`,
   published 2026-10-27.
-- [ ] 2.4 Set `minimumReleaseAge: 10080` in both workspace files, with an ABIP-6 comment. Remove `postcss`,
+
+  **Result (2026-10-27):** of the 1069 versions in the root lockfile and the 629 in the example's, none on npm is
+  younger than 7 days. The example's `@appliedblockchain/giano-connector@4.0.0` and `giano-wallet-transport@4.0.0`
+  were published around 2026-10-27 08:03 UTC. Downgrading to 3.x would undo #159's move to CREATE3 addresses, so
+  **PR 2 waits: it merges no earlier than 2026-11-03 08:05 UTC.**
+- [x] 2.4 Set `minimumReleaseAge: 10080` in both workspace files, with an ABIP-6 comment. Remove `postcss`,
   `baseline-browser-mapping` and `'@appliedblockchain/*'`. Where removing one breaks `pnpm install`, replace it with a
   version-specific entry, and give the advisory or reason and a removal date.
-- [ ] 2.5 Run `pnpm install --frozen-lockfile` in both workspaces and confirm the lockfiles are unchanged. If 2.3
+- [ ] 2.5 Run `pnpm install --frozen-lockfile` in both workspaces and confirm the lockfiles are unchanged. The root
+  passes, unchanged, with the line "Lockfile passes supply-chain policies (1069 entries)". The example needs a
+  `read:packages` token, which this machine lacks; it is verified by the `giano-example` image build in CI. If 2.3
   forced a change, commit it alone, as `chore(deps): …`, per the lockfile-discipline requirement.
-- [ ] 2.6 Wire `node --test scripts/check-release-age.test.mjs` and `node scripts/check-release-age.mjs` into `ci.yml`
+- [x] 2.6 Wire `node --test scripts/check-release-age.test.mjs` and `node scripts/check-release-age.mjs` into `ci.yml`
   next to the Dockerfile check, and run `--registry` when exclusions exist.
-- [ ] 2.7 Update the docs:
+- [x] 2.7 Update the docs:
   - `AGENTS.md`: the lockfile rule and the 7-day lag for our own releases;
   - the `services/custom-example` README: "a new Giano release can be installed 7 days after publication";
   - `docs/abip-compliance.md`: the ABIP-6 section, giving the window per workspace and the active exclusions, of which
