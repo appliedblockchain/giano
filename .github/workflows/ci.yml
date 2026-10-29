@@ -42,8 +42,6 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-contracts test:deploy
       - name: Build contracts TS surface (committed artifacts only)
         run: pnpm --filter @appliedblockchain/giano-contracts build:ts
-      - name: Deploy CLI unit tests (signing paths, verify-only)
-        run: pnpm --filter @appliedblockchain/giano-contracts test:deploy
       - name: Build wallet-core
         run: pnpm --filter @appliedblockchain/giano-wallet-core build
       - name: wallet-core unit tests
@@ -201,6 +199,8 @@ jobs:
         run: pnpm --filter @appliedblockchain/giano-bundler typecheck
       - name: Vitest (unit + anvil integration, incl. the simulation bytecode drift check)
         run: pnpm --filter @appliedblockchain/giano-bundler test
+      - name: Deploy CLI integration (CREATE3, recovery and idempotence)
+        run: pnpm --filter @appliedblockchain/giano-contracts test:deploy:integration
       - name: Chain document migration script
         run: node --test scripts/migrate-chains-document.test.mjs
 
