@@ -18,7 +18,7 @@ delivered as one stacked PR per ABIP.
 | ABIP-5 | External resources in AGENTS.md file | Adopted |
 | ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces; one deviation, `@appliedblockchain/*` excluded in the example |
 | ABIP-7 | Pin Exact Dependency Versions | Adopted: every manifest entry and override exact; library peers keep ranges |
-| ABIP-8 | Key Generation Ceremony | In progress (`apply-abips`) |
+| ABIP-8 | Key Generation Ceremony | Adopted: inventory and runbook in [`key-ceremony.md`](key-ceremony.md); the canonical deployer's ceremony is pending with DevOps |
 
 ## ABIP-5: External resources in AGENTS.md (adopted)
 
@@ -109,6 +109,31 @@ capability in OpenSpec.
 `scripts/check-pinned-versions.mjs` runs in CI on every pull request, and in the CI run `release.yml` calls (job
 "Exact dependency pins (ABIP-7)"). It fails on any non-exact manifest entry outside the library peer exemption, and on
 any non-exact override value. Transitive ranges are the lockfile's job and are out of scope.
+
+## ABIP-8: Key Generation Ceremony (adopted)
+
+The key inventory and the Giano runbook are in [`key-ceremony.md`](key-ceremony.md). The repository-level contract is
+the `production-key-ceremony` capability in OpenSpec. Ceremonies are run by DevOps; the repository makes sure nothing
+in it needs, or tells anyone to hold, a production key:
+
+- **The canonical deployer is in scope on every chain.** One key owns every canonical CREATE3 salt, so the key that
+  adopts a testnet is the key that adopts mainnet. ABIP-8's testnet exception does not cover it.
+- **Verify-only deploys.** `deploy:cli core` / `testing` without `DEPLOYER_PRIVATE_KEY` check every contract against a
+  release's code and send nothing. A missing contract fails the run, pointing to DevOps. The
+  `giano-contracts-deployer` image and the Helm pre-install Job run this way. The chart says never to put the key in a
+  client's secret.
+- **Docs.** `packages/contracts/README.md`, `specs/INFRASTRUCTURE.md`, `specs/INTEGRATION.md`,
+  `specs/DEVELOPER-GUIDE.md` and `specs/CHAIN-ADOPTION.md` no longer hand a developer or a client the canonical
+  deployer key. Adoption is a DevOps operation.
+- **Production signing** stays in the HSM. wallet-api refuses an in-process sponsorship signer in the `production`
+  class, now covered by a test.
+
+| Pending | Owner |
+|---------|-------|
+| Ceremony for the permanent canonical deployer, then the placeholder switch in `deploy/config.ts` | DevOps, then the tech lead |
+| Confirm that the development team has no read access to the `Giano prd` 1Password vault | DevOps |
+| prd sponsorship signer (in the HSM), bundler executor, timelock and operator keys, by ceremony, when prd is provisioned | DevOps |
+| Retire `deploy/sepolia/` (keeps `CANONICAL_DEPLOYER_PRIVATE_KEY` in a local `.env`); #160 replaces it | #160 |
 
 ## ABIP-2: Docker Hardened Images (adopted)
 

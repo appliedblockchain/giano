@@ -9,7 +9,10 @@
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
  * Signing: DEPLOYER_PRIVATE_KEY (must be the canonical deployer), or --impersonate on a local
- * chain. `upgrade --execute` sends the paymaster's upgradeToAndCall from UPGRADER_PRIVATE_KEY;
+ * chain. With neither, `core` and `testing` only verify: every contract must already be in place
+ * with a release's code, and nothing is sent. The canonical deployer key is a production key: it
+ * comes from an ABIP-8 ceremony and is held by Applied Blockchain DevOps (docs/key-ceremony.md);
+ * set it only for a local or testnet chain, or as that operator. `upgrade --execute` sends the paymaster's upgradeToAndCall from UPGRADER_PRIVATE_KEY;
  * without --execute it prints the calldata for whoever holds UPGRADER_ROLE (the timelock).
  *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
@@ -128,8 +131,13 @@ function localOnly(local: boolean, what: string): void {
 		);
 }
 
-async function deployerContext(): Promise<
-	DeployContext & { chainId: number; local: boolean }
+/** `verifyOnly`: without a key, run with no signer instead of failing (`core`, `testing`). */
+async function deployerContext({
+	verifyOnly = false,
+}: {
+	verifyOnly?: boolean;
+} = {}): Promise<
+	DeployContext & { chainId: number; chain: Chain; local: boolean }
 > {
 	const { chainId, chain, transport, publicClient, local } = await connect();
 	if (DEPLOYER_IS_PLACEHOLDER && !local) {
@@ -137,7 +145,7 @@ async function deployerContext(): Promise<
 			`CANONICAL_DEPLOYER is still the placeholder (deploy/config.ts); set the real deployer before deploying to chain ${chainId}`,
 		);
 	}
-	let walletClient: WalletClient<Transport, Chain, Account>;
+	let walletClient: WalletClient<Transport, Chain, Account> | undefined;
 	if (values.impersonate) {
 		localOnly(local, "--impersonate");
 		await impersonate(
@@ -151,18 +159,19 @@ async function deployerContext(): Promise<
 		});
 	} else {
 		const key = process.env.DEPLOYER_PRIVATE_KEY;
-		if (!key)
+		if (key)
+			walletClient = createWalletClient({
+				chain,
+				transport,
+				account: privateKeyToAccount(key as `0x${string}`),
+			});
+		else if (!verifyOnly)
 			throw new Error(
 				"set DEPLOYER_PRIVATE_KEY (the canonical deployer), or pass --impersonate on a local chain",
 			);
-		walletClient = createWalletClient({
-			chain,
-			transport,
-			account: privateKeyToAccount(key as `0x${string}`),
-		});
 	}
 	log(
-		`deployer ${CANONICAL_DEPLOYER}${values.impersonate ? " (impersonated)" : ""}`,
+		`deployer ${CANONICAL_DEPLOYER}${values.impersonate ? " (impersonated)" : walletClient ? "" : " (no key: verify only)"}`,
 	);
 	const record = readRecord(
 		chainId,
@@ -176,8 +185,14 @@ async function deployerContext(): Promise<
 		record,
 		log,
 		chainId,
+		chain,
 		local,
 	};
+}
+
+function signer(ctx: DeployContext): WalletClient<Transport, Chain, Account> {
+	if (!ctx.walletClient) throw new Error(`\`${command}\` needs a signer`);
+	return ctx.walletClient;
 }
 
 /** --release (default: the latest). `dev` — the working tree, unreleased — only on a local chain. */
@@ -229,11 +244,11 @@ async function main(): Promise<void> {
 		}
 		case "p256": {
 			const ctx = await deployerContext();
-			await deployP256Verifier(ctx.publicClient, ctx.walletClient, log);
+			await deployP256Verifier(ctx.publicClient, signer(ctx), log);
 			return;
 		}
 		case "core": {
-			const ctx = await deployerContext();
+			const ctx = await deployerContext({ verifyOnly: true });
 			await deployCore(ctx, release(ctx.local), {
 				entryPoint: address("entry-point"),
 				roleAdmin: address("role-admin"),
@@ -245,7 +260,7 @@ async function main(): Promise<void> {
 			return;
 		}
 		case "testing": {
-			const ctx = await deployerContext();
+			const ctx = await deployerContext({ verifyOnly: true });
 			if ((PRODUCTION_CHAIN_IDS as readonly number[]).includes(ctx.chainId)) {
 				throw new Error(
 					`chain ${ctx.chainId} is a production chain; the test fixtures must never be deployed there (R-29)`,
@@ -295,7 +310,7 @@ async function main(): Promise<void> {
 					"--execute needs UPGRADER_PRIVATE_KEY (an account holding UPGRADER_ROLE)",
 				);
 			const upgrader = createWalletClient({
-				chain: ctx.walletClient.chain,
+				chain: ctx.chain,
 				transport: http(required("rpc")),
 				account: privateKeyToAccount(key as `0x${string}`),
 			});

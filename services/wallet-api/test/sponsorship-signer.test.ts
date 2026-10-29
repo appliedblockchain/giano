@@ -2,6 +2,7 @@ import type { Address, Hex } from "viem";
 import { keccak256, recoverTypedDataAddress, size, slice } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+import { loadConfig } from "../src/config.js";
 import {
 	encodePaymasterData,
 	encodeStubPaymasterData,
@@ -167,5 +168,38 @@ describe("packUints", () => {
 	it("packs two 128-bit values the way the EntryPoint does", () => {
 		expect(packUints(1n, 2n)).toBe(`0x${"0".repeat(31)}1${"0".repeat(31)}2`);
 		expect(size(packUints(0n, 0n))).toBe(32);
+	});
+});
+
+describe("config: where the sponsorship signer key lives (ABIP-8, docs/key-ceremony.md)", () => {
+	const env = (extra: Record<string, string>) =>
+		({
+			NODE_ENV: "test",
+			GIANO_ENVIRONMENT: "test",
+			LOG_LEVEL: "error",
+			DATABASE_URL: "postgres://u:p@localhost:5432/x",
+			CHAIN_ID: "31337",
+			RPC_URL: "http://a:8545",
+			BUNDLER_URL: "http://a:4337",
+			ENTRYPOINT_ADDRESS: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			FACTORY_ADDRESS: "0x2222222222222222222222222222222222222222",
+			SPONSORSHIP_ENABLED: "true",
+			SPONSORSHIP_PAYMASTER_ADDRESS: PAYMASTER,
+			SPONSORSHIP_SIGNER_KIND: "local",
+			SPONSORSHIP_SIGNER_KEY_REF: KEY,
+			...extra,
+		}) as NodeJS.ProcessEnv;
+
+	it("refuses an in-process key in a production deployment with sponsorship on", () => {
+		expect(() =>
+			loadConfig(env({ GIANO_DEPLOYMENT_CLASS: "production" })),
+		).toThrow(/must be "hsm" when GIANO_DEPLOYMENT_CLASS=production/);
+	});
+
+	it("accepts an in-process key on a testnet deployment", () => {
+		expect(
+			loadConfig(env({ GIANO_DEPLOYMENT_CLASS: "testnet" }))
+				.SPONSORSHIP_SIGNER_KIND,
+		).toBe("local");
 	});
 });

@@ -73,8 +73,12 @@ bundler:
   image: giano-bundler
 
 deployer:
-  # one-shot CREATE3 deploy of the canonical contracts as a pre-install hook Job. Its secret must
-  # carry DEPLOYER_PRIVATE_KEY, the canonical deployer's key (packages/contracts/deploy/config.ts).
+  # one-shot pre-install hook Job: verifies that the canonical contracts are on config.chainId's chain,
+  # with a release's code, and writes the chain's address registry entry. It needs no key and sends
+  # nothing. NEVER put DEPLOYER_PRIVATE_KEY in secrets.existingSecret: the canonical deployer key is
+  # a production key generated in an ABIP-8 ceremony and held by Applied Blockchain DevOps only
+  # (docs/key-ceremony.md). If a contract is missing, the Job fails: adopting a chain is their
+  # operation, not part of a client install.
   enabled: false
   image: giano-contracts-deployer
   # the sponsorship paymaster's sole ROLE_ADMIN (a TimelockController in production); required

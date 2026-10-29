@@ -3,7 +3,11 @@
 // runtime has none (ABIP-2), so the CLI runs as a child `node` process with an argument array.
 //
 //   RPC_URL, CHAIN_ID          the chain (CHAIN_ID is checked against what the endpoint reports)
-//   DEPLOYER_PRIVATE_KEY       the canonical deployer's key (packages/contracts/deploy/config.ts)
+//   DEPLOYER_PRIVATE_KEY       optional. Unset, the run only verifies: every canonical contract must
+//                              already be on the chain with a release's code, and nothing is sent.
+//                              The canonical deployer key comes from an ABIP-8 ceremony and is held
+//                              by Applied Blockchain DevOps (docs/key-ceremony.md): never put it in a
+//                              client's secret. Adopting a new chain is their operation.
 //   DEPLOYER_IMPERSONATE=true  local chains (31337/31338) only: impersonate the canonical deployer
 //                              instead of signing; the CLI refuses it on any other chain
 //   ROLE_ADMIN                 the paymaster's sole ROLE_ADMIN; a TimelockController in production
@@ -36,7 +40,6 @@ function required(name, why = "") {
 const rpcUrl = required("RPC_URL");
 const chainId = Number(required("CHAIN_ID"));
 const impersonate = env.DEPLOYER_IMPERSONATE === "true";
-if (!impersonate) required("DEPLOYER_PRIVATE_KEY", " (the canonical deployer)");
 const roleAdmin = required("ROLE_ADMIN", " (the paymaster ROLE_ADMIN)");
 const outDir = env.OUT_DIR || "/out";
 const common = [

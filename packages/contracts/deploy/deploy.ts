@@ -19,6 +19,7 @@ import {
 	type Transport,
 	type WalletClient,
 } from "viem";
+import { CANONICAL_CODE, canonicalCodeAt } from "../canonical";
 import { gianoPaymasterAbi } from "../generated";
 import { LABELS, type LabelKey, upgradeLabel } from "./config";
 import {
@@ -33,7 +34,12 @@ import { DEV_RELEASE, type Release } from "./release";
 
 export type DeployContext = {
 	publicClient: PublicClient;
-	walletClient: WalletClient<Transport, Chain, Account>;
+	/**
+	 * Signs as the canonical deployer. Absent, the run is verify-only: a contract already in place is
+	 * checked against the code a release leaves there, and a missing one fails without sending
+	 * anything — adopting a chain is a DevOps operation with the deployer key (docs/key-ceremony.md).
+	 */
+	walletClient?: WalletClient<Transport, Chain, Account>;
 	/** The canonical deployer; the wallet client's account must be this address. */
 	deployer: Address;
 	record: DeploymentRecord;
@@ -63,6 +69,7 @@ function assertDeployerAccount(ctx: DeployContext): void {
 	// CreateX only honours a permissioned salt from the address in its first 20 bytes. From any
 	// other sender it treats the salt as ordinary and deploys somewhere else, unprotected — so a
 	// wrong key must stop us here, before anything is sent.
+	if (!ctx.walletClient) return;
 	if (
 		getAddress(ctx.walletClient.account.address) !== getAddress(ctx.deployer)
 	) {
@@ -122,13 +129,33 @@ export async function deployLabel(
 
 	const existing = await codehashAt(ctx, address);
 	if (existing) {
+		// Verify-only, the address alone proves nothing (canonical.ts): the code there must be what a
+		// release puts at that address. Test fixtures have no canonical code to compare with.
+		if (
+			!ctx.walletClient &&
+			Object.keys(CANONICAL_CODE).some(
+				(a) => a.toLowerCase() === address.toLowerCase(),
+			) &&
+			!canonicalCodeAt(address, existing)
+		)
+			throw new Error(
+				`${label} at ${address} holds code ${existing}, which no Giano release puts there`,
+			);
 		ctx.log(`  = ${label.padEnd(28)} ${address} (already deployed)`);
 		return { address, label, release, codehash: existing };
 	}
 
+	const walletClient = ctx.walletClient;
+	if (!walletClient)
+		throw new Error(
+			`${label} is not deployed at ${address} on this chain, and this run has no deployer key, so it only verifies. ` +
+				"Adopting a chain needs the canonical deployer, which Applied Blockchain DevOps operate (docs/key-ceremony.md); " +
+				"never put that key in a client deployment.",
+		);
+
 	const { request, result } = init
 		? await ctx.publicClient.simulateContract({
-				account: ctx.walletClient.account,
+				account: walletClient.account,
 				address: CREATEX_ADDRESS,
 				abi: createxAbi,
 				functionName: "deployCreate3AndInit",
@@ -140,7 +167,7 @@ export async function deployLabel(
 				],
 			})
 		: await ctx.publicClient.simulateContract({
-				account: ctx.walletClient.account,
+				account: walletClient.account,
 				address: CREATEX_ADDRESS,
 				abi: createxAbi,
 				functionName: "deployCreate3",
@@ -151,7 +178,7 @@ export async function deployLabel(
 			`CreateX would deploy ${label} at ${result as Address}, expected ${address}`,
 		);
 
-	const transactionHash = await ctx.walletClient.writeContract(request);
+	const transactionHash = await walletClient.writeContract(request);
 	const receipt = await ctx.publicClient.waitForTransactionReceipt({
 		hash: transactionHash,
 	});
@@ -291,7 +318,11 @@ export async function deployTesting(
 		]),
 	});
 	record(ctx, "testPaymaster", testPaymaster);
-	if (params.fundWei > 0n && testPaymaster.transactionHash) {
+	if (
+		params.fundWei > 0n &&
+		testPaymaster.transactionHash &&
+		ctx.walletClient
+	) {
 		// receive() forwards to the EntryPoint deposit. Only on first deployment, so re-runs do not
 		// keep topping it up.
 		const hash = await ctx.walletClient.sendTransaction({

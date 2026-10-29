@@ -37,9 +37,13 @@ an address no longer commits to bytecode, code is checked separately (steps 5 an
       (`pnpm --filter @appliedblockchain/giano-contracts deploy:cli p256 --rpc <url>`) —
       giano-doctor treats missing P-256 verification as CRITICAL.
 
-4.  Deploy the canonical contracts — with the canonical deployer's key.
-      DEPLOYER_PRIVATE_KEY=… pnpm --filter @appliedblockchain/giano-contracts \
-        deploy:cli core --rpc <url> --role-admin <timelock>
+4.  Deploy the canonical contracts — with the canonical deployer's key, which only DevOps hold.
+      The key is generated in an ABIP-8 ceremony and never reaches the development team
+      (docs/key-ceremony.md); this step is a DevOps request, run with the key from the secret store:
+        pnpm --filter @appliedblockchain/giano-contracts \
+          deploy:cli core --rpc <url> --role-admin <timelock>
+      Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
+      code and sends nothing.
       From a committed release, never a fresh build (MC-26): the release's creation code is
       what every chain gets. Idempotent; commit the record it writes
       (packages/contracts/deployments/<chainId>.json).

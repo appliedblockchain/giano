@@ -93,13 +93,15 @@ backward-compatible across one minor.
 
 ## 5. Contracts
 
-Use the published `giano-contracts` deployments for supported chains. To deploy to a new
-chain, run the `giano-contracts-deployer` one-shot (compose `profiles: [deploy]` or the
-Helm pre-install hook) with `RPC_URL`, `CHAIN_ID`, `DEPLOYER_PRIVATE_KEY` (the canonical
-deployer's key) and `ROLE_ADMIN` (the paymaster's role admin) — it deploys the latest contracts
-release with CREATE3 through CreateX (the same addresses on every chain, set by the canonical
-deployer and fixed labels), checks the code it finds or deploys, and emits
-`giano-addresses.<chainId>.json`. Only the canonical deployer can deploy to the canonical addresses.
+Use the published `giano-contracts` deployments for supported chains. The `giano-contracts-deployer`
+one-shot (the Helm pre-install hook) runs with `RPC_URL`, `CHAIN_ID` and `ROLE_ADMIN` (the paymaster's
+role admin) and **no key**. It checks that every canonical contract is on the chain with a release's
+code (the same addresses on every chain, set by the canonical deployer and fixed labels), and emits
+`giano-addresses.<chainId>.json`. Only the canonical deployer can deploy to the canonical addresses,
+and its key is an Applied Blockchain production key, generated in an ABIP-8 ceremony and held by
+DevOps only (`docs/key-ceremony.md`). **Never put `DEPLOYER_PRIVATE_KEY` in a client's secret.**
+Adopting a new chain is a request to Applied Blockchain; the Job fails on a chain where a contract is
+missing.
 
 ## 6. Tenants
 
