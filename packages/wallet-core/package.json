@@ -40,7 +40,7 @@
 		"prepublishOnly": "pnpm build"
 	},
 	"peerDependencies": {
-		"viem": "^2.57.11"
+		"viem": "^2.57.10"
 	},
 	"dependencies": {
 		"@appliedblockchain/giano-contracts": "workspace:*",
@@ -52,7 +52,7 @@
 		"@vitest/coverage-v8": "4.1.12",
 		"tsdown": "0.23.1",
 		"typescript": "7.0.2",
-		"viem": "2.57.11",
+		"viem": "2.57.10",
 		"vitest": "4.1.12"
 	}
 }
