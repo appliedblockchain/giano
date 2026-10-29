@@ -42,3 +42,19 @@ export function entryPointRuntimeCode(chainId: number): Hex {
 	}
 	return code as Hex;
 }
+
+/** Whether `address` is the canonical EntryPoint v0.9 address. */
+export function isEntryPointAddress(address: string): boolean {
+	return address.toLowerCase() === ENTRY_POINT_ADDRESS.toLowerCase();
+}
+
+/** Whether `code` is the canonical EntryPoint v0.9 runtime on chain `chainId`. */
+export function isCanonicalEntryPointCode(
+	code: string | undefined,
+	chainId: number,
+): boolean {
+	return (
+		!!code &&
+		code.toLowerCase() === entryPointRuntimeCode(chainId).toLowerCase()
+	);
+}

@@ -176,8 +176,10 @@ function main(): void {
 // Source of truth: deployments/<chainId>.json (written by the deploy CLI) + address-overrides.json.
 // Regenerate with: pnpm gen:addresses (CI fails on drift).
 
+import { ENTRY_POINT_ADDRESS } from './entrypoint';
+
 /** Canonical ERC-4337 EntryPoint v0.9. */
-export const ENTRYPOINT_V09_ADDRESS = '0x433709009B8330FDa32311DF1C2AFA402eD8D009' as const;
+export const ENTRYPOINT_V09_ADDRESS: typeof ENTRY_POINT_ADDRESS = ENTRY_POINT_ADDRESS;
 
 export type GianoDeployment = {
   /** ERC-4337 EntryPoint the wallets are bound to. */

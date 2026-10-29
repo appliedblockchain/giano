@@ -22,7 +22,9 @@
 		"devnet:provision:mappings": "node devnet/provision-tx-mappings.mjs",
 		"devnet:generate:b": "ANVIL_CHAIN_ID=31338 CHAIN_ID=31338 node devnet/with-pinned-anvil.mjs node devnet/generate-state.mjs",
 		"devnet:generate:all": "pnpm devnet:generate && pnpm devnet:generate:b",
-		"devnet:upgrade:paymaster": "ANVIL_PORT=18545 node devnet/with-pinned-anvil.mjs node devnet/upgrade-paymaster.mjs"
+		"devnet:upgrade:paymaster": "ANVIL_PORT=18545 node devnet/with-pinned-anvil.mjs node devnet/upgrade-paymaster.mjs",
+		"devnet:upgrade:paymaster:b": "ANVIL_PORT=18545 ANVIL_CHAIN_ID=31338 CHAIN_ID=31338 node devnet/with-pinned-anvil.mjs node devnet/upgrade-paymaster.mjs",
+		"devnet:upgrade:paymaster:all": "pnpm devnet:upgrade:paymaster && pnpm devnet:upgrade:paymaster:b"
 	},
 	"devDependencies": {
 		"@appliedblockchain/giano-connector": "workspace:^",

@@ -12,7 +12,7 @@ import {
 	parseEther,
 	type TestClient,
 } from "viem";
-import { entryPointRuntimeCode } from "../entrypoint";
+import { isCanonicalEntryPointCode } from "../entrypoint";
 import { ENTRY_POINT_V09 } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
 import { presignedDeployment } from "./createx";
@@ -90,10 +90,7 @@ export async function installEntryPoint(
 ): Promise<void> {
 	const existing = await publicClient.getCode({ address: ENTRY_POINT_V09 });
 	if (existing && existing !== "0x") {
-		if (
-			existing.toLowerCase() !==
-			entryPointRuntimeCode(await publicClient.getChainId()).toLowerCase()
-		)
+		if (!isCanonicalEntryPointCode(existing, await publicClient.getChainId()))
 			throw new Error("EntryPoint v0.9 code mismatch");
 		log(`  = EntryPoint v0.9 already at ${ENTRY_POINT_V09}`);
 		return;

@@ -70,6 +70,22 @@ describe("JSON-RPC", () => {
 				}),
 			).toMatchObject({ error: { code: -32602 } });
 		}
+		// The v0.9 EntryPoint reads initCode starting 0x7702 as a 7702 authorization.
+		expect(
+			await call({
+				jsonrpc: "2.0",
+				id: 21,
+				method: "eth_sendUserOperation",
+				params: [
+					{
+						...op,
+						factory: "0x7702000000000000000000000000000000000000",
+						factoryData: "0x",
+					},
+					entryPoint,
+				],
+			}),
+		).toMatchObject({ error: { code: -32602 } });
 	});
 
 	it("refuses unknown methods and malformed envelopes", async () => {

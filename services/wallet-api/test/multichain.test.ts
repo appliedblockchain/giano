@@ -2,6 +2,7 @@ import {
 	CANONICAL_FACTORY,
 	CANONICAL_IMPLEMENTATION,
 	ENTRYPOINT_V09_ADDRESS,
+	entryPointRuntimeCode,
 	gianoAddresses,
 } from "@appliedblockchain/giano-contracts";
 import Fastify from "fastify";
@@ -406,6 +407,8 @@ type FakeClientBehaviour = {
 	chainId?: number | Error;
 	code?: Record<string, string>;
 	implementation?: string;
+	/** What the implementation's entryPoint() returns. */
+	boundEntryPoint?: string;
 	probeAddress?: string;
 };
 
@@ -416,11 +419,18 @@ function fakeClient(behaviour: FakeClientBehaviour): PublicClient {
 			return behaviour.chainId ?? 31337;
 		},
 		async getCode({ address }: { address: string }) {
-			return behaviour.code?.[address.toLowerCase()] ?? "0xabcd";
+			const code = behaviour.code?.[address.toLowerCase()];
+			if (code !== undefined) return code;
+			// The EntryPoint runs its real runtime; every other address the stand-in release code.
+			return address.toLowerCase() === ENTRYPOINT_V09_ADDRESS.toLowerCase()
+				? entryPointRuntimeCode(31337)
+				: "0xabcd";
 		},
 		async readContract({ functionName }: { functionName: string }) {
 			if (functionName === "implementation")
 				return behaviour.implementation ?? CANONICAL_IMPLEMENTATION;
+			if (functionName === "entryPoint")
+				return behaviour.boundEntryPoint ?? ENTRYPOINT_V09_ADDRESS;
 			if (functionName === "getAddress")
 				return (
 					behaviour.probeAddress ?? "0x00000000000000000000000000000000000abcde"
@@ -536,6 +546,55 @@ describe("verifyChain", () => {
 		expect(
 			result.failures.some((failure) => failure.kind === "entrypoint-missing"),
 		).toBe(true);
+	});
+
+	it("an EntryPoint other than v0.9 is FATAL — every hash Giano computes is a v0.9 hash", async () => {
+		const v07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as const;
+		const result = await verifyChain(
+			{ ...descriptor, entryPoint: v07 },
+			fakeClient({ code: { [v07.toLowerCase()]: "0x6001" } }),
+			isFakeCanonical,
+		);
+		expect(result.failures).toContainEqual({
+			kind: "entrypoint-not-canonical",
+			address: v07,
+			reason: "address",
+		});
+		expect(result.failures.every(isFatalFailure)).toBe(true);
+	});
+
+	it("non-canonical code at the v0.9 EntryPoint address is FATAL", async () => {
+		const result = await verifyChain(
+			descriptor,
+			fakeClient({
+				code: { [descriptor.entryPoint.toLowerCase()]: "0x6001" },
+			}),
+			isFakeCanonical,
+		);
+		expect(result.failures).toEqual([
+			{
+				kind: "entrypoint-not-canonical",
+				address: descriptor.entryPoint,
+				reason: "code",
+			},
+		]);
+	});
+
+	it("an earlier release's implementation, bound to another EntryPoint, is FATAL", async () => {
+		const v07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+		const result = await verifyChain(
+			descriptor,
+			fakeClient({ boundEntryPoint: v07 }),
+			isFakeCanonical,
+		);
+		expect(result.failures).toEqual([
+			{
+				kind: "implementation-entrypoint-mismatch",
+				implementation: CANONICAL_IMPLEMENTATION,
+				expected: descriptor.entryPoint,
+				found: v07,
+			},
+		]);
 	});
 });
 

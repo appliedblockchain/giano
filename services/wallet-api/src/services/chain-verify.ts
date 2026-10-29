@@ -2,7 +2,11 @@ import {
 	CANONICAL_FACTORY,
 	CANONICAL_IMPLEMENTATION,
 	canonicalCodeAt,
+	ENTRY_POINT_ADDRESS,
+	gianoSmartWalletAbi,
 	gianoSmartWalletFactoryAbi,
+	isCanonicalEntryPointCode,
+	isEntryPointAddress,
 } from "@appliedblockchain/giano-contracts";
 import { keccak256, type PublicClient } from "viem";
 import type { ResolvedChain } from "../config.js";
@@ -24,6 +28,11 @@ export type ChainVerificationFailure =
 	| { kind: "unreachable"; detail: string } // NOT fatal
 	| { kind: "chain-id-mismatch"; declared: number; reported: number }
 	| { kind: "entrypoint-missing"; address: `0x${string}` }
+	| {
+			kind: "entrypoint-not-canonical";
+			address: `0x${string}`;
+			reason: "address" | "code";
+	  }
 	| { kind: "factory-missing"; address: `0x${string}` }
 	| {
 			kind: "factory-not-canonical";
@@ -40,6 +49,13 @@ export type ChainVerificationFailure =
 			contract: "factory" | "implementation";
 			address: `0x${string}`;
 			codehash: `0x${string}`;
+	  }
+	| {
+			/** The wallet implementation is bound to a different EntryPoint than the chain is configured with. */
+			kind: "implementation-entrypoint-mismatch";
+			implementation: `0x${string}`;
+			expected: `0x${string}`;
+			found: `0x${string}`;
 	  }
 	| { kind: "paymaster-missing"; address: `0x${string}` };
 
@@ -122,6 +138,20 @@ export async function verifyChain(
 				kind: "entrypoint-missing",
 				address: descriptor.entryPoint,
 			});
+		} else if (!isEntryPointAddress(descriptor.entryPoint)) {
+			// Every hash the relay and the paymaster compute is a v0.9 hash; any other EntryPoint
+			// would record useropHashes that never match what lands on chain.
+			result.failures.push({
+				kind: "entrypoint-not-canonical",
+				address: descriptor.entryPoint,
+				reason: "address",
+			});
+		} else if (!isCanonicalEntryPointCode(entryPointCode, descriptor.chainId)) {
+			result.failures.push({
+				kind: "entrypoint-not-canonical",
+				address: descriptor.entryPoint,
+				reason: "code",
+			});
 		}
 
 		result.factoryPresent = !!factoryCode && factoryCode !== "0x";
@@ -184,6 +214,25 @@ export async function verifyChain(
 						codehash: implementationHash,
 					});
 				}
+
+				// Every release's code is canonical at the same address, but each release hardcodes
+				// its own EntryPoint: an earlier release (v0.7) passes the codehash check and still
+				// rejects every v0.9 operation. Ask the implementation which one it serves.
+				const boundEntryPoint = (await client.readContract({
+					address: implementation,
+					abi: gianoSmartWalletAbi,
+					functionName: "entryPoint",
+				})) as `0x${string}`;
+				if (
+					boundEntryPoint.toLowerCase() !== descriptor.entryPoint.toLowerCase()
+				) {
+					result.failures.push({
+						kind: "implementation-entrypoint-mismatch",
+						implementation,
+						expected: descriptor.entryPoint,
+						found: boundEntryPoint,
+					});
+				}
 			}
 
 			// MC-22: the live cross-check — ask the chain's own factory to derive an address for
@@ -231,6 +280,10 @@ export function describeFailure(
 			return `chain ${chainId}: the RPC endpoint reports chain ${failure.reported}, not ${failure.declared} — the endpoint and the declaration disagree; fix the configuration`;
 		case "entrypoint-missing":
 			return `chain ${chainId}: no EntryPoint at ${failure.address} — deploy EntryPoint v0.9 at its canonical address before any Giano contract (adoption checklist step 2)`;
+		case "entrypoint-not-canonical":
+			return failure.reason === "address"
+				? `chain ${chainId}: entryPoint ${failure.address} is not EntryPoint v0.9 (${ENTRY_POINT_ADDRESS}) — Giano computes v0.9 operation hashes only; fix the chain's entryPoint configuration`
+				: `chain ${chainId}: the code at ${failure.address} is not the canonical EntryPoint v0.9 runtime — do not serve this chain`;
 		case "factory-missing":
 			return `chain ${chainId}: no account factory at ${failure.address} — deploy the canonical contracts (adoption checklist step 4)`;
 		case "factory-not-canonical":
@@ -239,6 +292,8 @@ export function describeFailure(
 			return `chain ${chainId}: implementation ${failure.found} is not the canonical ${failure.expected} — the factory at the canonical address is running a different build`;
 		case "code-not-canonical":
 			return `chain ${chainId}: the ${failure.contract} at ${failure.address} runs code no release puts there (codehash ${failure.codehash}) — redeploy from a release (MC-19)`;
+		case "implementation-entrypoint-mismatch":
+			return `chain ${chainId}: implementation ${failure.implementation} is bound to EntryPoint ${failure.found}, not ${failure.expected} — the chain still runs an earlier release; upgrade it before serving`;
 		case "paymaster-missing":
 			return `chain ${chainId}: sponsorship is configured but there is no paymaster at ${failure.address}`;
 	}

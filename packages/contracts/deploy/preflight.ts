@@ -8,7 +8,7 @@ import {
 	zeroAddress,
 } from "viem";
 import { CANONICAL_CODE } from "../canonical";
-import { entryPointRuntimeCode } from "../entrypoint";
+import { isCanonicalEntryPointCode } from "../entrypoint";
 import { gianoPaymasterAbi, gianoSmartWalletFactoryAbi } from "../generated";
 import {
 	CANONICAL_DEPLOYER,
@@ -25,9 +25,6 @@ export const CORE_KEYS = [
 	"paymasterImplementation",
 	"paymasterProxy",
 ] as const;
-// Includes the canonical SenderCreator and chain-specific EIP-712 immutables.
-export const entryPointCodehash = (chainId: number) =>
-	keccak256(entryPointRuntimeCode(chainId));
 // CreateX upstream README, Security Considerations (pinned runtime hash).
 export const CREATEX_CODEHASH =
 	"0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f";
@@ -158,7 +155,7 @@ export async function inspectDeployment(
 	});
 	await check("Canonical EntryPoint v0.9 runtime", async () => {
 		const code = await client.getCode({ address: ENTRY_POINT_V09 });
-		if (!code || keccak256(code) !== entryPointCodehash(profile.chainId))
+		if (!isCanonicalEntryPointCode(code, profile.chainId))
 			throw new GateError(
 				"Missing or noncanonical EntryPoint. Do not deploy or serve this chain.",
 			);

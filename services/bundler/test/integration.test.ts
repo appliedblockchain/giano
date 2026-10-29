@@ -1,4 +1,10 @@
-import { type Address, type Hex, keccak256, parseEther } from "viem";
+import {
+	type Address,
+	getContractAddress,
+	type Hex,
+	keccak256,
+	parseEther,
+} from "viem";
 import {
 	entryPoint09Abi,
 	getUserOperationHash,
@@ -195,6 +201,34 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		]);
 		expect(estimate.error?.code).toBe(-32521);
 		expect(estimate.error?.message).toMatch(/reverted during simulation/);
+	});
+
+	it("estimates a first operation on an RPC without the SenderCreator, from its state override", async () => {
+		// The devnet deploys the EntryPoint canonically, so its SenderCreator exists; remove it to
+		// exercise the patched senderCreatorCode the estimator always supplies.
+		const senderCreator = getContractAddress({
+			from: devnet.entryPoint,
+			nonce: 1n,
+		});
+		const code = await devnet.client.getCode({ address: senderCreator });
+		expect(code && code !== "0x").toBeTruthy();
+		await devnet.test.setCode({ address: senderCreator, bytecode: "0x" });
+		try {
+			const op = await draft(951n, executeCall(recipient, 0n), false);
+			expect(op.factory).toBe(devnet.factory);
+			// Self-funded, so the final real-price validation passes too.
+			await devnet.test.setBalance({
+				address: op.sender as Address,
+				value: parseEther("1"),
+			});
+			const estimate = await rpc(bundler.url, "eth_estimateUserOperationGas", [
+				op,
+				devnet.entryPoint,
+			]);
+			expect(estimate.error).toBeUndefined();
+		} finally {
+			await devnet.test.setCode({ address: senderCreator, bytecode: code! });
+		}
 	});
 
 	it("refuses what the EntryPoint would refuse, with Alto's codes", async () => {

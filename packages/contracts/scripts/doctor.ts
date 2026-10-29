@@ -50,6 +50,7 @@ import {
 import { entryPointRuntimeCode } from "../entrypoint";
 import {
 	gianoPaymasterAbi,
+	gianoSmartWalletAbi,
 	gianoSmartWalletFactoryAbi,
 	iEntryPointAbi,
 	multiOwnableAbi,
@@ -785,6 +786,23 @@ async function doctorChain(flags: Record<string, string>) {
 					report("ok", "implementation is canonical", impl);
 					await reportCanonicalCode(provider, impl, "implementation");
 				}
+
+				// Every release's code is canonical at the same address, but each hardcodes its own
+				// EntryPoint: an earlier release passes the codehash check and rejects every v0.9 op.
+				const boundEntryPoint: string = await new Contract(
+					impl,
+					gianoSmartWalletAbi,
+					provider,
+				).entryPoint();
+				report(
+					getAddress(boundEntryPoint) === getAddress(entryPoint)
+						? "ok"
+						: "fail",
+					"implementation is bound to the configured EntryPoint",
+					getAddress(boundEntryPoint) === getAddress(entryPoint)
+						? boundEntryPoint
+						: `${boundEntryPoint}, expected ${entryPoint} — the chain runs an earlier release; upgrade it before serving`,
+				);
 
 				// MC-22: the live cross-check. A factory at the right address running different code
 				// would pass every address comparison — asking it to derive an account address for a

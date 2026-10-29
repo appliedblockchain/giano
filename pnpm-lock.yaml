@@ -112,9 +112,6 @@ importers:
 
   packages/contracts:
     dependencies:
-      viem:
-        specifier: 2.57.11
-        version: 2.57.11(bufferutil@4.0.9)(typescript@7.0.2)(utf-8-validate@5.0.10)(zod@3.24.4)
       zod:
         specifier: 3.24.4
         version: 3.24.4
@@ -146,6 +143,9 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      viem:
+        specifier: 2.57.11
+        version: 2.57.11(bufferutil@4.0.9)(typescript@7.0.2)(utf-8-validate@5.0.10)(zod@3.24.4)
 
   packages/paymaster-sdk:
     dependencies:

@@ -1,6 +1,6 @@
 import {
-	ENTRY_POINT_ADDRESS,
-	entryPointRuntimeCode,
+	isCanonicalEntryPointCode,
+	isEntryPointAddress,
 } from "@appliedblockchain/giano-contracts";
 import type { Logger } from "pino";
 import { createPublicClient, formatEther, http, type PublicClient } from "viem";
@@ -82,10 +82,8 @@ export function createChainRegistry(options: {
 			} else {
 				const code = await client.getCode({ address: config.entryPoint });
 				if (
-					config.entryPoint.toLowerCase() ===
-						ENTRY_POINT_ADDRESS.toLowerCase() &&
-					code?.toLowerCase() ===
-						entryPointRuntimeCode(config.chainId).toLowerCase()
+					isEntryPointAddress(config.entryPoint) &&
+					isCanonicalEntryPointCode(code, config.chainId)
 				) {
 					let chainType = config.chainType;
 					if (chainType === "auto") {

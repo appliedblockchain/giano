@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import { GianoEntryPointAddress } from "../giano-entry-point";
 import { GianoError } from "../giano-error";
 import { defaultGianoLogger, type GianoLogger } from "../logger";
 import {
@@ -105,8 +106,6 @@ function toUserOperation(params: PaymasterHookParams): PaymasterUserOperation {
 	return op;
 }
 
-const ENTRY_POINT_V09: Address = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
-
 /** ERC-7677 speaks hex quantities, not JSON numbers, and `undefined` must not become `"0x0"`. */
 function toQuantity(value: bigint | undefined): Hex | undefined {
 	return value === undefined ? undefined : (`0x${value.toString(16)}` as Hex);
@@ -171,7 +170,7 @@ export function createErc7677PaymasterClient(
 ): Erc7677PaymasterClient {
 	const logger = options.logger ?? defaultGianoLogger;
 	const doFetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
-	const entryPoint = options.entryPointAddress ?? ENTRY_POINT_V09;
+	const entryPoint = options.entryPointAddress ?? GianoEntryPointAddress;
 	let nextId = 1;
 
 	async function call(

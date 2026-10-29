@@ -106,8 +106,9 @@ The factory, implementation and paymaster proxy sit at the canonical addresses i
 `packages/contracts/canonical.ts`, on both devnet chains and on every other chain. The baked paymaster
 is upgraded through UUPS and keeps its proxy address; its current implementation is recorded in
 `e2e/devnet/addresses.json`. To run unreleased paymaster code on the devnet, use
-`devnet:upgrade:paymaster`: it deploys the working tree's build (`--release dev`, local chains only)
-as an upgrade target and points the baked proxy at it without replacing its funding address.
+`devnet:upgrade:paymaster:all`: it deploys the working tree's build (`--release dev`, local chains only)
+as an upgrade target and points the baked proxy at it without replacing its funding address, on both
+devnet chains (each has its own state file).
 
 ### Well-known addresses the stack probes
 

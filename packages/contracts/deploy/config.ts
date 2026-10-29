@@ -3,6 +3,7 @@
  * `pnpm gen:canonical` turns these into canonical.ts, so this file is the one place to change them.
  */
 import { type Address, getAddress } from "viem";
+import { ENTRY_POINT_ADDRESS } from "../entrypoint";
 
 /**
  * The EOA that owns every canonical CREATE3 salt (deploy/create3.ts). It is part of every canonical
@@ -58,5 +59,4 @@ export const LOCAL_CHAIN_IDS = [31337, 31338] as const;
 export const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111] as const;
 
 /** ERC-4337 EntryPoint v0.9; the wallet implementation hardcodes it. */
-export const ENTRY_POINT_V09: Address =
-	"0x433709009B8330FDa32311DF1C2AFA402eD8D009";
+export const ENTRY_POINT_V09: Address = ENTRY_POINT_ADDRESS;

@@ -42,7 +42,14 @@ const base = {
 	sender: addressSchema.transform((value) => getAddress(value)),
 	nonce: quantity,
 	callData: hexData,
-	factory: addressSchema.transform((value) => getAddress(value)).optional(),
+	// EntryPoint v0.9 reads initCode starting 0x7702 as an EIP-7702 authorization, not a factory.
+	factory: addressSchema
+		.refine(
+			(value) => !value.toLowerCase().startsWith("0x7702"),
+			"EIP-7702 operations are not supported (factory starts with 0x7702)",
+		)
+		.transform((value) => getAddress(value))
+		.optional(),
 	factoryData: hexData.optional(),
 	paymaster: addressSchema.transform((value) => getAddress(value)).optional(),
 	paymasterData: hexData.optional(),

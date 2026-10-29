@@ -14,6 +14,14 @@ import { evaluatePolicy, type PolicyRuleResult } from "./userop-policy.js";
 const hexData = z.string().regex(/^0x[0-9a-fA-F]*$/) as z.ZodType<Hex>;
 const hexQuantity = z.string().regex(/^0x[0-9a-fA-F]+$/) as z.ZodType<Hex>;
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/) as z.ZodType<Address>;
+/**
+ * EntryPoint v0.9 treats initCode whose first two bytes are 0x7702 as an EIP-7702 authorization
+ * rather than a factory call. Giano accounts are factory-deployed, so such a factory is refused.
+ */
+const factoryAddress = address.refine(
+	(value) => !value.toLowerCase().startsWith("0x7702"),
+	"EIP-7702 operations are not supported (factory starts with 0x7702)",
+) as z.ZodType<Address>;
 
 /**
  * EntryPoint v0.9 user operation in JSON-RPC (hex) encoding. The EntryPoint address
@@ -35,7 +43,7 @@ export const rpcUserOpSchema = z
 		maxFeePerGas: hexQuantity,
 		maxPriorityFeePerGas: hexQuantity,
 		signature: hexData,
-		factory: address.optional(),
+		factory: factoryAddress.optional(),
 		factoryData: hexData.optional(),
 		paymaster: address.optional(),
 		paymasterVerificationGasLimit: hexQuantity.optional(),
