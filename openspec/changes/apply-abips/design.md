@@ -121,6 +121,11 @@ upgrade. ABIP-7's own upgrade-workflow rule forbids mixing upgrades into an unre
 The lockfile diff is then limited to specifier strings. A one-off script does the rewrite: it reads the lockfile and
 rewrites the manifests. That script is not committed, but its output is checked by the committed range checker.
 
+A plain `pnpm install` after changing override values re-resolves the whole tree and dedupes, which drops older
+duplicates. So the lockfile's `specifier:` and `overrides:` lines are rewritten in place, by the same one-off script.
+`pnpm install --frozen-lockfile`, followed by a plain `pnpm install` that must leave the file byte-identical, proves
+the result is consistent.
+
 - **Peer dependencies.** Published libraries keep their ranges (`viem ^2.31.0`, `react >=18`, `wagmi ^2.15.0`,
   `@rainbow-me/rainbowkit ^2.2.0`). The set of published libraries is the non-private `packages/*` manifests that have
   `publishConfig`. The checker computes it from that rule, not from a hard-coded list.

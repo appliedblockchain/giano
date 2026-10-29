@@ -138,6 +138,22 @@ jobs:
       - name: Check both workspaces, every workflow and Dockerfile
         run: node scripts/check-release-age.mjs --registry
 
+  pinned-versions:
+    # ABIP-7 (docs/abip-compliance.md): every dependency in every package.json is an exact version,
+    # except peerDependencies of the libraries this repo publishes; override values are exact too.
+    # Reads manifests and workspace files only, so it runs on fork PRs as well.
+    name: Exact dependency pins (ABIP-7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Pin check unit tests
+        run: node --test scripts/check-pinned-versions.test.mjs
+      - name: Check every manifest and override
+        run: node scripts/check-pinned-versions.mjs
+
   wallet-api:
     name: wallet-api tests + OpenAPI drift
     runs-on: ubuntu-latest

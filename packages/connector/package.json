@@ -54,7 +54,7 @@
 		"@appliedblockchain/giano-wallet-transport": "workspace:*"
 	},
 	"devDependencies": {
-		"@rainbow-me/rainbowkit": "^2.2.4",
+		"@rainbow-me/rainbowkit": "2.2.5",
 		"tsdown": "0.23.1",
 		"typescript": "7.0.2",
 		"viem": "2.31.6",

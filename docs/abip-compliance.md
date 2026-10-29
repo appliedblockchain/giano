@@ -17,7 +17,7 @@ delivered as one stacked PR per ABIP.
 | ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) and one out-of-scope image (`giano-contracts-deployer`) |
 | ABIP-5 | External resources in AGENTS.md file | Adopted |
 | ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces; one deviation, `@appliedblockchain/*` excluded in the example |
-| ABIP-7 | Pin Exact Dependency Versions | In progress (`apply-abips`) |
+| ABIP-7 | Pin Exact Dependency Versions | Adopted: every manifest entry and override exact; library peers keep ranges |
 | ABIP-8 | Key Generation Ceremony | In progress (`apply-abips`) |
 
 ## ABIP-5: External resources in AGENTS.md (adopted)
@@ -78,6 +78,37 @@ following:
 - an exclusion that is not one exact version, other than `@appliedblockchain/*`;
 - a `pnpm install` without `--frozen-lockfile` in a workflow or a Dockerfile;
 - with `--registry`, which CI passes: an excluded version older than the window, or one that does not exist.
+
+## ABIP-7: Pin Exact Dependency Versions (adopted)
+
+Every manifest in the repository is in scope: the root, `packages/*`, `services/*` (including the separate
+`services/custom-example` workspace) and `e2e`, 14 in all. The repository-level contract is the `dependency-pinning`
+capability in OpenSpec.
+
+- **Exact versions.** Every `dependencies`, `devDependencies` and `optionalDependencies` entry is an exact version.
+  `workspace:` references are kept, because they resolve to exact versions at install and publish time.
+- **Peer dependencies.** The seven published `@appliedblockchain/*` libraries (non-private `packages/*` with
+  `publishConfig`) keep semver ranges on their `peerDependencies`, for example `viem ^2.31.0` and `react >=18`, so
+  integrators choose those versions themselves. That is ABIP-7's exemption, and the only one used. Every other field
+  in those libraries is exact.
+- **Overrides.** The security floors in both `pnpm-workspace.yaml` files have exact values. Their selector keys keep
+  the range that scopes which resolutions they replace, for example `"ws@>=8.0.0 <8.21.0": "8.21.0"`.
+- **How the pins were chosen.** Each range was replaced with the version its lockfile already resolved, and each
+  override value with the version it already resolved to (or its floor, for an override nothing currently matches).
+  Only the lockfiles' `specifier` and `overrides` lines changed; every resolved package and snapshot is byte-identical.
+  The published libraries' runtime dependencies are therefore the versions they already shipped with (changeset
+  `exact-dependency-pins`).
+- **Git, tarball and `file:` dependencies.** There are none. The checker accepts a git dependency only at a
+  40-character commit SHA. The Foundry dependencies are git submodules, pinned by commit.
+- **Not adopted yet: `catalog:`.** ABIP-7 recommends a pnpm catalog in monorepos. It is a separate mechanical
+  rewrite, kept out of this change so the pin diff stays reviewable, and `services/custom-example` cannot share the
+  root catalog. It is a follow-up.
+
+### Enforcement
+
+`scripts/check-pinned-versions.mjs` runs in CI on every pull request, and in the CI run `release.yml` calls (job
+"Exact dependency pins (ABIP-7)"). It fails on any non-exact manifest entry outside the library peer exemption, and on
+any non-exact override value. Transitive ranges are the lockfile's job and are out of scope.
 
 ## ABIP-2: Docker Hardened Images (adopted)
 
