@@ -119,7 +119,7 @@ transactions. **Commit it** for every chain except the local ones; `pnpm gen:add
 extras the CLI does not deploy (e.g. a non-default EntryPoint) go in `address-overrides.json`.
 
 The `giano-contracts-deployer` image (`Dockerfile.deployer`) runs `core` (and `testing` with
-`DEPLOY_TESTING=true`) from environment variables; see `scripts/deployer-entrypoint.sh`.
+`DEPLOY_TESTING=true`) from environment variables; see `scripts/deployer-entrypoint.mjs`.
 
 ### Local chains
 

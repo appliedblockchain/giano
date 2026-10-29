@@ -134,29 +134,40 @@
 
 ## 4. ABIP-2: close the remaining gaps (PR 4, `chore/abip-2-close-gaps`)
 
-- [ ] 4.1 Open the GitHub issue "Revisit giano-devnet base when a hardened Foundry/anvil image exists" and link it in
+- [x] 4.1 Open the GitHub issue "Revisit giano-devnet base when a hardened Foundry/anvil image exists" and link it in
   `docs/abip-compliance.md` in place of "_to be opened_".
-- [ ] 4.2 Decide between bundling `deploy/cli.ts` with tsdown and keeping `tsx` at runtime (design D5, open question).
-  Record the choice in design D5.
-- [ ] 4.3 Port `packages/contracts/scripts/deployer-entrypoint.sh` to `deployer-entrypoint.mjs`:
+- [x] 4.2 Decide between bundling `deploy/cli.ts` with tsdown and keeping `tsx` at runtime (design D5, open question).
+  Record the choice in design D5. **Chosen: bundle.** It bundles cleanly into one 748 kB ESM file
+  (`tsdown.deployer.config.mts`), so the runtime has no `node_modules`, no `tsx` and no TypeScript. Issue: #165.
+- [x] 4.3 Port `packages/contracts/scripts/deployer-entrypoint.sh` to `deployer-entrypoint.mjs`:
   - same env contract (`RPC_URL`, `CHAIN_ID`, `ROLE_ADMIN`, `RELEASE`, `DEPLOY_TESTING`, `PAYMASTER_FUND_ETH`,
     `OUT_DIR`);
   - same registry JSON output;
   - no shell, and no `exec` or `spawn` with `shell: true`.
-- [ ] 4.4 Rewrite `packages/contracts/Dockerfile.deployer`:
+
+  It adds `DEPLOYER_IMPERSONATE=true`, for local chains only (the CLI refuses `--impersonate` elsewhere). Without it,
+  the image could not run anywhere while `CANONICAL_DEPLOYER` is the placeholder: no key can match `0x…dEaD`.
+- [x] 4.4 Rewrite `packages/contracts/Dockerfile.deployer`:
   - DHI Node `-dev` build stage and runtime final stage, pinned to the digests wallet-api uses;
   - files copied with `--chown` to the DHI user, and `/out` owned by that user;
   - no `RUN` in the final stage;
   - an exec-form `ENTRYPOINT ["node", "…/deployer-entrypoint.mjs"]`.
-- [ ] 4.5 Remove `packages/contracts/Dockerfile.deployer *` from the `abip-2-exceptions` block. Add a
+- [x] 4.5 Remove `packages/contracts/Dockerfile.deployer *` from the `abip-2-exceptions` block. Add a
   `check-dockerfiles` test that rejects a `*` whole-file entry. Confirm the policy check passes on the new Dockerfile.
-- [ ] 4.6 Gates:
+- [x] 4.6 Gates:
   - `docker build` of the deployer;
   - `docker run --entrypoint sh` fails;
   - the main process UID is non-zero;
   - the e2e compose `deploy` profile against a fresh anvil writes `/out/<chainId>.json` and a registry entry whose
     addresses equal `pnpm deploy:cli addresses`.
-- [ ] 4.7 Update `docs/abip-compliance.md`: drop the "out of scope" paragraph, move the deployer row to "DHI Node", and
+
+  No compose file has a `deploy` profile, so the image was run directly:
+  - against `giano-devnet` (baked state), it verifies all four contracts as already deployed and writes both files;
+  - against a blank anvil, after `install-createx` / `install-entrypoint`, it deploys all four at the canonical
+    addresses, then the two `giano.test.*` contracts with `DEPLOY_TESTING=true`;
+  - with no key and no impersonation, it fails with a clear message;
+  - `sh` exits 127, the UID is 1000, the image size is 154 MB, and there is no `node_modules`.
+- [x] 4.7 Update `docs/abip-compliance.md`: drop the "out of scope" paragraph, move the deployer row to "DHI Node", and
   leave devnet as the only exception. Open PR 4.
 
 ## 5. ABIP-8: key ceremony (PR 5, `chore/abip-8-key-ceremony`)

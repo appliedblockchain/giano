@@ -140,8 +140,15 @@ export function checkDockerfile(text, file, exceptions = []) {
 					ref.startsWith(`${e.image}:`)),
 		);
 
-	// `<file> *` in the exceptions block: a one-shot tool, not a deployed image, out of ABIP-2 scope
-	if (exceptions.some((e) => e.file === file && e.image === "*")) return errors;
+	// ABIP-2's exceptions cover a third-party image with no hardened equivalent, so an entry names
+	// that image; a whole-file `<file> *` entry would exempt everything else in the file too.
+	if (exceptions.some((e) => e.file === file && e.image === "*")) {
+		fail(
+			1,
+			"whole-file-exemption",
+			"`*` exempts the whole file; ABIP-2 exceptions name the third-party image",
+		);
+	}
 
 	const stages = parseStages(text);
 	if (stages.length === 0) {

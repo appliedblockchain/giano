@@ -14,7 +14,7 @@ delivered as one stacked PR per ABIP.
 | ABIP | Title | Status |
 |------|-------|--------|
 | ABIP-1 | Branch Protection Rules | In progress (`apply-abips`) |
-| ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`) and one out-of-scope image (`giano-contracts-deployer`) |
+| ABIP-2 | Docker Hardened Images | Adopted, with one third-party exception (`giano-devnet`, tracked in #165) |
 | ABIP-5 | External resources in AGENTS.md file | Adopted |
 | ABIP-6 | Enforce Minimum Package Age | Adopted: 7 days in both workspaces; one deviation, `@appliedblockchain/*` excluded in the example |
 | ABIP-7 | Pin Exact Dependency Versions | Adopted: every manifest entry and override exact; library peers keep ranges |
@@ -112,8 +112,8 @@ any non-exact override value. Transitive ranges are the lockfile's job and are o
 
 ## ABIP-2: Docker Hardened Images (adopted)
 
-ABIP-2 applies because this repository publishes seven container images for non-local environments (the eighth, the one-shot `giano-contracts-deployer`,
-is out of scope; see below), and `.github/workflows/docker.yml` is the authoritative list. The migration follows the ABIP-2 companion guide, "Docker
+ABIP-2 applies because this repository publishes eight container images, and `.github/workflows/docker.yml` is the
+authoritative list. The migration follows the ABIP-2 companion guide, "Docker
 Hardened Images Usage and Migration". The repository-level contract is the `container-images` capability in OpenSpec.
 
 | Image | Final-stage base | Notes |
@@ -121,7 +121,7 @@ Hardened Images Usage and Migration". The repository-level contract is the `cont
 | `giano-wallet-api` | DHI Node (Alpine) | no shell; runs as `node` (1000) |
 | `giano-wallet-byo` | DHI Node (Alpine) | no shell; esbuild bundles at start |
 | `giano-bundler` | DHI Node (Alpine) | no shell; entrypoint is `entrypoint.mjs` |
-| `giano-contracts-deployer` | `node:22-slim`, **out of scope** | one-shot deploy tool, not a deployed image; see below |
+| `giano-contracts-deployer` | DHI Node (Alpine) | no shell; the deploy CLI bundled into one file, no `node_modules`; runs as `node` (1000) |
 | `giano-wallet-web` | DHI nginx (Debian) | SPA tool allow-list; runs as `nginx` (65532) |
 | `giano-paymaster-admin` | DHI nginx (Debian) | SPA tool allow-list |
 | `giano-example` | DHI nginx (Debian) | SPA tool allow-list |
@@ -160,18 +160,19 @@ Mitigations:
 - the image has no ECR repository;
 - it is never deployed to a non-local environment: it is a GHCR artefact for local and CI chains only.
 
-**`giano-contracts-deployer` (out of scope).** It is a one-shot tool that deploys the contracts to a chain (Helm
-pre-install Job, compose `deploy` profile), not a service that runs in an environment. It stays on `node:22-slim`
-and runs the contracts package's deploy CLI with `tsx`; it deploys committed releases, so it carries no compiler. It is exempted as a whole file (`*` in the block below), and its `docker.yml`
-entry is still built and published to GHCR.
+Tracking issue: [#165](https://github.com/appliedblockchain/giano/issues/165).
 
-Tracking issue: _to be opened (task 8.4 of the `adopt-docker-hardened-images` change)._
+`giano-contracts-deployer` was previously exempted as a whole file, as a one-shot tool rather than a deployed image.
+That exemption is gone (`apply-abips`). ABIP-2's exceptions cover only third-party images. The deployer also runs in
+client clusters (Helm pre-install Job) and is handed deployer credentials, so it gets the same hardening as every
+other image. Its CLI is bundled with every dependency into `dist-deployer/cli.mjs` (`tsdown.deployer.config.mts`).
+The runtime holds node, that file, the releases and the CreateX deployment data, and nothing else. The check rejects
+a whole-file `*` entry.
 
 The check reads this block, so the documented exceptions and the enforced exceptions are the same list:
 
 ```abip-2-exceptions
 services/devnet/Dockerfile           ghcr.io/foundry-rs/foundry
-packages/contracts/Dockerfile.deployer *
 ```
 
 ### SPA tool allow-list (applied guideline, not an exception)

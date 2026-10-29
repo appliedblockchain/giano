@@ -127,19 +127,22 @@ CMD ["node", "dist/index.js"]
 		]);
 	});
 
-	it("exempts a whole file recorded with *, and only that file", () => {
+	it("rejects a whole-file * exemption: ABIP-2 exceptions cover a third-party image only", () => {
 		const exc = [{ file: "svc/Dockerfile", image: "*" }];
-		assert.deepEqual(
-			rules(
-				"FROM node:22-slim\nRUN echo hi\nUSER root\n",
-				"svc/Dockerfile",
-				exc,
-			),
-			[],
+		const errs = checkDockerfile(
+			`FROM ${DEV} AS build\nFROM ${RT}\n`,
+			"svc/Dockerfile",
+			exc,
 		);
-		assert.deepEqual(rules("FROM node:22-slim\n", "other/Dockerfile", exc), [
-			"dhi-base",
-		]);
+		assert.deepEqual(
+			errs.map((e) => [e.line, e.rule]),
+			[[1, "whole-file-exemption"]],
+		);
+		// and it exempts nothing: the file's own violations are still reported
+		assert.deepEqual(
+			rules("FROM node:22-slim\nRUN echo hi\n", "svc/Dockerfile", exc),
+			["whole-file-exemption", "dhi-base", "final-instructions"],
+		);
 	});
 
 	it("lists only external references", () => {

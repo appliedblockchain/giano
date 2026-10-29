@@ -1,6 +1,7 @@
 .cursorrules
 **/.env
 dist/
+dist-deployer/
 node_modules/
 .pnpm-store/
 .idea/
