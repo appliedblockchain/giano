@@ -1,9 +1,17 @@
-import { Alert, Box, Button, HStack, Stack, Text } from "@chakra-ui/react";
-import { useState } from "react";
-import { LuLogIn } from "react-icons/lu";
-import { Copyable, SectionCard } from "../components/ui";
+import {
+	Alert,
+	Box,
+	Button,
+	Heading,
+	HStack,
+	Stack,
+	Text,
+} from "@chakra-ui/react";
+import { type ReactNode, useState } from "react";
+import { LuCheck, LuLogIn } from "react-icons/lu";
+import { Copyable } from "../components/ui";
 import { type SignInFailure, usePlatform } from "../lib/platform-session";
-import type { PlatformAreaProps } from "./PlatformArea";
+import type { PlatformAreaProps } from "./shared";
 
 /**
  * Either area without a session, where the console has the platform API (specs/PLATFORM-ADMIN-SPECS.md
@@ -27,7 +35,7 @@ const FAILURE_TEXT: Record<
 	"not-admin": {
 		title: "Not a platform admin on this deployment",
 		description:
-			"The connected address is not on this deployment's platform admin list. Connect the wallet holding a platform admin address, or ask a platform admin to add yours under Platform → Admins.",
+			"The connected address is not on this deployment's platform admin list. Connect the wallet holding a platform admin address, or ask a platform admin to add yours under Admins.",
 	},
 	disabled: {
 		title: "Platform API disabled on this deployment",
@@ -71,12 +79,28 @@ export function SignIn({
 		}
 	};
 
+	const connected = wallet !== undefined;
 	return (
-		<SectionCard
-			title="Platform admin sign-in"
-			subtitle="This console is for Giano's platform admins. Sign in with the wallet that holds your platform admin address."
+		<Box
+			maxW="lg"
+			mx="auto"
+			mt={{ base: "4", md: "10" }}
+			bg="surface"
+			borderWidth="1px"
+			rounded="xl"
+			p={{ base: "5", md: "7" }}
 		>
-			<Stack gap="4" maxW="2xl">
+			<Stack gap="5">
+				<Stack gap="1.5">
+					<Heading as="h2" size="xl">
+						Sign in
+					</Heading>
+					<Text fontSize="sm" color="fg.muted">
+						This console reads nothing until a platform admin signs in. Your
+						wallet signs a message that names this console's domain; no
+						transaction is sent and no gas is spent.
+					</Text>
+				</Stack>
 				{endedNotice && (
 					<Alert.Root status="info" size="sm">
 						<Alert.Indicator />
@@ -107,35 +131,86 @@ export function SignIn({
 				)}
 				{!disabled && (
 					<>
-						<Text fontSize="sm" color="fg.muted">
-							Your wallet is asked to sign a message naming this console's
-							domain. Nothing is sent on-chain and no gas is spent. The session
-							lasts until it expires, you sign out, reload, or change account,
-							network or deployment.
-						</Text>
-						<Box>
-							<Button
-								colorPalette="brand"
-								onClick={() => void start()}
-								loading={busy || connecting}
-								loadingText={
-									connecting ? "Connecting" : "Waiting for signature"
-								}
+						<Stack as="ol" gap="3" listStyleType="none">
+							<Step
+								number={1}
+								done={connected}
+								title={connected ? "Wallet connected" : "Connect a wallet"}
 							>
-								<LuLogIn /> Sign in with wallet
-							</Button>
-						</Box>
-						{wallet && (
-							<HStack gap="2">
-								<Text fontSize="xs" color="fg.muted">
-									Signing as
-								</Text>
-								<Copyable value={wallet.address} label="Connected account" />
-							</HStack>
-						)}
+								{wallet ? (
+									<HStack gap="2" flexWrap="wrap">
+										<Copyable
+											value={wallet.address}
+											label="Connected account"
+										/>
+										<Text as="span">on {deployment.name}</Text>
+									</HStack>
+								) : (
+									`The one holding your platform admin address, on ${deployment.name}.`
+								)}
+							</Step>
+							<Step number={2} done={false} title="Sign the message">
+								Only addresses on wallet-api's platform admin list get a
+								session.
+							</Step>
+						</Stack>
+						<Button
+							colorPalette="brand"
+							onClick={() => void start()}
+							loading={busy || connecting}
+							loadingText={connecting ? "Connecting" : "Waiting for signature"}
+						>
+							<LuLogIn /> Sign in with wallet
+						</Button>
+						<Text fontSize="xs" color="fg.muted">
+							The session lives in this tab only, and the console warns you
+							before it expires. Reloading, switching account or network, or
+							changing deployment ends it.
+						</Text>
 					</>
 				)}
 			</Stack>
-		</SectionCard>
+		</Box>
+	);
+}
+
+function Step({
+	number,
+	done,
+	title,
+	children,
+}: {
+	number: number;
+	done: boolean;
+	title: string;
+	children: ReactNode;
+}) {
+	return (
+		<HStack as="li" gap="3" align="flex-start">
+			<Box
+				aria-hidden="true"
+				boxSize="6"
+				flexShrink="0"
+				rounded="full"
+				display="grid"
+				placeItems="center"
+				fontSize="xs"
+				fontWeight="bold"
+				bg={done ? "green.solid" : undefined}
+				color={done ? "green.contrast" : "brand.fg"}
+				borderWidth={done ? undefined : "2px"}
+				borderColor="brand.solid"
+			>
+				{done ? <LuCheck /> : number}
+			</Box>
+			<Stack gap="0.5">
+				<Text fontSize="sm" fontWeight="semibold">
+					{title}
+				</Text>
+				<Box fontSize="sm" color="fg.muted">
+					{children}
+				</Box>
+			</Stack>
+		</HStack>
 	);
 }

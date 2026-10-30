@@ -1,34 +1,19 @@
+import type {
+	GianoTimelockClient,
+	HealthReport,
+} from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Alert,
-	Badge,
 	Box,
 	Button,
-	ButtonGroup,
 	Container,
 	Heading,
 	HStack,
-	NativeSelect,
-	Popover,
-	Portal,
 	Spinner,
 	Stack,
-	Tabs,
 	Text,
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-	LuHistory,
-	LuHourglass,
-	LuLayoutDashboard,
-	LuMoon,
-	LuRefreshCw,
-	LuSettings,
-	LuShieldCheck,
-	LuSun,
-	LuUserCog,
-	LuUsers,
-	LuWallet,
-} from "react-icons/lu";
 import { ProposalDialog } from "./components/ProposalDialog";
 import { Copyable, notifyError } from "./components/ui";
 import {
@@ -48,9 +33,9 @@ import {
 	isUserRejection,
 	networkDetails,
 } from "./lib/chain";
-import { useColorMode } from "./lib/color-mode";
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
-import type { ProposalRequest } from "./lib/proposals";
+import type { ProposalRequest, Propose } from "./lib/proposals";
+import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
@@ -58,22 +43,19 @@ import { RolesPanel } from "./panels/RolesPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { TenantsPanel } from "./panels/TenantsPanel";
 import { TimelockPanel } from "./panels/TimelockPanel";
-import { PlatformArea, SessionBar } from "./platform/PlatformArea";
+import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
-
-type Area = "paymaster" | "platform";
+import type { PlatformAreaProps } from "./platform/shared";
+import { TenantsTab } from "./platform/TenantsTab";
+import { Header } from "./shell/Header";
+import { SessionWarning } from "./shell/SessionWarning";
+import { TabBar } from "./shell/TabBar";
 
 export function App() {
 	const { deployments } = getAdminConfig();
 	const [deployment, setDeployment] = useState(() =>
 		initialDeployment(deployments),
 	);
-	/**
-	 * Paymaster (the chain view, as it always was) or Platform (wallet-api's tenant registry and its
-	 * platform admins). Not
-	 * remembered: a reload lands on Paymaster, and the Platform area asks for a signature anyway.
-	 */
-	const [area, setArea] = useState<Area>("paymaster");
 
 	const selectDeployment = useCallback((next: Deployment) => {
 		setDeployment(next);
@@ -87,12 +69,7 @@ export function App() {
 	// click and makes the chain check run again.
 	return (
 		<PlatformSessionProvider key={deploymentKey(deployment)}>
-			<Console
-				deployment={deployment}
-				selectDeployment={selectDeployment}
-				area={area}
-				setArea={setArea}
-			/>
+			<Console deployment={deployment} selectDeployment={selectDeployment} />
 		</PlatformSessionProvider>
 	);
 }
@@ -100,16 +77,12 @@ export function App() {
 function Console({
 	deployment,
 	selectDeployment: onSelectDeployment,
-	area,
-	setArea,
 }: {
 	deployment: Deployment;
 	selectDeployment: (next: Deployment) => void;
-	area: Area;
-	setArea: (area: Area) => void;
 }) {
-	const { deployments, platformApi } = getAdminConfig();
-	const { session, expire } = usePlatform();
+	const { platformApi } = getAdminConfig();
+	const { session, expire, signOut } = usePlatform();
 	const [wallet, setWallet] = useState<ConnectedWallet>();
 	const [connecting, setConnecting] = useState(false);
 	const [notAdded, setNotAdded] = useState<ChainNotAddedError>();
@@ -215,115 +188,48 @@ function Console({
 		}
 	}, [deployment]);
 
+	const disconnect = useCallback(async () => {
+		// Best effort: a wallet that supports it forgets this site, so a reload does not reconnect it
+		// silently. The console forgets the wallet either way. The session was signed by this wallet,
+		// so it goes with it.
+		await getInjectedProvider()
+			?.request({
+				method: "wallet_revokePermissions",
+				params: [{ eth_accounts: {} }],
+			} as never)
+			.catch(() => undefined);
+		setWallet(undefined);
+		if (session) await signOut();
+	}, [session, signOut]);
+
+	const route = useRoute();
+	const platformProps = {
+		deployment,
+		wallet,
+		connect,
+		connecting,
+		client,
+		overview,
+		myRoles,
+		refreshChain: refresh,
+	};
+
 	return (
 		<Box minH="100vh">
-			<Box
-				borderBottomWidth="1px"
-				bg="surface"
-				position="sticky"
-				top="0"
-				zIndex="docked"
-			>
-				<Container maxW="7xl" py="3">
-					<HStack justify="space-between" gap="4" flexWrap="wrap">
-						<HStack gap="3">
-							<Heading size="md">Giano paymaster</Heading>
-							{deployments.length > 1 ? (
-								<NativeSelect.Root size="sm" width="auto">
-									<NativeSelect.Field
-										value={deploymentKey(deployment)}
-										onChange={(event) => {
-											const next = deployments.find(
-												(candidate) =>
-													deploymentKey(candidate) ===
-													event.currentTarget.value,
-											);
-											if (next) selectDeployment(next);
-										}}
-										aria-label="Deployment"
-									>
-										{deployments.map((candidate) => (
-											<option
-												key={deploymentKey(candidate)}
-												value={deploymentKey(candidate)}
-											>
-												{candidate.name} — chain {candidate.chainId}
-											</option>
-										))}
-									</NativeSelect.Field>
-									<NativeSelect.Indicator />
-								</NativeSelect.Root>
-							) : (
-								<Badge colorPalette="brand" variant="subtle">
-									{deployment.name}
-								</Badge>
-							)}
-							{deployments.length === 1 && (
-								<Badge variant="outline">chain {deployment.chainId}</Badge>
-							)}
-							{overview && <Field label="Paymaster" value={overview.address} />}
-							{platformApi && (
-								<ButtonGroup
-									size="sm"
-									variant="outline"
-									attached
-									aria-label="Area"
-								>
-									<Button
-										variant={area === "paymaster" ? "solid" : "outline"}
-										onClick={() => setArea("paymaster")}
-										aria-pressed={area === "paymaster"}
-									>
-										<LuLayoutDashboard /> Paymaster
-									</Button>
-									<Button
-										variant={area === "platform" ? "solid" : "outline"}
-										onClick={() => setArea("platform")}
-										aria-pressed={area === "platform"}
-									>
-										<LuUserCog /> Platform
-									</Button>
-								</ButtonGroup>
-							)}
-						</HStack>
-
-						<HStack gap="3">
-							{lastUpdated && (
-								<Text fontSize="xs" color="fg.muted">
-									updated {lastUpdated.toLocaleTimeString()}
-								</Text>
-							)}
-							<Button
-								size="sm"
-								variant="ghost"
-								onClick={() => void refresh()}
-								loading={loading}
-								aria-label="Refresh"
-							>
-								<LuRefreshCw />
-							</Button>
-							<ColorModeButton />
-							{wallet ? (
-								<WalletCard
-									wallet={wallet}
-									deployment={deployment}
-									roles={myRoles.length}
-								/>
-							) : (
-								<Button
-									size="sm"
-									colorPalette="brand"
-									onClick={() => void connect()}
-									loading={connecting}
-									loadingText="Connecting"
-								>
-									<LuWallet /> Connect wallet
-								</Button>
-							)}
-						</HStack>
-					</HStack>
-				</Container>
-			</Box>
+			<Header
+				deployment={deployment}
+				selectDeployment={selectDeployment}
+				overview={overview}
+				health={health}
+				lastUpdated={lastUpdated}
+				loading={loading}
+				refresh={refresh}
+				wallet={wallet}
+				roles={myRoles.length}
+				connect={connect}
+				connecting={connecting}
+				disconnect={disconnect}
+			/>
 
 			<Container maxW="7xl" py="6">
 				{!wallet && notAdded && (
@@ -375,7 +281,7 @@ function Console({
 					</Alert.Root>
 				)}
 
-				{!wallet && !notAdded && area === "paymaster" && !platformApi && (
+				{!wallet && !notAdded && !platformApi && (
 					<Alert.Root status="info" mb="4">
 						<Alert.Indicator />
 						<Alert.Content>
@@ -399,124 +305,33 @@ function Console({
 					</Alert.Root>
 				)}
 
-				<SessionBar />
-
-				{signedOut && (
+				{signedOut ? (
 					<SignIn
 						deployment={deployment}
 						wallet={wallet}
 						connect={connect}
 						connecting={connecting}
 					/>
-				)}
-
-				{area === "platform" && !signedOut && (
-					<PlatformArea
-						deployment={deployment}
-						wallet={wallet}
-						connect={connect}
-						connecting={connecting}
-						client={client}
-						overview={overview}
-						myRoles={myRoles}
-						refreshChain={refresh}
-					/>
-				)}
-
-				{area === "paymaster" && !overview && loading && (
-					<Stack align="center" py="16" gap="3">
-						<Spinner size="lg" color="brand.solid" />
-						<Text color="fg.muted">Reading the paymaster…</Text>
-					</Stack>
-				)}
-
-				{area === "paymaster" && overview && client && (
-					<Tabs.Root defaultValue="overview" lazyMount unmountOnExit={false}>
-						<Tabs.List mb="4">
-							<Tabs.Trigger value="overview">
-								<LuLayoutDashboard /> Overview
-							</Tabs.Trigger>
-							<Tabs.Trigger value="tenants">
-								<LuUsers /> Tenants ({overview.tenants.length})
-							</Tabs.Trigger>
-							<Tabs.Trigger value="roles">
-								<LuShieldCheck /> Roles
-							</Tabs.Trigger>
-							<Tabs.Trigger value="settings">
-								<LuSettings /> Settings
-							</Tabs.Trigger>
-							<Tabs.Trigger value="timelock">
-								<LuHourglass /> Timelock
-							</Tabs.Trigger>
-							<Tabs.Trigger value="history">
-								<LuHistory /> History
-							</Tabs.Trigger>
-							<Tabs.Trigger value="health">
-								<LuShieldCheck /> Health
-								{health && health.level !== "ok" && (
-									<Badge
-										colorPalette={health.level === "fail" ? "red" : "orange"}
-										variant="solid"
-										ml="1"
-										size="sm"
-									>
-										!
-									</Badge>
-								)}
-							</Tabs.Trigger>
-						</Tabs.List>
-
-						<Tabs.Content value="overview">
-							<OverviewPanel overview={overview} />
-						</Tabs.Content>
-						<Tabs.Content value="tenants">
-							<TenantsPanel
-								client={client}
-								tenants={overview.tenants}
-								myRoles={myRoles}
-								connected={wallet !== undefined}
-								rosterOnChain={rosterOnChain}
-								refresh={refresh}
-								propose={propose}
-							/>
-						</Tabs.Content>
-						<Tabs.Content value="roles">
-							<RolesPanel
-								client={client}
-								roles={overview.roles}
-								myRoles={myRoles}
-								account={wallet?.address}
-								refresh={refresh}
-								propose={propose}
-								timelockAddress={deployment.timelockAddress}
-							/>
-						</Tabs.Content>
-						<Tabs.Content value="settings">
-							<SettingsPanel
-								client={client}
-								overview={overview}
-								myRoles={myRoles}
-								refresh={refresh}
-								propose={propose}
-							/>
-						</Tabs.Content>
-						<Tabs.Content value="timelock">
-							<TimelockPanel
-								timelock={timelock}
-								tenants={overview.tenants}
-								connected={wallet !== undefined}
-								propose={propose}
-								refresh={refresh}
-								lastUpdated={lastUpdated}
-							/>
-						</Tabs.Content>
-						<Tabs.Content value="history">
-							<HistoryPanel client={client} />
-						</Tabs.Content>
-						<Tabs.Content value="health">
-							{health && <HealthPanel health={health} />}
-						</Tabs.Content>
-					</Tabs.Root>
+				) : (
+					<>
+						<TabBar
+							route={route}
+							platformApi={platformApi}
+							tenants={overview?.tenants.length}
+							healthLevel={health?.level}
+						/>
+						<RouteView
+							route={route}
+							platformProps={platformProps}
+							health={health}
+							propose={propose}
+							timelock={timelock}
+							refresh={refresh}
+							lastUpdated={lastUpdated}
+							rosterOnChain={rosterOnChain}
+							loading={loading}
+						/>
+					</>
 				)}
 
 				<ProposalDialog
@@ -524,126 +339,130 @@ function Console({
 					request={proposal}
 					onClose={() => setProposal(undefined)}
 				/>
+				<SessionWarning
+					wallet={wallet}
+					connect={connect}
+					chainId={deployment.chainId}
+				/>
 			</Container>
 		</Box>
 	);
 }
 
-function ColorModeButton() {
-	const { colorMode, toggleColorMode } = useColorMode();
-	// A toggle, named for what it turns on: not "Switch to …", which in this header means a network.
-	return (
-		<Button
-			size="sm"
-			variant="ghost"
-			onClick={toggleColorMode}
-			aria-label="Dark mode"
-			aria-pressed={colorMode === "dark"}
-		>
-			{colorMode === "dark" ? <LuSun /> : <LuMoon />}
-		</Button>
-	);
-}
-
 /**
- * A value with the word for what it is.
- *
- * Two bare hex strings sat in this header — the paymaster and the connected account — and nothing
- * said which was which. They are the same shape, they are both copyable, and getting them the wrong
- * way round is exactly the mistake a operator cannot afford to make.
+ * The page for the current route. The panels are mounted as they were under the old tab bars; the
+ * later layers of this redesign replace them one tab at a time.
  */
-function Field({ label, value }: { label: string; value: string }) {
-	return (
-		<HStack gap="2">
-			<Text
-				fontSize="2xs"
-				color="fg.muted"
-				textTransform="uppercase"
-				letterSpacing="wide"
-				fontWeight="medium"
-			>
-				{label}
-			</Text>
-			<Copyable value={value} label={label} />
-		</HStack>
-	);
-}
-
-/**
- * What the console is signing as.
- *
- * Occupies the same slot and about the same width as the connect button it replaces. An account
- * address is 42 characters and is never abbreviated here — see {@link Copyable} — so shown inline
- * it wraps the header onto a second row the moment a wallet connects, and every control in it
- * moves. It goes in a panel instead: the button carries the state worth seeing at a glance, and
- * the values a operator actually reads are one click away and full width.
- *
- * The network is named there even though a connected wallet is always on the deployment's chain —
- * that it agrees is the thing worth showing, and it is the half a operator with several
- * environments open will otherwise assume.
- */
-function WalletCard({
-	wallet,
-	deployment,
-	roles,
+function RouteView({
+	route,
+	platformProps,
+	health,
+	propose,
+	timelock,
+	refresh,
+	lastUpdated,
+	rosterOnChain,
+	loading,
 }: {
-	wallet: ConnectedWallet;
-	deployment: Deployment;
-	roles: number;
+	route: Route;
+	platformProps: PlatformAreaProps;
+	health: HealthReport | undefined;
+	propose: Propose | undefined;
+	timelock: GianoTimelockClient | undefined;
+	refresh: () => Promise<void>;
+	lastUpdated: Date | undefined;
+	rosterOnChain: boolean;
+	loading: boolean;
 }) {
+	const { platformApi } = getAdminConfig();
+	const { client, overview, myRoles, wallet, deployment } = platformProps;
+
+	if (route.tab === "not-found" || (route.tab === "admins" && !platformApi))
+		return <NotFound />;
+	if (route.tab === "admins") return <AdminsTab />;
+
+	if (!overview || !client)
+		return loading ? (
+			<Stack align="center" py="16" gap="3">
+				<Spinner size="lg" color="brand.solid" />
+				<Text color="fg.muted">Reading the paymaster…</Text>
+			</Stack>
+		) : null;
+
+	switch (route.tab) {
+		case "overview":
+			return <OverviewPanel overview={overview} />;
+		case "tenants":
+			return (
+				<Stack gap="6">
+					{platformApi && (
+						<TenantsTab
+							{...platformProps}
+							selected={route.tenant}
+							lastUpdated={lastUpdated}
+						/>
+					)}
+					<TenantsPanel
+						client={client}
+						tenants={overview.tenants}
+						myRoles={myRoles}
+						connected={wallet !== undefined}
+						rosterOnChain={rosterOnChain}
+						refresh={refresh}
+						propose={propose}
+					/>
+				</Stack>
+			);
+		case "paymaster":
+			return (
+				<SettingsPanel
+					client={client}
+					overview={overview}
+					myRoles={myRoles}
+					refresh={refresh}
+					propose={propose}
+				/>
+			);
+		case "roles":
+			return (
+				<RolesPanel
+					client={client}
+					roles={overview.roles}
+					myRoles={myRoles}
+					account={wallet?.address}
+					refresh={refresh}
+					propose={propose}
+					timelockAddress={deployment.timelockAddress}
+				/>
+			);
+		case "timelock":
+			return (
+				<TimelockPanel
+					timelock={timelock}
+					tenants={overview.tenants}
+					connected={wallet !== undefined}
+					propose={propose}
+					refresh={refresh}
+					lastUpdated={lastUpdated}
+				/>
+			);
+		case "activity":
+			return <HistoryPanel client={client} />;
+		case "health":
+			return health ? <HealthPanel health={health} /> : null;
+	}
+}
+
+function NotFound() {
 	return (
-		<Popover.Root positioning={{ placement: "bottom-end" }}>
-			<Popover.Trigger asChild>
-				<Button size="sm" variant="outline">
-					<Box boxSize="2" rounded="full" bg="green.solid" aria-hidden="true" />
-					Connected
-					<Badge colorPalette={roles > 0 ? "green" : "gray"} variant="subtle">
-						{roles > 0 ? `${roles} role${roles === 1 ? "" : "s"}` : "no roles"}
-					</Badge>
-				</Button>
-			</Popover.Trigger>
-			<Portal>
-				<Popover.Positioner>
-					<Popover.Content width="auto" maxW="md">
-						<Popover.Arrow />
-						<Popover.Body>
-							<Stack gap="3">
-								<Field label="Account" value={wallet.address} />
-								<HStack gap="2">
-									<Text
-										fontSize="2xs"
-										color="fg.muted"
-										textTransform="uppercase"
-										letterSpacing="wide"
-										fontWeight="medium"
-									>
-										Network
-									</Text>
-									<Text fontSize="sm">
-										{deployment.name} · chain {deployment.chainId}
-									</Text>
-								</HStack>
-								<HStack gap="2">
-									<Text
-										fontSize="2xs"
-										color="fg.muted"
-										textTransform="uppercase"
-										letterSpacing="wide"
-										fontWeight="medium"
-									>
-										Roles
-									</Text>
-									<Text fontSize="sm">
-										{roles > 0
-											? `${roles} on this paymaster`
-											: "none on this paymaster — reads only"}
-									</Text>
-								</HStack>
-							</Stack>
-						</Popover.Body>
-					</Popover.Content>
-				</Popover.Positioner>
-			</Portal>
-		</Popover.Root>
+		<Stack align="center" py="16" gap="3">
+			<Heading size="md">No such page</Heading>
+			<Text color="fg.muted">
+				The console has no page at {window.location.pathname}.
+			</Text>
+			<Link to={TAB_PATHS.overview} color="brand.fg" fontWeight="medium">
+				Go to the Overview
+			</Link>
+		</Stack>
 	);
 }
