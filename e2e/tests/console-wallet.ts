@@ -209,7 +209,7 @@ export async function openConsole(page: Page) {
 
 /**
  * Signs in as the console's wallet — anvil account 0, bootstrapped as `admin-console` — connecting
- * it first if needed. In the Paymaster area the panels render once the first read lands.
+ * it first if needed. The tab bar renders once the first chain read lands.
  */
 export async function signIn(page: Page) {
 	await page.getByRole("button", { name: /Sign in with wallet/ }).click();
@@ -218,5 +218,15 @@ export async function signIn(page: Page) {
 
 export async function signInToPaymaster(page: Page) {
 	await signIn(page);
-	await expect(page.getByRole("tab", { name: /Overview/ })).toBeVisible();
+	await expect(tab(page, /Overview/)).toBeVisible();
+}
+
+/** A tab in the console's one tab bar. Links, not ARIA tabs: each is a page with its own URL. */
+export const tab = (page: Page, name: RegExp) =>
+	page.getByRole("navigation", { name: "Console" }).getByRole("link", { name });
+
+/** Signs out through the session menu in the header. */
+export async function signOut(page: Page) {
+	await page.getByRole("button", { name: "Platform admin session" }).click();
+	await page.getByRole("button", { name: /^Sign out$/ }).click();
 }
