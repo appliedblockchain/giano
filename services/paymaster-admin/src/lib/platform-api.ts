@@ -62,7 +62,7 @@ export type HistoryEntry = {
 	id: string;
 	action: string;
 	actor: string;
-	platformSessionId: string | null;
+	platformAdminSessionId: string | null;
 	before: Record<string, unknown> | null;
 	after: Record<string, unknown> | null;
 	detail: Record<string, unknown> | null;
