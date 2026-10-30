@@ -5,7 +5,8 @@
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- chain \
  *     --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..] \
  *     [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] \
- *     [--executor 0x..]
+ *     [--executor 0x..] [--timelock 0x.. [--timelock-delays minDelay=2d,upgradeToAndCall=7d,..]
+ *     [--timelock-proposers 0x..,0x..]] [--require-timelock]
  *
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- wallet \
  *     --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]
@@ -18,13 +19,19 @@
  *
  * Flags fall back to env: RPC_URL, CHAIN_ID, FACTORY_ADDRESS, ENTRYPOINT_ADDRESS,
  * SPONSORSHIP_PAYMASTER_ADDRESS, PAYMASTER_TENANT_IDS, PAYMASTER_ROLE_ADMIN, SPONSORSHIP_SIGNERS,
- * GIANO_REQUIRE_PAYMASTER.
+ * GIANO_REQUIRE_PAYMASTER, PAYMASTER_TIMELOCK, PAYMASTER_TIMELOCK_DELAYS, PAYMASTER_TIMELOCK_PROPOSERS,
+ * GIANO_REQUIRE_TIMELOCK.
+ *
+ * Timelock (G9 R4): with --timelock, every timelocked role (timelock.ts) must be held by that
+ * GianoTimelock alone and each timelocked function must wait at least its --timelock-delays value.
+ * A timelocked role on a key fails the run when a timelock is required (--require-timelock, or a
+ * mainnet chain), and warns otherwise.
  * For registry chains (8453 / 84532 / 381185) the addresses default from the contracts registry.
  *
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
  *
  * Uses ethers (already a dependency of this package) — no build step required, mirrors
- * scripts/p256_deploy.ts and deploy/sepolia/print-funding.sh.
+ * scripts/p256_deploy.ts and deploy/contracts/print-funding.sh.
  */
 import {
 	Contract,
@@ -37,7 +44,7 @@ import {
 	toBeHex,
 } from "ethers";
 import {
-	ENTRYPOINT_V07_ADDRESS,
+	ENTRYPOINT_V09_ADDRESS,
 	type GianoDeployment,
 	getGianoDeployment,
 } from "../addresses";
@@ -47,12 +54,25 @@ import {
 	CANONICAL_SPONSORSHIP_PAYMASTER,
 	canonicalCodeAt,
 } from "../canonical";
+import { entryPointRuntimeCode } from "../entrypoint";
 import {
 	gianoPaymasterAbi,
+	gianoSmartWalletAbi,
 	gianoSmartWalletFactoryAbi,
+	gianoTimelockAbi,
 	iEntryPointAbi,
 	multiOwnableAbi,
 } from "../generated";
+import {
+	delayPolicyProblems,
+	formatDuration,
+	parseDuration,
+	paymasterSelector,
+	TIMELOCKED_FUNCTION_NAMES,
+	TIMELOCKED_ROLES,
+	type TimelockDelays,
+	type TimelockedFunctionName,
+} from "../timelock";
 
 // --- well-known addresses (identical on every EVM chain) ---
 const RIP7212_PRECOMPILE = "0x0000000000000000000000000000000000000100";
@@ -60,6 +80,8 @@ const RIP7212_PRECOMPILE = "0x0000000000000000000000000000000000000100";
 const P256_VERIFIER = "0xc2b78104907F722DABAc4C69f826a522B2754De4";
 /** Chains on which a permissive test paymaster is a deployment failure, not a convenience. */
 const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111];
+/** Chains that hold real money: a timelock is mandatory here (G9 R4). */
+const MAINNET_CHAIN_IDS = [1, 8453];
 /**
  * Below this, sponsored operations start failing in ways that look like client bugs.
  *
@@ -71,14 +93,6 @@ const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n; // 0.02 ETH
 /** A validating paymaster needs a stake before bundlers will accept its operations at all. */
 const MIN_STAKE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
 
-/**
- * keccak256 of EntryPoint v0.7's runtime code where it was deployed canonically (Arachnid proxy,
- * published salt) — identical on Ethereum Sepolia and Base, checked Oct 2026. The runtime embeds
- * the address of the SenderCreator its constructor deploys, so a copy of the code made any other
- * way differs here and cannot create accounts (MC-141).
- */
-const ENTRY_POINT_V07_CODEHASH =
-	"0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58";
 /** Tenants per `getTenants` page — the roster is read in pages so a large one cannot blow the call. */
 const TENANT_PAGE_SIZE = 50;
 
@@ -166,7 +180,7 @@ function resolveDeployment(
 		entryPoint: pick(
 			"entrypoint",
 			"ENTRYPOINT_ADDRESS",
-			registry?.entryPoint ?? ENTRYPOINT_V07_ADDRESS,
+			registry?.entryPoint ?? ENTRYPOINT_V09_ADDRESS,
 		),
 		factory: pick("factory", "FACTORY_ADDRESS", registry?.factory),
 		implementation: registry?.implementation,
@@ -528,7 +542,10 @@ async function checkSponsorshipPaymaster(
 				: `${defaultAdminCount} holder(s) — this is a superuser by another name`,
 		);
 
-		const expectedAuthority = (flags["role-admin"] ??
+		// With a timelock, it is the expected authority; the timelock section below checks the rest.
+		const expectedAuthority = (flags.timelock ??
+			process.env.PAYMASTER_TIMELOCK ??
+			flags["role-admin"] ??
 			process.env.PAYMASTER_ROLE_ADMIN) as string | undefined;
 		for (const [label, role] of [
 			["ROLE_ADMIN", roleAdminRole],
@@ -612,6 +629,172 @@ async function checkSponsorshipPaymaster(
 	} catch (error) {
 		report("fail", "read the role topology", (error as Error).message);
 	}
+}
+
+/**
+ * G9 R4: every timelocked role is held by the expected GianoTimelock alone, and each timelocked
+ * function waits at least its published delay. Without `--timelock` this only reports who holds the
+ * timelocked roles. A holder without code (an EOA) fails when a timelock is required:
+ * `--require-timelock`, GIANO_REQUIRE_TIMELOCK=true, or a mainnet chain.
+ */
+async function checkTimelock(
+	provider: JsonRpcProvider,
+	paymasterAddress: `0x${string}`,
+	flags: Record<string, string>,
+	chainId: number,
+): Promise<void> {
+	section("Paymaster timelock (G9)");
+	const required =
+		MAINNET_CHAIN_IDS.includes(chainId) ||
+		(flags["require-timelock"] ?? process.env.GIANO_REQUIRE_TIMELOCK) ===
+			"true";
+	const timelockFlag = flags.timelock ?? process.env.PAYMASTER_TIMELOCK;
+	const delaysFlag =
+		flags["timelock-delays"] ?? process.env.PAYMASTER_TIMELOCK_DELAYS;
+	const paymaster = new Contract(paymasterAddress, gianoPaymasterAbi, provider);
+
+	try {
+		const timelock = timelockFlag
+			? requireAddress(timelockFlag, "timelock")
+			: undefined;
+		for (const name of TIMELOCKED_ROLES) {
+			const role: string = await paymaster[name]();
+			const count: bigint = await paymaster.getRoleMemberCount(role);
+			const holders: string[] = [];
+			for (let i = 0n; i < count; i++)
+				holders.push(getAddress(await paymaster.getRoleMember(role, i)));
+			if (timelock) {
+				const alone =
+					holders.length === 1 && holders[0] === getAddress(timelock);
+				report(
+					alone ? "ok" : "fail",
+					`${name} held by the timelock alone`,
+					alone
+						? timelock
+						: `held by ${holders.join(", ") || "nobody"} — expected only ${getAddress(timelock)}`,
+				);
+				continue;
+			}
+			const keys: string[] = [];
+			for (const holder of holders)
+				if (!(await hasCode(provider, holder))) keys.push(holder);
+			report(
+				keys.length ? (required ? "fail" : "warn") : "info",
+				`${name} holders`,
+				keys.length
+					? `${holders.join(", ")} — ${keys.join(", ")} ${keys.length === 1 ? "is a key" : "are keys"}, not a timelock`
+					: holders.join(", ") || "none",
+			);
+		}
+		if (!timelock) {
+			report(
+				required ? "fail" : "info",
+				"timelock not verified",
+				"pass --timelock <0x..> (or PAYMASTER_TIMELOCK) and --timelock-delays to assert the G9 topology",
+			);
+			return;
+		}
+
+		if (!(await hasCode(provider, timelock))) {
+			report("fail", "timelock deployed", `no code at ${timelock}`);
+			return;
+		}
+		const tl = new Contract(timelock, gianoTimelockAbi, provider);
+		let minDelay: bigint;
+		try {
+			minDelay = await tl.getMinDelay();
+			await tl.getEffectiveDelay(paymasterAddress, "0x00000000");
+		} catch {
+			report(
+				"fail",
+				"timelock is a GianoTimelock",
+				`${timelock} does not answer getEffectiveDelay — a stock TimelockController has one delay for everything`,
+			);
+			return;
+		}
+		report("ok", "timelock is a GianoTimelock", timelock);
+
+		// On-chain delays, effective (never below minDelay), as a policy.
+		const actual = { minDelay: Number(minDelay) } as TimelockDelays;
+		for (const name of TIMELOCKED_FUNCTION_NAMES)
+			actual[name] = Number(
+				await tl.getEffectiveDelay(paymasterAddress, paymasterSelector(name)),
+			);
+
+		const published = delaysFlag ? parseDelayList(delaysFlag) : undefined;
+		for (const name of ["minDelay", ...TIMELOCKED_FUNCTION_NAMES] as const) {
+			const want = published?.[name];
+			const ok = want === undefined || actual[name] >= want;
+			report(
+				!ok ? "fail" : want === undefined ? "warn" : "ok",
+				`${name} delay`,
+				`${formatDuration(actual[name])}${want === undefined ? " (no published value to check against)" : ok ? ` ≥ published ${formatDuration(want)}` : ` — below the published ${formatDuration(want)}`}`,
+			);
+		}
+		if (!published)
+			report(
+				"info",
+				"unverified",
+				"pass --timelock-delays minDelay=2d,upgradeToAndCall=7d,… (or PAYMASTER_TIMELOCK_DELAYS) so the delays are asserted",
+			);
+		const problems = delayPolicyProblems(actual);
+		report(
+			problems.length ? "fail" : "ok",
+			"role changes wait at least as long as anything they could bypass",
+			problems.join("; ") || undefined,
+		);
+
+		const proposers = (
+			flags["timelock-proposers"] ??
+			process.env.PAYMASTER_TIMELOCK_PROPOSERS ??
+			""
+		)
+			.split(",")
+			.map((p) => p.trim())
+			.filter(Boolean);
+		const proposerRole: string = await tl.PROPOSER_ROLE();
+		for (const proposer of proposers) {
+			const isProposer: boolean = await tl.hasRole(proposerRole, proposer);
+			const isContract = await hasCode(provider, proposer);
+			report(
+				!isProposer ? "fail" : isContract ? "ok" : "warn",
+				"timelock proposer",
+				`${getAddress(proposer)}${!isProposer ? " does not hold PROPOSER_ROLE" : isContract ? " (contract account, e.g. a Safe)" : " is a key, not a Safe — one key can queue anything"}`,
+			);
+		}
+		// Upstream grants DEFAULT_ADMIN_ROLE to the timelock itself; GianoTimelock passes no other admin.
+		const selfAdmin: boolean = await tl.hasRole(
+			"0x0000000000000000000000000000000000000000000000000000000000000000",
+			timelock,
+		);
+		report(
+			selfAdmin ? "ok" : "fail",
+			"timelock administers itself",
+			selfAdmin ? undefined : "the timelock is not its own admin",
+		);
+	} catch (error) {
+		report("fail", "read the timelock topology", (error as Error).message);
+	}
+}
+
+/** `minDelay=2d,upgradeToAndCall=7d,…` → a partial policy in seconds. */
+function parseDelayList(value: string): Partial<TimelockDelays> {
+	const delays: Partial<TimelockDelays> = {};
+	for (const entry of value
+		.split(",")
+		.map((e) => e.trim())
+		.filter(Boolean)) {
+		const [name, duration] = entry.split("=");
+		if (
+			name !== "minDelay" &&
+			!TIMELOCKED_FUNCTION_NAMES.includes(name as TimelockedFunctionName)
+		)
+			throw new Error(
+				`--timelock-delays: unknown "${name}"; use minDelay or ${TIMELOCKED_FUNCTION_NAMES.join(", ")}`,
+			);
+		delays[name as keyof TimelockDelays] = parseDuration(duration ?? "");
+	}
+	return delays;
 }
 
 async function hasCode(
@@ -725,17 +908,18 @@ async function doctorChain(flags: Record<string, string>) {
 	const entryPointCode = await provider.getCode(entryPoint);
 	report(
 		entryPointCode && entryPointCode !== "0x" ? "ok" : "fail",
-		"EntryPoint v0.7 deployed",
+		"EntryPoint v0.9 deployed",
 		entryPoint,
 	);
 	if (entryPointCode && entryPointCode !== "0x") {
 		const hash = keccak256(entryPointCode);
+		const expectedCodehash = keccak256(entryPointRuntimeCode(chainId));
 		report(
-			hash === ENTRY_POINT_V07_CODEHASH ? "ok" : "fail",
-			"EntryPoint runs the canonical v0.7 code",
-			hash === ENTRY_POINT_V07_CODEHASH
+			hash === expectedCodehash ? "ok" : "fail",
+			"EntryPoint runs the canonical v0.9 code",
+			hash === expectedCodehash
 				? hash
-				: `${hash}, expected ${ENTRY_POINT_V07_CODEHASH} — not the canonical deployment; account creation may fail (MC-141)`,
+				: `${hash}, expected ${expectedCodehash} — not the canonical deployment; account creation may fail (MC-141)`,
 		);
 	}
 
@@ -791,6 +975,23 @@ async function doctorChain(flags: Record<string, string>) {
 					report("ok", "implementation is canonical", impl);
 					await reportCanonicalCode(provider, impl, "implementation");
 				}
+
+				// Every release's code is canonical at the same address, but each hardcodes its own
+				// EntryPoint: an earlier release passes the codehash check and rejects every v0.9 op.
+				const boundEntryPoint: string = await new Contract(
+					impl,
+					gianoSmartWalletAbi,
+					provider,
+				).entryPoint();
+				report(
+					getAddress(boundEntryPoint) === getAddress(entryPoint)
+						? "ok"
+						: "fail",
+					"implementation is bound to the configured EntryPoint",
+					getAddress(boundEntryPoint) === getAddress(entryPoint)
+						? boundEntryPoint
+						: `${boundEntryPoint}, expected ${entryPoint} — the chain runs an earlier release; upgrade it before serving`,
+				);
 
 				// MC-22: the live cross-check. A factory at the right address running different code
 				// would pass every address comparison — asking it to derive an account address for a
@@ -861,6 +1062,8 @@ async function doctorChain(flags: Record<string, string>) {
 		flags,
 		chainId,
 	);
+	if (sponsorshipPaymaster)
+		await checkTimelock(provider, sponsorshipPaymaster, flags, chainId);
 
 	const executor =
 		flags.executor ??
@@ -1027,7 +1230,9 @@ async function main() {
 				"Usage:",
 				"  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..]",
 				"                [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..]",
-				"                [--signers 0x..,0x..] [--executor 0x..]",
+				"                [--signers 0x..,0x..] [--executor 0x..] [--timelock 0x..]",
+				"                [--timelock-delays minDelay=2d,upgradeToAndCall=7d,..] [--timelock-proposers 0x..]",
+				"                [--require-timelock]",
 				"  doctor wallet --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]",
 			].join("\n"),
 		);

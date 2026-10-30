@@ -12,6 +12,7 @@ RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/contracts/vendor/account-abstraction packages/contracts/vendor/account-abstraction
 COPY packages/paymaster-sdk/package.json packages/paymaster-sdk/package.json
 COPY services/paymaster-admin/package.json services/paymaster-admin/package.json
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-paymaster-admin...

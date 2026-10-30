@@ -9,9 +9,11 @@ import { assertUserVerificationRequirement } from "./user-verification-requireme
 
 export type BaseCredentialInfo = {
 	/**
-	 * When not provided, defaults to {@link DEFAULT_USER_VERIFICATION_REQUIREMENT}
+	 * Only `'required'` is accepted: wallet-api and the wallet contract reject any passkey response
+	 * without user verification. When not provided, defaults to
+	 * {@link DEFAULT_USER_VERIFICATION_REQUIREMENT}.
 	 */
-	userVerification?: UserVerificationRequirement;
+	userVerification?: "required";
 	/**
 	 * When not provided, defaults to {@link DEFAULT_CREDENTIAL_MEDIATION_REQUIREMENT}
 	 */

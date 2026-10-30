@@ -7,7 +7,7 @@
  * every sponsorship.
  *
  * What it bakes:
- *   - CreateX and EntryPoint v0.7 at their canonical addresses
+ *   - CreateX and EntryPoint v0.9 at their canonical addresses
  *   - the FreshCryptoLib P-256 verifier. The pinned anvil provides the RIP-7212 precompile natively,
  *     so this is belt-and-braces — but it makes the state work on an older anvil too, and
  *     `giano-doctor` treats missing P-256 verification as a critical failure
@@ -160,7 +160,7 @@ if (
 console.log(`Generating devnet state against ${RPC} (${clientVersion})`);
 
 // ── 1–4. Infrastructure, the canonical contracts and the testing fixtures ────────
-// One command: CreateX and EntryPoint v0.7 (what a public chain already has), the P-256 verifier,
+// One command: CreateX and EntryPoint v0.9 (what a public chain already has), the P-256 verifier,
 // then the wallet factory + implementation, the production paymaster and the fixtures — at their
 // canonical CREATE3 addresses, deployed by the impersonated canonical deployer (no key involved).
 //
@@ -289,7 +289,7 @@ fs.writeFileSync(
 
 const addresses = {
 	chainId: 31337,
-	entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 	factory: deployed.factory,
 	implementation: deployed.implementation,
 	sponsorshipPaymaster,

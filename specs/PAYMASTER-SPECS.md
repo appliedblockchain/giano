@@ -130,7 +130,7 @@ sequenceDiagram
     participant Ledger as Ledger (Postgres)
     participant Signer as Signer (HSM)
     participant Relay as wallet-api<br/>/v1/userops
-    participant EP as EntryPoint v0.7
+    participant EP as EntryPoint v0.9
     participant PM as GianoPaymaster
     participant Watch as Watcher
 
@@ -190,7 +190,7 @@ be unbounded.
 
 ```solidity
 contract GianoPaymaster is
-    IPaymaster,                              // @account-abstraction 0.7
+    IPaymaster,                              // @account-abstraction 0.9
     Initializable,                           // OZ
     AccessControlEnumerableUpgradeable,      // OZ — roles, enumerable holders
     PausableUpgradeable,                     // OZ — emergency stop
@@ -278,14 +278,16 @@ Role constants map one-to-one onto D13. There is no owner and no `DEFAULT_ADMIN_
 | `FEE_ADMIN_ROLE` | `setDefaultFee`, `setTenantFee` |
 | `FEE_COLLECTOR_ROLE` | `withdrawFees(to, amount)` — reverts above `treasury` |
 | `STAKE_ADMIN_ROLE` | `addStake`, `unlockStake`, `withdrawStake` |
-| `TENANT_ADMIN_ROLE` | `registerTenant`, `setTenantWithdrawAddress`, `setTenantEnabled` |
+| `TENANT_ADMIN_ROLE` | `registerTenant`, `setTenantEnabled` |
+| `WITHDRAW_ADDRESS_ADMIN_ROLE` | `setTenantWithdrawAddress` — timelocked (R-68) |
 | `PARAM_ADMIN_ROLE` | `setPostOpGasAllowance`, `setPenaltyBps` |
 | `PAUSER_ROLE` | `pause`, `unpause` |
 | `UPGRADER_ROLE` | `_authorizeUpgrade` |
 | `ROLE_ADMIN` | Granting and revoking every role above, **including itself** |
 
 The initialiser calls `_setRoleAdmin(role, ROLE_ADMIN)` for every role and grants `ROLE_ADMIN` to
-exactly one address — the timelock (§4.3) — and never grants `DEFAULT_ADMIN_ROLE`. That is what
+exactly one address — a bootstrap key that hands it to the timelock (§4.3) — and never grants
+`DEFAULT_ADMIN_ROLE`. That is what
 makes R-46 structural: there is no account that can grant itself a role without going through the
 timelock's public queue and delay.
 
@@ -499,19 +501,44 @@ as addresses.
 ### 4.3 Upgrade and role authority
 
 ```
-Safe multisig  ──proposes──▶  TimelockController  ──holds──▶  ROLE_ADMIN + UPGRADER_ROLE
-   (N-of-M)                    (published minDelay)              on GianoPaymaster
+Safe multisig  ──proposes──▶  GianoTimelock  ──holds──▶  ROLE_ADMIN + UPGRADER_ROLE
+   (N-of-M)                   (a delay per        + FEE_ADMIN_ROLE + WITHDRAW_ADDRESS_ADMIN_ROLE
+                               function)              on GianoPaymaster
 ```
 
 `_authorizeUpgrade` is `onlyRole(UPGRADER_ROLE)`. Because the timelock holds it, every upgrade is
 queued publicly, visible for the full delay, and executable only afterwards — R-51's exit window is
 enforced by the timelock, not by a promise, and there is no bypass path for an "urgent" change.
 Because the timelock also holds `ROLE_ADMIN`, every role grant is subject to the same queue and
-delay, which is what R-46 asks for. Shortening the delay is itself a timelocked operation.
+delay, which is what R-46 asks for. It also holds `FEE_ADMIN_ROLE` and
+`WITHDRAW_ADDRESS_ADMIN_ROLE`, so fee changes and withdrawal-address changes are public before they
+apply (R-68). Every other role stays on an operational key and acts immediately.
+
+`GianoTimelock` (`src/paymaster/GianoTimelock.sol`) is OpenZeppelin's `TimelockController` with
+one addition: a delay per `(target, selector)`. An operation must be scheduled with at least
+`max(minDelay, functionDelay(target, selector))`, taken over every call in a batch, so the upgrade,
+the role functions, `setTenantWithdrawAddress`, `setDefaultFee` and `setTenantFee` each wait their
+own delay (R-69). `minDelay` is the floor and the delay of anything not configured. Changing a
+delay is itself a timelocked call (`setFunctionDelay`, or upstream `updateDelay` for the floor),
+and it must wait at least the delay it changes, so a short configuration delay cannot be used to
+shorten a long one. The constructor passes no admin upstream, so the timelock administers only
+itself. A stock controller would need one instance per delay, each holding a role; one controller
+keeps one proposer Safe, one queue to watch and one address to verify.
+
+Keying delays on the selector is sound because a timelock call reaches its target directly and
+the paymaster has no function that dispatches to another of its own (no multicall). Adding one
+would require its delay to be at least that of everything it can reach.
+
+The timelock is not canonical: its proposers and delays are the operator's, so it is deployed with
+plain CREATE (`deploy:cli timelock`) and recorded in `deployments/<chainId>.json` and the chain
+profile. The paymaster is initialised with a bootstrap `ROLE_ADMIN` (the provisioning key), which
+grants the immediate roles and then hands off (`deploy:cli handoff`): it grants every timelocked
+role to the timelock, revokes them from everyone else and renounces its own `ROLE_ADMIN` last.
 
 Operational rules: the timelock's proposer set is the Safe and nothing else; no operational key
-holds any role; the executor set is either the Safe or open (an open executor cannot bring a
-proposal forward in time, only run one whose delay has elapsed).
+holds a timelocked role; the executor set is either the Safe or open (an open executor cannot bring
+a proposal forward in time, only run one whose delay has elapsed). `giano-doctor chain --timelock`
+asserts the topology and each delay against the published policy (R-70).
 
 ### 4.4 Storage-layout safety
 
@@ -557,15 +584,18 @@ refuses a deployment record whose paymaster address or codehash is not canonical
 
 A validating paymaster that returns a validity window needs a stake before bundlers will accept its
 ops, and R-24 makes "deployed but unstaked" a failed deployment rather than a puzzling client bug.
-The deployment sequence is therefore: deploy implementation → deploy proxy → `initialize` →
-timelock-queue the role grants → `addStake(unstakeDelaySec)` → `registerTenant` per tenant →
-tenant funds via `depositFor`.
+The deployment sequence is therefore: deploy implementation → deploy proxy → `initialize` with a
+bootstrap `ROLE_ADMIN` → grant the immediate roles → `addStake(unstakeDelaySec)` →
+`registerTenant` per tenant → tenant funds via `depositFor` → deploy the `GianoTimelock` → hand the
+timelocked roles to it and renounce the bootstrap `ROLE_ADMIN` (§4.3).
 
 `giano-doctor chain` grows checks that fail the exit code, not just warn: paymaster proxy has code;
 the proxy and the implementation behind it run canonical code (a release's codehash);
 implementation address matches the registry; stake present and above the configured minimum;
 `EntryPoint.balanceOf(paymaster)` above the low-water mark; the signer set is exactly the expected
-keys; `ROLE_ADMIN` and `UPGRADER_ROLE` are held by the timelock and by nothing else;
+keys; `ROLE_ADMIN`, `UPGRADER_ROLE`, `FEE_ADMIN_ROLE` and `WITHDRAW_ADDRESS_ADMIN_ROLE` are held by
+the timelock and by nothing else, and each timelocked function's delay is at least its published
+value;
 `Σ balances + treasury ≤ deposit`; and at least one tenant balance is non-zero.
 
 ---
@@ -1558,6 +1588,9 @@ belongs in the runbook after every deploy, every implementation upgrade and ever
 | R-65 | §6.1 opt-out-only field · §6.2 structural detection, allowlist bypassed · §6.3 platform cap · §6.6 (if the platform pays) |
 | R-66 | §9.1 HSM and local implementations · `GIANO_DEPLOYMENT_CLASS` gate · §13.1 |
 | R-67 | §10.3 copy names the app's operator · §5.4 (the typed reason it keys off) |
+| R-68 | §3.3 role table (`WITHDRAW_ADDRESS_ADMIN_ROLE` split out) · §4.3 timelock holds the timelocked roles |
+| R-69 | §4.3 `GianoTimelock` per-function delays · `deploy/chains/*.json` `timelock.delays` |
+| R-70 | §4.3 · §4.6 `giano-doctor chain --timelock` · `deploy:cli handoff` / proposal output |
 
 ---
 

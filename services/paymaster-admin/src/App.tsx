@@ -15,9 +15,10 @@ import {
 	Tabs,
 	Text,
 } from "@chakra-ui/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	LuHistory,
+	LuHourglass,
 	LuLayoutDashboard,
 	LuRefreshCw,
 	LuSettings,
@@ -26,6 +27,7 @@ import {
 	LuUsers,
 	LuWallet,
 } from "react-icons/lu";
+import { ProposalDialog } from "./components/ProposalDialog";
 import { Copyable, notifyError } from "./components/ui";
 import {
 	type Deployment,
@@ -45,12 +47,14 @@ import {
 	networkDetails,
 } from "./lib/chain";
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
+import type { ProposalRequest } from "./lib/proposals";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
 import { RolesPanel } from "./panels/RolesPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { TenantsPanel } from "./panels/TenantsPanel";
+import { TimelockPanel } from "./panels/TimelockPanel";
 import { PlatformArea, SessionBar } from "./platform/PlatformArea";
 import { SignIn } from "./platform/SignIn";
 
@@ -136,6 +140,21 @@ function Console({
 		refresh,
 	} = usePaymaster(deployment, wallet, readAuth);
 	const signedOut = platformApi && !session;
+
+	/**
+	 * The paymaster's timelock, when the deployment names one (G9). Built from the paymaster client
+	 * so it shares its connection and its wallet. With it, a timelocked action the wallet cannot send
+	 * opens a proposal instead (`propose`); without it there is nothing to propose to.
+	 */
+	const timelock = useMemo(
+		() =>
+			client && deployment.timelockAddress
+				? client.timelock(deployment.timelockAddress)
+				: undefined,
+		[client, deployment.timelockAddress],
+	);
+	const [proposal, setProposal] = useState<ProposalRequest>();
+	const propose = timelock ? setProposal : undefined;
 
 	const selectDeployment = useCallback(
 		(next: Deployment) => {
@@ -422,6 +441,9 @@ function Console({
 							<Tabs.Trigger value="settings">
 								<LuSettings /> Settings
 							</Tabs.Trigger>
+							<Tabs.Trigger value="timelock">
+								<LuHourglass /> Timelock
+							</Tabs.Trigger>
 							<Tabs.Trigger value="history">
 								<LuHistory /> History
 							</Tabs.Trigger>
@@ -451,6 +473,7 @@ function Console({
 								connected={wallet !== undefined}
 								rosterOnChain={rosterOnChain}
 								refresh={refresh}
+								propose={propose}
 							/>
 						</Tabs.Content>
 						<Tabs.Content value="roles">
@@ -460,6 +483,8 @@ function Console({
 								myRoles={myRoles}
 								account={wallet?.address}
 								refresh={refresh}
+								propose={propose}
+								timelockAddress={deployment.timelockAddress}
 							/>
 						</Tabs.Content>
 						<Tabs.Content value="settings">
@@ -468,6 +493,17 @@ function Console({
 								overview={overview}
 								myRoles={myRoles}
 								refresh={refresh}
+								propose={propose}
+							/>
+						</Tabs.Content>
+						<Tabs.Content value="timelock">
+							<TimelockPanel
+								timelock={timelock}
+								tenants={overview.tenants}
+								connected={wallet !== undefined}
+								propose={propose}
+								refresh={refresh}
+								lastUpdated={lastUpdated}
 							/>
 						</Tabs.Content>
 						<Tabs.Content value="history">
@@ -478,6 +514,12 @@ function Console({
 						</Tabs.Content>
 					</Tabs.Root>
 				)}
+
+				<ProposalDialog
+					timelock={timelock}
+					request={proposal}
+					onClose={() => setProposal(undefined)}
+				/>
 			</Container>
 		</Box>
 	);

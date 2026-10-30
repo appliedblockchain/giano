@@ -10,13 +10,13 @@ cache_path = 'cache_forge'
 # what `pnpm release:cut` freezes into releases/<version>/, and the deploy CLI deploys only from a
 # release, never from a fresh build. Every setting below reaches the bytecode, so all of them are
 # pinned rather than left to Foundry's defaults:
-#   - solc and the EVM target. `paris` (no PUSH0, MCOPY or transient storage) keeps one release
-#     deployable on every chain we may adopt, including ones that lag on hardforks.
+#   - solc and the EVM target. EntryPoint v0.9 requires Cancun (MCOPY and transient storage).
+#     Chains that have not activated those opcodes cannot run this release.
 #   - remappings. solc records them in the metadata hash appended to the bytecode, so they are
 #     listed in remappings.txt and auto-detection is off: a new package in node_modules must not be
 #     able to change the build.
 solc_version = '0.8.28'
-evm_version = 'paris'
+evm_version = 'cancun'
 optimizer = true
 optimizer_runs = 200
 via_ir = true

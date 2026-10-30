@@ -174,6 +174,13 @@ describe("requirement literals", () => {
 		expect(() => assertUserVerificationRequirement("bogus")).toThrow(
 			/User Verification/,
 		);
+		// Giano requires user verification end to end (G4): weaker requests are refused up front.
+		expect(() => assertUserVerificationRequirement("preferred")).toThrow(
+			/requires user verification/,
+		);
+		expect(() => assertUserVerificationRequirement("discouraged")).toThrow(
+			/requires user verification/,
+		);
 	});
 
 	it("exposes sane defaults", () => {

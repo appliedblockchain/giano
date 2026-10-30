@@ -33,12 +33,23 @@ export const hash32Schema = z
 
 const quantity = hexQuantity.transform((value) => BigInt(value));
 
-/** Fields every v0.7 operation carries, in JSON-RPC (hex) encoding. */
+/** Fields every v0.9 operation carries, in JSON-RPC (hex) encoding. */
 const base = {
+	// Giano uses factory-deployed passkey accounts and its existing sponsorship envelope.
+	authorization: z.never().optional(),
+	eip7702Auth: z.never().optional(),
+	paymasterSignature: z.never().optional(),
 	sender: addressSchema.transform((value) => getAddress(value)),
 	nonce: quantity,
 	callData: hexData,
-	factory: addressSchema.transform((value) => getAddress(value)).optional(),
+	// EntryPoint v0.9 reads initCode starting 0x7702 as an EIP-7702 authorization, not a factory.
+	factory: addressSchema
+		.refine(
+			(value) => !value.toLowerCase().startsWith("0x7702"),
+			"EIP-7702 operations are not supported (factory starts with 0x7702)",
+		)
+		.transform((value) => getAddress(value))
+		.optional(),
 	factoryData: hexData.optional(),
 	paymaster: addressSchema.transform((value) => getAddress(value)).optional(),
 	paymasterData: hexData.optional(),
@@ -74,7 +85,7 @@ export const estimateUserOpSchema = z
 	})
 	.strip();
 
-export type UserOp = UserOperation<"0.7">;
+export type UserOp = UserOperation<"0.9">;
 
 /** Normalises a parsed operation: the factory and paymaster fields travel as complete groups or not at all. */
 export function toUserOp(
@@ -115,7 +126,7 @@ export function userOpHash(
 	return getUserOperationHash({
 		chainId,
 		entryPointAddress: entryPoint,
-		entryPointVersion: "0.7",
+		entryPointVersion: "0.9",
 		userOperation: op,
 	});
 }

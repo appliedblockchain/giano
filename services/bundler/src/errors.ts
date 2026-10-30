@@ -1,5 +1,5 @@
 import { BaseError, decodeErrorResult, type Hex, isHex } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { entryPoint09Abi } from "viem/account-abstraction";
 
 /**
  * JSON-RPC error codes. The 4337 ones are ERC-7769's, with the meanings Alto gave them, so a
@@ -61,7 +61,7 @@ export function decodeEntryPointRevert(error: unknown): EntryPointRevert {
 	const data = revertData(error);
 	if (data) {
 		try {
-			const decoded = decodeErrorResult({ abi: entryPoint07Abi, data });
+			const decoded = decodeErrorResult({ abi: entryPoint09Abi, data });
 			if (decoded.errorName === "FailedOp")
 				return { kind: "failed-op", reason: decoded.args[1] };
 			if (decoded.errorName === "FailedOpWithRevert")

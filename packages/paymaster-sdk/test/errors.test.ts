@@ -1,4 +1,7 @@
-import { gianoPaymasterAbi } from "@appliedblockchain/giano-contracts";
+import {
+	gianoPaymasterAbi,
+	gianoTimelockAbi,
+} from "@appliedblockchain/giano-contracts";
 import {
 	ContractFunctionExecutionError,
 	ContractFunctionRevertedError,
@@ -15,6 +18,7 @@ import {
 	PaymasterRevertError,
 	TenantAlreadyRegisteredError,
 	TenantInDeficitError,
+	TimelockOperationStateError,
 	translateContractError,
 	UnknownTenantError,
 } from "../src/errors";
@@ -150,5 +154,57 @@ describe("translateContractError", () => {
 		expect(translateContractError(network, { operation: "do the thing" })).toBe(
 			network,
 		);
+	});
+});
+
+describe("timelocked roles and timelock reverts (G9)", () => {
+	it("tells the operator a timelocked role is proposed through the timelock, not granted", () => {
+		const error = translate("AccessControlUnauthorizedAccount", [
+			ACCOUNT,
+			PAYMASTER_ROLES.WITHDRAW_ADDRESS_ADMIN_ROLE,
+		]) as MissingRoleError;
+
+		expect(error).toBeInstanceOf(MissingRoleError);
+		expect(error.timelocked).toBe(true);
+		expect(error.message).toMatch(
+			/WITHDRAW_ADDRESS_ADMIN_ROLE is timelocked: .*propose the call through the timelock/,
+		);
+	});
+
+	it("keeps the plain grant advice for a role that acts immediately", () => {
+		const error = translate("AccessControlUnauthorizedAccount", [
+			ACCOUNT,
+			PAYMASTER_ROLES.TENANT_ADMIN_ROLE,
+		]) as MissingRoleError;
+
+		expect(error.timelocked).toBe(false);
+		expect(error.message).toMatch(/granted by the ROLE_ADMIN holder/);
+	});
+
+	it("decodes the timelock's expected-state bitmap into words", () => {
+		const id = `0x${"11".repeat(32)}` as const;
+		// 1 << Ready: what execute demands.
+		const expected = `0x${"0".repeat(63)}4` as const;
+		const data = encodeErrorResult({
+			abi: gianoTimelockAbi,
+			errorName: "TimelockUnexpectedOperationState",
+			args: [id, expected],
+		});
+		const error = translateContractError(
+			new ContractFunctionExecutionError(
+				new ContractFunctionRevertedError({
+					abi: gianoTimelockAbi,
+					data,
+					functionName: "execute",
+				}),
+				{ abi: gianoTimelockAbi, functionName: "execute", args: [] },
+			),
+			{ operation: "execute timelock operation" },
+		) as TimelockOperationStateError;
+
+		expect(error).toBeInstanceOf(TimelockOperationStateError);
+		expect(error.operationId).toBe(id);
+		expect(error.expected).toEqual(["ready"]);
+		expect(error.message).toMatch(/to be ready/);
 	});
 });

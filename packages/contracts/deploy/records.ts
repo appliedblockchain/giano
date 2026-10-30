@@ -29,6 +29,15 @@ export type DeploymentRecord = {
 	contracts: Partial<Record<LabelKey, DeployedContract>>;
 	/** Upgrade targets deployed under versioned labels (`giano.paymaster.impl@v2`), oldest first. */
 	upgrades: (DeployedContract & { of: LabelKey })[];
+	/**
+	 * The paymaster's GianoTimelock (G9). Not canonical: plain CREATE, operator-specific
+	 * proposers and delays. `delays` is the policy it was deployed with, in seconds.
+	 */
+	timelock?: DeployedContract & {
+		proposers: Address[];
+		executors: Address[];
+		delays: Record<string, number>;
+	};
 };
 
 export function recordPath(chainId: number, dir = DEPLOYMENTS_DIR): string {

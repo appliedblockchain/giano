@@ -170,7 +170,7 @@ const edge = [
 		env: {
 			GIANO_DEPLOYMENTS:
 				'[{"chainId":84532,"name":"Base Sepolia","rpcUrl":"https://base.example/v2/SECRETKEY",' +
-				'"entryPoint":"0x0000000071727De22E5E9d8BAf0edAc6f37da032","sponsorshipPaymaster":"0x00000000000000000000000000000000000000bb",' +
+				'"entryPoint":"0x433709009B8330FDa32311DF1C2AFA402eD8D009","sponsorshipPaymaster":"0x00000000000000000000000000000000000000bb",' +
 				'"walletApi":{"policy":{"allowedPaymasters":["0x00000000000000000000000000000000000000bb"]}},"bundler":{"chainType":"op-stack"},' +
 				'"paymasterAdmin":{"walletRpcUrl":"https://sepolia.base.org","refreshSeconds":20}}]',
 		},

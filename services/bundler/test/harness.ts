@@ -14,7 +14,6 @@ import {
 	http,
 	type PublicClient,
 	parseEther,
-	toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry as anvilChain } from "viem/chains";
@@ -102,29 +101,14 @@ export async function startDevnet(chainId = 31337): Promise<Devnet> {
 		return getAddress(receipt.contractAddress!);
 	};
 
-	// As the e2e devnet does it: deploy anywhere, copy the runtime code to the canonical address.
-	// That leaves no SenderCreator at the canonical EntryPoint's first CREATE address, which is the
-	// case the estimator has to cope with.
-	const deployed = await deploy("EntryPoint");
-	await test.setCode({
-		address: DEFAULT_ENTRYPOINT,
-		bytecode: (await client.getCode({ address: deployed }))!,
-	});
-	// setCode copies no storage, and the reentrancy guard's slot would then start at zero: the first
-	// handleOps would pay ~20k gas to create it, which no real EntryPoint does. Copy what the
-	// constructor wrote.
-	for (let slot = 0n; slot < 8n; slot++) {
-		const value = await client.getStorageAt({
-			address: deployed,
-			slot: toHex(slot, { size: 32 }),
-		});
-		if (value && BigInt(value) !== 0n)
-			await test.setStorageAt({
-				address: DEFAULT_ENTRYPOINT,
-				index: toHex(slot, { size: 32 }),
-				value,
-			});
-	}
+	// Deploy canonically: v0.9 SenderCreator authenticates its EntryPoint via an immutable.
+	const deploymentModule = new URL(
+		"../../../packages/contracts/deploy/local.ts",
+		import.meta.url,
+	).href;
+	const { installEntryPoint } = await import(deploymentModule);
+	await installEntryPoint(client, test, deployer.address, () => {});
+
 	const entryPoint = DEFAULT_ENTRYPOINT;
 
 	const factory = await deploy("SimpleAccountFactory", [entryPoint]);

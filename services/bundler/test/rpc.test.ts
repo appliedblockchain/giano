@@ -5,7 +5,7 @@ import { RpcError } from "../src/errors.js";
 import { createMetrics } from "../src/metrics.js";
 import { createMethods, handleJsonRpc, type RpcContext } from "../src/rpc.js";
 
-const entryPoint = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+const entryPoint = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 const sent: unknown[] = [];
 const context = {
 	chainId: 84532,
@@ -57,6 +57,35 @@ describe("JSON-RPC", () => {
 				params: [],
 			}),
 		).toEqual({ jsonrpc: "2.0", id: "a", result: [entryPoint] });
+	});
+
+	it("refuses unsupported 7702 and parallel-paymaster fields instead of discarding them", async () => {
+		for (const key of ["authorization", "eip7702Auth", "paymasterSignature"]) {
+			expect(
+				await call({
+					jsonrpc: "2.0",
+					id: 20,
+					method: "eth_sendUserOperation",
+					params: [{ ...op, [key]: "0x" }, entryPoint],
+				}),
+			).toMatchObject({ error: { code: -32602 } });
+		}
+		// The v0.9 EntryPoint reads initCode starting 0x7702 as a 7702 authorization.
+		expect(
+			await call({
+				jsonrpc: "2.0",
+				id: 21,
+				method: "eth_sendUserOperation",
+				params: [
+					{
+						...op,
+						factory: "0x7702000000000000000000000000000000000000",
+						factoryData: "0x",
+					},
+					entryPoint,
+				],
+			}),
+		).toMatchObject({ error: { code: -32602 } });
 	});
 
 	it("refuses unknown methods and malformed envelopes", async () => {

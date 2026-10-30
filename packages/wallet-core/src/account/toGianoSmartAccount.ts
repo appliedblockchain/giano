@@ -467,7 +467,7 @@ export function toWebAuthnSignature({
 	signature,
 	raw,
 }: {
-	webauthn: WebAuthnP256.SignMetadata;
+	webauthn: Awaited<ReturnType<WebAuthnAccount["sign"]>>["webauthn"];
 	signature: Hex;
 	raw?: WebAuthnP256.sign.ReturnType["raw"] | undefined;
 }): Hex {
@@ -503,8 +503,13 @@ export function toWebAuthnSignature({
 			{
 				authenticatorData: webauthn.authenticatorData,
 				clientDataJSON: stringToHex(webauthn.clientDataJSON),
-				challengeIndex: BigInt(webauthn.challengeIndex),
-				typeIndex: BigInt(webauthn.typeIndex),
+				challengeIndex: BigInt(
+					webauthn.challengeIndex ??
+						webauthn.clientDataJSON.indexOf('"challenge"'),
+				),
+				typeIndex: BigInt(
+					webauthn.typeIndex ?? webauthn.clientDataJSON.indexOf('"type"'),
+				),
 				r,
 				s,
 			},

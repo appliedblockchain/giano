@@ -17,9 +17,10 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import { useState } from "react";
-import type { Address } from "viem";
+import { type Address, isAddress, isAddressEqual } from "viem";
 import { Copyable, SectionCard } from "../components/ui";
 import { useWrite } from "../hooks/useWrite";
+import type { Propose } from "../lib/proposals";
 
 type Props = {
 	client: GianoPaymasterClient;
@@ -27,6 +28,10 @@ type Props = {
 	myRoles: readonly PaymasterRoleName[];
 	account: Address | undefined;
 	refresh: () => Promise<void>;
+	/** Set when the deployment has a timelock: role changes the wallet cannot send are proposed. */
+	propose?: Propose;
+	/** The configured timelock, so a holder that is the timelock can say so. */
+	timelockAddress?: Address;
 };
 
 /**
@@ -36,6 +41,11 @@ type Props = {
  * pairs — the fee admin cannot collect the fees it sets, the fee collector cannot change the rate,
  * no role at all can reach a tenant balance — and an operator reviewing holders needs to see the
  * pair to know whether a grant is safe.
+ *
+ * Each role also says whether it is timelocked (G9). On a handed-off deployment the timelock holds
+ * ROLE_ADMIN, so granting and revoking are themselves timelocked: a wallet that holds ROLE_ADMIN (a
+ * devnet key) sends them directly, and anyone else builds a proposal for the timelock instead of a
+ * transaction that would revert.
  */
 export function RolesPanel({
 	client,
@@ -43,16 +53,32 @@ export function RolesPanel({
 	myRoles,
 	account,
 	refresh,
+	propose,
+	timelockAddress,
 }: Props) {
 	const { run, busy } = useWrite(refresh);
 	const canGrant = myRoles.includes("ROLE_ADMIN");
+	const canPropose = !canGrant && propose !== undefined;
 
 	const [role, setRole] = useState<PaymasterRoleName>("TENANT_ADMIN_ROLE");
 	const [target, setTarget] = useState("");
+	const [problem, setProblem] = useState<string>();
 
 	const defaultAdmin = roles.find(
 		(entry) => entry.name === "DEFAULT_ADMIN_ROLE",
 	);
+
+	const proposeChange = (kind: "grantRole" | "revokeRole") => {
+		if (!propose) return;
+		if (!isAddress(target)) {
+			const message = `"${target}" is not an address.`;
+			setProblem(message);
+			console.error(`[paymaster-admin] Could not propose ${kind}: ${message}`);
+			return;
+		}
+		setProblem(undefined);
+		propose({ kind, role, account: target });
+	};
 
 	return (
 		<Stack gap="4">
@@ -72,7 +98,7 @@ export function RolesPanel({
 
 			<SectionCard
 				title="Roles"
-				subtitle="There is no owner and no superuser. Every role is administered by ROLE_ADMIN, which in production is a timelock."
+				subtitle="There is no owner and no superuser. Every role is administered by ROLE_ADMIN. Timelocked roles are held by the timelock on a handed-off deployment, so their functions wait out a public delay; immediate roles stay on operational keys."
 			>
 				<Table.ScrollArea borderWidth="1px" rounded="md">
 					<Table.Root size="sm">
@@ -83,7 +109,6 @@ export function RolesPanel({
 								<Table.ColumnHeader>
 									What it can and cannot do
 								</Table.ColumnHeader>
-								{canGrant && <Table.ColumnHeader />}
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -99,18 +124,38 @@ export function RolesPanel({
 													<Text fontWeight="medium" fontSize="sm">
 														{entry.name}
 													</Text>
-													{myRoles.includes(
-														entry.name as PaymasterRoleName,
-													) && (
-														<Badge
-															colorPalette="brand"
-															variant="subtle"
-															size="sm"
-															width="fit-content"
-														>
-															you hold this
-														</Badge>
-													)}
+													<HStack gap="1" flexWrap="wrap">
+														{description?.timelocked ? (
+															<Badge
+																colorPalette="purple"
+																variant="subtle"
+																size="sm"
+																title="Held by the timelock on a handed-off deployment: its functions wait out a public delay"
+															>
+																timelocked
+															</Badge>
+														) : (
+															<Badge
+																colorPalette="gray"
+																variant="subtle"
+																size="sm"
+																title="Stays on an operational key: its functions take effect immediately"
+															>
+																immediate
+															</Badge>
+														)}
+														{myRoles.includes(
+															entry.name as PaymasterRoleName,
+														) && (
+															<Badge
+																colorPalette="brand"
+																variant="subtle"
+																size="sm"
+															>
+																you hold this
+															</Badge>
+														)}
+													</HStack>
 												</Stack>
 											</Table.Cell>
 											<Table.Cell>
@@ -121,8 +166,18 @@ export function RolesPanel({
 												) : (
 													<Stack gap="1">
 														{entry.holders.map((holder) => (
-															<HStack key={holder} gap="2">
+															<HStack key={holder} gap="2" flexWrap="wrap">
 																<Copyable value={holder} label={entry.name} />
+																{timelockAddress &&
+																	isAddressEqual(holder, timelockAddress) && (
+																		<Badge
+																			colorPalette="purple"
+																			variant="outline"
+																			size="sm"
+																		>
+																			the timelock
+																		</Badge>
+																	)}
 																{canGrant && (
 																	<Button
 																		size="xs"
@@ -141,6 +196,23 @@ export function RolesPanel({
 																		revoke
 																	</Button>
 																)}
+																{canPropose && (
+																	<Button
+																		size="xs"
+																		variant="ghost"
+																		colorPalette="red"
+																		title="revokeRole is timelocked: build the proposal for the timelock"
+																		onClick={() =>
+																			propose?.({
+																				kind: "revokeRole",
+																				role: entry.name as PaymasterRoleName,
+																				account: holder,
+																			})
+																		}
+																	>
+																		propose revoke
+																	</Button>
+																)}
 															</HStack>
 														))}
 													</Stack>
@@ -156,7 +228,6 @@ export function RolesPanel({
 													{description?.mayNot}.
 												</Text>
 											</Table.Cell>
-											{canGrant && <Table.Cell />}
 										</Table.Row>
 									);
 								})}
@@ -171,10 +242,14 @@ export function RolesPanel({
 				)}
 			</SectionCard>
 
-			{canGrant && (
+			{(canGrant || canPropose) && (
 				<SectionCard
-					title="Grant a role"
-					subtitle="You hold ROLE_ADMIN. On a production deployment this action would go through the timelock."
+					title={canGrant ? "Grant a role" : "Propose a role change"}
+					subtitle={
+						canGrant
+							? "You hold ROLE_ADMIN, so this sends directly. Role changes are timelocked: on a handed-off deployment only the timelock holds ROLE_ADMIN, and they are proposed instead."
+							: "grantRole and revokeRole are timelocked. This builds the proposal and the Safe batch for the timelock; nothing is sent from here."
+					}
 				>
 					<HStack gap="3" flexWrap="wrap" align="flex-end">
 						<Box minW="14rem">
@@ -210,20 +285,47 @@ export function RolesPanel({
 								placeholder="0x…"
 							/>
 						</Box>
-						<Button
-							size="sm"
-							colorPalette="brand"
-							disabled={busy || !target}
-							onClick={() =>
-								void run(`Grant ${role}`, () =>
-									client.grantRole(role, target as Address),
-								)
-							}
-						>
-							Grant
-						</Button>
+						{canGrant ? (
+							<Button
+								size="sm"
+								colorPalette="brand"
+								disabled={busy || !target}
+								onClick={() =>
+									void run(`Grant ${role}`, () =>
+										client.grantRole(role, target as Address),
+									)
+								}
+							>
+								Grant
+							</Button>
+						) : (
+							<>
+								<Button
+									size="sm"
+									colorPalette="brand"
+									disabled={!target}
+									onClick={() => proposeChange("grantRole")}
+								>
+									Propose grant
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									colorPalette="red"
+									disabled={!target}
+									onClick={() => proposeChange("revokeRole")}
+								>
+									Propose revoke
+								</Button>
+							</>
+						)}
 					</HStack>
-					{account && (
+					{problem && (
+						<Text fontSize="xs" color="red.fg" mt="2">
+							{problem}
+						</Text>
+					)}
+					{account && canGrant && (
 						<Text fontSize="xs" color="fg.muted" mt="3">
 							Signing as {account}.
 						</Text>

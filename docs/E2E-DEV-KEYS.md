@@ -91,7 +91,7 @@ state is regenerated.
 
 | Contract | Address |
 | --- | --- |
-| EntryPoint v0.7 (canonical, all chains) | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
+| EntryPoint v0.9 (canonical, all chains) | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
 | `GianoSmartWalletFactory` | `0x9c01925D07527A7920031196396A9c37421715A2` |
 | `GianoSmartWallet` implementation | `0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6` |
 | **`GianoPaymaster` (proxy)** | `0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96` |
@@ -106,8 +106,9 @@ The factory, implementation and paymaster proxy sit at the canonical addresses i
 `packages/contracts/canonical.ts`, on both devnet chains and on every other chain. The baked paymaster
 is upgraded through UUPS and keeps its proxy address; its current implementation is recorded in
 `e2e/devnet/addresses.json`. To run unreleased paymaster code on the devnet, use
-`devnet:upgrade:paymaster`: it deploys the working tree's build (`--release dev`, local chains only)
-as an upgrade target and points the baked proxy at it without replacing its funding address.
+`devnet:upgrade:paymaster:all`: it deploys the working tree's build (`--release dev`, local chains only)
+as an upgrade target and points the baked proxy at it without replacing its funding address, on both
+devnet chains (each has its own state file).
 
 ### Well-known addresses the stack probes
 
@@ -129,10 +130,13 @@ separation the contract exists to enforce — `provision-paymaster.ts` says so l
 
 | Role | Devnet holder | Production |
 | --- | --- | --- |
-| `ROLE_ADMIN` | anvil 0 | timelock |
-| `UPGRADER_ROLE` | anvil 0 | timelock |
-| `SIGNER_ADMIN_ROLE`, `FEE_ADMIN_ROLE`, `FEE_COLLECTOR_ROLE`, `STAKE_ADMIN_ROLE`, `TENANT_ADMIN_ROLE`, `PARAM_ADMIN_ROLE`, `PAUSER_ROLE` | anvil 0 | separate holders |
+| `ROLE_ADMIN`, `UPGRADER_ROLE`, `FEE_ADMIN_ROLE`, `WITHDRAW_ADDRESS_ADMIN_ROLE` | anvil 0 | the GianoTimelock alone (G9) |
+| `SIGNER_ADMIN_ROLE`, `FEE_COLLECTOR_ROLE`, `STAKE_ADMIN_ROLE`, `TENANT_ADMIN_ROLE`, `PARAM_ADMIN_ROLE`, `PAUSER_ROLE` | anvil 0 | separate holders, immediate |
 | `DEFAULT_ADMIN_ROLE` | **nobody — by design** | nobody |
+
+The devnet has no timelock: a suite that had to wait out a delay to change a fee would be
+untestable. `giano-doctor chain` reports the timelocked roles on a key there as info, not a failure;
+docs/PAYMASTER-TIMELOCK-RUNBOOK.md covers the production topology.
 
 `DEFAULT_ADMIN_ROLE` being empty is asserted by the contract tests, by `giano-doctor`, and by the
 admin console's health check. A holder would be a superuser by another name.
@@ -189,10 +193,10 @@ as WebAuthn **RP IDs**, so renaming either means updating `TENANT_FIXTURES` (the
 
 Deliberately **not** in this document, and not in the repository.
 
-- `deploy/.env` — gitignored. Holds the real `DEPLOYER_PRIVATE_KEY`, `BUNDLER_EXECUTOR_PRIVATE_KEYS`
+- `deploy/contracts/*.local.env` — gitignored operator files selected explicitly by `--env-file`. Hold the real `DEPLOYER_PRIVATE_KEY`, `BUNDLER_EXECUTOR_PRIVATE_KEYS`
   and `ADMIN_API_KEY` for a testnet deployment. **Never commit it, and
   never copy its values into a document — this one included.**
-- `deploy/sepolia.env.example` — the template. Variable names only, no values. That is the file to
+- `deploy/contracts/operator.env.example` — the template. Variable names only, no values. That is the file to
   read to learn what a real deployment needs.
 - Production role holders are timelocks and the sponsorship signer lives in a KMS, so there is no
   raw production private key for anyone to write down.

@@ -502,7 +502,7 @@ the labels, and later contract changes are new releases deployed under versioned
 (`giano.paymaster.impl@v2`, `giano.wallet.impl@v2`) that proxies and accounts move to through UUPS.
 
 **MC-141 still matters.** The account implementation hardcodes the EntryPoint address. Under CREATE3
-a chain without EntryPoint v0.7 at `0x0000000071727De2…` no longer gets different addresses — it gets
+a chain without EntryPoint v0.9 at `0x433709009B8330FD…` no longer gets different addresses — it gets
 the same addresses running wallets bound to nothing — and it is still a required first step of the
 on-premises runbook and of the adoption checklist (§15.3). This is what happened to the pre-freeze
 381185 deployment.
@@ -1566,8 +1566,8 @@ An on-premises deployment sets `CHAIN_ID`, `RPC_URL` and `BUNDLER_URL` and is do
 supplies `GIANO_CHAINS`, never sees a chain picker, never supplies a `chainId` on a backend request,
 and its operator needs no knowledge of the multi-chain shape (MC-90).
 
-The one thing it **does** need, and which is easy to miss: **EntryPoint v0.7 at
-`0x0000000071727De2…`** (MC-141). A private chain will not have it. The account implementation
+The one thing it **does** need, and which is easy to miss: **EntryPoint v0.9 at
+`0x433709009B8330FD…`** (MC-141). A private chain will not have it. The account implementation
 hardcodes that address, so without it every Giano address in that deployment shifts and nothing lines
 up. It is the first step of §15.3, before any Giano contract is deployed.
 
@@ -1579,7 +1579,7 @@ operation and must be turnkey rather than tribal knowledge. This checklist is a 
 
 ```
 1.  CreateX present at 0xba5Ed…ba5Ed?                         → else deploy it first
-2.  EntryPoint v0.7 at 0x0000000071727De2…?                   → else deploy it there (MC-141)
+2.  EntryPoint v0.9 at 0x433709009B8330FD…?                   → else deploy it there (MC-141)
 3.  RIP-7212 precompile present?                              → informational; drives fee tuning
 4.  Deploy canonical contracts                                → deploy:cli core, from a release,
                                                                  signed by the canonical deployer

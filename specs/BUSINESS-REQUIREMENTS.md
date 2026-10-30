@@ -141,6 +141,14 @@ that a chain is publicly reachable, that its endpoint is unauthenticated, that t
 transaction-submission infrastructure exists for it, or that it provides the same native
 capabilities as a public chain.
 
+**BR-37** — Every use of a passkey MUST require user verification by the authenticator: a PIN,
+biometric or device passcode, not merely a touch. A signature made with user presence alone MUST NOT
+authorise a transaction, sign a message on the user's behalf, open a session, or add a credential
+to a wallet. This is what the promise at the top of this document rests on: possession of the
+device is not enough, the user must also unlock it. It is enforced where signatures are verified,
+on chain and in the backend, because a client can always be bypassed
+([G4 report](https://claude.ai/artifact/KDXpKqiifSnZTCpjA3ecEa)).
+
 ### 2.2 The parts of the system
 
 Section 2.1 states what Giano promises. This section names the parts that must exist for those

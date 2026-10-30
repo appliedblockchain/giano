@@ -4,6 +4,8 @@ packages:
   # Packages, and in this lockfile that entry would make every install here need a token.
   - "!services/custom-example"
   - "packages/*"
+  # Committed EntryPoint v0.9 artifacts and Solidity sources, pinned by this repository.
+  - "packages/contracts/vendor/account-abstraction"
   - "e2e"
 
 overrides:

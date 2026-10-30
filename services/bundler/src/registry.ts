@@ -1,3 +1,7 @@
+import {
+	isCanonicalEntryPointCode,
+	isEntryPointAddress,
+} from "@appliedblockchain/giano-contracts";
 import type { Logger } from "pino";
 import { createPublicClient, formatEther, http, type PublicClient } from "viem";
 import type { PrivateKeyAccount } from "viem/accounts";
@@ -12,7 +16,7 @@ import { createSubmitter, type Submitter } from "./submitter.js";
  * The chain registry: one entry per served chain, each with its own client, executor lanes,
  * estimator and lookup — nothing chain-bound is shared between chains, the same rule wallet-api's
  * registry keeps (MC-50). A chain becomes ready once its RPC answers with the configured chain id
- * and its EntryPoint has code; until then it is retried in the background and its requests are
+ * and its EntryPoint has the canonical v0.9 runtime; until then it is retried in the background and its requests are
  * refused as unavailable, while every other chain keeps serving (MC-54).
  */
 
@@ -77,7 +81,10 @@ export function createChainRegistry(options: {
 					);
 			} else {
 				const code = await client.getCode({ address: config.entryPoint });
-				if (code && code !== "0x") {
+				if (
+					isEntryPointAddress(config.entryPoint) &&
+					isCanonicalEntryPointCode(code, config.chainId)
+				) {
 					let chainType = config.chainType;
 					if (chainType === "auto") {
 						const oracle = await client.getCode({ address: GAS_PRICE_ORACLE });
@@ -94,11 +101,11 @@ export function createChainRegistry(options: {
 					return;
 				}
 				// A fresh devnet gets its contracts after `up`, so this is waited for rather than fatal.
-				entry.waitingFor = `no EntryPoint at ${config.entryPoint}`;
+				entry.waitingFor = `canonical EntryPoint v0.9 missing or code mismatch at ${config.entryPoint}`;
 				if (attempt % 10 === 1)
 					chainLog.error(
 						{ entryPoint: config.entryPoint },
-						"no EntryPoint is deployed at the configured address yet; waiting",
+						"canonical EntryPoint v0.9 unavailable; waiting",
 					);
 			}
 		} catch (error) {

@@ -21,6 +21,7 @@ import { type Address, parseEther } from "viem";
 import { Copyable, SectionCard, TenantStatusBadge } from "../components/ui";
 import { useWrite } from "../hooks/useWrite";
 import { eth, exactEth } from "../lib/format";
+import type { Propose } from "../lib/proposals";
 
 type Props = {
 	client: GianoPaymasterClient;
@@ -30,6 +31,8 @@ type Props = {
 	/** False when the roster came from registration logs rather than the on-chain set. */
 	rosterOnChain: boolean;
 	refresh: () => Promise<void>;
+	/** Set when the deployment has a timelock: fee changes the wallet cannot send are proposed. */
+	propose?: Propose;
 };
 
 /**
@@ -50,7 +53,9 @@ type Props = {
  *
  * Funding is offered to everyone — anyone may fund a tenant — while the administrative actions are
  * gated on TENANT_ADMIN_ROLE, and withdrawal is offered to nobody here at all, because only the
- * tenant's own registered address can perform it.
+ * tenant's own registered address can perform it. Fee overrides and withdrawal addresses are
+ * timelocked (G9): sent directly only by a wallet that holds the role, otherwise proposed — the
+ * Timelock tab builds either.
  */
 export function TenantsPanel({
 	client,
@@ -59,6 +64,7 @@ export function TenantsPanel({
 	connected,
 	rosterOnChain,
 	refresh,
+	propose,
 }: Props) {
 	const { run, busy } = useWrite(refresh);
 	const canAdminister = myRoles.includes("TENANT_ADMIN_ROLE");
@@ -214,6 +220,23 @@ export function TenantsPanel({
 														}
 													>
 														Clear fee
+													</Button>
+												)}
+												{!canSetFees && propose && tenant.hasFeeOverride && (
+													<Button
+														size="xs"
+														variant="ghost"
+														title="setTenantFee is timelocked: build the proposal for the timelock"
+														onClick={() =>
+															propose({
+																kind: "setTenantFee",
+																tenantId: tenant.id,
+																hasOverride: false,
+																feeWei: 0n,
+															})
+														}
+													>
+														Propose clearing fee
 													</Button>
 												)}
 											</HStack>

@@ -11,7 +11,7 @@ import {Static} from '../GianoSmartWallet/Static.sol';
 
 /// @dev Shared fixture for the paymaster suite.
 ///
-///      The real EntryPoint v0.7 bytecode is etched at its canonical address, so deposits, stake
+///      The real EntryPoint v0.9 bytecode is etched at its canonical address, so deposits, stake
 ///      and withdrawals are exercised against the contract that will actually hold the money
 ///      rather than a mock that agrees with us.
 ///
@@ -19,7 +19,7 @@ import {Static} from '../GianoSmartWallet/Static.sol';
 ///      anything: if the fixture held them all on one account, "the fee admin cannot collect fees"
 ///      would pass for the wrong reason.
 contract PaymasterTestBase is CreateXFixture {
-    IEntryPoint internal constant ENTRY_POINT = IEntryPoint(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
+    IEntryPoint internal constant ENTRY_POINT = IEntryPoint(0x433709009B8330FDa32311DF1C2AFA402eD8D009);
 
     /// @dev Stands in for the canonical deployer EOA; the label is the production one.
     address internal canonicalDeployer = makeAddr('canonicalDeployer');
@@ -42,6 +42,7 @@ contract PaymasterTestBase is CreateXFixture {
     address internal feeCollector = makeAddr('feeCollector');
     address internal stakeAdmin = makeAddr('stakeAdmin');
     address internal tenantAdmin = makeAddr('tenantAdmin');
+    address internal withdrawAddressAdmin = makeAddr('withdrawAddressAdmin');
     address internal paramAdmin = makeAddr('paramAdmin');
     address internal pauser = makeAddr('pauser');
     address internal upgrader = makeAddr('upgrader');
@@ -87,6 +88,7 @@ contract PaymasterTestBase is CreateXFixture {
         paymaster.grantRole(paymaster.FEE_COLLECTOR_ROLE(), feeCollector);
         paymaster.grantRole(paymaster.STAKE_ADMIN_ROLE(), stakeAdmin);
         paymaster.grantRole(paymaster.TENANT_ADMIN_ROLE(), tenantAdmin);
+        paymaster.grantRole(paymaster.WITHDRAW_ADDRESS_ADMIN_ROLE(), withdrawAddressAdmin);
         paymaster.grantRole(paymaster.PARAM_ADMIN_ROLE(), paramAdmin);
         paymaster.grantRole(paymaster.PAUSER_ROLE(), pauser);
         paymaster.grantRole(paymaster.UPGRADER_ROLE(), upgrader);

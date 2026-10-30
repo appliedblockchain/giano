@@ -9,7 +9,7 @@ const flat = {
 	name: "Base Sepolia",
 	rpcUrl: "https://base.example/KEY",
 	bundlerUrl: "http://bundler-base-sepolia.giano-dev.local:4337",
-	entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 	factory: "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",
 	sponsorshipPaymaster: "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
 	policy: { allowedPaymasters: ["0xf98b56de62ce88cEb70A9155582248cDBf2D0718"] },
@@ -25,7 +25,7 @@ describe("migrate-chains-document", () => {
 				chainId: 84532,
 				name: "Base Sepolia",
 				rpcUrl: "https://base.example/KEY",
-				entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+				entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 				sponsorshipPaymaster: "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
 				walletApi: {
 					factory: "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050",

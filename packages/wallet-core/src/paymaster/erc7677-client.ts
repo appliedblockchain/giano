@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import { GianoEntryPointAddress } from "../giano-entry-point";
 import { GianoError } from "../giano-error";
 import { defaultGianoLogger, type GianoLogger } from "../logger";
 import {
@@ -29,7 +30,7 @@ export type Erc7677PaymasterClientOptions = {
 	chainId: number;
 	/** Current wallet session bearer, or null when signed out. */
 	getSessionToken: () => string | null;
-	/** EntryPoint address; defaults to the v0.7 canonical address. */
+	/** EntryPoint address; defaults to the v0.9 canonical address. */
 	entryPointAddress?: Address;
 	logger?: GianoLogger;
 	/** Injected for tests. */
@@ -105,8 +106,6 @@ function toUserOperation(params: PaymasterHookParams): PaymasterUserOperation {
 	return op;
 }
 
-const ENTRY_POINT_V07: Address = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
-
 /** ERC-7677 speaks hex quantities, not JSON numbers, and `undefined` must not become `"0x0"`. */
 function toQuantity(value: bigint | undefined): Hex | undefined {
 	return value === undefined ? undefined : (`0x${value.toString(16)}` as Hex);
@@ -171,7 +170,7 @@ export function createErc7677PaymasterClient(
 ): Erc7677PaymasterClient {
 	const logger = options.logger ?? defaultGianoLogger;
 	const doFetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
-	const entryPoint = options.entryPointAddress ?? ENTRY_POINT_V07;
+	const entryPoint = options.entryPointAddress ?? GianoEntryPointAddress;
 	let nextId = 1;
 
 	async function call(

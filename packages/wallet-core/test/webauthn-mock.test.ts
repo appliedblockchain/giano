@@ -203,7 +203,15 @@ describe("mock interop with ox + viem", () => {
 		const { signature, webauthn } = await account.sign({ hash });
 
 		const verified = WebAuthnP256.verify({
-			metadata: webauthn,
+			metadata: {
+				...webauthn,
+				challengeIndex:
+					webauthn.challengeIndex ??
+					webauthn.clientDataJSON.indexOf('"challenge"'),
+				typeIndex:
+					webauthn.typeIndex ?? webauthn.clientDataJSON.indexOf('"type"'),
+				userVerificationRequired: webauthn.userVerificationRequired ?? true,
+			},
 			challenge: hash,
 			publicKey: PublicKey.fromHex(`0x04${credential.publicKey.slice(2)}`),
 			signature: Signature.fromHex(signature),

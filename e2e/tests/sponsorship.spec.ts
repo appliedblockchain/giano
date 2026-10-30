@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { type Address, createPublicClient, getAbiItem, http } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { entryPoint09Abi } from "viem/account-abstraction";
 import { ORIGINS } from "../origins.mjs";
 import {
 	connectWallet,
@@ -218,7 +218,7 @@ async function waitForDeploymentSettlement(
 	const getDeploymentLogs = () =>
 		client.getLogs({
 			address: ADDRESSES.entryPoint,
-			event: getAbiItem({ abi: entryPoint07Abi, name: "UserOperationEvent" }),
+			event: getAbiItem({ abi: entryPoint09Abi, name: "UserOperationEvent" }),
 			args: {
 				sender: address as Address,
 				paymaster: ADDRESSES.sponsorshipPaymaster as Address,
@@ -630,7 +630,7 @@ test.describe("tenant isolation", () => {
 						nonce: "0x0",
 						callData: "0x",
 					},
-					"0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+					"0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 					"0x7a69",
 					{},
 				],

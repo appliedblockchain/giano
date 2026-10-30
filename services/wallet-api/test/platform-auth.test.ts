@@ -362,7 +362,7 @@ describe("configuration", () => {
 		CHAIN_ID: "31337",
 		RPC_URL: "http://localhost:8545",
 		BUNDLER_URL: "http://localhost:4337",
-		ENTRYPOINT_ADDRESS: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+		ENTRYPOINT_ADDRESS: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 		FACTORY_ADDRESS: "0x2222222222222222222222222222222222222222",
 	};
 	const load = (env: Record<string, string>) => () =>

@@ -1,5 +1,6 @@
 import {
 	bundlerChainSchema,
+	ENTRY_POINT_ADDRESS,
 	gianoAddresses,
 	validateChainList,
 } from "@appliedblockchain/giano-contracts";
@@ -10,8 +11,7 @@ import { z } from "zod";
 /** The well-known Anvil account 0 key — never legitimate outside a devnet. */
 export const ANVIL_KEY =
 	"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-export const DEFAULT_ENTRYPOINT: Address =
-	"0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+export const DEFAULT_ENTRYPOINT: Address = ENTRY_POINT_ADDRESS;
 
 export class ConfigError extends Error {}
 

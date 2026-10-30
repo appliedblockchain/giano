@@ -18,6 +18,7 @@ import {
 } from "./setup.js";
 import {
 	createAuthenticator,
+	FLAG_UP,
 	makeAuthenticationResponse,
 	makeRegistrationResponse,
 	type TestAuthenticator,
@@ -292,6 +293,28 @@ describe("registration ceremony", () => {
 		expect((res.json() as { error: string }).error).toBe("verification-failed");
 	});
 
+	it("rejects a response without user verification (UP only)", async () => {
+		const options = await getOptions("user-no-uv", "registration");
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TEST_ORIGIN },
+			payload: {
+				externalUserId: "user-no-uv",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TEST_ORIGIN,
+					rpId: TEST_RP_ID,
+					flags: FLAG_UP,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe("verification-failed");
+		// Nothing was registered: the user still has no credential.
+		expect((await getOptions("user-no-uv")).credentialIds).toEqual([]);
+	});
+
 	it("rejects a challenge bound to a different user (challenge-user-mismatch)", async () => {
 		// 'user-1' exists, so a registration challenge for them is user-bound
 		const options = await getOptions("user-1", "registration");
@@ -383,6 +406,30 @@ describe("authentication ceremony", () => {
 		expect(afterLogout.statusCode).toBe(401);
 	});
 
+	it("rejects an assertion without user verification (UP only) and issues no session", async () => {
+		const auth = createAuthenticator();
+		await register("user-auth-no-uv", auth);
+		const options = await getOptions("user-auth-no-uv");
+
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/authentication/verify",
+			headers: { origin: TEST_ORIGIN },
+			payload: {
+				response: makeAuthenticationResponse(auth, {
+					challenge: options.challenge,
+					origin: TEST_ORIGIN,
+					rpId: TEST_RP_ID,
+					flags: FLAG_UP,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		const body = res.json() as { error: string; session?: unknown };
+		expect(body.error).toBe("verification-failed");
+		expect(body.session).toBeUndefined();
+	});
+
 	it("rejects an assertion whose challenge was never issued", async () => {
 		const auth = createAuthenticator();
 		const res = await ctx.app.inject({
@@ -454,7 +501,7 @@ describe("userop relay", () => {
 		);
 		expect(send).toBeTruthy();
 		// EntryPoint param comes from server config, never the request
-		expect(send!.params[1]).toBe("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
+		expect(send!.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 
 		// status endpoint sees it under the server-computed hash
 		const opRow = await ctx.app.inject({
@@ -538,7 +585,7 @@ describe("userop relay", () => {
 		const send = ctx.bundlerCalls
 			.filter((c) => c.method === "eth_sendUserOperation")
 			.at(-1)!;
-		expect(send.params[1]).toBe("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
+		expect(send.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 	});
 
 	it("serves receipts publicly (read-only)", async () => {
@@ -557,7 +604,7 @@ describe("userop relay", () => {
  * door, so every assertion here is about the two doors being the same door.
  */
 describe("bundler relay (JSON-RPC)", () => {
-	const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+	const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 	const target = "0x4444444444444444444444444444444444444444";
 	let sessionToken: string;
 	let walletAddress: string;

@@ -34,6 +34,7 @@ import {
 	roleName,
 } from "./roles";
 import { toTenantId, toTenantUuid } from "./tenant-id";
+import { GianoTimelockClient } from "./timelock";
 import type {
 	HealthReport,
 	PaymasterConfig,
@@ -164,6 +165,21 @@ export class GianoPaymasterClient {
 			address: this.address,
 			publicClient: this.publicClient,
 			walletClient,
+			logWindow: this.logWindow,
+		});
+	}
+
+	/**
+	 * A client for the GianoTimelock that holds this paymaster's timelocked roles (G9), sharing this
+	 * client's connection and wallet. The timelock's address is not discoverable from the paymaster
+	 * — a role holder is just an address — so the caller names it.
+	 */
+	timelock(address: Address): GianoTimelockClient {
+		return new GianoTimelockClient({
+			address,
+			paymaster: this.address,
+			publicClient: this.publicClient,
+			walletClient: this.walletClient,
 			logWindow: this.logWindow,
 		});
 	}
@@ -706,7 +722,14 @@ export class GianoPaymasterClient {
 		);
 	}
 
-	/** Moves a tenant's exit. The new address is the only one that can withdraw the balance. */
+	/**
+	 * Moves a tenant's exit. The new address is the only one that can withdraw the balance.
+	 *
+	 * Gated by WITHDRAW_ADDRESS_ADMIN_ROLE, not TENANT_ADMIN_ROLE, and timelocked (G9): it redirects
+	 * where a tenant's money can go, so on a handed-off deployment only the timelock holds the role
+	 * and this direct call is refused — propose it with
+	 * `GianoTimelockClient.proposeSetTenantWithdrawAddress` instead.
+	 */
 	setTenantWithdrawAddress(
 		tenantId: string,
 		withdrawAddress: Address,
@@ -785,7 +808,9 @@ export class GianoPaymasterClient {
 		);
 	}
 
-	// --- fees (FEE_ADMIN_ROLE) ------------------------------------------------------------------
+	// --- fees (FEE_ADMIN_ROLE, timelocked) ------------------------------------------------------
+	// Sent directly only where a key still holds the role (a devnet). On a handed-off deployment the
+	// timelock holds it: see `GianoTimelockClient.proposeSetDefaultFee` / `proposeSetTenantFee`.
 
 	setDefaultFee(feeWei: bigint): Promise<WriteResult> {
 		return this.send("setDefaultFee", [feeWei], "set the default platform fee");
@@ -846,7 +871,9 @@ export class GianoPaymasterClient {
 		return this.send("withdrawStake", [to], "withdraw the stake");
 	}
 
-	// --- roles (ROLE_ADMIN) ---------------------------------------------------------------------
+	// --- roles (ROLE_ADMIN, timelocked) ---------------------------------------------------------
+	// As with fees: direct only where a key holds ROLE_ADMIN. Otherwise `proposeGrantRole` /
+	// `proposeRevokeRole` on the timelock client.
 
 	grantRole(role: PaymasterRoleName, account: Address): Promise<WriteResult> {
 		return this.send(

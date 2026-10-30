@@ -162,8 +162,8 @@ return signature-validation failure.
 ## Toolchain
 
 Foundry is the only Solidity toolchain. `foundry.toml` pins everything that reaches the bytecode:
-solc `0.8.28`, EVM `paris` (no `PUSH0`, `MCOPY` or transient storage, so one release deploys on
-every chain we may adopt), optimizer runs `200`, `viaIR`, and the remappings in `remappings.txt`
+solc `0.8.28`, EVM `cancun` (EntryPoint v0.9 requires MCOPY and transient storage; deploy only on
+chains implementing Cancun opcodes), optimizer runs `200`, `viaIR`, and the remappings in `remappings.txt`
 (auto-detection is off: solc records remappings in the metadata hash).
 
 Generated, committed files, so a fresh clone builds the TypeScript surface with no solc, no
@@ -183,3 +183,11 @@ pnpm build       # gen:abis + gen:addresses + tsdown (needs forge and the submod
 pnpm test        # forge test (needs the submodules: pnpm git:init at the repo root)
 pnpm storage:check
 ```
+
+## Guided contract deployment
+
+Run `pnpm contracts:deploy` from the repository root. Public chain configuration persists in
+`deploy/chains/*.json`; use `--chain <profile>` or `--config <file>` to choose a deployment.
+The same profile drives `contracts:funding`, `contracts:provision`, `contracts:sponsorship` and
+`contracts:doctor`. See [the deployment and address-cutover runbook](../../deploy/contracts/README.md)
+for prerequisites, saved operator choices, read-only plans, provisioning, verification and recovery.

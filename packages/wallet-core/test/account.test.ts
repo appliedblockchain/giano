@@ -408,6 +408,22 @@ describe("signing helpers", () => {
 		expect(size(encoded)).toBeGreaterThan(100);
 	});
 
+	it("derives optional WebAuthn indices from the signed JSON", () => {
+		const clientDataJSON = '{"type":"webauthn.get","challenge":"abc"}';
+		const signature = `0x${"11".repeat(32)}${"22".repeat(32)}1b` as const;
+		const webauthn = { authenticatorData: "0xaabb" as const, clientDataJSON };
+		expect(toWebAuthnSignature({ webauthn, signature })).toBe(
+			toWebAuthnSignature({
+				webauthn: {
+					...webauthn,
+					challengeIndex: clientDataJSON.indexOf('"challenge"'),
+					typeIndex: clientDataJSON.indexOf('"type"'),
+				},
+				signature,
+			}),
+		);
+	});
+
 	it("toWebAuthnSignature() takes r and s from the assertion DER when the raw credential is present", () => {
 		const webauthn = {
 			authenticatorData: "0xaabb",

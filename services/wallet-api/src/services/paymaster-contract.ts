@@ -1,6 +1,11 @@
 import { gianoPaymasterAbi } from "@appliedblockchain/giano-contracts";
 import type { Address, Hex, PublicClient } from "viem";
-import { concat, encodeAbiParameters, keccak256, numberToHex, pad } from "viem";
+import { concat, encodeAbiParameters, numberToHex, pad } from "viem";
+import {
+	getUserOperationHash,
+	toUserOperation,
+	type UserOperation,
+} from "viem/account-abstraction";
 
 /**
  * Reads the paymaster's on-chain configuration, and builds the `paymasterData` the contract
@@ -228,36 +233,18 @@ export function computeUserOpHash(args: {
 	entryPoint: Address;
 	chainId: number;
 }): Hex {
-	const packed = keccak256(
-		encodeAbiParameters(
-			[
-				{ type: "address" },
-				{ type: "uint256" },
-				{ type: "bytes32" },
-				{ type: "bytes32" },
-				{ type: "bytes32" },
-				{ type: "uint256" },
-				{ type: "bytes32" },
-				{ type: "bytes32" },
-			],
-			[
-				args.sender,
-				args.nonce,
-				keccak256(args.initCode),
-				keccak256(args.callData),
-				args.accountGasLimits,
-				args.preVerificationGas,
-				args.gasFees,
-				keccak256(args.paymasterAndData),
-			],
+	const { entryPoint, chainId, ...packed } = args;
+	return getUserOperationHash({
+		entryPointAddress: entryPoint,
+		entryPointVersion: "0.9",
+		chainId,
+		userOperation: toUserOperation<Omit<UserOperation<"0.9">, "authorization">>(
+			{
+				...packed,
+				signature: "0x",
+			},
 		),
-	);
-	return keccak256(
-		encodeAbiParameters(
-			[{ type: "bytes32" }, { type: "address" }, { type: "uint256" }],
-			[packed, args.entryPoint, BigInt(args.chainId)],
-		),
-	);
+	});
 }
 
 /** `paymasterAndData` as the EntryPoint lays it out: the prefix, then the authorisation header. */

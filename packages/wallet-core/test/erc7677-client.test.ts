@@ -51,7 +51,7 @@ describe("ERC-7677 paymaster client", () => {
 			).getPaymasterStubData({
 				...userOperation,
 				chainId: 31337,
-				entryPointAddress: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+				entryPointAddress: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 			});
 			expect(result.paymaster).toBe(PAYMASTER);
 
@@ -113,7 +113,7 @@ describe("ERC-7677 paymaster client", () => {
 			nonce: "0x7",
 			callGasLimit: "0x30d40",
 		});
-		expect(body.params[1]).toBe("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
+		expect(body.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 		expect(body.params[2]).toBe("0x7a69"); // 31337
 	});
 

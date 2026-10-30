@@ -121,6 +121,7 @@ contract EndToEndTest is PaymasterTestBase {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = op;
         vm.expectRevert();
+        vm.prank(beneficiary, beneficiary);
         ENTRY_POINT.handleOps(ops, beneficiary);
     }
 
@@ -134,6 +135,7 @@ contract EndToEndTest is PaymasterTestBase {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = op;
         vm.expectRevert(); // AA32 expired or not due
+        vm.prank(beneficiary, beneficiary);
         ENTRY_POINT.handleOps(ops, beneficiary);
         assertEq(paymaster.getTenant(TENANT_A).balance, balanceBefore, 'nothing debited');
     }
@@ -151,6 +153,7 @@ contract EndToEndTest is PaymasterTestBase {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = op;
         vm.expectRevert();
+        vm.prank(beneficiary, beneficiary);
         ENTRY_POINT.handleOps(ops, beneficiary);
     }
 
@@ -195,6 +198,7 @@ contract EndToEndTest is PaymasterTestBase {
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = op;
         vm.expectRevert();
+        vm.prank(beneficiary, beneficiary);
         ENTRY_POINT.handleOps(ops, beneficiary);
 
         vm.prank(tenantAWithdraw);
@@ -245,6 +249,7 @@ contract EndToEndTest is PaymasterTestBase {
         );
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = op;
+        vm.prank(beneficiary, beneficiary);
         ENTRY_POINT.handleOps(ops, beneficiary);
     }
 

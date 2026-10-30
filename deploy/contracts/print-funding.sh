@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
-# Prints the EOAs you need to fund with testnet ETH (derived from the keys in deploy/.env),
+# Prints the EOAs you need to fund with testnet ETH (derived from the keys in the selected operator environment),
 # their current balances, and the suggested top-up amounts.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ENV_FILE="$REPO_ROOT/deploy/.env"
+: "${GIANO_PROFILE_LOADED:?use pnpm contracts:funding, contracts:provision or contracts:sponsorship with --chain <profile>}"
+: "${CHAIN_ID:?select a chain profile}"
+: "${RPC_URL:?provide a chain RPC}"
 
-[ -f "$ENV_FILE" ] || { echo "ERROR: $ENV_FILE not found. Run: cp deploy/sepolia.env.example deploy/.env"; exit 1; }
-# shellcheck disable=SC1090
-set -a; . "$ENV_FILE"; set +a
-
-RPC="${RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}" \
+RPC="$RPC_URL" \
 pnpm --filter @appliedblockchain/giano-contracts exec node - <<'NODE'
 const { JsonRpcProvider, Wallet, formatEther } = require('ethers');
 const provider = new JsonRpcProvider(process.env.RPC);
 const stake = process.env.STAKE_ETH ?? '0.1';
 const tenantFund = process.env.TENANT_FUND_ETH ?? '0.02';
-const testDeposit = process.env.PAYMASTER_FUND_ETH ?? '0.01';
 const rows = [
-  // Pays for the contract deployments (deploy-contracts.sh) and, off the production chains, the
-  // test paymaster's deposit; nothing else.
-  ['Canonical deployer', process.env.CANONICAL_DEPLOYER_PRIVATE_KEY, '~0.05', `contract deployments + test deposit (${testDeposit}, testnets only)`],
+  // Pays for the four core contract deployments.
+  ['Canonical deployer', process.env.CANONICAL_DEPLOYER_PRIVATE_KEY, process.env.DEPLOYER_MIN_ETH, 'core contract deployments'],
   [
     'Operator',
     process.env.DEPLOYER_PRIVATE_KEY,
@@ -39,15 +33,16 @@ const rows = [
   ['Sponsorship signer', process.env.SPONSORSHIP_SIGNER_KEY, 'none', 'signs ERC-7677 sponsorships — no funding needed'],
 ];
 (async () => {
-  console.log(`\nRPC: ${process.env.RPC}\n`);
+  console.log(`\nNetwork: ${process.env.CHAIN_NAME} (${process.env.CHAIN_ID})\n`);
   for (const [name, pk, want, note] of rows) {
-    if (!pk) { console.log(`${name.padEnd(20)} <key not set in deploy/.env>`); continue; }
-    const addr = new Wallet(pk).address;
+    if (!pk) { console.log(`${name.padEnd(20)} <key not set in the selected operator environment>`); continue; }
+    let addr;
+    try { addr = new Wallet(pk).address; } catch { console.log(`${name}: invalid key; correct the operator environment.`); process.exitCode = 1; continue; }
     let bal = '?';
     try { bal = formatEther(await provider.getBalance(addr)); } catch {}
     console.log(`${name.padEnd(20)} ${addr}`);
     console.log(`${''.padEnd(20)} balance: ${bal} ETH   suggested: ${want} ETH   (${note})\n`);
   }
-  console.log('Get Sepolia ETH from a faucet, e.g. https://sepoliafaucet.com or https://www.alchemy.com/faucets/ethereum-sepolia');
+  console.log('Fund these addresses on the selected network; balances and fees do not carry across chains.');
 })();
 NODE

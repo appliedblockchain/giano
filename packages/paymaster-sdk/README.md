@@ -111,23 +111,70 @@ try {
 }
 ```
 
-| Role | Calls |
-| --- | --- |
-| — (anyone) | `depositFor` |
-| the tenant's own withdrawal address | `withdrawTenant` |
-| `TENANT_ADMIN_ROLE` | `registerTenant`, `setTenantEnabled`, `setTenantWithdrawAddress` |
-| `FEE_ADMIN_ROLE` | `setDefaultFee`, `setTenantFee` |
-| `FEE_COLLECTOR_ROLE` | `withdrawFees` |
-| `SIGNER_ADMIN_ROLE` | `addSigner`, `removeSigner` |
-| `PARAM_ADMIN_ROLE` | `setPostOpGasAllowance`, `setPenaltyBps` |
-| `PAUSER_ROLE` | `pause`, `unpause` |
-| `STAKE_ADMIN_ROLE` | `addStake`, `unlockStake`, `withdrawStake` |
-| `ROLE_ADMIN` | `grantRole`, `revokeRole` |
+| Role | Calls | |
+| --- | --- | --- |
+| — (anyone) | `depositFor` | |
+| the tenant's own withdrawal address | `withdrawTenant` | |
+| `TENANT_ADMIN_ROLE` | `registerTenant`, `setTenantEnabled` | |
+| `WITHDRAW_ADDRESS_ADMIN_ROLE` | `setTenantWithdrawAddress` | timelocked |
+| `FEE_ADMIN_ROLE` | `setDefaultFee`, `setTenantFee` | timelocked |
+| `FEE_COLLECTOR_ROLE` | `withdrawFees` | |
+| `SIGNER_ADMIN_ROLE` | `addSigner`, `removeSigner` | |
+| `PARAM_ADMIN_ROLE` | `setPostOpGasAllowance`, `setPenaltyBps` | |
+| `PAUSER_ROLE` | `pause`, `unpause` | |
+| `STAKE_ADMIN_ROLE` | `addStake`, `unlockStake`, `withdrawStake` | |
+| `ROLE_ADMIN` | `grantRole`, `revokeRole` | timelocked |
+| `UPGRADER_ROLE` | `upgradeToAndCall` (via the deploy CLI or a proposal) | timelocked |
 
 Writes return `{ hash, wait() }` rather than blocking until confirmation, so a UI can show
 "submitted" before it shows "confirmed".
 
-`ROLE_DESCRIPTIONS` carries what each role may and — the half that matters — may **not** do.
+`ROLE_DESCRIPTIONS` carries what each role may and — the half that matters — may **not** do, and
+whether it is `timelocked`.
+
+## The timelock
+
+On a handed-off deployment the **timelocked** roles above are held by a `GianoTimelock` alone
+(G9; the policy is `timelock.ts` in `@appliedblockchain/giano-contracts`, re-exported here). Their
+functions are not sent from a key: they are *proposed* to the timelock, wait out a public delay
+— each function has its own — and are then *executed*. A direct call from a key that lacks the role
+fails with `MissingRoleError`, whose `timelocked` flag and message say to propose it instead.
+
+`GianoTimelockClient` does the proposing and reading without anyone hand-encoding calldata:
+
+```ts
+const timelock = paymaster.timelock('0x…');           // or new GianoTimelockClient({ address, paymaster, publicClient })
+
+await timelock.getConfig();                             // minDelay, each timelocked function's delay, executors open?, roles held
+const proposal = await timelock.proposeSetDefaultFee(parseEther('0.0002'));
+proposal.id; proposal.delay; proposal.readyAtIfScheduledNow;
+proposal.schedule; proposal.execute; proposal.cancel;  // calldata for the timelock
+timelock.safeBatch(proposal);                           // the Safe Transaction Builder file that schedules it
+
+const { operations } = await timelock.getOperations({ windows: 10 });
+// each: id, calls (decoded: "set the default fee to 0.0002 ETH"), delay, state, readyAt
+await timelock.withWallet(walletClient).executeOperation(operations[0]); // once ready
+```
+
+| | |
+| --- | --- |
+| `proposeSetDefaultFee`, `proposeSetTenantFee`, `proposeSetTenantWithdrawAddress`, `proposeGrantRole`, `proposeRevokeRole`, `proposeUpgrade` | one proposal each; `propose(calls)` for anything else or a batch |
+| `getOperations({ windows })` | operations from `CallScheduled` / `CallSalt` / `CallExecuted` / `Cancelled`, with state (`waiting`, `ready`, `done`, `cancelled`) and ETA |
+| `executeOperation(op or id)` | rebuilds the call from its logs and executes it |
+| `schedule(proposal)`, `cancel(id)` | for a proposer that is a key — a devnet or a test |
+
+The delay is read from the timelock (`getDelay` / `getBatchDelay`), never from a profile, and a
+proposal asking for less is refused before anyone signs. The salt is random by default, because a
+second proposal of the same change under the same salt would be the same operation id; pass
+`{ salt }` to reproduce one. Nothing here assumes the proposer signs in this process — in
+production it is a Safe, which is what `safeBatch` is for.
+
+Operations come from logs, so `getOperations` reads windows of blocks like every other log read
+(below). One query per window covers all four events; an operation's scheduling is at least its
+delay older than its execution, so a list meant to show what is pending should read back at least
+the longest delay. `executeOperation` executes from any key, which works where the timelock's
+executors are open (`getConfig().executorsOpen`); otherwise the executor Safe sends
+`proposal.execute`.
 
 ## Tenant ids
 
@@ -174,8 +221,22 @@ pnpm paymaster help
 Signing is by raw EOA private key (`--private-key`, `PAYMASTER_PRIVATE_KEY`, or anvil's key 0 on
 chain 31337), which is a **development affordance**: a key on a command line is in your shell
 history and your process table. State-changing commands confirm before sending unless `--yes` is
-passed, and warn when signing against a non-local chain. Production role holders are timelocks,
-which are not driven from here.
+passed, and warn when signing against a non-local chain.
+
+The timelocked commands — `set-fee`, `set-withdraw-address`, `grant`, `revoke` and `upgrade` — take
+`--timelock <address>` (or `GIANO_PAYMASTER_TIMELOCK`). With it they **send nothing and need no
+key**: they print the proposal — operation id, delay, when it would be ready, and the schedule,
+execute and cancel calldata — and `--safe-json <file>` writes the Safe Transaction Builder batch that
+schedules it. `--salt` reproduces a proposal, `--delay 2d` lengthens one. Without `--timelock` they
+send directly, which works only where the key still holds the role (a devnet); a key without it is
+told the action is timelocked and to pass `--timelock`.
+
+```bash
+pnpm paymaster set-fee 0.0002 --timelock 0x… --safe-json schedule.json
+pnpm paymaster timelock status --timelock 0x…            # minDelay, each function's delay, roles held
+pnpm paymaster timelock pending --timelock 0x…           # waiting and ready operations with their ETA (--all, --windows <n>)
+pnpm paymaster timelock execute <id> --timelock 0x…      # rebuild from the logs and execute; needs a key
+```
 
 `--json` prints machine-readable output for scripting.
 

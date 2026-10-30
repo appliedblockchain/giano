@@ -60,7 +60,7 @@ An integration has **two halves**:
                                                         policied userop relay              │
                                                                  └──────────┬──────────────┘
                                                                             ▼
-                                                              EVM chain: EntryPoint v0.7 →
+                                                              EVM chain: EntryPoint v0.9 →
                                                               GianoSmartWallet (passkey account)
 ```
 
@@ -86,7 +86,7 @@ isolated per tenant, and cross-tenant use is both structurally impossible at the
   at canonical CREATE3 addresses (a function of the canonical deployer and fixed labels) — the same
   address on every chain.
 - **Transactions → UserOps.** The SDK repackages `eth_sendTransaction` into an ERC-4337 UserOp
-  (EntryPoint v0.7). Gas is sponsorable by a paymaster.
+  (EntryPoint v0.9). Gas is sponsorable by a paymaster.
 - **Works on any EVM chain.** P-256 signatures verify via the **RIP-7212 precompile** where present
   (cheap), falling back to an **in-contract FreshCryptoLib verifier** where it isn't. (Don't assume
   which — [`giano-doctor`](#6-part-d--verify--operate-giano-doctor) probes it live.)
@@ -206,7 +206,7 @@ relay-to-proxy chain, the `portless:*` scripts, how to add or rename a name (and
 | Service | URL | Notes |
 | --- | --- | --- |
 | devnet (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler (giano-bundler) | http://bundler.localhost | EntryPoint v0.7 |
+| bundler (giano-bundler) | http://bundler.localhost | EntryPoint v0.9 |
 | wallet-web (tenant `stock`) | http://wallet.localhost | Giano's stock wallet UI (open directly for the Settings view) |
 | wallet-api | http://api.localhost | shared multi-tenant backend (also reached via each wallet origin's `/api` proxy) |
 
@@ -404,9 +404,9 @@ on purpose.
 
 ## 5. Part C — Stand up the wallet stack on a new chain
 
-The worked example below is Ethereum Sepolia, but every value is env-driven — point it at any EVM
-chain by changing `CHAIN_ID` + `RPC_URL` + the addresses. The full runbook is
-[`deploy/sepolia/README.md`](../deploy/sepolia/README.md).
+The worked example below is Ethereum Sepolia. Public chain settings persist in `deploy/chains/*.json`;
+select a profile with `--chain` or provide another JSON profile with `--config`. The full runbook is
+[`deploy/contracts/DEMO.md`](../deploy/contracts/DEMO.md).
 
 ### 5.1 Contracts
 
@@ -417,10 +417,10 @@ chain by changing `CHAIN_ID` + `RPC_URL` + the addresses. The full runbook is
   the key comes from an ABIP-8 ceremony and is never handed to developers or clients
   (`docs/key-ceremony.md`). The scripted testnet flow below is the one DevOps run:
   ```sh
-  cp deploy/sepolia.env.example deploy/.env   # set DEPLOYER_PRIVATE_KEY etc.
-  ./deploy/sepolia/print-funding.sh           # shows the EOAs to fund + balances + faucets
-  ./deploy/sepolia/deploy-contracts.sh        # deploys factory + impl + paymaster (+ test fixtures off
-                                              # production chains), writes addresses back to .env
+  cp deploy/contracts/operator.env.example deploy/contracts/ethereum-sepolia.local.env
+  # Configure operator inputs; public chain settings persist in deploy/chains/ethereum-sepolia.json.
+  pnpm contracts:funding --chain ethereum-sepolia --env-file deploy/contracts/ethereum-sepolia.local.env
+  pnpm contracts:deploy --chain ethereum-sepolia --env-file deploy/contracts/ethereum-sepolia.local.env
   ```
   It uses `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy and `DEPLOYER_PRIVATE_KEY` as the demo's
   operator (the paymaster's `ROLE_ADMIN`). The canonical deployer key is an Applied Blockchain
@@ -450,7 +450,7 @@ front the ETH). Env ([`services/bundler/README.md`](../services/bundler/README.m
 
 - `GIANO_CHAINS` (required) — the backend chain document wallet-api reads too
   (`packages/contracts/chains.ts`): per chain `chainId`, `name`, `rpcUrl`, optional `entryPoint`
-  (default canonical v0.7), and an optional `bundler` section (`enabled`, `rpcUrl`, `chainType`,
+  (default canonical v0.9), and an optional `bundler` section (`enabled`, `rpcUrl`, `chainType`,
   `maxBlockRange`). One process serves every chain in it, at `POST /<chainId>`, each isolated in its
   own lanes, estimator and lookup; point wallet-api's `BUNDLER_BASE_URL` at it.
 - `BUNDLER_EXECUTOR_PRIVATE_KEYS` (required, **funded on every chain served**, comma-separated — one
@@ -678,7 +678,8 @@ The contract has **no owner and no superuser**. Each privileged action has its o
 | `FEE_ADMIN_ROLE` | Set the fee and per-tenant overrides | Collect the fees it sets |
 | `FEE_COLLECTOR_ROLE` | Withdraw accrued treasury, capped at what accrued | Change the rate; touch tenant balances |
 | `STAKE_ADMIN_ROLE` | Add, unlock and withdraw the stake | Touch the deposit or any balance |
-| `TENANT_ADMIN_ROLE` | Register tenants and their withdrawal addresses | Move a registered tenant's funds |
+| `TENANT_ADMIN_ROLE` | Register, enable and disable tenants | Move a registered tenant's funds; change where it withdraws to |
+| `WITHDRAW_ADDRESS_ADMIN_ROLE` | Change a tenant's withdrawal address (timelocked) | Move funds; onboard tenants |
 | `PARAM_ADMIN_ROLE` | Set the overhead allowance and limits | Move funds |
 | `PAUSER_ROLE` | Halt new sponsorships | Move funds; alter configuration |
 | `UPGRADER_ROLE` | Replace the implementation | — (see the custody note below) |
@@ -769,8 +770,9 @@ State this to tenants plainly rather than letting the shorter version stand:
   tenant that objects to withdraw its balance first. There is no bypass, including for changes
   presented as urgent.
 - **A tenant that loses its withdrawal key strands that balance permanently**, because by design
-  nobody else can move it. Rotation via `setTenantWithdrawAddress` (`TENANT_ADMIN_ROLE`) exists and
-  should be used *before* a key is lost.
+  nobody else can move it. Rotation via `setTenantWithdrawAddress` (`WITHDRAW_ADDRESS_ADMIN_ROLE`, held by the
+  timelock in production, so a rotation waits its published delay) exists and should be used
+  *before* a key is lost.
 
 "Giano cannot take your funds" is therefore true of Giano's day-to-day operation and conditional on
 the upgrade controls. Anything stronger would be a claim the architecture does not support.
@@ -894,7 +896,7 @@ pnpm run doctor chain --rpc <url> --chain-id <id> \
   [--factory 0x..] [--sponsorship-paymaster 0x..] [--test-paymaster 0x..] \
   [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] [--executor 0x..]
 ```
-Checks: RPC reachable and chain id matches; EntryPoint v0.7, factory, and implementation have code;
+Checks: RPC reachable and chain id matches; EntryPoint v0.9, factory, and implementation have code;
 executor native balance (if given); and P-256 support (RIP-7212 precompile → FreshCryptoLib verifier
 → none).
 
@@ -912,7 +914,7 @@ output:
 
 ```
 Contracts
-  ✓ EntryPoint v0.7 deployed: 0x0000000071727De22E5E9d8BAf0edAc6f37da032
+  ✓ EntryPoint v0.9 deployed: 0x433709009B8330FDa32311DF1C2AFA402eD8D009
   ✓ GianoSmartWalletFactory deployed: 0x9c01925D07527A7920031196396A9c37421715A2
   ✓ factory address is canonical: 0x9c01925D07527A7920031196396A9c37421715A2
   ✓ factory runs canonical code: release v1 (giano.factory)
@@ -1044,5 +1046,5 @@ P-256 passkey).
 | [`PAYMASTER-SPECS.md`](./PAYMASTER-SPECS.md) | gas sponsorship: the technical design — contract, service, ledger, watcher |
 | [`e2e/README.md`](../e2e/README.md) | the two-tenant demo: its four origins, how portless serves them without root, and how to add or rename one |
 | [`packages/connector/README.md`](../packages/connector/README.md) | full SDK API + 0.x → 1.x (embedded) migration |
-| [`deploy/sepolia/README.md`](../deploy/sepolia/README.md) | end-to-end real-chain deploy runbook (any EVM chain) |
+| [`deploy/contracts/DEMO.md`](../deploy/contracts/DEMO.md) | end-to-end real-chain deploy runbook (any EVM chain) |
 | [`README-ROR.md`](../README-ROR.md) | Related Origin Requests (cross-origin passkeys) |

@@ -46,6 +46,7 @@ const ROLE_FLAGS = {
 	"fee-collector": "FEE_COLLECTOR_ROLE",
 	"stake-admin": "STAKE_ADMIN_ROLE",
 	"tenant-admin": "TENANT_ADMIN_ROLE",
+	"withdraw-address-admin": "WITHDRAW_ADDRESS_ADMIN_ROLE",
 	"param-admin": "PARAM_ADMIN_ROLE",
 	pauser: "PAUSER_ROLE",
 	upgrader: "UPGRADER_ROLE",

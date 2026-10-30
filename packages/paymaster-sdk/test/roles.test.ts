@@ -1,6 +1,8 @@
+import { TIMELOCKED_ROLES } from "@appliedblockchain/giano-contracts";
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_ADMIN_ROLE,
+	isTimelockedRole,
 	PAYMASTER_ROLE_NAMES,
 	PAYMASTER_ROLES,
 	ROLE_DESCRIPTIONS,
@@ -27,6 +29,8 @@ const ON_CHAIN_ROLE_HASHES = {
 		"0x8d86c4dcecd6f4dea2c1a19b7cbf464f1923f61835825feede704d624f5ac14c",
 	TENANT_ADMIN_ROLE:
 		"0x8fb1ef4148ad48f454517febd8f2389910d8ce34020838107d3679b007d92b49",
+	WITHDRAW_ADDRESS_ADMIN_ROLE:
+		"0x796082dff270c10f07fe9e9ad498cf4be27c011aea315c27a5c952947b2239cc",
 	PARAM_ADMIN_ROLE:
 		"0x57679fcefb7fb679fea4abf8c99a74b6c4c3a84582e28f1262ba66cbbcbf2a29",
 	PAUSER_ROLE:
@@ -103,5 +107,19 @@ describe("role descriptions", () => {
 			expect(description.may.length).toBeGreaterThan(0);
 			expect(description.mayNot.length).toBeGreaterThan(0);
 		}
+	});
+
+	it("marks exactly the roles the timelock holds as timelocked (G9)", () => {
+		const timelocked = PAYMASTER_ROLE_NAMES.filter(
+			(name) => ROLE_DESCRIPTIONS[name].timelocked,
+		);
+		expect([...timelocked].sort()).toEqual([...TIMELOCKED_ROLES].sort());
+		for (const name of timelocked) expect(isTimelockedRole(name)).toBe(true);
+	});
+
+	it("keeps the withdrawal address off TENANT_ADMIN_ROLE, which acts immediately", () => {
+		expect(ROLE_DESCRIPTIONS.TENANT_ADMIN_ROLE.timelocked).toBe(false);
+		expect(ROLE_DESCRIPTIONS.TENANT_ADMIN_ROLE.may).not.toMatch(/withdraw/);
+		expect(ROLE_DESCRIPTIONS.WITHDRAW_ADDRESS_ADMIN_ROLE.timelocked).toBe(true);
 	});
 });

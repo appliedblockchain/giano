@@ -15,6 +15,7 @@ import {
 } from "./setup.js";
 import {
 	createAuthenticator,
+	FLAG_UP,
 	makeAuthenticationResponse,
 	makeRegistrationResponse,
 	type TestAuthenticator,
@@ -146,7 +147,11 @@ const claim = (claimCode: string) =>
 		payload: { claimCode },
 	});
 
-const fill = async (claimCode: string, auth: TestAuthenticator) => {
+const fill = async (
+	claimCode: string,
+	auth: TestAuthenticator,
+	flags?: number,
+) => {
 	const claimed = await claim(claimCode);
 	expect(claimed.statusCode).toBe(200);
 	const { challenge } = claimed.json() as { challenge: string };
@@ -160,6 +165,7 @@ const fill = async (claimCode: string, auth: TestAuthenticator) => {
 				challenge,
 				origin: ORIGIN,
 				rpId: TENANT_A.rpId,
+				flags,
 			}),
 		},
 	});
@@ -413,6 +419,23 @@ describe("pending-addition lifecycle (WM-18…WM-23)", () => {
 			headers: authed(session.token),
 		});
 		expect(overflow.statusCode).toBe(429);
+	});
+
+	it("refuses a deposit without user verification and leaves the slot open for a verified one", async () => {
+		const deviceB = createAuthenticator();
+		const { session } = await register(
+			"no-uv-fill-user",
+			createAuthenticator(),
+		);
+		const slot = await openSlot(session.token);
+
+		const refused = await fill(slot.claimCode, deviceB, FLAG_UP);
+		expect(refused.statusCode).toBe(400);
+		expect((refused.json() as { error: string }).error).toBe(
+			"verification-failed",
+		);
+
+		expect((await fill(slot.claimCode, deviceB)).statusCode).toBe(200);
 	});
 
 	it("leaves a filled slot inert: no owner, no session, and a second fill is refused", async () => {

@@ -33,7 +33,7 @@ const apiUrl = (process.env.WALLET_API_URL ?? "http://api.localhost").replace(
 /**
  * Stacks other than the e2e devnet supply their tenants and demo ERC-20 through the environment
  * instead of `addresses.json`, which is a devnet artefact. `SPONSOR_TENANTS` is a JSON array of
- * `{ slug, adminKey }`; the Sepolia demo (deploy/sepolia/provision-sponsorship.sh) passes it.
+ * `{ slug, adminKey }`; the Sepolia demo (deploy/contracts/provision-sponsorship.sh) passes it.
  *
  * `SPONSOR_ERC20` is optional alongside it: a production chain (R-29) carries no demo ERC-20, so
  * there the allowlist is empty and only wallet management — governed by platform policy, not by

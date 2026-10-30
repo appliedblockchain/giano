@@ -382,7 +382,8 @@ explicitly named role, granted independently:
 | Fee admin | Set the fee rate and per-tenant overrides | Collect the fees it sets |
 | **Fee collector** | Withdraw accrued treasury, up to the accrued amount | Change the rate; touch tenant balances |
 | Stake admin | Add, unlock and withdraw the network stake | Touch the deposit or any balance |
-| Tenant admin | Register tenants and their withdrawal addresses | Move a registered tenant's funds |
+| Tenant admin | Register tenants, enable and disable them | Move a registered tenant's funds; change where it withdraws to |
+| Withdraw-address admin | Change a tenant's withdrawal address (timelocked, R-68) | Move funds; onboard tenants |
 | Parameter admin | Set the overhead allowance and operational limits | Move funds |
 | Pauser | Halt acceptance of new sponsorships | Move funds; alter configuration |
 | Upgrader | Replace the implementation, subject to D14 | — (see the qualification above) |
@@ -610,6 +611,39 @@ who did what is reconstructible from the chain alone rather than from Giano's re
 
 **R-48** — No role MUST be able to move a tenant's balance. This MUST hold for every role
 individually and for any combination of them, subject only to R-51.
+
+**R-68** (G9) — Every privileged operation MUST be classified as *timelocked* or *immediate*, and
+that classification MUST be enforced on-chain by which account holds the role. The decision:
+
+| Operation | Role | Class | Why |
+|---|---|---|---|
+| `upgradeToAndCall` | `UPGRADER_ROLE` | **Timelocked** | Can do anything, including taking tenant funds (R-50, R-51) |
+| `grantRole`, `revokeRole`, `renounceRole` | `ROLE_ADMIN` | **Timelocked** | Otherwise every other delay can be bypassed by granting a role (R-46) |
+| `setTenantWithdrawAddress` | `WITHDRAW_ADDRESS_ADMIN_ROLE` | **Timelocked** | Redirects where a tenant's funds can be withdrawn to |
+| `setDefaultFee`, `setTenantFee` | `FEE_ADMIN_ROLE` | **Timelocked** | Changes what tenants are charged; tenants see it coming |
+| `addSigner`, `removeSigner` | `SIGNER_ADMIN_ROLE` | Immediate | Key rotation (G8) and leaked-key response must not wait |
+| `setPostOpGasAllowance`, `setPenaltyBps` | `PARAM_ADMIN_ROLE` | Immediate | Bounded operational parameters (`penaltyBps` capped on-chain) |
+| `pause`, `unpause` | `PAUSER_ROLE` | Immediate | Emergency stop; withdrawals stay open while paused (R-53) |
+| `addStake`, `unlockStake`, `withdrawStake` | `STAKE_ADMIN_ROLE` | Immediate | Touch the stake only, never the deposit |
+| `registerTenant`, `setTenantEnabled` | `TENANT_ADMIN_ROLE` | Immediate | Day-to-day onboarding and offboarding |
+| `withdrawFees` | `FEE_COLLECTOR_ROLE` | Immediate | Capped at accrued treasury; cannot reach tenant balances |
+
+No role mixes the two classes. `setTenantWithdrawAddress` was split out of the tenant-admin role
+for this reason: the timelock holds it, an operational key keeps onboarding. The timelocked roles
+are held by the paymaster's `GianoTimelock` and by nothing else.
+
+**R-69** (G9) — Each timelocked operation MUST have its own delay, configurable independently of
+the others, and each environment's delays MUST be chosen and published (`deploy/chains/*.json`,
+`timelock.delays`). The upgrade delay MUST be long enough for a tenant to withdraw (R-51). A role
+change MUST wait at least as long as the longest delay it could bypass, since granting a timelocked
+role to a key would skip that role's delay from then on. Changing any delay MUST itself wait at
+least the delay being changed.
+
+**R-70** (G9) — No production deployment may end with a timelocked role on a key. `giano-doctor
+chain` MUST fail if any timelocked role is held by anything other than the expected timelock, or if
+any timelocked operation's delay is below its published value. The timelock's proposer and any
+role holder MAY be a contract account (a Safe), and the tooling MUST NOT assume an EOA: it can emit
+a timelock proposal or a Safe Transaction Builder batch instead of sending.
 
 ### 4.5 Upgradeability
 

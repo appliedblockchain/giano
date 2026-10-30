@@ -48,13 +48,14 @@ const SIMULATION = {
 	verificationGasLimit: 4_000_000n,
 	callGasLimit: 6_000_000n,
 	paymasterVerificationGasLimit: 1_000_000n,
-	paymasterPostOpGasLimit: 500_000n,
 };
 /** `innerHandleOp` refuses to start unless 63/64 of what is left covers the execution limits plus this. */
 const INNER_GAS_OVERHEAD = 10_000n;
-/** EntryPoint v0.7 charges 10% of unused execution gas. */
+/** EntryPoint v0.9 charges 10% only above 40,000 unused gas per segment. */
 const PENALTY_PERCENT = 10n;
 const MIN_CALL_GAS = 9_000n;
+/** Headroom for an unsponsored account to transfer its prefund at the real fee (see `estimate`). */
+const PREFUND_TRANSFER_GAS = 30_000n;
 /** Assumed for a paymaster that did not say what its postOp needs. */
 const DEFAULT_POST_OP_GAS = 50_000n;
 const EXECUTE_USER_OP_SELECTOR = "0x8dd7712f";
@@ -160,6 +161,9 @@ export function createEstimator(options: {
 			const givenPaymasterVerification =
 				input.paymasterVerificationGasLimit || undefined;
 			const givenPostOp = input.paymasterPostOpGasLimit || undefined;
+			const paymasterPostOpGasLimit = hasPaymaster
+				? (givenPostOp ?? DEFAULT_POST_OP_GAS)
+				: 0n;
 
 			const simOp: UserOp = {
 				...input,
@@ -177,10 +181,10 @@ export function createEstimator(options: {
 								givenPaymasterVerification ?? 0n,
 								SIMULATION.paymasterVerificationGasLimit,
 							),
-							paymasterPostOpGasLimit: maxBigInt(
-								givenPostOp ?? 0n,
-								SIMULATION.paymasterPostOpGasLimit,
-							),
+							// The limit the operation will carry, not a generous one: only the call limit is
+							// inverted out of `paid`, so unused postOp gas — and v0.9's penalty on it — would
+							// otherwise land in the measured call gas.
+							paymasterPostOpGasLimit,
 						}
 					: {}),
 			};
@@ -207,17 +211,20 @@ export function createEstimator(options: {
 			const preOpGas = measured.preOpGas;
 			const used = executionGasUsed(
 				measured.paid - preOpGas,
-				simOp.callGasLimit + (simOp.paymasterPostOpGasLimit ?? 0n),
+				simOp.callGasLimit,
 			);
 
 			// preOpGas covers the account's validation (and deployment) and the paymaster's, so it bounds
 			// either limit on its own.
-			const verificationGasLimit = scale(preOpGas, 130n);
+			// At 1 wei an existing EntryPoint deposit may cover an account's prefund; at the real fee
+			// the account may need to transfer funds and create/update a deposit slot. A sponsored
+			// operation pays no prefund from the account, so it needs no allowance for it.
+			const verificationGasLimit = scale(
+				preOpGas + (hasPaymaster ? 0n : PREFUND_TRANSFER_GAS),
+				130n,
+			);
 			const paymasterVerificationGasLimit = hasPaymaster
 				? (givenPaymasterVerification ?? scale(preOpGas, 130n))
-				: 0n;
-			const paymasterPostOpGasLimit = hasPaymaster
-				? (givenPostOp ?? DEFAULT_POST_OP_GAS)
 				: 0n;
 
 			let callGasLimit = 0n;
@@ -227,15 +234,11 @@ export function createEstimator(options: {
 				// more than it uses. Re-run at the chosen limit: running out shows up as the call eating
 				// the whole limit, well above what it used before.
 				for (let attempt = 0; attempt < 3; attempt++) {
-					const atLimit = {
-						...simOp,
-						callGasLimit,
-						...(hasPaymaster ? { paymasterPostOpGasLimit } : {}),
-					};
+					const atLimit = { ...simOp, callGasLimit };
 					const result = await simulateHandleOp(atLimit);
 					const usedAtLimit = executionGasUsed(
 						result.paid - result.preOpGas,
-						callGasLimit + (hasPaymaster ? paymasterPostOpGasLimit : 0n),
+						callGasLimit,
 					);
 					if (usedAtLimit <= used + (callGasLimit - used) / 2n) break;
 					callGasLimit = scale(callGasLimit, 150n);
@@ -294,15 +297,20 @@ export function createEstimator(options: {
 }
 
 /**
- * Execution gas from what the EntryPoint charged beyond validation. It charges
- * `used + (limit - used) / 10` (the unused-gas penalty), so `used = (10·charged - limit) / 9`;
- * with nothing unused there is no penalty and the charge is the usage.
+ * Upper bound on execution gas after removing the unused-gas penalty. v0.9 exempts
+ * up to 40,000 unused gas. Invert only the account call limit: postOp can
+ * have no penalty at all (empty context). Its usage, and any penalty on its unused gas, remain
+ * in the upper bound — which is why the estimate simulates at the real postOp limit, where the
+ * 40,000 exemption covers the default allowance. Include the <4,000 gas exemption to avoid
+ * understating usage.
  */
 export function executionGasUsed(charged: bigint, limit: bigint): bigint {
 	if (charged >= limit) return charged;
-	const used =
+	const inverse =
 		(100n * charged - PENALTY_PERCENT * limit) / (100n - PENALTY_PERCENT);
-	return used < 0n ? 0n : used;
+	const uncertainty = (40_000n * PENALTY_PERCENT + 89n) / 90n;
+	const upper = inverse + uncertainty;
+	return upper < 0n ? 0n : upper > charged ? charged : upper;
 }
 
 function prefund(op: UserOp): bigint {

@@ -12,7 +12,7 @@ import {
 	size,
 	sliceHex,
 } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { entryPoint09Abi } from "viem/account-abstraction";
 import type { Submitter } from "./submitter.js";
 import { formatUserOp, type UserOp, userOpHash } from "./userop.js";
 
@@ -143,7 +143,7 @@ export function createLookup(options: {
 			);
 			if (!transaction?.blockHash || !transaction.to) return null;
 			const { functionName, args } = decodeFunctionData({
-				abi: entryPoint07Abi,
+				abi: entryPoint09Abi,
 				data: transaction.input,
 			});
 			if (functionName !== "handleOps") return null;
@@ -200,7 +200,7 @@ type Packed = {
 	signature: Hex;
 };
 
-/** PackedUserOperation back to its v0.7 fields. */
+/** PackedUserOperation back to its v0.9 fields. */
 export function unpack(packed: Packed): UserOp {
 	const high = (word: Hex) => hexToBigInt(sliceHex(word, 0, 16));
 	const low = (word: Hex) => hexToBigInt(sliceHex(word, 16, 32));

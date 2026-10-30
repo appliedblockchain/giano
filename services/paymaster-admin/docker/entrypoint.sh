@@ -29,8 +29,11 @@ if [ -z "${GIANO_DEPLOYMENTS:-}" ]; then
   # common case where GIANO_RPC_URL is keyed or otherwise not for publication.
   GIANO_WALLET_RPC_URL="${GIANO_WALLET_RPC_URL:-}"
 
-  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","walletRpcUrl":"%s","sponsorshipPaymaster":"%s","refreshSeconds":%s}]' \
-    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_WALLET_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_REFRESH_SECONDS")
+  # Optional. The paymaster's GianoTimelock (G9); empty on a deployment that has not been handed off.
+  GIANO_TIMELOCK_ADDRESS="${GIANO_TIMELOCK_ADDRESS:-}"
+
+  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","walletRpcUrl":"%s","sponsorshipPaymaster":"%s","timelockAddress":"%s","refreshSeconds":%s}]' \
+    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_WALLET_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_TIMELOCK_ADDRESS" "$GIANO_REFRESH_SECONDS")
 fi
 
 # Keep the fields the console reads and drop the rest.
@@ -58,12 +61,14 @@ GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
   [ .[]
     | { name, chainId, rpcUrl, sponsorshipPaymaster,
         walletRpcUrl: (.paymasterAdmin.walletRpcUrl // .walletRpcUrl),
+        timelockAddress: (.paymasterAdmin.timelockAddress // .timelockAddress),
         refreshSeconds: (.paymasterAdmin.refreshSeconds // .refreshSeconds // 15) }
-    # Only walletRpcUrl is dropped when empty. Every other field keeps an empty string on purpose:
-    # the proxy step below asks whether rpcUrl looks absolute, and a missing key would make that
-    # `null | test(...)`, which stops the container with a jq message instead of letting the SPA
-    # report "deployment N has no rpcUrl".
+    # Only walletRpcUrl and timelockAddress are dropped when empty. Every other field keeps an empty
+    # string on purpose: the proxy step below asks whether rpcUrl looks absolute, and a missing key
+    # would make that `null | test(...)`, which stops the container with a jq message instead of
+    # letting the SPA report "deployment N has no rpcUrl".
     | if (.walletRpcUrl // "") == "" then del(.walletRpcUrl) else . end
+    | if (.timelockAddress // "") == "" then del(.timelockAddress) else . end
     | with_entries(select(.value != null)) ]')
 export GIANO_DEPLOYMENTS
 

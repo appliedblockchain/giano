@@ -1,5 +1,5 @@
 import { concat, encodeErrorResult, type Hex, padHex } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { entryPoint09Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import {
 	decodeEntryPointRevert,
@@ -24,20 +24,23 @@ const op: UserOp = {
 };
 
 describe("executionGasUsed", () => {
-	// What EntryPoint v0.7 charges for `used` gas under `limit`: the 10% unused-gas penalty.
+	// v0.9 waives the penalty below 40,000 unused gas.
 	const charge = (used: bigint, limit: bigint) =>
-		used >= limit ? used : used + ((limit - used) * 10n) / 100n;
+		limit - used <= 40_000n ? used : used + ((limit - used) * 10n) / 100n;
 
-	it("inverts the EntryPoint charge to within a gas", () => {
+	it("bounds usage conservatively across the penalty threshold", () => {
 		for (const [used, limit] of [
 			[45_123n, 6_000_000n],
 			[1n, 10n],
 			[21_000n, 21_000n],
 			[0n, 9_000n],
 			[250_001n, 6_500_000n],
+			[60_001n, 100_000n],
+			[60_000n, 100_000n],
+			[59_999n, 100_000n],
 		]) {
 			const recovered = executionGasUsed(charge(used, limit), limit);
-			expect(recovered <= used && used - recovered <= 1n).toBe(true);
+			expect(recovered >= used && recovered - used <= 4_445n).toBe(true);
 		}
 	});
 
@@ -76,7 +79,7 @@ describe("EntryPoint reverts", () => {
 	const failedOp = (reason: string) => ({
 		cause: {
 			data: encodeErrorResult({
-				abi: entryPoint07Abi,
+				abi: entryPoint09Abi,
 				errorName: "FailedOp",
 				args: [0n, reason],
 			}),
@@ -88,7 +91,7 @@ describe("EntryPoint reverts", () => {
 			decodeEntryPointRevert({ cause: failedOp("AA24 signature error") }),
 		).toEqual({ kind: "failed-op", reason: "AA24 signature error" });
 		const withRevert = encodeErrorResult({
-			abi: entryPoint07Abi,
+			abi: entryPoint09Abi,
 			errorName: "FailedOpWithRevert",
 			args: [0n, "AA23 reverted", "0x1234"],
 		});

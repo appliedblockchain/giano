@@ -86,7 +86,7 @@ if (record.chainId !== chainId) {
 const c = record.contracts;
 const entry = {
 	chainId,
-	entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 	factory: c.factory.address,
 	implementation: c.walletImplementation.address,
 	sponsorshipPaymaster: c.paymasterProxy.address,

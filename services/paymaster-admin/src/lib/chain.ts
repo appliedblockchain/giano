@@ -8,6 +8,7 @@ import {
 	defineChain,
 	type EIP1193Provider,
 	http,
+	type PublicClient,
 } from "viem";
 import type { Deployment } from "../config";
 import { describeError } from "./format";
@@ -42,7 +43,10 @@ export type ReadAuth = {
 	onUnauthorized: () => void;
 };
 
-export function createReadClient(deployment: Deployment, auth?: ReadAuth) {
+export function createReadClient(
+	deployment: Deployment,
+	auth?: ReadAuth,
+): PublicClient<ReturnType<typeof http>, Chain> {
 	return createPublicClient({
 		chain: toChain(deployment),
 		transport: http(

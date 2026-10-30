@@ -1,7 +1,7 @@
 import { custom, parseGwei, toHex } from "viem";
 import {
 	createBundlerClient,
-	entryPoint07Address,
+	entryPoint09Address,
 } from "viem/account-abstraction";
 import {
 	afterEach,
@@ -642,7 +642,7 @@ describe("transactions & user operations", () => {
 					paymasterPostOpGasLimit: "0x4e20",
 					paymasterData: "0x5678",
 				},
-				entryPoint07Address,
+				entryPoint09Address,
 			],
 		});
 	});

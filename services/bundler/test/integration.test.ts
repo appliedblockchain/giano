@@ -1,5 +1,15 @@
-import { type Address, type Hex, keccak256, parseEther } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import {
+	type Address,
+	getContractAddress,
+	type Hex,
+	keccak256,
+	parseEther,
+} from "viem";
+import {
+	entryPoint09Abi,
+	getUserOperationHash,
+	toPackedUserOperation,
+} from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -52,6 +62,36 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		expect(
 			(await rpc(bundler.url, "pimlico_getUserOperationGasPrice")).error?.code,
 		).toBe(-32601);
+	});
+
+	it("matches v0.9 EIP-712 hashing on chain and rejects a v0.7 signature", async () => {
+		const { op, hash } = await prepare(900n, "0x", true);
+		const userOperation = ops().toOp(op);
+		expect(
+			await devnet.client.readContract({
+				address: devnet.entryPoint,
+				abi: entryPoint09Abi,
+				functionName: "getUserOpHash",
+				args: [toPackedUserOperation(userOperation)],
+			}),
+		).toBe(hash);
+		const legacyHash = getUserOperationHash({
+			chainId: devnet.chainId,
+			entryPointAddress: devnet.entryPoint,
+			entryPointVersion: "0.7",
+			userOperation,
+		});
+		expect(legacyHash).not.toBe(hash);
+		const owner = privateKeyToAccount(KEYS.owner);
+		const signature = await owner.sign({ hash: legacyHash });
+		expect(
+			(
+				await rpc(bundler.url, "eth_sendUserOperation", [
+					{ ...op, signature },
+					devnet.entryPoint,
+				])
+			).error?.message,
+		).toMatch(/AA24/);
 	});
 
 	it("deploys a self-funded account with its first operation, and the executor is reimbursed", async () => {
@@ -116,7 +156,7 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		).toBe(0n);
 		const deposit = await devnet.client.readContract({
 			address: devnet.entryPoint,
-			abi: entryPoint07Abi,
+			abi: entryPoint09Abi,
 			functionName: "balanceOf",
 			args: [devnet.paymaster],
 		});
@@ -138,7 +178,7 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 			deposit -
 			(await devnet.client.readContract({
 				address: devnet.entryPoint,
-				abi: entryPoint07Abi,
+				abi: entryPoint09Abi,
 				functionName: "balanceOf",
 				args: [devnet.paymaster],
 			}));
@@ -161,6 +201,34 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		]);
 		expect(estimate.error?.code).toBe(-32521);
 		expect(estimate.error?.message).toMatch(/reverted during simulation/);
+	});
+
+	it("estimates a first operation on an RPC without the SenderCreator, from its state override", async () => {
+		// The devnet deploys the EntryPoint canonically, so its SenderCreator exists; remove it to
+		// exercise the patched senderCreatorCode the estimator always supplies.
+		const senderCreator = getContractAddress({
+			from: devnet.entryPoint,
+			nonce: 1n,
+		});
+		const code = await devnet.client.getCode({ address: senderCreator });
+		expect(code && code !== "0x").toBeTruthy();
+		await devnet.test.setCode({ address: senderCreator, bytecode: "0x" });
+		try {
+			const op = await draft(951n, executeCall(recipient, 0n), false);
+			expect(op.factory).toBe(devnet.factory);
+			// Self-funded, so the final real-price validation passes too.
+			await devnet.test.setBalance({
+				address: op.sender as Address,
+				value: parseEther("1"),
+			});
+			const estimate = await rpc(bundler.url, "eth_estimateUserOperationGas", [
+				op,
+				devnet.entryPoint,
+			]);
+			expect(estimate.error).toBeUndefined();
+		} finally {
+			await devnet.test.setCode({ address: senderCreator, bytecode: code! });
+		}
 	});
 
 	it("refuses what the EntryPoint would refuse, with Alto's codes", async () => {

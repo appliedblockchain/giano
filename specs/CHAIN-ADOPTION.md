@@ -16,6 +16,10 @@ fixed label only (`packages/contracts/README.md`, "Canonical addresses"). The sa
 permissioned, so **only the canonical deployer can adopt a chain** — step 4 needs its key. Because
 an address no longer commits to bytecode, code is checked separately (steps 5 and 8).
 
+EntryPoint v0.9 requires Cancun EVM opcodes (including `MCOPY`, `TLOAD`, and `TSTORE`) and
+an EIP-1559 `basefee`. Confirm RPC support for `eth_call` state overrides and gas estimation.
+See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.md).
+
 ## The checklist
 
 ```
@@ -25,10 +29,10 @@ an address no longer commits to bytecode, code is checked separately (steps 5 an
       createx) — that is what puts it at the same address everywhere. The deploy CLI refuses
       to run without it.
 
-2.  EntryPoint v0.7 at 0x0000000071727De22E5E9d8BAf0edAc6f37da032?
+2.  EntryPoint v0.9 at 0x433709009B8330FDa32311DF1C2AFA402eD8D009?
       The account implementation HARDCODES this address, so against a different EntryPoint
       the implementation is different code: it would still land at the canonical address, but
-      as code no release puts there (MC-141). Public chains almost always have it; a PRIVATE
+      as code no release puts there (MC-141). Verify runtime code with giano-doctor, including its chain-dependent EIP-712 cache. A PRIVATE
       chain will not — deploy it there BEFORE any Giano contract (`deploy:cli
       install-entrypoint` is the local recipe).
 
@@ -94,7 +98,7 @@ never supplies `GIANO_CHAINS`, never sees a chain picker, never supplies a `chai
 request, and its operator needs no knowledge of the multi-chain shape (MC-90). Single-chain is
 the degenerate case of N, not a separate build or mode (MC-86, MC-87).
 
-The things it **does** need, and which are easy to miss: **EntryPoint v0.7 and CreateX at their
+The things it **does** need, and which are easy to miss: **EntryPoint v0.9 and CreateX at their
 canonical addresses** (steps 1 and 2). A private chain will have neither; without EntryPoint the
 implementation is not canonical code, and without CreateX nothing can be deployed at all.
 

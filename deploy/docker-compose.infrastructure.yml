@@ -81,7 +81,7 @@ x-giano-chains: &giano-chains |
   [
     {
       "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://anvil:8545",
-      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
@@ -90,7 +90,7 @@ x-giano-chains: &giano-chains |
     },
     {
       "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://anvil-b:8545",
-      "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
@@ -145,15 +145,13 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   # anvil / anvil-b — two chains, one baked state file.
   #
-  # Instant boot: state.json carries EntryPoint v0.7, the Giano factory and implementation,
+  # Instant boot: state.json carries EntryPoint v0.9, the Giano factory and implementation,
   # the GianoPaymaster with both tenants registered and funded, and the demo ERC-20 — all
   # pre-deployed by e2e/devnet/generate-state.mjs. Nothing is deployed at `up` time.
   #
-  # Two chains rather than one, and the SAME state on both: `anvil_dumpState` carries
-  # accounts, code and storage but not the chain id, which anvil takes from --chain-id. One
-  # committed artefact, two chains, and identical contract addresses on both by construction
-  # — which is what makes "one passkey, one address, every chain" demonstrable rather than
-  # asserted, and what the demo's cross-chain panel needs.
+  # Two separately generated states: EntryPoint v0.9 caches its chain ID in runtime code.
+  # The generator verifies identical Giano contract addresses on both chains, preserving
+  # "one passkey, one address, every chain" for the demo's cross-chain panel.
   #
   # ⚠ The image is pinned by digest and the pin matters: state.json's format is tied to the
   # anvil version that wrote it. A version mismatch takes the whole stack down in a way that
@@ -176,7 +174,7 @@ services:
     entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31338', '--load-state', '/devnet/state.json']
     restart: unless-stopped
     volumes:
-      - ../e2e/devnet/state.json:/devnet/state.json:ro
+      - ../e2e/devnet/state-31338.json:/devnet/state.json:ro
     ports:
       - '8546:8545'
 

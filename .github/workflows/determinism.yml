@@ -53,6 +53,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Test deployment transactions and interrupted-run recovery on anvil
+        run: pnpm --filter @appliedblockchain/giano-contracts test:deploy:integration
       # Also installs the pinned solc that release:verify runs.
       - name: Unreleased contract changes (informational)
         working-directory: packages/contracts

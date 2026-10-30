@@ -1,5 +1,7 @@
 /** Upgrade the baked local paymaster through UUPS, preserving its proxy and funded tenants.
- * Run on a fresh pinned anvil via `pnpm devnet:upgrade:paymaster`.
+ * Run on a fresh pinned anvil via `pnpm devnet:upgrade:paymaster:all` (or `devnet:upgrade:paymaster`
+ * for chain 31337 alone, `:b` for chain 31338). Each chain has its own state file, so both must be
+ * upgraded or chain B keeps the old paymaster while addresses.json names the new implementation.
  * This script loads and writes local fixture state only; it refuses non-Anvil nodes.
  *
  * The new implementation is the working tree's (`--release dev`), deployed by the deploy CLI under
@@ -13,6 +15,8 @@ import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 const RPC = process.env.RPC_URL ?? "http://127.0.0.1:18545";
+const CHAIN_ID = Number(process.env.CHAIN_ID ?? 31337);
+const STATE_FILE = CHAIN_ID === 31337 ? "state.json" : `state-${CHAIN_ID}.json`;
 /** Anvil's account 0. Never used anywhere real. */
 const ANVIL_KEY =
 	"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -32,10 +36,14 @@ async function rpc(method, params = []) {
 const version = await rpc("web3_clientVersion");
 if (!version.includes("anvil") || !version.includes("1.7.1"))
 	throw new Error("requires the pinned local Anvil 1.7.1");
-if (Number(BigInt(await rpc("eth_chainId"))) !== 31337)
-	throw new Error("requires local chain 31337");
+if (![31337, 31338].includes(CHAIN_ID))
+	throw new Error(`CHAIN_ID ${CHAIN_ID} is not a local devnet chain`);
+if (Number(BigInt(await rpc("eth_chainId"))) !== CHAIN_ID)
+	throw new Error(
+		`requires local chain ${CHAIN_ID} (ANVIL_CHAIN_ID=${CHAIN_ID} for with-pinned-anvil.mjs)`,
+	);
 
-const statePath = new URL("./state.json", import.meta.url);
+const statePath = new URL(`./${STATE_FILE}`, import.meta.url);
 const addressesPath = new URL("./addresses.json", import.meta.url);
 const addresses = JSON.parse(readFileSync(addressesPath, "utf8"));
 // Anvil accepts its compressed dump format. Compress before hex encoding so the
@@ -70,10 +78,20 @@ try {
 		},
 	);
 	const record = JSON.parse(
-		readFileSync(join(recordDir, "31337.json"), "utf8"),
+		readFileSync(join(recordDir, `${CHAIN_ID}.json`), "utf8"),
 	);
-	addresses.sponsorshipPaymasterImplementation =
-		record.contracts.paymasterImplementation.address;
+	const implementation = record.contracts.paymasterImplementation.address;
+	// The upgrade label is content-addressed (CREATE3), so every chain lands the same implementation
+	// address. addresses.json is shared; refuse to let the chains drift apart.
+	if (
+		CHAIN_ID !== 31337 &&
+		implementation.toLowerCase() !==
+			addresses.sponsorshipPaymasterImplementation.toLowerCase()
+	)
+		throw new Error(
+			`chain ${CHAIN_ID} upgraded to ${implementation}, but addresses.json names ${addresses.sponsorshipPaymasterImplementation} — upgrade chain 31337 first (pnpm devnet:upgrade:paymaster:all)`,
+		);
+	addresses.sponsorshipPaymasterImplementation = implementation;
 } finally {
 	rmSync(recordDir, { recursive: true, force: true });
 }
@@ -82,7 +100,8 @@ const dumped = await rpc("anvil_dumpState");
 let bytes = Buffer.from(dumped.slice(2), "hex");
 if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes);
 writeFileSync(statePath, JSON.stringify(JSON.parse(bytes.toString("utf8"))));
-writeFileSync(addressesPath, `${JSON.stringify(addresses, null, 2)}\n`);
+if (CHAIN_ID === 31337)
+	writeFileSync(addressesPath, `${JSON.stringify(addresses, null, 2)}\n`);
 console.log(
-	`Upgraded local paymaster ${addresses.sponsorshipPaymaster} to ${addresses.sponsorshipPaymasterImplementation}`,
+	`Upgraded chain ${CHAIN_ID} paymaster ${addresses.sponsorshipPaymaster} to ${addresses.sponsorshipPaymasterImplementation} (${STATE_FILE})`,
 );

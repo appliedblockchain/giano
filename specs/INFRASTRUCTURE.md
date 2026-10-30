@@ -286,7 +286,7 @@ subgraph VPCX["VPC giano-dev · 10.40.0.0/16 · eu-west-2 · two AZs"]
   S3EP["S3 gateway endpoint (free)<br/>ECR layers come from S3 — keeps them off the NAT"]
 end
 
-CHAINSTACK["Base Sepolia — chain 84532<br/>Ethereum Sepolia — chain 11155111<br/>RPC via QuickNode, one endpoint per chain, keys in ASM<br/>EntryPoint v0.7 · GianoSmartWalletFactory · GianoPaymaster proxy — same addresses on both"]
+CHAINSTACK["Base Sepolia — chain 84532<br/>Ethereum Sepolia — chain 11155111<br/>RPC via QuickNode, one endpoint per chain, keys in ASM<br/>EntryPoint v0.9 · GianoSmartWalletFactory · GianoPaymaster proxy — same addresses on both"]
 PLATFORM["ECR, 6 repos tagged by commit SHA · Secrets Manager giano-dev-* (KMS CMK)<br/>EventBridge Scheduler, desiredCount 0 or 1"]
 DDOG["Datadog · datadoghq.com<br/>every task runs 3 containers: app + datadog-agent + log_router<br/>metrics and traces from the Agent · logs via FireLens straight to the intake<br/>CloudWatch keeps only the log routers' own stdout"]
 
@@ -2878,7 +2878,7 @@ deployer and fixed labels, and are the **same addresses** on both chains:
 
 | Contract | Address | On 84532? | On 11155111? |
 |---|---|---|---|
-| EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` | yes (canonical, everywhere) | yes |
+| EntryPoint v0.9 | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` | yes (canonical, everywhere) | yes |
 | `GianoSmartWalletFactory` | `CANONICAL_FACTORY` | **no** — to be deployed (§13.1) | **no** — to be deployed |
 | `GianoSmartWallet` implementation | `CANONICAL_IMPLEMENTATION` | **no** — same | **no** — same |
 | `GianoPaymaster` proxy | `CANONICAL_SPONSORSHIP_PAYMASTER` | **no** | **no** |
@@ -3015,7 +3015,7 @@ others' as-is. `entryPoint`, `factory` and `sponsorshipPaymaster` are the same a
   {
     "chainId": 84532, "name": "Base Sepolia",
     "rpcUrl": "<base sepolia quicknode endpoint>",
-    "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
     "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
     "walletApi": {
       "factory": "<CANONICAL_FACTORY>",
@@ -3025,7 +3025,7 @@ others' as-is. `entryPoint`, `factory` and `sponsorshipPaymaster` are the same a
   {
     "chainId": 11155111, "name": "Ethereum Sepolia",
     "rpcUrl": "<eth sepolia quicknode endpoint>",
-    "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
     "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
     "walletApi": {
       "factory": "<CANONICAL_FACTORY>",
