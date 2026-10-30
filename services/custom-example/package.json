@@ -15,7 +15,7 @@
 		"preview": "vite preview --port 4410"
 	},
 	"dependencies": {
-		"@appliedblockchain/giano-connector": "4.0.0",
+		"@appliedblockchain/giano-connector": "5.0.0",
 		"@chakra-ui/react": "3.36.1",
 		"@emotion/react": "11.14.0",
 		"@rainbow-me/rainbowkit": "2.2.5",
