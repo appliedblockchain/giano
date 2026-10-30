@@ -1,4 +1,8 @@
 import {
+	type PasskeyDevicePreference,
+	withPasskeyDevicePreference,
+} from "../passkey-device-preference";
+import {
 	type CredentialInfoUse,
 	type CredentialInfoUserPick,
 	DEFAULT_CREDENTIAL_MEDIATION_REQUIREMENT,
@@ -20,6 +24,7 @@ const getAllowCredentials = (
 
 export const getCredential = async (
 	options: CredentialInfoUse | CredentialInfoUserPick,
+	preference?: PasskeyDevicePreference,
 ): Promise<PublicKeyCredential | null> => {
 	const requestOptions: CredentialRequestOptions = {
 		mediation: options.mediation ?? DEFAULT_CREDENTIAL_MEDIATION_REQUIREMENT,
@@ -32,6 +37,8 @@ export const getCredential = async (
 	};
 
 	return <PublicKeyCredential | null>(
-		await navigator.credentials.get(requestOptions)
+		await navigator.credentials.get(
+			withPasskeyDevicePreference(requestOptions, preference),
+		)
 	);
 };

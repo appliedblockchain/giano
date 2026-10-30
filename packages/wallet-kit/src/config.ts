@@ -1,4 +1,8 @@
 import { gianoAddresses } from "@appliedblockchain/giano-contracts";
+import {
+	type PasskeyDevicePreference,
+	resolvePasskeyDevicePreference,
+} from "@appliedblockchain/giano-wallet-core";
 
 /** One chain this wallet origin serves — everything needed to serve it (MC-40). */
 export type WalletChainConfig = {
@@ -36,6 +40,7 @@ export type WalletChainConfig = {
 };
 
 export type WalletConfig = {
+	passkeyDevicePreference?: PasskeyDevicePreference;
 	/** The closed list of chains this wallet origin serves (MC-39). Never empty. */
 	chains: WalletChainConfig[];
 	/** Base URL of the wallet-api; '/api' when proxied same-origin. */
@@ -61,6 +66,7 @@ export type RawChainEntry = {
 };
 
 export type RawWalletConfig = RawChainEntry & {
+	passkeyDevicePreference?: PasskeyDevicePreference;
 	chains?: RawChainEntry[];
 	walletApiUrl?: string;
 	allowedDappOrigins?: string[];
@@ -124,6 +130,9 @@ export function resolveWalletConfig({
 
 	return {
 		chains,
+		passkeyDevicePreference: resolvePasskeyDevicePreference(
+			raw.passkeyDevicePreference,
+		),
 		walletApiUrl,
 		allowedDappOrigins: raw.allowedDappOrigins ?? [],
 		rpId: raw.rpId || defaultRpId || globalThis.location?.hostname || "",

@@ -53,6 +53,17 @@ function Popup({ config }: { config: WalletConfig }) {
 				{config.branding.name} <small>· secure wallet</small>
 			</div>
 
+			{config.passkeyDevicePreference === "prefer-mobile" &&
+			(pending?.kind === "connect" ||
+				pending?.kind === "transaction" ||
+				pending?.kind === "sign" ||
+				processing) ? (
+				<p data-testid="passkey-device-guidance">
+					Your browser may offer a phone or QR code. You can also choose another
+					available passkey.
+				</p>
+			) : null}
+
 			{pending?.kind === "connect" ? (
 				<Connect request={withProcessing(pending)} />
 			) : null}
