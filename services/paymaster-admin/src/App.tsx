@@ -20,9 +20,11 @@ import {
 	LuHistory,
 	LuHourglass,
 	LuLayoutDashboard,
+	LuMoon,
 	LuRefreshCw,
 	LuSettings,
 	LuShieldCheck,
+	LuSun,
 	LuUserCog,
 	LuUsers,
 	LuWallet,
@@ -46,6 +48,7 @@ import {
 	isUserRejection,
 	networkDetails,
 } from "./lib/chain";
+import { useColorMode } from "./lib/color-mode";
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import type { ProposalRequest } from "./lib/proposals";
 import { HealthPanel } from "./panels/HealthPanel";
@@ -299,6 +302,7 @@ function Console({
 							>
 								<LuRefreshCw />
 							</Button>
+							<ColorModeButton />
 							{wallet ? (
 								<WalletCard
 									wallet={wallet}
@@ -522,6 +526,22 @@ function Console({
 				/>
 			</Container>
 		</Box>
+	);
+}
+
+function ColorModeButton() {
+	const { colorMode, toggleColorMode } = useColorMode();
+	// A toggle, named for what it turns on: not "Switch to …", which in this header means a network.
+	return (
+		<Button
+			size="sm"
+			variant="ghost"
+			onClick={toggleColorMode}
+			aria-label="Dark mode"
+			aria-pressed={colorMode === "dark"}
+		>
+			{colorMode === "dark" ? <LuSun /> : <LuMoon />}
+		</Button>
 	);
 }
 
