@@ -101,6 +101,11 @@ minimumReleaseAgeExclude:
   # Deviation from ABIP-6 (docs/abip-compliance.md): our own releases, published by this
   # repository's release.yml, so the example can install a Giano release as soon as it is out.
   - '@appliedblockchain/*'
+
+# Exact versions (ABIP-7): `pnpm add` writes `1.2.3`, not `^1.2.3`.
+# scripts/check-pinned-versions.mjs enforces this in CI.
+saveExact: true
+
 allowBuilds:
   bufferutil: false
   esbuild: false

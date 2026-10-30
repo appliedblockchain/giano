@@ -84,6 +84,11 @@ overrides:
 # dependency carrying a critical security fix, with its advisory and removal date in a comment;
 # scripts/check-release-age.mjs enforces all of this in CI.
 minimumReleaseAge: 10080
+
+# Exact versions (ABIP-7): `pnpm add` writes `1.2.3`, not `^1.2.3`.
+# scripts/check-pinned-versions.mjs enforces this in CI.
+saveExact: true
+
 # Native deps left unbuilt (matches pre-pnpm-11 behavior — none were built before).
 # Flip any to `true` and reinstall if its build scripts are needed.
 allowBuilds:
