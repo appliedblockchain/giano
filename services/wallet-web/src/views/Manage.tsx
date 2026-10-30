@@ -2,7 +2,10 @@ import type {
 	ManagementController,
 	OwnerRow,
 } from "@appliedblockchain/giano-wallet-kit";
-import { useManagement } from "@appliedblockchain/giano-wallet-kit/react";
+import {
+	useManagement,
+	useWalletKit,
+} from "@appliedblockchain/giano-wallet-kit/react";
 import { useEffect, useState } from "react";
 import { AddFlow, type AddVariant } from "./manage/AddFlow";
 import { AddressFlow } from "./manage/AddressFlow";
@@ -23,6 +26,7 @@ import { RefusalNotice } from "./manage/shared";
  */
 export function Manage({ onClose }: { onClose?: () => void }) {
 	const { state, flow, actions } = useManagement();
+	const { config } = useWalletKit();
 	// Which entry point started the add flow is a copy decision, so it lives in the view.
 	const [addVariant, setAddVariant] = useState<AddVariant>("this-device");
 
@@ -60,6 +64,12 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 	if (state.view === "signed-out") {
 		return (
 			<>
+				{config.passkeyDevicePreference === "prefer-mobile" ? (
+					<p data-testid="passkey-device-guidance">
+						Your browser may offer a phone or QR code. You can also choose
+						another available passkey.
+					</p>
+				) : null}
 				<div className="card">
 					<h2>Manage your wallet</h2>
 					<p>

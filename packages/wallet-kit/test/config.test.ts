@@ -167,3 +167,30 @@ describe("resolveWalletConfig (WK-06)", () => {
 		).toThrow(/no testPaymasterAddress/);
 	});
 });
+
+describe("passkey device preference", () => {
+	it("defaults existing configs and supports both chain shapes", () => {
+		for (const raw of [{ ...chainEntry }, { chains: [chainEntry] }]) {
+			expect(resolveWalletConfig({ raw }).passkeyDevicePreference).toBe(
+				"browser-default",
+			);
+			for (const preference of ["browser-default", "prefer-mobile"] as const) {
+				expect(
+					resolveWalletConfig({
+						raw: { ...raw, passkeyDevicePreference: preference },
+					}).passkeyDevicePreference,
+				).toBe(preference);
+			}
+		}
+	});
+	it("rejects invalid preference before a ceremony", () => {
+		expect(() =>
+			resolveWalletConfig({
+				raw: {
+					...chainEntry,
+					passkeyDevicePreference: "phone-only",
+				} as unknown as RawWalletConfig,
+			}),
+		).toThrow(/passkeyDevicePreference/);
+	});
+});

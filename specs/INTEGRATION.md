@@ -473,3 +473,17 @@ docker compose --profile portless -f deploy/docker-compose.e2e.yml up --build
 # separately with `pnpm --filter @appliedblockchain/giano-wallet-web dev`):
 docker compose -f deploy/docker-compose.dev.yml up --build
 ```
+
+### Passkey device suggestions
+
+A wallet operator can set `GIANO_PASSKEY_DEVICE_PREFERENCE=prefer-mobile` on the
+stock wallet container, or `passkeyDevicePreference: "prefer-mobile"` in a custom
+wallet-kit configuration. This suggests WebAuthn's hybrid phone flow for
+registration, sign-in, and approvals. The browser/OS may ignore it. It neither
+requires a phone nor changes which credentials can authorize the wallet.
+
+The setting belongs to the wallet origin. Applications using the connector do
+not pass a device preference and receive no new authenticator metadata. No
+connector upgrade or pin change is needed. Set `browser-default` or omit the
+setting to restore normal browser choice. Current-device and claim-device
+passkey enrollment remains unhinted; owner approval still uses the preference.

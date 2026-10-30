@@ -3,6 +3,7 @@ export * from "./giano-entry-point";
 export * from "./giano-error";
 export * from "./logger";
 export * from "./management";
+export * from "./passkey-device-preference";
 export * from "./paymaster";
 export * from "./provider";
 export * from "./provider-injection";

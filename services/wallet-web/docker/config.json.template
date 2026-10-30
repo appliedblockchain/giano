@@ -9,6 +9,7 @@
   "testPaymasterAddress": "${GIANO_PAYMASTER_ADDRESS}",
   "nativeCurrency": { "symbol": "${GIANO_NATIVE_CURRENCY_SYMBOL}", "decimals": ${GIANO_NATIVE_CURRENCY_DECIMALS} },
   "allowedDappOrigins": ${GIANO_ALLOWED_DAPP_ORIGINS},
+  "passkeyDevicePreference": "${GIANO_PASSKEY_DEVICE_PREFERENCE}",
   "rpId": "${GIANO_RP_ID}",
   "branding": {
     "name": "${GIANO_BRAND_NAME}"

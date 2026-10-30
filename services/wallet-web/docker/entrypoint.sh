@@ -24,6 +24,12 @@ export GIANO_WALLET_API_URL="${GIANO_WALLET_API_URL:-/api}"
 export GIANO_ALLOWED_DAPP_ORIGINS="${GIANO_ALLOWED_DAPP_ORIGINS:-[]}"
 # WebAuthn RP ID = the wallet hostname; empty = taken from the hostname the browser used
 export GIANO_RP_ID="${GIANO_RP_ID:-}"
+# A UI suggestion only: preserve browser choice and credential eligibility.
+export GIANO_PASSKEY_DEVICE_PREFERENCE="${GIANO_PASSKEY_DEVICE_PREFERENCE:-browser-default}"
+case "$GIANO_PASSKEY_DEVICE_PREFERENCE" in
+  browser-default|prefer-mobile) ;;
+  *) echo "GIANO_PASSKEY_DEVICE_PREFERENCE must be browser-default or prefer-mobile" >&2; exit 1 ;;
+esac
 export GIANO_BRAND_NAME="${GIANO_BRAND_NAME:-Giano Wallet}"
 # extra CSP connect-src entries, space-separated; only needed when a node/bundler is dialled directly
 export GIANO_CSP_CONNECT_SRC="${GIANO_CSP_CONNECT_SRC:-${GIANO_RPC_URL:-} ${GIANO_BUNDLER_URL:-}}"
@@ -34,7 +40,7 @@ if [ -n "${GIANO_CHAINS:-}" ]; then
     exit 1
   fi
   export GIANO_CHAINS
-  envsubst '${GIANO_CHAINS} ${GIANO_WALLET_API_URL} ${GIANO_ALLOWED_DAPP_ORIGINS} ${GIANO_RP_ID} ${GIANO_BRAND_NAME}' \
+  envsubst '${GIANO_CHAINS} ${GIANO_WALLET_API_URL} ${GIANO_ALLOWED_DAPP_ORIGINS} ${GIANO_RP_ID} ${GIANO_BRAND_NAME} ${GIANO_PASSKEY_DEVICE_PREFERENCE}' \
     < /etc/giano/config.multichain.json.template > /usr/share/nginx/html/config.json
 else
   : "${GIANO_CHAIN_ID:?GIANO_CHAIN_ID is required (or set GIANO_CHAINS)}"
