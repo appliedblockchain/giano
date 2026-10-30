@@ -25,7 +25,7 @@ wallet, API, bundler and deployment configuration. It does not migrate a live de
   are conservative; measure fees with the target chain's real passkey and sponsorship traffic.
 - The doctor and bundler compare the canonical runtime, including chain-dependent EIP-712 caches.
   A mainnet runtime hash alone is insufficient: the constructor embeds a chain ID and domain.
-- All workspace viem consumers and the standalone example use 2.57.11, which understands v0.9.
+- All workspace viem consumers and the standalone example use 2.57.10, which understands v0.9.
   The wallet-core peer floor is raised accordingly. Contracts and wallet-core carry a major changeset.
   The standalone example consumes published Giano packages; update those package versions after
   the coordinated major release is published before using it against v0.9.
