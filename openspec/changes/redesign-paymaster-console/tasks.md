@@ -9,12 +9,12 @@
 
 ## 2. Theme
 
-- [ ] 2.1 Replace `theme.ts`:
+- [x] 2.1 Replace `theme.ts`:
   - the system font stack, plus the `brand` and `accent` palettes with light and dark semantic tokens, as in custom-example;
   - a white `canvas`;
   - the `timelock` semantic palette (D5).
-- [ ] 2.2 Add colour mode: the `.dark` class on `<html>`, a hook, and an inline pre-paint script in `index.html` (D4). Add a toggle in the header.
-- [ ] 2.3 Check every existing panel in light and dark mode on the e2e stack, and fix any hard-coded colour.
+- [x] 2.2 Add colour mode: the `.dark` class on `<html>`, a hook, and a pre-paint script in `public/` (D4). Add a toggle in the header.
+- [x] 2.3 Check every existing panel in light and dark mode on the e2e stack, and fix any hard-coded colour.
 
 ## 3. Shell and navigation
 
