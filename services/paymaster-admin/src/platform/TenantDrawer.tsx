@@ -35,7 +35,7 @@ import {
 	RevokeKeyDialog,
 	SuspendDialog,
 } from "./LifecycleDialogs";
-import type { PlatformAreaProps } from "./PlatformArea";
+import type { PlatformAreaProps } from "./shared";
 import {
 	actorLabel,
 	LifecycleBadge,

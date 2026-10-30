@@ -1,4 +1,5 @@
 import type {
+	GianoPaymasterClient,
 	PaymasterOverview,
 	PaymasterRoleName,
 	TenantView,
@@ -13,8 +14,23 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import type { ReactNode } from "react";
+import type { Deployment } from "../config";
+import type { ConnectedWallet } from "../lib/chain";
 import { eth } from "../lib/format";
 import type { ApiError, TenantStatus } from "../lib/platform-api";
+
+/** What the platform views (registry, tenant drawer, sign-in) are handed by the console shell. */
+export type PlatformAreaProps = {
+	deployment: Deployment;
+	wallet: ConnectedWallet | undefined;
+	connect: () => Promise<ConnectedWallet | undefined>;
+	connecting: boolean;
+	/** The chain side: the paymaster roster the registry is joined to, and the roles that gate on-chain steps. */
+	client: GianoPaymasterClient | undefined;
+	overview: PaymasterOverview | undefined;
+	myRoles: readonly PaymasterRoleName[];
+	refreshChain: () => Promise<void>;
+};
 
 /** Where a registry tenant stands on the selected chain's paymaster, matched on tenant id. */
 export type OnChainState =
