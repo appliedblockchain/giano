@@ -125,6 +125,16 @@ function toDeployment(
 		throw new Error(
 			`deployment ${index + 1} (${raw.name ?? fallbackName}) has a timelockAddress that is not an address: ${raw.timelockAddress}`,
 		);
+	// Checked rather than passed through: `Number("15s")` is NaN, and `setInterval` reads NaN as 0
+	// — a console that polls the RPC as fast as the browser will let it.
+	const refreshSeconds =
+		raw.refreshSeconds === undefined || raw.refreshSeconds === ""
+			? DEFAULT_REFRESH_SECONDS
+			: Number(raw.refreshSeconds);
+	if (!Number.isFinite(refreshSeconds) || refreshSeconds < 0)
+		throw new Error(
+			`deployment ${index + 1} (${raw.name ?? fallbackName}) has a refreshSeconds that is not a number of seconds: ${raw.refreshSeconds}`,
+		);
 
 	return {
 		name: raw.name || fallbackName || `chain ${chainId}`,
@@ -137,10 +147,7 @@ function toDeployment(
 		timelockAddress: raw.timelockAddress
 			? (raw.timelockAddress as `0x${string}`)
 			: undefined,
-		refreshSeconds:
-			raw.refreshSeconds === undefined || raw.refreshSeconds === ""
-				? DEFAULT_REFRESH_SECONDS
-				: Number(raw.refreshSeconds),
+		refreshSeconds,
 	};
 }
 

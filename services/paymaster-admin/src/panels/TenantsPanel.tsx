@@ -272,6 +272,23 @@ export function TenantsPanel({
 	);
 }
 
+/**
+ * An amount typed in ETH, or why it is not one. Stated next to the field: an amount that does not
+ * parse used to make Fund do nothing at all, which reads as a console that has stopped working.
+ */
+function parseAmount(
+	amount: string,
+): { wei: bigint; error?: undefined } | { wei?: undefined; error: string } {
+	let wei: bigint;
+	try {
+		wei = parseEther(amount.trim());
+	} catch {
+		return { error: "Enter an amount in ETH, such as 0.1" };
+	}
+	if (wei <= 0n) return { error: "Enter an amount greater than zero" };
+	return { wei };
+}
+
 function FundDialog({
 	tenant,
 	client,
@@ -286,16 +303,12 @@ function FundDialog({
 	const { run, busy } = useWrite(refresh);
 	const [amount, setAmount] = useState("0.1");
 
+	const parsed = parseAmount(amount);
+
 	const submit = async () => {
-		let wei: bigint;
-		try {
-			wei = parseEther(amount);
-		} catch {
-			return;
-		}
-		if (!tenant) return;
+		if (!tenant || parsed.error !== undefined) return;
 		const done = await run(`Fund ${tenant.uuid}`, () =>
-			client.depositFor(tenant.id, wei),
+			client.depositFor(tenant.id, parsed.wei),
 		);
 		if (done) onClose();
 	};
@@ -314,7 +327,7 @@ function FundDialog({
 						</Dialog.Header>
 						<Dialog.Body>
 							<Stack gap="4">
-								<Field.Root>
+								<Field.Root invalid={parsed.error !== undefined}>
 									<Field.Label>Amount (ETH)</Field.Label>
 									<Input
 										value={amount}
@@ -322,6 +335,7 @@ function FundDialog({
 										inputMode="decimal"
 										autoFocus
 									/>
+									<Field.ErrorText>{parsed.error}</Field.ErrorText>
 								</Field.Root>
 								{tenant && tenant.deficit > 0n && (
 									<Text fontSize="sm" color="orange.fg">
@@ -345,6 +359,7 @@ function FundDialog({
 							<Button
 								colorPalette="brand"
 								onClick={() => void submit()}
+								disabled={parsed.error !== undefined}
 								loading={busy}
 								loadingText="Funding"
 							>
