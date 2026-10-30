@@ -1,5 +1,26 @@
 # @appliedblockchain/giano-contracts
 
+## 5.0.0
+
+### Major Changes
+
+- 95a40c2: Move Giano from EntryPoint v0.7 to the final v0.9 release, including EIP-712 operation hashes, Cancun contract artifacts, bundler simulations, canonical deployment checks and configuration. Existing accounts and paymaster deposits require an explicit migration; old signed operations are incompatible. Require viem 2.57.10 or later for v0.9 types and hashing.
+- b448e54: Put critical paymaster admin operations behind a timelock (G9). `setTenantWithdrawAddress` moves from `TENANT_ADMIN_ROLE` to a new `WITHDRAW_ADDRESS_ADMIN_ROLE`, so a holder of the tenant-admin role can no longer redirect withdrawals. New `GianoTimelock` contract (in release v2): an OpenZeppelin `TimelockController` with its own delay per function, which holds `ROLE_ADMIN`, `UPGRADER_ROLE`, `FEE_ADMIN_ROLE` and `WITHDRAW_ADDRESS_ADMIN_ROLE`. The package exports the timelock policy and proposal encoders (`TIMELOCKED_OPERATIONS`, `encodeTimelockProposal`, `safeTransactionBatch`, …) and `gianoTimelockAbi`. The deploy CLI gains `timelock`, `handoff` and `upgrade --timelock`, and `giano-doctor chain --timelock` checks the topology and delays.
+
+  Timelock support (G9). `GianoTimelockClient` (or `paymaster.timelock(address)`) reads a GianoTimelock's per-function delays, lists its operations with their state and ETA from the timelock's logs, builds a proposal for each timelocked paymaster action (default fee, tenant fee, withdrawal address, role grant and revoke, upgrade) with the delay the timelock enforces plus the Safe Transaction Builder batch, and executes a ready operation where executors are open. `WITHDRAW_ADDRESS_ADMIN_ROLE` joins the role list and `setTenantWithdrawAddress` is documented under it rather than `TENANT_ADMIN_ROLE`; every role description now says whether it is `timelocked`, and a `MissingRoleError` for a timelocked role says to propose the call. The `giano-paymaster` CLI gains `--timelock` (timelocked commands print the proposal instead of sending, `--safe-json` writes the batch), `upgrade`, and `timelock status | pending | execute`.
+
+- eb8a25f: Require WebAuthn user verification (G4). The wallet contract in release v2 now rejects any passkey signature whose authenticator data lacks the UV flag, so presence alone (for example a security key used without its PIN) no longer authorises an operation or an ERC-1271 signature. `BaseCredentialInfo.userVerification` now accepts only `'required'`; `'preferred'` and `'discouraged'` are refused up front. wallet-api enforces the same rule at registration, sign-in and owner addition.
+
+### Patch Changes
+
+- 00f0c39: Runtime dependencies are now pinned to exact versions (ABIP-7): `zod@3.24.4` in contracts,
+  `@noble/hashes@1.8.0` in tx-describe, `ox@0.7.1` and `uuid@11.1.1` in wallet-core, and `ulid@3.0.2`
+  in wallet-transport. These are the versions every release already shipped and tested with. A project
+  that wants a different version can choose it with its own package manager's overrides. Peer
+  dependencies (`viem`, `react`, `wagmi`, `@rainbow-me/rainbowkit`) keep their semver ranges, so
+  integrators still choose those versions themselves.
+- 544ac79: Add generic guided deployment and operator workflows driven by persisted chain profiles, initially including Base Sepolia and Ethereum Sepolia with read-only prerequisite checks, release-code and proxy configuration verification, explicit transaction confirmation, and per-contract deployment checkpoints.
+
 ## 4.0.0
 
 ### Major Changes

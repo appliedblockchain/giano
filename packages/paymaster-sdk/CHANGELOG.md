@@ -1,5 +1,22 @@
 # @appliedblockchain/giano-paymaster-sdk
 
+## 5.0.0
+
+### Minor Changes
+
+- b448e54: Put critical paymaster admin operations behind a timelock (G9). `setTenantWithdrawAddress` moves from `TENANT_ADMIN_ROLE` to a new `WITHDRAW_ADDRESS_ADMIN_ROLE`, so a holder of the tenant-admin role can no longer redirect withdrawals. New `GianoTimelock` contract (in release v2): an OpenZeppelin `TimelockController` with its own delay per function, which holds `ROLE_ADMIN`, `UPGRADER_ROLE`, `FEE_ADMIN_ROLE` and `WITHDRAW_ADDRESS_ADMIN_ROLE`. The package exports the timelock policy and proposal encoders (`TIMELOCKED_OPERATIONS`, `encodeTimelockProposal`, `safeTransactionBatch`, …) and `gianoTimelockAbi`. The deploy CLI gains `timelock`, `handoff` and `upgrade --timelock`, and `giano-doctor chain --timelock` checks the topology and delays.
+
+  Timelock support (G9). `GianoTimelockClient` (or `paymaster.timelock(address)`) reads a GianoTimelock's per-function delays, lists its operations with their state and ETA from the timelock's logs, builds a proposal for each timelocked paymaster action (default fee, tenant fee, withdrawal address, role grant and revoke, upgrade) with the delay the timelock enforces plus the Safe Transaction Builder batch, and executes a ready operation where executors are open. `WITHDRAW_ADDRESS_ADMIN_ROLE` joins the role list and `setTenantWithdrawAddress` is documented under it rather than `TENANT_ADMIN_ROLE`; every role description now says whether it is `timelocked`, and a `MissingRoleError` for a timelocked role says to propose the call. The `giano-paymaster` CLI gains `--timelock` (timelocked commands print the proposal instead of sending, `--safe-json` writes the batch), `upgrade`, and `timelock status | pending | execute`.
+
+### Patch Changes
+
+- Updated dependencies [95a40c2]
+- Updated dependencies [00f0c39]
+- Updated dependencies [544ac79]
+- Updated dependencies [b448e54]
+- Updated dependencies [eb8a25f]
+  - @appliedblockchain/giano-contracts@5.0.0
+
 ## 4.0.0
 
 ### Patch Changes
