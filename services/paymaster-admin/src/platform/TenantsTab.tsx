@@ -43,6 +43,8 @@ export function TenantsTab(props: PlatformAreaProps) {
 	const [includeDeleted, setIncludeDeleted] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string>();
+	/** Kept apart from `loadError`: the live list is still worth showing when only this half failed. */
+	const [deletedError, setDeletedError] = useState<string>();
 	const [selected, setSelected] = useState<string>();
 	const [creating, setCreating] = useState(false);
 
@@ -57,7 +59,10 @@ export function TenantsTab(props: PlatformAreaProps) {
 			if (!current.ok) return setLoadError(current.error.message);
 			setLoadError(undefined);
 			setLive(current.value.tenants);
-			if (tombstones.ok) setDeleted(tombstones.value.tenants);
+			if (tombstones.ok) {
+				setDeleted(tombstones.value.tenants);
+				setDeletedError(undefined);
+			} else setDeletedError(tombstones.error.message);
 		} catch (cause) {
 			setLoadError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
@@ -147,6 +152,18 @@ export function TenantsTab(props: PlatformAreaProps) {
 						</Alert.Root>
 					)}
 
+					{!loadError && deletedError && (
+						<Alert.Root status="warning" size="sm">
+							<Alert.Indicator />
+							<Alert.Content>
+								<Alert.Title>Could not read the deleted tenants</Alert.Title>
+								<Alert.Description>
+									{deletedError} The list below has the live tenants only.
+								</Alert.Description>
+							</Alert.Content>
+						</Alert.Root>
+					)}
+
 					{!live && loading ? (
 						<HStack py="8" justify="center">
 							<Spinner />
@@ -199,7 +216,7 @@ export function TenantsTab(props: PlatformAreaProps) {
 									))}
 									{rows.length === 0 && (
 										<Table.Row>
-											<Table.Cell colSpan={7}>
+											<Table.Cell colSpan={6}>
 												<Text color="fg.muted">No tenants yet.</Text>
 											</Table.Cell>
 										</Table.Row>
