@@ -18,22 +18,22 @@
 
 ## 3. Shell and navigation
 
-- [ ] 3.1 Add `lib/router.tsx`: `useRoute`, `navigate`, `<Link>`, the route table, and an unknown-route view (D1).
-- [ ] 3.2 Split `App.tsx` into `shell/Header.tsx` and `shell/TabBar.tsx`, a route outlet, and the existing connect and deployment logic.
+- [x] 3.1 Add `lib/router.tsx`: `useRoute`, `navigate`, `<Link>`, the route table, and an unknown-route view (D1).
+- [x] 3.2 Split `App.tsx` into `shell/Header.tsx` and `shell/TabBar.tsx`, a route outlet, and the existing connect and deployment logic.
   - The header: logo, title, deployment select, paymaster address, session pill, wallet with disconnect, colour-mode toggle.
   - The status line: health level, invariant, queued count, last refresh.
-- [ ] 3.3 One tab bar: Overview, Tenants, Paymaster, Roles, Timelock, Activity, Health, Admins. Admins only with `platformApi`. Remove the area switch (D2). Mount the existing panels under their new routes unchanged.
-- [ ] 3.4 The sign-in page at `/sign-in` with its steps. After sign-in, return to the route that asked for it.
-- [ ] 3.5 The session warning two minutes before expiry, with Stay signed in (a fresh signature) and Sign out (K8).
-- [ ] 3.6 Wallet disconnect. Take the native currency symbol from the chain instead of a hard-coded "ETH" (C10).
-- [ ] 3.7 Pause polling while the tab is hidden. Refresh Activity and the registry with everything else (C7).
-- [ ] 3.8 e2e: move the console specs to the new tab names and routes; add a deep-link case and an unknown-route case.
+- [x] 3.3 One tab bar: Overview, Tenants, Paymaster, Roles, Timelock, Activity, Health, Admins. Admins only with `platformApi`. Remove the area switch (D2). Mount the existing panels under their new routes unchanged.
+- [x] 3.4 The sign-in page with its steps, shown in place of any path until there is a session. After sign-in, that path renders.
+- [x] 3.5 The session warning two minutes before expiry, with Stay signed in (a fresh signature) and Sign out (K8).
+- [x] 3.6 Wallet disconnect (C10). It also signs out, because the session was signed by that wallet.
+- [x] 3.7 Pause polling while the tab is hidden, and refresh the registry with everything else (C7).
+- [x] 3.8 e2e: move the console specs to the new tab names and routes; add a deep-link case and an unknown-route case.
 
 ## 4. Shared primitives
 
 - [ ] 4.1 `useChainAction` and `<ActionButton>`: send, propose or blocked, with the missing role named (D6, C2, C3).
 - [ ] 4.2 `ConfirmDialog` for destructive writes (C4).
-- [ ] 4.3 `AddressInput` and `AmountInput` with field-level errors and a typed value (D7, C5).
+- [ ] 4.3 `AddressInput` and `AmountInput` with field-level errors and a typed value (D7, C5). Take the native currency symbol from the chain instead of a hard-coded "ETH" (C10).
 - [ ] 4.4 `InlineError`. Route every failure through it or a toast, never neither (C6).
 - [ ] 4.5 `StatusText`, `TimelockedTag` and `QueuedMarker`; exact values available without a `title` tooltip (C11).
 - [ ] 4.6 `usePendingOperations`: the timelock's pending operations, read once and shared by the markers and the Overview (N7).
@@ -96,7 +96,8 @@
   - tx links and timestamps;
   - tenant filter and totals;
   - an error state;
-  - "Look further back" instead of the 100-row cap (K6).
+  - "Look further back" instead of the 100-row cap;
+  - refreshed with everything else without losing the older pages already loaded (K6, C7).
 - [ ] 10.2 Health: its own icon, a labelled badge, and the subtitle fixed (K7).
 - [ ] 10.3 Admins: field-level errors; the shared confirm (K12).
 - [ ] 10.4 README: the tab list, the write rules, and the proposal-builder claim corrected. `specs/PLATFORM-ADMIN-SPECS.md` §11.2 (C12).

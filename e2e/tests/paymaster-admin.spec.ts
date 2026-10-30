@@ -9,6 +9,8 @@ import {
 	openConsole,
 	signIn,
 	signInToPaymaster,
+	signOut,
+	tab,
 	walletCalls,
 	walletChain,
 } from "./console-wallet";
@@ -64,8 +66,7 @@ test("the wallet card names the account, the network and what that account may d
 	).toBeVisible();
 	await expect(card.getByText(/on this paymaster/)).toBeVisible();
 	// The header's other address is the paymaster's, and is labelled as such rather than left bare.
-	// Scoped to the label itself: where the Platform area is configured, the header's area switch
-	// also has a "Paymaster" button.
+	// Scoped to the label itself: the tab bar also has a "Paymaster" link.
 	await expect(
 		page.getByRole("paragraph").filter({ hasText: /^Paymaster$/ }),
 	).toBeVisible();
@@ -153,7 +154,7 @@ test("a write is signed by the connected wallet and lands on the chain", async (
 	// Deliberately not waiting on the toast: it outlives the write that raised it, so a second
 	// write would match the first one's confirmation and pass without having done anything.
 	const setFee = async (value: string) => {
-		await page.getByRole("tab", { name: /Settings/ }).click();
+		await tab(page, /Paymaster/).click();
 		await page.getByLabel("New default fee (ETH)").fill(value);
 		await page.getByRole("button", { name: /^Set$/ }).first().click();
 	};
@@ -198,7 +199,7 @@ test.describe("access", () => {
 		await installWallet(page, { known: [CHAINS.a.chainId] });
 		await openConsole(page);
 
-		await expect(page.getByRole("tab", { name: /Overview/ })).toHaveCount(0);
+		await expect(tab(page, /Overview/)).toHaveCount(0);
 		await expect(page.getByText("Reading the paymaster…")).toHaveCount(0);
 		expect(reads).toEqual([]);
 	});
@@ -253,7 +254,7 @@ test.describe("access", () => {
 		}
 	});
 
-	test("one session serves both areas, and signing out ends both", async ({
+	test("one session serves every tab, and signing out ends it", async ({
 		page,
 	}) => {
 		await installWallet(page, { known: [CHAINS.a.chainId] });
@@ -261,23 +262,74 @@ test.describe("access", () => {
 		await chooseDeployment(page, CHAINS.a.chainId);
 		await signInToPaymaster(page);
 
-		await page.getByRole("button", { name: "Platform", exact: true }).click();
-		await expect(page.getByRole("tab", { name: /Tenants/ })).toBeVisible();
-		await page.getByRole("button", { name: "Paymaster", exact: true }).click();
-		await expect(page.getByRole("tab", { name: /Overview/ })).toBeVisible();
+		await tab(page, /Tenants/).click();
+		await expect(page.getByTestId("tenant-row-stock")).toBeVisible();
+		await tab(page, /Overview/).click();
+		await expect(tab(page, /Overview/)).toHaveAttribute("aria-current", "page");
 		await expect(
 			page.getByRole("button", { name: /Sign in with wallet/ }),
 		).toHaveCount(0);
 
-		await page.getByRole("button", { name: /Sign out/ }).click();
+		await signOut(page);
 		await expect(
 			page.getByRole("button", { name: /Sign in with wallet/ }),
 		).toBeVisible();
-		await expect(page.getByRole("tab", { name: /Overview/ })).toHaveCount(0);
-		// signing in again from the Platform area lands there
-		await page.getByRole("button", { name: "Platform", exact: true }).click();
+		await expect(tab(page, /Overview/)).toHaveCount(0);
+	});
+
+	test("disconnecting the wallet also ends the session it signed", async ({
+		page,
+	}) => {
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signInToPaymaster(page);
+
+		await page.getByRole("button", { name: /^Connected/ }).click();
+		await page.getByRole("button", { name: "Disconnect and sign out" }).click();
+		await expect(
+			page.getByRole("button", { name: /^Connect wallet$/ }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: /Sign in with wallet/ }),
+		).toBeVisible();
+		await expect(tab(page, /Overview/)).toHaveCount(0);
+	});
+
+	test("each tab has its own URL, which survives a reload and a fresh sign-in", async ({
+		page,
+	}) => {
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signInToPaymaster(page);
+
+		await tab(page, /Timelock/).click();
+		await expect(page).toHaveURL(/\/timelock$/);
+		await page.reload();
 		await signIn(page);
-		await expect(page.getByRole("tab", { name: /Tenants/ })).toBeVisible();
+		await expect(tab(page, /Timelock/)).toHaveAttribute("aria-current", "page");
+
+		await page.goBack();
+		await expect(page).toHaveURL(/\/$/);
+		await expect(tab(page, /Overview/)).toHaveAttribute("aria-current", "page");
+	});
+
+	test("a tenant has its own URL, and an unknown path says there is no such page", async ({
+		page,
+	}) => {
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await page.goto(`${ORIGINS.paymasterAdmin}/tenants/byo`);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signIn(page);
+		await expect(page.getByRole("dialog")).toContainText("byo");
+
+		await page.goto(`${ORIGINS.paymasterAdmin}/settings`);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signIn(page);
+		await expect(page.getByText("No such page")).toBeVisible();
+		await page.getByRole("link", { name: "Go to the Overview" }).click();
+		await expect(tab(page, /Overview/)).toHaveAttribute("aria-current", "page");
 	});
 
 	test("the platform relay refuses a caller with no session, and the console proxies no RPC", async ({

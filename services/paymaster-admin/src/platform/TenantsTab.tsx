@@ -14,8 +14,9 @@ import { LuPlus, LuRefreshCw } from "react-icons/lu";
 import { Copyable, SectionCard } from "../components/ui";
 import type { TenantSummary } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
+import { navigate, TAB_PATHS, tenantPath } from "../lib/router";
 import { CreateTenantDialog } from "./CreateTenantDialog";
-import type { PlatformAreaProps } from "./PlatformArea";
+import type { PlatformAreaProps } from "./shared";
 import {
 	LifecycleBadge,
 	OnChainBadge,
@@ -35,7 +36,16 @@ import { TenantDrawer } from "./TenantDrawer";
  * Deleted tenants are always fetched, because a tombstone still explains a roster entry, and shown
  * only when asked for.
  */
-export function TenantsTab(props: PlatformAreaProps) {
+export function TenantsTab({
+	selected,
+	lastUpdated,
+	...props
+}: PlatformAreaProps & {
+	/** The tenant whose drawer is open, from the route (`/tenants/<slug>`); the URL is the state. */
+	selected: string | undefined;
+	/** When the chain was last read: the registry is re-read with it, so the two halves stay in step. */
+	lastUpdated: Date | undefined;
+}) {
 	const { deployment, overview, myRoles } = props;
 	const { run } = usePlatform();
 	const [live, setLive] = useState<TenantSummary[]>();
@@ -45,7 +55,6 @@ export function TenantsTab(props: PlatformAreaProps) {
 	const [loadError, setLoadError] = useState<string>();
 	/** Kept apart from `loadError`: the live list is still worth showing when only this half failed. */
 	const [deletedError, setDeletedError] = useState<string>();
-	const [selected, setSelected] = useState<string>();
 	const [creating, setCreating] = useState(false);
 
 	const load = useCallback(async () => {
@@ -70,9 +79,10 @@ export function TenantsTab(props: PlatformAreaProps) {
 		}
 	}, [run]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: every console refresh re-reads the registry too
 	useEffect(() => {
 		void load();
-	}, [load]);
+	}, [load, lastUpdated]);
 
 	const roster = useMemo(() => rosterByUuid(overview), [overview]);
 	const rows = useMemo(
@@ -190,7 +200,7 @@ export function TenantsTab(props: PlatformAreaProps) {
 										<Table.Row
 											key={tenant.id}
 											cursor="pointer"
-											onClick={() => setSelected(tenant.slug)}
+											onClick={() => navigate(tenantPath(tenant.slug))}
 											data-testid={`tenant-row-${tenant.slug}`}
 										>
 											<Table.Cell>
@@ -248,7 +258,7 @@ export function TenantsTab(props: PlatformAreaProps) {
 				<TenantDrawer
 					{...props}
 					slug={selected}
-					onClose={() => setSelected(undefined)}
+					onClose={() => navigate(TAB_PATHS.tenants)}
 					onChanged={() => void load()}
 					canAdminister={myRoles.includes("TENANT_ADMIN_ROLE")}
 					onChain={(id) => onChainState(roster, id)}
