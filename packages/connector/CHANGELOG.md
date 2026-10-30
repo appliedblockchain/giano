@@ -1,5 +1,12 @@
 # @appliedblockchain/giano-connector
 
+## 5.0.0
+
+### Patch Changes
+
+- Updated dependencies [00f0c39]
+  - @appliedblockchain/giano-wallet-transport@5.0.0
+
 ## 4.0.0
 
 ### Patch Changes
