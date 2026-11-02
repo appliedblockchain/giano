@@ -253,7 +253,8 @@ function PricingCard({
 	client: GianoPaymasterClient;
 	defaultFeeWei: bigint;
 }) {
-	const fee = useAmountInput();
+	// 0 is a fee: free sponsorship.
+	const fee = useAmountInput(undefined, undefined, { allowZero: true });
 	const feeWei = fee.value;
 	return (
 		<Card
@@ -273,8 +274,12 @@ function PricingCard({
 			<ActionButton
 				target={{ operation: "setDefaultFee" }}
 				label="Set default fee"
-				send={feeWei ? () => client.setDefaultFee(feeWei) : undefined}
-				proposal={feeWei ? { kind: "setDefaultFee", feeWei } : undefined}
+				send={
+					feeWei !== undefined ? () => client.setDefaultFee(feeWei) : undefined
+				}
+				proposal={
+					feeWei !== undefined ? { kind: "setDefaultFee", feeWei } : undefined
+				}
 				onDone={fee.clear}
 			/>
 		</Card>
