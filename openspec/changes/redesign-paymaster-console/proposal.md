@@ -19,10 +19,16 @@ This change specifies the whole redesign: phase 1, console-only (the K, C and N 
 | Layer | What | State |
 | --- | --- | --- |
 | 1 | Six bugs | Done, PR #179 |
-| 2 | This change | PR #180 |
+| 2 | This change, phase 1 plan | PR #180. The plan's extension to the gaps and phase 2 landed as the first commit of layer 5, to leave #180 unchanged in review. |
 | 3 | Theme and colour mode | Done, PR #181 |
-| 4 | Shell: router, header, tab bar, sign-in, session warning, disconnect | Done, PR #183. The status line still lacks the queued count and block (G1). |
-| 5–11 | Primitives, Tenants, Paymaster, Roles, Timelock, Overview, Activity/Health/Admins | To do |
+| 4 | Shell: router, header, tab bar, sign-in, session warning, disconnect | Done, PR #183 |
+| 5 | Shared primitives, config, Vitest, status line counts | Done, PR #184 |
+| 6 | Tenants list and tenant page | Done, PR #185 |
+| 7 | Paymaster tab | Done, PR #186 |
+| 8 | Roles | Done, PR #187 |
+| 9 | Timelock | Done, PR #188 |
+| 10 | Overview | Done, PR #189 |
+| 11 | Activity, Health, Admins, phone width, docs | Done, PR #190 |
 | 12–17 | Phase 2: B1–B6 | To do |
 
 ### Phase 1: console only
@@ -64,6 +70,20 @@ These were in the canvas, or are needed to build it, but were in neither the ass
 - **G11 · Tests.** The console has no unit tests. Add Vitest for the router, the input validators, the Send/Propose/blocked resolution and the queued-change matching. Add an e2e case for "Stay signed in".
 - **G12 · Admins:** the page says that removing an admin ends their sessions at once, which wallet-api already does.
 
+### Found and fixed in phase 1
+
+Building and testing the layers found these, each fixed in the layer that introduced it or, for older ones, in the layer that found it:
+
+- **A reverted write was announced as confirmed.** The write path waited for the receipt and never read its status. Older than the redesign.
+- **SDK writes were sent with the bare gas estimate.** On the devnet that is exactly the post-refund gas used, so a call that clears storage (cancelling an operation) ran out of gas. Writes now carry a fifth more.
+- **The tenant edit dialog reset on every poll**, wiping what was typed, because the page re-reads the tenant each refresh.
+- **A field was cleared after its write succeeded even when a new value had been typed** while the refresh ran.
+- **Stay signed in remounted the page.** The chain read client was keyed on the session token, so a renewed session rebuilt it and unmounted whatever was open.
+- **A reopened Issue key dialog showed the last key again.**
+- **The create dialog's Register on-chain blamed the role** when the withdrawal address was merely empty.
+- **The sticky header covered controls** scrolled to after a dialog closed, and keyboard focus with them.
+- **The tab bar and the tenant list counted tenants differently**: the roster against the registry.
+
 ### Phase 2: SDK and wallet-api
 
 - **B1 · Admin events.** The SDK reads the paymaster's and the timelock's privileged events into one decoded, windowed list, and the Activity tab shows it beside the settlements.
@@ -100,18 +120,16 @@ These were in the canvas, or are needed to build it, but were in neither the ass
 ## Impact
 
 - **paymaster-admin:**
-  - `App.tsx` split into a shell and routes (done); `panels/` and `platform/` become `pages/` per tab.
-  - `components/` grows the shared primitives.
-  - `config.ts`: optional `explorerUrl` and `addresses` per deployment (G3, G4).
-  - A small in-house router (done); no new runtime dependency. Vitest as a dev dependency (G11), pinned under ABIP-6 and ABIP-7.
-- **paymaster-sdk:**
-  - proposal-call helpers for `updateDelay`, `setFunctionDelay` and timelock role grants and revokes (layer 9);
-  - `getAdminEvents` (B1);
-  - timelock-aware `assessHealth` (B2).
-  - Each needs a changeset.
+  - `App.tsx` split into a shell (`shell/`) and routes; the old `panels/` are gone, replaced by a folder per tab: `overview/`, `tenants/`, `paymaster/`, `roles/`, `timelock/`, `activity/`, `health/`. `platform/` keeps the sign-in, Admins and the tenant dialogs.
+  - `components/` holds the shared primitives; `lib/` their pure logic, unit-tested.
+  - `config.ts`: optional `explorerUrl`, `addresses` and `nativeCurrency` per deployment (G3, G4).
+  - A small in-house router; no new runtime dependency. Vitest as a dev dependency (G11), pinned under ABIP-6 and ABIP-7.
+- **paymaster-sdk**, each with a changeset:
+  - phase 1: `getImplementation` and `upgradeToAndCall` (layer 7); `renounceRole`, and `revokeRole` taking `DEFAULT_ADMIN_ROLE` (layer 8); `timelockCall`, the proposals for `updateDelay`, `setFunctionDelay` and the timelock's own roles, and `cancelCalldata` (layer 9); gas headroom on every write (layer 9, a fix);
+  - phase 2: `getAdminEvents` (B1) and timelock-aware `assessHealth` (B2).
 - **contracts:** release codehashes exported for `assessHealth` (B2). No contract change.
 - **wallet-api:** three new platform endpoints (`chains`, `usage`, `drift`), sessions on the admins endpoints (B6), the prober and bundler changes §10.2 names, and a drift metric. No schema migration except an index if usage queries need one.
-- **e2e:** `paymaster-admin.spec.ts`, `platform-console.spec.ts` and `platform-admin.spec.ts` follow each layer; new cases for the tenant page, timelock writes, Stay signed in, and the phase 2 endpoints.
+- **e2e:** `paymaster-admin.spec.ts`, `platform-console.spec.ts` and `platform-admin.spec.ts` follow each layer, with new cases for the tenant page, the Paymaster and Roles tabs, the Overview, Stay signed in and phone width. `timelock-console.spec.ts` (new) deploys its own timelock for the schedule, execute, cancel and rotation cases. Phase 2 adds cases for its endpoints.
 - **Docs:**
   - the console README: its tab list, the write rules, the config fields, and the claim of "a proposal builder for every timelocked action";
   - `specs/PLATFORM-ADMIN-SPECS.md` §10 and §11.2.
