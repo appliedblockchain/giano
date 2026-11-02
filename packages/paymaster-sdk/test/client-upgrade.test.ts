@@ -39,6 +39,7 @@ describe("upgradeToAndCall", () => {
 	it("simulates, then sends upgradeToAndCall with the call data, empty by default", async () => {
 		const simulated: { functionName: string; args: readonly unknown[] }[] = [];
 		const publicClient = {
+			estimateContractGas: async () => 100_000n,
 			simulateContract: async (request: {
 				functionName: string;
 				args: readonly unknown[];
@@ -50,9 +51,13 @@ describe("upgradeToAndCall", () => {
 				return { request };
 			},
 		} as unknown as PaymasterPublicClient;
+		const written: { gas?: bigint }[] = [];
 		const walletClient = {
 			account: { address: IMPLEMENTATION, type: "json-rpc" },
-			writeContract: async () => `0x${"ab".repeat(32)}` as Hex,
+			writeContract: async (request: { gas?: bigint }) => {
+				written.push(request);
+				return `0x${"ab".repeat(32)}` as Hex;
+			},
 		} as unknown as PaymasterWalletClient;
 		const client = new GianoPaymasterClient({
 			address: PROXY,
@@ -62,6 +67,8 @@ describe("upgradeToAndCall", () => {
 		const result = await client.upgradeToAndCall(IMPLEMENTATION);
 		expect(result.hash).toBe(`0x${"ab".repeat(32)}`);
 		await client.upgradeToAndCall(IMPLEMENTATION, "0x1234");
+		// a fifth over the estimate: a bare estimate can be exactly the post-refund gas, and run out
+		expect(written[0].gas).toBe(120_000n);
 		expect(simulated).toEqual([
 			{ functionName: "upgradeToAndCall", args: [IMPLEMENTATION, "0x"] },
 			{ functionName: "upgradeToAndCall", args: [IMPLEMENTATION, "0x1234"] },

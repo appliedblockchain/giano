@@ -34,6 +34,7 @@ import {
 	SignerRequiredError,
 	translateContractError,
 } from "./errors";
+import { withGasHeadroom } from "./gas";
 import {
 	type BlockRange,
 	DEFAULT_LOG_WINDOW,
@@ -594,6 +595,83 @@ export class GianoTimelockClient {
 		};
 	}
 
+	/**
+	 * A call on the timelock itself, for {@link propose}. The timelock administers itself: its delays
+	 * and its own roles change only through an operation it executes, after its own delay.
+	 */
+	timelockCall(functionName: string, args: readonly unknown[]): TimelockCall {
+		return {
+			target: this.address,
+			data: encodeFunctionData({
+				abi: gianoTimelockAbi,
+				functionName,
+				args,
+			} as never),
+		};
+	}
+
+	/** `updateDelay` on the timelock: the floor every operation waits. (the timelock itself) */
+	proposeUpdateDelay(
+		seconds: bigint,
+		options?: ProposeOptions,
+	): Promise<TimelockProposalDraft> {
+		return this.propose([this.timelockCall("updateDelay", [seconds])], options);
+	}
+
+	/**
+	 * `setFunctionDelay` on the timelock for one timelocked paymaster function. `0` removes its own
+	 * delay, so it waits the minimum. (the timelock itself)
+	 */
+	proposeSetFunctionDelay(
+		functionName: TimelockedFunctionName,
+		seconds: bigint,
+		options?: ProposeOptions,
+	): Promise<TimelockProposalDraft> {
+		return this.propose(
+			[
+				this.timelockCall("setFunctionDelay", [
+					this.paymaster,
+					paymasterSelector(functionName),
+					seconds,
+				]),
+			],
+			options,
+		);
+	}
+
+	/** `grantRole` on the timelock: a new proposer, canceller or executor. (the timelock itself) */
+	proposeGrantTimelockRole(
+		role: TimelockRoleName,
+		account: Address,
+		options?: ProposeOptions,
+	): Promise<TimelockProposalDraft> {
+		return this.propose(
+			[this.timelockCall("grantRole", [TIMELOCK_ROLES[role], account])],
+			options,
+		);
+	}
+
+	/** `revokeRole` on the timelock. (the timelock itself) */
+	proposeRevokeTimelockRole(
+		role: TimelockRoleName,
+		account: Address,
+		options?: ProposeOptions,
+	): Promise<TimelockProposalDraft> {
+		return this.propose(
+			[this.timelockCall("revokeRole", [TIMELOCK_ROLES[role], account])],
+			options,
+		);
+	}
+
+	/** `cancel` calldata for an operation id, for a canceller that is a Safe — even one whose scheduling is not in the blocks read. */
+	cancelCalldata(id: Hex): Hex {
+		return encodeFunctionData({
+			abi: gianoTimelockAbi,
+			functionName: "cancel",
+			args: [id],
+		} as never);
+	}
+
 	/** `setDefaultFee`, through the timelock. (FEE_ADMIN_ROLE) */
 	proposeSetDefaultFee(
 		feeWei: bigint,
@@ -843,7 +921,9 @@ export class GianoTimelockClient {
 				value: value || undefined,
 				chain: walletClient.chain ?? this.publicClient.chain,
 			} as never);
-			const hash = await walletClient.writeContract(request as never);
+			const hash = await walletClient.writeContract(
+				(await withGasHeadroom(this.publicClient, request)) as never,
+			);
 			return {
 				hash,
 				wait: (confirmations?: number) =>
