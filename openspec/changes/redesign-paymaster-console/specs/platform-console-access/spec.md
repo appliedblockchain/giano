@@ -69,6 +69,7 @@ Two minutes before the session expires, the console SHALL say so. It SHALL offer
 The session SHALL end in the console, returning it to the sign-in page, on any of these:
 - a reload;
 - a wallet account or chain change;
+- disconnecting the wallet, since the session was signed by it;
 - switching deployment;
 - *Sign out*, which also calls logout on the API;
 - any platform admin call answered `401`, a chain read included.

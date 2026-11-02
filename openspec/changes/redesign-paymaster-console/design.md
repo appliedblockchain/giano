@@ -1,10 +1,8 @@
 ## Context
 
-The console is a Vite + React 19 + Chakra UI v3 SPA. It reads the chain through the SDK, and through wallet-api's platform relay when the platform API is configured (`gate-paymaster-console-reads`), and writes through the connected wallet. It has two areas:
-- **Paymaster:** Overview, Tenants, Roles, Settings, Timelock, History, Health.
-- **Platform:** Tenants, Admins, behind a SIWE session.
+The console is a Vite + React 19 + Chakra UI v3 SPA. It reads the chain through the SDK, and through wallet-api's platform relay when the platform API is configured (`gate-paymaster-console-reads`), and writes through the connected wallet.
 
-`App.tsx` held the header, the area switch, the wallet, the tab bar and the proposal dialog in one 629-line component. Layers 1–4 have since replaced it with a shell (`shell/`), a router (`lib/router.tsx`) and the theme; the old panels are mounted unchanged under the new routes.
+Before this change it had two areas, **Paymaster** (Overview, Tenants, Roles, Settings, Timelock, History, Health) and **Platform** (Tenants, Admins, behind a SIWE session), with `App.tsx` holding the header, the area switch, the wallet, the tab bar and the proposal dialog in one 629-line component. Phase 1 (layers 1–11, PRs #179–#190) replaced all of it: one tab bar with a page per tab, a shell, the shared primitives, and a folder per tab. None of the old panels remain.
 
 The A1 assessment produced:
 - the keep/change/new list (K1–K12, C1–C12, N1–N10, B1–B6);
@@ -14,7 +12,7 @@ The A1 assessment produced:
 A second pass (2026-11-02) checked the canvas against the code and the plan, and found the gaps G1–G12 in the proposal. One apparent gap was not one: the canvas's "not on the admin list" wording is already what `platform-console-access` requires for a `401` from verify.
 
 This change covers the whole redesign:
-- **Phase 1** (layers 1–11): console only, the K, C, N and G items.
+- **Phase 1** (layers 1–11): console only, the K, C, N and G items. Done.
 - **Phase 2** (layers 12–17): the B items, each an SDK or wallet-api change, followed by the console part that uses it.
 
 ## Goals / Non-Goals
@@ -83,34 +81,41 @@ New semantic palettes:
 `canvas` becomes white in light mode. The header and table heads use `bg.subtle`.
 
 ### D6. One write path
-The new `useChainAction` hook in `hooks/` replaces the ad-hoc mix of `useWrite` calls and per-panel checks. Given the operation name, it resolves, from the SDK's `TIMELOCKED_OPERATIONS` and the wallet's roles, to one of:
-- `send`: the wallet holds the role; sends directly. A timelocked role on a deployment with a timelock still sends directly when the wallet holds it, as on a devnet.
-- `propose`: timelocked, a timelock is configured, and the wallet lacks the role; opens the proposal dialog with the call.
-- `blocked`: names the role that's missing and, for a timelocked operation with no timelock configured, says so.
+`useChainAction` and `<ActionButton>` replace the ad-hoc mix of `useWrite` calls and per-panel checks. A write names its target, and `resolveAction` (`lib/actions.ts`, unit-tested) resolves it for the wallet in front of it:
+- **a timelocked operation** (from the SDK's `TIMELOCKED_OPERATIONS`): `send` when the wallet holds its role, even where a timelock is configured, as on a devnet; `propose` when it does not and a timelock is configured, which opens the proposal dialog with the call and needs no wallet; otherwise `blocked`, naming the role and that no timelock is configured;
+- **a role** for an immediate write: `send` or `blocked`, naming the role;
+- **anyone with a wallet**, for funding a tenant;
+- **a gate** the caller decides, with its own reason, for rules outside the paymaster's role table: holding `DEFAULT_ADMIN_ROLE`, or one of the timelock's own roles.
 
-`<ActionButton>` renders the three states consistently: Send in brand colour, Propose in `timelock` purple with a clock, and blocked as disabled with the reason. A destructive operation wraps `send` in a confirmation dialog naming the effect.
+With no wallet connected, anything but a proposal is `blocked` with "Connect a wallet".
+
+`<ActionButton>` renders the states consistently: Send in brand colour, Propose in `timelock` purple with a clock, blocked as disabled with the reason beneath. A destructive write asks first in a `ConfirmDialog` naming its effect. A *quiet* style (a gray ghost button) marks an action that sits beside a louder one and must not be mistaken for it, as Renounce beside Revoke.
+
+`useWrite` announces *submitted* when the wallet returns the hash and *confirmed* only when the receipt's status is success; a reverted receipt is a failure, with the transaction hash.
 
 ### D7. Validation at the input
-`AddressInput` and `AmountInput` own their parsing:
-- an address is checksummed, or 0x plus 40 hex characters;
-- an amount goes through `parseEther` and must be above zero, with an optional max; 0 is allowed where it is a value (a fee, or Add stake on locked stake).
+`AddressInput`, `AmountInput`, `WholeNumberInput` and `CalldataInput` own their parsing (`lib/validate.ts`, unit-tested):
+- an address is `0x` plus 40 hex characters, checksummed when mixed-case, and handed on checksummed;
+- an amount is a positive decimal in the selected chain's native currency (`parseUnits` with its decimals), with an optional maximum that *Max* fills exactly; 0 only where it is a value (a fee, or Add stake on locked stake);
+- a whole number is non-negative, capped where the contract's type is (`uint32` for the post-op gas allowance and the unstake delay), and the penalty at 5000 basis points;
+- calldata is `0x` and whole bytes.
 
-Each states its error under the field and hands the form a typed value or `undefined`. No `as Address` survives in `pages/`.
+Each states its problem under the field as it is typed and hands the form a typed value or `undefined`, so no write casts a string. A field is cleared after its write succeeds only if it still holds what was sent: whatever was typed while the refresh ran belongs to the operator.
 
 ### D8. The stack
 Each layer is a PR on the one below and leaves the console working:
 
 1. `fix/paymaster-console-bugs`: the six bugs. **Done** (#179).
-2. `openspec`: this change (#180).
+2. `openspec`: this change (#180). Its extension to the gaps and phase 2 is the first commit of layer 5.
 3. Theme and colour mode (D4, D5). **Done** (#181).
 4. Shell: the router, the header, the tab bar, sign-in, the session warning, disconnect (D1, D2). The existing panels are mounted unchanged under the new routes. **Done** (#183).
-5. Shared primitives: `ActionButton`, `useChainAction`, `ConfirmDialog`, `AddressInput`, `AmountInput`, `InlineError`, `StatusText`, `QueuedMarker`, `usePendingOperations`, `AddressLabel`, `TxLink` (D6, D7, D9). Config: `explorerUrl` and `addresses`. Vitest. The status line's queued count and block, and the Timelock tab count (G1, G2).
-6. Tenants list and tenant page (D3), with the ledger comparison and the other deployments (G6).
-7. Paymaster tab: every card, including the stake lifecycle, upgrade, treasury max and unpause.
-8. Roles.
-9. Timelock: the summary, the operations list, writes, options, batches, self-administration. Includes the SDK helpers and their changeset.
-10. Overview dashboard.
-11. Activity, Health, Admins, phone width, and the README and spec docs.
+5. Shared primitives: `ActionButton`, `useChainAction`, `ConfirmDialog`, `AddressInput`, `AmountInput`, `InlineError`, `StatusText`, `QueuedMarker`, `usePendingOperations`, `AddressLabel`, `TxLink` (D6, D7, D9). Config: `explorerUrl` and `addresses`. Vitest. The status line's queued count and block, and the Timelock tab count (G1, G2). **Done** (#184).
+6. Tenants list and tenant page (D3), with the ledger comparison and the other deployments (G6). **Done** (#185).
+7. Paymaster tab: every card, including the stake lifecycle, upgrade, treasury max and unpause. **Done** (#186).
+8. Roles. **Done** (#187).
+9. Timelock: the summary, the operations list, writes, options, batches, self-administration. Includes the SDK helpers and their changeset. **Done** (#188).
+10. Overview dashboard. **Done** (#189).
+11. Activity, Health, Admins, phone width, and the README and spec docs. **Done** (#190).
 
 Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be the same PR when it is small:
 
@@ -120,6 +125,8 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
+
+A bug found in a later layer is fixed on the branch of the layer that introduced it, and the layers above are restacked (`gh stack rebase --upstack`), so each PR stays correct on its own: the edit-dialog reset found by CI on #186 was fixed in #185, and an unformatted test in #187 in #187. A bug older than the redesign is fixed, as its own commit, in the layer that found it.
 
 Layers 3–5 are the base: everything above them uses their primitives. Layers 6–11 are independent of each other and can be reordered. Phase 2 layers depend only on layer 11 for the tab they extend, and on nothing in each other; they are ordered by what they are worth against what they cost. They can leave this stack and become their own once phase 1 merges.
 
@@ -160,6 +167,34 @@ wallet-api's paymaster watcher already reads each paymaster and writes `paymaste
 
 An admin can end only their own sessions. Ending someone else's is already possible by removing them, which is recorded in the admin history; a second, unrecorded way to lock someone out is not worth adding.
 
+### D16. One console context
+`shell/ConsoleContext.tsx` provides what every primitive needs about the console around it: the deployment, the wallet and its paymaster roles, the paymaster address, the timelock client, the `propose` callback, the console refresh and the block it read at, the timelock's operations and access (D17), and each configured Safe's threshold. A control deep in a tab reads it with `useConsole()` instead of having half a dozen props threaded down to it. The paymaster overview and the joined tenant rows stay props: they are what a tab renders, not what a control decides with.
+
+### D17. The timelock is read once, then incrementally
+`usePendingOperations` reads the timelock's operations once per console refresh for the whole console: the Timelock tab, its count in the tab bar, the status line, the queued markers, the Roles tab's Execute and the Overview all use the same list. The first read goes back enough windows to cover the longest delay, from the chain's recent seconds per block, capped at 40; it waits for the delays to be known. Each later refresh reads only the blocks after the last one, merges what they say into what is known (an operation keeps the calls and salt it was scheduled with and takes its new state), and asks the contract for the state of anything still pending, since waiting becomes ready with time alone. *Look further back* adds an older window and never re-reads.
+
+`useTimelockAccess` reads the timelock's config and whether the wallet holds PROPOSER, CANCELLER or EXECUTOR once per timelock and wallet, not per refresh: changing either is itself a timelocked operation.
+
+### D18. Needs attention folds what repeats
+The Overview's conditions come from a pure `attentionItems` (`lib/attention.ts`). More than three of one kind — twenty tenants with no balance — fold into one line that names the first three, newest first and each a link to its tenant page, and says how many more. Listed one by one they would push the paymaster's own conditions off the page, which is the opposite of what the list is for.
+
+### D19. Phase 1 needed SDK additions
+The plan put SDK work in phase 2, but the console's write rules need the SDK to be able to make each write it offers:
+- `getImplementation` (the ERC-1967 slot) and `upgradeToAndCall`, so a wallet holding `UPGRADER_ROLE` can Send an upgrade;
+- `renounceRole`, and `revokeRole` taking `DEFAULT_ADMIN_ROLE`, which only another holder can revoke;
+- `timelockCall`, `proposeUpdateDelay`, `proposeSetFunctionDelay`, `proposeGrantTimelockRole`, `proposeRevokeTimelockRole` and `cancelCalldata` (task 8.1).
+
+Each is its own commit with a changeset. Every SDK write is also sent with a fifth more gas than the node estimates (`withGasHeadroom`), because a bare estimate can be exactly the post-refund gas and a call that clears storage then reverts.
+
+### D20. The session token is read per request
+The chain read client is keyed on whether there is a session, not on which. It reads the current token on each request (`fetchFn`), so *Stay signed in* swaps the session without a new client, a re-read or a remount, and whatever the operator was typing stays.
+
+### D21. The e2e timelock is deployed by the test
+The e2e devnet's baked state has no timelock, and the rest of the suite needs `admin-console` to keep every paymaster role. Regenerating the baked state needs the pinned anvil and changes a 1 MB file every suite loads. So `timelock-console.spec.ts` deploys its own 2-second GianoTimelock from the v2 release, with `admin-console` as proposer and canceller and executors open, points the console at it by adding `timelockAddress` to the `/config.json` it fetches, grants it `ROLE_ADMIN` alongside `admin-console`, and takes back everything it grants. Two seconds is waited out in real time; anvil stamps blocks with the wall clock, so no time travel is needed, only a mined block.
+
+### D22. The ledger health check runs on demand
+The Health tab's ledger check needs one tenant detail per registered tenant. It runs when the tab opens and when asked, five requests at a time, not on every poll. B5 moves the comparison into wallet-api, where it is one read (D10).
+
 ## Risks / Trade-offs
 
 - **[A long stack drifts from main]** → Rebase the stack (`gh stack rebase`) whenever main moves under it. Merge bottom-up as each layer is approved, rather than holding the stack until the top is done.
@@ -171,10 +206,13 @@ An admin can end only their own sessions. Ending someone else's is already possi
 - **[Usage queries on a large table]** → Bounded to 90 days, indexed (platform-usage-metrics). If that is still slow, aggregate by day in a later change.
 - **[Codehash with immutables zeroed is fragile]** → The positions come from the compiler's `immutableReferences`, recorded with the hash. A test deploys the release and checks the SDK's hash matches.
 - **[Phase 2 makes the stack 17 deep]** → Once phase 1 merges, phase 2 layers can each be their own short stack.
+- **[A long-lived local e2e stack drifts]** → The console specs restore what they change (fees, roles, the timelock's grants) and use fresh names, so they run repeatedly on one stack. Two things still need a fresh one: `tenant-isolation` V1 registers a fixed external user id, and Playwright bundles the BYO wallet from the local package builds, which must be rebuilt after the packages change. CI starts clean each run.
 
 ## Open Questions
 
-- Should the session warning's "Stay signed in" sign a fresh SIWE message, or should wallet-api grow a refresh endpoint? Phase 1 signs again, which needs no backend change.
+Resolved in phase 1: *Stay signed in* signs a fresh SIWE message, with no refresh endpoint, and swaps the session in place (D20).
+
+
 - B4: refusals are grouped by `SponsorshipRefusalReason`, plus `temporarily-unavailable`. Should a tenant's own sponsorship-rule refusals be split from platform refusals (paused, deficit), so the Overview does not blame the platform for a tenant's rules?
 - B5: should drift also be a `/healthz` signal, so a deploy fails on it? This change exposes it; who acts on it is the alerting non-goal.
 - B6: is 30 days of session history enough, or does it follow `platform_admin_sessions` retention, whatever housekeeping sets?
