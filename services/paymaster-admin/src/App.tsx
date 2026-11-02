@@ -44,12 +44,12 @@ import { joinTenants, type TenantRow } from "./lib/tenants";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
-import { RolesPanel } from "./panels/RolesPanel";
 import { TimelockPanel } from "./panels/TimelockPanel";
 import { PaymasterTab } from "./paymaster/PaymasterTab";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
+import { RolesTab } from "./roles/RolesTab";
 import {
 	type ConsoleContextValue,
 	ConsoleProvider,
@@ -430,7 +430,7 @@ function RouteView({
 	registry: Registry;
 }) {
 	const { platformApi } = getAdminConfig();
-	const { client, overview, myRoles, wallet, deployment } = platformProps;
+	const { client, overview, wallet } = platformProps;
 
 	if (route.tab === "not-found" || (route.tab === "admins" && !platformApi))
 		return <NotFound />;
@@ -462,17 +462,7 @@ function RouteView({
 		case "paymaster":
 			return <PaymasterTab client={client} overview={overview} />;
 		case "roles":
-			return (
-				<RolesPanel
-					client={client}
-					roles={overview.roles}
-					myRoles={myRoles}
-					account={wallet?.address}
-					refresh={refresh}
-					propose={propose}
-					timelockAddress={deployment.timelockAddress}
-				/>
-			);
+			return <RolesTab client={client} roles={overview.roles} />;
 		case "timelock":
 			return (
 				<TimelockPanel

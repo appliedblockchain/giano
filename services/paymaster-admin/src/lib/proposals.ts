@@ -1,9 +1,10 @@
-import type {
-	GianoTimelockClient,
-	PaymasterRoleName,
-	SafeTransactionBatch,
-	TimelockedFunctionName,
-	TimelockProposalDraft,
+import {
+	type GianoTimelockClient,
+	PAYMASTER_ROLES,
+	type PaymasterRoleName,
+	type SafeTransactionBatch,
+	type TimelockedFunctionName,
+	type TimelockProposalDraft,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import type { Address, Hex } from "viem";
 
@@ -32,6 +33,13 @@ export type ProposalRequest =
 			kind: "grantRole" | "revokeRole";
 			role: PaymasterRoleName;
 			account: Address;
+	  }
+	/** Grant to `to` and revoke from `from` in one operation, so the role is never held by neither. */
+	| {
+			kind: "rotateRole";
+			role: PaymasterRoleName;
+			from: Address;
+			to: Address;
 	  };
 
 /** Opens the proposal flow. Undefined where the deployment has no timelock configured. */
@@ -41,7 +49,7 @@ export type Propose = (request: ProposalRequest) => void;
 export function requestFunction(
 	request: ProposalRequest,
 ): TimelockedFunctionName {
-	return request.kind;
+	return request.kind === "rotateRole" ? "grantRole" : request.kind;
 }
 
 export function buildProposal(
@@ -68,6 +76,17 @@ export function buildProposal(
 			return timelock.proposeGrantRole(request.role, request.account);
 		case "revokeRole":
 			return timelock.proposeRevokeRole(request.role, request.account);
+		case "rotateRole":
+			return timelock.propose([
+				timelock.paymasterCall("grantRole", [
+					PAYMASTER_ROLES[request.role],
+					request.to,
+				]),
+				timelock.paymasterCall("revokeRole", [
+					PAYMASTER_ROLES[request.role],
+					request.from,
+				]),
+			]);
 	}
 }
 
