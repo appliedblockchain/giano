@@ -34,6 +34,10 @@ import {
 	SectionCard,
 	Stat,
 } from "../components/ui";
+import {
+	INITIAL_WINDOWS,
+	type TimelockOperationsState,
+} from "../hooks/usePendingOperations";
 import { useWrite } from "../hooks/useWrite";
 import { describeError } from "../lib/format";
 import {
@@ -53,10 +57,8 @@ type Props = {
 	refresh: () => Promise<void>;
 	/** Bumped by every console refresh, so this tab re-reads alongside the rest. */
 	lastUpdated: Date | undefined;
+	timelockOperations: TimelockOperationsState;
 };
-
-/** Blocks read per window, as everywhere else; the first read goes this many windows back. */
-const INITIAL_WINDOWS = 5;
 
 const STATE_TONE: Record<
 	TimelockOperationState,
@@ -90,42 +92,43 @@ export function TimelockPanel({
 	propose,
 	refresh,
 	lastUpdated,
+	timelockOperations,
 }: Props) {
 	const [config, setConfig] = useState<TimelockConfig>();
-	const [operations, setOperations] = useState<readonly TimelockOperation[]>(
-		[],
-	);
-	const [range, setRange] = useState<{ fromBlock: bigint; toBlock: bigint }>();
-	const [windows, setWindows] = useState(INITIAL_WINDOWS);
-	const [hasOlder, setHasOlder] = useState(false);
-	const [loading, setLoading] = useState(false);
-	const [error, setError] = useState<string>();
+	const [configLoading, setConfigLoading] = useState(false);
+	const [configError, setConfigError] = useState<string>();
+	// The operations are the console's shared read (usePendingOperations): the queued markers on
+	// other tabs and the counts in the header come from the same list this tab shows.
+	const { operations, range, hasOlder, lookFurther } = timelockOperations;
+	const loading = configLoading || timelockOperations.loading;
+	const error = configError ?? timelockOperations.error;
 
-	const load = useCallback(async () => {
+	const loadConfig = useCallback(async () => {
 		if (!timelock) return;
-		setLoading(true);
+		setConfigLoading(true);
 		try {
-			const [nextConfig, page] = await Promise.all([
-				timelock.getConfig(),
-				timelock.getOperations({ windows }),
-			]);
-			setConfig(nextConfig);
-			setOperations(page.operations);
-			setRange({ fromBlock: page.fromBlock, toBlock: page.toBlock });
-			setHasOlder(page.older !== undefined);
-			setError(undefined);
+			setConfig(await timelock.getConfig());
+			setConfigError(undefined);
 		} catch (cause) {
-			setError(describeError(cause));
+			setConfigError(describeError(cause));
 			console.error("[paymaster-admin] Could not read the timelock", cause);
 		} finally {
-			setLoading(false);
+			setConfigLoading(false);
 		}
-	}, [timelock, windows]);
+	}, [timelock]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: every console refresh re-reads the timelock too
 	useEffect(() => {
-		void load();
-	}, [load, lastUpdated]);
+		void loadConfig();
+	}, [loadConfig, lastUpdated]);
+
+	const load = useCallback(
+		() =>
+			Promise.all([loadConfig(), timelockOperations.reload()]).then(
+				() => undefined,
+			),
+		[loadConfig, timelockOperations.reload],
+	);
 
 	const { run, busy, isPending } = useWrite(async () => {
 		await Promise.all([load(), refresh()]);
@@ -327,7 +330,7 @@ export function TimelockPanel({
 							size="sm"
 							variant="outline"
 							disabled={loading}
-							onClick={() => setWindows((current) => current * 2)}
+							onClick={lookFurther}
 						>
 							Look further back
 						</Button>
@@ -336,9 +339,11 @@ export function TimelockPanel({
 			>
 				{operations.length === 0 ? (
 					<Text fontSize="sm" color="fg.muted">
-						{config
-							? "Nothing scheduled in these blocks."
-							: "Reading the timelock's logs…"}
+						{timelockOperations.error
+							? "Nothing to show until the timelock's logs can be read."
+							: timelockOperations.settled
+								? "Nothing scheduled in these blocks."
+								: "Reading the timelock's logs…"}
 					</Text>
 				) : (
 					<Table.ScrollArea borderWidth="1px" rounded="md">
