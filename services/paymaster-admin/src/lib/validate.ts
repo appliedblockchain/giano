@@ -43,9 +43,14 @@ export type AmountLimits = {
 	max?: bigint;
 	/** Says what `max` is, e.g. "the treasury". */
 	maxLabel?: string;
+	/**
+	 * Whether 0 is a value rather than a mistake. A fee of 0 is free sponsorship and legitimate;
+	 * funding, withdrawing or staking 0 does nothing and is refused.
+	 */
+	allowZero?: boolean;
 };
 
-/** A positive decimal in the chain's native currency, returned in its smallest unit (wei). */
+/** A decimal in the chain's native currency, above 0 unless allowed, returned in its smallest unit (wei). */
 export function parseAmount(
 	text: string,
 	limits: AmountLimits,
@@ -61,7 +66,8 @@ export function parseAmount(
 			error: `${currency.symbol} has ${currency.decimals} decimal places; this has ${decimals}.`,
 		};
 	const value = parseUnits(trimmed, currency.decimals);
-	if (value === 0n) return { error: "The amount must be more than 0." };
+	if (value === 0n && !limits.allowZero)
+		return { error: "The amount must be more than 0." };
 	if (max !== undefined && value > max)
 		return {
 			error: `That is more than ${maxLabel ?? "the maximum"} (${exactAmount(max, currency)}).`,
