@@ -33,6 +33,8 @@ export type ConsoleContextValue = {
 	propose: Propose | undefined;
 	/** The console's refresh: what a write calls once it is mined. */
 	refresh: () => Promise<void>;
+	/** The block the last refresh read the paymaster at. */
+	block: bigint | undefined;
 	timelockOperations: TimelockOperationsState;
 	/** Threshold and owners of each configured Safe, by lowercase address. */
 	safes: Readonly<Record<string, SafeInfo>>;

@@ -2,7 +2,6 @@ import type {
 	GianoPaymasterClient,
 	PaymasterOverview,
 	PaymasterRoleName,
-	TenantView,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Alert,
@@ -18,6 +17,7 @@ import type { Deployment } from "../config";
 import type { ConnectedWallet } from "../lib/chain";
 import { eth } from "../lib/format";
 import type { ApiError, TenantStatus } from "../lib/platform-api";
+import type { OnChainState } from "../lib/tenants";
 
 /** What the platform views (registry, tenant drawer, sign-in) are handed by the console shell. */
 export type PlatformAreaProps = {
@@ -32,32 +32,7 @@ export type PlatformAreaProps = {
 	refreshChain: () => Promise<void>;
 };
 
-/** Where a registry tenant stands on the selected chain's paymaster, matched on tenant id. */
-export type OnChainState =
-	| "enabled"
-	| "disabled"
-	| "not-registered"
-	| "unknown";
-
-/** The roster, keyed by the UUID form of the tenant id — the same id the registry row carries. */
-export function rosterByUuid(
-	overview: PaymasterOverview | undefined,
-): Map<string, TenantView> | undefined {
-	if (!overview) return undefined;
-	return new Map(
-		overview.tenants.map((tenant) => [tenant.uuid.toLowerCase(), tenant]),
-	);
-}
-
-export function onChainState(
-	roster: Map<string, TenantView> | undefined,
-	tenantId: string,
-): OnChainState {
-	if (!roster) return "unknown";
-	const entry = roster.get(tenantId.toLowerCase());
-	if (!entry) return "not-registered";
-	return entry.enabled ? "enabled" : "disabled";
-}
+export type { OnChainState } from "../lib/tenants";
 
 const ON_CHAIN = {
 	enabled: { colorPalette: "green", label: "registered · enabled" },
@@ -188,6 +163,20 @@ export function issuesByField(
 	}
 	return byField;
 }
+
+/** A JSON object typed into a field, such as branding, or why it is not one. */
+export const parseJsonObject = (
+	text: string,
+): { ok: true; value: Record<string, unknown> } | { ok: false } => {
+	try {
+		const value = JSON.parse(text || "{}") as unknown;
+		return value && typeof value === "object" && !Array.isArray(value)
+			? { ok: true, value: value as Record<string, unknown> }
+			: { ok: false };
+	} catch {
+		return { ok: false };
+	}
+};
 
 export const linesToList = (text: string) =>
 	text

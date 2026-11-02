@@ -45,12 +45,10 @@ import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
 import { RolesPanel } from "./panels/RolesPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
-import { TenantsPanel } from "./panels/TenantsPanel";
 import { TimelockPanel } from "./panels/TimelockPanel";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
-import { TenantsTab } from "./platform/TenantsTab";
 import {
 	type ConsoleContextValue,
 	ConsoleProvider,
@@ -59,6 +57,7 @@ import {
 import { Header } from "./shell/Header";
 import { SessionWarning } from "./shell/SessionWarning";
 import { TabBar } from "./shell/TabBar";
+import { TenantsRoute } from "./tenants/TenantsRoute";
 
 export function App() {
 	const { deployments } = getAdminConfig();
@@ -225,6 +224,7 @@ function Console({
 		timelock,
 		propose,
 		refresh,
+		block,
 		timelockOperations,
 		safes,
 	};
@@ -426,31 +426,18 @@ function RouteView({
 	) : null;
 
 	// The registry is wallet-api's, not the chain's: an RPC failure must not hide it, Create tenant or a
-	// tenant's page. It joins the roster when there is one, and says so when there is not.
-	if (route.tab === "tenants")
+	// tenant's page. They say the on-chain side is unknown until the paymaster is read. Without the
+	// platform API the tab is the roster alone, so it waits for the read like the others.
+	if (route.tab === "tenants" && (platformApi || (overview && client)))
 		return (
-			<Stack gap="6">
-				{platformApi && (
-					<TenantsTab
-						{...platformProps}
-						selected={route.tenant}
-						lastUpdated={lastUpdated}
-					/>
-				)}
-				{overview && client ? (
-					<TenantsPanel
-						client={client}
-						tenants={overview.tenants}
-						myRoles={myRoles}
-						connected={wallet !== undefined}
-						rosterOnChain={rosterOnChain}
-						refresh={refresh}
-						propose={propose}
-					/>
-				) : (
-					reading
-				)}
-			</Stack>
+			<TenantsRoute
+				param={route.tenant}
+				client={client}
+				overview={overview}
+				rosterOnChain={rosterOnChain}
+				lastUpdated={lastUpdated}
+				platformProps={platformProps}
+			/>
 		);
 
 	if (!overview || !client) return reading;

@@ -337,7 +337,7 @@ test.describe("access", () => {
 		await page.goto(`${ORIGINS.paymasterAdmin}/tenants/byo`);
 		await chooseDeployment(page, CHAINS.a.chainId);
 		await signIn(page);
-		await expect(page.getByRole("dialog")).toContainText("byo");
+		await expect(page.getByTestId("tenant-header")).toContainText("byo");
 
 		await page.goto(`${ORIGINS.paymasterAdmin}/settings`);
 		await chooseDeployment(page, CHAINS.a.chainId);

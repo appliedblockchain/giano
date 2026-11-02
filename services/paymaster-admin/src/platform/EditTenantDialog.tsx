@@ -12,9 +12,16 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import type { PlatformTenant } from "../lib/platform-api";
+import { formToPolicy, type PolicyForm, policyToForm } from "../lib/policy";
+import { PolicyFields } from "../tenants/PolicyFields";
 import { OriginsField } from "./CreateTenantDialog";
 import { usePlatformAction } from "./LifecycleDialogs";
-import { ApiErrorAlert, issuesByField, linesToList } from "./shared";
+import {
+	ApiErrorAlert,
+	issuesByField,
+	linesToList,
+	parseJsonObject,
+} from "./shared";
 
 type Form = {
 	rpName: string;
@@ -22,7 +29,7 @@ type Form = {
 	allowedDappOrigins: string;
 	corsOrigins: string;
 	openRegistration: boolean;
-	policy: string;
+	policy: PolicyForm;
 	branding: string;
 };
 
@@ -35,27 +42,14 @@ const toForm = (tenant: PlatformTenant): Form => ({
 	allowedDappOrigins: tenant.allowedDappOrigins.join("\n"),
 	corsOrigins: tenant.corsOrigins.join("\n"),
 	openRegistration: tenant.openRegistration,
-	policy: JSON.stringify(tenant.policy, null, 2),
+	policy: policyToForm(tenant.policy),
 	branding: JSON.stringify(tenant.branding, null, 2),
 });
-
-const parseJson = (
-	text: string,
-): { ok: true; value: Record<string, unknown> } | { ok: false } => {
-	try {
-		const value = JSON.parse(text || "{}") as unknown;
-		return value && typeof value === "object" && !Array.isArray(value)
-			? { ok: true, value: value as Record<string, unknown> }
-			: { ok: false };
-	} catch {
-		return { ok: false };
-	}
-};
 
 /**
  * Edit a tenant's mutable fields (specs/PLATFORM-ADMIN-SPECS.md §11.3). Optimistic: the request
  * carries the version the form was opened at, and a 412 means someone changed the tenant since.
- * The drawer then reloads underneath while this form keeps what the platform admin typed, so it can be
+ * The tenant page then reloads underneath while this form keeps what the platform admin typed, so it can be
  * re-applied against the new version rather than lost.
  */
 export function EditTenantDialog({
@@ -76,8 +70,7 @@ export function EditTenantDialog({
 	const [baseVersion, setBaseVersion] = useState(tenant.version);
 	const [conflicted, setConflicted] = useState(false);
 	const issues = issuesByField(error);
-	const policy = parseJson(form.policy);
-	const branding = parseJson(form.branding);
+	const branding = parseJsonObject(form.branding);
 
 	// a fresh open starts from the tenant as it is now
 	useEffect(() => {
@@ -87,8 +80,17 @@ export function EditTenantDialog({
 		}
 	}, [open, tenant, conflicted]);
 
-	const set = (field: keyof Form) => (event: { target: { value: string } }) =>
-		setForm({ ...form, [field]: event.target.value });
+	const set =
+		(
+			field:
+				| "rpName"
+				| "expectedOrigins"
+				| "allowedDappOrigins"
+				| "corsOrigins"
+				| "branding",
+		) =>
+		(event: { target: { value: string } }) =>
+			setForm({ ...form, [field]: event.target.value });
 
 	const close = () => {
 		setConflicted(false);
@@ -97,7 +99,7 @@ export function EditTenantDialog({
 	};
 
 	const save = async () => {
-		if (!policy.ok || !branding.ok) return;
+		if (!branding.ok) return;
 		const result = await act((api) =>
 			api.update(tenant.slug, baseVersion, {
 				rpName: form.rpName.trim(),
@@ -105,7 +107,7 @@ export function EditTenantDialog({
 				allowedDappOrigins: linesToList(form.allowedDappOrigins),
 				corsOrigins: linesToList(form.corsOrigins),
 				openRegistration: form.openRegistration,
-				policy: policy.value,
+				policy: formToPolicy(form.policy),
 				branding: branding.value,
 			}),
 		);
@@ -148,9 +150,9 @@ export function EditTenantDialog({
 												Someone else changed this tenant
 											</Alert.Title>
 											<Alert.Description>
-												The drawer now shows its current values. Your edits are
-												kept below — check them against what changed, then save
-												again to apply them on top.
+												The tenant page now shows its current values. Your edits
+												are kept below — check them against what changed, then
+												save again to apply them on top.
 											</Alert.Description>
 										</Alert.Content>
 									</Alert.Root>
@@ -204,23 +206,11 @@ export function EditTenantDialog({
 										{fieldError("adminKeys")}
 									</Text>
 								)}
-								<Field.Root invalid={!policy.ok || !!fieldError("policy")}>
-									<Field.Label>Policy (JSON)</Field.Label>
-									<Textarea
-										value={form.policy}
-										onChange={set("policy")}
-										rows={4}
-										fontFamily="mono"
-										fontSize="sm"
-									/>
-									<Field.ErrorText>
-										{!policy.ok ? "Not a JSON object" : fieldError("policy")}
-									</Field.ErrorText>
-									<Field.HelperText>
-										Per-tenant overrides of the relay policy; checked by
-										wallet-api on save.
-									</Field.HelperText>
-								</Field.Root>
+								<PolicyFields
+									value={form.policy}
+									onChange={(policy) => setForm({ ...form, policy })}
+									error={fieldError("policy")}
+								/>
 								<Field.Root invalid={!branding.ok || !!fieldError("branding")}>
 									<Field.Label>Branding (JSON)</Field.Label>
 									<Textarea
@@ -253,7 +243,7 @@ export function EditTenantDialog({
 								colorPalette="brand"
 								onClick={() => void save()}
 								loading={busy}
-								disabled={!policy.ok || !branding.ok || !form.rpName.trim()}
+								disabled={!branding.ok || !form.rpName.trim()}
 							>
 								Save
 							</Button>
