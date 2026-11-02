@@ -77,8 +77,25 @@ export function useRoute(): Route {
 	return parseRoute(useSyncExternalStore(subscribe, currentPath));
 }
 
+const currentHash = () => window.location.hash;
+
+/**
+ * The location's `#…`, updated by a {@link navigate} to the same path with a new hash as well as by
+ * Back and Forward. For links into a page, such as a queued marker's link to its operation.
+ */
+export function useHash(): string {
+	return useSyncExternalStore((onChange) => {
+		const unsubscribe = subscribe(onChange);
+		window.addEventListener("hashchange", onChange);
+		return () => {
+			unsubscribe();
+			window.removeEventListener("hashchange", onChange);
+		};
+	}, currentHash);
+}
+
 export function navigate(path: string): void {
-	if (path === window.location.pathname) return;
+	if (path === window.location.pathname + window.location.hash) return;
 	window.history.pushState(null, "", path);
 	window.dispatchEvent(new Event(NAVIGATE));
 	window.scrollTo(0, 0);

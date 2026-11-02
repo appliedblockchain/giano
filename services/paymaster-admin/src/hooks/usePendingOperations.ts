@@ -63,10 +63,18 @@ export function usePendingOperations(
 		toBlock?: bigint;
 	}>({ operations: [] });
 	const running = useRef(false);
+	/**
+	 * Bumped whenever the timelock changes. A read started for an earlier one finishes into nothing:
+	 * without it, a read still in flight when the client was rebuilt (connecting a wallet rebuilds it)
+	 * would publish into the state just reset, and block the new client's first read.
+	 */
+	const generation = useRef(0);
 
 	// A different timelock is a different list: nothing read from the last one carries over.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `timelock` is a trigger: a new one resets what was read
 	useEffect(() => {
+		generation.current += 1;
+		running.current = false;
 		known.current = { operations: [] };
 		setOperations([]);
 		setRange(undefined);
@@ -86,12 +94,15 @@ export function usePendingOperations(
 		if (known.current.toBlock === undefined && longestDelay === undefined)
 			return;
 		running.current = true;
+		const run = generation.current;
+		const stale = () => run !== generation.current;
 		setLoading(true);
 		try {
 			const from = known.current.toBlock;
 			if (from === undefined) {
 				const windows = await firstReadWindows(timelock, longestDelay);
 				const page = await timelock.getOperations({ windows });
+				if (stale()) return;
 				publish(page.operations);
 				known.current.toBlock = page.toBlock;
 				setRange({ fromBlock: page.fromBlock, toBlock: page.toBlock });
@@ -113,6 +124,7 @@ export function usePendingOperations(
 							: { ...operation, state };
 					}),
 				);
+				if (stale()) return;
 				publish(refreshed);
 				if (page.toBlock >= from) {
 					known.current.toBlock = page.toBlock;
@@ -123,12 +135,15 @@ export function usePendingOperations(
 			}
 			setError(undefined);
 		} catch (cause) {
+			if (stale()) return;
 			setError(describeError(cause));
 			console.error("[paymaster-admin] Could not read the timelock", cause);
 		} finally {
-			running.current = false;
-			setLoading(false);
-			setSettled(true);
+			if (!stale()) {
+				running.current = false;
+				setLoading(false);
+				setSettled(true);
+			}
 		}
 	}, [timelock, longestDelay, publish]);
 
@@ -140,9 +155,11 @@ export function usePendingOperations(
 	/** One more window, older than anything read: what is found there is merged in, never re-read. */
 	const lookFurther = useCallback(async () => {
 		if (!timelock || !older) return;
+		const run = generation.current;
 		setLoading(true);
 		try {
 			const page = await timelock.getOperations({ range: older });
+			if (run !== generation.current) return;
 			publish(merge(page.operations, known.current.operations));
 			setRange(
 				(current) => current && { ...current, fromBlock: page.fromBlock },

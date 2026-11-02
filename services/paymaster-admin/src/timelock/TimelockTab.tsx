@@ -19,7 +19,13 @@ import {
 	Table,
 	Text,
 } from "@chakra-ui/react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { LuClock, LuDownload, LuRefreshCw } from "react-icons/lu";
 import { type Address, getAddress, isAddressEqual } from "viem";
 import { ActionButton } from "../components/actions";
@@ -42,6 +48,7 @@ import { AddressLabel, TxLink } from "../components/values";
 import { describeError } from "../lib/format";
 import { downloadSafeBatch, relativeTime } from "../lib/proposals";
 import { queuedKeys } from "../lib/queued";
+import { useHash } from "../lib/router";
 import { MAX_UINT32 } from "../lib/validate";
 import { addressNames, useConsole } from "../shell/ConsoleContext";
 
@@ -66,6 +73,8 @@ const STATE: Record<
  */
 export function TimelockTab({ tenants }: { tenants: readonly TenantView[] }) {
 	const { timelock, timelockAccess, timelockOperations } = useConsole();
+	// Read once for the tab: the summary and the roles card show the same holders.
+	const holders = useTimelockHolders();
 	if (!timelock)
 		return (
 			<SectionCard
@@ -94,11 +103,11 @@ export function TimelockTab({ tenants }: { tenants: readonly TenantView[] }) {
 					stale={timelockAccess.config !== undefined}
 				/>
 			)}
-			<SummaryCard />
+			<SummaryCard holders={holders} />
 			<OperationsCard />
 			<SimpleGrid columns={{ base: 1, xl: 2 }} gap="4" alignItems="start">
 				<DelaysCard />
-				<TimelockRolesCard />
+				<TimelockRolesCard holders={holders.holders} />
 			</SimpleGrid>
 			<ProposeCard tenants={tenants} />
 			{timelockOperations.error && (
@@ -157,10 +166,15 @@ function useTimelockHolders() {
 	return { holders, candidates, error, read };
 }
 
-function SummaryCard() {
+type Holders = ReturnType<typeof useTimelockHolders>;
+
+function SummaryCard({
+	holders: { holders, candidates, error, read },
+}: {
+	holders: Holders;
+}) {
 	const { timelock, timelockAccess, wallet } = useConsole();
 	const { config, mayPropose, mayCancel, mayExecute } = timelockAccess;
-	const { holders, candidates, error, read } = useTimelockHolders();
 	if (!timelock) return null;
 	const roleLine = (role: TimelockRoleName, open?: boolean) =>
 		open ? (
@@ -272,15 +286,21 @@ function OperationsCard() {
 				: operation.state === filter,
 	);
 
-	// A queued marker elsewhere links to /timelock#<id>: bring that operation into view, whatever the filter.
+	// A queued marker elsewhere links to /timelock#<id>: bring that operation into view, whatever the
+	// filter — once per link followed. Every poll brings a new list, and re-applying the link on each
+	// one would undo whatever the operator filtered or scrolled to since.
+	const hash = useHash();
+	const followed = useRef<string>(undefined);
 	useEffect(() => {
-		const id = window.location.hash.slice(1);
-		if (!id || !operations.some((operation) => operation.id === id)) return;
+		const id = hash.slice(1);
+		if (!id || followed.current === hash) return;
+		if (!operations.some((operation) => operation.id === id)) return;
+		followed.current = hash;
 		setFilter("all");
 		requestAnimationFrame(() =>
 			document.getElementById(id)?.scrollIntoView({ block: "start" }),
 		);
-	}, [operations]);
+	}, [hash, operations]);
 
 	return (
 		<SectionCard
@@ -733,9 +753,8 @@ function ChangeDelay({
 	);
 }
 
-function TimelockRolesCard() {
+function TimelockRolesCard({ holders }: { holders: Holders["holders"] }) {
 	const { propose } = useConsole();
-	const { holders } = useTimelockHolders();
 	const [role, setRole] = useState<TimelockRoleName>("PROPOSER_ROLE");
 	const account = useAddressInput();
 	const grantee = account.value;

@@ -59,7 +59,8 @@ export function CallForm({
 	const [kind, setKind] = useState<Kind>("setDefaultFee");
 	const [tenant, setTenant] = useState<string>(tenants[0]?.id ?? "");
 	const [role, setRole] = useState<PaymasterRoleName>("FEE_ADMIN_ROLE");
-	const fee = useAmountInput();
+	// 0 is a fee: free sponsorship, for every tenant or for one.
+	const fee = useAmountInput(undefined, undefined, { allowZero: true });
 	const address = useAddressInput();
 	const data = useCalldataInput();
 
@@ -81,9 +82,9 @@ export function CallForm({
 		const feeWei = fee.value;
 		switch (kind) {
 			case "setDefaultFee":
-				return feeWei ? { kind, feeWei } : undefined;
+				return feeWei !== undefined ? { kind, feeWei } : undefined;
 			case "setTenantFee":
-				return feeWei && tenantId
+				return feeWei !== undefined && tenantId
 					? { kind, tenantId, hasOverride: true, feeWei }
 					: undefined;
 			case "clearTenantFee":
