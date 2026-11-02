@@ -14,7 +14,12 @@ import { useState } from "react";
 import { AddressInput, useAddressInput } from "../components/inputs";
 import { useWrite } from "../hooks/useWrite";
 import type { IssuedAdminKey, PlatformTenant } from "../lib/platform-api";
-import { formToPolicy, type PolicyForm, policyToForm } from "../lib/policy";
+import {
+	formToPolicy,
+	type PolicyForm,
+	policyProblems,
+	policyToForm,
+} from "../lib/policy";
 import { PolicyFields } from "../tenants/PolicyFields";
 import { ShownOnce, useKeyGuard, usePlatformAction } from "./LifecycleDialogs";
 import type { PlatformAreaProps } from "./shared";
@@ -352,7 +357,8 @@ export function CreateTenantDialog({
 												!form.slug ||
 												!form.walletOrigin ||
 												!form.rpName ||
-												!branding.ok
+												!branding.ok ||
+												policyProblems(policy).length > 0
 											}
 										>
 											Create tenant

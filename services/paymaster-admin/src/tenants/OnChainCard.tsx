@@ -121,7 +121,8 @@ function Registered({
 }) {
 	const { deployment } = useConsole();
 	const fund = useAmountInput();
-	const fee = useAmountInput();
+	// 0 is a fee: free sponsorship for this tenant, which is not the same as clearing the override.
+	const fee = useAmountInput(undefined, undefined, { allowZero: true });
 	const withdrawTo = useAddressInput();
 	const amount = fund.value;
 	const feeWei = fee.value;
@@ -228,12 +229,12 @@ function Registered({
 						target={{ operation: "setTenantFee" }}
 						label="Set fee override"
 						send={
-							feeWei
+							feeWei !== undefined
 								? () => client.setTenantFee(tenant.id, true, feeWei)
 								: undefined
 						}
 						proposal={
-							feeWei
+							feeWei !== undefined
 								? {
 										kind: "setTenantFee",
 										tenantId: tenant.id,

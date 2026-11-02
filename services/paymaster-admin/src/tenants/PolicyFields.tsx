@@ -22,6 +22,7 @@ import {
 	type ListMode,
 	type PerChainForm,
 	type PolicyForm,
+	policyProblems,
 } from "../lib/policy";
 
 /** wallet-api's 400 for a policy names its path below `/policy`; shown on the policy as a whole. */
@@ -204,11 +205,11 @@ export function PolicyFields({ value, onChange, error }: Props) {
 					<LuPlus /> Add a chain
 				</Button>
 			</Box>
-			{error && (
-				<Text color="red.fg" fontSize="sm">
-					{error}
+			{[...policyProblems(value), ...(error ? [error] : [])].map((problem) => (
+				<Text key={problem} color="red.fg" fontSize="sm">
+					{problem}
 				</Text>
-			)}
+			))}
 		</Stack>
 	);
 }

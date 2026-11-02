@@ -115,6 +115,32 @@ function listTo(list: ListForm): string[] | undefined {
 }
 
 /**
+ * What is wrong with a policy form before it is sent, one sentence each; empty when nothing is.
+ *
+ * "Only these" with no address would otherwise be sent as an empty list — which wallet-api reads as
+ * *any* address, the most permissive allowlist there is, while the form looked locked down. And two
+ * sections for one chain would silently merge, the second overwriting the first.
+ */
+export function policyProblems(form: PolicyForm): string[] {
+	const problems: string[] = [];
+	const seen = new Set<string>();
+	for (const chain of form.perChain) {
+		const id = chain.chainId.trim();
+		if (!/^\d+$/.test(id))
+			problems.push("Each chain section needs a chain id, a whole number.");
+		else if (seen.has(id))
+			problems.push(`Chain ${id} has two sections: merge them into one.`);
+		seen.add(id);
+		for (const field of LIST_FIELDS)
+			if (chain[field].mode === "only" && !listTo(chain[field])?.length)
+				problems.push(
+					`${LIST_LABELS[field]} on chain ${id || "?"} is "Only these" with no address. Add one, or choose "Any address" if that is what you mean.`,
+				);
+	}
+	return problems;
+}
+
+/**
  * The policy object to send. Empty fields are left out, so they inherit the deployment default.
  * A rate limit that is not a whole number is sent as typed, for wallet-api to refuse against its
  * field rather than to arrive as `null`.

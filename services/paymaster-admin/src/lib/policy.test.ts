@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { emptyChain, formToPolicy, policyToForm } from "./policy";
+import {
+	emptyChain,
+	formToPolicy,
+	policyProblems,
+	policyToForm,
+} from "./policy";
 
 const TARGET = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
 
@@ -53,5 +58,35 @@ describe("policy form", () => {
 			relayRateLimitPerMinute: "ten",
 			perChain: { "1": { allowedTargets: [TARGET, TARGET] } },
 		});
+	});
+});
+
+describe("policyProblems", () => {
+	it("refuses Only these with no address, which would be sent as any address", () => {
+		const form = policyToForm({});
+		form.perChain.push({
+			...emptyChain("1"),
+			allowedTargets: { mode: "only", text: " \n ," },
+		});
+		expect(policyProblems(form)).toEqual([
+			'Allowed targets on chain 1 is "Only these" with no address. Add one, or choose "Any address" if that is what you mean.',
+		]);
+	});
+
+	it("refuses a repeated or missing chain id, which would merge or send an empty key", () => {
+		const form = policyToForm({});
+		form.perChain.push(emptyChain("1"), emptyChain("1"), emptyChain(""));
+		expect(policyProblems(form)).toEqual([
+			"Chain 1 has two sections: merge them into one.",
+			"Each chain section needs a chain id, a whole number.",
+		]);
+	});
+
+	it("is empty for a well-formed policy", () => {
+		expect(
+			policyProblems(
+				policyToForm({ perChain: { "1": { allowedTargets: [] } } }),
+			),
+		).toEqual([]);
 	});
 });
