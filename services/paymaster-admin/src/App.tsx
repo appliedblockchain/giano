@@ -40,6 +40,7 @@ import {
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import type { ProposalRequest, Propose } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
+import { joinTenants, type TenantRow } from "./lib/tenants";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
@@ -58,6 +59,7 @@ import { Header } from "./shell/Header";
 import { SessionWarning } from "./shell/SessionWarning";
 import { TabBar } from "./shell/TabBar";
 import { TenantsRoute } from "./tenants/TenantsRoute";
+import { type Registry, useRegistry } from "./tenants/useRegistry";
 
 export function App() {
 	const { deployments } = getAdminConfig();
@@ -141,6 +143,13 @@ function Console({
 	const [proposal, setProposal] = useState<ProposalRequest>();
 	const propose = timelock ? setProposal : undefined;
 	const timelockOperations = usePendingOperations(timelock, lastUpdated);
+	// Read for the whole console, not only the Tenants tab: the tab bar counts the same tenants the
+	// list shows.
+	const registry = useRegistry(lastUpdated);
+	const tenantRows = useMemo(
+		() => joinTenants(registry.tenants, overview?.tenants),
+		[registry.tenants, overview?.tenants],
+	);
 	const safes = useSafes(deployment, client?.publicClient);
 
 	const selectDeployment = useCallback(
@@ -344,7 +353,13 @@ function Console({
 							<TabBar
 								route={route}
 								platformApi={platformApi}
-								tenants={overview?.tenants.length}
+								tenants={
+									!overview || (platformApi && !registry.tenants)
+										? undefined
+										: tenantRows.filter(
+												(row) => row.registry?.status !== "deleted",
+											).length
+								}
 								pendingOperations={
 									// Only from a read that succeeded: "(0)" after a failed one reads as nothing queued.
 									timelock && timelockOperations.read
@@ -364,6 +379,8 @@ function Console({
 								rosterOnChain={rosterOnChain}
 								loading={loading}
 								timelockOperations={timelockOperations}
+								tenantRows={tenantRows}
+								registry={registry}
 							/>
 						</>
 					)}
@@ -399,6 +416,8 @@ function RouteView({
 	rosterOnChain,
 	loading,
 	timelockOperations,
+	tenantRows,
+	registry,
 }: {
 	route: Route;
 	platformProps: PlatformAreaProps;
@@ -410,6 +429,8 @@ function RouteView({
 	rosterOnChain: boolean;
 	loading: boolean;
 	timelockOperations: TimelockOperationsState;
+	tenantRows: readonly TenantRow[];
+	registry: Registry;
 }) {
 	const { platformApi } = getAdminConfig();
 	const { client, overview, myRoles, wallet, deployment } = platformProps;
@@ -433,7 +454,8 @@ function RouteView({
 			<TenantsRoute
 				param={route.tenant}
 				client={client}
-				overview={overview}
+				rows={tenantRows}
+				registry={registry}
 				rosterOnChain={rosterOnChain}
 				lastUpdated={lastUpdated}
 				platformProps={platformProps}

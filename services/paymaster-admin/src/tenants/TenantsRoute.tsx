@@ -1,7 +1,4 @@
-import type {
-	GianoPaymasterClient,
-	PaymasterOverview,
-} from "@appliedblockchain/giano-paymaster-sdk";
+import type { GianoPaymasterClient } from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Button,
 	CloseButton,
@@ -13,16 +10,16 @@ import {
 	Stack,
 	Text,
 } from "@chakra-ui/react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { getAdminConfig } from "../config";
 import { Link, TAB_PATHS } from "../lib/router";
-import { joinTenants } from "../lib/tenants";
+import type { TenantRow } from "../lib/tenants";
 import { CreateTenantDialog } from "../platform/CreateTenantDialog";
 import type { PlatformAreaProps } from "../platform/shared";
 import { RegisterById } from "./OnChainCard";
 import { TenantPage } from "./TenantPage";
 import { TenantsList } from "./TenantsList";
-import { useRegistry } from "./useRegistry";
+import type { Registry } from "./useRegistry";
 
 /**
  * The Tenants tab: the list at `/tenants`, one tenant's page at `/tenants/<slug>` — or
@@ -32,7 +29,8 @@ import { useRegistry } from "./useRegistry";
 export function TenantsRoute({
 	param,
 	client,
-	overview,
+	rows,
+	registry,
 	rosterOnChain,
 	lastUpdated,
 	platformProps,
@@ -41,17 +39,14 @@ export function TenantsRoute({
 	param: string | undefined;
 	/** Undefined while the paymaster has not been read: the registry still shows, its chain side unknown. */
 	client: GianoPaymasterClient | undefined;
-	overview: PaymasterOverview | undefined;
+	/** The registry joined to the roster, as the console computes it once for the tab bar too. */
+	rows: readonly TenantRow[];
+	registry: Registry;
 	rosterOnChain: boolean;
 	lastUpdated: Date | undefined;
 	platformProps: PlatformAreaProps;
 }) {
 	const { platformApi } = getAdminConfig();
-	const registry = useRegistry(lastUpdated);
-	const rows = useMemo(
-		() => joinTenants(registry.tenants, overview?.tenants),
-		[registry.tenants, overview?.tenants],
-	);
 	const [creating, setCreating] = useState(false);
 	const [registering, setRegistering] = useState(false);
 
