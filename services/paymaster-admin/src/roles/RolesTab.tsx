@@ -19,10 +19,16 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import { useState } from "react";
+import { LuLogOut, LuUserMinus } from "react-icons/lu";
 import { type Address, isAddressEqual } from "viem";
 import { ActionButton } from "../components/actions";
 import { AddressInput, useAddressInput } from "../components/inputs";
-import { InlineError, QueuedMarker, TimelockedTag } from "../components/status";
+import {
+	InlineError,
+	QueuedMarker,
+	StatusText,
+	TimelockedTag,
+} from "../components/status";
 import { ExecuteButton } from "../components/timelock";
 import { SectionCard } from "../components/ui";
 import { AddressLabel } from "../components/values";
@@ -205,6 +211,7 @@ function RoleRow({
 										<ActionButton
 											target={{ operation: "revokeRole" }}
 											label="Revoke"
+											icon={<LuUserMinus />}
 											size="xs"
 											destructive
 											send={() => client.revokeRole(entry.name, holder)}
@@ -225,8 +232,10 @@ function RoleRow({
 											<ActionButton
 												target={{ role: entry.name }}
 												label="Renounce"
+												icon={<LuLogOut />}
 												size="xs"
 												destructive
+												quiet
 												send={() => client.renounceRole(entry.name, holder)}
 												confirm={{
 													title: `Renounce ${entry.name}`,
@@ -276,9 +285,25 @@ function DefaultAdminCard({
 	const { wallet } = useConsole();
 	if (holders.length === 0)
 		return (
-			<Text fontSize="sm" color="accent.fg" data-testid="default-admin">
-				DEFAULT_ADMIN_ROLE is held by nobody: there is no superuser.
-			</Text>
+			<HStack
+				gap="3"
+				flexWrap="wrap"
+				borderWidth="1px"
+				rounded="lg"
+				bg="surface"
+				px="4"
+				py="3"
+				fontSize="sm"
+				data-testid="default-admin"
+			>
+				<Text fontFamily="mono" fontWeight="medium">
+					DEFAULT_ADMIN_ROLE
+				</Text>
+				<StatusText tone="green">held by nobody</StatusText>
+				<Text color="fg.muted">
+					There is no superuser: every power goes through a named role.
+				</Text>
+			</HStack>
 		);
 	const youHold =
 		wallet !== undefined &&
