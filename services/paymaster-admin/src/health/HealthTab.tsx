@@ -227,13 +227,17 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 		setLoading(true);
 		try {
 			const differing: { slug: string; text: string }[] = [];
+			const unread: string[] = [];
 			const queue = [...candidates];
 			const worker = async () => {
 				for (let row = queue.shift(); row; row = queue.shift()) {
 					const slug = row.registry?.slug;
 					if (!slug || !row.onChain) continue;
 					const result = await run((api) => api.detail(slug));
-					if (!result?.ok) continue;
+					if (!result?.ok) {
+						unread.push(slug);
+						continue;
+					}
 					const entry = result.value.ledger.find(
 						(line) => line.chainId === deployment.chainId,
 					);
@@ -255,26 +259,47 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 				}
 			};
 			await Promise.all(Array.from({ length: 5 }, worker));
+			const compared = count - unread.length;
 			setCheck(
-				differing.length === 0
+				compared === 0
 					? {
 							id: "ledger",
-							level: "ok",
-							label: "wallet-api's ledger matches the chain",
-							detail: `For all ${count} tenants with a registry row, at block ${block ?? "?"}.`,
-						}
-					: {
-							id: "ledger",
 							level: "warn",
-							label: "wallet-api's ledger differs from the chain",
-							detail: differing.map((entry) => entry.text).join("; "),
+							label: "Could not compare wallet-api's ledger with the chain",
+							detail: `None of the ${count} tenants' records could be read from wallet-api, so nothing was compared.`,
 							remedy:
-								"A ledger a few blocks behind catches up on its own. One synced past the block read and still different is drift: check wallet-api's paymaster watcher.",
-							links: differing.slice(0, 5).map((entry) => ({
-								to: tenantPath(entry.slug),
-								label: entry.slug,
-							})),
-						},
+								"Check wallet-api is reachable and your session is valid, then compare again.",
+						}
+					: differing.length === 0 && unread.length === 0
+						? {
+								id: "ledger",
+								level: "ok",
+								label: "wallet-api's ledger matches the chain",
+								detail: `For all ${count} tenants with a registry row, at block ${block ?? "?"}.`,
+							}
+						: {
+								id: "ledger",
+								level: "warn",
+								label:
+									differing.length > 0
+										? "wallet-api's ledger differs from the chain"
+										: "wallet-api's ledger could not be compared for every tenant",
+								detail: [
+									...differing.map((entry) => entry.text),
+									...(unread.length > 0
+										? [
+												`${unread.length} of ${count} tenants could not be read from wallet-api, so were not compared: ${unread.slice(0, 5).join(", ")}${unread.length > 5 ? "…" : ""}`,
+											]
+										: []),
+								].join("; "),
+								remedy:
+									differing.length > 0
+										? "A ledger a few blocks behind catches up on its own. One synced past the block read and still different is drift: check wallet-api's paymaster watcher."
+										: "Compare again; if it keeps failing, check wallet-api.",
+								links: [...differing.map((entry) => entry.slug), ...unread]
+									.slice(0, 5)
+									.map((slug) => ({ to: tenantPath(slug), label: slug })),
+							},
 			);
 		} catch (cause) {
 			setCheck({
