@@ -48,6 +48,16 @@ describe("parseAmount", () => {
 		});
 	});
 
+	it("accepts 0 only where it is a value, as a fee is", () => {
+		expect(parseAmount("0", { currency: ETH, allowZero: true })).toEqual({
+			value: 0n,
+		});
+		expect(parseAmount("0.0", { currency: ETH, allowZero: true })).toEqual({
+			value: 0n,
+		});
+		expect(parseAmount("0", { currency: ETH }).error).toMatch(/more than 0/);
+	});
+
 	it("refuses zero, signs, units and too many decimals", () => {
 		expect(parseAmount("0", { currency: ETH }).error).toMatch(/more than 0/);
 		expect(parseAmount("-1", { currency: ETH }).error).toMatch(/amount in ETH/);

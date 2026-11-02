@@ -25,6 +25,11 @@ describe("parseRoute", () => {
 		});
 	});
 
+	it("says a malformed escape is not found, rather than throwing", () => {
+		expect(parseRoute("/tenants/100%")).toEqual({ tab: "not-found" });
+		expect(parseRoute("/tenants/%E0%A4")).toEqual({ tab: "not-found" });
+	});
+
 	it("says an unknown path is not found", () => {
 		expect(parseRoute("/settings")).toEqual({ tab: "not-found" });
 		expect(parseRoute("/tenants/byo/edit")).toEqual({ tab: "not-found" });
