@@ -10,7 +10,7 @@ import {
 	Text,
 	Textarea,
 } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlatformTenant } from "../lib/platform-api";
 import { formToPolicy, type PolicyForm, policyToForm } from "../lib/policy";
 import { PolicyFields } from "../tenants/PolicyFields";
@@ -72,13 +72,31 @@ export function EditTenantDialog({
 	const issues = issuesByField(error);
 	const branding = parseJsonObject(form.branding);
 
-	// a fresh open starts from the tenant as it is now
+	// A fresh open starts from the tenant as it is now. While open, the page re-reads the tenant on
+	// every refresh and hands this a new object each time: that must not wipe what is being typed.
+	// Only a new version replaces the form, and only while nothing has been typed into it; with edits
+	// in it, the save meets the 412 and the edits are kept for re-applying.
+	const opened = useRef<{ version: number; form: Form }>(undefined);
 	useEffect(() => {
-		if (open && !conflicted) {
-			setForm(toForm(tenant));
+		if (!open) {
+			opened.current = undefined;
+			return;
+		}
+		if (conflicted) return;
+		const previous = opened.current;
+		const pristine =
+			previous !== undefined &&
+			JSON.stringify(form) === JSON.stringify(previous.form);
+		if (
+			previous === undefined ||
+			(tenant.version !== previous.version && pristine)
+		) {
+			const fresh = toForm(tenant);
+			opened.current = { version: tenant.version, form: fresh };
+			setForm(fresh);
 			setBaseVersion(tenant.version);
 		}
-	}, [open, tenant, conflicted]);
+	}, [open, tenant, conflicted, form]);
 
 	const set =
 		(

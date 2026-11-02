@@ -174,6 +174,11 @@ test.describe("admin console", () => {
 		await edit
 			.getByRole("textbox", { name: "Display name" })
 			.fill("Renamed in the console");
+		// longer than the console's 5 s poll: a refresh while the dialog is open must not wipe the edit
+		await page.waitForTimeout(6_000);
+		await expect(
+			edit.getByRole("textbox", { name: "Display name" }),
+		).toHaveValue("Renamed in the console");
 		await edit.getByRole("button", { name: "Save" }).click();
 		await expect(
 			page.getByText("Renamed in the console").first(),
