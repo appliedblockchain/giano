@@ -20,6 +20,7 @@ import {
 	SignerRequiredError,
 	translateContractError,
 } from "./errors";
+import { withGasHeadroom } from "./gas";
 import { assessHealth } from "./health";
 import {
 	type BlockRange,
@@ -714,7 +715,9 @@ export class GianoPaymasterClient {
 				chain: walletClient.chain ?? this.publicClient.chain,
 			} as never);
 
-			const hash = await walletClient.writeContract(request as never);
+			const hash = await walletClient.writeContract(
+				(await withGasHeadroom(this.publicClient, request)) as never,
+			);
 			return {
 				hash,
 				wait: (confirmations?: number) =>

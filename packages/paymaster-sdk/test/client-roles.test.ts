@@ -13,6 +13,7 @@ const HOLDER = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed" as const;
 function recording() {
 	const simulated: { functionName: string; args: readonly unknown[] }[] = [];
 	const publicClient = {
+		estimateContractGas: async () => 100_000n,
 		simulateContract: async (request: {
 			functionName: string;
 			args: readonly unknown[];
