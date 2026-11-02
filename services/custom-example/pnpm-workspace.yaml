@@ -85,9 +85,6 @@ overrides:
   "preact@>=10.0.0 <10.26.10": "10.29.8"
   # socket.io-parser — @metamask/sdk via wagmi connectors
   "socket.io-parser@>=4.0.0 <4.2.7": "4.2.7"
-  # GHSA-587h-7wmj-h5pm, GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-rq7h-c2jc-7f22 (<=6.4.3) and
-  # GHSA-8g5g-mxqh-grgj (=6.4.4); also lifts the copy that vitest resolves.
-  "vite@>=6.0.0 <6.4.5": "6.4.5"
   # GHSA-68fv-2mgg-jv7q — magicast via @vitest/coverage-v8, vite, postcss
   "source-map-js@>=1.0.0 <1.2.2": "1.2.2"
   # Critical — ethereum-cryptography (hardhat), create-hash/create-hmac and @coinbase/wallet-sdk.
