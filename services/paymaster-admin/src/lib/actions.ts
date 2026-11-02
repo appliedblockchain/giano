@@ -26,7 +26,12 @@ export type ActionPlan =
 export type ActionTarget =
 	| { operation: TimelockedFunctionName }
 	| { role: PaymasterRoleName }
-	| { anyone: true };
+	| { anyone: true }
+	/**
+	 * Gated by something the paymaster's role table does not name — holding DEFAULT_ADMIN_ROLE, or
+	 * one of the timelock's own roles — decided by the caller, with the reason to show when not.
+	 */
+	| { gate: { allowed: boolean; reason: string } };
 
 export type ActionContext = {
 	/** Paymaster roles the connected wallet holds; empty when none is connected. */
@@ -39,7 +44,7 @@ export type ActionContext = {
 export function targetRole(
 	target: ActionTarget,
 ): PaymasterRoleName | undefined {
-	if ("anyone" in target) return undefined;
+	if ("anyone" in target || "gate" in target) return undefined;
 	return "operation" in target
 		? (TIMELOCKED_OPERATIONS[target.operation].role as PaymasterRoleName)
 		: target.role;
@@ -51,6 +56,18 @@ export function resolveAction(
 ): ActionPlan {
 	const role = targetRole(target);
 	const timelocked = "operation" in target;
+
+	if ("gate" in target) {
+		if (!connected)
+			return {
+				kind: "blocked",
+				reason: "Connect a wallet to send this.",
+				needsWallet: true,
+			};
+		return target.gate.allowed
+			? { kind: "send" }
+			: { kind: "blocked", reason: target.gate.reason, needsWallet: false };
+	}
 
 	if (connected && (role === undefined || myRoles.includes(role)))
 		return { kind: "send" };
