@@ -46,7 +46,14 @@ export function tenantPath(tenant: string): string {
 export function parseRoute(pathname: string): Route {
 	const path = pathname.replace(/\/+$/, "") || "/";
 	const tenant = /^\/tenants\/([^/]+)$/.exec(path);
-	if (tenant) return { tab: "tenants", tenant: decodeURIComponent(tenant[1]) };
+	if (tenant) {
+		// A malformed escape (`/tenants/100%`) is a path no tenant has, not a reason to crash the page.
+		try {
+			return { tab: "tenants", tenant: decodeURIComponent(tenant[1]) };
+		} catch {
+			return { tab: "not-found" };
+		}
+	}
 	for (const [tab, tabPath] of Object.entries(TAB_PATHS))
 		if (tabPath === path) return { tab: tab as Tab };
 	return { tab: "not-found" };
