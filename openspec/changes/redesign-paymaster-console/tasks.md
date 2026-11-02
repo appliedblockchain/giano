@@ -21,7 +21,7 @@
 - [x] 3.1 Add `lib/router.tsx`: `useRoute`, `navigate`, `<Link>`, the route table, and an unknown-route view (D1).
 - [x] 3.2 Split `App.tsx` into `shell/Header.tsx` and `shell/TabBar.tsx`, a route outlet, and the existing connect and deployment logic.
   - The header: logo, title, deployment select, paymaster address, session pill, wallet with disconnect, colour-mode toggle.
-  - The status line: health level, invariant, queued count, last refresh.
+  - The status line: health level, invariant, paused, last refresh. The queued count and the block moved to 4.7 (G1).
 - [x] 3.3 One tab bar: Overview, Tenants, Paymaster, Roles, Timelock, Activity, Health, Admins. Admins only with `platformApi`. Remove the area switch (D2). Mount the existing panels under their new routes unchanged.
 - [x] 3.4 The sign-in page with its steps, shown in place of any path until there is a session. After sign-in, that path renders.
 - [x] 3.5 The session warning two minutes before expiry, with Stay signed in (a fresh signature) and Sign out (K8).
@@ -37,6 +37,9 @@
 - [ ] 4.4 `InlineError`. Route every failure through it or a toast, never neither (C6).
 - [ ] 4.5 `StatusText`, `TimelockedTag` and `QueuedMarker`; exact values available without a `title` tooltip (C11).
 - [ ] 4.6 `usePendingOperations`: the timelock's pending operations, read once and shared by the markers and the Overview (N7).
+- [ ] 4.7 The status line's queued-change count, linking to Timelock, and the block of the last refresh; the Timelock tab's pending count (G1, G2).
+- [ ] 4.8 Config: optional `explorerUrl` and `addresses` per deployment, validated at load; `TxLink` and `AddressLabel` (*you*, *the timelock*, *the paymaster*, configured labels; a Safe's threshold read once per deployment) (D9, G3, G4).
+- [ ] 4.9 Vitest as a pinned dev dependency (ABIP-6, ABIP-7, lockfile in its own commit); unit tests for `parseRoute`, the input validators and `useChainAction`'s resolution (G11).
 
 ## 5. Tenants
 
@@ -55,19 +58,23 @@
 - [ ] 5.4 Per-tenant activity on the tenant page (N8).
 - [ ] 5.5 Suspend offers to disable on every chain (K11, spec §11.3); create accepts policy and branding.
 - [ ] 5.6 e2e: list, tenant page, register from the page, fee override Send.
+- [ ] 5.7 Tenant page: wallet-api's ledger compared with the chain, and each other configured chain's registration, enabled state and ledger balance via `/v1/platform/rpc/<chainId>` (G6, D10).
+- [ ] 5.8 List: users column, the next on-chain step per row (Register on chain, Fund), totals under the list, and the roster-only list where `platformApi` is false.
 
 ## 6. Paymaster tab
 
 - [ ] 6.1 Move Settings to `/paymaster` as role-labelled cards, using the shared primitives (K4).
 - [ ] 6.2 Stake lifecycle: add, unlock, withdraw; the unstake delay in human units and unlocking as a date (N1, K1).
 - [ ] 6.3 Upgrade: the current implementation from the ERC-1967 slot, and Propose `upgradeToAndCall` (N3).
-- [ ] 6.4 Treasury withdraw with Max and confirmation; confirmation on pause and on signer removal (C4).
+- [ ] 6.4 Treasury withdraw with Max and confirmation; confirmation on pause, stake unlock and signer removal (C4).
+- [ ] 6.5 Unpause; clear each input after its write succeeds; validate gas and delays as whole numbers (K4).
 
 ## 7. Roles
 
 - [ ] 7.1 The role table with timelocked/immediate and "you" badges; flag non-timelock holders of timelocked roles (K3).
 - [ ] 7.2 Revoke with confirmation. Allow revoking `DEFAULT_ADMIN_ROLE` when held (D4).
 - [ ] 7.3 "Propose a role change": grant, revoke, and rotate as one batch (N5).
+- [ ] 7.4 Each role's "may, and may not" from the SDK role table; the `DEFAULT_ADMIN_ROLE` banner; Execute on a ready role change (G8).
 
 ## 8. Timelock
 
@@ -81,6 +88,8 @@
 - [ ] 8.3 Schedule, execute and cancel sent directly by a PROPOSER, EXECUTOR or CANCELLER wallet; a cancel batch for incomplete operations (N4).
 - [ ] 8.4 Proposal dialog: multi-call, salt, delay and predecessor; operation id; copy calldata; Safe schedule, execute and cancel batches (N5).
 - [ ] 8.5 Delays table with Propose change; the timelock's own PROPOSER, CANCELLER and EXECUTOR holders with Propose grant/revoke (N6).
+- [ ] 8.6 Summary: address, minimum delay, who proposes, cancels and executes (checked against the configured addresses, saying the timelock cannot list them), and what the connected wallet may do (G9).
+- [ ] 8.7 e2e: schedule from a PROPOSER wallet, execute, cancel, and a rotation batch on the e2e timelock.
 
 ## 9. Overview
 
@@ -99,6 +108,48 @@
   - "Look further back" instead of the 100-row cap;
   - refreshed with everything else without losing the older pages already loaded (K6, C7).
 - [ ] 10.2 Health: its own icon, a labelled badge, and the subtitle fixed (K7).
-- [ ] 10.3 Admins: field-level errors; the shared confirm (K12).
+- [ ] 10.3 Admins: field-level errors; the shared confirm; the note that removing an admin ends their sessions (K12, G12).
 - [ ] 10.4 README: the tab list, the write rules, and the proposal-builder claim corrected. `specs/PLATFORM-ADMIN-SPECS.md` §11.2 (C12).
 - [ ] 10.5 Run `openspec validate redesign-paymaster-console --strict` and the full e2e suite.
+- [ ] 10.6 Activity: outcome and account filters, the overhead column, and Export CSV of the loaded rows (G5).
+- [ ] 10.7 Health: checks grouped as Funds, Keys and roles, Registry and chain; the console-side registry and ledger checks; what to do, with a link, on each warning (G7, D10).
+- [ ] 10.8 Phone width: every tab at 390 px with no page-level horizontal scroll; an e2e case at that size (G10).
+- [ ] 10.9 e2e: Stay signed in (G11).
+
+## 11. Phase 2: timelock-aware health (B2, layer 12)
+
+- [ ] 11.1 Contracts: record `GianoPaymaster`'s runtime codehash, with the immutable positions zeroed, in each `releases/<version>/release.json`, and export the map. Changeset (D13).
+- [ ] 11.2 SDK: `assessHealth` takes an optional timelock context; the timelocked-roles and delays checks; the implementation-release check. Replace the "verify this is the timelock" warning. Tests and a changeset.
+- [ ] 11.3 `giano-doctor chain`: pass the profile's delays and the timelock, and apply the same checks.
+- [ ] 11.4 Console: pass the timelock context and the implementation codehash; Health shows the three checks in Keys and roles.
+
+## 12. Phase 2: admin events (B1, layer 13)
+
+- [ ] 12.1 SDK: `getAdminEvents({ range, kinds })` over the paymaster and timelock, decoded with role names, windowed like `getSponsorships`. Changeset (D12).
+- [ ] 12.2 SDK test: every privileged event in the paymaster ABI is decoded.
+- [ ] 12.3 Console: Admin events in Activity, with *Look further back*; the tenant page's history adds that tenant's on-chain events.
+
+## 13. Phase 2: sign-ins and sessions (B6, layer 14)
+
+- [ ] 13.1 wallet-api: `lastSignInAt` and `activeSessions` on `GET /v1/platform/admins`; `GET /v1/platform/admins/:id/sessions`; `DELETE /v1/platform/admins/:id/sessions/:sessionId` for your own sessions only (D15). Route tests.
+- [ ] 13.2 Console: last sign-in and active sessions on Admins; your own sessions with *End*.
+
+## 14. Phase 2: chains (B3, layer 15)
+
+- [ ] 14.1 wallet-api: the prober keeps its last verification and each probe; `BundlerClient.supportedEntryPoints()`.
+- [ ] 14.2 wallet-api: `GET /v1/platform/chains`, probed in parallel with a 3-second timeout, no URLs in the response. Route tests, including one chain down.
+- [ ] 14.3 Console: the Chains section on Health, with the head-age and watcher-lag thresholds next to the doctor's.
+- [ ] 14.4 Update `specs/PLATFORM-ADMIN-SPECS.md` §10 from "follow-up card" to delivered.
+
+## 15. Phase 2: drift (B5, layer 16)
+
+- [ ] 15.1 wallet-api: drift computed at the end of each watcher pass, held in memory with its time (D14). Unit tests for each kind of drift, and for a watcher that is behind.
+- [ ] 15.2 wallet-api: `GET /v1/platform/drift` and the per-chain drifted-tenants metric.
+- [ ] 15.3 `giano-doctor`: a drift check.
+- [ ] 15.4 Console: Health's Registry and chain group reads the endpoint when it exists (D10, D11).
+
+## 16. Phase 2: usage (B4, layer 17)
+
+- [ ] 16.1 wallet-api: `GET /v1/platform/usage` from `sponsorship_decisions` and `sponsorship_settlements`, at most 90 days, rate limited. Add an index if the query plan needs one, in its own migration.
+- [ ] 16.2 Console: the Usage card on the Overview and the tenant page, absent when the endpoint returns 404 (D11).
+- [ ] 16.3 Final pass: `openspec validate redesign-paymaster-console --strict`, the full e2e suite, and the README and `PLATFORM-ADMIN-SPECS.md` updated for phase 2.
