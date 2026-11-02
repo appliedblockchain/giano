@@ -779,17 +779,18 @@ and whether it should also alert.
 
 ### 11.2 Layout
 
-A top-level switch between the existing **Paymaster** tabs (Overview, Tenants, Roles, Settings,
-History, Health — unchanged) and a new **Platform** area. H5 delivers its Tenants and Sign-in
-tabs, and the Admins tab followed with `platform-admins-in-database`; the Chains tab belongs to the
-follow-up card (H-k).
+One tab bar, each tab a page with its own path (`openspec/changes/redesign-paymaster-console`):
+Overview, Tenants, Paymaster, Roles, Timelock, Activity, Health, and Admins where the platform API
+is configured. The earlier split into a Paymaster area and a Platform area is gone: it put one
+tenant in two places. The selected deployment is chosen in the header and is not part of the path.
 
 | Tab | Contents |
 | --- | --- |
-| **Tenants** | Registry table: slug, id, status, wallet origin, users, and per selected chain an *on-chain* column joined from the paymaster roster by id: `registered · enabled`, `registered · disabled`, or `not registered`. A fourth group lists tenants on the roster with **no** registry row, which today nobody can see. Row → detail drawer with fields, keys, ledger position and history. |
-| **Admins** | The platform admins (id, address, who added them, when), *Add admin*, and *Remove* with a confirmation, plus the change history (§4.1). No Remove button on the signed-in platform admin's own row, or when only one platform admin is left; the API refuses both anyway. |
-| **Chains** *(follow-up card)* | One card per served chain from `/v1/platform/chains`, with the thresholds applied and the same ok/check/failing badges as `HealthPanel`. |
-| **Sign-in** | Shown in place of the other tabs until the platform admin has a session. One button, *Sign in with wallet*: connects the wallet if needed, then runs §4.2 with the connected address and the selected chain. Shows which platform admin id and address are signed in and when the session expires. Any `401` returns here. |
+| **Tenants** (`/tenants`) | One list: the registry joined by tenant id to the selected chain's paymaster roster — slug, wallet origin, lifecycle status, *registered · enabled*, *registered · disabled* or *not registered*, balance, deficit, fee, users, any queued timelock change, and the next on-chain step. Tenants on the roster with **no** registry row are listed in it, marked as such. Search, a state filter, *Show deleted*, and totals for the chain. |
+| **A tenant** (`/tenants/<slug>`) | A page, not a drawer: the tenant on this chain with its on-chain actions under the console's write rules; wallet-api's ledger compared with the chain; the tenant on every other configured chain; recent sponsorships; fields, the policy as fields, admin keys (never key material) and history with each edit's before and after; and the lifecycle actions its state allows (§11.3). |
+| **Admins** (`/admins`) | The platform admins (id, address, who added them, when), *Add admin* with the id and address checked as they are typed, and *Remove* with a confirmation, plus the change history (§4.1). Your own row and the last admin's say why they cannot be removed; the API refuses both anyway. Removing an admin ends their sessions at once. |
+| **Chains** *(follow-up card, B3)* | A section of the Health tab once wallet-api serves `/v1/platform/chains`: one row per served chain, with the thresholds applied. Absent until then. |
+| **Sign-in** | Shown in place of whatever path was opened until the platform admin has a session, and that path after. *Sign in with wallet* connects the wallet if needed, then runs §4.2 with the connected address and the selected chain. The header shows who is signed in and for how long; two minutes before the session ends, *Stay signed in* signs again and replaces the session in place. Any `401` returns here. |
 
 ### 11.3 Flows
 

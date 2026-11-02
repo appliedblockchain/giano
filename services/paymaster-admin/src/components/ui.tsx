@@ -119,8 +119,14 @@ export function SectionCard({
 			borderColor="border"
 		>
 			<Card.Header pb="2">
-				<HStack justify="space-between" align="flex-start" gap="4">
-					<Box>
+				{/* On a narrow screen the actions wrap under the title rather than squeezing it. */}
+				<HStack
+					justify="space-between"
+					align="flex-start"
+					gap="4"
+					flexWrap="wrap"
+				>
+					<Box flex="1 1 16rem" minW="0">
 						<Heading size="md">{title}</Heading>
 						{subtitle && (
 							<Text fontSize="sm" color="fg.muted" mt="1">
