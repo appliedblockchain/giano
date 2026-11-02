@@ -192,6 +192,7 @@ export function OnChainStep({
 	title,
 	description,
 	allowed,
+	ready = true,
 	busy,
 	actionLabel,
 	onAct,
@@ -199,7 +200,10 @@ export function OnChainStep({
 }: {
 	title: string;
 	description: ReactNode;
+	/** Whether the wallet holds TENANT_ADMIN_ROLE; without it the step says so. */
 	allowed: boolean;
+	/** Whether the step's own fields are filled in; not a reason to blame the role. */
+	ready?: boolean;
 	busy: boolean;
 	actionLabel: string;
 	onAct: () => void;
@@ -219,7 +223,7 @@ export function OnChainStep({
 						colorPalette="brand"
 						onClick={onAct}
 						loading={busy}
-						disabled={!allowed}
+						disabled={!allowed || !ready}
 					>
 						{actionLabel}
 					</Button>

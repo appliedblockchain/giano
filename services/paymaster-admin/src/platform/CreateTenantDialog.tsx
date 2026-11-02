@@ -167,10 +167,9 @@ export function CreateTenantDialog({
 												title={`Register on ${deployment.name}`}
 												description="Optional. Registers this tenant's id on the paymaster so it can be funded and sponsored. Registration is once-only."
 												allowed={
-													canAdministerOnChain(myRoles) &&
-													client !== undefined &&
-													withdrawTo.value !== undefined
+													canAdministerOnChain(myRoles) && client !== undefined
 												}
+												ready={withdrawTo.value !== undefined}
 												busy={write.busy}
 												actionLabel="Register on-chain"
 												onAct={() => void register()}

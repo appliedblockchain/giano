@@ -112,7 +112,7 @@ export function TenantPage({
 			>
 				<LuArrowLeft aria-hidden="true" /> Tenants
 			</Link>
-<HStack
+			<HStack
 				justify="space-between"
 				align="flex-start"
 				flexWrap="wrap"
