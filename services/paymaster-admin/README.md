@@ -1,94 +1,117 @@
 # Giano paymaster admin
 
-An operator's view of a Giano sponsorship paymaster: tenant balances, treasury, roles, health and
-settled sponsorships — all read straight from the chain.
+An operator's console for a Giano sponsorship paymaster: its tenants, treasury, stake, roles,
+timelock and settled sponsorships, read from the chain, and, where the deployment enables it,
+wallet-api's tenant registry and platform admins beside them.
 
-The Paymaster area has no backend of its own. It reads the chain over JSON-RPC and nothing else, so
-it keeps no database and cannot show you anything the chain does not already say. That is
-deliberate: an operational view whose numbers come from a cache can be wrong in the one situation
-where being wrong matters most.
+Everything about the paymaster is read straight from the chain over JSON-RPC. The console keeps no
+database and caches nothing it shows as a figure: an operational view whose numbers come from a
+cache can be wrong in the one situation where being wrong matters most.
 
-Who may read is a separate question, answered by where the console is deployed: a hosted console
-reads only for a signed-in platform admin, through wallet-api; a standalone one must sit behind
-your own access control (see [Access](#access)).
-
-Where the deployment enables it, a **Platform** area sits beside it: wallet-api's tenant registry
-and the platform admin list, for Giano's own platform admins (see [Platform area](#platform-area)).
+Who may read is answered by where the console is deployed: a hosted console reads only for a
+signed-in platform admin, through wallet-api; a standalone one must sit behind your own access
+control (see [Access](#access)).
 
 ```bash
 pnpm demo:admin            # from the repo root → http://localhost:4402
 ```
 
-## What it shows
+## The tabs
 
-- **Overview** — the solvency invariant (`Σ tenant balances + treasury ≤ deposit`), deposit, stake
-  and pricing. A breach is rendered as an insolvency, not a warning.
-- **Tenants** — the whole roster with balances, deficits and effective fees, enumerated on-chain.
-- **Roles** — who holds what, and what each role may and may **not** do. `DEFAULT_ADMIN_ROLE` is
-  shown precisely because it should be empty.
-  Each role is marked **timelocked** or **immediate**.
-- **Settings** — signing keys, fees, parameters, stake, treasury, pause.
-- **Timelock** — with `timelockAddress` configured: the timelock's minimum delay and each timelocked
-  function's own delay, whether it holds the timelocked roles yet, and its operations (waiting,
-  ready, done, cancelled) with their ETA, read from its logs. A proposal builder for every
-  timelocked action. Where executors are open, **Execute** sends a ready operation from the
-  connected wallet; otherwise it saves the Safe execute batch.
-- **History** — settled sponsorships, with gas, fee and overhead separately.
-- **Health** — the checks `giano-doctor` runs, at the same thresholds.
+One tab bar, each tab a page with its own URL (`/`, `/tenants`, `/tenants/<slug>`, `/paymaster`,
+`/roles`, `/timelock`, `/activity`, `/health`, `/admins`), so reloading, a new browser tab and Back
+all land where they point. The deployment is chosen in the header, not in the URL.
+
+- **Overview** — first what needs an operator, each with a link to where it is fixed: the
+  invariant breached, the paymaster paused or unstaked, tenants in deficit, unfunded, unregistered
+  or disagreeing with the registry, ready timelock operations. Then the deposit, tenant balances,
+  treasury and stake, solvency with its slack, the configuration with the implementation, and what
+  is queued in the timelock.
+- **Tenants** — one list: wallet-api's registry joined by tenant id to the selected chain's
+  paymaster roster, with lifecycle and on-chain state, balance, deficit, fee, users, queued changes
+  and the next step. Search, a state filter, totals. Without the platform API it is the roster by id.
+- **A tenant** (`/tenants/<slug>`) — its state on this chain with register, fund, enable or disable,
+  fee override and withdrawal address; wallet-api's ledger compared with the chain; the tenant on
+  every other configured chain; its recent sponsorships; the registry record and admin keys (never
+  key material); its history with each edit's before and after; and the lifecycle actions its state
+  allows.
+- **Paymaster** — one card per setting, each naming the role it needs: pause, signing keys,
+  pricing, operational parameters, treasury (with *Max*), stake (add, unlock, withdraw, with the
+  unlock date) and upgrade (the implementation from the ERC-1967 slot).
+- **Roles** — every role, timelocked or immediate and its delay, its holders by name, what it may
+  and may **not** do, queued changes with *Execute*; grant, revoke, renounce and rotate.
+  `DEFAULT_ADMIN_ROLE` is shown because it should be held by nobody.
+- **Timelock** — with `timelockAddress` configured: who proposes, cancels and executes, what your
+  wallet may do, its operations with *Execute* and *Cancel*, its delays and its own roles, each with
+  a proposal to change them.
+- **Activity** — settled sponsorships with time, tenant, account, outcome, gas, fee and overhead,
+  filters and totals, *Look further back* with no row cap, and *Export CSV*.
+- **Health** — the checks `giano-doctor` runs, at the same thresholds, grouped as Funds, Keys and
+  roles, and Registry and chain, each saying what to do and where; with the platform API, also that
+  every on-chain tenant has a registry row and that wallet-api's ledger matches the chain.
+- **Admins** — with the platform API: who may sign in, the change history, *Add admin* and *Remove*.
+
+## The write rules
+
+Every control that sends a transaction is shown whether or not your wallet may use it. One that it
+may not is disabled and says why — the role it needs, or that a wallet must be connected — because
+hiding a control just produces a support ticket. A write that is destructive (pause, revoke, remove
+a signer, disable a tenant, withdraw, unlock or withdraw the stake, upgrade, execute, cancel) asks
+first and says what it does. Every address and amount field checks its value as you type, says
+what is wrong under the field, and keeps its button disabled until it is right.
 
 ### Timelocked actions
 
 Fees, withdrawal addresses, role changes and upgrades are timelocked (G9): on a handed-off
-deployment only the timelock holds their roles, and its proposer is a Safe. So where the connected
-wallet holds the role — a devnet, where one key holds everything — the console sends them directly as
-before; where it does not and a timelock is configured, the same control says **Propose** and opens
-the proposal instead of a transaction that would revert. A proposal shows the operation id, the
-delay read from the timelock, when it would be ready, and the schedule / execute / cancel calldata
-(click to copy), and saves the Safe Transaction Builder batch. Nothing is sent: building a proposal
-needs no wallet and no role.
+deployment only the timelock holds their roles, and its proposer is a Safe. So the same control
+resolves three ways:
+
+- **Send** where your wallet holds the role — a devnet, where one key holds everything;
+- **Propose**, in the timelock's purple with a clock, where it does not and a timelock is
+  configured. This opens the proposal instead of a transaction that would revert;
+- disabled, naming the role, where there is neither.
+
+The proposal dialog takes one or more calls that execute together (a role rotation is a grant and a
+revoke in one operation), a salt, a delay no shorter than the timelock requires and a predecessor.
+It shows the operation id, when it could execute, and the schedule, execute and cancel calldata, and
+saves the Safe Transaction Builder batch for each step. A wallet holding the timelock's
+`PROPOSER_ROLE` can schedule it from there. Building a proposal needs no wallet and no role.
+
+A change that is queued is marked where it will land — a tenant's fee, a role, the implementation —
+with when it is ready and a link to the operation.
 
 ## Connecting a wallet
 
 In a standalone console reads need no wallet. Where the platform API is configured, reading needs a
-platform admin sign-in, and the sign-in uses the wallet. Either way, the wallet enables the actions
-the connected account's roles allow;
-everything else stays visible but disabled, with the role it would need named underneath — hiding a
-control just produces a support ticket.
+platform admin sign-in, and the sign-in uses the wallet. Either way, the wallet enables the writes
+its account's roles allow.
 
 The console never sees a key. It asks an injected EIP-1193 wallet to sign, which is the only shape
-that works when the role holders are hardware wallets and timelocks. It checks the wallet's chain
-rather than silently switching it: quietly moving a hardware wallet to another network is a good
-way to sign a treasury withdrawal against the wrong deployment.
+that works when the role holders are hardware wallets and timelocks. Connecting asks the wallet to
+move to the deployment's chain, and adds it where the wallet does not know it.
 
 Withdrawing a tenant's balance is deliberately absent. Only that tenant's own registered withdrawal
 address can do it, and no role on the paymaster can — including every role at once.
 
-## Platform area
+## Signing in
+
+With the platform API (`GIANO_WALLET_API_UPSTREAM`), the console shows a sign-in page in place of
+whatever path was opened, and that path once signed in. The connected wallet signs a message
+wallet-api wrote, naming this console's domain; the address must be one of wallet-api's platform
+admins (its `platform_admins` table). The session lives in the page's memory only: a reload, an
+account or network change, a deployment switch, sign-out, disconnecting the wallet, or its expiry
+(30 minutes) ends it. Two minutes before it ends, a card offers *Stay signed in*: a fresh signature
+that replaces the session in place, keeping whatever you were typing.
+
+The first platform admins come from wallet-api's init step, per environment
+(`services/wallet-api/src/environments.ts`), and only into an empty list. After that the Admins tab
+manages them: an added admin can sign in at once, and removing one ends their sessions at once.
+Nobody can remove themselves or the last admin.
 
 Tenants can be created, edited, suspended and deleted at runtime, with no redeploy
-([`specs/PLATFORM-ADMIN-SPECS.md`](../../specs/PLATFORM-ADMIN-SPECS.md)). The Platform area is
-where Giano's platform admins do it. A header switch moves between **Paymaster** and **Platform**; the
-switch only exists when the container is given `GIANO_WALLET_API_UPSTREAM`.
-
-- **Sign in with wallet.** The connected wallet signs a message wallet-api wrote, naming this
-  console's domain. The address must be one of wallet-api's platform admins (its `platform_admins` table). The session lives in
-  the page's memory only: a reload, an account or network change, a deployment switch, sign-out or
-  its expiry (30 minutes) ends it. It is the same session the Paymaster area reads with, so the
-  sign-in view shows in both areas and one sign-in serves both.
-- **Tenants.** The registry, with each tenant's status and —
-  matched on tenant id — its state on the selected paymaster: *registered · enabled*, *registered ·
-  disabled* or *not registered*. Roster entries with no registry row are listed on their own.
-- **A tenant.** Fields, admin keys (never key material), usage, ledger and history, and the actions
-  its state allows: create (keys shown once, then an optional *Register on-chain*), edit,
-  suspend (then an optional on-chain disable), resume, delete (type the slug), issue and revoke keys.
-- **Admins.** Who can sign in here: each platform admin's id, address, who added them and when; *Add
-  admin* (they can sign in at once); *Remove* (their sessions end on their next request); and the
-  history of every change. There is no Remove button on your own row, or when only one platform admin
-  is left — wallet-api refuses both anyway. The first platform admins come from wallet-api's init step, per
-  environment (`services/wallet-api/src/environments.ts`), and only into an empty list.
-
-On-chain follow-ups need `TENANT_ADMIN_ROLE` on the paymaster and are always optional: the API action
-has already happened when they are offered.
+([`specs/PLATFORM-ADMIN-SPECS.md`](../../specs/PLATFORM-ADMIN-SPECS.md)). On-chain follow-ups —
+registering, disabling on suspend, enabling on resume — are offered after the API action, never
+instead of it, and never undo it.
 
 ## Configuration
 
@@ -153,7 +176,7 @@ either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-dep
 `GIANO_EXPLORER_URL` / `GIANO_ENVIRONMENT_LABEL` / `GIANO_REFRESH_SECONDS`. `addresses` needs
 `GIANO_DEPLOYMENTS`.
 
-`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area and gates
+`GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the platform API (the registry, Admins and sign-in) and gates
 every read: the container proxies `/api/*` to wallet-api on its own origin, drops the browser's
 `Origin` header (wallet-api's platform routes refuse any request carrying one), re-resolves the
 upstream per request through the nameserver in `/etc/resolv.conf`, points each deployment's reads at
@@ -224,18 +247,19 @@ deployment is hundreds of requests, growing by about five a day.
 
 The console answers the two differently:
 
-- **Sponsorships** reads one window ending at the head and says which blocks those are. *Look
-  further back* reads the preceding window and adds to the table. A settlement record exists
-  nowhere else, so a window is the affordable version of a read that has no substitute.
-- **Tenants** shows no slug at all — a tenant is identified by the id the contract uses, which is
-  the same value as its `tenants.id` UUID and which every view call already carries. The panel is
-  therefore entirely view calls: complete, exact, and the same cost on a chain's first day as on its
-  ten-thousandth.
+- **Activity** reads one window ending at the head and says which blocks those are. *Look
+  further back* reads the preceding window and adds to the table; each refresh reads only the new
+  blocks. A settlement record exists nowhere else, so a window is the affordable version of a read
+  that has no substitute. The Timelock tab's operations are read the same way, going back far enough
+  to cover its longest delay.
+- **Tenants** take their slug from wallet-api's registry, matched on the tenant id, which is the
+  same value as the contract's id. Without the platform API they are listed by id: the roster itself
+  is entirely view calls, complete and exact.
 
 Registering a tenant still **writes** a slug, because that event is what lets an auditor reconcile
-the on-chain record against the backend's tenant table. To read one back, use
-`giano-paymaster tenant <id>` — it pages backwards with the tenant id as an indexed filter, which a
-console refreshing every fifteen seconds cannot afford to do — or a block explorer.
+the on-chain record against the backend's tenant table. To read one back without the registry, use
+`giano-paymaster tenant <id>` — it pages backwards with the tenant id as an indexed filter — or a
+block explorer.
 
 INFRASTRUCTURE §14.6 has the reasoning and the numbers.
 
@@ -249,7 +273,7 @@ An operator checking that a role holder is the timelock is comparing the whole v
 
 `deploy/docker-compose.e2e.yml` publishes it on 8083, and portless serves it as
 **http://paymaster.localhost**. Open it beside http://app.localhost: a sponsored send from the
-sample dApp shows up as a falling tenant balance and a new row under **History**.
+sample dApp shows up as a falling tenant balance and a new row under **Activity**.
 
 It waits for the sponsorship provisioner, so it shows a provisioned deployment rather than an empty
 roster that looks like a bug.
