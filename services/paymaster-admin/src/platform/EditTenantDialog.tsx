@@ -12,7 +12,12 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import type { PlatformTenant } from "../lib/platform-api";
-import { formToPolicy, type PolicyForm, policyToForm } from "../lib/policy";
+import {
+	formToPolicy,
+	type PolicyForm,
+	policyProblems,
+	policyToForm,
+} from "../lib/policy";
 import { PolicyFields } from "../tenants/PolicyFields";
 import { OriginsField } from "./CreateTenantDialog";
 import { usePlatformAction } from "./LifecycleDialogs";
@@ -261,7 +266,11 @@ export function EditTenantDialog({
 								colorPalette="brand"
 								onClick={() => void save()}
 								loading={busy}
-								disabled={!branding.ok || !form.rpName.trim()}
+								disabled={
+									!branding.ok ||
+									!form.rpName.trim() ||
+									policyProblems(form.policy).length > 0
+								}
 							>
 								Save
 							</Button>
