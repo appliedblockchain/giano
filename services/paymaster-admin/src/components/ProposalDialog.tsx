@@ -81,6 +81,11 @@ export function ProposalDialog({
 		setRequired(undefined);
 	}, [request]);
 
+	// The proposal is rebuilt from the chain whenever its options change; while a salt or a delay is
+	// being typed, only once the typing pauses rather than four reads a keystroke.
+	const settledSalt = useDebounced(salt, 400);
+	const settledDelay = useDebounced(delay, 400);
+
 	const saltProblem =
 		salt && !SALT.test(salt)
 			? "A salt is 0x and 64 hex characters."
@@ -98,13 +103,15 @@ export function ProposalDialog({
 			requests.length === 0 ||
 			saltProblem ||
 			delayProblem ||
-			!salt
+			!settledSalt ||
+			!SALT.test(settledSalt) ||
+			!/^\d*$/.test(settledDelay.trim())
 		)
 			return;
 		let cancelled = false;
 		buildProposal(timelock, requests, {
-			salt: salt as Hex,
-			delay: delay.trim() ? BigInt(delay.trim()) : undefined,
+			salt: settledSalt as Hex,
+			delay: settledDelay.trim() ? BigInt(settledDelay.trim()) : undefined,
 			predecessor: predecessor ? (predecessor as Hex) : undefined,
 		})
 			.then((built) => {
@@ -122,7 +129,15 @@ export function ProposalDialog({
 		return () => {
 			cancelled = true;
 		};
-	}, [timelock, requests, salt, delay, predecessor, saltProblem, delayProblem]);
+	}, [
+		timelock,
+		requests,
+		settledSalt,
+		settledDelay,
+		predecessor,
+		saltProblem,
+		delayProblem,
+	]);
 
 	/**
 	 * Each request's calls, decoded here rather than read off the draft: a proposal the timelock
@@ -452,6 +467,16 @@ function Calldata({ value, label }: { value: Hex; label: string }) {
 			</Text>
 		</Stack>
 	);
+}
+
+/** `value`, once it has stopped changing for `ms`. */
+function useDebounced<T>(value: T, ms: number): T {
+	const [settled, setSettled] = useState(value);
+	useEffect(() => {
+		const timer = setTimeout(() => setSettled(value), ms);
+		return () => clearTimeout(timer);
+	}, [value, ms]);
+	return settled;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
