@@ -309,7 +309,9 @@ test("the Roles tab grants, rotates and revokes a role, each change landing on c
 
 	await holder(second).getByRole("button", { name: "Revoke" }).click();
 	const confirm = page.getByRole("alertdialog", { name: "Revoke PAUSER_ROLE" });
-	await expect(confirm).toContainText("will no longer be able to halt acceptance");
+	await expect(confirm).toContainText(
+		"will no longer be able to halt acceptance",
+	);
 	await confirm.getByRole("button", { name: "Revoke" }).click();
 	await expect(holder(second)).toHaveCount(0, { timeout: 30_000 });
 });
