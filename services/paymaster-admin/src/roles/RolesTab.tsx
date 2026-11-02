@@ -32,10 +32,7 @@ import {
 import { ExecuteButton } from "../components/timelock";
 import { SectionCard } from "../components/ui";
 import { AddressLabel } from "../components/values";
-import {
-	type TimelockAccess,
-	useTimelockConfig,
-} from "../hooks/useTimelockConfig";
+import type { TimelockAccess } from "../hooks/useTimelockConfig";
 import { queuedKeys } from "../lib/queued";
 import { useConsole } from "../shell/ConsoleContext";
 
@@ -55,7 +52,7 @@ export function RolesTab({
 	client: GianoPaymasterClient;
 	roles: readonly RoleHolders[];
 }) {
-	const access = useTimelockConfig();
+	const access = useConsole().timelockAccess;
 	const named = roles.filter(
 		(entry): entry is RoleHolders & { name: PaymasterRoleName } =>
 			entry.name !== "DEFAULT_ADMIN_ROLE",
