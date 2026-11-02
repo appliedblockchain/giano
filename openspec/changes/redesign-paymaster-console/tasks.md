@@ -31,15 +31,15 @@
 
 ## 4. Shared primitives
 
-- [ ] 4.1 `useChainAction` and `<ActionButton>`: send, propose or blocked, with the missing role named (D6, C2, C3).
-- [ ] 4.2 `ConfirmDialog` for destructive writes (C4).
-- [ ] 4.3 `AddressInput` and `AmountInput` with field-level errors and a typed value (D7, C5). Take the native currency symbol from the chain instead of a hard-coded "ETH" (C10).
-- [ ] 4.4 `InlineError`. Route every failure through it or a toast, never neither (C6).
-- [ ] 4.5 `StatusText`, `TimelockedTag` and `QueuedMarker`; exact values available without a `title` tooltip (C11).
-- [ ] 4.6 `usePendingOperations`: the timelock's pending operations, read once and shared by the markers and the Overview (N7).
-- [ ] 4.7 The status line's queued-change count, linking to Timelock, and the block of the last refresh; the Timelock tab's pending count (G1, G2).
-- [ ] 4.8 Config: optional `explorerUrl` and `addresses` per deployment, validated at load; `TxLink` and `AddressLabel` (*you*, *the timelock*, *the paymaster*, configured labels; a Safe's threshold read once per deployment) (D9, G3, G4).
-- [ ] 4.9 Vitest as a pinned dev dependency (ABIP-6, ABIP-7, lockfile in its own commit); unit tests for `parseRoute`, the input validators and `useChainAction`'s resolution (G11).
+- [x] 4.1 `useChainAction` and `<ActionButton>`: send, propose or blocked, with the missing role named (D6, C2, C3).
+- [x] 4.2 `ConfirmDialog` for destructive writes (C4).
+- [x] 4.3 `AddressInput` and `AmountInput` with field-level errors and a typed value (D7, C5). Take the native currency symbol from the chain instead of a hard-coded "ETH" (C10): `nativeCurrency` comes from the chain descriptor; each tab moves to it as it is rebuilt (sections 5–10).
+- [x] 4.4 `InlineError`, with Try again and a stale note (C6). Each tab routes every failure through it or a toast, never neither, as it is rebuilt (sections 5–10).
+- [x] 4.5 `StatusText`, `TimelockedTag` and `QueuedMarker`; exact values available without a `title` tooltip (C11).
+- [x] 4.6 `usePendingOperations`: the timelock's pending operations, read once and shared by the markers and the Overview (N7).
+- [x] 4.7 The status line's queued-change count, linking to Timelock, and the block of the last refresh; the Timelock tab's pending count (G1, G2).
+- [x] 4.8 Config: optional `explorerUrl` and `addresses` per deployment, validated at load; `TxLink` and `AddressLabel` (*you*, *the timelock*, *the paymaster*, configured labels; a Safe's threshold read once per deployment) (D9, G3, G4).
+- [x] 4.9 Vitest as a pinned dev dependency (ABIP-6, ABIP-7, lockfile in its own commit); unit tests for `parseRoute`, the input validators and `useChainAction`'s resolution (G11).
 
 ## 5. Tenants
 

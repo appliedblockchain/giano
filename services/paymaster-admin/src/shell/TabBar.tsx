@@ -33,11 +33,14 @@ export function TabBar({
 	route,
 	platformApi,
 	tenants,
+	pendingOperations,
 	healthLevel,
 }: {
 	route: Route;
 	platformApi: boolean;
 	tenants: number | undefined;
+	/** Waiting or ready timelock operations, once read; undefined without a timelock. */
+	pendingOperations: number | undefined;
 	healthLevel: HealthLevel | undefined;
 }) {
 	const tabs = TABS.filter(({ tab }) => tab !== "admins" || platformApi);
@@ -75,6 +78,9 @@ export function TabBar({
 						<Icon />
 						{label}
 						{tab === "tenants" && tenants !== undefined && ` (${tenants})`}
+						{tab === "timelock" &&
+							pendingOperations !== undefined &&
+							` (${pendingOperations})`}
 						{tab === "health" && healthLevel && healthLevel !== "ok" && (
 							<Badge
 								colorPalette={healthLevel === "fail" ? "red" : "orange"}

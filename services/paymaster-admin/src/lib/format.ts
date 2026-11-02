@@ -1,4 +1,7 @@
-import { formatEther } from "viem";
+import { formatUnits } from "viem";
+import type { NativeCurrency } from "../config";
+
+const ETH: NativeCurrency = { symbol: "ETH", decimals: 18 };
 
 /**
  * Money is shown to a fixed number of decimals with the exact value in the title attribute.
@@ -8,7 +11,16 @@ import { formatEther } from "viem";
  * rounded figure is for reading; the exact one is one hover away and is what the chain holds.
  */
 export function eth(wei: bigint, decimals = 4): string {
-	const exact = formatEther(wei);
+	return amount(wei, ETH, decimals);
+}
+
+/** {@link eth} in the chain's own currency, without the symbol. */
+export function amount(
+	wei: bigint,
+	currency: NativeCurrency,
+	decimals = 4,
+): string {
+	const exact = formatUnits(wei, currency.decimals);
 	const value = Number(exact);
 	if (value === 0) return "0";
 	// Anything that would round to zero is shown as a bound instead, so "0.0000" never stands in
@@ -21,7 +33,11 @@ export function eth(wei: bigint, decimals = 4): string {
 }
 
 /** The exact wei-precision figure, for tooltips and copy buttons. */
-export const exactEth = (wei: bigint): string => `${formatEther(wei)} ETH`;
+export const exactEth = (wei: bigint): string => exactAmount(wei, ETH);
+
+/** The exact figure with the chain's currency symbol, e.g. `0.000123456789 POL`. */
+export const exactAmount = (wei: bigint, currency: NativeCurrency): string =>
+	`${formatUnits(wei, currency.decimals)} ${currency.symbol}`;
 
 /*
  * There is deliberately no address- or hash-shortening helper here.
