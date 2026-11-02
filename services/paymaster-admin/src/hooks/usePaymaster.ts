@@ -56,7 +56,12 @@ export function usePaymaster(
 ): PaymasterState {
 	const blocked = auth === "required";
 	const token = auth === "required" ? undefined : auth?.token;
-	// The client is keyed on the token; the callback is read when a 401 arrives, whatever its identity.
+	const signedIn = token !== undefined;
+	// The client is keyed on whether there is a session, not on which: a renewed session's token is
+	// read per request, so Stay signed in swaps it without a new client, a re-read, or a remount. The
+	// callback is likewise read when a 401 arrives, whatever its identity.
+	const currentToken = useRef(token);
+	currentToken.current = token;
 	const onUnauthorized = useRef<() => void>(undefined);
 	onUnauthorized.current =
 		auth === "required" ? undefined : auth?.onUnauthorized;
@@ -66,11 +71,19 @@ export function usePaymaster(
 				? undefined
 				: createReadClient(
 						deployment,
-						token
-							? { token, onUnauthorized: () => onUnauthorized.current?.() }
+						signedIn
+							? {
+									token: () => {
+										const current = currentToken.current;
+										return typeof current === "function"
+											? current()
+											: (current ?? "");
+									},
+									onUnauthorized: () => onUnauthorized.current?.(),
+								}
 							: undefined,
 					),
-		[deployment, blocked, token],
+		[deployment, blocked, signedIn],
 	);
 
 	const [client, setClient] = useState<GianoPaymasterClient>();
