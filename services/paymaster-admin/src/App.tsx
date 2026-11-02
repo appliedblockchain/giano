@@ -45,12 +45,10 @@ import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
 import { RolesPanel } from "./panels/RolesPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
-import { TenantsPanel } from "./panels/TenantsPanel";
 import { TimelockPanel } from "./panels/TimelockPanel";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
-import { TenantsTab } from "./platform/TenantsTab";
 import {
 	type ConsoleContextValue,
 	ConsoleProvider,
@@ -59,6 +57,7 @@ import {
 import { Header } from "./shell/Header";
 import { SessionWarning } from "./shell/SessionWarning";
 import { TabBar } from "./shell/TabBar";
+import { TenantsRoute } from "./tenants/TenantsRoute";
 
 export function App() {
 	const { deployments } = getAdminConfig();
@@ -223,6 +222,7 @@ function Console({
 		timelock,
 		propose,
 		refresh,
+		block,
 		timelockOperations,
 		safes,
 	};
@@ -428,24 +428,14 @@ function RouteView({
 			return <OverviewPanel overview={overview} />;
 		case "tenants":
 			return (
-				<Stack gap="6">
-					{platformApi && (
-						<TenantsTab
-							{...platformProps}
-							selected={route.tenant}
-							lastUpdated={lastUpdated}
-						/>
-					)}
-					<TenantsPanel
-						client={client}
-						tenants={overview.tenants}
-						myRoles={myRoles}
-						connected={wallet !== undefined}
-						rosterOnChain={rosterOnChain}
-						refresh={refresh}
-						propose={propose}
-					/>
-				</Stack>
+				<TenantsRoute
+					param={route.tenant}
+					client={client}
+					overview={overview}
+					rosterOnChain={rosterOnChain}
+					lastUpdated={lastUpdated}
+					platformProps={platformProps}
+				/>
 			);
 		case "paymaster":
 			return (

@@ -19,10 +19,14 @@ export type ActionPlan =
 	| { kind: "propose" }
 	| { kind: "blocked"; reason: string; needsWallet: boolean };
 
-/** A write is named by the timelocked function it calls, or by the role an immediate one needs. */
+/**
+ * A write is named by the timelocked function it calls, by the role an immediate one needs, or as
+ * open to anyone with a wallet (funding a tenant).
+ */
 export type ActionTarget =
 	| { operation: TimelockedFunctionName }
-	| { role: PaymasterRoleName };
+	| { role: PaymasterRoleName }
+	| { anyone: true };
 
 export type ActionContext = {
 	/** Paymaster roles the connected wallet holds; empty when none is connected. */
@@ -32,7 +36,10 @@ export type ActionContext = {
 	hasTimelock: boolean;
 };
 
-export function targetRole(target: ActionTarget): PaymasterRoleName {
+export function targetRole(
+	target: ActionTarget,
+): PaymasterRoleName | undefined {
+	if ("anyone" in target) return undefined;
 	return "operation" in target
 		? (TIMELOCKED_OPERATIONS[target.operation].role as PaymasterRoleName)
 		: target.role;
@@ -45,7 +52,8 @@ export function resolveAction(
 	const role = targetRole(target);
 	const timelocked = "operation" in target;
 
-	if (connected && myRoles.includes(role)) return { kind: "send" };
+	if (connected && (role === undefined || myRoles.includes(role)))
+		return { kind: "send" };
 	// A proposal is built, not sent, so it needs no wallet: anyone reading the console may draft one
 	// for the proposer.
 	if (timelocked && hasTimelock) return { kind: "propose" };
