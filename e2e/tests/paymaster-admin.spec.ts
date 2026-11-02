@@ -281,6 +281,12 @@ test("the Roles tab grants, rotates and revokes a role, each change landing on c
 
 	// a rotation grants the new holder before it revokes the old one
 	await page.getByLabel("From").selectOption({ label: getAddress(first) });
+	// rotating a holder to itself would leave the role with nobody: refused before the wallet
+	await page.getByRole("textbox", { name: "To", exact: true }).fill(first);
+	await expect(page.getByText("rotating to itself would leave")).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Rotate", exact: true }),
+	).toBeDisabled();
 	await page.getByRole("textbox", { name: "To", exact: true }).fill(second);
 	await page.getByRole("button", { name: "Rotate", exact: true }).click();
 	await expect(holder(second)).toBeVisible({ timeout: 30_000 });

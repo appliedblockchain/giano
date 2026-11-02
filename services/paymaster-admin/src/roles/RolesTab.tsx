@@ -377,7 +377,12 @@ function ChangeCard({
 	const [from, setFrom] = useState<string>("");
 	const rotateFrom = holders.find((holder) => holder === from) ?? holders[0];
 	const grantee = grantTo.value;
-	const successor = rotateTo.value;
+	// Rotating a holder to itself would grant nothing and then revoke it: the role left with nobody.
+	const sameHolder =
+		rotateTo.value !== undefined &&
+		rotateFrom !== undefined &&
+		isAddressEqual(rotateTo.value, rotateFrom);
+	const successor = sameHolder ? undefined : rotateTo.value;
 
 	return (
 		<SectionCard
@@ -450,7 +455,18 @@ function ChangeCard({
 										<NativeSelect.Indicator />
 									</NativeSelect.Root>
 								</Field.Root>
-								<AddressInput input={rotateTo} label="To" />
+								<AddressInput
+									input={rotateTo}
+									label="To"
+									helper={
+										sameHolder ? (
+											<Text as="span" color="red.fg">
+												That is the holder it rotates from: rotating to itself
+												would leave the role with nobody.
+											</Text>
+										) : undefined
+									}
+								/>
 								<Box>
 									<ActionButton
 										target={{ operation: "grantRole" }}
@@ -463,7 +479,12 @@ function ChangeCard({
 															role,
 															successor,
 														);
-														await granted.wait();
+														// Revoke only once the grant has succeeded: mined is not the same.
+														const receipt = await granted.wait();
+														if (receipt.status !== "success")
+															throw new Error(
+																`The grant to ${successor} (${granted.hash}) reverted, so ${rotateFrom} keeps the role; nothing was revoked.`,
+															);
 														return client.revokeRole(role, rotateFrom);
 													}
 												: undefined
