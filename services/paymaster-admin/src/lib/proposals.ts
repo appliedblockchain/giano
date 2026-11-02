@@ -2,9 +2,14 @@ import {
 	type GianoTimelockClient,
 	PAYMASTER_ROLES,
 	type PaymasterRoleName,
+	type ProposeOptions,
 	type SafeTransactionBatch,
+	TIMELOCK_ROLES,
+	type TimelockCall,
 	type TimelockedFunctionName,
 	type TimelockProposalDraft,
+	type TimelockRoleName,
+	toTenantId,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import type { Address, Hex } from "viem";
 
@@ -40,54 +45,123 @@ export type ProposalRequest =
 			role: PaymasterRoleName;
 			from: Address;
 			to: Address;
+	  }
+	/** The timelock's own floor. */
+	| { kind: "updateDelay"; seconds: bigint }
+	/** One timelocked paymaster function's own delay; 0 falls back to the floor. */
+	| {
+			kind: "setFunctionDelay";
+			functionName: TimelockedFunctionName;
+			/** The function's selector on the paymaster, as the timelock's config reports it. */
+			selector: Hex;
+			seconds: bigint;
+	  }
+	/** The timelock's own proposers, cancellers and executors. */
+	| {
+			kind: "grantTimelockRole" | "revokeTimelockRole";
+			role: TimelockRoleName;
+			account: Address;
 	  };
 
 /** Opens the proposal flow. Undefined where the deployment has no timelock configured. */
 export type Propose = (request: ProposalRequest) => void;
 
-/** The paymaster function a request calls, for its delay and the role that gates it. */
+/**
+ * The paymaster function a request calls, for the role that gates it and why it waits. Undefined
+ * for a change to the timelock itself, which no paymaster role gates: only the timelock can make it.
+ */
 export function requestFunction(
 	request: ProposalRequest,
-): TimelockedFunctionName {
-	return request.kind === "rotateRole" ? "grantRole" : request.kind;
+): TimelockedFunctionName | undefined {
+	switch (request.kind) {
+		case "rotateRole":
+			return "grantRole";
+		case "updateDelay":
+		case "setFunctionDelay":
+		case "grantTimelockRole":
+		case "revokeTimelockRole":
+			return undefined;
+		default:
+			return request.kind;
+	}
 }
 
-export function buildProposal(
+/** The calls a request makes, on the paymaster or on the timelock itself. */
+export function requestCalls(
 	timelock: GianoTimelockClient,
 	request: ProposalRequest,
-): Promise<TimelockProposalDraft> {
+): TimelockCall[] {
+	const paymaster = (name: string, args: readonly unknown[]) =>
+		timelock.paymasterCall(name, args);
+	const self = (name: string, args: readonly unknown[]) =>
+		timelock.timelockCall(name, args);
 	switch (request.kind) {
 		case "setDefaultFee":
-			return timelock.proposeSetDefaultFee(request.feeWei);
+			return [paymaster("setDefaultFee", [request.feeWei])];
 		case "setTenantFee":
-			return timelock.proposeSetTenantFee(
-				request.tenantId,
-				request.hasOverride,
-				request.feeWei,
-			);
+			return [
+				paymaster("setTenantFee", [
+					toTenantId(request.tenantId),
+					request.hasOverride,
+					request.feeWei,
+				]),
+			];
 		case "setTenantWithdrawAddress":
-			return timelock.proposeSetTenantWithdrawAddress(
-				request.tenantId,
-				request.withdrawAddress,
-			);
+			return [
+				paymaster("setTenantWithdrawAddress", [
+					toTenantId(request.tenantId),
+					request.withdrawAddress,
+				]),
+			];
 		case "upgradeToAndCall":
-			return timelock.proposeUpgrade(request.implementation, request.data);
+			return [
+				paymaster("upgradeToAndCall", [request.implementation, request.data]),
+			];
 		case "grantRole":
-			return timelock.proposeGrantRole(request.role, request.account);
 		case "revokeRole":
-			return timelock.proposeRevokeRole(request.role, request.account);
+			return [
+				paymaster(request.kind, [
+					PAYMASTER_ROLES[request.role],
+					request.account,
+				]),
+			];
 		case "rotateRole":
-			return timelock.propose([
-				timelock.paymasterCall("grantRole", [
-					PAYMASTER_ROLES[request.role],
-					request.to,
+			// Grant first: executed together, the role is never held by nobody.
+			return [
+				paymaster("grantRole", [PAYMASTER_ROLES[request.role], request.to]),
+				paymaster("revokeRole", [PAYMASTER_ROLES[request.role], request.from]),
+			];
+		case "updateDelay":
+			return [self("updateDelay", [request.seconds])];
+		case "setFunctionDelay":
+			return [
+				self("setFunctionDelay", [
+					timelock.paymaster,
+					request.selector,
+					request.seconds,
 				]),
-				timelock.paymasterCall("revokeRole", [
-					PAYMASTER_ROLES[request.role],
-					request.from,
-				]),
-			]);
+			];
+		case "grantTimelockRole":
+			return [
+				self("grantRole", [TIMELOCK_ROLES[request.role], request.account]),
+			];
+		case "revokeTimelockRole":
+			return [
+				self("revokeRole", [TIMELOCK_ROLES[request.role], request.account]),
+			];
 	}
+}
+
+/** One proposal from one or more requests, in order: a batch executes all of them or none. */
+export function buildProposal(
+	timelock: GianoTimelockClient,
+	requests: readonly ProposalRequest[],
+	options?: ProposeOptions,
+): Promise<TimelockProposalDraft> {
+	return timelock.propose(
+		requests.flatMap((request) => requestCalls(timelock, request)),
+		options,
+	);
 }
 
 /**
