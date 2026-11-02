@@ -464,9 +464,18 @@ function useBlockTimes(
 			[...new Set(records.map((record) => record.blockNumber))].slice(0, 100),
 		[records],
 	);
+	// Each block is asked for once: a read that fails is not retried in a loop, which is what keying
+	// the effect on `times` did — every result made a new Map, and a block that failed was still
+	// missing, so it was asked for again. A failed block shows its number without a time.
+	const asked = useRef(new Set<string>());
 	useEffect(() => {
 		let cancelled = false;
-		const missing = blocks.filter((block) => !times.has(block));
+		const missing = blocks.filter((block) => {
+			const key = `${client.address}:${block}`;
+			if (asked.current.has(key)) return false;
+			asked.current.add(key);
+			return true;
+		});
 		if (missing.length === 0) return;
 		void Promise.all(
 			missing.map(async (block) => {
@@ -483,16 +492,17 @@ function useBlockTimes(
 			}),
 		).then((entries) => {
 			if (cancelled) return;
+			const found = entries.filter(([, time]) => time !== undefined);
+			if (found.length === 0) return;
 			setTimes((current) => {
 				const next = new Map(current);
-				for (const [block, time] of entries)
-					if (time !== undefined) next.set(block, time);
+				for (const [block, time] of found) next.set(block, time as number);
 				return next;
 			});
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [client, blocks, times]);
+	}, [client, blocks]);
 	return times;
 }
