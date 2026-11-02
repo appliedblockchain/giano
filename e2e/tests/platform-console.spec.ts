@@ -268,6 +268,43 @@ test.describe("admin console", () => {
 		});
 	});
 
+	test("the Overview lists a tenant not registered on this chain by slug, linking to its page", async ({
+		page,
+	}) => {
+		const slug = `attention-${Date.now()}`;
+		await page.getByRole("button", { name: /Create tenant/ }).click();
+		const create = page.getByRole("dialog");
+		await create.getByRole("textbox", { name: "Slug" }).fill(slug);
+		await create
+			.getByRole("textbox", { name: "Wallet origin" })
+			.fill(`http://wallet-${slug}.localhost`);
+		await create
+			.getByRole("textbox", { name: "Display name" })
+			.fill("Attention E2E");
+		await create.getByRole("button", { name: "Create tenant" }).click();
+		await expect(create.getByText("These are shown once")).toBeVisible();
+		await create.getByRole("button", { name: "Done" }).click();
+		await page.getByRole("button", { name: "Close anyway" }).click();
+
+		// listed on its own, or, with more than three such tenants, on one line that names the newest
+		// first — either way by slug and linking to its page
+		await tab(page, /Overview/).click();
+		const attention = page.getByTestId("needs-attention");
+		await expect(attention).toContainText(slug, { timeout: 30_000 });
+		const named = attention.getByRole("link", { name: slug, exact: true });
+		if (await named.count()) await named.click();
+		else
+			await attention
+				.locator("[data-testid^=attention-unregistered]")
+				.filter({ hasText: `${slug} is not registered on this chain` })
+				.getByRole("link", { name: /Register/ })
+				.click();
+		await expect(page).toHaveURL(new RegExp(`/tenants/${slug}$`));
+		await expect(page.getByTestId("tenant-header")).toContainText(
+			"not registered",
+		);
+	});
+
 	test("admins are added and removed from the console, but never yourself", async ({
 		page,
 	}) => {

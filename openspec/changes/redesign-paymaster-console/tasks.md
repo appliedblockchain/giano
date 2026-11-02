@@ -93,11 +93,11 @@
 
 ## 9. Overview
 
-- [ ] 9.1 Needs attention:
+- [x] 9.1 Needs attention (more than three of one kind fold into one line naming the first few, each linking to its tenant page):
   - tenants in deficit, unfunded, unregistered, or disagreeing between registry and chain;
   - ready operations;
   - pause state (N10).
-- [ ] 9.2 Stat cards, solvency, configuration (with the implementation), queued changes; tenants named by slug (K1).
+- [x] 9.2 Stat cards, solvency, configuration (with the implementation), queued changes; tenants named by slug (K1). The usage card waits for `GET /v1/platform/usage` (B4, task 16) and is absent until then.
 
 ## 10. Activity, Health, Admins, docs
 

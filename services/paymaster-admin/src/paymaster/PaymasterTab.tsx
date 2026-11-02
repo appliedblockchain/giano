@@ -15,13 +15,7 @@ import {
 	Stack,
 	Text,
 } from "@chakra-ui/react";
-import {
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { LuPause, LuPlay, LuTrash2 } from "react-icons/lu";
 import type { Address } from "viem";
 import { ActionButton } from "../components/actions";
@@ -44,7 +38,7 @@ import {
 } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { AddressLabel, Amount } from "../components/values";
-import { describeError } from "../lib/format";
+import { useImplementation } from "../hooks/useImplementation";
 import { queuedKeys } from "../lib/queued";
 import { MAX_UINT32, parsePenaltyBps } from "../lib/validate";
 import { useConsole } from "../shell/ConsoleContext";
@@ -629,33 +623,13 @@ function describeCall(calldata: `0x${string}`): string {
 
 function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 	const { block } = useConsole();
-	const [implementation, setImplementation] = useState<Address>();
-	const [error, setError] = useState<string>();
+	const { implementation, error, read } = useImplementation(client, block);
 	const next = useAddressInput();
 	const data = useCalldataInput();
 	const address = next.value;
 	const calldata = data.value ?? "0x";
 	const { hasCode, error: codeError } = useHasCode(client, address);
 	const noCode = address !== undefined && hasCode === false;
-	// Right after an upgrade an older read can land last: only the latest read's answer is kept.
-	const generation = useRef(0);
-
-	const read = useCallback(async () => {
-		const current = ++generation.current;
-		try {
-			const found = await client.getImplementation();
-			if (generation.current !== current) return;
-			setImplementation(found);
-			setError(undefined);
-		} catch (cause) {
-			if (generation.current === current) setError(describeError(cause));
-		}
-	}, [client]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: re-read with every console refresh
-	useEffect(() => {
-		void read();
-	}, [read, block]);
 
 	return (
 		<Card
