@@ -1,10 +1,11 @@
 import { Button, Field, Group, Input, InputAddon } from "@chakra-ui/react";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { type Address, formatUnits } from "viem";
+import { type Address, formatUnits, type Hex } from "viem";
 import {
 	type Parsed,
 	parseAddress,
 	parseAmount,
+	parseCalldata,
 	parseWholeNumber,
 } from "../lib/validate";
 import { useConsole } from "../shell/ConsoleContext";
@@ -18,7 +19,11 @@ export type InputState<T> = {
 	setText: (text: string) => void;
 	value: T | undefined;
 	error: string | undefined;
-	/** Empties the field; called once its write succeeds. */
+	/**
+	 * Empties the field, once its write succeeds — unless it has been changed since the render this
+	 * `clear` came from. A write's success arrives after the receipt and a refresh, and whatever the
+	 * operator typed next in the meantime is theirs, not the old write's to wipe.
+	 */
 	clear: () => void;
 };
 
@@ -28,12 +33,17 @@ export function useInput<T>(
 ): InputState<T> {
 	const [text, setText] = useState(initial);
 	const parsed = useMemo(() => parse(text), [parse, text]);
-	const clear = useCallback(() => setText(""), []);
+	const clear = useCallback(
+		() => setText((current) => (current === text ? "" : current)),
+		[text],
+	);
 	return { text, setText, value: parsed.value, error: parsed.error, clear };
 }
 
 export const useAddressInput = (): InputState<Address> =>
 	useInput(parseAddress);
+
+export const useCalldataInput = (): InputState<Hex> => useInput(parseCalldata);
 
 /** An amount in the selected chain's currency, at most `max` when given. */
 /**
@@ -165,4 +175,9 @@ export function WholeNumberInput({
 			end={unit && <InputAddon>{unit}</InputAddon>}
 		/>
 	);
+}
+
+/** Raw calldata, `0x…`, for a call made after an upgrade. */
+export function CalldataInput(props: FieldProps<Hex>) {
+	return <TextField placeholder="0x (none)" mono {...props} />;
 }

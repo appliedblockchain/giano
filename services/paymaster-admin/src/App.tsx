@@ -45,8 +45,8 @@ import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
 import { RolesPanel } from "./panels/RolesPanel";
-import { SettingsPanel } from "./panels/SettingsPanel";
 import { TimelockPanel } from "./panels/TimelockPanel";
+import { PaymasterTab } from "./paymaster/PaymasterTab";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
@@ -460,15 +460,7 @@ function RouteView({
 				/>
 			);
 		case "paymaster":
-			return (
-				<SettingsPanel
-					client={client}
-					overview={overview}
-					myRoles={myRoles}
-					refresh={refresh}
-					propose={propose}
-				/>
-			);
+			return <PaymasterTab client={client} overview={overview} />;
 		case "roles":
 			return (
 				<RolesPanel
