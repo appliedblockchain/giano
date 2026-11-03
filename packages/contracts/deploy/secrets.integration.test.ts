@@ -40,14 +40,18 @@ async function run(args: string[], env: Record<string, string>) {
 	);
 }
 
-test("deploy:cli and the guided wizard never print or record the deployer key", {
-	timeout: 120000,
-}, async () => {
+/** The address of {@link KEY}. */
+const SIGNER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+/** A role admin that is not the signer (the wizard refuses a deployer as ROLE_ADMIN). */
+const ROLE_ADMIN = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+
+/** Starts anvil on a free port with `chainId`; resolves once it answers. */
+async function startAnvil(chainId: number) {
 	const socket = createServer();
 	await new Promise<void>((resolve) => socket.listen(0, "127.0.0.1", resolve));
 	const port = (socket.address() as { port: number }).port;
 	await new Promise<void>((resolve) => socket.close(() => resolve()));
-	const anvil = spawn(
+	const process = spawn(
 		"anvil",
 		[
 			"--host",
@@ -55,31 +59,42 @@ test("deploy:cli and the guided wizard never print or record the deployer key", 
 			"--port",
 			String(port),
 			"--chain-id",
-			"31337",
+			String(chainId),
 			"--silent",
 		],
 		{ stdio: "ignore" },
 	);
+	const rpc = `http://127.0.0.1:${port}`;
+	for (let i = 0; ; i++) {
+		try {
+			await fetch(rpc, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}',
+			});
+			break;
+		} catch (error) {
+			if (i >= 50) throw error;
+			await delay(100);
+		}
+	}
+	return { rpc, process };
+}
+
+test("deploy:cli and the guided wizard never print or record the deployer key", {
+	timeout: 120000,
+}, async () => {
+	const local = await startAnvil(31337);
+	// The guided wizard's profile (base-sepolia) is chain 84532: a matching chain, so it gets past
+	// the chain check and prints its plan.
+	const sepolia = await startAnvil(84532);
 	const dir = mkdtempSync(join(tmpdir(), "giano-secrets-"));
 	try {
-		const rpc = `http://127.0.0.1:${port}`;
+		const rpc = local.rpc;
 		for (let i = 0; ; i++) {
 			const probe = await run(["deploy/cli.ts", "addresses"], {});
 			if (probe.code === 0) break;
 			if (i > 20) throw new Error("cli does not start");
-		}
-		for (let i = 0; ; i++) {
-			try {
-				await fetch(rpc, {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}',
-				});
-				break;
-			} catch (error) {
-				if (i >= 50) throw error;
-				await delay(100);
-			}
 		}
 		const outputs: string[] = [];
 		for (const command of ["install-createx", "install-entrypoint"]) {
@@ -93,7 +108,7 @@ test("deploy:cli and the guided wizard never print or record the deployer key", 
 				"--rpc",
 				rpc,
 				"--role-admin",
-				"0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+				SIGNER,
 				"--record-dir",
 				dir,
 			],
@@ -103,7 +118,9 @@ test("deploy:cli and the guided wizard never print or record the deployer key", 
 		assert.match(core.stdout, /\+ giano\.paymaster\.proxy/);
 		outputs.push(core.stdout, core.stderr);
 
-		// The guided wizard's plan, with the key in its variable.
+		// The guided wizard's plan, with the key in its variable. It loads the key (the plan names its
+		// signer) and prints the plan, then exits non-zero: a fresh anvil has no CreateX or EntryPoint,
+		// and the testnet deployer may be unset. Neither stops the plan from being printed.
 		const guided = await run(
 			[
 				"deploy/guided.ts",
@@ -111,12 +128,22 @@ test("deploy:cli and the guided wizard never print or record the deployer key", 
 				"--chain",
 				"base-sepolia",
 				"--rpc",
-				rpc,
+				sepolia.rpc,
 				"--role-admin",
-				"0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+				ROLE_ADMIN,
 			],
 			{ CANONICAL_DEPLOYER_PRIVATE_KEY: KEY },
 		);
+		assert.equal(guided.code, 1, guided.stderr);
+		assert.match(guided.stdout, /OK: RPC is .* \(84532\)/);
+		assert.match(guided.stdout, /OK: Deployment plan \(testnet\)/);
+		assert.match(
+			guided.stdout,
+			new RegExp(
+				`Network class: testnet; canonical deployer: .*; signer: ${SIGNER}`,
+			),
+		);
+		assert.match(guided.stdout, /walletImplementation\s+expected/);
 		outputs.push(guided.stdout, guided.stderr);
 
 		// A malformed key must not be echoed back in an error either.
@@ -149,7 +176,8 @@ test("deploy:cli and the guided wizard never print or record the deployer key", 
 		for (const file of files)
 			assertNoKey(readFileSync(join(dir, file), "utf8"), file);
 	} finally {
-		anvil.kill();
+		local.process.kill();
+		sepolia.process.kill();
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
