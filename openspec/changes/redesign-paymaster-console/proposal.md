@@ -30,7 +30,8 @@ This change specifies the whole redesign: phase 1, console-only (the K, C and N 
 | 10 | Overview | Done, PR #189 |
 | 11 | Activity, Health, Admins, phone width, docs | Done, PR #190 |
 | 12 | Phase 2: B2, timelock-aware health | Done, PR #205 |
-| 13–17 | Phase 2: B1, B6, B3, B5, B4 | To do |
+| 13 | Phase 2: B1, admin events | Done, PR #206 |
+| 14–17 | Phase 2: B6, B3, B5, B4 | To do |
 
 ### Phase 1: console only
 
