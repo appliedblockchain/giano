@@ -14,6 +14,7 @@ import {
 	defineChain,
 	encodeFunctionData,
 	getAddress,
+	type Hex,
 	http,
 	type PublicClient,
 } from "viem";
@@ -154,6 +155,25 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			assert.equal(releaseOf(contract, code)?.release, "v2", key);
 			// Code is checked against the contract it claims to be, not any release contract.
 			assert.equal(releaseOf("GianoTimelock", code), undefined, key);
+			// The fingerprint itself, not only the size: one byte changed outside every immutable range,
+			// same length, is no release's code.
+			const fingerprint = releaseOf(contract, code);
+			assert.ok(fingerprint);
+			const outside = [...Array(fingerprint.size).keys()].find(
+				(i) =>
+					!fingerprint.immutables.some(
+						({ start, length }) => i >= start && i < start + length,
+					),
+			);
+			assert.ok(outside !== undefined);
+			const at = 2 + outside * 2;
+			const flipped = (Number.parseInt(code.slice(at, at + 2), 16) ^ 0xff)
+				.toString(16)
+				.padStart(2, "0");
+			const tampered =
+				`${code.slice(0, at)}${flipped}${code.slice(at + 2)}` as Hex;
+			assert.equal(tampered.length, code.length);
+			assert.equal(releaseOf(contract, tampered), undefined, key);
 		}
 		const before = readFileSync(join(dir, "84532.json"), "utf8");
 		const nonceBefore = await client.getTransactionCount({
