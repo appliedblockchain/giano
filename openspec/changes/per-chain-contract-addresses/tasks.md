@@ -9,7 +9,7 @@
 - [x] 2.1 Extend the release tooling so that compiling a release's `standard-input.json` yields, per deployable contract, the runtime bytecode and `immutableReferences`. Verify with a unit test that the factory's `implementation` immutable and both UUPS `__self` immutables are reported.
 - [x] 2.2 Add a generator (`pnpm gen:releases`) that writes `releases.ts` with `{ contract, release, immutables, fingerprint }` for every release, plus a `releaseOf(kind, runtimeCode)` helper. Verify that running it twice gives no diff, and that `releaseOf` recognises code deployed by `local:deploy` for every core contract.
 - [x] 2.3 Add a test that fails when any release contract has an immutable reference without a registered semantic check (design risk 1). Verify it passes for `v1` and `v2`, and fails when a check is removed.
-- [ ] 2.4 CI: in `determinism.yml`, regenerate `releases.ts` and fail on drift. Verify by pushing the layer and checking that the job is green.
+- [x] 2.4 CI: in `determinism.yml`, regenerate `releases.ts` and fail on drift. Verify by pushing the layer and checking that the job is green.
 
 ## 3. Network classes, overrides and the deployment guard (PR 3, design D2–D5)
 
@@ -22,7 +22,7 @@
 - [x] 3.7 Records v2: add `network`, per-contract `deterministic` and `expected`, and `deviations` (design D5). Update `records.ts` and `operations.ts`. Verify with `deploy.test.ts`, which checks that a confirmed deviation is written.
 - [x] 3.8 `generate-addresses.ts`: drop the canonical-deployer and canonical-address checks, and use `releaseOf` for code. Verify with tests for a record carrying an overridden address (accepted) and a record with foreign code (rejected), and that `pnpm gen:addresses` leaves no drift.
 - [x] 3.9 Remove `canonical.ts`, `scripts/generate-canonical.ts` and the `CANONICAL_*` exports, and export `releaseOf` and the fingerprints from `index.ts`. Fix `deploy-local.ts` and every in-repo import. Add a major changeset that names the replacements. Verify with `pnpm -r typecheck` and with `grep -r CANONICAL_FACTORY`, which should match nothing outside the CHANGELOG.
-- [ ] 3.10 CI: in `determinism.yml`, assert the CREATE3 math and the `releaseOf` result for `local` and for each class deployer that is set (design D7). Verify with a green run on the layer.
+- [x] 3.10 CI: in `determinism.yml`, assert the CREATE3 math and the `releaseOf` result for `local` and for each class deployer that is set (design D7). Verify with a green run on the layer.
 - [x] 3.11 Rewrite the contracts README sections "Canonical addresses" and "Deploying", and `deploy/contracts/README.md`, for classes, overrides and the mainnet guard. Verify by following the `--plan` commands as written against Base Sepolia (read-only).
 
 ## 4. wallet-api and doctor (PR 4, design D6)
