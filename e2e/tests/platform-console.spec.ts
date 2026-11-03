@@ -382,6 +382,27 @@ test.describe("admin console", () => {
 		}
 	});
 
+	test("Health shows what wallet-api sees of each chain it serves", async ({
+		page,
+	}) => {
+		await tab(page, /Health/).click();
+		const chains = page.getByTestId("health-chains");
+		for (const chainId of [CHAINS.a.chainId, CHAINS.b.chainId]) {
+			const chain = chains.getByTestId(`chain-${chainId}`);
+			await expect(chain).toContainText("served", { timeout: 30_000 });
+			await expect(
+				chain.getByTestId(`check-chain-${chainId}-node`),
+			).toContainText(/head \d+, \d+s old/);
+			await expect(
+				chain.getByTestId(`check-chain-${chainId}-bundler`),
+			).toContainText("lists the configured EntryPoint");
+			// an idle devnet's head is old by design; it is shown, not failed
+			await expect(chain).not.toContainText("failing");
+		}
+		// the console reads it through wallet-api; no node or bundler address is shown
+		await expect(chains).not.toContainText("http");
+	});
+
 	test("admins are added and removed from the console, but never yourself", async ({
 		page,
 	}) => {
