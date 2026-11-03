@@ -150,6 +150,6 @@
 
 ## 16. Phase 2: usage (B4, layer 17)
 
-- [ ] 16.1 wallet-api: `GET /v1/platform/usage` from `sponsorship_decisions` and `sponsorship_settlements`, at most 90 days, rate limited. Add an index if the query plan needs one, in its own migration.
-- [ ] 16.2 Console: the Usage card on the Overview and the tenant page, absent when the endpoint returns 404 (D11).
+- [x] 16.1 wallet-api: `GET /v1/platform/usage` from `sponsorship_decisions` and `sponsorship_settlements`, at most 90 days, rate limited. Add an index if the query plan needs one, in its own migration. It did: migration 0010, by chain and time, with a test of the plan at a realistic size (D27).
+- [x] 16.2 Console: the Usage card on the Overview and the tenant page, absent when the endpoint returns 404 (D11).
 - [ ] 16.3 Final pass: `openspec validate redesign-paymaster-console --strict`, the full e2e suite, and the README and `PLATFORM-ADMIN-SPECS.md` updated for phase 2.
