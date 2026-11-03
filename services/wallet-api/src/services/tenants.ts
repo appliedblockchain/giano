@@ -126,7 +126,7 @@ export const tenantFieldsSchema = z
 		corsOrigins: originList,
 		openRegistration: z.boolean().default(false),
 		policy: tenantPolicySchema.default({}),
-		branding: z.record(z.unknown()).default({}),
+		branding: z.record(z.string(), z.unknown()).default({}),
 	})
 	.strict();
 
@@ -226,16 +226,21 @@ export const IMMUTABLE_TENANT_FIELDS = [
 	"rpId",
 ] as const;
 
-/** The mutable subset. Absent fields stay as stored. */
-export const tenantPatchSchema = tenantFieldsSchema
-	.pick({
-		rpName: true,
-		expectedOrigins: true,
-		allowedDappOrigins: true,
-		corsOrigins: true,
-		openRegistration: true,
-		policy: true,
-		branding: true,
+const fieldShape = tenantFieldsSchema.shape;
+
+/**
+ * The mutable subset. Absent fields stay as stored. zod 4 applies a default even inside
+ * `.partial()`, which would reset every absent field, so the defaults are removed first.
+ */
+export const tenantPatchSchema = z
+	.object({
+		rpName: fieldShape.rpName,
+		expectedOrigins: fieldShape.expectedOrigins.removeDefault(),
+		allowedDappOrigins: fieldShape.allowedDappOrigins.removeDefault(),
+		corsOrigins: fieldShape.corsOrigins.removeDefault(),
+		openRegistration: fieldShape.openRegistration.removeDefault(),
+		policy: fieldShape.policy.removeDefault(),
+		branding: fieldShape.branding.removeDefault(),
 	})
 	.partial()
 	.strict();
@@ -262,7 +267,10 @@ export function validateTenantUpdate(
 		return {
 			ok: false,
 			issues: parsed.error.issues.map((issue) => ({
-				path: issue.path,
+				// zod 4 types a path segment as PropertyKey; JSON input never yields a symbol key.
+				path: issue.path.map((segment) =>
+					typeof segment === "symbol" ? segment.toString() : segment,
+				),
 				message: issue.message,
 			})),
 		};

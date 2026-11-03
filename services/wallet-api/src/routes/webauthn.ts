@@ -37,7 +37,7 @@ const registrationResponseSchema = z
 				transports: z.array(z.string()).optional(),
 			})
 			.passthrough(),
-		clientExtensionResults: z.record(z.unknown()).default({}),
+		clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
 		authenticatorAttachment: z.string().optional(),
 	})
 	.passthrough();
@@ -55,7 +55,7 @@ const authenticationResponseSchema = z
 				userHandle: z.string().optional(),
 			})
 			.passthrough(),
-		clientExtensionResults: z.record(z.unknown()).default({}),
+		clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
 		authenticatorAttachment: z.string().optional(),
 	})
 	.passthrough();
