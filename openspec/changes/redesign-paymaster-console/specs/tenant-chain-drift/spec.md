@@ -1,3 +1,7 @@
+## Purpose
+
+Defines how wallet-api detects and reports where its tenant registry and ledger disagree with each sponsoring paymaster, without mistaking a watcher that is behind for drift, and how platform admins, metrics and `giano-doctor` read the result.
+
 ## ADDED Requirements
 
 ### Requirement: wallet-api detects drift between its records and each paymaster
@@ -14,16 +18,22 @@ An active registry tenant not yet registered on a chain SHALL NOT be drift: it i
 - **WHEN** a tenant was funded on chain before its registry row existed, so the ledger has no row for it
 - **THEN** drift is reported for that tenant, naming what the chain holds
 
+The ledger SHALL be compared with the paymaster as it was at the block the ledger describes: the later of the watcher's cursor and the ledger row's own block. A tenant the node cannot read at that block SHALL be listed as not compared, neither drift nor agreement. So that a withdrawal address is current at every block the watcher reaches, the watcher SHALL ingest `TenantWithdrawAddressChanged`.
+
 #### Scenario: Suspended tenant still enabled
 - **WHEN** a tenant is suspended in the registry and still enabled on Base Sepolia
 - **THEN** drift is reported for that tenant and chain, naming both states
+
+#### Scenario: Block not readable
+- **WHEN** the node cannot serve the paymaster's state at the block a tenant's ledger row describes
+- **THEN** that tenant is listed as not compared, and no drift is reported for it
 
 #### Scenario: Watcher behind
 - **WHEN** the ledger differs from the chain only because the watcher has not reached the block that changed it
 - **THEN** no drift is reported
 
 ### Requirement: Drift is readable by platform admins, by metrics and by giano-doctor
-`GET /v1/platform/drift` SHALL require a platform admin session and SHALL return the current drift per chain, with when it was checked. A stored result older than two reconcile intervals SHALL NOT be served as current, and a chain whose drift cannot be computed SHALL be an error for that chain alone. wallet-api SHALL expose the number of drifted tenants per chain as a metric, apart from the tenants with no registry row. `giano-doctor` SHALL offer a check that reads the same comparison and fails on drift in this deployment's records; a tenant with no registry row, an old result and tenants not compared SHALL warn.
+`GET /v1/platform/drift` SHALL require a platform admin session and SHALL return the current drift per chain, with when it was checked. A replica that does not run that chain's watcher SHALL compute it on request, so the answer does not depend on which replica is reached. A stored result older than two reconcile intervals SHALL NOT be served as current, and a chain whose drift cannot be computed SHALL be an error for that chain alone. Drift SHALL be reported, not treated as a health failure. wallet-api SHALL expose the number of drifted tenants per chain as a metric, apart from the tenants with no registry row. `giano-doctor` SHALL offer a check that reads the same comparison and fails on drift in this deployment's records; a tenant with no registry row, an old result and tenants not compared SHALL warn.
 
 #### Scenario: Shared paymaster
 - **WHEN** another deployment's tenants are on the same paymaster
