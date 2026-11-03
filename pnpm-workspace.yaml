@@ -22,6 +22,14 @@ overrides:
   # GHSA-v6h2-p8h4-qcjw, GHSA-f886-m6hf-6m8v, GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895
   "brace-expansion@>=1.0.0 <1.1.18": "1.1.18"
   "brace-expansion@>=2.0.0 <2.1.4": "2.1.7"
+  # GHSA-qr28-fpjm-wq7f (high), GHSA-vcc3-ghjq-m6fr — query-string 7.1.3 (via @walletconnect/utils)
+  # asks for 0.2.x and only 0.5.1 is fixed. 0.5.1 is ESM-only, which query-string 7 cannot require(),
+  # but no installed code imports query-string, so the package is never loaded. Check that again
+  # before you drop or change this entry.
+  "decode-uri-component@<0.5.1": "0.5.1"
+  # GHSA-gcqx-w48m-w2h4 — RainbowKit pins @vanilla-extract/css 1.20.1, which uses deepmerge 4. No fixed
+  # deepmerge release exists; @vanilla-extract/css 1.21.3 replaces deepmerge with deepmerge-ts.
+  "@vanilla-extract/css@>=1.0.0 <1.21.3": "1.21.3"
   # GHSA-pxg6-pf52-xh8x — @sentry/node (hardhat) pins 0.4.x; no fixed 0.4 release.
   "cookie@<0.7.0": "0.7.0"
   # GHSA-52f5-9888-hmc6, GHSA-ph9p-34f9-6g65 — solc pins tmp 0.0.33; no fixed 0.0.x release.
