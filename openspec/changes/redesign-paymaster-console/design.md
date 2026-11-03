@@ -123,7 +123,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health. **Done** (#208).
-16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
+16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health. **Done**.
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
 
 A bug found in a later layer is fixed on the branch of the layer that introduced it, and the layers above are restacked (`gh stack rebase --upstack`), so each PR stays correct on its own: the edit-dialog reset found by CI on #186 was fixed in #185, and an unformatted test in #187 in #187. A bug older than the redesign is fixed, as its own commit, in the layer that found it.
@@ -225,6 +225,14 @@ The console reads the chains with every refresh (keyed on `lastUpdated`, which c
 
 The Chains section is read with each console refresh while Health is open; each read probes every chain, inside the session's platform rate limit.
 
+### D26. Drift as built
+- **The ledger is checked at the block it describes.** The reconcile overwrites the ledger with the chain at the head every pass, so after it the two agree by construction. Drift therefore runs before it, and compares each ledger row with the paymaster read at the later of the watcher's cursor (every event up to it is in the ledger) and the row's own block (a reconcile writes the head). A watcher behind is not drift. A node that cannot serve that block's state leaves the tenant `unchecked`, not guessed.
+- **The watcher ingests `TenantWithdrawAddressChanged`.** Without it the ledger's withdrawal address changed only on reconcile, and a settlement advancing a row past an address change would read as drift.
+- **Any replica answers.** The result is kept in memory by the replica that runs the chain's watcher; any other computes it on request from the same database and chain.
+- **giano-doctor reads the comparison** from `GET /v1/platform/drift`, with wallet-api's URL and a platform admin session token from the environment. It cannot see wallet-api's database, and repeating the comparison would be a second copy to drift.
+- **Reported, not a health failure**, at the user's decision: the endpoint, `giano_paymaster_drifted_tenants{chain}` and the doctor say so; nothing refuses to start or deploy on it.
+- **Health shows it as warnings**, replacing the console's own registry-row and ledger checks where served, plus whether each tenant's on-chain state matches its registry status.
+
 ## Risks / Trade-offs
 
 - **[A long stack drifts from main]** → Rebase the stack (`gh stack rebase`) whenever main moves under it. Merge bottom-up as each layer is approved, rather than holding the stack until the top is done.
@@ -242,9 +250,10 @@ The Chains section is read with each console refresh while Health is open; each 
 
 Resolved in phase 1: *Stay signed in* signs a fresh SIWE message, with no refresh endpoint, and swaps the session in place (D20).
 
+Resolved in phase 2: drift is reported (endpoint, metric, doctor), not a `/healthz` signal (D26).
+
 
 - B4: refusals are grouped by `SponsorshipRefusalReason`, plus `temporarily-unavailable`. Should a tenant's own sponsorship-rule refusals be split from platform refusals (paused, deficit), so the Overview does not blame the platform for a tenant's rules?
-- B5: should drift also be a `/healthz` signal, so a deploy fails on it? This change exposes it; who acts on it is the alerting non-goal.
 - B6: is 30 days of session history enough, or does it follow `platform_admin_sessions` retention, whatever housekeeping sets?
 - B6 follow-up: ending a session only ever applies to the caller's own, so `:id` in `DELETE /v1/platform/admins/:id/sessions/:sessionId` is always the caller. `DELETE /v1/platform/sessions/:sessionId` would drop the 403 case; left for a later change so this one does not reshape the API again.
 - B6 follow-ups from review of #207: carry the admin's real IP (`trustProxy` with the hops counted, see D15); index `platform_admin_sessions` on `(address, created_at)`, as `list()` groups the whole table and `sessions()` filters by an unindexed `address` (a migration, so its own change).
