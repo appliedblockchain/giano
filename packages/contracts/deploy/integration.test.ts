@@ -18,6 +18,7 @@ import {
 	type PublicClient,
 } from "viem";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { releaseOf } from "../release-code";
 import {
 	encodeTimelockProposal,
 	paymasterSelector,
@@ -138,6 +139,22 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			checks.filter((check) => !check.ok),
 			[],
 		);
+		// The deployed code is v2's wherever it landed: immutables (the factory's implementation, the
+		// UUPS self-address) are masked by the release fingerprints.
+		for (const [key, contract] of [
+			["walletImplementation", "GianoSmartWallet"],
+			["factory", "GianoSmartWalletFactory"],
+			["paymasterImplementation", "GianoPaymaster"],
+			["paymasterProxy", "ERC1967Proxy"],
+		] as const) {
+			const deployed = ctx.record.contracts[key];
+			assert.ok(deployed);
+			const code = await client.getCode({ address: deployed.address });
+			assert.ok(code);
+			assert.equal(releaseOf(contract, code)?.release, "v2", key);
+			// Code is checked against the contract it claims to be, not any release contract.
+			assert.equal(releaseOf("GianoTimelock", code), undefined, key);
+		}
 		const before = readFileSync(join(dir, "84532.json"), "utf8");
 		const nonceBefore = await client.getTransactionCount({
 			address: CANONICAL_DEPLOYER,
@@ -160,6 +177,9 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			executors: [],
 			delays,
 		});
+		const timelockCode = await client.getCode({ address: timelock.address });
+		assert.ok(timelockCode);
+		assert.equal(releaseOf("GianoTimelock", timelockCode)?.release, "v2");
 		for (const name of TIMELOCKED_FUNCTION_NAMES)
 			assert.equal(
 				await client.readContract({
