@@ -9732,7 +9732,9 @@
                         "type": "object",
                         "properties": {
                           "chainId": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "checkedAt": {
                             "type": "string"
@@ -9749,7 +9751,7 @@
                               "required": [
                                 "kind"
                               ],
-                              "additionalProperties": true
+                              "additionalProperties": {}
                             }
                           },
                           "unchecked": {
@@ -9795,7 +9797,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9818,7 +9820,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
