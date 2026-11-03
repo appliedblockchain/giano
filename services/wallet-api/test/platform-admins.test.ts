@@ -2,7 +2,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { platformAdminHistory, platformAdmins } from "../src/db/schema.js";
+import {
+	platformAdminHistory,
+	platformAdminSessions,
+	platformAdmins,
+} from "../src/db/schema.js";
 import {
 	bootstrapAdmins,
 	createPlatformAdminService,
@@ -205,6 +209,167 @@ describe("managing admins from the console", () => {
 				.statusCode,
 		).toBe(401);
 		expect(SECOND_ADMIN.address).not.toBe(ADMIN.address);
+	});
+});
+
+describe("sign-ins and sessions (D15)", () => {
+	type Session = {
+		id: string;
+		createdAt: string;
+		revokedAt: string | null;
+		current: boolean;
+	};
+	const sessionsOf = async (token: string, id: string) =>
+		(await as(token, "GET", `/v1/platform/admins/${id}/sessions`)).json()
+			.sessions as Session[];
+	const entry = async (token: string, id: string) =>
+		(await as(token, "GET", "/v1/platform/admins"))
+			.json()
+			.admins.find((admin: { id: string }) => admin.id === id);
+
+	it("lists each admin's last sign-in and open sessions: yesterday's, with none open", async () => {
+		const token = await platformSignIn(ctx.app, ADMIN);
+		const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
+		await ctx.db.insert(platformAdminSessions).values({
+			tokenHash: `test-${Date.now()}`,
+			adminId: "admin-second",
+			address: SECOND_ADMIN.address.toLowerCase(),
+			chainId: 31337,
+			createdAt: yesterday,
+			expiresAt: new Date(yesterday.getTime() + 3600 * 1000),
+		});
+
+		expect(await entry(token, "admin-second")).toMatchObject({
+			lastSignInAt: yesterday.toISOString(),
+			activeSessions: 0,
+		});
+		const me = await entry(token, "admin-test");
+		expect(me.activeSessions).toBeGreaterThanOrEqual(1);
+		expect(Date.parse(me.lastSignInAt)).toBeGreaterThan(Date.now() - 60_000);
+	});
+
+	it("lists an admin's last 30 days of sessions, newest first, marking this one, never a token", async () => {
+		const old = new Date(Date.now() - 31 * 24 * 3600 * 1000);
+		await ctx.db.insert(platformAdminSessions).values({
+			tokenHash: `test-old-${Date.now()}`,
+			adminId: "admin-test",
+			address: ADMIN.address.toLowerCase(),
+			chainId: 31337,
+			createdAt: old,
+			expiresAt: new Date(old.getTime() + 3600 * 1000),
+		});
+		await platformSignIn(ctx.app, ADMIN);
+		const token = await platformSignIn(ctx.app, ADMIN);
+
+		const response = await as(
+			token,
+			"GET",
+			"/v1/platform/admins/admin-test/sessions",
+		);
+		expect(response.statusCode).toBe(200);
+		const sessions = response.json().sessions as (Session &
+			Record<string, unknown>)[];
+		expect(sessions[0].current).toBe(true);
+		expect(sessions.filter((session) => session.current)).toHaveLength(1);
+		expect(
+			sessions.every(
+				(session, i) =>
+					i === 0 ||
+					Date.parse(sessions[i - 1].createdAt) >=
+						Date.parse(session.createdAt),
+			),
+		).toBe(true);
+		expect(
+			sessions.some(
+				(session) => Date.parse(session.createdAt) <= old.getTime(),
+			),
+		).toBe(false);
+		expect(Object.keys(sessions[0]).sort()).toEqual([
+			"chainId",
+			"createdAt",
+			"current",
+			"expiresAt",
+			"id",
+			"ip",
+			"revokedAt",
+			"userAgent",
+		]);
+		expect(response.body).not.toMatch(/gps_|token/i);
+	});
+
+	it("ends your own other session: it is refused at once, and yours continues", async () => {
+		const mine = await platformSignIn(ctx.app, ADMIN);
+		const other = await platformSignIn(ctx.app, ADMIN);
+		// the session `other` signs its requests with, as the list marks it for that session
+		const target = (await sessionsOf(other, "admin-test")).find(
+			(session) => session.current,
+		);
+		expect(target).toBeDefined();
+
+		const ended = await as(
+			mine,
+			"DELETE",
+			`/v1/platform/admins/admin-test/sessions/${target?.id}`,
+		);
+		expect(ended.statusCode).toBe(204);
+		expect((await as(other, "GET", "/v1/platform/admins")).statusCode).toBe(
+			401,
+		);
+		expect((await as(mine, "GET", "/v1/platform/admins")).statusCode).toBe(200);
+		const after = (await sessionsOf(mine, "admin-test")).find(
+			(session) => session.id === target?.id,
+		);
+		expect(after?.revokedAt).not.toBeNull();
+		// ending it again changes nothing
+		expect(
+			(
+				await as(
+					mine,
+					"DELETE",
+					`/v1/platform/admins/admin-test/sessions/${target?.id}`,
+				)
+			).statusCode,
+		).toBe(204);
+	});
+
+	it("refuses to end another admin's session, which continues", async () => {
+		const mine = await platformSignIn(ctx.app, ADMIN);
+		const theirs = await platformSignIn(ctx.app, SECOND_ADMIN);
+		const target = (await sessionsOf(theirs, "admin-second")).find(
+			(session) => session.current,
+		);
+
+		const refused = await as(
+			mine,
+			"DELETE",
+			`/v1/platform/admins/admin-second/sessions/${target?.id}`,
+		);
+		expect(refused.statusCode).toBe(403);
+		expect(refused.json().error).toBe("not-your-session");
+		expect((await as(theirs, "GET", "/v1/platform/admins")).statusCode).toBe(
+			200,
+		);
+		// nor by naming yourself with their session
+		expect(
+			(
+				await as(
+					mine,
+					"DELETE",
+					`/v1/platform/admins/admin-test/sessions/${target?.id}`,
+				)
+			).statusCode,
+		).toBe(404);
+		expect((await as(theirs, "GET", "/v1/platform/admins")).statusCode).toBe(
+			200,
+		);
+	});
+
+	it("answers an unknown admin with 404", async () => {
+		const token = await platformSignIn(ctx.app, ADMIN);
+		expect(
+			(await as(token, "GET", "/v1/platform/admins/nobody/sessions"))
+				.statusCode,
+		).toBe(404);
 	});
 });
 
