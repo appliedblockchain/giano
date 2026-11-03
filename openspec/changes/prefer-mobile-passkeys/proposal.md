@@ -27,4 +27,4 @@ None. Existing wallet-transaction-review consent requirements and tenant/origin 
 
 Implementation will touch `packages/wallet-core`, `packages/wallet-kit`, `services/wallet-web`, their tests, stock wallet configuration templates, and wallet integration/developer documentation. Test coverage will include the BYO wallet and example demo through the E2E stack. Published wallet-core and wallet-kit API additions need a changeset when implemented. No backend schema, smart-contract, address, connector protocol, dependency upgrade, or production rollout change is proposed.
 
-This planning PR is stacked on #176. Implementation requires a separate apply request.
+This PR is stacked on #176 and contains both the proposal and its implementation. The implementation was requested after the proposal was reviewed. `tasks.md` tracks what is verified.

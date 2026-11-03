@@ -487,3 +487,5 @@ not pass a device preference and receive no new authenticator metadata. No
 connector upgrade or pin change is needed. Set `browser-default` or omit the
 setting to restore normal browser choice. Current-device and claim-device
 passkey enrollment remains unhinted; owner approval still uses the preference.
+
+The hint is sent whatever device the user is on, because detecting a phone would mean UA sniffing. On a phone, the browser may offer another device first; the phone's own passkey stays selectable. If most of your users are on phones, keep `browser-default`.

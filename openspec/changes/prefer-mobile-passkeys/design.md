@@ -50,6 +50,16 @@ Stock wallet connect, approval, and management authentication views share short 
 
 Hints are advisory and may be ignored. Send the hint without UA sniffing or feature probing; accept otherwise valid local, synced, or security-key credentials. Do not automatically retry after NotAllowedError or AbortError, since these include deliberate cancellation. Browser-default remains a deployment rollback option. No changes to RP ID, user verification, session identity, credential allow-lists, or backend verification.
 
+### D6. Users already on a phone get the same hint, as an accepted risk
+
+Initial registration and sign-in carry the hint whichever device the user is on. On a phone, `hybrid` can lead the browser to offer "use another device" before the phone's own passkey, which is the risk D3 removes from enrollment. We accept it here rather than adding a rule, for three reasons:
+
+- Detecting a phone needs UA or Client Hints sniffing (`navigator.userAgentData.mobile`), which D5 rules out. Feature probes do not help either: `getClientCapabilities().hybridTransport` and the platform-authenticator check are true on phones as well as desktops.
+- Unlike enrollment, nothing is bound to the wrong device. The phone's local passkey stays eligible, cancelling never retries, and the user can choose it in the same chooser. A wrong first suggestion costs a tap, not a misplaced credential.
+- The setting is opt-in per deployment. An operator whose users are mostly on phones keeps `browser-default`, which is also the rollback.
+
+The package READMEs and the integration guide state this trade-off. Task 4.3 records what real phones show at registration and sign-in. If a major mobile browser puts the cross-device option ahead of the local passkey, we revisit this decision with that evidence. We do not add a sniffing rule pre-emptively.
+
 References: [WebAuthn hints](https://www.w3.org/TR/webauthn-3/#enum-hints), [Chrome guidance and OS limitations](https://developer.chrome.com/blog/passkeys-updates-chrome-129). These support a suggestion, not a guarantee of phone selection.
 
 ## Risks / Trade-offs
@@ -59,6 +69,7 @@ References: [WebAuthn hints](https://www.w3.org/TR/webauthn-3/#enum-hints), [Chr
 - Phone-preference copy conflicts with local enrollment → apply the explicit enrollment exception and test both additions and claims.
 - Public type/config drift → retain optional properties, test omission and invalid input, and add a minor changeset for wallet-core and wallet-kit during implementation.
 - Native chooser may still prefer a local option → accept that result; phone preference is not a security policy.
+- A user already on a phone may be offered another device first at registration or sign-in → accepted under D6, documented, and checked on real phones in 4.3; operators of phone-first deployments keep `browser-default`.
 
 ## Migration Plan
 

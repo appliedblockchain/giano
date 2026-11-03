@@ -33,6 +33,10 @@ For eligible ceremonies in `prefer-mobile` mode, the wallet SHALL request the We
 - **WHEN** an eligible passkey ceremony begins with `prefer-mobile` enabled
 - **THEN** its WebAuthn options contain `hints: ["hybrid"]` while the browser controls the chooser
 
+#### Scenario: User already on a phone
+- **WHEN** a user registers or signs in on a phone with `prefer-mobile` enabled
+- **THEN** the request carries the same hint as on a desktop, with no device detection, and the phone's own passkey remains selectable in the browser's chooser
+
 #### Scenario: Browser ignores hints
 - **WHEN** the browser ignores the hint or a phone is unavailable
 - **THEN** the wallet accepts any otherwise valid eligible credential without requiring evidence of mobile use

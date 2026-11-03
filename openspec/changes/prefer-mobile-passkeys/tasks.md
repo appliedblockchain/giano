@@ -16,20 +16,19 @@
 
 ## 3. Stock wallet configuration and user guidance
 
-- [ ] 3.1 Add GIANO_PASSKEY_DEVICE_PREFERENCE to the stock wallet entrypoint and both config templates, with browser-default as the default. Verify rendered config for unset, valid, invalid, scalar, and multi-chain cases, including the explicit multi-chain substitution allow-list; retain the hardened-image tool constraints.
-- [ ] 3.2 Support the same setting in local development through Vite's served config path, without editing tracked defaults per run. Verify local config resolves the same values as the container and document the exact startup command in the developer guide.
-- [ ] 3.3 Add shared conditional guidance near connect, signing approvals, and management sign-in. Add view/browser assertions for enabled versus default mode and ensure enrollment still says to use the current device; verify keyboard access and existing consent/sponsorship gating.
+- [x] 3.1 Add GIANO_PASSKEY_DEVICE_PREFERENCE to the stock wallet entrypoint and both config templates, with browser-default as the default. Verify rendered config for unset, valid, invalid, scalar, and multi-chain cases, including the explicit multi-chain substitution allow-list; retain the hardened-image tool constraints.
+- [x] 3.2 Support the same setting in local development through Vite's served config path (`vite dev` and `vite preview`; an empty value counts as unset, as in the entrypoint), without editing tracked defaults per run. Verify local config resolves the same values as the container and document the exact startup command in the developer guide.
+- [ ] 3.3 Add shared conditional guidance near connect, signing approvals, management sign-in, and the owner signatures that authorize an add, removal or address change. Add view/browser assertions for enabled versus default mode and ensure enrollment still says to use the current device; verify keyboard access and existing consent/sponsorship gating.
 - [x] 3.4 Document stock wallet runtime configuration, browser-controlled choice, rollback, and the dApp/wallet boundary in integration documentation. Verify sample configuration matches the templates and does not require a connector option or dependency upgrade.
 
 ## 4. Integration verification
 
 - [ ] 4.1 Rebuild/recreate the E2E stack from the implementation checkout and verify readiness before testing. Exercise default and prefer-mobile modes with stock and BYO wallets, capture actual credential request options, and complete registration, restored-session signing, a sponsored transaction, and owner management; verify enrollment exceptions and no extra ceremonies.
 - [ ] 4.2 Exercise the published-connector example demo against the configured stock wallet without changing its connector pin. Verify Setup verified, connection, signing, cancellation, and explanatory wallet copy; distinguish request-option assertions from native chooser behavior.
-- [ ] 4.3 Record a real desktop-browser/phone smoke test for registration and signing, plus local-credential fallback and a browser/OS that ignores hints where available. State browser/OS versions and any unavailable hardware coverage; do not count virtual-authenticator success as proof of a phone chooser.
+- [ ] 4.3 Record a real desktop-browser/phone smoke test for registration and signing, registration and sign-in started on the phone itself (D6: is the local passkey still offered first or alongside?), plus local-credential fallback and a browser/OS that ignores hints where available. State browser/OS versions and any unavailable hardware coverage; do not count virtual-authenticator success as proof of a phone chooser.
 - [ ] 4.4 Run pnpm lint, wallet-core and wallet-kit tests/typechecks, wallet-web typecheck/build, relevant E2E suites, and openspec validate prefer-mobile-passkeys --strict. Verify changesets cover published API additions and no contract, credential-eligibility, lockfile, or default deployment behavior changes appear in the diff.
 
 ## Workflow follow-up
 
-- Request implementation explicitly with openspec-apply-change; this proposal does not authorize code changes.
-- Keep the implementation on the dedicated branch stacked above PR #176; update this PR when implementation is requested.
+- Implementation was requested and lives in this PR, on the dedicated branch stacked above PR #176.
 - After implementation and required review/checks, sync the delta spec and archive the completed change.
