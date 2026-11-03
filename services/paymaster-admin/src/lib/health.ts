@@ -142,6 +142,7 @@ export function checkLink(id: string): { to: string; label: string } {
 		id === "tenant-deficits" ||
 		id === "tenants-funded" ||
 		id === "registry-rows" ||
+		id === "drift-enabled" ||
 		id === "ledger"
 	)
 		return { to: TAB_PATHS.tenants, label: "Tenants" };
