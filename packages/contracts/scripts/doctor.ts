@@ -6,7 +6,7 @@
  *     --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..] \
  *     [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] \
  *     [--executor 0x..] [--timelock 0x.. [--timelock-delays minDelay=2d,upgradeToAndCall=7d,..]
- *     [--timelock-proposers 0x..,0x..]] [--require-timelock]
+ *     [--timelock-proposers 0x..,0x..]] [--require-timelock] [--profile <name|file>]
  *
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- wallet \
  *     --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]
@@ -26,7 +26,15 @@
  * GianoTimelock alone and each timelocked function must wait at least its --timelock-delays value.
  * A timelocked role on a key fails the run when a timelock is required (--require-timelock, or a
  * mainnet chain), and warns otherwise.
- * For registry chains (8453 / 84532 / 381185) the addresses default from the contracts registry.
+ * For registry chains the addresses default from the contracts registry.
+ *
+ * Addresses are per chain: nothing is compared with a fixed address. Code is checked against the
+ * release fingerprints (releaseOf), the immutables they mask against the chain's own addresses
+ * (the factory clones the registered implementation, the paymaster proxy points at paymaster
+ * release code), and each address is reported as deterministic or not for the configured class
+ * deployers. With --profile <name|file> (env GIANO_PROFILE; contracts:doctor sets it) the chain's
+ * class is known, and on a mainnet a non-deterministic address the deployment record does not list
+ * as a confirmed deviation fails the run.
  *
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
  *
@@ -48,12 +56,10 @@ import {
 	type GianoDeployment,
 	getGianoDeployment,
 } from "../addresses";
-import {
-	CANONICAL_FACTORY,
-	CANONICAL_IMPLEMENTATION,
-	CANONICAL_SPONSORSHIP_PAYMASTER,
-	canonicalCodeAt,
-} from "../canonical";
+import { DEPLOYERS, type NetworkClass } from "../deploy/config";
+import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
+import { loadProfile, type ProfileFile } from "../deploy/profiles";
+import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
 import {
 	gianoPaymasterAbi,
@@ -63,6 +69,7 @@ import {
 	iEntryPointAbi,
 	multiOwnableAbi,
 } from "../generated";
+import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
 	delayPolicyProblems,
 	formatDuration,
@@ -340,16 +347,8 @@ async function checkSponsorshipPaymaster(
 		address,
 	);
 	if (!pmHasCode) return;
-	if (getAddress(address) === getAddress(CANONICAL_SPONSORSHIP_PAYMASTER)) {
-		report("ok", "paymaster proxy address is canonical", address);
-		await reportCanonicalCode(provider, address, "paymaster proxy");
-	} else {
-		report(
-			"warn",
-			"paymaster proxy address is not canonical",
-			`${address} — canonical is ${CANONICAL_SPONSORSHIP_PAYMASTER}`,
-		);
-	}
+	inUse.paymasterProxy = getAddress(address) as `0x${string}`;
+	await reportReleaseCode(provider, address, "ERC1967Proxy", "paymaster proxy");
 
 	const paymaster = new Contract(address, gianoPaymasterAbi, provider);
 	const ep = new Contract(entryPoint, iEntryPointAbi, provider);
@@ -373,13 +372,18 @@ async function checkSponsorshipPaymaster(
 
 	// --- implementation matches the registry -------------------------------------------------
 	try {
-		// ERC-1967 implementation slot
-		const slot =
-			"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
-		const raw = await provider.getStorage(address, slot);
+		// The proxy's code proves nothing about what it delegates to: the slot must hold paymaster
+		// release code.
+		const raw = await provider.getStorage(address, IMPLEMENTATION_SLOT);
 		const impl = getAddress(`0x${raw.slice(-40)}`);
 		report("info", "implementation", impl);
-		await reportCanonicalCode(provider, impl, "paymaster implementation");
+		inUse.paymasterImplementation = impl as `0x${string}`;
+		await reportReleaseCode(
+			provider,
+			impl,
+			"GianoPaymaster",
+			"paymaster implementation",
+		);
 		if (deployment.sponsorshipPaymasterImplementation) {
 			const expected = getAddress(
 				deployment.sponsorshipPaymasterImplementation,
@@ -805,31 +809,96 @@ async function hasCode(
 	return code !== undefined && code !== "0x";
 }
 
+/** ERC-1967 implementation slot. */
+const IMPLEMENTATION_SLOT =
+	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+
+/** The core contract addresses this run found in use, for the placement report. */
+const inUse: Partial<Record<CoreKey, `0x${string}`>> = {};
+
 /**
- * Under CREATE3 an address does not commit to code, so a canonical address proves nothing on its
- * own: the code there must be a release's (CANONICAL_CODE in canonical.ts).
+ * An address does not commit to code: the code there must be a release's `contract`, matched by
+ * its release fingerprint (releaseOf) wherever it sits. Returns whether it is.
  */
-async function reportCanonicalCode(
+async function reportReleaseCode(
 	provider: JsonRpcProvider,
 	address: string,
+	contract: ReleaseContractName,
 	what: string,
-): Promise<void> {
-	const code = await provider.getCode(address);
-	if (!code || code === "0x") return;
-	const codehash = keccak256(code);
-	const match = canonicalCodeAt(address, codehash);
+): Promise<boolean> {
+	const code = (await provider.getCode(address)) as `0x${string}`;
+	if (!code || code === "0x") return false;
+	const match = releaseOf(contract, code);
 	if (match)
-		report(
-			"ok",
-			`${what} runs canonical code`,
-			`release ${match.release} (${match.label})`,
-		);
+		report("ok", `${what} runs release code`, `${contract} ${match.release}`);
 	else
 		report(
 			"fail",
-			`${what} does NOT run canonical code`,
-			`codehash ${codehash} at ${address} matches no release (MC-19)`,
+			`${what} does NOT run release code`,
+			`codehash ${keccak256(code)} at ${address} matches no release's ${contract} (MC-19)`,
 		);
+	return Boolean(match);
+}
+
+/** The chain profile named by --profile or GIANO_PROFILE: a deploy/chains name or a file. */
+function selectedProfile(
+	flags: Record<string, string>,
+): ProfileFile | undefined {
+	const value = flags.profile ?? process.env.GIANO_PROFILE;
+	if (!value) return undefined;
+	return /[/\\]|\.json$/.test(value)
+		? loadProfile({ config: value })
+		: loadProfile({ chain: value });
+}
+
+/**
+ * Whether each address in use is the deterministic one. Without a profile this is information for
+ * every configured class; with one, a mainnet address that is neither deterministic nor a
+ * deviation the record lists fails the run.
+ */
+function reportPlacement(chainId: number, flags: Record<string, string>): void {
+	section("Address placement");
+	const profile = selectedProfile(flags)?.profile;
+	if (profile && profile.chainId !== chainId)
+		throw new Error(
+			`--profile is chain ${profile.chainId}, but this run checks chain ${chainId}`,
+		);
+	const classes: NetworkClass[] = profile
+		? [profile.network]
+		: ["mainnet", "testnet", "local"];
+	for (const network of classes) {
+		const deployer = DEPLOYERS[network];
+		if (!deployer) {
+			report(
+				"info",
+				`${network} class`,
+				"canonical deployer not configured; no deterministic addresses to compare with",
+			);
+			continue;
+		}
+		for (const p of placements(inUse, deployer))
+			report(
+				"info",
+				`${p.key} is ${p.deterministic ? "" : "NOT "}the ${network} deterministic address`,
+				p.deterministic
+					? p.address
+					: `${p.address}, deterministic ${p.expected}`,
+			);
+		if (profile) {
+			const undeclared = undeclaredDeviations(
+				placements(inUse, deployer),
+				readRecord(chainId),
+			);
+			for (const p of undeclared)
+				report(
+					network === "mainnet" ? "fail" : "warn",
+					`undeclared ${network} deviation: ${p.key}`,
+					`${p.address} is not the deterministic ${p.expected}, and deployments/${chainId}.json lists no confirmed deviation for it`,
+				);
+			if (!undeclared.length)
+				report("ok", "every non-deterministic address is a recorded deviation");
+		}
+	}
 }
 
 /** Returns 'precompile' | 'verifier' | 'none' — how (if at all) this chain can verify P-256 sigs. */
@@ -938,16 +1007,13 @@ async function doctorChain(flags: Record<string, string>) {
 			factoryAddr,
 		);
 
-		// MC-19: address identity across chains only holds when the factory sits at the frozen
-		// canonical address. A chain that cannot offer it must not be admitted to a served list.
-		if (getAddress(factoryAddr) === getAddress(CANONICAL_FACTORY)) {
-			report("ok", "factory address is canonical", CANONICAL_FACTORY);
-			await reportCanonicalCode(provider, factoryAddr, "factory");
-		} else {
-			report(
-				"fail",
-				"factory address is NOT canonical",
-				`${factoryAddr} — canonical is ${CANONICAL_FACTORY}; this chain cannot join a multi-chain deployment (MC-19)`,
+		if (factoryHasCode) {
+			inUse.factory = factoryAddr;
+			await reportReleaseCode(
+				provider,
+				factoryAddr,
+				"GianoSmartWalletFactory",
+				"factory",
 			);
 		}
 
@@ -965,19 +1031,28 @@ async function doctorChain(flags: Record<string, string>) {
 					"GianoSmartWallet implementation deployed",
 					impl,
 				);
-				if (getAddress(impl) !== getAddress(CANONICAL_IMPLEMENTATION)) {
+				inUse.walletImplementation = getAddress(impl) as `0x${string}`;
+				// The factory's implementation is an immutable the fingerprint masks: it must be the
+				// chain's registered wallet implementation, where the registry has one.
+				if (deployment.implementation)
 					report(
-						"fail",
-						"implementation is NOT canonical",
-						`${impl} — canonical is ${CANONICAL_IMPLEMENTATION} (MC-19)`,
+						getAddress(impl) === getAddress(deployment.implementation)
+							? "ok"
+							: "fail",
+						"factory clones the registered wallet implementation",
+						getAddress(impl) === getAddress(deployment.implementation)
+							? impl
+							: `${impl}, registered ${deployment.implementation}`,
 					);
-				} else {
-					report("ok", "implementation is canonical", impl);
-					await reportCanonicalCode(provider, impl, "implementation");
-				}
+				await reportReleaseCode(
+					provider,
+					impl,
+					"GianoSmartWallet",
+					"implementation",
+				);
 
-				// Every release's code is canonical at the same address, but each hardcodes its own
-				// EntryPoint: an earlier release passes the codehash check and rejects every v0.9 op.
+				// Each release hardcodes its own EntryPoint: an earlier release is release code and
+				// still rejects every v0.9 op.
 				const boundEntryPoint: string = await new Contract(
 					impl,
 					gianoSmartWalletAbi,
@@ -997,7 +1072,7 @@ async function doctorChain(flags: Record<string, string>) {
 				// would pass every address comparison — asking it to derive an account address for a
 				// fixed probe owner is what catches that. The probe owner is a well-known 64-byte
 				// value that is never a real credential; the expected address is the same on every
-				// canonical chain because the derivation has no chain-dependent term (MC-18).
+				// served chain because the derivation has no chain-dependent term (MC-18).
 				const probeOwner = `0x${"11".repeat(64)}`;
 				const probeAddress: string = await factory.getFunction("getAddress")(
 					[probeOwner],
@@ -1062,6 +1137,7 @@ async function doctorChain(flags: Record<string, string>) {
 		flags,
 		chainId,
 	);
+	reportPlacement(chainId, flags);
 	if (sponsorshipPaymaster)
 		await checkTimelock(provider, sponsorshipPaymaster, flags, chainId);
 
@@ -1228,7 +1304,7 @@ async function main() {
 				"giano-doctor — verify a Giano deployment or inspect a wallet.",
 				"",
 				"Usage:",
-				"  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..]",
+				"  doctor chain  --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..] [--profile <name|file>]",
 				"                [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..]",
 				"                [--signers 0x..,0x..] [--executor 0x..] [--timelock 0x..]",
 				"                [--timelock-delays minDelay=2d,upgradeToAndCall=7d,..] [--timelock-proposers 0x..]",

@@ -464,6 +464,53 @@ export function deviationGate(
 	return { kind: "confirm", phrase: `deviate ${profileId}` };
 }
 
+/** Where an address in use on a chain sits relative to the class's deterministic addresses. */
+export type Placement = {
+	key: CoreKey;
+	address: Address;
+	/** CREATE3(class deployer, label); null when the class deployer is not configured. */
+	expected: Address | null;
+	deterministic: boolean;
+};
+
+/** For each contract address in use, whether it is the deterministic one for `deployer`. */
+export function placements(
+	addresses: Partial<Record<CoreKey, Address>>,
+	deployer: Address | null,
+): Placement[] {
+	return CORE_KEYS.flatMap((key) => {
+		const address = addresses[key];
+		if (!address) return [];
+		const expected = deployer ? create3Address(deployer, LABELS[key]) : null;
+		return [
+			{
+				key,
+				address: getAddress(address),
+				expected,
+				deterministic: same(address, expected),
+			},
+		];
+	});
+}
+
+/**
+ * Non-deterministic addresses the chain's record does not list as a deviation. On a mainnet every
+ * such address must have been confirmed by an operator when it was deployed or adopted.
+ */
+export function undeclaredDeviations(
+	inUse: Placement[],
+	record: DeploymentRecord | undefined,
+): Placement[] {
+	return inUse.filter(
+		(p) =>
+			p.expected !== null &&
+			!p.deterministic &&
+			!(record?.deviations ?? []).some(
+				(d) => d.contract === p.key && same(d.actual, p.address),
+			),
+	);
+}
+
 /**
  * Whether deploying an upgrade target under `label` with `signer` deviates. The target lands at
  * CREATE3(signer, label), so only the class's canonical deployer puts it where every chain of the

@@ -237,6 +237,8 @@ async function main() {
 						.join(",")
 				: "",
 			PAYMASTER_TIMELOCK_PROPOSERS: profile.timelock?.proposers.join(",") ?? "",
+			// doctor knows the chain's class and checks mainnet deviations against the record.
+			GIANO_PROFILE: selected.file,
 			FACTORY_ADDRESS: at("factory"),
 			SPONSORSHIP_PAYMASTER_ADDRESS: at("paymasterProxy"),
 			TEST_PAYMASTER_ADDRESS: "",

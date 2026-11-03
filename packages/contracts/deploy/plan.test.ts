@@ -24,7 +24,9 @@ import {
 	deviationWarning,
 	fixedAddresses,
 	IMPLEMENTATION_SLOT,
+	placements,
 	planCore,
+	undeclaredDeviations,
 	upgradeDeviation,
 } from "./plan";
 import { type DeploymentRecord, recordDeviations } from "./records";
@@ -739,5 +741,72 @@ describe("upgradeDeviation", () => {
 			expected: create3Address(MAINNET, label),
 			actual: create3Address(OTHER_KEY, label),
 		});
+	});
+});
+
+describe("undeclaredDeviations (giano-doctor --profile)", () => {
+	const proxy = getAddress("0x3000000000000000000000000000000000000003");
+	const inUse = {
+		walletImplementation: expected("walletImplementation"),
+		factory: expected("factory"),
+		paymasterImplementation: expected("paymasterImplementation"),
+		paymasterProxy: proxy,
+	};
+	const record = (deviations: { contract: string; actual: Address }[]) => ({
+		chainId: 8453,
+		deployer: MAINNET,
+		contracts: {},
+		upgrades: [],
+		deviations: deviations.map((d) => ({
+			...d,
+			reason: "override" as const,
+			expected: expected("paymasterProxy"),
+			at: "2026-11-03T00:00:00.000Z",
+			confirmed: true,
+		})),
+	});
+
+	it("marks each address deterministic or not for the class deployer", () => {
+		assert.deepEqual(
+			placements(inUse, MAINNET).map((p) => [p.key, p.deterministic]),
+			[
+				["walletImplementation", true],
+				["factory", true],
+				["paymasterImplementation", true],
+				["paymasterProxy", false],
+			],
+		);
+	});
+
+	it("flags a non-deterministic address the record does not list", () => {
+		assert.deepEqual(
+			undeclaredDeviations(placements(inUse, MAINNET), record([])).map((p) => [
+				p.key,
+				p.address,
+			]),
+			[["paymasterProxy", proxy]],
+		);
+		assert.equal(
+			undeclaredDeviations(placements(inUse, MAINNET), undefined).length,
+			1,
+		);
+	});
+
+	it("accepts a deviation the record lists for that contract and address", () => {
+		assert.deepEqual(
+			undeclaredDeviations(
+				placements(inUse, MAINNET),
+				record([{ contract: "paymasterProxy", actual: proxy }]),
+			),
+			[],
+		);
+		// Listed for another address: still undeclared.
+		assert.equal(
+			undeclaredDeviations(
+				placements(inUse, MAINNET),
+				record([{ contract: "paymasterProxy", actual: OTHER_KEY }]),
+			).length,
+			1,
+		);
 	});
 });

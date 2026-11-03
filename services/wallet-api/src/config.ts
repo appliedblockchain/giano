@@ -30,6 +30,12 @@ export type ResolvedChain = {
 	bundlerUrl: string;
 	entryPoint: `0x${string}`;
 	factory: `0x${string}`;
+	/**
+	 * The wallet implementation `factory` must clone: GIANO_CHAINS `walletApi.implementation`, else
+	 * the contracts registry. Unset only for a chain neither names (a local devnet); the factory's
+	 * implementation is then still checked for release code and its EntryPoint.
+	 */
+	implementation?: `0x${string}`;
 	sponsorshipPaymaster?: `0x${string}`;
 	/**
 	 * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
@@ -635,6 +641,8 @@ const envSchema = z
 						entryPoint: (descriptor.entryPoint ??
 							registry!.entryPoint) as `0x${string}`,
 						factory: (walletApi.factory ?? registry!.factory) as `0x${string}`,
+						implementation: (walletApi.implementation ??
+							registry?.implementation) as `0x${string}` | undefined,
 						sponsorshipPaymaster: (descriptor.sponsorshipPaymaster ??
 							registry?.sponsorshipPaymaster) as `0x${string}` | undefined,
 						policy: resolvePolicy(walletApi.policy),
@@ -650,6 +658,9 @@ const envSchema = z
 							gianoAddresses[env.CHAIN_ID!]!.entryPoint) as `0x${string}`,
 						factory: (env.FACTORY_ADDRESS ??
 							gianoAddresses[env.CHAIN_ID!]!.factory) as `0x${string}`,
+						implementation: gianoAddresses[env.CHAIN_ID!]?.implementation as
+							| `0x${string}`
+							| undefined,
 						sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
 							gianoAddresses[env.CHAIN_ID!]?.sponsorshipPaymaster) as
 							| `0x${string}`

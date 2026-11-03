@@ -7,6 +7,7 @@ import { runMigrations } from "./migrate.js";
 import {
 	describeFailure,
 	isFatalFailure,
+	probeDivergence,
 	verifyChain,
 } from "./services/chain-verify.js";
 import {
@@ -48,8 +49,8 @@ const registry = app.chains;
 // ── Chain verification at boot (§3.5, §4.2) ──────────────────────────────────────
 //
 // Every configured chain is verified against the chain ITSELF, before serving traffic:
-// endpoint identity, EntryPoint, canonical factory and implementation, paymaster where
-// sponsorship is enabled, and the live factory cross-check. Structural misconfiguration
+// endpoint identity, EntryPoint, release code and immutables at the chain's own factory, wallet
+// implementation and paymaster, and the live factory cross-check. Structural misconfiguration
 // refuses start-up; mere unreachability does not (S7, MC-92): the deployment starts,
 // marks that chain unavailable, serves its other chains and retries in the background.
 {
@@ -83,11 +84,12 @@ const registry = app.chains;
 	// MC-22: every served chain's factory must derive the SAME address for the same owner.
 	// Comparing addresses alone would miss a factory at the right address running different
 	// code; this catches it.
-	if (new Set(probeAddresses.values()).size > 1) {
+	const divergence = probeDivergence(probeAddresses);
+	if (divergence) {
 		fatal = true;
 		app.log.fatal(
 			{ probeAddresses: Object.fromEntries(probeAddresses) },
-			"address-identity violation: the served chains derive DIFFERENT account addresses for the same owner (MC-16, MC-22)",
+			divergence,
 		);
 	}
 	if (fatal) {
