@@ -1,8 +1,15 @@
 /** Persisted public chain configuration. Secrets are supplied through environment references only. */
-import { readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
 import { basename, resolve } from "node:path";
 import { getAddress, parseEther, zeroAddress } from "viem";
 import { z } from "zod";
+import { OVERRIDE_KEYS, PROFILE_NETWORKS } from "./config";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 export const PROFILES_DIR = resolve(REPO_ROOT, "deploy/chains");
@@ -50,9 +57,26 @@ const timelockSchema = z
 			.strict(),
 	})
 	.strict();
+/**
+ * Contracts that already exist on this chain at an address other than the class's deterministic
+ * one. An override is verified (release code, immutables) and recorded, never deployed; contracts
+ * that depend on it use it. On a mainnet every override is a deviation that needs confirming.
+ */
+const overridesSchema = z
+	.object(
+		Object.fromEntries(
+			OVERRIDE_KEYS.map((key) => [key, nonzeroAddress.optional()]),
+		) as Record<
+			(typeof OVERRIDE_KEYS)[number],
+			z.ZodOptional<typeof nonzeroAddress>
+		>,
+	)
+	.strict();
 export const profileSchema = z
 	.object({
 		chainId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+		/** The network class: which canonical deployer, and so which deterministic addresses, apply. */
+		network: z.enum(PROFILE_NETWORKS),
 		name: z
 			.string()
 			.min(1)
@@ -106,12 +130,15 @@ export const profileSchema = z
 			})
 			.strict(),
 		timelock: timelockSchema.optional(),
+		addresses: overridesSchema.optional(),
 	})
 	.strict();
 export type ChainProfile = z.infer<typeof profileSchema>;
 export type ProfileFile = { file: string; id: string; profile: ChainProfile };
 
 export function listProfiles(): string[] {
+	// The deployer image ships no profiles; it passes --network instead.
+	if (!existsSync(PROFILES_DIR)) return [];
 	return readdirSync(PROFILES_DIR)
 		.filter((name) => /^[a-z0-9][a-z0-9-]*\.json$/.test(name))
 		.map((name) => name.slice(0, -5))
@@ -141,7 +168,7 @@ export function loadProfile(options: {
 	} catch {
 		// Do not print parser errors: an operator may accidentally paste a credential into a field.
 		throw new Error(
-			"Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance, paymaster parameters and optionally the timelock. Unknown/secret fields are refused.",
+			`Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, network (${PROFILE_NETWORKS.join(" or ")}), name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance, paymaster parameters, and optionally the timelock and address overrides (${OVERRIDE_KEYS.join(", ")}). Unknown/secret fields are refused.`,
 		);
 	}
 }
@@ -188,4 +215,13 @@ export function paymasterParams(profile: ChainProfile) {
 		...profile.paymaster,
 		defaultFeeWei: BigInt(profile.paymaster.defaultFeeWei),
 	};
+}
+
+/** The committed profile for `chainId`, if deploy/chains/ has one. */
+export function profileForChain(chainId: number): ProfileFile | undefined {
+	for (const id of listProfiles()) {
+		const selected = loadProfile({ chain: id });
+		if (selected.profile.chainId === chainId) return selected;
+	}
+	return undefined;
 }

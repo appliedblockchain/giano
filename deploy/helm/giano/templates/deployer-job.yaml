@@ -29,6 +29,10 @@ spec:
               value: {{ required "deployer.roleAdmin is required (the paymaster ROLE_ADMIN)" .Values.deployer.roleAdmin | quote }}
             - name: DEPLOY_TESTING
               value: {{ .Values.deployer.deployTesting | quote }}
+            {{- with .Values.deployer.network }}
+            - name: NETWORK
+              value: {{ . | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}

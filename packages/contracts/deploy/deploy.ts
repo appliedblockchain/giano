@@ -1,8 +1,9 @@
 /**
- * The deployments themselves, shared by the CLI (deploy/cli.ts) and the generators that deploy to a
- * throwaway anvil (scripts/generate-canonical.ts). Every canonical contract goes through CreateX
+ * The deployments themselves, shared by the guided wizard (deploy/guided.ts), the CLI (deploy/cli.ts)
+ * and the local bring-up (scripts/deploy-local.ts). Every labelled contract goes through CreateX
  * with CREATE3 (deploy/create3.ts); everything is idempotent — a contract already at its address is
- * checked and recorded, never redeployed.
+ * checked against the release fingerprints and recorded, never redeployed. A contract the plan
+ * fixes elsewhere (a profile override, deploy/plan.ts) is verified there and never deployed.
  */
 import {
 	type Account,
@@ -20,8 +21,8 @@ import {
 	type WalletClient,
 	zeroAddress,
 } from "viem";
-import { CANONICAL_CODE, canonicalCodeAt } from "../canonical";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
 	delayPolicyProblems,
 	encodeTimelockProposal,
@@ -29,7 +30,14 @@ import {
 	TIMELOCKED_ROLES,
 	type TimelockDelays,
 } from "../timelock";
-import { LABELS, type LabelKey, upgradeLabel } from "./config";
+import {
+	CONTRACT_OF,
+	classDeployer,
+	LABELS,
+	type LabelKey,
+	type NetworkClass,
+	upgradeLabel,
+} from "./config";
 import {
 	CREATEX_ADDRESS,
 	create3Address,
@@ -37,19 +45,28 @@ import {
 	guardedSalt,
 } from "./create3";
 import { createxAbi } from "./createx";
+import type { CoreKey } from "./plan";
 import type { DeployedContract, DeploymentRecord } from "./records";
 import { DEV_RELEASE, type Release } from "./release";
 
 export type DeployContext = {
 	publicClient: PublicClient;
 	/**
-	 * Signs as the canonical deployer. Absent, the run is verify-only: a contract already in place is
-	 * checked against the code a release leaves there, and a missing one fails without sending
-	 * anything — adopting a chain is a DevOps operation with the deployer key (docs/key-ceremony.md).
+	 * Signs the deployments. Absent, the run is verify-only: a contract already in place is checked
+	 * against the release fingerprints, and a missing one fails without sending anything — adopting
+	 * a chain needs the class's canonical deployer key, which the development team holds
+	 * (docs/key-ceremony.md).
 	 */
 	walletClient?: WalletClient<Transport, Chain, Account>;
-	/** The canonical deployer; the wallet client's account must be this address. */
+	/**
+	 * The address CREATE3 salts are bound to: the wallet client's account, which must be this address.
+	 * Normally the class's canonical deployer; any other signer lands on its own addresses.
+	 */
 	deployer: Address;
+	/** The chain's network class: which canonical deployer the recorded `expected` addresses use. */
+	network: NetworkClass;
+	/** For tests: the class deployer instead of deploy/config.ts. */
+	classDeployer?: Address | null;
 	record: DeploymentRecord;
 	log: (line: string) => void;
 	/** Persist each completed contract, so interrupted runs retain transaction provenance. */
@@ -98,14 +115,6 @@ async function assertCreateX(ctx: DeployContext): Promise<void> {
 	}
 }
 
-async function codehashAt(
-	ctx: DeployContext,
-	address: Address,
-): Promise<Hex | null> {
-	const code = await ctx.publicClient.getCode({ address });
-	return code && code !== "0x" ? keccak256(code) : null;
-}
-
 /**
  * Deploys `initCode` under `label` with CREATE3, optionally calling `init` on it in the same
  * transaction. Returns the contract whether it was deployed now or found already in place.
@@ -115,9 +124,16 @@ export async function deployLabel(
 	{
 		label,
 		release,
+		contract,
 		initCode,
 		init,
-	}: { label: string; release: string; initCode: Hex; init?: Hex },
+	}: {
+		label: string;
+		release: string;
+		contract: ReleaseContractName;
+		initCode: Hex;
+		init?: Hex;
+	},
 ): Promise<DeployedContract> {
 	assertDeployerAccount(ctx);
 	await assertCreateX(ctx);
@@ -137,29 +153,17 @@ export async function deployLabel(
 			`create3.ts computed ${address} for ${label} but CreateX says ${onChain}`,
 		);
 
-	const existing = await codehashAt(ctx, address);
-	if (existing) {
-		// Verify-only, the address alone proves nothing (canonical.ts): the code there must be what a
-		// release puts at that address. Test fixtures have no canonical code to compare with.
-		if (
-			!ctx.walletClient &&
-			Object.keys(CANONICAL_CODE).some(
-				(a) => a.toLowerCase() === address.toLowerCase(),
-			) &&
-			!canonicalCodeAt(address, existing)
-		)
-			throw new Error(
-				`${label} at ${address} holds code ${existing}, which no Giano release puts there`,
-			);
+	const existing = await ctx.publicClient.getCode({ address });
+	if (existing && existing !== "0x") {
 		ctx.log(`  = ${label.padEnd(28)} ${address} (already deployed)`);
-		return { address, label, release, codehash: existing };
+		return releaseCode(label, release, contract, address, existing);
 	}
 
 	const walletClient = ctx.walletClient;
 	if (!walletClient)
 		throw new Error(
 			`${label} is not deployed at ${address} on this chain, and this run has no deployer key, so it only verifies. ` +
-				"Adopting a chain needs the canonical deployer, which Applied Blockchain DevOps operate (docs/key-ceremony.md); " +
+				"Adopting a chain needs the class's canonical deployer, which the Applied Blockchain development team operates (docs/key-ceremony.md); " +
 				"never put that key in a client deployment.",
 		);
 
@@ -195,13 +199,69 @@ export async function deployLabel(
 	});
 	if (receipt.status !== "success")
 		throw new Error(`deploying ${label} reverted (${transactionHash})`);
-	const codehash = await codehashAt(ctx, address);
-	if (!codehash)
+	const code = await ctx.publicClient.getCode({ address });
+	if (!code || code === "0x")
 		throw new Error(
 			`no code at ${address} after deploying ${label} (${transactionHash})`,
 		);
 	ctx.log(`  + ${label.padEnd(28)} ${address}  ${transactionHash}`);
-	return { address, label, release, codehash, transactionHash };
+	return {
+		...releaseCode(label, release, contract, address, code),
+		transactionHash,
+	};
+}
+
+/**
+ * The record entry for `code` at `address`, which must be a release's `contract` (any release: a
+ * chain may keep an older one). Only a `dev` build, local by construction, is exempt.
+ */
+function releaseCode(
+	label: string,
+	release: string,
+	contract: ReleaseContractName,
+	address: Address,
+	code: Hex,
+): DeployedContract {
+	const codehash = keccak256(code);
+	const match = releaseOf(contract, code);
+	if (!match && release !== DEV_RELEASE)
+		throw new Error(
+			`${label} at ${address} holds code ${codehash}, which matches no release's ${contract}`,
+		);
+	return {
+		address,
+		label,
+		release: match?.release ?? release,
+		codehash,
+		...(match ? { fingerprint: match.fingerprint } : {}),
+	};
+}
+
+/**
+ * A contract the plan fixes at `address` (an override, a recorded address, or one already at the
+ * expected address under another signer): verified there, never deployed.
+ */
+export async function useExisting(
+	ctx: DeployContext,
+	{
+		label,
+		release,
+		contract,
+		address,
+	}: {
+		label: string;
+		release: string;
+		contract: ReleaseContractName;
+		address: Address;
+	},
+): Promise<DeployedContract> {
+	const code = await ctx.publicClient.getCode({ address });
+	if (!code || code === "0x")
+		throw new Error(
+			`${label} is fixed at ${address}, which has no code; an overridden contract is never deployed`,
+		);
+	ctx.log(`  = ${label.padEnd(28)} ${address} (fixed address; verified)`);
+	return releaseCode(label, release, contract, address, code);
 }
 
 /**
@@ -214,12 +274,29 @@ function record(
 	deployed: DeployedContract,
 ): DeployedContract {
 	const previous = ctx.record.contracts[key];
+	const deployer =
+		ctx.classDeployer === undefined
+			? classDeployer(ctx.network)
+			: ctx.classDeployer;
+	const expected = deployer ? create3Address(deployer, LABELS[key]) : null;
+	const placement = {
+		expected,
+		deterministic:
+			expected !== null &&
+			getAddress(expected) === getAddress(deployed.address),
+	};
 	const merged =
 		previous &&
 		previous.address === deployed.address &&
 		!deployed.transactionHash
-			? { ...previous, codehash: deployed.codehash }
-			: deployed;
+			? {
+					...previous,
+					codehash: deployed.codehash,
+					fingerprint: deployed.fingerprint,
+					...placement,
+				}
+			: { ...deployed, ...placement };
+	ctx.record.network = ctx.network;
 	ctx.record.contracts[key] = merged;
 	ctx.onRecord?.();
 	return merged;
@@ -237,67 +314,72 @@ function withArgs(
 }
 
 /**
- * The canonical contracts under their fixed labels: wallet implementation, factory, paymaster
+ * The core contracts under their fixed labels: wallet implementation, factory, paymaster
  * implementation and paymaster proxy. On a chain that already has them this verifies and records.
+ * `fixed` (deploy/plan.ts `fixedAddresses`) names contracts to verify at a given address instead of
+ * deploying them; contracts that depend on one use its address (the factory's implementation, the
+ * proxy's implementation).
  */
 export async function deployCore(
 	ctx: DeployContext,
 	release: Release,
 	paymaster: PaymasterParams,
+	fixed: Partial<Record<CoreKey, Address>> = {},
 ): Promise<void> {
 	const c = release.contracts;
-	const put = (key: LabelKey, deployed: DeployedContract) =>
-		record(ctx, key, deployed);
+	const place = async (
+		key: CoreKey,
+		initCode: Hex,
+		init?: Hex,
+	): Promise<DeployedContract> => {
+		const common = {
+			label: LABELS[key],
+			release: release.version,
+			contract: CONTRACT_OF[key],
+		};
+		const address = fixed[key];
+		return record(
+			ctx,
+			key,
+			address
+				? await useExisting(ctx, { ...common, address })
+				: await deployLabel(ctx, { ...common, initCode, init }),
+		);
+	};
 
-	const wallet = put(
+	const wallet = await place(
 		"walletImplementation",
-		await deployLabel(ctx, {
-			label: LABELS.walletImplementation,
-			release: release.version,
-			initCode: c.GianoSmartWallet.creationCode,
-		}),
+		c.GianoSmartWallet.creationCode,
 	);
-	put(
+	await place(
 		"factory",
-		await deployLabel(ctx, {
-			label: LABELS.factory,
-			release: release.version,
-			initCode: withArgs(c.GianoSmartWalletFactory.creationCode, "address", [
-				wallet.address,
-			]),
-		}),
+		withArgs(c.GianoSmartWalletFactory.creationCode, "address", [
+			wallet.address,
+		]),
 	);
-	const implementation = put(
+	const implementation = await place(
 		"paymasterImplementation",
-		await deployLabel(ctx, {
-			label: LABELS.paymasterImplementation,
-			release: release.version,
-			initCode: c.GianoPaymaster.creationCode,
-		}),
+		c.GianoPaymaster.creationCode,
 	);
 	// A stock ERC1967Proxy with an EMPTY payload, initialised by CreateX in the same transaction: no
 	// window in which an unconfigured proxy could be claimed, and nothing operator-specific in the
 	// init code (§4.2 of specs/PAYMASTER-SPECS.md).
-	put(
+	await place(
 		"paymasterProxy",
-		await deployLabel(ctx, {
-			label: LABELS.paymasterProxy,
-			release: release.version,
-			initCode: withArgs(c.ERC1967Proxy.creationCode, "address, bytes", [
-				implementation.address,
-				"0x",
-			]),
-			init: encodeFunctionData({
-				abi: gianoPaymasterAbi,
-				functionName: "initialize",
-				args: [
-					paymaster.entryPoint,
-					paymaster.roleAdmin,
-					paymaster.defaultFeeWei,
-					paymaster.postOpGasAllowance,
-					paymaster.penaltyBps,
-				],
-			}),
+		withArgs(c.ERC1967Proxy.creationCode, "address, bytes", [
+			implementation.address,
+			"0x",
+		]),
+		encodeFunctionData({
+			abi: gianoPaymasterAbi,
+			functionName: "initialize",
+			args: [
+				paymaster.entryPoint,
+				paymaster.roleAdmin,
+				paymaster.defaultFeeWei,
+				paymaster.postOpGasAllowance,
+				paymaster.penaltyBps,
+			],
 		}),
 	);
 }
@@ -315,6 +397,7 @@ export async function deployTesting(
 		await deployLabel(ctx, {
 			label: LABELS.testErc20,
 			release: release.version,
+			contract: CONTRACT_OF.testErc20,
 			initCode: withArgs(c.PrivateERC20.creationCode, "uint256, address", [
 				100_000_000_000_000n * 10n ** 18n,
 				params.holder,
@@ -324,6 +407,7 @@ export async function deployTesting(
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
 		release: release.version,
+		contract: CONTRACT_OF.testPaymaster,
 		initCode: withArgs(c.PermissivePaymaster.creationCode, "address, address", [
 			params.entryPoint,
 			params.owner,
@@ -369,6 +453,7 @@ export async function deployUpgradeTarget(
 	const deployed = await deployLabel(ctx, {
 		label: upgradeLabel(LABELS[of], version),
 		release: release.version,
+		contract: CONTRACT_OF[of],
 		initCode: creationCode,
 	});
 	if (!ctx.record.upgrades.some((u) => u.address === deployed.address))

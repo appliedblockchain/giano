@@ -8,27 +8,22 @@ import {
 	createPublicClient,
 	createWalletClient,
 	defineChain,
-	getAddress,
 	type Hex,
 	http,
-	keccak256,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import {
-	CANONICAL_DEPLOYER,
-	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V09,
-	LABELS,
-} from "./config";
-import { create3Address } from "./create3";
+import { releaseOf } from "../release-code";
+import { CONTRACT_OF, classDeployer, ENTRY_POINT_V09 } from "./config";
 import { deployCore } from "./deploy";
 import {
 	CORE_KEYS,
-	expectedCodehash,
-	inspectDeployment,
-	roleAdmin,
-	verifyCoreState,
-} from "./preflight";
+	deviationGate,
+	deviationWarning,
+	fixedAddresses,
+	type Plan,
+	planCore,
+} from "./plan";
+import { inspectDeployment, roleAdmin, verifyCoreState } from "./preflight";
 import {
 	listProfiles,
 	loadProfile,
@@ -36,7 +31,7 @@ import {
 	REPO_ROOT,
 	savePublicChoices,
 } from "./profiles";
-import { readRecord, writeRecord } from "./records";
+import { readRecord, recordDeviations, writeRecord } from "./records";
 import { loadRelease } from "./release";
 
 class GuidanceError extends Error {}
@@ -154,8 +149,9 @@ async function main() {
 				"Release not found or unreadable. Use --release v1 or another committed release under packages/contracts/releases/.",
 			);
 		}
+		const deployer = classDeployer(profile.network);
 		console.log(
-			`\n${profile.name} (${profile.chainId}) / release ${version}\nCanonical deployer: ${CANONICAL_DEPLOYER}\nPaymaster ROLE_ADMIN: ${admin}\nFee: ${profile.paymaster.defaultFeeWei} wei; post-op allowance: ${profile.paymaster.postOpGasAllowance} gas; penalty: ${profile.paymaster.penaltyBps} bps.\nNo test ERC-20 or permissive paymaster will be deployed (R-29).`,
+			`\n${profile.name} (${profile.chainId}, ${profile.network}) / release ${version}\nCanonical ${profile.network} deployer: ${deployer ?? "NOT CONFIGURED"}\nPaymaster ROLE_ADMIN: ${admin}\nFee: ${profile.paymaster.defaultFeeWei} wei; post-op allowance: ${profile.paymaster.postOpGasAllowance} gas; penalty: ${profile.paymaster.penaltyBps} bps.\nNo test ERC-20 or permissive paymaster will be deployed (R-29).`,
 		);
 		if (
 			rl &&
@@ -178,10 +174,6 @@ async function main() {
 		});
 		const client = createPublicClient({ chain, transport });
 		const blockers: string[] = [];
-		if (DEPLOYER_IS_PLACEHOLDER)
-			blockers.push(
-				"Canonical deployer is still the placeholder. Choose the permanent deployer address in deploy/config.ts; regenerate canonical.ts and devnet state, review and commit them before public deployment. Do not fund the placeholder.",
-			);
 		let account: ReturnType<typeof privateKeyToAccount> | undefined;
 		const key = process.env.CANONICAL_DEPLOYER_PRIVATE_KEY;
 		if (key) {
@@ -192,31 +184,38 @@ async function main() {
 					"CANONICAL_DEPLOYER_PRIVATE_KEY is invalid; provide a 32-byte hex private key securely through the environment.",
 				);
 			}
-			if (
-				account &&
-				getAddress(account.address) !== getAddress(CANONICAL_DEPLOYER)
-			)
-				blockers.push(
-					"Signing key does not match CANONICAL_DEPLOYER. Obtain the canonical deployer key from its custodian.",
-				);
 		} else
 			console.log(
-				"INFO: No signing key supplied. For execution, export CANONICAL_DEPLOYER_PRIVATE_KEY securely and rerun; plans do not need it.",
+				`INFO: No signing key supplied. For execution, load the ${profile.network} canonical deployer key from its 1Password item into CANONICAL_DEPLOYER_PRIVATE_KEY in this shell only, and rerun; plans do not need it.`,
 			);
-		// Validate record ownership before sending anything; never silently replace an older record.
-		let record: ReturnType<typeof readRecord>;
-		try {
-			record = readRecord(chain.id, CANONICAL_DEPLOYER);
-		} catch {
-			throw new GuidanceError(
-				"Existing deployment record is invalid or belongs to another deployer. Archive and review it before adopting the new address family; do not overwrite it blindly.",
-			);
-		}
-		const checks = await inspectDeployment(client, profile, version, admin);
+		const record = readRecord(chain.id);
+		const signer = account?.address ?? null;
+		const { checks, plan } = await inspectDeployment(
+			client,
+			profile,
+			version,
+			admin,
+			{ signer, record },
+		);
 		for (const check of checks)
 			console.log(`${check.ok ? "OK" : "BLOCKED"}: ${check.message}`);
 		for (const blocker of blockers) console.log(`BLOCKED: ${blocker}`);
-		if (blockers.length || checks.some((check) => !check.ok)) {
+		if (!plan || blockers.length || checks.some((check) => !check.ok)) {
+			process.exitCode = 1;
+			return;
+		}
+		if (plan.deviations.length && profile.network !== "mainnet")
+			console.log(
+				`\nDeviations from the deterministic ${profile.network} addresses (reported and recorded; a testnet needs no extra confirmation):\n${plan.deviations.map((d) => `  - ${d.key}: expected ${d.expected}, actual ${d.actual} (${d.reason})`).join("\n")}`,
+			);
+		if (profile.network === "mainnet" && plan.deviations.length)
+			for (const line of deviationWarning(plan, profile.name))
+				console.log(line);
+		const gate = deviationGate(plan, selected.id, {
+			interactive: Boolean(rl && !values.plan),
+		});
+		if (gate.kind === "refuse") {
+			console.log(`BLOCKED: ${gate.reason}`);
 			process.exitCode = 1;
 			return;
 		}
@@ -231,8 +230,17 @@ async function main() {
 		}
 		if (!account)
 			throw new GuidanceError(
-				"Set CANONICAL_DEPLOYER_PRIVATE_KEY securely in the environment and rerun. No transactions sent.",
+				"Load the canonical deployer key from its 1Password item into CANONICAL_DEPLOYER_PRIVATE_KEY in this shell and rerun. No transactions sent.",
 			);
+		if (
+			gate.kind === "confirm" &&
+			(await ask(
+				`This deployment deviates on a mainnet. Type '${gate.phrase}' to accept the deviations above (anything else cancels)`,
+			)) !== gate.phrase
+		) {
+			console.log("Cancelled. No transactions sent.");
+			return;
+		}
 		const confirmation = `deploy ${profile.chainId} ${version}`;
 		if (
 			(await ask(
@@ -243,17 +251,26 @@ async function main() {
 			return;
 		}
 		// Recheck after the operator has reviewed the plan; balances/code may have changed.
-		const fresh = await inspectDeployment(client, profile, version, admin);
-		if (fresh.some((check) => !check.ok))
+		const fresh = await inspectDeployment(client, profile, version, admin, {
+			signer,
+			record,
+		});
+		if (
+			!fresh.plan ||
+			fresh.checks.some((check) => !check.ok) ||
+			JSON.stringify(fresh.plan.deviations) !== JSON.stringify(plan.deviations)
+		)
 			throw new GuidanceError(
-				"Requirements changed during review. Rerun the plan. No transactions sent.",
+				"Requirements or deviations changed during review. Rerun the plan. No transactions sent.",
 			);
 		const walletClient = createWalletClient({ chain, transport, account });
+		record.deployer = account.address;
 		await deployCore(
 			{
 				publicClient: client,
 				walletClient,
-				deployer: CANONICAL_DEPLOYER,
+				deployer: account.address,
+				network: profile.network,
 				record,
 				log: console.log,
 				onRecord: () => writeRecord(record),
@@ -264,17 +281,26 @@ async function main() {
 				roleAdmin: admin,
 				...paymasterParams(profile),
 			},
+			fixedAddresses(fresh.plan),
 		);
 		for (const key of CORE_KEYS) {
-			const code = await client.getCode({
-				address: create3Address(CANONICAL_DEPLOYER, LABELS[key]),
-			});
-			if (!code || keccak256(code) !== expectedCodehash(key, version))
+			const deployed = record.contracts[key];
+			const code = deployed
+				? await client.getCode({ address: deployed.address })
+				: undefined;
+			if (!code || !releaseOf(CONTRACT_OF[key], code))
 				throw new GuidanceError(
 					`Post-deployment code verification failed for ${key}. Do not serve this chain.`,
 				);
 		}
-		await verifyCoreState(client, admin, profile);
+		const after: Plan = await planCore(client, {
+			network: profile.network,
+			signer,
+			overrides: profile.addresses,
+			record,
+		});
+		await verifyCoreState(client, admin, profile, after);
+		recordDeviations(record, plan.deviations, gate.kind === "confirm");
 		writeRecord(record);
 		const addressEnv = new URL(
 			`../../../deploy/contracts/${chain.id}.addresses.env`,

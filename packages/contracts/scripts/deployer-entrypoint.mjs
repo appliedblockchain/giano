@@ -10,6 +10,9 @@
 //                              client's secret. Adopting a new chain is their operation.
 //   DEPLOYER_IMPERSONATE=true  local chains (31337/31338) only: impersonate the canonical deployer
 //                              instead of signing; the CLI refuses it on any other chain
+//   NETWORK                    mainnet or testnet: the chain's network class, which picks the
+//                              canonical deployer whose addresses are verified. Required for any
+//                              chain but a local one (31337/31338).
 //   ROLE_ADMIN                 the paymaster's sole ROLE_ADMIN; a TimelockController in production
 //   RELEASE                    optional; the latest release by default
 //   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111)
@@ -50,6 +53,7 @@ const common = [
 	...(env.RELEASE ? ["--release", env.RELEASE] : []),
 ];
 if (impersonate) common.push("--impersonate");
+if (env.NETWORK) common.push("--network", env.NETWORK);
 
 function cli(args) {
 	const { status, error } = spawnSync(process.execPath, [CLI, ...args], {

@@ -1,8 +1,9 @@
 /**
- * giano-deploy — deploys the canonical contracts with CREATE3 through CreateX.
+ * giano-deploy — deploys the Giano contracts with CREATE3 through CreateX.
  *
  *   pnpm deploy:cli addresses
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
+ *                            [--chain <profile> | --network mainnet|testnet] [--allow-deviation]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
@@ -12,11 +13,21 @@
  *   pnpm deploy:cli p256     --rpc <url>
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
- * Signing: DEPLOYER_PRIVATE_KEY (must be the canonical deployer), or --impersonate on a local
- * chain. With neither, `core` and `testing` only verify: every contract must already be in place
- * with a release's code, and nothing is sent. The canonical deployer key is a production key: it
- * comes from an ABIP-8 ceremony and is held by Applied Blockchain DevOps (docs/key-ceremony.md);
- * set it only for a local or testnet chain, or as that operator.
+ * Network class: local chains (31337/31338) are `local`. Any other chain takes its class, and any
+ * address overrides, from --chain <profile> (deploy/chains/), else from the committed profile with
+ * its chain id, else from --network. The class picks the canonical deployer whose CREATE3 addresses
+ * are expected (deploy/config.ts DEPLOYERS); a class whose deployer is not configured yet is
+ * planned but never signed for.
+ *
+ * Signing: DEPLOYER_PRIVATE_KEY, or --impersonate on a local chain. A key that is not the class's
+ * canonical deployer deploys at its own CREATE3 addresses: every such contract is a deviation. On a
+ * mainnet `core` refuses any deviation (an override, another key, a contract recorded elsewhere)
+ * unless --allow-deviation is passed; this command has no prompt, so prefer the guided wizard
+ * (deploy/guided.ts), which shows the deviations and asks for a typed confirmation. Without a key,
+ * `core` and `testing` only verify: every contract must already be in place with a release's code,
+ * and nothing is sent. The canonical deployer keys are development-team keys kept in 1Password
+ * (docs/key-ceremony.md): load one into this shell's environment only, never into a file or a
+ * client's configuration.
  * `upgrade --execute` sends the paymaster's upgradeToAndCall from UPGRADER_PRIVATE_KEY;
  * without --execute it prints the calldata for whoever holds UPGRADER_ROLE. With --timelock it
  * prints the timelock proposal instead (schedule / execute / cancel calldata, and with --safe-json
@@ -62,13 +73,16 @@ import {
 	type TimelockedFunctionName,
 } from "../timelock";
 import {
-	CANONICAL_DEPLOYER,
-	DEPLOYER_IS_PLACEHOLDER,
+	classDeployer,
+	DEPLOYERS,
 	ENTRY_POINT_V09,
 	LABELS,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
+	type NetworkClass,
+	type OverrideKey,
 	PRODUCTION_CHAIN_IDS,
+	PROFILE_NETWORKS,
 } from "./config";
 import { create3Address } from "./create3";
 import {
@@ -83,10 +97,13 @@ import {
 } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { deployP256Verifier } from "./p256";
+import { deviationGate, fixedAddresses, formatPlan, planCore } from "./plan";
+import { loadProfile, profileForChain } from "./profiles";
 import {
 	DEPLOYMENTS_DIR,
 	type DeploymentRecord,
 	readRecord,
+	recordDeviations,
 	writeRecord,
 } from "./records";
 import {
@@ -103,6 +120,10 @@ const { positionals, values } = parseArgs({
 		release: { type: "string" },
 		impersonate: { type: "boolean", default: false },
 		"record-dir": { type: "string" },
+		// network class: a committed profile, or the class alone
+		chain: { type: "string" },
+		network: { type: "string" },
+		"allow-deviation": { type: "boolean", default: false },
 		// core
 		"role-admin": { type: "string" },
 		"entry-point": { type: "string", default: ENTRY_POINT_V09 },
@@ -196,11 +217,66 @@ async function roleAdminClient(
 	});
 }
 
-function paymasterProxy(record: DeploymentRecord | undefined): Address {
-	return (
-		record?.contracts.paymasterProxy?.address ??
-		create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy)
-	);
+/** The recorded paymaster proxy, else the class's deterministic one. */
+function paymasterProxy(
+	record: DeploymentRecord | undefined,
+	network: NetworkClass,
+	overrides: Partial<Record<OverrideKey, string>> = {},
+): Address {
+	if (overrides.paymasterProxy) return getAddress(overrides.paymasterProxy);
+	if (record?.contracts.paymasterProxy?.address)
+		return record.contracts.paymasterProxy.address;
+	const deployer = classDeployer(network);
+	if (!deployer)
+		throw new Error(
+			`no paymaster proxy is recorded for this chain and the ${network} canonical deployer is not configured; pass the chain's record (--record-dir)`,
+		);
+	return create3Address(deployer, LABELS.paymasterProxy);
+}
+
+type Network = {
+	network: NetworkClass;
+	/** The committed profile's id, when the class came from one. */
+	profileId?: string;
+	overrides: Partial<Record<OverrideKey, string>>;
+};
+
+/** The chain's network class and overrides (see the header). */
+function resolveNetwork(chainId: number, local: boolean): Network {
+	if (local) {
+		if (values.chain || values.network)
+			throw new Error(
+				`chain ${chainId} is a local chain; it is always the local class (no --chain or --network)`,
+			);
+		return { network: "local", overrides: {} };
+	}
+	if (values.chain && values.network)
+		throw new Error("pass --chain <profile> or --network, not both");
+	const selected = values.chain
+		? loadProfile({ chain: values.chain })
+		: values.network
+			? undefined
+			: profileForChain(chainId);
+	if (selected) {
+		if (selected.profile.chainId !== chainId)
+			throw new Error(
+				`profile ${selected.id} is chain ${selected.profile.chainId}, but the RPC is chain ${chainId}`,
+			);
+		return {
+			network: selected.profile.network,
+			profileId: selected.id,
+			overrides: selected.profile.addresses ?? {},
+		};
+	}
+	if (!values.network)
+		throw new Error(
+			`chain ${chainId} has no committed profile; pass --chain <profile> or --network ${PROFILE_NETWORKS.join("|")}`,
+		);
+	if (!(PROFILE_NETWORKS as readonly string[]).includes(values.network))
+		throw new Error(
+			`--network is ${PROFILE_NETWORKS.join(" or ")}, not ${values.network}`,
+		);
+	return { network: values.network as NetworkClass, overrides: {} };
 }
 
 function writeSafeJson(contents: unknown): void {
@@ -245,25 +321,27 @@ async function deployerContext({
 }: {
 	verifyOnly?: boolean;
 } = {}): Promise<
-	DeployContext & { chainId: number; chain: Chain; local: boolean }
+	DeployContext & {
+		chainId: number;
+		chain: Chain;
+		local: boolean;
+		target: Network;
+	}
 > {
 	const { chainId, chain, transport, publicClient, local } = await connect();
-	if (DEPLOYER_IS_PLACEHOLDER && !local) {
-		throw new Error(
-			`CANONICAL_DEPLOYER is still the placeholder (deploy/config.ts); set the real deployer before deploying to chain ${chainId}`,
-		);
-	}
+	const target = resolveNetwork(chainId, local);
+	const canonical = classDeployer(target.network);
 	let walletClient: WalletClient<Transport, Chain, Account> | undefined;
 	if (values.impersonate) {
 		localOnly(local, "--impersonate");
 		await impersonate(
 			createTestClient({ chain, transport, mode: "anvil" }),
-			CANONICAL_DEPLOYER,
+			DEPLOYERS.local,
 		);
 		walletClient = createWalletClient({
 			chain,
 			transport,
-			account: CANONICAL_DEPLOYER,
+			account: DEPLOYERS.local,
 		});
 	} else {
 		const key = process.env.DEPLOYER_PRIVATE_KEY;
@@ -275,27 +353,88 @@ async function deployerContext({
 			});
 		else if (!verifyOnly)
 			throw new Error(
-				"set DEPLOYER_PRIVATE_KEY (the canonical deployer), or pass --impersonate on a local chain",
+				`set DEPLOYER_PRIVATE_KEY (the ${target.network} canonical deployer, from its 1Password item), or pass --impersonate on a local chain`,
 			);
 	}
+	// Without a key, the class's canonical deployer is who the addresses are derived from.
+	const deployer = walletClient?.account.address ?? canonical;
 	log(
-		`deployer ${CANONICAL_DEPLOYER}${values.impersonate ? " (impersonated)" : walletClient ? "" : " (no key: verify only)"}`,
+		`network ${target.network}${target.profileId ? ` (profile ${target.profileId})` : ""}; canonical deployer ${canonical ?? "NOT CONFIGURED"}; ${walletClient ? `signer ${walletClient.account.address}${values.impersonate ? " (impersonated)" : ""}` : "no key: verify only"}`,
 	);
+	if (!deployer)
+		throw new Error(
+			`the ${target.network} canonical deployer is not configured (DEPLOYERS.${target.network} in deploy/config.ts), so there are no addresses to verify`,
+		);
+	// `core` prints its plan first and refuses there (planOrRefuse); nothing else signs for a class
+	// without a canonical deployer either.
+	if (walletClient && !canonical && command !== "core")
+		throw new Error(
+			`the ${target.network} canonical deployer is not configured (DEPLOYERS.${target.network} in deploy/config.ts); refusing to sign for chain ${chainId}`,
+		);
 	const record = readRecord(
 		chainId,
-		CANONICAL_DEPLOYER,
+		undefined,
 		values["record-dir"] ?? DEPLOYMENTS_DIR,
 	);
 	return {
 		publicClient,
 		walletClient,
-		deployer: CANONICAL_DEPLOYER,
+		deployer,
+		network: target.network,
 		record,
 		log,
 		chainId,
 		chain,
 		local,
+		target,
 	};
+}
+
+/**
+ * Prints the plan and refuses what must not be signed: a blocker (an override without release
+ * code, foreign code, a class deployer that is not configured), or a mainnet deviation without
+ * --allow-deviation. Returns the addresses deployCore must use rather than derive.
+ */
+async function planOrRefuse(
+	ctx: Awaited<ReturnType<typeof deployerContext>>,
+): Promise<
+	Partial<
+		Record<
+			| "walletImplementation"
+			| "factory"
+			| "paymasterImplementation"
+			| "paymasterProxy",
+			Address
+		>
+	>
+> {
+	const plan = await planCore(ctx.publicClient, {
+		network: ctx.network,
+		signer: ctx.walletClient?.account.address ?? null,
+		overrides: ctx.target.overrides,
+		record: ctx.record,
+	});
+	for (const line of formatPlan(plan)) log(line);
+	if (plan.blockers.length)
+		throw new Error(`refusing to deploy:\n  ${plan.blockers.join("\n  ")}`);
+	const gate = deviationGate(
+		plan,
+		ctx.target.profileId ?? `chain-${ctx.chainId}`,
+		{
+			interactive: false,
+			allowDeviation: values["allow-deviation"],
+		},
+	);
+	if (gate.kind === "refuse")
+		throw new Error(`${gate.reason} Pass --allow-deviation to accept them.`);
+	if (plan.deviations.length && ctx.walletClient)
+		recordDeviations(
+			ctx.record,
+			plan.deviations,
+			plan.network === "mainnet" && values["allow-deviation"],
+		);
+	if (ctx.walletClient) ctx.record.deployer = ctx.walletClient.account.address;
+	return fixedAddresses(plan);
 }
 
 function signer(ctx: DeployContext): WalletClient<Transport, Chain, Account> {
@@ -321,17 +460,22 @@ function save(ctx: DeployContext): void {
 async function main(): Promise<void> {
 	switch (command) {
 		case "addresses": {
-			log(
-				`deployer ${CANONICAL_DEPLOYER}${DEPLOYER_IS_PLACEHOLDER ? "  ⚠ placeholder" : ""}`,
-			);
-			for (const [key, label] of Object.entries(LABELS) as [
-				LabelKey,
-				string,
-			][]) {
-				log(
-					`  ${key.padEnd(24)} ${create3Address(CANONICAL_DEPLOYER, label)}  (${label})`,
-				);
+			for (const network of ["mainnet", "testnet", "local"] as const) {
+				const deployer = classDeployer(network);
+				log(`${network}: canonical deployer ${deployer ?? "NOT CONFIGURED"}`);
+				if (!deployer) continue;
+				for (const [key, label] of Object.entries(LABELS) as [
+					LabelKey,
+					string,
+				][]) {
+					log(
+						`  ${key.padEnd(24)} ${create3Address(deployer, label)}  (${label})`,
+					);
+				}
 			}
+			log(
+				"These are the deterministic addresses; a chain profile may override single contracts (deploy/chains/).",
+			);
 			return;
 		}
 		case "install-createx":
@@ -342,12 +486,7 @@ async function main(): Promise<void> {
 			if (command === "install-createx")
 				await installCreateX(publicClient, testClient, log);
 			else
-				await installEntryPoint(
-					publicClient,
-					testClient,
-					CANONICAL_DEPLOYER,
-					log,
-				);
+				await installEntryPoint(publicClient, testClient, DEPLOYERS.local, log);
 			return;
 		}
 		case "p256": {
@@ -357,13 +496,19 @@ async function main(): Promise<void> {
 		}
 		case "core": {
 			const ctx = await deployerContext({ verifyOnly: true });
-			await deployCore(ctx, release(ctx.local), {
-				entryPoint: address("entry-point"),
-				roleAdmin: address("role-admin"),
-				defaultFeeWei: BigInt(required("default-fee-wei")),
-				postOpGasAllowance: Number(required("post-op-gas-allowance")),
-				penaltyBps: Number(required("penalty-bps")),
-			});
+			const fixed = await planOrRefuse(ctx);
+			await deployCore(
+				ctx,
+				release(ctx.local),
+				{
+					entryPoint: address("entry-point"),
+					roleAdmin: address("role-admin"),
+					defaultFeeWei: BigInt(required("default-fee-wei")),
+					postOpGasAllowance: Number(required("post-op-gas-allowance")),
+					penaltyBps: Number(required("penalty-bps")),
+				},
+				fixed,
+			);
 			save(ctx);
 			return;
 		}
@@ -402,7 +547,11 @@ async function main(): Promise<void> {
 				);
 				return;
 			}
-			const proxy = paymasterProxy(ctx.record);
+			const proxy = paymasterProxy(
+				ctx.record,
+				ctx.network,
+				ctx.target.overrides,
+			);
 			const calldata = paymasterUpgradeCalldata(target.address);
 			if (values.timelock) {
 				const proposal = await paymasterUpgradeProposal(
@@ -473,13 +622,14 @@ async function main(): Promise<void> {
 			const { chainId, chain, transport, publicClient, local } =
 				await connect();
 			const walletClient = await roleAdminClient(chain, transport, local);
+			const target = resolveNetwork(chainId, local);
 			const record = readRecord(
 				chainId,
-				CANONICAL_DEPLOYER,
+				undefined,
 				values["record-dir"] ?? DEPLOYMENTS_DIR,
 			);
 			const params = {
-				paymaster: paymasterProxy(record),
+				paymaster: paymasterProxy(record, target.network, target.overrides),
 				proposers: (values.proposer ?? []).map((p) => getAddress(p)),
 				executors: (values.executor ?? []).map((e) => getAddress(e)),
 				delays: timelockDelays(),
@@ -516,12 +666,13 @@ async function main(): Promise<void> {
 		case "handoff": {
 			const { chainId, chain, transport, publicClient, local } =
 				await connect();
+			const target = resolveNetwork(chainId, local);
 			const record = readRecord(
 				chainId,
-				CANONICAL_DEPLOYER,
+				undefined,
 				values["record-dir"] ?? DEPLOYMENTS_DIR,
 			);
-			const proxy = paymasterProxy(record);
+			const proxy = paymasterProxy(record, target.network, target.overrides);
 			const timelock = address("timelock");
 			// A typo here would hand the paymaster to an address nobody controls, irreversibly.
 			try {

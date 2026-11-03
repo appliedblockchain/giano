@@ -26,7 +26,10 @@ import {
 	TIMELOCKED_FUNCTION_NAMES,
 	type TimelockDelays,
 } from "../timelock";
-import { CANONICAL_DEPLOYER, ENTRY_POINT_V09 } from "./config";
+import { DEPLOYERS, ENTRY_POINT_V09 } from "./config";
+
+const CANONICAL_DEPLOYER = DEPLOYERS.local;
+
 import {
 	type DeployContext,
 	deployCore,
@@ -103,6 +106,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			publicClient: client,
 			walletClient,
 			deployer: CANONICAL_DEPLOYER,
+			network: "local",
 			record,
 			log,
 			onRecord: () => {
@@ -130,11 +134,12 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		await deployCore(ctx, loadRelease("v2"), params);
 		assert.equal(ctx.record.contracts.factory?.transactionHash, firstHash);
 		assert.equal(Object.keys(ctx.record.contracts).length, 4);
-		const checks = await inspectDeployment(
+		const { checks } = await inspectDeployment(
 			client,
 			profile,
 			"v2",
 			CANONICAL_DEPLOYER,
+			{ signer: CANONICAL_DEPLOYER, deployer: CANONICAL_DEPLOYER },
 		);
 		assert.deepEqual(
 			checks.filter((check) => !check.ok),

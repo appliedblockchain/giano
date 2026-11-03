@@ -1,9 +1,10 @@
 {
 	"chainId": 11155111,
+	"network": "testnet",
 	"name": "Ethereum Sepolia",
 	"rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
 	"rpcUrlEnv": "ETHEREUM_SEPOLIA_RPC_URL",
-	"release": "v1",
+	"release": "v2",
 	"roleAdmin": null,
 	"minDeployerBalanceEth": "0.05",
 	"paymaster": {

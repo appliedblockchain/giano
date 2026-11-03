@@ -83,6 +83,9 @@ deployer:
   image: giano-contracts-deployer
   # the sponsorship paymaster's sole ROLE_ADMIN (a TimelockController in production); required
   roleAdmin: ""
+  # the chain's network class, mainnet or testnet: which canonical deployer's deterministic addresses
+  # the Job verifies. Required for any chain but a local one (31337/31338).
+  network: ""
   deployTesting: false
 
 ingress:

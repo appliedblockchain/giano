@@ -1,11 +1,12 @@
 /**
  * One command to give a local anvil chain everything Giano expects of a public chain, then the
- * canonical contracts and the test fixtures at their canonical addresses:
+ * Giano contracts and the test fixtures at the local class's deterministic addresses:
  *
  *   CreateX, EntryPoint v0.9, the P-256 verifier, the wallet factory + implementation, the paymaster
  *   (proxy initialised with ROLE_ADMIN on anvil account 0), PrivateERC20 and PermissivePaymaster.
  *
- * The canonical deployer is impersonated, so no key is involved. Writes deployments/<chainId>.json
+ * The fixed local deployer (DEPLOYERS.local, deploy/config.ts) is impersonated, so no key is
+ * involved, and the addresses never move when a real mainnet or testnet deployer is set. Writes deployments/<chainId>.json
  * (gitignored for local chains). Provisioning the paymaster (roles, stake, tenants) is separate:
  * `pnpm provision:paymaster`, or e2e/devnet/generate-state.mjs, which does all of it.
  *
@@ -21,11 +22,7 @@ import {
 	type PublicClient,
 	parseEther,
 } from "viem";
-import {
-	CANONICAL_DEPLOYER,
-	ENTRY_POINT_V09,
-	LOCAL_CHAIN_IDS,
-} from "../deploy/config";
+import { DEPLOYERS, ENTRY_POINT_V09, LOCAL_CHAIN_IDS } from "../deploy/config";
 import {
 	type DeployContext,
 	deployCore,
@@ -63,23 +60,24 @@ async function main(): Promise<void> {
 	const testClient = createTestClient({ chain, transport, mode: "anvil" });
 	const release = loadRelease(process.env.RELEASE || latestRelease());
 	log(
-		`Local deployment on chain ${chainId} (${url}), release ${release.version}, deployer ${CANONICAL_DEPLOYER} (impersonated)`,
+		`Local deployment on chain ${chainId} (${url}), release ${release.version}, deployer ${DEPLOYERS.local} (impersonated)`,
 	);
 
 	await installCreateX(publicClient, testClient, log);
 	// Sent by the impersonated deployer, so anvil account 0 (the operator) keeps a clean nonce.
-	await installEntryPoint(publicClient, testClient, CANONICAL_DEPLOYER, log);
-	await impersonate(testClient, CANONICAL_DEPLOYER);
+	await installEntryPoint(publicClient, testClient, DEPLOYERS.local, log);
+	await impersonate(testClient, DEPLOYERS.local);
 	const walletClient = createWalletClient({
 		chain,
 		transport,
-		account: CANONICAL_DEPLOYER,
+		account: DEPLOYERS.local,
 	});
 	const ctx: DeployContext = {
 		publicClient,
 		walletClient,
-		deployer: CANONICAL_DEPLOYER,
-		record: readRecord(chainId, CANONICAL_DEPLOYER),
+		deployer: DEPLOYERS.local,
+		network: "local",
+		record: readRecord(chainId, DEPLOYERS.local),
 		log,
 	};
 	await deployP256Verifier(publicClient, walletClient, log);

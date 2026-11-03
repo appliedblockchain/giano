@@ -2,23 +2,25 @@
  * Generates addresses.ts (the committed per-chain address registry) from the deployment records the
  * deploy CLI writes (deployments/<chainId>.json) plus address-overrides.json.
  *
- * Run with: pnpm gen:addresses  (CI re-runs it and fails on drift)
+ * A chain's addresses are whatever its record says: the class's deterministic ones, or a profile's
+ * overrides. None is compared with a fixed address. What is checked is the code: every recorded
+ * contract must carry the fingerprint of a release of that contract (release-fingerprints.ts), which
+ * the deploy tooling computed from the chain itself when it recorded it.
+ *
+ *   pnpm gen:addresses  (CI re-runs it and fails on drift)
+ *
+ * Exported for tests: generateRegistry(dir, overrides) returns the file's text instead of writing it.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-	CANONICAL_DEPLOYER,
-	CANONICAL_FACTORY,
-	CANONICAL_IMPLEMENTATION,
-	CANONICAL_SPONSORSHIP_PAYMASTER,
-	canonicalCodeAt,
-} from "../canonical";
-import {
+	CONTRACT_OF,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
 	PRODUCTION_CHAIN_IDS,
 } from "../deploy/config";
 import { DEPLOYMENTS_DIR, type DeploymentRecord } from "../deploy/records";
+import { RELEASE_FINGERPRINTS } from "../release-code";
 
 const pkgRoot = path.resolve(import.meta.dirname, "..");
 const overridesPath = path.join(pkgRoot, "address-overrides.json");
@@ -38,45 +40,31 @@ const RECORD_TO_FIELD: Record<LabelKey, { field: string; optional: boolean }> =
 		testErc20: { field: "testErc20", optional: true },
 	};
 
-/** Registry fields that must hold canonical code (CANONICAL_CODE in canonical.ts). */
-const CANONICAL_CODE_FIELDS: LabelKey[] = [
-	"factory",
-	"walletImplementation",
-	"paymasterProxy",
-	"paymasterImplementation",
-];
-
 type Overrides = Record<string, Record<string, string>>;
 
 function isAddress(value: unknown): value is string {
 	return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
-function main(): void {
-	const overrides: Overrides = JSON.parse(
-		fs.readFileSync(overridesPath, "utf8"),
-	);
+export function generateRegistry(
+	dir: string = DEPLOYMENTS_DIR,
+	overrides: Overrides = JSON.parse(fs.readFileSync(overridesPath, "utf8")),
+): { text: string; chains: number } {
+	overrides = { ...overrides };
 	delete overrides.$comment;
 
 	const chains: Record<number, Record<string, string>> = {};
-	const files = fs.existsSync(DEPLOYMENTS_DIR)
-		? fs.readdirSync(DEPLOYMENTS_DIR).sort()
-		: [];
+	const files = fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
 	for (const entry of files) {
 		const match = /^(\d+)\.json$/.exec(entry);
 		if (!match) continue;
 		const chainId = Number(match[1]);
 		if ((LOCAL_CHAIN_IDS as readonly number[]).includes(chainId)) continue; // local chains are never committed
 		const record = JSON.parse(
-			fs.readFileSync(path.join(DEPLOYMENTS_DIR, entry), "utf8"),
+			fs.readFileSync(path.join(dir, entry), "utf8"),
 		) as DeploymentRecord;
 		if (record.chainId !== chainId)
 			throw new Error(`${entry} records chain ${record.chainId}`);
-		if (record.deployer.toLowerCase() !== CANONICAL_DEPLOYER.toLowerCase()) {
-			throw new Error(
-				`chain ${chainId}: deployed by ${record.deployer}, not the canonical deployer ${CANONICAL_DEPLOYER}`,
-			);
-		}
 
 		const out: Record<string, string> = {};
 		for (const [key, { field, optional }] of Object.entries(
@@ -92,15 +80,22 @@ function main(): void {
 				throw new Error(
 					`chain ${chainId}: invalid ${key} address ${deployed.address}`,
 				);
-			// MC-19/MC-27: an address is not enough under CREATE3 — the code must be a release's too.
-			if (
-				CANONICAL_CODE_FIELDS.includes(key) &&
-				!canonicalCodeAt(deployed.address, deployed.codehash)
-			) {
+			// MC-19/MC-27: an address proves nothing about the code; the recorded fingerprint must be a
+			// release's, for this contract and the release the record names.
+			const contract = CONTRACT_OF[key];
+			const release = RELEASE_FINGERPRINTS.find(
+				(r) =>
+					r.contract === contract &&
+					r.fingerprint.toLowerCase() === deployed.fingerprint?.toLowerCase(),
+			);
+			if (!release)
 				throw new Error(
-					`chain ${chainId}: ${key} at ${deployed.address} has codehash ${deployed.codehash}, which no release puts there (canonical.ts CANONICAL_CODE)`,
+					`chain ${chainId}: ${key} at ${deployed.address} has ${deployed.fingerprint ? `fingerprint ${deployed.fingerprint}` : `no fingerprint (code hash ${deployed.codehash})`}, which matches no release's ${contract} (release-fingerprints.ts)`,
 				);
-			}
+			if (release.release !== deployed.release)
+				throw new Error(
+					`chain ${chainId}: ${key} at ${deployed.address} is recorded as ${deployed.release} but its fingerprint is ${release.release}'s`,
+				);
 			out[field] = deployed.address;
 		}
 		chains[chainId] = out;
@@ -137,26 +132,6 @@ function main(): void {
 			return `  ${chainId}: {\n${lines}\n  },`;
 		})
 		.join("\n");
-
-	// MC-19/MC-27: every chain the registry admits carries the canonical factory, implementation and
-	// paymaster proxy — under CREATE3 that holds by construction for the canonical deployer, and is
-	// checked anyway so a hand-edited record cannot slip through.
-	for (const [chainId, record] of Object.entries(chains)) {
-		for (const [field, canonical] of [
-			["factory", CANONICAL_FACTORY],
-			["implementation", CANONICAL_IMPLEMENTATION],
-			["sponsorshipPaymaster", CANONICAL_SPONSORSHIP_PAYMASTER],
-		] as const) {
-			if (
-				record[field] &&
-				record[field].toLowerCase() !== canonical.toLowerCase()
-			) {
-				throw new Error(
-					`chain ${chainId}: ${field} ${record[field]} differs from the canonical ${canonical}`,
-				);
-			}
-		}
-	}
 
 	// R-29 layer 2: a testing artifact on a production chain is a build failure, not a warning.
 	for (const chainId of PRODUCTION_CHAIN_IDS) {
@@ -220,10 +195,13 @@ export function getGianoDeployment(chainId: number): GianoDeployment {
   return deployment;
 }
 `;
-	fs.writeFileSync(outPath, output);
-	console.log(
-		`Wrote ${path.relative(process.cwd(), outPath)} (${Object.keys(chains).length} chains)`,
-	);
+	return { text: output, chains: Object.keys(chains).length };
 }
 
-main();
+if (process.argv[1] === import.meta.filename) {
+	const { text, chains } = generateRegistry();
+	fs.writeFileSync(outPath, text);
+	console.log(
+		`Wrote ${path.relative(process.cwd(), outPath)} (${chains} chains)`,
+	);
+}

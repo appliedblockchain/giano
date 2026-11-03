@@ -1,7 +1,7 @@
 /**
- * deployCore's three signing paths (openspec: production-key-ceremony). The chain is a stub that
- * holds the real runtime code of the baked devnet (e2e/devnet/state.json), so "already deployed"
- * is checked against the codehashes canonical.ts freezes.
+ * deployCore's signing paths and the deployment record (openspec: production-key-ceremony,
+ * contract-deployment). The chain is a stub that holds the real runtime code of the baked devnet
+ * (e2e/devnet/state.json), so "already deployed" is checked against the release fingerprints.
  *
  *   pnpm --filter @appliedblockchain/giano-contracts test:deploy
  */
@@ -10,7 +10,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { type Address, type Hex, keccak256, type PublicClient } from "viem";
-import { CANONICAL_DEPLOYER } from "./config";
+import { DEPLOYERS } from "./config";
+
+const CANONICAL_DEPLOYER = DEPLOYERS.local;
+
 import {
 	CREATEX_ADDRESS,
 	create3Address,
@@ -18,6 +21,7 @@ import {
 	guardedSalt,
 } from "./create3";
 import { type DeployContext, deployCore } from "./deploy";
+import { recordDeviations } from "./records";
 import { loadRelease } from "./release";
 
 const LABELS = [
@@ -88,6 +92,7 @@ const context = (
 	publicClient,
 	walletClient,
 	deployer: CANONICAL_DEPLOYER,
+	network: "local",
 	record: {
 		chainId: 31337,
 		deployer: CANONICAL_DEPLOYER,
@@ -118,22 +123,100 @@ describe("deployCore without a key (verify only)", () => {
 		const { publicClient } = chain(code);
 		await assert.rejects(
 			deployCore(context(publicClient), loadRelease("v1"), PAYMASTER),
-			/giano\.factory is not deployed .* no deployer key.*DevOps.*never put that key in a client deployment/,
+			/giano\.factory is not deployed .* no deployer key.*development team.*never put that key in a client deployment/,
 		);
 	});
 
-	it("fails on a canonical address holding code no release puts there", async () => {
+	it("fails on an address holding code that matches no release", async () => {
 		const code = allDeployed();
 		code.set(ADDRESSES[0], "0x6080604052");
 		const { publicClient } = chain(code);
 		await assert.rejects(
 			deployCore(context(publicClient), loadRelease("v1"), PAYMASTER),
-			/giano\.wallet\.impl at .* which no Giano release puts there/,
+			/giano\.wallet\.impl at .* matches no release's GianoSmartWallet/,
 		);
+	});
+
+	it("records the release the code matches, its fingerprint and that it is deterministic", async () => {
+		const { publicClient } = chain(allDeployed());
+		const ctx = context(publicClient);
+		await deployCore(ctx, loadRelease("v2"), PAYMASTER);
+		assert.equal(ctx.record.network, "local");
+		for (const [i, deployed] of Object.values(ctx.record.contracts).entries()) {
+			assert.equal(deployed?.release, "v2");
+			assert.match(deployed?.fingerprint ?? "", /^0x[0-9a-f]{64}$/);
+			assert.equal(deployed?.expected, ADDRESSES[i]);
+			assert.equal(deployed?.deterministic, true);
+		}
 	});
 });
 
 describe("deployCore with a key", () => {
+	it("verifies an overridden paymaster where it is, deploys the rest, and records the confirmed deviation", async () => {
+		const overridden = "0x3000000000000000000000000000000000000003" as Address;
+		const code = new Map<string, Hex>([[overridden, devnetCode(ADDRESSES[3])]]);
+		const { publicClient, walletClient, sent } = chain(code);
+		const ctx = context(publicClient, walletClient);
+		await deployCore(ctx, loadRelease("v2"), PAYMASTER, {
+			paymasterProxy: overridden,
+		});
+		assert.deepEqual(sent, [
+			"giano.wallet.impl",
+			"giano.factory",
+			"giano.paymaster.impl",
+		]);
+		recordDeviations(
+			ctx.record,
+			[
+				{
+					key: "paymasterProxy",
+					reason: "override",
+					expected: ADDRESSES[3],
+					actual: overridden,
+				},
+			],
+			true,
+			"2026-11-03T00:00:00.000Z",
+		);
+		const { contracts, deviations } = ctx.record;
+		assert.equal(contracts.paymasterProxy?.address, overridden);
+		assert.equal(contracts.paymasterProxy?.deterministic, false);
+		assert.equal(contracts.paymasterProxy?.expected, ADDRESSES[3]);
+		assert.equal(contracts.paymasterProxy?.transactionHash, undefined);
+		for (const key of [
+			"walletImplementation",
+			"factory",
+			"paymasterImplementation",
+		] as const)
+			assert.equal(contracts[key]?.deterministic, true, key);
+		assert.deepEqual(deviations, [
+			{
+				contract: "paymasterProxy",
+				reason: "override",
+				expected: ADDRESSES[3],
+				actual: overridden,
+				at: "2026-11-03T00:00:00.000Z",
+				confirmed: true,
+			},
+		]);
+	});
+
+	it("refuses an overridden contract with no code instead of deploying it", async () => {
+		const { publicClient, walletClient, sent } = chain(new Map());
+		await assert.rejects(
+			deployCore(
+				context(publicClient, walletClient),
+				loadRelease("v2"),
+				PAYMASTER,
+				{
+					walletImplementation: "0x3000000000000000000000000000000000000003",
+				},
+			),
+			/fixed at 0x3000000000000000000000000000000000000003, which has no code/,
+		);
+		assert.deepEqual(sent, []);
+	});
+
 	it("deploys what is missing and only that", async () => {
 		const code = allDeployed();
 		code.delete(ADDRESSES[1]);
