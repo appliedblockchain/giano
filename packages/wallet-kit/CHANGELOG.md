@@ -1,5 +1,21 @@
 # @appliedblockchain/giano-wallet-kit
 
+## 6.0.0
+
+### Minor Changes
+
+- fc4164a: Add an optional wallet-owned passkeyDevicePreference setting to suggest mobile authentication through WebAuthn hybrid hints. Default browser choice, credential eligibility, user verification, and explicit enrollment behavior are preserved.
+
+### Patch Changes
+
+- Updated dependencies [fc4164a]
+- Updated dependencies [4c85f2e]
+- Updated dependencies [4c85f2e]
+  - @appliedblockchain/giano-wallet-core@6.0.0
+  - @appliedblockchain/giano-tx-describe@6.0.0
+  - @appliedblockchain/giano-wallet-transport@6.0.0
+  - @appliedblockchain/giano-contracts@6.0.0
+
 ## 5.0.0
 
 ### Patch Changes
