@@ -772,6 +772,24 @@ watcher computes it on request from the same database and chain. It is also the 
 `giano_paymaster_drifted_tenants{chain}` and `giano-doctor chain`'s drift check. Drift is reported,
 not a `/healthz` failure: who acts on it is the alerting non-goal.
 
+### 10.4 `GET /v1/platform/usage`
+
+One chain's sponsorship usage over a range (B4): `?chainId=<id>&since=<time>&until=<time>`, the
+last 7 days unless given, at most 90 (`400 range-too-long`, naming the limit). In total and per
+tenant by slug:
+
+- decisions allowed and refused, refusals by reason, and refusals by whose they are to fix:
+  `rules` (the tenant's own sponsorship rules), `funds` (its balance or deficit), `platform`
+  (sponsorship switched off, or temporarily unavailable) and `other`. Split so the Overview does not
+  blame the platform for a tenant's rules;
+- operations settled and, of those, reverted;
+- gas sponsored, platform fees and overhead, in wei as decimal strings.
+
+It reads `sponsorship_decisions` and `sponsorship_settlements` and never the chain. Migration 0010
+indexes both by chain and time, which is what a range across every tenant of one chain filters on;
+a test checks the plan uses them at a realistic size. Settlements are dated by when the watcher
+observed them. A deleted tenant's settlements stay, under a `null` tenant.
+
 ---
 
 ## 11. The console
