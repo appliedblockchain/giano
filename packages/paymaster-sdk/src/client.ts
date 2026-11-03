@@ -16,6 +16,12 @@ import {
 	zeroAddress,
 } from "viem";
 import {
+	type AdminEvent,
+	type AdminEventKind,
+	enrichAdminEvents,
+	readAdminEvents,
+} from "./admin-events";
+import {
 	PaymasterSdkError,
 	SignerRequiredError,
 	translateContractError,
@@ -684,6 +690,68 @@ export class GianoPaymasterClient {
 		);
 
 		return { ...page, records: logs.map(toSponsorshipRecord) };
+	}
+
+	/**
+	 * The privileged changes to the paymaster and, given its address, its timelock, in one window of
+	 * blocks: role changes, fees, parameters, signers, pause, upgrades, tenant registration, state
+	 * and funds, and the timelock's schedule, execute, cancel, delay and role events (B1). Newest
+	 * first, each with its block time, transaction sender and actor.
+	 *
+	 * A window like {@link getSponsorships}: pass `older` back as `range` to read the one before.
+	 * `kinds` narrows the list by event name; `tenantId` to one tenant's events, including timelock
+	 * calls that change it.
+	 */
+	async getAdminEvents(
+		options: {
+			range?: Partial<BlockRange>;
+			kinds?: readonly AdminEventKind[];
+			timelock?: Address;
+			tenantId?: string;
+		} = {},
+	): Promise<Page & { events: readonly AdminEvent[] }> {
+		const timelock = options.timelock
+			? this.timelock(options.timelock)
+			: undefined;
+		const resolved = await resolveWindow(
+			this.publicClient,
+			options.range,
+			this.logWindow,
+		);
+		const { logs, ...page } = await readWindow(
+			resolved,
+			(range) =>
+				readAdminEvents(this.publicClient, range, {
+					paymaster: this.address,
+					timelock: timelock?.address,
+					kinds: options.kinds,
+					decodeCall: timelock
+						? (target, data) => timelock.decodeCall(target, data)
+						: undefined,
+				}),
+			(narrowed) => {
+				this.logWindow = narrowed;
+			},
+		);
+		const tenant = options.tenantId
+			? toTenantId(options.tenantId).toLowerCase()
+			: undefined;
+		const kept = tenant
+			? logs.filter(
+					(event) =>
+						event.tenant?.id.toLowerCase() === tenant ||
+						event.call?.decoded?.args.some(
+							(arg) => typeof arg === "string" && arg.toLowerCase() === tenant,
+						),
+				)
+			: logs;
+		return {
+			...page,
+			events: await enrichAdminEvents(this.publicClient, kept, {
+				paymaster: this.address,
+				timelock: timelock?.address,
+			}),
+		};
 	}
 
 	/**
