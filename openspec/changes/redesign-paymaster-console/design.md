@@ -120,7 +120,7 @@ Each layer is a PR on the one below and leaves the console working:
 Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be the same PR when it is small:
 
 12. B2: timelock-aware `assessHealth`, release codehashes, `giano-doctor`. SDK and contracts changesets. **Done** (#205).
-13. B1: `getAdminEvents` in the SDK, then the admin events in Activity.
+13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done**.
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns.
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
@@ -201,6 +201,11 @@ The Health tab's ledger check needs one tenant detail per registered tenant. It 
 
 ### D23. The console's published delays are configuration
 A chain's published delays are in its profile (`deploy/chains/*.json`), which the console cannot read. Each deployment gains an optional `timelockDelays`, the profile's `timelock.delays` in seconds, set flat or as `paymasterAdmin.timelockDelays` in the chain document. With it, Health fails a delay below its value as `giano-doctor` does; without it, Health warns that the delays were not compared, and still fails a role change that waits less than what it could bypass. A configured timelock that has not been read yet gives no timelock verdict, rather than "no timelock is configured".
+
+### D24. Admin events as built
+`getAdminEvents` asks the node for the admin events only (one `eth_getLogs` per contract with the events' topics), so a window busy with settlements costs no more. Each entry carries the transaction's `from` and an `actor`: the account the event names (a role change's `sender`, a pause's `account`, an enable's `actor`), otherwise the contract the transaction was sent to when it was not the emitter (the timelock executing, a Safe), otherwise `from`. One hop only; a Safe calling the timelock that calls the paymaster shows the Safe for the timelock's event and the timelock for the paymaster's. Block times and senders are one read per distinct block and transaction, five at a time; one that fails leaves its field empty rather than failing the list. The event lists are `PAYMASTER_ADMIN_EVENTS` and `TIMELOCK_ADMIN_EVENTS`, beside lists of the events that are not admin events and why (settlements, `Initialized`, `CallSalt`); the test fails on an ABI event in neither.
+
+On the tenant page the chain's events are listed under the registry's history, not interleaved with it: the registry pages by cursor and the chain by window of blocks, and merging them would order entries wrongly wherever one page ends before the other. `tenantId` keeps the tenant's own events and the timelock calls whose arguments name it.
 
 ## Risks / Trade-offs
 
