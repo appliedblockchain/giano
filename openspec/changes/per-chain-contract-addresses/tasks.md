@@ -31,7 +31,7 @@
 - [x] 4.2 Let `GIANO_CHAINS` `walletApi` carry an optional `implementation`, falling back to the registry. Verify with a config test, and with `openapi:check` if the schema is published.
 - [x] 4.3 `openapi/generate.ts`: replace `CANONICAL_FACTORY` with a fixed dummy address. Verify that `openapi:check` passes with no diff.
 - [x] 4.4 `scripts/doctor.ts`: replace the canonical comparisons with `releaseOf` and the semantic checks. Report whether each address is deterministic for the class. With a profile, flag mainnet deviations missing from the record. Verify with `pnpm run doctor chain` against the e2e devnet (all ok), and with a doctor test for an undeclared deviation.
-- [ ] 4.5 Run the e2e suite against the stack built from this layer. Verify that Playwright is green, re-running once for the known watcher-stall flake before investigating.
+- [x] 4.5 Run the e2e suite against the stack built from this layer. Verify that Playwright is green, re-running once for the known watcher-stall flake before investigating.
 
 ## 5. Docs and specs (PR 5)
 
