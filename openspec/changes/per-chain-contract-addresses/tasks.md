@@ -2,7 +2,7 @@
 
 ## 1. Baseline
 
-- [ ] 1.1 On the unmodified branch, run `pnpm lint`, `pnpm -F @appliedblockchain/giano-contracts test`, `test:deploy`, `typecheck`, `release:verify`, `pnpm -F @appliedblockchain/giano-wallet-api test` and `typecheck`. Record any failure that already exists. Done when the results are saved in the scratchpad.
+- [x] 1.1 On the unmodified branch, run `pnpm lint`, `pnpm -F @appliedblockchain/giano-contracts test`, `test:deploy`, `typecheck`, `release:verify`, `pnpm -F @appliedblockchain/giano-wallet-api test` and `typecheck`. Record any failure that already exists. Done when the results are saved in the scratchpad.
 
 ## 2. Release fingerprints (PR 2, design D1 and D7)
 
