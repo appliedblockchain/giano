@@ -56,7 +56,11 @@ import {
 	type GianoDeployment,
 	getGianoDeployment,
 } from "../addresses";
-import { DEPLOYERS, type NetworkClass } from "../deploy/config";
+import {
+	DEPLOYERS,
+	isProductionChain,
+	type NetworkClass,
+} from "../deploy/config";
 import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
 import { loadProfile, type ProfileFile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
@@ -85,9 +89,7 @@ import {
 const RIP7212_PRECOMPILE = "0x0000000000000000000000000000000000000100";
 /** daimo p256-verifier — the in-contract FCL fallback webauthn-sol uses when RIP-7212 is absent. */
 const P256_VERIFIER = "0xc2b78104907F722DABAc4C69f826a522B2754De4";
-/** Chains on which a permissive test paymaster is a deployment failure, not a convenience. */
-const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111];
-/** Chains that hold real money: a timelock is mandatory here (G9 R4). */
+/** Chains that hold real money: a timelock is mandatory here (G9 R4), as on any --profile mainnet. */
 const MAINNET_CHAIN_IDS = [1, 8453];
 /**
  * Below this, sponsored operations start failing in ways that look like client bugs.
@@ -650,6 +652,7 @@ async function checkTimelock(
 	section("Paymaster timelock (G9)");
 	const required =
 		MAINNET_CHAIN_IDS.includes(chainId) ||
+		selectedProfile(flags)?.profile.network === "mainnet" ||
 		(flags["require-timelock"] ?? process.env.GIANO_REQUIRE_TIMELOCK) ===
 			"true";
 	const timelockFlag = flags.timelock ?? process.env.PAYMASTER_TIMELOCK;
@@ -828,7 +831,7 @@ async function reportReleaseCode(
 ): Promise<boolean> {
 	const code = (await provider.getCode(address)) as `0x${string}`;
 	if (!code || code === "0x") return false;
-	const match = releaseOf(contract, code);
+	const match = releaseOf(contract, code, address as `0x${string}`);
 	if (match)
 		report("ok", `${what} runs release code`, `${contract} ${match.release}`);
 	else
@@ -1104,7 +1107,8 @@ async function doctorChain(flags: Record<string, string>) {
 		const addr = requireAddress(testPaymaster, "test-paymaster");
 		const pmHasCode = await hasCode(provider, addr);
 		report(pmHasCode ? "ok" : "fail", "test paymaster deployed", addr);
-		if (PRODUCTION_CHAIN_IDS.includes(chainId)) {
+		// R-29: the fixed list, or a chain whose --profile declares mainnet.
+		if (isProductionChain(chainId, selectedProfile(flags)?.profile.network)) {
 			report(
 				"fail",
 				"test paymaster on a production chain",

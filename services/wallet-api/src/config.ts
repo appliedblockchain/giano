@@ -207,6 +207,11 @@ const envSchema = z
 		/** Single-chain shorthand only; defaulted from the contracts address registry for CHAIN_ID. */
 		ENTRYPOINT_ADDRESS: addressSchema.optional(),
 		FACTORY_ADDRESS: addressSchema.optional(),
+		/**
+		 * The wallet implementation FACTORY_ADDRESS must clone. Needed for a chain outside the
+		 * registry (a local chain); otherwise the registry's.
+		 */
+		IMPLEMENTATION_ADDRESS: addressSchema.optional(),
 
 		CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
 		SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
@@ -436,6 +441,7 @@ const envSchema = z
 			for (const [key, present] of [
 				["ENTRYPOINT_ADDRESS", env.ENTRYPOINT_ADDRESS !== undefined],
 				["FACTORY_ADDRESS", env.FACTORY_ADDRESS !== undefined],
+				["IMPLEMENTATION_ADDRESS", env.IMPLEMENTATION_ADDRESS !== undefined],
 				[
 					"SPONSORSHIP_PAYMASTER_ADDRESS",
 					env.SPONSORSHIP_PAYMASTER_ADDRESS !== undefined,
@@ -658,7 +664,8 @@ const envSchema = z
 							gianoAddresses[env.CHAIN_ID!]!.entryPoint) as `0x${string}`,
 						factory: (env.FACTORY_ADDRESS ??
 							gianoAddresses[env.CHAIN_ID!]!.factory) as `0x${string}`,
-						implementation: gianoAddresses[env.CHAIN_ID!]?.implementation as
+						implementation: (env.IMPLEMENTATION_ADDRESS ??
+							gianoAddresses[env.CHAIN_ID!]?.implementation) as
 							| `0x${string}`
 							| undefined,
 						sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??

@@ -23,6 +23,7 @@ x-giano-chains: &giano-chains |
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
+        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6",
         "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
       }
     },
@@ -32,6 +33,7 @@ x-giano-chains: &giano-chains |
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
+        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6",
         "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
       }
     }

@@ -15,6 +15,7 @@ import chainPlugin from "../src/plugins/chain.js";
 import {
 	isFatalFailure,
 	probeDivergence,
+	recoveryDivergence,
 	verifyChain,
 } from "../src/services/chain-verify.js";
 import type { ChainRegistry, ChainServices } from "../src/services/chains.js";
@@ -65,6 +66,21 @@ describe("config: the chain list", () => {
 			"0x1000000000000000000000000000000000000001",
 		]);
 		expect(config.CHAINS[0].name).not.toMatch(/^\d+$/); // never a bare number (MC-81)
+	});
+
+	it("IMPLEMENTATION_ADDRESS gives a single-chain shorthand outside the registry its implementation", () => {
+		const config = loadConfig({
+			...BASE_ENV,
+			CHAIN_ID: "31337",
+			RPC_URL: "http://a:8545",
+			BUNDLER_URL: "http://a:4337",
+			ENTRYPOINT_ADDRESS: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
+			FACTORY_ADDRESS: "0x2222222222222222222222222222222222222222",
+			IMPLEMENTATION_ADDRESS: "0x3333333333333333333333333333333333333333",
+		});
+		expect(config.CHAINS[0].implementation).toBe(
+			"0x3333333333333333333333333333333333333333",
+		);
 	});
 
 	it("accepts GIANO_CHAINS, resolving registry defaults per chain (MC-46)", () => {
@@ -596,6 +612,16 @@ describe("verifyChain", () => {
 				codehash: keccak256("0xdead"),
 			},
 		]);
+		expect(result.implementationUnchecked).toBe(true);
+	});
+
+	it("checks release code at the address it was read from (a UUPS __self must be that address)", async () => {
+		const seen: string[] = [];
+		await verifyChain(descriptor, fakeClient({}), (contract, code, address) => {
+			seen.push(`${contract}@${address.toLowerCase()}`);
+			return fakeRelease(contract, code);
+		});
+		expect(seen).toContain(`GianoSmartWallet@${IMPLEMENTATION.toLowerCase()}`);
 	});
 
 	it("a factory running code no release has is FATAL (an address does not prove code)", async () => {
@@ -673,6 +699,38 @@ describe("verifyChain", () => {
 		expect(refusal).toContain(
 			"chain 10 → 0x00000000000000000000000000000000000fffff",
 		);
+	});
+
+	it("a chain recovering after boot must derive the served chains' probe address (MC-22)", () => {
+		const served = new Map([
+			[8453, "0x00000000000000000000000000000000000abcde"],
+		]);
+		expect(
+			recoveryDivergence(
+				served,
+				10,
+				"0x00000000000000000000000000000000000ABCDE",
+			),
+		).toBeNull();
+		const refusal = recoveryDivergence(
+			served,
+			10,
+			"0x00000000000000000000000000000000000fffff",
+		);
+		expect(refusal).toContain(
+			"chain 8453 → 0x00000000000000000000000000000000000abcde",
+		);
+		expect(refusal).toContain(
+			"chain 10 → 0x00000000000000000000000000000000000fffff",
+		);
+		// The first chain admitted sets the reference for the rest.
+		expect(
+			recoveryDivergence(
+				new Map(),
+				10,
+				"0x00000000000000000000000000000000000fffff",
+			),
+		).toBeNull();
 	});
 
 	it("a missing EntryPoint is FATAL (MC-141)", async () => {

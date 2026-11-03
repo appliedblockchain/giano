@@ -84,6 +84,11 @@ export type ChainVerification = {
 	factoryRelease?: string;
 	/** The wallet implementation the chain's factory clones. */
 	implementationAddress?: `0x${string}`;
+	/**
+	 * True when the chain has no resolved implementation (no `walletApi.implementation`, no
+	 * registry entry) to compare the factory's with. Its code and EntryPoint are still checked.
+	 */
+	implementationUnchecked?: boolean;
 	paymasterPresent?: boolean;
 	/** The address the chain's own factory derives for the probe owner (MC-22). */
 	probeAddress?: `0x${string}`;
@@ -109,6 +114,7 @@ export const PROBE_OWNER = `0x${"11".repeat(64)}` as const;
 export type ReleaseCheck = (
 	contract: ReleaseContractName,
 	code: Hex,
+	address: `0x${string}`,
 ) => { release: string } | undefined;
 
 export async function verifyChain(
@@ -127,9 +133,10 @@ export async function verifyChain(
 		address: `0x${string}`,
 		code: Hex | undefined,
 	): string | undefined => {
+		// The address too: a UUPS implementation's masked `__self` must be the address it sits at.
 		const match =
 			code && code !== "0x"
-				? releaseCheck(VERIFIED_CONTRACTS[contract], code)
+				? releaseCheck(VERIFIED_CONTRACTS[contract], code, address)
 				: undefined;
 		if (!match)
 			result.failures.push({
@@ -217,8 +224,9 @@ export async function verifyChain(
 			result.implementationAddress = implementation;
 			// The factory's implementation is an immutable the fingerprint masks: it must be the chain's
 			// own wallet implementation (GIANO_CHAINS walletApi.implementation, else the registry).
-			if (
-				descriptor.implementation &&
+			if (!descriptor.implementation) {
+				result.implementationUnchecked = true;
+			} else if (
 				implementation.toLowerCase() !== descriptor.implementation.toLowerCase()
 			) {
 				result.failures.push({
@@ -338,4 +346,20 @@ export function probeDivergence(
 		.map(([chainId, address]) => `chain ${chainId} → ${address}`)
 		.join(", ");
 	return `address-identity violation: the served chains derive DIFFERENT account addresses for the same owner (${listed}) (MC-16, MC-22)`;
+}
+
+/**
+ * MC-22 for a chain coming back after being unavailable: its probe address must equal the served
+ * chains'. Returns the refusal, or null when it may be served. On null the caller records the probe
+ * in `served`, so the first chain admitted sets the reference and recoveries that come back together
+ * are compared with each other (the check and the update run in one synchronous step).
+ */
+export function recoveryDivergence(
+	served: ReadonlyMap<number, string>,
+	chainId: number,
+	probeAddress: string,
+): string | null {
+	return probeDivergence(
+		new Map([...served, [chainId, probeAddress.toLowerCase()]]),
+	);
 }

@@ -8,6 +8,7 @@ import {
 	describeFailure,
 	isFatalFailure,
 	probeDivergence,
+	recoveryDivergence,
 	verifyChain,
 } from "./services/chain-verify.js";
 import {
@@ -53,8 +54,10 @@ const registry = app.chains;
 // implementation and paymaster, and the live factory cross-check. Structural misconfiguration
 // refuses start-up; mere unreachability does not (S7, MC-92): the deployment starts,
 // marks that chain unavailable, serves its other chains and retries in the background.
+/** The probe address each served chain's factory derives (MC-22); a recovering chain must match it. */
+const servedProbes = new Map<number, string>();
 {
-	const probeAddresses = new Map<number, string>();
+	const probeAddresses = servedProbes;
 	let fatal = false;
 	for (const chain of registry.all) {
 		const verification = await verifyChain(
@@ -70,6 +73,11 @@ const registry = app.chains;
 				app.log.warn({ chainId: chain.chainId, failure }, line);
 			}
 		}
+		if (verification.implementationUnchecked)
+			app.log.warn(
+				{ chainId: chain.chainId },
+				`chain ${chain.chainId}: no wallet implementation configured (walletApi.implementation, IMPLEMENTATION_ADDRESS) or registered — the factory's implementation was checked for release code and EntryPoint, but not compared with the chain's own`,
+			);
 		if (
 			verification.failures.some((failure) => failure.kind === "unreachable")
 		) {
@@ -146,7 +154,30 @@ const prober = setInterval(() => {
 			void verifyChain(chain.descriptor, chain.publicClient)
 				.then((verification) => {
 					const fatalFailures = verification.failures.filter(isFatalFailure);
-					if (verification.reachable && fatalFailures.length === 0) {
+					// MC-22 holds for every admission: a chain unreachable at boot never met the
+					// boot-time probe comparison, so it meets it here.
+					const divergence =
+						verification.probeAddress &&
+						recoveryDivergence(
+							servedProbes,
+							chain.chainId,
+							verification.probeAddress,
+						);
+					if (divergence) {
+						app.log.error(
+							{
+								chainId: chain.chainId,
+								probeAddress: verification.probeAddress,
+								servedProbes: Object.fromEntries(servedProbes),
+							},
+							`ALERT: ${divergence} — chain ${chain.chainId} stays unavailable`,
+						);
+					} else if (verification.reachable && fatalFailures.length === 0) {
+						if (verification.probeAddress)
+							servedProbes.set(
+								chain.chainId,
+								verification.probeAddress.toLowerCase(),
+							);
 						app.log.info(
 							{ chainId: chain.chainId },
 							"chain is reachable and verified — serving it again",
