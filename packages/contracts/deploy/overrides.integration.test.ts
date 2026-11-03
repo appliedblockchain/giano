@@ -36,7 +36,7 @@ const profile = loadProfile({ chain: "base-sepolia" }).profile;
 const EARLIER_KEY = getAddress("0x00000000000000000000000000000000000E4211");
 const CLASS_DEPLOYER = getAddress("0x00000000000000000000000000000000000C1A55");
 
-test("overridden wallet implementation and paymaster proxy are verified and reused, dependants wired to them", {
+test("overridden wallet implementation and paymaster are verified and reused, dependants wired to them", {
 	timeout: 90000,
 }, async () => {
 	const socket = createServer();
@@ -100,11 +100,31 @@ test("overridden wallet implementation and paymaster proxy are verified and reus
 		await deployCore(earlier, loadRelease("v2"), params);
 		const wallet = earlier.record.contracts.walletImplementation?.address;
 		const proxy = earlier.record.contracts.paymasterProxy?.address;
-		assert.ok(wallet && proxy);
+		const paymaster = earlier.record.contracts.paymasterImplementation?.address;
+		assert.ok(wallet && proxy && paymaster);
 
-		// The class deployer adopts the chain with those two overridden.
+		// Overriding the proxy alone is refused: it points at the earlier key's implementation, not
+		// at the one the class deployer would deploy.
+		const proxyOnly = await planCore(client, {
+			network: "testnet",
+			signer: CLASS_DEPLOYER,
+			deployer: CLASS_DEPLOYER,
+			overrides: { walletImplementation: wallet, paymasterProxy: proxy },
+			release: "v2",
+		});
+		assert.match(
+			proxyOnly.blockers.join("\n"),
+			new RegExp(`Override paymasterImplementation with ${paymaster}`),
+		);
+
+		// The class deployer adopts the chain with the wallet implementation and the paymaster
+		// (proxy and implementation) overridden.
 		await impersonate(testClient, CLASS_DEPLOYER);
-		const overrides = { walletImplementation: wallet, paymasterProxy: proxy };
+		const overrides = {
+			walletImplementation: wallet,
+			paymasterImplementation: paymaster,
+			paymasterProxy: proxy,
+		};
 		const plan = await planCore(client, {
 			network: "testnet",
 			signer: CLASS_DEPLOYER,
@@ -117,6 +137,7 @@ test("overridden wallet implementation and paymaster proxy are verified and reus
 			plan.deviations.map((d) => [d.key, d.reason, d.actual]),
 			[
 				["walletImplementation", "override", wallet],
+				["paymasterImplementation", "override", paymaster],
 				["paymasterProxy", "override", proxy],
 			],
 		);
@@ -127,11 +148,11 @@ test("overridden wallet implementation and paymaster proxy are verified and reus
 		await deployCore(ctx, loadRelease("v2"), params, fixedAddresses(plan));
 		recordDeviations(ctx.record, plan.deviations, false);
 
-		// Two transactions: the factory and the paymaster implementation. The overrides are reused.
+		// One transaction: the factory. The overrides are reused.
 		assert.equal(
 			(await client.getTransactionCount({ address: CLASS_DEPLOYER })) -
 				nonceBefore,
-			2,
+			1,
 		);
 		const { contracts } = ctx.record;
 		assert.equal(contracts.walletImplementation?.address, wallet);
@@ -152,13 +173,15 @@ test("overridden wallet implementation and paymaster proxy are verified and reus
 		);
 		const factoryCode = await client.getCode({ address: factory });
 		assert.equal(
-			releaseOf("GianoSmartWalletFactory", factoryCode ?? "0x")?.release,
+			releaseOf("GianoSmartWalletFactory", factoryCode ?? "0x", factory)
+				?.release,
 			"v2",
 		);
 		assert.deepEqual(
 			ctx.record.deviations?.map((d) => [d.contract, d.reason, d.confirmed]),
 			[
 				["walletImplementation", "override", false],
+				["paymasterImplementation", "override", false],
 				["paymasterProxy", "override", false],
 			],
 		);

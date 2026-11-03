@@ -10,7 +10,12 @@ import { type Address, type Hex, type PublicClient, zeroAddress } from "viem";
 import { DEPLOYERS, LABELS } from "./config";
 import { create3Address } from "./create3";
 import { planCore } from "./plan";
-import { inspectDeployment, roleAdmin, verifyCoreState } from "./preflight";
+import {
+	assertRoleAdminNotDeployer,
+	inspectDeployment,
+	roleAdmin,
+	verifyCoreState,
+} from "./preflight";
 import { loadProfile } from "./profiles";
 
 const profile = loadProfile({ chain: "base-sepolia" }).profile;
@@ -39,6 +44,17 @@ function client(overrides: object = {}): PublicClient {
 test("role admin must be a valid nonzero address", () => {
 	assert.throws(() => roleAdmin(zeroAddress));
 	assert.throws(() => roleAdmin("invalid"));
+});
+
+test("a deployer key is refused as role admin on a non-local chain", () => {
+	const signer = "0x2222222222222222222222222222222222222222" as Address;
+	assert.throws(
+		() => assertRoleAdminNotDeployer(signer, signer, false),
+		/must be a timelock or Safe, never a deployer/,
+	);
+	assert.doesNotThrow(() => assertRoleAdminNotDeployer(admin, signer, false));
+	// Local chains (anvil) use a dev key for both.
+	assert.doesNotThrow(() => assertRoleAdminNotDeployer(signer, signer, true));
 });
 
 test("wrong-chain RPC stops before inspecting addresses or balances", async () => {

@@ -14,7 +14,8 @@ import {
 	type PublicClient,
 	pad,
 } from "viem";
-import { DEPLOYERS, LABELS } from "./config";
+import { RELEASE_FINGERPRINTS } from "../release-code";
+import { CONTRACT_OF, DEPLOYERS, LABELS } from "./config";
 import { create3Address } from "./create3";
 import {
 	CORE_KEYS,
@@ -40,6 +41,27 @@ const CODE = Object.fromEntries(
 			.code,
 	]),
 ) as Record<CoreKey, Hex>;
+
+/**
+ * `key`'s devnet code as it would be at `address`: its UUPS `__self` immutable set to `address`
+ * (releaseOf refuses implementation code whose `__self` is another address).
+ */
+function place(key: CoreKey, address: Address): Hex {
+	const fingerprint = RELEASE_FINGERPRINTS.find(
+		(f) => f.contract === CONTRACT_OF[key] && f.release === "v2",
+	);
+	let code = CODE[key].toLowerCase();
+	for (const { name, start, length } of fingerprint?.immutables ?? [])
+		if (name.endsWith(".__self"))
+			code =
+				code.slice(0, 2 + start * 2) +
+				address
+					.slice(2)
+					.toLowerCase()
+					.padStart(length * 2, "0") +
+				code.slice(2 + (start + length) * 2);
+	return code as Hex;
+}
 
 /** A stand-in mainnet canonical deployer (DEPLOYERS.mainnet is not configured yet). */
 const MAINNET = getAddress("0x1000000000000000000000000000000000000001");
@@ -77,7 +99,8 @@ function chain(
 /** Every core contract deployed at `deployer`'s CREATE3 addresses, consistently wired. */
 function deployedBy(deployer: Address) {
 	const code: Record<string, Hex> = {};
-	for (const key of CORE_KEYS) code[expected(key, deployer)] = CODE[key];
+	for (const key of CORE_KEYS)
+		code[expected(key, deployer)] = place(key, expected(key, deployer));
 	return chain(code, {
 		implementation: expected("walletImplementation", deployer),
 		paymasterImplementation: expected("paymasterImplementation", deployer),
@@ -140,7 +163,7 @@ describe("planCore", () => {
 			chain(
 				{
 					[proxy]: CODE.paymasterProxy,
-					[implementation]: CODE.paymasterImplementation,
+					[implementation]: place("paymasterImplementation", implementation),
 				},
 				{ paymasterImplementation: implementation },
 			),
@@ -204,7 +227,7 @@ describe("planCore", () => {
 	it("reports a contract the record lists away from its expected address as existing-elsewhere", async () => {
 		const wallet = getAddress("0x5000000000000000000000000000000000000005");
 		const plan = await planCore(
-			chain({ [wallet]: CODE.walletImplementation }),
+			chain({ [wallet]: place("walletImplementation", wallet) }),
 			{
 				network: "mainnet",
 				signer: MAINNET,
@@ -254,18 +277,50 @@ describe("planCore", () => {
 		);
 	});
 
-	it("verifies a timelock override as GianoTimelock release code", async () => {
-		const timelock = getAddress("0x6000000000000000000000000000000000000006");
-		const plan = await planCore(chain({ [timelock]: CODE.factory }), {
-			network: "testnet",
-			signer: MAINNET,
-			deployer: MAINNET,
-			overrides: { timelock },
-		});
+	it("refuses an overridden proxy that points at another paymaster implementation", async () => {
+		const proxy = getAddress("0x3000000000000000000000000000000000000003");
+		const elsewhere = getAddress("0x7000000000000000000000000000000000000007");
+		const plan = await planCore(
+			chain(
+				{
+					[proxy]: CODE.paymasterProxy,
+					[elsewhere]: place("paymasterImplementation", elsewhere),
+				},
+				{ paymasterImplementation: elsewhere },
+			),
+			{
+				network: "testnet",
+				signer: MAINNET,
+				deployer: MAINNET,
+				overrides: { paymasterProxy: proxy },
+			},
+		);
 		assert.ok(
 			plan.blockers.some((b) =>
-				/timelock at .* matches no release's GianoTimelock/.test(b),
+				b.includes(`Override paymasterImplementation with ${elsewhere}`),
 			),
+			plan.blockers.join("\n"),
+		);
+	});
+
+	it("refuses implementation code whose __self is another address", async () => {
+		const wallet = getAddress("0x5000000000000000000000000000000000000005");
+		const plan = await planCore(
+			chain({ [wallet]: place("walletImplementation", OTHER_KEY) }),
+			{
+				network: "testnet",
+				signer: MAINNET,
+				deployer: MAINNET,
+				overrides: { walletImplementation: wallet },
+			},
+		);
+		assert.ok(
+			plan.blockers.some(
+				(b) =>
+					b.includes(`walletImplementation at ${wallet}`) &&
+					/matches no release's GianoSmartWallet/.test(b),
+			),
+			plan.blockers.join("\n"),
 		);
 	});
 
@@ -322,14 +377,11 @@ describe("deviationGate", () => {
 		);
 	});
 
-	it("--allow-deviation lets a non-interactive mainnet run through", async () => {
-		assert.deepEqual(
-			deviationGate(await plan("mainnet", OTHER_KEY), "base", {
-				interactive: false,
-				allowDeviation: true,
-			}),
-			{ kind: "none" },
-		);
+	it("a non-interactive mainnet run points at the guided wizard", async () => {
+		const gate = deviationGate(await plan("mainnet", OTHER_KEY), "base", {
+			interactive: false,
+		});
+		assert.match(gate.kind === "refuse" ? gate.reason : "", /deploy:guided/);
 	});
 
 	it("a testnet override is reported, not gated", async () => {
@@ -339,7 +391,7 @@ describe("deviationGate", () => {
 			chain(
 				{
 					[proxy]: CODE.paymasterProxy,
-					[implementation]: CODE.paymasterImplementation,
+					[implementation]: place("paymasterImplementation", implementation),
 				},
 				{ paymasterImplementation: implementation },
 			),

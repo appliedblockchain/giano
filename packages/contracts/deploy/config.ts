@@ -92,6 +92,30 @@ export const LOCAL_CHAIN_IDS = [31337, 31338] as const;
 /** Production chains never carry the test fixtures (R-29). */
 export const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111] as const;
 
+/**
+ * R-29: a chain on the fixed list, or any chain declared `mainnet` (by its profile or its record), so
+ * that adopting a mainnet protects it without a code change.
+ */
+export function isProductionChain(
+	chainId: number,
+	network?: NetworkClass,
+): boolean {
+	return (
+		network === "mainnet" ||
+		(PRODUCTION_CHAIN_IDS as readonly number[]).includes(chainId)
+	);
+}
+
+/**
+ * The configured canonical deployers equal to `address`. A deployer only places contracts: it must
+ * never hold a role on one, which is what keeps its key outside ABIP-8 (docs/key-ceremony.md).
+ */
+export function isClassDeployer(address: Address): boolean {
+	return [DEPLOYERS.mainnet, DEPLOYERS.testnet].some(
+		(d) => d !== null && getAddress(d) === getAddress(address),
+	);
+}
+
 /** ERC-4337 EntryPoint v0.9; the wallet implementation hardcodes it. */
 export const ENTRY_POINT_V09: Address = ENTRY_POINT_ADDRESS;
 
@@ -106,14 +130,14 @@ export const CONTRACT_OF = {
 } as const satisfies Record<LabelKey, ReleaseContractName>;
 
 /**
- * Contracts a chain profile may override (deploy/profiles.ts `addresses`): the core contracts, and
- * the paymaster's timelock, which is never deterministic (plain CREATE) but is verified the same way.
+ * Contracts a chain profile may override (deploy/profiles.ts `addresses`): the core contracts. The
+ * timelock is not one: it is deployed with plain CREATE (`deploy:cli timelock`), has no deterministic
+ * address, and its address lives in the profile's `timelock.address` alone.
  */
 export const OVERRIDE_KEYS = [
 	"walletImplementation",
 	"factory",
 	"paymasterImplementation",
 	"paymasterProxy",
-	"timelock",
 ] as const;
 export type OverrideKey = (typeof OVERRIDE_KEYS)[number];

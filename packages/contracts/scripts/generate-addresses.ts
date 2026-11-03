@@ -15,9 +15,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	CONTRACT_OF,
+	isProductionChain,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
-	PRODUCTION_CHAIN_IDS,
+	type NetworkClass,
 } from "../deploy/config";
 import { DEPLOYMENTS_DIR, type DeploymentRecord } from "../deploy/records";
 import { RELEASE_FINGERPRINTS } from "../release-code";
@@ -42,6 +43,14 @@ const RECORD_TO_FIELD: Record<LabelKey, { field: string; optional: boolean }> =
 
 type Overrides = Record<string, Record<string, string>>;
 
+/**
+ * The registry fields address-overrides.json may set: third-party contracts only. A Giano contract's
+ * address comes from its record alone, whose fingerprint the deploy tooling read from the chain; one
+ * at a non-deterministic address goes through a profile override (deploy/chains/<profile>.json),
+ * which the tooling verifies and records.
+ */
+const OVERRIDABLE_FIELDS = ["entryPoint"];
+
 function isAddress(value: unknown): value is string {
 	return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
 }
@@ -54,6 +63,7 @@ export function generateRegistry(
 	delete overrides.$comment;
 
 	const chains: Record<number, Record<string, string>> = {};
+	const networks: Record<number, NetworkClass | undefined> = {};
 	const files = fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
 	for (const entry of files) {
 		const match = /^(\d+)\.json$/.exec(entry);
@@ -99,12 +109,17 @@ export function generateRegistry(
 			out[field] = deployed.address;
 		}
 		chains[chainId] = out;
+		networks[chainId] = record.network;
 	}
 
 	const defaults = overrides.default ?? {};
 	for (const chainId of Object.keys(chains)) {
 		const merged = { ...defaults, ...(overrides[chainId] ?? {}) };
 		for (const [field, address] of Object.entries(merged)) {
+			if (!OVERRIDABLE_FIELDS.includes(field))
+				throw new Error(
+					`address-overrides.json sets ${field} for chain ${chainId}: only ${OVERRIDABLE_FIELDS.join(", ")} may be set there. A Giano contract's address comes from its deployment record; to use one at a non-deterministic address, override it in the chain profile (deploy/chains/<profile>.json addresses) and deploy, which verifies and records it.`,
+				);
 			if (!isAddress(address))
 				throw new Error(
 					`Invalid override address for chain ${chainId}.${field}: ${address}`,
@@ -133,10 +148,11 @@ export function generateRegistry(
 		})
 		.join("\n");
 
-	// R-29 layer 2: a testing artifact on a production chain is a build failure, not a warning.
-	for (const chainId of PRODUCTION_CHAIN_IDS) {
-		const record = chains[chainId];
-		if (!record) continue;
+	// R-29 layer 2: a testing artifact on a production chain (the fixed list, or any chain recorded
+	// as mainnet) is a build failure, not a warning.
+	for (const [id, record] of Object.entries(chains)) {
+		const chainId = Number(id);
+		if (!isProductionChain(chainId, networks[chainId])) continue;
 		for (const field of ["testPaymaster", "testErc20"]) {
 			if (record[field]) {
 				throw new Error(

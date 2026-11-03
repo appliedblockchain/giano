@@ -62,12 +62,16 @@ const record = (): DeploymentRecord => ({
 	],
 });
 
-function generate(input: DeploymentRecord) {
+function generate(
+	input: DeploymentRecord,
+	overrides: Record<string, Record<string, string>> = {},
+) {
 	const dir = mkdtempSync(join(tmpdir(), "giano-registry-"));
 	try {
 		writeFileSync(join(dir, `${input.chainId}.json`), JSON.stringify(input));
 		return generateRegistry(dir, {
 			default: { entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" },
+			...overrides,
 		});
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -113,4 +117,24 @@ test("the factory and the wallet implementation are required", () => {
 test("local chains never enter the registry", () => {
 	const { chains } = generate({ ...record(), chainId: 31337 });
 	assert.equal(chains, 0);
+});
+
+test("address-overrides.json cannot set a Giano contract", () => {
+	assert.throws(
+		() =>
+			generate(record(), {
+				8453: { factory: "0x9999999999999999999999999999999999999999" },
+			}),
+		/address-overrides.json sets factory for chain 8453/,
+	);
+});
+
+test("a chain recorded as mainnet is a production chain for R-29, listed or not", () => {
+	const mainnet = { ...record(), chainId: 4242 };
+	mainnet.contracts.testPaymaster = contract(
+		"0x6666666666666666666666666666666666666666",
+		"PermissivePaymaster",
+	);
+	assert.throws(() => generate(mainnet), /chain 4242 is a production chain/);
+	assert.doesNotThrow(() => generate({ ...mainnet, network: "testnet" }));
 });

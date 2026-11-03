@@ -166,7 +166,6 @@ test("address overrides accept the overridable contracts only, as nonzero addres
 		addresses: {
 			paymasterProxy: "0x2222222222222222222222222222222222222222",
 			walletImplementation: "0x3333333333333333333333333333333333333333",
-			timelock: "0x4444444444444444444444444444444444444444",
 		},
 	});
 	assert.equal(valid.success, true);
@@ -176,6 +175,8 @@ test("address overrides accept the overridable contracts only, as nonzero addres
 	);
 	for (const addresses of [
 		{ testErc20: "0x2222222222222222222222222222222222222222" },
+		// The timelock's address lives in `timelock.address` only.
+		{ timelock: "0x4444444444444444444444444444444444444444" },
 		{ paymaster: "0x2222222222222222222222222222222222222222" },
 		{ factory: "0x0000000000000000000000000000000000000000" },
 		{ factory: "not an address" },

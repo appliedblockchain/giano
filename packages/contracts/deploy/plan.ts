@@ -66,7 +66,7 @@ export type CodeState =
 	| { state: "foreign"; codehash: Hex };
 
 export type PlannedContract = {
-	key: CoreKey | "timelock";
+	key: CoreKey;
 	label: string;
 	contract: ReleaseContractName;
 	/** CREATE3(class deployer, label); null when the class's deployer is not configured, or for the timelock. */
@@ -79,7 +79,7 @@ export type PlannedContract = {
 };
 
 export type Deviation = {
-	key: CoreKey | "timelock";
+	key: CoreKey;
 	reason: DeviationReason;
 	expected: Address | null;
 	actual: Address | null;
@@ -115,7 +115,7 @@ async function codeAt(
 ): Promise<CodeState> {
 	const code = await client.getCode({ address });
 	if (!code || code === "0x") return { state: "empty" };
-	const match = releaseOf(contract, code);
+	const match = releaseOf(contract, code, address);
 	return match
 		? { state: "release", release: match.release }
 		: { state: "foreign", codehash: keccak256(code) };
@@ -224,24 +224,6 @@ export async function planCore(
 			);
 	}
 
-	if (overrides.timelock) {
-		const actual = getAddress(overrides.timelock);
-		const code = await codeAt(client, "GianoTimelock", actual);
-		contracts.push({
-			key: "timelock",
-			label: "giano.paymaster.timelock",
-			contract: "GianoTimelock",
-			expected: null,
-			actual,
-			source: "override",
-			code,
-		});
-		if (code.state !== "release")
-			blockers.push(
-				`timelock at ${actual} (override) ${code.state === "empty" ? "has no code" : `holds code ${code.codehash}, which matches no release's GianoTimelock`}.`,
-			);
-	}
-
 	blockers.push(...(await immutableProblems(client, contracts)));
 
 	const deviations = contracts
@@ -264,8 +246,9 @@ export async function planCore(
 
 /**
  * The semantic checks behind the masked immutables (deploy/immutable-checks.ts), for contracts that
- * already exist: an existing factory must clone the planned wallet implementation, and an existing
- * paymaster proxy must point at paymaster release code.
+ * already exist, overrides included: an existing factory must clone the planned wallet
+ * implementation, and an existing paymaster proxy (itself release proxy code, which codeAt checked)
+ * must point at the planned paymaster implementation, which must be paymaster release code.
  */
 async function immutableProblems(
 	client: PublicClient,
@@ -287,6 +270,7 @@ async function immutableProblems(
 			);
 	}
 	const proxy = find("paymasterProxy");
+	const paymaster = find("paymasterImplementation");
 	if (proxy?.actual && proxy.code.state === "release") {
 		const slot = await client.getStorageAt({
 			address: proxy.actual,
@@ -300,6 +284,10 @@ async function immutableProblems(
 			problems.push(
 				`paymaster proxy at ${proxy.actual} points at ${implementation ?? "nothing"}, which holds no paymaster release code.`,
 			);
+		else if (!same(implementation, paymaster?.actual ?? null))
+			problems.push(
+				`paymaster proxy at ${proxy.actual} points at ${implementation}, not the planned paymaster implementation ${paymaster?.actual}. Override paymasterImplementation with ${implementation}, or use the upgrade procedure.`,
+			);
 	}
 	return problems;
 }
@@ -312,7 +300,7 @@ async function immutableProblems(
 export function fixedAddresses(plan: Plan): Partial<Record<CoreKey, Address>> {
 	const fixed: Partial<Record<CoreKey, Address>> = {};
 	for (const c of plan.contracts) {
-		if (c.key === "timelock" || !c.actual) continue;
+		if (!c.actual) continue;
 		if (
 			c.code.state !== "empty" ||
 			c.source === "override" ||
@@ -373,21 +361,20 @@ export type DeviationGate =
 
 /**
  * What a plan's deviations require before signing. Only mainnets gate: an interactive run must type
- * `deviate <profile>`, a non-interactive one refuses unless the caller passed an explicit
- * allowance (`deploy:cli core --allow-deviation`). Testnets and local chains only report.
+ * `deviate <profile>`, and a non-interactive one (`deploy:cli core`) always refuses. Nothing skips the
+ * typed confirmation. Testnets and local chains only report.
  */
 export function deviationGate(
 	plan: Plan,
 	profileId: string,
-	options: { interactive: boolean; allowDeviation?: boolean },
+	options: { interactive: boolean },
 ): DeviationGate {
 	if (plan.network !== "mainnet" || plan.deviations.length === 0)
 		return { kind: "none" };
-	if (options.allowDeviation) return { kind: "none" };
 	if (!options.interactive)
 		return {
 			kind: "refuse",
-			reason: `A non-interactive run refuses a mainnet deployment that deviates (${plan.deviations.map((d) => `${d.key}: ${d.reason}`).join("; ")}). Rerun interactively to review and confirm, or fix the deviation.`,
+			reason: `A non-interactive run refuses a mainnet deployment that deviates (${plan.deviations.map((d) => `${d.key}: ${d.reason}`).join("; ")}). Run the guided wizard (pnpm deploy:guided) to review and confirm it, or fix the deviation.`,
 		};
 	return { kind: "confirm", phrase: `deviate ${profileId}` };
 }

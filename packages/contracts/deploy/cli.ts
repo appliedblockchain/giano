@@ -3,7 +3,7 @@
  *
  *   pnpm deploy:cli addresses
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
- *                            [--chain <profile> | --network mainnet|testnet] [--allow-deviation]
+ *                            [--chain <profile> | --network mainnet|testnet]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
@@ -21,9 +21,10 @@
  *
  * Signing: DEPLOYER_PRIVATE_KEY, or --impersonate on a local chain. A key that is not the class's
  * canonical deployer deploys at its own CREATE3 addresses: every such contract is a deviation. On a
- * mainnet `core` refuses any deviation (an override, another key, a contract recorded elsewhere)
- * unless --allow-deviation is passed; this command has no prompt, so prefer the guided wizard
- * (deploy/guided.ts), which shows the deviations and asks for a typed confirmation. Without a key,
+ * mainnet `core` always refuses a deviation (an override, another key, a contract recorded
+ * elsewhere): this command has no prompt, and nothing skips the typed confirmation, so a deviating
+ * mainnet deployment goes through the guided wizard (deploy/guided.ts), which shows the deviations
+ * and asks for it. On a non-local chain `--role-admin` must not be a deployer key. Without a key,
  * `core` and `testing` only verify: every contract must already be in place with a release's code,
  * and nothing is sent. The canonical deployer keys are development-team keys kept in 1Password
  * (docs/key-ceremony.md): load one into this shell's environment only, never into a file or a
@@ -76,12 +77,12 @@ import {
 	classDeployer,
 	DEPLOYERS,
 	ENTRY_POINT_V09,
+	isProductionChain,
 	LABELS,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
 	type NetworkClass,
 	type OverrideKey,
-	PRODUCTION_CHAIN_IDS,
 	PROFILE_NETWORKS,
 } from "./config";
 import { create3Address } from "./create3";
@@ -98,6 +99,7 @@ import {
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { deployP256Verifier } from "./p256";
 import { deviationGate, fixedAddresses, formatPlan, planCore } from "./plan";
+import { assertRoleAdminNotDeployer } from "./preflight";
 import { loadProfile, profileForChain } from "./profiles";
 import {
 	DEPLOYMENTS_DIR,
@@ -123,7 +125,6 @@ const { positionals, values } = parseArgs({
 		// network class: a committed profile, or the class alone
 		chain: { type: "string" },
 		network: { type: "string" },
-		"allow-deviation": { type: "boolean", default: false },
 		// core
 		"role-admin": { type: "string" },
 		"entry-point": { type: "string", default: ENTRY_POINT_V09 },
@@ -393,7 +394,7 @@ async function deployerContext({
 /**
  * Prints the plan and refuses what must not be signed: a blocker (an override without release
  * code, foreign code, a class deployer that is not configured), or a mainnet deviation without
- * --allow-deviation. Returns the addresses deployCore must use rather than derive.
+ * a mainnet deviation (always: see deviationGate). Returns the addresses deployCore must use.
  */
 async function planOrRefuse(
 	ctx: Awaited<ReturnType<typeof deployerContext>>,
@@ -420,19 +421,11 @@ async function planOrRefuse(
 	const gate = deviationGate(
 		plan,
 		ctx.target.profileId ?? `chain-${ctx.chainId}`,
-		{
-			interactive: false,
-			allowDeviation: values["allow-deviation"],
-		},
+		{ interactive: false },
 	);
-	if (gate.kind === "refuse")
-		throw new Error(`${gate.reason} Pass --allow-deviation to accept them.`);
+	if (gate.kind === "refuse") throw new Error(gate.reason);
 	if (plan.deviations.length && ctx.walletClient)
-		recordDeviations(
-			ctx.record,
-			plan.deviations,
-			plan.network === "mainnet" && values["allow-deviation"],
-		);
+		recordDeviations(ctx.record, plan.deviations, false);
 	if (ctx.walletClient) ctx.record.deployer = ctx.walletClient.account.address;
 	return fixedAddresses(plan);
 }
@@ -496,13 +489,19 @@ async function main(): Promise<void> {
 		}
 		case "core": {
 			const ctx = await deployerContext({ verifyOnly: true });
+			const admin = address("role-admin");
+			assertRoleAdminNotDeployer(
+				admin,
+				ctx.walletClient?.account.address ?? null,
+				ctx.local,
+			);
 			const fixed = await planOrRefuse(ctx);
 			await deployCore(
 				ctx,
 				release(ctx.local),
 				{
 					entryPoint: address("entry-point"),
-					roleAdmin: address("role-admin"),
+					roleAdmin: admin,
 					defaultFeeWei: BigInt(required("default-fee-wei")),
 					postOpGasAllowance: Number(required("post-op-gas-allowance")),
 					penaltyBps: Number(required("penalty-bps")),
@@ -514,7 +513,7 @@ async function main(): Promise<void> {
 		}
 		case "testing": {
 			const ctx = await deployerContext({ verifyOnly: true });
-			if ((PRODUCTION_CHAIN_IDS as readonly number[]).includes(ctx.chainId)) {
+			if (isProductionChain(ctx.chainId, ctx.network)) {
 				throw new Error(
 					`chain ${ctx.chainId} is a production chain; the test fixtures must never be deployed there (R-29)`,
 				);

@@ -288,7 +288,7 @@ async function main() {
 			const code = deployed
 				? await client.getCode({ address: deployed.address })
 				: undefined;
-			if (!code || !releaseOf(CONTRACT_OF[key], code))
+			if (!code || !releaseOf(CONTRACT_OF[key], code, deployed?.address))
 				throw new GuidanceError(
 					`Post-deployment code verification failed for ${key}. Do not serve this chain.`,
 				);

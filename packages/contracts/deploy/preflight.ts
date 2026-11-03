@@ -9,7 +9,7 @@ import {
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
 import { gianoPaymasterAbi } from "../generated";
-import { ENTRY_POINT_V09 } from "./config";
+import { DEPLOYERS, ENTRY_POINT_V09, isClassDeployer } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
 import {
 	CORE_KEYS,
@@ -34,13 +34,33 @@ export function roleAdmin(value: string): Address {
 	return address;
 }
 
+/**
+ * Refuses a deployer as the paymaster's ROLE_ADMIN on a non-local chain: the signing key or a
+ * configured class deployer. A deployer key is a development-team key outside ABIP-8 only because it
+ * holds no role on what it deploys (docs/key-ceremony.md).
+ */
+export function assertRoleAdminNotDeployer(
+	admin: Address,
+	signer: Address | null,
+	local: boolean,
+): void {
+	if (local) return;
+	if (
+		isClassDeployer(admin) ||
+		(signer !== null && getAddress(signer) === getAddress(admin))
+	)
+		throw new GateError(
+			`ROLE_ADMIN ${admin} is a deployer key. The paymaster's role admin must be a timelock or Safe, never a deployer.`,
+		);
+}
+
 const planned = (plan: Plan, key: (typeof CORE_KEYS)[number]) =>
 	plan.contracts.find((c) => c.key === key);
 
 /**
- * An existing paymaster proxy must be configured as this plan says: initialised with the planned
- * implementation (unless the proxy itself is an override, which the plan checked holds paymaster
- * code), with ROLE_ADMIN, EntryPoint and fees as the profile publishes them.
+ * An existing paymaster proxy, overridden or not, must be configured as this plan says: pointing at
+ * the planned implementation, with ROLE_ADMIN, EntryPoint and fees as the profile publishes them, and
+ * (on a non-local chain) no deployer holding ROLE_ADMIN.
  */
 export async function verifyCoreState(
 	client: PublicClient,
@@ -53,20 +73,18 @@ export async function verifyCoreState(
 	const code = await client.getCode({ address: proxy.actual });
 	if (!code || code === "0x") return;
 	const implementation = planned(plan, "paymasterImplementation")?.actual;
-	if (proxy.source !== "override") {
-		const slot = await client.getStorageAt({
-			address: proxy.actual,
-			slot: IMPLEMENTATION_SLOT,
-		});
-		if (
-			!slot ||
-			!implementation ||
-			getAddress(`0x${slot.slice(-40)}`) !== getAddress(implementation)
-		)
-			throw new Error(
-				"Paymaster was upgraded or points to an unexpected implementation; use the upgrade procedure.",
-			);
-	}
+	const slot = await client.getStorageAt({
+		address: proxy.actual,
+		slot: IMPLEMENTATION_SLOT,
+	});
+	if (
+		!slot ||
+		!implementation ||
+		getAddress(`0x${slot.slice(-40)}`) !== getAddress(implementation)
+	)
+		throw new GateError(
+			"Paymaster was upgraded or points to an unexpected implementation; use the upgrade procedure.",
+		);
 	const read = { address: proxy.actual, abi: gianoPaymasterAbi } as const;
 	const role = await client.readContract({
 		...read,
@@ -90,9 +108,28 @@ export async function verifyCoreState(
 		allowance !== profile.paymaster.postOpGasAllowance ||
 		penalty !== profile.paymaster.penaltyBps
 	)
-		throw new Error(
+		throw new GateError(
 			"Existing paymaster admin, EntryPoint or fee parameters differ from this plan. Review its configuration before continuing.",
 		);
+	if (plan.network !== "local") {
+		const deployers = [
+			plan.signer,
+			plan.classDeployer,
+			DEPLOYERS.mainnet,
+			DEPLOYERS.testnet,
+		].filter((a): a is Address => a !== null);
+		for (const deployer of new Set(deployers.map((a) => getAddress(a))))
+			if (
+				await client.readContract({
+					...read,
+					functionName: "hasRole",
+					args: [role, deployer],
+				})
+			)
+				throw new GateError(
+					`Deployer ${deployer} holds ROLE_ADMIN on the paymaster at ${proxy.actual}. A deployer must hold no role.`,
+				);
+	}
 }
 
 export type Check = { ok: boolean; message: string };
@@ -160,6 +197,9 @@ export async function inspectDeployment(
 				"Missing or noncanonical EntryPoint. Do not deploy or serve this chain.",
 			);
 	});
+	await check("ROLE_ADMIN is not a deployer key", async () =>
+		assertRoleAdminNotDeployer(admin, options.signer, false),
+	);
 	let plan: Plan | undefined;
 	await check(`Deployment plan (${profile.network})`, async () => {
 		try {
@@ -186,10 +226,12 @@ export async function inspectDeployment(
 		async () => {
 			try {
 				await verifyCoreState(client, admin, profile, plan as Plan);
-			} catch {
-				throw new GateError(
-					"Configuration could not be verified or differs from this plan. Review the proxy implementation slot, ROLE_ADMIN, EntryPoint and fee parameters.",
-				);
+			} catch (error) {
+				throw error instanceof GateError
+					? error
+					: new GateError(
+							"Configuration could not be verified. Review the proxy implementation slot, ROLE_ADMIN, EntryPoint and fee parameters.",
+						);
 			}
 		},
 	);
@@ -212,4 +254,4 @@ export async function inspectDeployment(
 		);
 	return { checks, plan };
 }
-class GateError extends Error {}
+export class GateError extends Error {}

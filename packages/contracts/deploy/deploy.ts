@@ -223,7 +223,7 @@ function releaseCode(
 	code: Hex,
 ): DeployedContract {
 	const codehash = keccak256(code);
-	const match = releaseOf(contract, code);
+	const match = releaseOf(contract, code, address);
 	if (!match && release !== DEV_RELEASE)
 		throw new Error(
 			`${label} at ${address} holds code ${codehash}, which matches no release's ${contract}`,
