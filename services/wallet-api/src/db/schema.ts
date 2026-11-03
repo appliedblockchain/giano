@@ -587,6 +587,11 @@ export const sponsorshipSettlements = pgTable(
 	(t) => [
 		primaryKey({ columns: [t.chainId, t.useropHash] }),
 		index("sponsorship_settlements_tenant_idx").on(t.tenantId, t.observedAt),
+		// GET /v1/platform/usage: one chain over a time range (migration 0010)
+		index("sponsorship_settlements_chain_observed_idx").on(
+			t.chainId,
+			t.observedAt,
+		),
 	],
 );
 
@@ -629,6 +634,8 @@ export const sponsorshipDecisions = pgTable(
 			t.tenantId,
 			t.createdAt,
 		),
+		// GET /v1/platform/usage: one chain over a time range (migration 0010)
+		index("sponsorship_decisions_chain_created_idx").on(t.chainId, t.createdAt),
 	],
 );
 

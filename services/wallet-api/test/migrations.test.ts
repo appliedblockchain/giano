@@ -214,6 +214,20 @@ describe("migration 0007_tenant_lifecycle", () => {
 			(await client.query(`SELECT created_by FROM tenant_admin_keys`)).rows,
 		).toEqual([{ created_by: "seed" }]);
 	});
+	it("0010 adds the usage indexes, leading with the chain and the time", async () => {
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0010")),
+		).toEqual(["0010_usage_indexes.sql"]);
+		const { rows } = await client.query(
+			`SELECT indexname, indexdef FROM pg_indexes WHERE indexname IN ('sponsorship_decisions_chain_created_idx', 'sponsorship_settlements_chain_observed_idx') ORDER BY 1`,
+		);
+		expect(rows.map((row) => row.indexname)).toEqual([
+			"sponsorship_decisions_chain_created_idx",
+			"sponsorship_settlements_chain_observed_idx",
+		]);
+		expect(rows[0].indexdef).toContain("(chain_id, created_at)");
+		expect(rows[1].indexdef).toContain("(chain_id, observed_at)");
+	});
 
 	it("0011 dates every existing session's last use to its issue, and accepts the session revocation history action", async () => {
 		const {

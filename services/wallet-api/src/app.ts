@@ -30,6 +30,7 @@ import platformChainRoutes from "./routes/platform-chains.js";
 import platformDriftRoutes from "./routes/platform-drift.js";
 import platformRpcRoutes from "./routes/platform-rpc.js";
 import platformTenantRoutes from "./routes/platform-tenants.js";
+import platformUsageRoutes from "./routes/platform-usage.js";
 import rpcRelayRoutes from "./routes/rpc-relay.js";
 import txMappingRoutes from "./routes/tx-mappings.js";
 import useropRoutes from "./routes/userops.js";
@@ -304,6 +305,7 @@ export async function buildApp({
 		await app.register(platformAdminRoutes, { admins, config });
 		await app.register(platformRpcRoutes, { config });
 		await app.register(platformDriftRoutes, { db, config, registry, drift });
+		await app.register(platformUsageRoutes, { db, config, registry });
 		await app.register(platformChainRoutes, {
 			db,
 			config,
