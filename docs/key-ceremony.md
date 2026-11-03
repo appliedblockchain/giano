@@ -3,7 +3,9 @@
 Every private key that can move mainnet value or hold a privileged role in a live Giano deployment
 is produced by the [ABIP-8 Key Generation Ceremony](https://app.notion.com/p/applied-blockchain/ABIP-8-Key-Generation-Ceremony-399b61bd7d52811b8811f762cbe1bde0).
 The ceremony is run by **DevOps only**: the development team never has access to these keys, and
-neither do clients. This page is the Giano-specific part: which keys exist, where each one lives,
+neither do clients. The canonical deployer keys are the exception. They only pay deployment gas and
+hold no authority, so the development team creates them and keeps them in 1Password
+([below](#canonical-deployers)). This page is the Giano-specific part: which keys exist, where each one lives,
 and what to do with it. For how a ceremony itself is run (the clean VM, `multichain-keygen --rng
 openssl`, quiet mode, the Notion record template), read ABIP-8. This page does not restate it.
 
@@ -17,7 +19,7 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 
 | Key | What it signs, or the role it holds | ABIP-8 scope | Where it lives | Consumed by |
 |-----|-------------------------------------|--------------|----------------|-------------|
-| **Canonical deployer** (`CANONICAL_DEPLOYER`, `DEPLOYER_PRIVATE_KEY` for the deploy CLI) | Owns every canonical CREATE3 salt: the only key that can put Giano's contracts at their canonical addresses, on **any** chain. Permanent. | **In scope on every chain, testnets included.** One key adopts every chain, so a testnet adoption uses the production key. | DevOps secret store (a KMS/HSM key, or the `Giano prd` 1Password vault) | the deploy CLI, run by DevOps only. Never a service, never a client deployment. The Helm deployer Job runs **without** it and only verifies. |
+| **Canonical deployers**, one for **mainnet** and one for **testnet** (`DEPLOYER_PRIVATE_KEY` / `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy tooling) | Own the canonical CREATE3 salts of their network class, so they decide *where* Giano's contracts land on a chain of that class. They pay the deployment gas and nothing else: no role, no funds and no authority on any deployed contract (`ROLE_ADMIN` is a separate key). | **Out of scope.** They are not hot keys: they are never deployed to a live environment and are used only from the deploying shell for a one-off adoption. They hold only a gas float. | 1Password, provided by the development team. Two independent keys, never one key or two derived from a common seed. | the deploy tooling, run by the development team. Never a service, never a client deployment. The Helm deployer Job runs **without** them and only verifies. |
 | **Sponsorship signer** (`SPONSORSHIP_SIGNER_KEY_REF`) | Signs paymaster sponsorship data, i.e. authorises spending the operator's gas. Holds no funds. | Production: in scope. Testnet `dev`: out of scope. | Production: inside the HSM/KMS (`SPONSORSHIP_SIGNER_KIND=hsm`), generated there or imported there by DevOps from a ceremony, never exported. wallet-api refuses `local` in the `production` class. `dev`: 1Password `secrets-dev` field `sponsorship-signer-key`, mirrored to Secrets Manager (`SPONSORSHIP_SIGNER_KIND=local`, class `testnet`). | wallet-api |
 | **Bundler executor** (`BUNDLER_EXECUTOR_PRIVATE_KEYS`) | Submits and **pays gas for** every `handleOps` transaction; funded on each chain. | Production: in scope. `dev` (Base Sepolia, Ethereum Sepolia): out of scope. | 1Password `secrets-<env>` field `alto-executor-key` (Alto-era name), mirrored to Secrets Manager; `prd` uses the `Giano prd` vault | giano-bundler |
 | **Paymaster `ROLE_ADMIN`**, and the TimelockController's **proposer/executor** keys | Grants every other paymaster role (`SIGNER_ADMIN`, `FEE_ADMIN`, `FEE_COLLECTOR`, `STAKE_ADMIN`, `TENANT_ADMIN`, `PARAM_ADMIN`, `PAUSER`, `UPGRADER`). In production it is a TimelockController, whose proposer and executor keys are the real signers. | Production: in scope (every key that can propose or execute). `dev`: a developer-held EOA on testnets, out of scope. | Production: DevOps secret store, one ceremony per key | the timelock; `provision:paymaster` and `upgrade --execute` (`UPGRADER_PRIVATE_KEY`) only on a devnet or a first-run testnet |
@@ -28,6 +30,26 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 Giano has no production environment yet (`infra/versions.json` `prd` is empty), and
 `CANONICAL_DEPLOYER` is still the placeholder `0x…dEaD`. No in-scope key exists today. Every key in
 scope above is created by a ceremony when it is first needed.
+
+### Canonical deployers
+
+The canonical deployers do not go through the ceremony. They are created by the development team and
+stored in 1Password:
+
+- **Two keys.** One owns the mainnet salts and one the testnet salts, so a testnet adoption never
+  touches the mainnet key. The OpenSpec change `per-chain-contract-addresses` introduces the split.
+  Until it lands, `packages/contracts/deploy/config.ts` has a single placeholder deployer.
+- **Use.** Load the key from its 1Password item into the environment of the deploying shell only, for
+  the run. Never write it to a file in the repository, a client's configuration or a deployment
+  record.
+- **Funding.** Keep only enough gas on the key for the adoption at hand. Top it up per run rather than
+  holding a balance.
+- **Address.** Setting a deployer address in `deploy/config.ts` moves every canonical address of that
+  class. The PR names the 1Password item that holds the matching key.
+- **Loss or leak.** A leaked key cannot touch any deployed contract. It can, however, occupy the
+  canonical addresses of its class on chains not yet adopted. If that happens, create a new key and
+  update `deploy/config.ts`. Chains adopted afterwards then get the new key's addresses, or a per-chain
+  override.
 
 ## Runbook
 
@@ -40,7 +62,6 @@ For every in-scope key, DevOps:
 
    | Key | Store | Item / field |
    |-----|-------|--------------|
-   | Canonical deployer | KMS/HSM key, or the `Giano prd` vault | `canonical-deployer` (one, for every chain) |
    | Sponsorship signer | the production HSM/KMS key named by `SPONSORSHIP_SIGNER_KEY_REF` | — |
    | Bundler executor | `Giano prd` vault, note `secrets-prd` | `alto-executor-key` (bump its `version`; `infra/iac/asm.tf` mirrors it) |
    | Timelock proposer / executor, paymaster operator | `Giano prd` vault | one item per key |
@@ -50,11 +71,6 @@ For every in-scope key, DevOps:
    record holds the **public address**, never the private key.
 4. **Publish the address** to the service owner, the tech lead in `AGENTS.md`, so the key in use can
    be checked against the ceremony record. Per key:
-   - **Canonical deployer:** the address replaces the placeholder in
-     `packages/contracts/deploy/config.ts`, following the
-     [switch procedure](../packages/contracts/README.md#canonical-addresses). That moves every canonical
-     address, so the PR links the ceremony record. Then DevOps adopt each chain with the key (`deploy:cli
-     core`). Anyone can verify the result afterwards with the same command and no key.
    - **Sponsorship signer:** the address is authorised on the paymaster through the timelock
      (`SIGNER_ADMIN_ROLE`).
    - **Bundler executor and operator:** fund the address on each chain, and watch its balance
@@ -66,16 +82,14 @@ For every in-scope key, DevOps:
 ## What the repository does to keep it this way
 
 - `deploy:cli core` / `testing` without `DEPLOYER_PRIVATE_KEY` only verify. Every contract must
-  already be in place with a release's code, and a missing one fails with "adoption is a DevOps
-  operation". The `giano-contracts-deployer` image and the Helm pre-install Job run that way. The
-  chart's `values.yaml` says never to put the key in `secrets.existingSecret`.
+  already be in place with a release's code, and a missing one fails: adopting a chain needs the
+  canonical deployer. The `giano-contracts-deployer` image and the Helm pre-install Job run that way.
+  The chart's `values.yaml` says never to put the key in `secrets.existingSecret`.
 - The developer-facing docs mark `DEPLOYER_PRIVATE_KEY=…` commands as local/testnet operator commands,
-  or as DevOps-only: `packages/contracts/README.md`, `specs/INFRASTRUCTURE.md` §13.1,
-  `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md` and `specs/CHAIN-ADOPTION.md`. On local chains,
-  `--impersonate` (or `DEPLOYER_IMPERSONATE=true`) needs no key at all.
+  or as canonical-deployer runs that take the key from 1Password: `packages/contracts/README.md`,
+  `specs/INFRASTRUCTURE.md` §13.1, `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md` and
+  `specs/CHAIN-ADOPTION.md`. On local chains, `--impersonate` (or `DEPLOYER_IMPERSONATE=true`) needs no
+  key at all.
 - wallet-api refuses an in-process sponsorship signer in the `production` deployment class.
-- **Superseded:** `deploy/sepolia/` keeps `CANONICAL_DEPLOYER_PRIVATE_KEY` in a local `deploy/.env`. That
-  flow may only be run by DevOps, from the secret store. #160 replaces it with `deploy/contracts/`,
-  and that replacement must follow the same rule.
 - The development team has no read access to the `Giano prd` 1Password vault. That is enforced in
   1Password, not here, and is confirmed by DevOps.
