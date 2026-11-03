@@ -27,6 +27,9 @@ all land where they point. The deployment is chosen in the header, not in the UR
   or disagreeing with the registry, ready timelock operations. Then the deposit, tenant balances,
   treasury and stake, solvency with its slack, the configuration with the implementation, and what
   is queued in the timelock.
+  With the platform API, a Usage card shows the chain's last seven days: decisions allowed and refused (split
+  by whose to fix: the tenant's rules, its funds, or the platform), settled, gas, fees and
+  overhead. Each tenant's page has the same for that tenant.
 - **Tenants** — one list: wallet-api's registry joined by tenant id to the selected chain's
   paymaster roster, with lifecycle and on-chain state, balance, deficit, fee, users, queued changes
   and the next step. Search, a state filter, totals. Without the platform API it is the roster by id.
