@@ -328,6 +328,60 @@ test.describe("admin console", () => {
 		);
 	});
 
+	test("Admins shows each admin's last sign-in, and ending another of your sessions signs it out", async ({
+		page,
+		browser,
+	}) => {
+		// a second sign-in as admin-console, in its own browser
+		const other = await browser.newContext();
+		const second = await other.newPage();
+		try {
+			await installWallet(second, { known: [CHAINS.a.chainId] });
+			await openConsole(second);
+			await chooseDeployment(second, CHAINS.a.chainId);
+			await second.getByRole("button", { name: /^Connect wallet$/ }).click();
+			await second.getByRole("button", { name: /Sign in with wallet/ }).click();
+			await expect(second.getByText("admin-console")).toBeVisible();
+
+			await tab(page, /Admins/).click();
+			const me = page.getByTestId("admin-row-admin-console");
+			await expect(me.getByTestId("admin-sign-in")).toContainText(
+				/\d+ open sessions/,
+			);
+
+			// this session is marked and has no End; the newest other open one is the second browser's
+			const sessions = page.getByTestId("your-sessions");
+			await expect(
+				sessions.locator("[data-testid^=session-]").filter({
+					hasText: "this session",
+				}),
+			).toHaveCount(1);
+			await expect(
+				sessions
+					.locator("[data-testid^=session-]")
+					.filter({ hasText: "this session" })
+					.getByRole("button", { name: "End" }),
+			).toHaveCount(0);
+			const newestOther = sessions
+				.locator("[data-testid^=session-]")
+				.filter({ hasText: "open" })
+				.filter({ hasNotText: "this session" })
+				.first();
+			await newestOther.getByRole("button", { name: "End" }).click();
+			await expect(page.getByText("Session ended")).toBeVisible();
+
+			// the second browser's next request is refused: it is back at sign-in; this one carries on
+			await tab(second, /Admins/).click();
+			await expect(
+				second.getByRole("button", { name: /Sign in with wallet/ }),
+			).toBeVisible({ timeout: 30_000 });
+			await page.getByRole("button", { name: "Refresh admins" }).click();
+			await expect(me).toBeVisible();
+		} finally {
+			await other.close();
+		}
+	});
+
 	test("admins are added and removed from the console, but never yourself", async ({
 		page,
 	}) => {

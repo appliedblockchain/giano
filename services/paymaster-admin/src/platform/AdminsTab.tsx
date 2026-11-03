@@ -11,12 +11,19 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
-import { LuPlus, LuRefreshCw, LuTrash2 } from "react-icons/lu";
+import { LuLogOut, LuPlus, LuRefreshCw, LuTrash2 } from "react-icons/lu";
 import { AddressInput, useAddressInput } from "../components/inputs";
-import { Copyable, SectionCard } from "../components/ui";
+import { InlineError, StatusText } from "../components/status";
+import {
+	Copyable,
+	notifyError,
+	notifySuccess,
+	SectionCard,
+} from "../components/ui";
 import type {
 	PlatformAdminHistoryEntry,
 	PlatformAdminRow,
+	PlatformAdminSession,
 } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
 import { ActionDialog, usePlatformAction } from "./LifecycleDialogs";
@@ -63,6 +70,8 @@ export function AdminsTab() {
 	}, [load]);
 
 	const me = session?.admin.address.toLowerCase();
+	// B6, read where wallet-api reports it: an older one lists admins without these fields (D11).
+	const signIns = admins?.some((admin) => admin.activeSessions !== undefined);
 
 	return (
 		<Stack gap="4">
@@ -107,6 +116,9 @@ export function AdminsTab() {
 									<Table.ColumnHeader>Admin</Table.ColumnHeader>
 									<Table.ColumnHeader>Address</Table.ColumnHeader>
 									<Table.ColumnHeader>Added by</Table.ColumnHeader>
+									{signIns && (
+										<Table.ColumnHeader>Last sign-in</Table.ColumnHeader>
+									)}
 									<Table.ColumnHeader />
 								</Table.Row>
 							</Table.Header>
@@ -142,6 +154,19 @@ export function AdminsTab() {
 												{actorLabel(admin.addedBy)} ·{" "}
 												{new Date(admin.createdAt).toLocaleDateString()}
 											</Table.Cell>
+											{signIns && (
+												<Table.Cell fontSize="xs" data-testid="admin-sign-in">
+													<Text>
+														{admin.lastSignInAt
+															? new Date(admin.lastSignInAt).toLocaleString()
+															: "never"}
+													</Text>
+													<Text color="fg.muted">
+														{admin.activeSessions ?? 0} open session
+														{admin.activeSessions === 1 ? "" : "s"}
+													</Text>
+												</Table.Cell>
+											)}
 											<Table.Cell textAlign="end">
 												{/* the API refuses removing yourself or the last platform admin; so does the UI, and says why */}
 												{isMe ? (
@@ -171,6 +196,8 @@ export function AdminsTab() {
 					</Table.ScrollArea>
 				</Stack>
 			</SectionCard>
+
+			{session && <YourSessions adminId={session.admin.id} />}
 
 			<SectionCard
 				title="Changes"
@@ -225,6 +252,114 @@ export function AdminsTab() {
 				/>
 			)}
 		</Stack>
+	);
+}
+
+/**
+ * Your own sessions from the last 30 days (B6, D15), with *End* on each open one but this. Absent
+ * where wallet-api does not serve them (D11). Another admin's sessions end when they are removed.
+ */
+function YourSessions({ adminId }: { adminId: string }) {
+	const { run } = usePlatform();
+	const [sessions, setSessions] = useState<PlatformAdminSession[]>();
+	const [served, setServed] = useState(true);
+	const [error, setError] = useState<string>();
+	const [ending, setEnding] = useState<string>();
+
+	const load = useCallback(async () => {
+		const result = await run((api) => api.adminSessions(adminId));
+		if (!result) return;
+		if (result.ok) {
+			setSessions(result.value.sessions);
+			setError(undefined);
+		} else if (result.error.status === 404) setServed(false);
+		else setError(result.error.message);
+	}, [run, adminId]);
+
+	useEffect(() => {
+		void load();
+	}, [load]);
+
+	const end = async (session: PlatformAdminSession) => {
+		setEnding(session.id);
+		try {
+			const result = await run((api) => api.endSession(adminId, session.id));
+			if (!result) return;
+			if (result.ok) {
+				notifySuccess("Session ended", "It is refused from its next request.");
+				await load();
+			} else notifyError("Could not end the session", result.error.message);
+		} finally {
+			setEnding(undefined);
+		}
+	};
+
+	if (!served) return null;
+	const now = Date.now();
+	return (
+		<SectionCard
+			title="Your sessions"
+			subtitle="Where you have signed in during the last 30 days, newest first. End any you do not recognise, or no longer use."
+		>
+			<Stack gap="0" data-testid="your-sessions">
+				{error && (
+					<InlineError
+						title="Could not read your sessions"
+						error={error}
+						retry={() => void load()}
+					/>
+				)}
+				{sessions?.map((session, index) => {
+					const open =
+						!session.revokedAt && Date.parse(session.expiresAt) > now;
+					return (
+						<HStack
+							key={session.id}
+							justify="space-between"
+							align="flex-start"
+							gap="4"
+							py="3"
+							flexWrap="wrap"
+							borderTopWidth={index === 0 ? "0" : "1px"}
+							data-testid={`session-${session.id}`}
+						>
+							<Stack gap="1" minW="0" flex="1">
+								<HStack gap="2" flexWrap="wrap">
+									<StatusText tone={open ? "green" : "gray"}>
+										{open ? "open" : session.revokedAt ? "ended" : "expired"}
+									</StatusText>
+									{session.current && (
+										<Badge size="sm" variant="subtle" colorPalette="brand">
+											this session
+										</Badge>
+									)}
+									<Text fontSize="sm">
+										signed in {new Date(session.createdAt).toLocaleString()}
+									</Text>
+								</HStack>
+								<Text fontSize="xs" color="fg.muted" wordBreak="break-word">
+									{session.revokedAt
+										? `ended ${new Date(session.revokedAt).toLocaleString()}`
+										: `${open ? "ends" : "ended"} ${new Date(session.expiresAt).toLocaleString()}`}{" "}
+									· chain {session.chainId} · {session.ip ?? "no IP recorded"} ·{" "}
+									{session.userAgent ?? "no browser recorded"}
+								</Text>
+							</Stack>
+							{open && !session.current && (
+								<Button
+									size="xs"
+									variant="outline"
+									loading={ending === session.id}
+									onClick={() => void end(session)}
+								>
+									<LuLogOut /> End
+								</Button>
+							)}
+						</HStack>
+					);
+				})}
+			</Stack>
+		</SectionCard>
 	);
 }
 
