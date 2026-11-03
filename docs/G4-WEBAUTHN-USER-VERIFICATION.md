@@ -181,8 +181,9 @@ already-fixed browser bugs. So enforcement excludes no authenticator that curren
   address. The Notion item's concern that this would change "every future wallet address" does not
   apply to this deployment scheme. The old Ignition/CREATE2 scheme was bytecode-dependent; the
   CREATE3 scheme replaced it.
-- **Existing wallets.** The public registry is empty and `CANONICAL_DEPLOYER` is still the
-  `0x…dEaD` placeholder (`deploy/config.ts`), so no public chain has a canonical Giano deployment.
+- **Existing wallets.** The public registry is empty and neither the mainnet nor the testnet
+  canonical deployer is configured yet (`DEPLOYERS` in `deploy/config.ts`), so no public chain has a
+  Giano deployment.
   The committed registry is empty on `main` too. The only live wallets are on local devnets and the
   dev environment, and they are test accounts. Re-check this before cutting the release if a
   testnet deployment has happened in the meantime.

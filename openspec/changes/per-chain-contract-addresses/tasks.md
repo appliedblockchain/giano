@@ -35,10 +35,10 @@
 
 ## 5. Docs and specs (PR 5)
 
-- [ ] 5.1 `specs/MULTICHAIN_REQUIREMENTS.md`: amend MC-17, MC-19, MC-20, MC-27 and MC-28 to read "the deployment's registered addresses, verified by release code" instead of a constant. Scope MC-16 and MC-31 to the chains one deployment serves, and note that testnet and mainnet addresses differ. Verify through review: no MC requirement refers to `CANONICAL_FACTORY`.
-- [ ] 5.2 `specs/CHAIN-ADOPTION.md`, `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md`, `specs/INFRASTRUCTURE.md` §13.1 and the Helm `values.yaml` comments: update them for the per-class deployers and per-chain addresses. Verify with `grep -rn "canonical deployer\|CANONICAL_" specs deploy/helm`, which should show only the updated wording.
-- [ ] 5.3 `docs/key-ceremony.md`: list the two canonical deployers as development-team keys in 1Password, out of ABIP-8 scope, with the reason and their 1Password items. Remove the canonical deployer from the ceremony runbook table, and reword the Helm/DevOps references (the `production-key-ceremony` delta). Verify against the delta's scenarios.
-- [ ] 5.4 Check that the deploy wizard and `deploy:cli` never print the deployer key or write it to a record or file. Verify with a test that greps a run's output and record for the key.
+- [x] 5.1 `specs/MULTICHAIN_REQUIREMENTS.md`: amend MC-17, MC-19, MC-20, MC-27 and MC-28 to read "the deployment's registered addresses, verified by release code" instead of a constant. Scope MC-16 and MC-31 to the chains one deployment serves, and note that testnet and mainnet addresses differ. Verify through review: no MC requirement refers to `CANONICAL_FACTORY`.
+- [x] 5.2 `specs/CHAIN-ADOPTION.md`, `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md`, `specs/INFRASTRUCTURE.md` §13.1 and the Helm `values.yaml` comments: update them for the per-class deployers and per-chain addresses. Verify with `grep -rn "canonical deployer\|CANONICAL_" specs deploy/helm`, which should show only the updated wording.
+- [x] 5.3 `docs/key-ceremony.md`: list the two canonical deployers as development-team keys in 1Password, out of ABIP-8 scope, with the reason and their 1Password items. Remove the canonical deployer from the ceremony runbook table, and reword the Helm/DevOps references (the `production-key-ceremony` delta). Verify against the delta's scenarios.
+- [x] 5.4 Check that the deploy wizard and `deploy:cli` never print the deployer key or write it to a record or file. Verify with a test that greps a run's output and record for the key.
 
 ## Workflow follow-up
 

@@ -500,24 +500,33 @@ This section is the core of the work. Every requirement in it is about making ad
 structurally true and detectable when it is not.
 
 **MC-16** — For a given passkey, the smart account address MUST be identical on every chain a
-deployment serves.
+deployment serves. The guarantee is scoped to the chains one deployment serves: testnet and mainnet
+deployments use different canonical deployers, so a passkey's testnet and mainnet addresses differ
+by design *(amended: per-chain-contract-addresses)*.
 
-**MC-17** — Address identity MUST be guaranteed by construction — identical deterministic-deployment
-inputs on every chain — and MUST NOT depend on any runtime translation, mapping table or
-reconciliation step.
+**MC-17** — Address identity MUST be guaranteed by construction — every served chain's factory
+derives accounts from the same inputs (the factory and implementation the deployment's registered
+addresses name, verified by release code) — and MUST NOT depend on any runtime translation, mapping
+table or reconciliation step. Contract addresses themselves may differ per chain; the account
+derivation may not *(amended: per-chain-contract-addresses)*.
 
 **MC-18** — The account address MUST NOT depend on the chain id. No future change to the account
 factory may introduce a chain-dependent term into the address derivation without explicitly retiring
 MC-16.
 
-**MC-19** — The deployment MUST declare a single **canonical factory address and canonical
-implementation address**, frozen from one build. A chain MUST NOT be admitted to a deployment's
-served list unless its factory and implementation are at exactly those addresses. Canonical MUST be
-an explicitly stated constant, never "whatever some reference chain happens to have" — otherwise a
-fleet can agree unanimously on the wrong build *(decided: Q1, Q9)*.
+**MC-19** — A chain MUST NOT be admitted to a deployment's served list unless the deployment's
+registered addresses for that chain (its deployment record and overrides, or the deployment's chain
+configuration) hold **release code**: code whose masked hash equals a committed release's
+fingerprint for that contract, wherever it sits. The immutables the fingerprint masks MUST be
+checked against the chain's own addresses (the factory clones the registered implementation; the
+paymaster proxy points at paymaster release code). What is "right" MUST come from the committed
+releases, never from "whatever some reference chain happens to have" — otherwise a fleet can agree
+unanimously on the wrong build. No component compares a contract's address with a fixed constant
+*(decided: Q1, Q9; amended: per-chain-contract-addresses)*.
 
 **MC-20** — The check in MC-19 MUST run when configuration is loaded, MUST be performed against the
-chains themselves rather than against a committed file, and MUST prevent the deployment from serving
+chains themselves (the code at the deployment's registered addresses, verified by release code)
+rather than against a committed file, and MUST prevent the deployment from serving
 a chain that fails it. It MUST NOT be deferred to a user's first transaction.
 
 **MC-21** — The account nonce used to derive a user's address MUST be identical on every chain.
@@ -540,18 +549,21 @@ accommodated.
 the expected address on a target chain before contracts are deployed there. The pipeline MUST verify
 this and MUST either place it first or fail with a message that says exactly what is missing.
 
-**MC-26** — The compiler identity that produces the canonical addresses — version, optimiser
+**MC-26** — The compiler identity that produces the released code — version, optimiser
 settings, intermediate-representation setting, target EVM version and metadata configuration — MUST
 be pinned, and any change to it MUST be treated as an address-breaking change to the whole
 deployment.
 
-**MC-27** — Continuous integration MUST assert that a fresh deployment reproduces the canonical
-factory and implementation addresses, and MUST do so for **every** chain in the address registry, not
-only one reference chain.
+**MC-27** — Continuous integration MUST assert, for every network class whose canonical deployer is
+configured (and the local class), that a fresh deployment lands on the CREATE3 addresses of that
+deployer and that the code there is the release's; that the committed release fingerprints match
+the committed releases; and that every entry in the address registry is built from a deployment
+record whose code fingerprints are a release's *(amended: per-chain-contract-addresses)*.
 
-**MC-28** — Registry entries that predate the canonical freeze MUST be removed rather than carried as
-legacy. No account exists under them that must be preserved, so retaining them would preserve only
-the ambiguity about which build is canonical *(decided: Q1)*.
+**MC-28** — Registry entries whose code is not a committed release's MUST be removed rather than
+carried as legacy. The registry holds only the deployment's registered addresses, verified by
+release code; retaining anything else would preserve only the ambiguity about which build is
+served *(decided: Q1; amended: per-chain-contract-addresses)*.
 
 **MC-29** — Account deployment MUST remain lazy and per chain. Creating a credential MUST NOT require
 deploying the account on every served chain, and the first operation on a chain where the account is
@@ -561,8 +573,9 @@ not yet deployed MUST deploy it as part of that operation.
 MUST NOT present "not yet deployed on this chain" as an error.
 
 **MC-31** — Documentation MUST state to tenants and integrators that the address is the same on every
-served chain, that funds sent to it on any served chain are controlled by the same passkey, and what
-the limits of that guarantee are.
+chain one deployment serves, that funds sent to it on any of those chains are controlled by the same
+passkey, and what the limits of that guarantee are — in particular, that testnet and mainnet
+addresses differ *(amended: per-chain-contract-addresses)*.
 
 **MC-141** — EntryPoint v0.9 MUST be present at its canonical address on every served chain. The
 account implementation hardcodes that address, so a chain carrying a different EntryPoint produces
@@ -1128,9 +1141,11 @@ resources and the submission account funded on it (MC-98). The resources may sha
 funding, and its monitoring, is the dominant recurring cost of adding a chain and it does not
 amortise.
 
-**A chain with a divergent factory cannot be served.** Address identity is a precondition (MC-19), so
-a chain where the canonical factory cannot be placed is excluded — and that may be an external
-constraint rather than something Giano can resolve.
+**A chain with a divergent factory cannot be served.** Address identity is a precondition (MC-19,
+MC-22), so a chain whose factory cannot run release code deriving the same accounts as the other
+served chains is excluded — and that may be an external constraint rather than something Giano can
+resolve. A factory at a different address is not by itself a divergence: a chain profile may
+override it, as long as the derivation matches.
 
 **Signature-verification cost differs by chain.** Where the P-256 precompile is unavailable, the
 fallback verification is materially more expensive, which changes sponsorship economics. Fees must
