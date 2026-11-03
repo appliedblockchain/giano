@@ -123,7 +123,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health. **Done** (#208).
-16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health. **Done**.
+16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health. **Done** (#209).
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
 
 A bug found in a later layer is fixed on the branch of the layer that introduced it, and the layers above are restacked (`gh stack rebase --upstack`), so each PR stays correct on its own: the edit-dialog reset found by CI on #186 was fixed in #185, and an unformatted test in #187 in #187. A bug older than the redesign is fixed, as its own commit, in the layer that found it.
