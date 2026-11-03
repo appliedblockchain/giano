@@ -17,11 +17,12 @@ type RpcErrorShape = {
 	data: z.ZodOptional<z.ZodUnknown>;
 };
 
-export const rpcErrorSchema: z.ZodObject<RpcErrorShape, "strip"> = z.object({
-	code: z.number().int(),
-	message: z.string(),
-	data: z.unknown().optional(),
-});
+export const rpcErrorSchema: z.ZodObject<RpcErrorShape, z.core.$strip> =
+	z.object({
+		code: z.number().int(),
+		message: z.string(),
+		data: z.unknown().optional(),
+	});
 export type RpcError = z.infer<typeof rpcErrorSchema>;
 
 type BaseShape = {
@@ -42,7 +43,7 @@ const base: BaseShape = {
 /** Popup page finished loading its transport host — sent to opener before origins are pinned. */
 export const readyMessageSchema: z.ZodObject<
 	MessageShape<"ready">,
-	"strip"
+	z.core.$strip
 > = z.object({ ...base, type: z.literal("ready") });
 
 /**
@@ -62,11 +63,11 @@ export const handshakeMessageSchema: z.ZodObject<
 					capabilities: z.ZodDefault<z.ZodArray<z.ZodString>>;
 					chainId: z.ZodOptional<z.ZodNumber>;
 				},
-				"strip"
+				z.core.$strip
 			>;
 		}
 	>,
-	"strip"
+	z.core.$strip
 > = z.object({
 	...base,
 	type: z.literal("handshake"),
@@ -94,11 +95,11 @@ export const handshakeAckMessageSchema: z.ZodObject<
 					chainId: z.ZodNumber;
 					supportedChainIds: z.ZodArray<z.ZodNumber>;
 				},
-				"strip"
+				z.core.$strip
 			>;
 		}
 	>,
-	"strip"
+	z.core.$strip
 > = z.object({
 	...base,
 	type: z.literal("handshake:ack"),
@@ -122,22 +123,20 @@ export const handshakeNackMessageSchema: z.ZodObject<
 		{
 			payload: z.ZodObject<
 				{
-					reason: z.ZodEnum<
-						[
-							"unsupported-chain",
-							"chain-required",
-							"origin-not-allowed",
-							"protocol-version",
-						]
-					>;
+					reason: z.ZodEnum<{
+						"unsupported-chain": "unsupported-chain";
+						"chain-required": "chain-required";
+						"origin-not-allowed": "origin-not-allowed";
+						"protocol-version": "protocol-version";
+					}>;
 					message: z.ZodString;
 					supportedChainIds: z.ZodOptional<z.ZodArray<z.ZodNumber>>;
 				},
-				"strip"
+				z.core.$strip
 			>;
 		}
 	>,
-	"strip"
+	z.core.$strip
 > = z.object({
 	...base,
 	type: z.literal("handshake:nack"),
@@ -160,11 +159,11 @@ export const rpcMessageSchema: z.ZodObject<
 		{
 			payload: z.ZodObject<
 				{ method: z.ZodString; params: z.ZodOptional<z.ZodUnknown> },
-				"strip"
+				z.core.$strip
 			>;
 		}
 	>,
-	"strip"
+	z.core.$strip
 > = z.object({
 	...base,
 	type: z.literal("rpc"),
@@ -184,11 +183,11 @@ export const rpcResponseMessageSchema: z.ZodObject<
 					result: z.ZodOptional<z.ZodUnknown>;
 					error: z.ZodOptional<typeof rpcErrorSchema>;
 				},
-				"strip"
+				z.core.$strip
 			>;
 		}
 	>,
-	"strip"
+	z.core.$strip
 > = z.object({
 	...base,
 	type: z.literal("rpc:response"),
@@ -208,11 +207,11 @@ export const eventMessageSchema: z.ZodObject<
 		{
 			payload: z.ZodObject<
 				{ event: z.ZodString; data: z.ZodOptional<z.ZodUnknown> },
-				"strip"
+				z.core.$strip
 			>;
 		}
 	>,
-	"strip"
+	z.core.$strip
 > = z.object({
 	...base,
 	type: z.literal("event"),
@@ -225,11 +224,10 @@ export const eventMessageSchema: z.ZodObject<
 /** either direction: session teardown. */
 export const closeMessageSchema: z.ZodObject<
 	MessageShape<"close">,
-	"strip"
+	z.core.$strip
 > = z.object({ ...base, type: z.literal("close") });
 
 export const transportMessageSchema: z.ZodDiscriminatedUnion<
-	"type",
 	[
 		typeof readyMessageSchema,
 		typeof handshakeMessageSchema,
@@ -239,7 +237,8 @@ export const transportMessageSchema: z.ZodDiscriminatedUnion<
 		typeof rpcResponseMessageSchema,
 		typeof eventMessageSchema,
 		typeof closeMessageSchema,
-	]
+	],
+	"type"
 > = z.discriminatedUnion("type", [
 	readyMessageSchema,
 	handshakeMessageSchema,

@@ -41,7 +41,7 @@
 	"dependencies": {
 		"@ethereum-sourcify/clear-signing": "0.2.2",
 		"@noble/hashes": "1.8.0",
-		"zod": "3.24.4"
+		"zod": "4.6.7"
 	},
 	"devDependencies": {
 		"@types/node": "22.7.5",

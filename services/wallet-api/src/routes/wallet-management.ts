@@ -534,7 +534,9 @@ export default async function walletManagementRoutes(
 									transports: z.array(z.string()).optional(),
 								})
 								.passthrough(),
-							clientExtensionResults: z.record(z.unknown()).default({}),
+							clientExtensionResults: z
+								.record(z.string(), z.unknown())
+								.default({}),
 							authenticatorAttachment: z.string().optional(),
 						})
 						.passthrough(),

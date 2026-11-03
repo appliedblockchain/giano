@@ -40,7 +40,7 @@
 	},
 	"dependencies": {
 		"ulid": "3.0.2",
-		"zod": "3.24.4"
+		"zod": "4.6.7"
 	},
 	"devDependencies": {
 		"happy-dom": "21.0.4",

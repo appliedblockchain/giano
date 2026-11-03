@@ -138,8 +138,10 @@
                       "type": "string"
                     },
                     "chainId": {
-                      "type": "number",
-                      "nullable": true
+                      "type": [
+                        "number",
+                        "null"
+                      ]
                     },
                     "chains": {
                       "type": "array",
@@ -302,8 +304,7 @@
                 },
                 "required": [
                   "origin"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -349,7 +350,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "path",
             "name": "id",
@@ -363,17 +365,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "404": {
             "description": "Default Response",
@@ -411,8 +403,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -437,8 +429,10 @@
                     },
                     "config": {},
                     "updatedAt": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "valid": {
                       "type": "boolean"
@@ -465,6 +459,7 @@
                   },
                   "required": [
                     "configured",
+                    "config",
                     "updatedAt",
                     "valid"
                   ],
@@ -493,8 +488,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -520,6 +515,7 @@
                     }
                   },
                   "required": [
+                    "config",
                     "updatedAt"
                   ],
                   "additionalProperties": false
@@ -584,6 +580,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
                 "additionalProperties": {}
               }
             }
@@ -593,8 +592,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -620,6 +619,7 @@
                     }
                   },
                   "required": [
+                    "config",
                     "updatedAt"
                   ],
                   "additionalProperties": false
@@ -683,8 +683,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -692,10 +692,10 @@
           },
           {
             "schema": {
+              "default": 50,
               "type": "integer",
               "minimum": 1,
-              "maximum": 200,
-              "default": 50
+              "maximum": 200
             },
             "in": "query",
             "name": "limit",
@@ -728,12 +728,15 @@
                             "type": "string"
                           },
                           "createdByKeyHash": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "id",
+                          "config",
                           "createdAt",
                           "createdByKeyHash"
                         ],
@@ -763,8 +766,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -797,8 +800,10 @@
                       "type": "boolean"
                     },
                     "withdrawAddress": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "balanceWei": {
                       "type": "string"
@@ -895,8 +900,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -904,10 +909,10 @@
           },
           {
             "schema": {
+              "default": 100,
               "type": "integer",
               "minimum": 1,
-              "maximum": 500,
-              "default": 100
+              "maximum": 500
             },
             "in": "query",
             "name": "limit",
@@ -916,7 +921,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
             },
             "in": "query",
             "name": "before",
@@ -1035,8 +1041,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1044,10 +1050,10 @@
           },
           {
             "schema": {
+              "default": 100,
               "type": "integer",
               "minimum": 1,
-              "maximum": 500,
-              "default": 100
+              "maximum": 500
             },
             "in": "query",
             "name": "limit",
@@ -1097,13 +1103,17 @@
                             "type": "string"
                           },
                           "reason": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "ruleResults": {},
                           "feeWei": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "createdAt": {
                             "type": "string"
@@ -1115,6 +1125,7 @@
                           "sender",
                           "outcome",
                           "reason",
+                          "ruleResults",
                           "feeWei",
                           "createdAt"
                         ],
@@ -1143,8 +1154,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1208,6 +1219,7 @@
                         "required": [
                           "id",
                           "contract",
+                          "descriptor",
                           "updatedAt",
                           "valid",
                           "issues"
@@ -1238,8 +1250,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1247,10 +1259,10 @@
           },
           {
             "schema": {
+              "default": 50,
               "type": "integer",
               "minimum": 1,
-              "maximum": 200,
-              "default": 50
+              "maximum": 200
             },
             "in": "query",
             "name": "limit",
@@ -1289,20 +1301,28 @@
                             ]
                           },
                           "descriptor": {
-                            "nullable": true
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "createdAt": {
                             "type": "string"
                           },
                           "createdByKeyHash": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "id",
                           "contract",
                           "action",
+                          "descriptor",
                           "createdAt",
                           "createdByKeyHash"
                         ],
@@ -1331,8 +1351,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1397,6 +1417,7 @@
                   "required": [
                     "id",
                     "contract",
+                    "descriptor",
                     "updatedAt",
                     "valid",
                     "issues"
@@ -1449,8 +1470,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1515,6 +1536,7 @@
                   "required": [
                     "id",
                     "contract",
+                    "descriptor",
                     "updatedAt",
                     "valid",
                     "issues"
@@ -1578,8 +1600,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1602,17 +1624,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "404": {
             "description": "Default Response",
@@ -1651,8 +1663,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -1675,8 +1687,10 @@
                       "items": {}
                     },
                     "updatedAt": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -1713,19 +1727,10 @@
                     ]
                   },
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "enum": [
-                          "null"
-                        ],
-                        "nullable": true
-                      }
+                    "type": [
+                      "string",
+                      "number",
+                      "null"
                     ]
                   },
                   "method": {
@@ -1737,8 +1742,7 @@
                   },
                   "params": {
                     "type": "array",
-                    "minItems": 3,
-                    "items": [
+                    "prefixItems": [
                       {
                         "type": "object",
                         "properties": {
@@ -1807,8 +1811,7 @@
                           "sender",
                           "nonce",
                           "callData"
-                        ],
-                        "additionalProperties": false
+                        ]
                       },
                       {
                         "type": "string",
@@ -1819,7 +1822,8 @@
                         "pattern": "^0x[0-9a-fA-F]+$"
                       }
                     ],
-                    "additionalItems": {}
+                    "items": {},
+                    "minItems": 3
                   }
                 },
                 "required": [
@@ -1827,8 +1831,7 @@
                   "id",
                   "method",
                   "params"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -1853,19 +1856,10 @@
                       ]
                     },
                     "id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "enum": [
-                            "null"
-                          ],
-                          "nullable": true
-                        }
+                      "type": [
+                        "string",
+                        "number",
+                        "null"
                       ]
                     },
                     "result": {
@@ -1982,19 +1976,18 @@
                     "maxLength": 256
                   },
                   "kind": {
+                    "default": "auto",
                     "type": "string",
                     "enum": [
                       "auto",
                       "registration",
                       "authentication"
-                    ],
-                    "default": "auto"
+                    ]
                   }
                 },
                 "required": [
                   "externalUserId"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -2147,12 +2140,15 @@
                           "clientDataJSON",
                           "attestationObject"
                         ],
-                        "additionalProperties": true
+                        "additionalProperties": {}
                       },
                       "clientExtensionResults": {
+                        "default": {},
                         "type": "object",
-                        "additionalProperties": {},
-                        "default": {}
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
                       },
                       "authenticatorAttachment": {
                         "type": "string"
@@ -2164,14 +2160,13 @@
                       "type",
                       "response"
                     ],
-                    "additionalProperties": true
+                    "additionalProperties": {}
                   }
                 },
                 "required": [
                   "externalUserId",
                   "response"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -2298,12 +2293,15 @@
                           "authenticatorData",
                           "signature"
                         ],
-                        "additionalProperties": true
+                        "additionalProperties": {}
                       },
                       "clientExtensionResults": {
+                        "default": {},
                         "type": "object",
-                        "additionalProperties": {},
-                        "default": {}
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
                       },
                       "authenticatorAttachment": {
                         "type": "string"
@@ -2315,13 +2313,12 @@
                       "type",
                       "response"
                     ],
-                    "additionalProperties": true
+                    "additionalProperties": {}
                   }
                 },
                 "required": [
                   "response"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -2475,8 +2472,10 @@
                             "type": "string"
                           },
                           "name": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "publicKeyX": {
                             "type": "string"
@@ -2485,18 +2484,26 @@
                             "type": "string"
                           },
                           "transports": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            },
-                            "nullable": true
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "createdAt": {
                             "type": "string"
                           },
                           "removedAt": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -2584,15 +2591,20 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string",
-                    "maxLength": 256,
-                    "nullable": true
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "name"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -2627,8 +2639,10 @@
                       ]
                     },
                     "name": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -2848,7 +2862,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "path",
             "name": "id",
@@ -2885,21 +2900,27 @@
                       "type": "string"
                     },
                     "publicKey": {
-                      "type": "object",
-                      "properties": {
-                        "x": {
-                          "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "string"
+                            },
+                            "y": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
                         },
-                        "y": {
-                          "type": "string"
+                        {
+                          "type": "null"
                         }
-                      },
-                      "required": [
-                        "x",
-                        "y"
-                      ],
-                      "additionalProperties": false,
-                      "nullable": true
+                      ]
                     }
                   },
                   "required": [
@@ -2948,7 +2969,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "path",
             "name": "id",
@@ -3068,13 +3090,13 @@
                 "type": "object",
                 "properties": {
                   "chainIds": {
+                    "minItems": 1,
                     "type": "array",
                     "items": {
                       "type": "integer",
-                      "exclusiveMinimum": true,
-                      "minimum": 0
-                    },
-                    "minItems": 1
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
                   },
                   "name": {
                     "type": "string",
@@ -3083,8 +3105,7 @@
                 },
                 "required": [
                   "chainIds"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -3093,7 +3114,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "path",
             "name": "id",
@@ -3253,8 +3275,7 @@
                 },
                 "required": [
                   "claimCode"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -3411,12 +3432,15 @@
                           "clientDataJSON",
                           "attestationObject"
                         ],
-                        "additionalProperties": true
+                        "additionalProperties": {}
                       },
                       "clientExtensionResults": {
+                        "default": {},
                         "type": "object",
-                        "additionalProperties": {},
-                        "default": {}
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
                       },
                       "authenticatorAttachment": {
                         "type": "string"
@@ -3428,14 +3452,13 @@
                       "type",
                       "response"
                     ],
-                    "additionalProperties": true
+                    "additionalProperties": {}
                   }
                 },
                 "required": [
                   "claimCode",
                   "response"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -3607,14 +3630,14 @@
                     "maxLength": 200
                   },
                   "chainIds": {
+                    "default": [],
+                    "maxItems": 32,
                     "type": "array",
                     "items": {
                       "type": "integer",
-                      "exclusiveMinimum": true,
-                      "minimum": 0
-                    },
-                    "maxItems": 32,
-                    "default": []
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
                   },
                   "detail": {
                     "type": "string",
@@ -3625,8 +3648,7 @@
                   "action",
                   "ownerKind",
                   "owner"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -3757,19 +3779,17 @@
                       "maxFeePerGas",
                       "maxPriorityFeePerGas",
                       "signature"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "chainId": {
                     "type": "integer",
-                    "exclusiveMinimum": true,
-                    "minimum": 0
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
                   "userOperation"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -3996,8 +4016,10 @@
                       }
                     },
                     "rejectReason": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "createdAt": {
                       "type": "string"
@@ -4045,9 +4067,17 @@
                   "type": "object",
                   "properties": {
                     "receipt": {
-                      "nullable": true
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
+                  "required": [
+                    "receipt"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -4077,19 +4107,10 @@
                     ]
                   },
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "enum": [
-                          "null"
-                        ],
-                        "nullable": true
-                      }
+                    "type": [
+                      "string",
+                      "number",
+                      "null"
                     ]
                   },
                   "method": {
@@ -4104,8 +4125,7 @@
                   "jsonrpc",
                   "id",
                   "method"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -4114,8 +4134,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "path",
             "name": "chainId",
@@ -4142,19 +4162,10 @@
                       ]
                     },
                     "id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "enum": [
-                            "null"
-                          ],
-                          "nullable": true
-                        }
+                      "type": [
+                        "string",
+                        "number",
+                        "null"
                       ]
                     },
                     "result": {},
@@ -4284,19 +4295,10 @@
                     ]
                   },
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "enum": [
-                          "null"
-                        ],
-                        "nullable": true
-                      }
+                    "type": [
+                      "string",
+                      "number",
+                      "null"
                     ]
                   },
                   "method": {
@@ -4311,8 +4313,7 @@
                   "jsonrpc",
                   "id",
                   "method"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -4337,19 +4338,10 @@
                       ]
                     },
                     "id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "enum": [
-                            "null"
-                          ],
-                          "nullable": true
-                        }
+                      "type": [
+                        "string",
+                        "number",
+                        "null"
                       ]
                     },
                     "result": {},
@@ -4479,19 +4471,10 @@
                     ]
                   },
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "enum": [
-                          "null"
-                        ],
-                        "nullable": true
-                      }
+                    "type": [
+                      "string",
+                      "number",
+                      "null"
                     ]
                   },
                   "method": {
@@ -4506,8 +4489,7 @@
                   "jsonrpc",
                   "id",
                   "method"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -4516,8 +4498,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "path",
             "name": "chainId",
@@ -4539,19 +4521,10 @@
                       ]
                     },
                     "id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "enum": [
-                            "null"
-                          ],
-                          "nullable": true
-                        }
+                      "type": [
+                        "string",
+                        "number",
+                        "null"
                       ]
                     },
                     "result": {},
@@ -4681,19 +4654,10 @@
                     ]
                   },
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "enum": [
-                          "null"
-                        ],
-                        "nullable": true
-                      }
+                    "type": [
+                      "string",
+                      "number",
+                      "null"
                     ]
                   },
                   "method": {
@@ -4708,8 +4672,7 @@
                   "jsonrpc",
                   "id",
                   "method"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -4729,19 +4692,10 @@
                       ]
                     },
                     "id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "enum": [
-                            "null"
-                          ],
-                          "nullable": true
-                        }
+                      "type": [
+                        "string",
+                        "number",
+                        "null"
                       ]
                     },
                     "result": {},
@@ -4869,15 +4823,14 @@
                   },
                   "chainId": {
                     "type": "integer",
-                    "exclusiveMinimum": true,
-                    "minimum": 0
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
                   "address",
                   "chainId"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -4954,8 +4907,7 @@
                 "required": [
                   "message",
                   "signature"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -5066,17 +5018,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "401": {
             "description": "Default Response",
@@ -5161,7 +5103,9 @@
                             ]
                           },
                           "version": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "walletOrigin": {
                             "type": "string"
@@ -5195,10 +5139,16 @@
                           },
                           "policy": {
                             "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
                             "additionalProperties": {}
                           },
                           "branding": {
                             "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
                             "additionalProperties": {}
                           },
                           "createdAt": {
@@ -5208,11 +5158,15 @@
                             "type": "string"
                           },
                           "statusChangedAt": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "users": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -5264,7 +5218,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5287,7 +5241,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5310,7 +5264,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5333,7 +5287,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5356,7 +5310,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5379,7 +5333,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5402,7 +5356,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5429,7 +5383,8 @@
                   },
                   "id": {
                     "type": "string",
-                    "format": "uuid"
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   },
                   "walletOrigin": {
                     "type": "string"
@@ -5444,29 +5399,29 @@
                     "maxLength": 256
                   },
                   "expectedOrigins": {
+                    "default": [],
                     "type": "array",
                     "items": {
                       "type": "string"
-                    },
-                    "default": []
+                    }
                   },
                   "allowedDappOrigins": {
+                    "default": [],
                     "type": "array",
                     "items": {
                       "type": "string"
-                    },
-                    "default": []
+                    }
                   },
                   "corsOrigins": {
+                    "default": [],
                     "type": "array",
                     "items": {
                       "type": "string"
-                    },
-                    "default": []
+                    }
                   },
                   "openRegistration": {
-                    "type": "boolean",
-                    "default": false
+                    "default": false,
+                    "type": "boolean"
                   },
                   "policy": {
                     "type": "object",
@@ -5489,11 +5444,15 @@
                       },
                       "relayRateLimitPerMinute": {
                         "type": "integer",
-                        "exclusiveMinimum": true,
-                        "minimum": 0
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
                       },
                       "perChain": {
                         "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^\\d+$"
+                        },
                         "additionalProperties": {
                           "type": "object",
                           "properties": {
@@ -5532,15 +5491,18 @@
                         }
                       }
                     },
-                    "additionalProperties": false,
-                    "default": {}
+                    "additionalProperties": false
                   },
                   "branding": {
+                    "default": {},
                     "type": "object",
-                    "additionalProperties": {},
-                    "default": {}
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
                   },
                   "adminKeys": {
+                    "default": [],
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -5555,8 +5517,7 @@
                         "label"
                       ],
                       "additionalProperties": false
-                    },
-                    "default": []
+                    }
                   }
                 },
                 "required": [
@@ -5600,7 +5561,9 @@
                           ]
                         },
                         "version": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
                         },
                         "walletOrigin": {
                           "type": "string"
@@ -5634,10 +5597,16 @@
                         },
                         "policy": {
                           "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
                           "additionalProperties": {}
                         },
                         "branding": {
                           "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
                           "additionalProperties": {}
                         },
                         "createdAt": {
@@ -5647,8 +5616,10 @@
                           "type": "string"
                         },
                         "statusChangedAt": {
-                          "type": "string",
-                          "nullable": true
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -5722,7 +5693,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5745,7 +5716,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5768,7 +5739,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5791,7 +5762,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5814,7 +5785,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5837,7 +5808,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5860,7 +5831,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -5917,7 +5888,9 @@
                           ]
                         },
                         "version": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
                         },
                         "walletOrigin": {
                           "type": "string"
@@ -5951,10 +5924,16 @@
                         },
                         "policy": {
                           "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
                           "additionalProperties": {}
                         },
                         "branding": {
                           "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
                           "additionalProperties": {}
                         },
                         "createdAt": {
@@ -5964,8 +5943,10 @@
                           "type": "string"
                         },
                         "statusChangedAt": {
-                          "type": "string",
-                          "nullable": true
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -5997,8 +5978,10 @@
                             "type": "string"
                           },
                           "label": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "hashPrefix": {
                             "type": "string"
@@ -6021,14 +6004,20 @@
                       }
                     },
                     "users": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "credentials": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "lastUseropAt": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "ledger": {
                       "type": "array",
@@ -6036,7 +6025,9 @@
                         "type": "object",
                         "properties": {
                           "chainId": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "balanceWei": {
                             "type": "string"
@@ -6045,8 +6036,10 @@
                             "type": "string"
                           },
                           "lastSyncedBlock": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6090,7 +6083,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6113,7 +6106,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6136,7 +6129,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6159,7 +6152,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6182,7 +6175,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6205,7 +6198,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6228,7 +6221,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6256,26 +6249,22 @@
                     "type": "array",
                     "items": {
                       "type": "string"
-                    },
-                    "default": []
+                    }
                   },
                   "allowedDappOrigins": {
                     "type": "array",
                     "items": {
                       "type": "string"
-                    },
-                    "default": []
+                    }
                   },
                   "corsOrigins": {
                     "type": "array",
                     "items": {
                       "type": "string"
-                    },
-                    "default": []
+                    }
                   },
                   "openRegistration": {
-                    "type": "boolean",
-                    "default": false
+                    "type": "boolean"
                   },
                   "policy": {
                     "type": "object",
@@ -6298,11 +6287,15 @@
                       },
                       "relayRateLimitPerMinute": {
                         "type": "integer",
-                        "exclusiveMinimum": true,
-                        "minimum": 0
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
                       },
                       "perChain": {
                         "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^\\d+$"
+                        },
                         "additionalProperties": {
                           "type": "object",
                           "properties": {
@@ -6341,13 +6334,14 @@
                         }
                       }
                     },
-                    "additionalProperties": false,
-                    "default": {}
+                    "additionalProperties": false
                   },
                   "branding": {
                     "type": "object",
-                    "additionalProperties": {},
-                    "default": {}
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
                   },
                   "slug": {},
                   "id": {},
@@ -6399,7 +6393,9 @@
                       ]
                     },
                     "version": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "walletOrigin": {
                       "type": "string"
@@ -6433,10 +6429,16 @@
                     },
                     "policy": {
                       "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
                       "additionalProperties": {}
                     },
                     "branding": {
                       "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
                       "additionalProperties": {}
                     },
                     "createdAt": {
@@ -6446,8 +6448,10 @@
                       "type": "string"
                     },
                     "statusChangedAt": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -6491,7 +6495,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6514,7 +6518,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6537,7 +6541,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6560,7 +6564,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6583,7 +6587,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6606,7 +6610,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6629,7 +6633,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6660,17 +6664,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "400": {
             "description": "Default Response",
@@ -6690,7 +6684,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6713,7 +6707,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6736,7 +6730,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6759,7 +6753,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6782,7 +6776,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6805,7 +6799,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6828,7 +6822,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -6857,8 +6851,7 @@
                 },
                 "required": [
                   "reason"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -6903,7 +6896,9 @@
                       ]
                     },
                     "version": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "walletOrigin": {
                       "type": "string"
@@ -6937,10 +6932,16 @@
                     },
                     "policy": {
                       "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
                       "additionalProperties": {}
                     },
                     "branding": {
                       "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
                       "additionalProperties": {}
                     },
                     "createdAt": {
@@ -6950,8 +6951,10 @@
                       "type": "string"
                     },
                     "statusChangedAt": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -6995,7 +6998,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7018,7 +7021,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7041,7 +7044,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7064,7 +7067,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7087,7 +7090,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7110,7 +7113,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7133,7 +7136,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7187,7 +7190,9 @@
                       ]
                     },
                     "version": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "walletOrigin": {
                       "type": "string"
@@ -7221,10 +7226,16 @@
                     },
                     "policy": {
                       "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
                       "additionalProperties": {}
                     },
                     "branding": {
                       "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
                       "additionalProperties": {}
                     },
                     "createdAt": {
@@ -7234,8 +7245,10 @@
                       "type": "string"
                     },
                     "statusChangedAt": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -7279,7 +7292,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7302,7 +7315,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7325,7 +7338,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7348,7 +7361,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7371,7 +7384,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7394,7 +7407,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7417,7 +7430,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7446,8 +7459,7 @@
                 },
                 "required": [
                   "label"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -7515,7 +7527,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7538,7 +7550,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7561,7 +7573,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7584,7 +7596,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7607,7 +7619,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7630,7 +7642,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7653,7 +7665,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7681,7 +7693,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "path",
             "name": "keyId",
@@ -7695,17 +7708,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "400": {
             "description": "Default Response",
@@ -7725,7 +7728,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7748,7 +7751,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7771,7 +7774,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7794,7 +7797,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7817,7 +7820,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7840,7 +7843,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7863,7 +7866,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -7881,7 +7884,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "query",
             "name": "before",
@@ -7926,23 +7930,52 @@
                             "type": "string"
                           },
                           "platformAdminSessionId": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "before": {
-                            "type": "object",
-                            "additionalProperties": {},
-                            "nullable": true
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "after": {
-                            "type": "object",
-                            "additionalProperties": {},
-                            "nullable": true
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "detail": {
-                            "type": "object",
-                            "additionalProperties": {},
-                            "nullable": true
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "createdAt": {
                             "type": "string"
@@ -7962,8 +7995,10 @@
                       }
                     },
                     "next": {
-                      "type": "string",
-                      "nullable": true
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -7993,7 +8028,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8016,7 +8051,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8039,7 +8074,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8062,7 +8097,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8085,7 +8120,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8108,7 +8143,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8131,7 +8166,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8212,7 +8247,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8235,7 +8270,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8258,7 +8293,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8281,7 +8316,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8373,7 +8408,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8396,7 +8431,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8419,7 +8454,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8442,7 +8477,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8475,17 +8510,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "400": {
             "description": "Default Response",
@@ -8505,7 +8530,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8528,7 +8553,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8551,7 +8576,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8574,7 +8599,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8663,7 +8688,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8686,7 +8711,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8709,7 +8734,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8732,7 +8757,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8761,19 +8786,10 @@
                     ]
                   },
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "enum": [
-                          "null"
-                        ],
-                        "nullable": true
-                      }
+                    "type": [
+                      "string",
+                      "number",
+                      "null"
                     ]
                   },
                   "method": {
@@ -8788,8 +8804,7 @@
                   "jsonrpc",
                   "id",
                   "method"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -8798,8 +8813,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "path",
             "name": "chainId",
@@ -8826,19 +8841,10 @@
                       ]
                     },
                     "id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "enum": [
-                            "null"
-                          ],
-                          "nullable": true
-                        }
+                      "type": [
+                        "string",
+                        "number",
+                        "null"
                       ]
                     },
                     "result": {},
@@ -8887,7 +8893,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8910,7 +8916,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8933,7 +8939,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8956,7 +8962,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8979,7 +8985,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }

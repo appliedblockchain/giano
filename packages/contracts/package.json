@@ -70,7 +70,7 @@
 		"deploy:operate": "node --import tsx deploy/operations.ts"
 	},
 	"dependencies": {
-		"zod": "3.24.4"
+		"zod": "4.6.7"
 	},
 	"peerDependencies": {
 		"viem": "^2.57.10"
@@ -80,7 +80,7 @@
 		"@openzeppelin/contracts": "5.4.0",
 		"@openzeppelin/contracts-upgradeable": "5.4.0",
 		"@types/node": "22.7.5",
-		"@wagmi/cli": "2.3.1",
+		"@wagmi/cli": "2.10.0",
 		"ethers": "6.13.2",
 		"tsdown": "0.23.1",
 		"tsx": "4.19.4",

@@ -33,30 +33,32 @@ type ChainDescriptorShape = {
 				decimals: z.ZodNumber;
 				name: z.ZodOptional<z.ZodString>;
 			},
-			"strip"
+			z.core.$strip
 		>
 	>;
 };
 
-export const chainDescriptorSchema: z.ZodObject<ChainDescriptorShape, "strip"> =
-	z.object({
-		chainId: z.number().int().positive(),
-		/** Human-readable, shown to users and operators. Required — MC-81 forbids bare ids in the UI. */
-		name: z.string().min(1),
-		/** Read path. */
-		rpcUrl: z.string().url(),
-		/**
-		 * What `value` is denominated in on this chain, for anything that shows an amount to a user.
-		 * Optional: absent means ETH with 18 decimals, which is what every chain Giano ships with uses.
-		 */
-		nativeCurrency: z
-			.object({
-				symbol: z.string().min(1),
-				decimals: z.number().int().min(0).max(36),
-				name: z.string().min(1).optional(),
-			})
-			.optional(),
-	});
+export const chainDescriptorSchema: z.ZodObject<
+	ChainDescriptorShape,
+	z.core.$strip
+> = z.object({
+	chainId: z.number().int().positive(),
+	/** Human-readable, shown to users and operators. Required — MC-81 forbids bare ids in the UI. */
+	name: z.string().min(1),
+	/** Read path. */
+	rpcUrl: z.string().url(),
+	/**
+	 * What `value` is denominated in on this chain, for anything that shows an amount to a user.
+	 * Optional: absent means ETH with 18 decimals, which is what every chain Giano ships with uses.
+	 */
+	nativeCurrency: z
+		.object({
+			symbol: z.string().min(1),
+			decimals: z.number().int().min(0).max(36),
+			name: z.string().min(1).optional(),
+		})
+		.optional(),
+});
 
 export type NativeCurrency = NonNullable<ChainDescriptor["nativeCurrency"]>;
 
@@ -79,16 +81,17 @@ type ChainPolicyShape = {
 	allowedPaymasters: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
 };
 
-export const chainPolicySchema: z.ZodObject<ChainPolicyShape, "strict"> = z
-	.object({
-		maxCallGas: z.string().regex(/^\d+$/).optional(),
-		maxVerificationGas: z.string().regex(/^\d+$/).optional(),
-		maxFeePerGas: z.string().regex(/^\d+$/).optional(),
-		maxPriorityFeePerGas: z.string().regex(/^\d+$/).optional(),
-		allowedTargets: z.array(chainAddressSchema).optional(),
-		allowedPaymasters: z.array(chainAddressSchema).optional(),
-	})
-	.strict();
+export const chainPolicySchema: z.ZodObject<ChainPolicyShape, z.core.$strict> =
+	z
+		.object({
+			maxCallGas: z.string().regex(/^\d+$/).optional(),
+			maxVerificationGas: z.string().regex(/^\d+$/).optional(),
+			maxFeePerGas: z.string().regex(/^\d+$/).optional(),
+			maxPriorityFeePerGas: z.string().regex(/^\d+$/).optional(),
+			allowedTargets: z.array(chainAddressSchema).optional(),
+			allowedPaymasters: z.array(chainAddressSchema).optional(),
+		})
+		.strict();
 
 export type ChainPolicy = z.infer<typeof chainPolicySchema>;
 
@@ -99,13 +102,13 @@ export type ChainPolicy = z.infer<typeof chainPolicySchema>;
  */
 type WalletApiChainSectionShape = {
 	factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
-	policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, "strict">>;
+	policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, z.core.$strict>>;
 	bundlerUrl: z.ZodOptional<z.ZodString>;
 };
 
 export const walletApiChainSectionSchema: z.ZodObject<
 	WalletApiChainSectionShape,
-	"strict"
+	z.core.$strict
 > = z
 	.object({
 		factory: chainAddressSchema.optional(),
@@ -120,13 +123,15 @@ export type WalletApiChainSection = z.infer<typeof walletApiChainSectionSchema>;
 type BundlerChainSectionShape = {
 	enabled: z.ZodDefault<z.ZodBoolean>;
 	rpcUrl: z.ZodOptional<z.ZodString>;
-	chainType: z.ZodDefault<z.ZodEnum<["auto", "default", "op-stack"]>>;
+	chainType: z.ZodDefault<
+		z.ZodEnum<{ auto: "auto"; default: "default"; "op-stack": "op-stack" }>
+	>;
 	maxBlockRange: z.ZodDefault<z.ZodNumber>;
 };
 
 export const bundlerChainSectionSchema: z.ZodObject<
 	BundlerChainSectionShape,
-	"strict"
+	z.core.$strict
 > = z
 	.object({
 		/** `false`: this bundler does not serve the chain, and wallet-api must name another `bundlerUrl`. */
@@ -154,7 +159,7 @@ type PaymasterAdminChainSectionShape = {
 
 export const paymasterAdminChainSectionSchema: z.ZodObject<
 	PaymasterAdminChainSectionShape,
-	"strict"
+	z.core.$strict
 > = z
 	.object({
 		walletRpcUrl: z.string().optional(),
@@ -189,65 +194,74 @@ const backendChainFields: BackendChainFields = {
 };
 
 /** wallet-api's reading of a backend chain entry. */
-type WalletApiChainShape = z.objectUtil.extendShape<
+type WalletApiChainShape = z.core.util.Extend<
 	ChainDescriptorShape,
 	BackendChainFields & {
-		walletApi: z.ZodDefault<z.ZodObject<WalletApiChainSectionShape, "strict">>;
+		walletApi: z.ZodDefault<
+			z.ZodObject<WalletApiChainSectionShape, z.core.$strict>
+		>;
 		bundler: ForeignSection;
 		paymasterAdmin: ForeignSection;
 	}
 >;
 
-export const walletApiChainSchema: z.ZodObject<WalletApiChainShape, "strict"> =
-	chainDescriptorSchema
-		.extend({
-			...backendChainFields,
-			walletApi: walletApiChainSectionSchema.default({}),
-			bundler: foreignSection,
-			paymasterAdmin: foreignSection,
-		})
-		.strict();
+export const walletApiChainSchema: z.ZodObject<
+	WalletApiChainShape,
+	z.core.$strict
+> = chainDescriptorSchema
+	.extend({
+		...backendChainFields,
+		walletApi: walletApiChainSectionSchema.default({}),
+		bundler: foreignSection,
+		paymasterAdmin: foreignSection,
+	})
+	.strict();
 export type WalletApiChain = z.infer<typeof walletApiChainSchema>;
 
 /** giano-bundler's reading of a backend chain entry. */
-type BundlerChainShape = z.objectUtil.extendShape<
+type BundlerChainShape = z.core.util.Extend<
 	ChainDescriptorShape,
 	BackendChainFields & {
 		walletApi: ForeignSection;
-		bundler: z.ZodDefault<z.ZodObject<BundlerChainSectionShape, "strict">>;
+		// prefault, not default: zod 4 returns a default as-is, and the section's own defaults must apply.
+		bundler: z.ZodPrefault<
+			z.ZodObject<BundlerChainSectionShape, z.core.$strict>
+		>;
 		paymasterAdmin: ForeignSection;
 	}
 >;
 
-export const bundlerChainSchema: z.ZodObject<BundlerChainShape, "strict"> =
-	chainDescriptorSchema
-		.extend({
-			...backendChainFields,
-			walletApi: foreignSection,
-			bundler: bundlerChainSectionSchema.default({}),
-			paymasterAdmin: foreignSection,
-		})
-		.strict();
+export const bundlerChainSchema: z.ZodObject<
+	BundlerChainShape,
+	z.core.$strict
+> = chainDescriptorSchema
+	.extend({
+		...backendChainFields,
+		walletApi: foreignSection,
+		bundler: bundlerChainSectionSchema.prefault({}),
+		paymasterAdmin: foreignSection,
+	})
+	.strict();
 export type BundlerChain = z.infer<typeof bundlerChainSchema>;
 
 /**
  * @deprecated wallet-api reads {@link walletApiChainSchema} since the backend chain document
  * gained per-service sections. Kept so existing importers keep compiling.
  */
-type BackendChainDescriptorShape = z.objectUtil.extendShape<
+type BackendChainDescriptorShape = z.core.util.Extend<
 	ChainDescriptorShape,
 	{
 		bundlerUrl: z.ZodString;
 		entryPoint: z.ZodOptional<z.ZodType<`0x${string}`>>;
 		factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
 		sponsorshipPaymaster: z.ZodOptional<z.ZodType<`0x${string}`>>;
-		policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, "strict">>;
+		policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, z.core.$strict>>;
 	}
 >;
 
 export const backendChainDescriptorSchema: z.ZodObject<
 	BackendChainDescriptorShape,
-	"strip"
+	z.core.$strip
 > = chainDescriptorSchema.extend({
 	bundlerUrl: z.string().url(),
 	entryPoint: chainAddressSchema.optional(),
@@ -261,12 +275,18 @@ export type BackendChainDescriptor = z.infer<
 >;
 
 /** wallet-web's extension: what the browser needs; it never learns an endpoint it may not use. */
-type WalletChainDescriptorShape = z.objectUtil.extendShape<
+type WalletChainDescriptorShape = z.core.util.Extend<
 	ChainDescriptorShape,
 	{
 		bundlerUrl: z.ZodString;
 		factoryAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
-		sponsorship: z.ZodOptional<z.ZodEnum<["service", "test-paymaster", "off"]>>;
+		sponsorship: z.ZodOptional<
+			z.ZodEnum<{
+				service: "service";
+				"test-paymaster": "test-paymaster";
+				off: "off";
+			}>
+		>;
 		paymasterServiceUrl: z.ZodOptional<z.ZodString>;
 		testPaymasterAddress: z.ZodOptional<z.ZodType<`0x${string}`>>;
 	}
@@ -274,7 +294,7 @@ type WalletChainDescriptorShape = z.objectUtil.extendShape<
 
 export const walletChainDescriptorSchema: z.ZodObject<
 	WalletChainDescriptorShape,
-	"strip"
+	z.core.$strip
 > = chainDescriptorSchema.extend({
 	bundlerUrl: z.string().url(),
 	factoryAddress: chainAddressSchema.optional(),

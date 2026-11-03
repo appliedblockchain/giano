@@ -228,6 +228,72 @@ describe("one validator for every tenant write (admin-tenant-lifecycle)", () => 
 		]);
 	});
 
+	it("a patch keeps every field it omits, and an explicit empty value still replaces", () => {
+		// zod 4 applies a default inside .partial(); a default in the patch schema would reset
+		// every omitted field to it.
+		expect(tenantPatchSchema.parse({})).toEqual({});
+		const stored = {
+			...base,
+			id: "00000000-0000-4000-8000-000000000001",
+			rpId: "wallet.acme.app",
+			expectedOrigins: [
+				"https://wallet.acme.app",
+				"https://pay.wallet.acme.app",
+			],
+			allowedDappOrigins: ["https://dapp.example.com"],
+			corsOrigins: ["https://dapp.example.com"],
+			policy: { maxCallGas: "1000000" },
+			branding: { color: "#000000" },
+		} as unknown as Tenant;
+		const renamed = validateTenantUpdate(
+			stored,
+			tenantPatchSchema.parse({ rpName: "Acme" }),
+			{ adminKeyCount: 0 },
+		);
+		expect(renamed.ok && renamed.fields).toMatchObject({
+			rpName: "Acme",
+			expectedOrigins: [
+				"https://wallet.acme.app",
+				"https://pay.wallet.acme.app",
+			],
+			allowedDappOrigins: ["https://dapp.example.com"],
+			corsOrigins: ["https://dapp.example.com"],
+			openRegistration: true,
+			policy: { maxCallGas: "1000000" },
+			branding: { color: "#000000" },
+		});
+		const emptied = validateTenantUpdate(
+			stored,
+			tenantPatchSchema.parse({
+				allowedDappOrigins: [],
+				corsOrigins: [],
+				policy: {},
+				branding: {},
+			}),
+			{ adminKeyCount: 0 },
+		);
+		expect(emptied.ok).toBe(true);
+		if (!emptied.ok) return;
+		// toEqual, not toMatchObject: toMatchObject accepts any object for {}.
+		expect(emptied.fields.allowedDappOrigins).toEqual([]);
+		expect(emptied.fields.corsOrigins).toEqual([]);
+		expect(emptied.fields.policy).toEqual({});
+		expect(emptied.fields.branding).toEqual({});
+	});
+
+	it("names a perChain key that is not a chain id", () => {
+		const parsed = tenantPatchSchema.safeParse({
+			policy: { perChain: { base: {} } },
+		});
+		expect(parsed.success).toBe(false);
+		expect(parsed.error?.issues).toEqual([
+			expect.objectContaining({
+				path: ["policy", "perChain", "base"],
+				message: "perChain keys are chain ids",
+			}),
+		]);
+	});
+
 	it("refuses fixtures in which one entry claims an origin another entry claims", () => {
 		const other = {
 			...base,

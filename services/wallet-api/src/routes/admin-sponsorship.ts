@@ -255,7 +255,7 @@ export default async function adminSponsorshipRoutes(
 					"update cannot leave the rule set in a state a full replace would have rejected.",
 				security: [{ adminKey: [] }],
 				querystring: chainQuery,
-				body: z.record(z.unknown()),
+				body: z.record(z.string(), z.unknown()),
 				response: {
 					200: z.object({ config: z.unknown(), updatedAt: z.string() }),
 					400: z.object({
