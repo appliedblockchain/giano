@@ -57,6 +57,8 @@ type JsonRpcResponse =
 	  };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+/** Each batch item can fan out into several node calls. wallet-api never sends batches. */
+const MAX_BATCH_ITEMS = 10;
 
 function params<T extends z.ZodTypeAny>(
 	method: string,
@@ -392,6 +394,16 @@ export function createRpcServer(options: {
 						jsonrpc: "2.0",
 						id: null,
 						error: { code: ERROR_CODES.invalidRequest, message: "empty batch" },
+					});
+				}
+				if (body.length > MAX_BATCH_ITEMS) {
+					return reply(response, 200, {
+						jsonrpc: "2.0",
+						id: null,
+						error: {
+							code: ERROR_CODES.invalidRequest,
+							message: `batch of ${body.length} exceeds the limit of ${MAX_BATCH_ITEMS}`,
+						},
 					});
 				}
 				const batch = methods;
