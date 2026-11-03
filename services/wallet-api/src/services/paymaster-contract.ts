@@ -43,6 +43,38 @@ export type PaymasterReader = {
 	isSigner: (address: Address) => Promise<boolean>;
 	paused: () => Promise<boolean>;
 	blockNumber: () => Promise<bigint>;
+	/** Every tenant on the paymaster's roster, at the head, a page at a time (B5). */
+	roster: () => Promise<PaymasterRosterEntry[]>;
+	/**
+	 * A tenant's balance, deficit and withdrawal address as they were at `blockNumber`, so the
+	 * ledger can be checked at the block it was synced to rather than at the head (B5, D14).
+	 */
+	tenantAt: (
+		tenantId: Hex,
+		blockNumber: bigint,
+	) => Promise<Omit<PaymasterTenantState, "feeWei">>;
+};
+
+export type PaymasterRosterEntry = {
+	tenantId: Hex;
+	registered: boolean;
+	enabled: boolean;
+	withdrawAddress: Address;
+	balanceWei: bigint;
+	deficitWei: bigint;
+};
+
+/** Tenants per `getTenants` page, as giano-doctor reads them. */
+const ROSTER_PAGE_SIZE = 50n;
+
+type OnChainTenant = {
+	registered: boolean;
+	enabled: boolean;
+	hasFeeOverride: boolean;
+	withdrawAddress: Address;
+	balance: bigint;
+	deficit: bigint;
+	feeWeiOverride: bigint;
 };
 
 export type PaymasterReaderOptions = {
@@ -167,6 +199,51 @@ export function createPaymasterReader(
 				functionName: "paused",
 			})) as boolean,
 		blockNumber: () => client.getBlockNumber(),
+
+		async roster() {
+			const count = (await client.readContract({
+				...contract,
+				functionName: "tenantCount",
+			})) as bigint;
+			const entries: PaymasterRosterEntry[] = [];
+			for (let start = 0n; start < count; start += ROSTER_PAGE_SIZE) {
+				const span =
+					count - start < ROSTER_PAGE_SIZE ? count - start : ROSTER_PAGE_SIZE;
+				const [ids, records] = (await client.readContract({
+					...contract,
+					functionName: "getTenants",
+					args: [start, span],
+				})) as readonly [readonly Hex[], readonly OnChainTenant[]];
+				ids.forEach((tenantId, index) => {
+					const record = records[index];
+					entries.push({
+						tenantId,
+						registered: record.registered,
+						enabled: record.enabled,
+						withdrawAddress: record.withdrawAddress,
+						balanceWei: BigInt(record.balance),
+						deficitWei: BigInt(record.deficit),
+					});
+				});
+			}
+			return entries;
+		},
+
+		async tenantAt(tenantId, blockNumber) {
+			const state = (await client.readContract({
+				...contract,
+				functionName: "getTenant",
+				args: [tenantId],
+				blockNumber,
+			})) as OnChainTenant;
+			return {
+				registered: state.registered,
+				enabled: state.enabled,
+				withdrawAddress: state.withdrawAddress,
+				balanceWei: BigInt(state.balance),
+				deficitWei: BigInt(state.deficit),
+			};
+		},
 	};
 }
 

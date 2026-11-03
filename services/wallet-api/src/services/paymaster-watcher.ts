@@ -8,6 +8,7 @@ import {
 	paymasterTenants,
 	sponsorshipSettlements,
 } from "../db/schema.js";
+import { type ChainDrift, computeDrift } from "./drift.js";
 import type { PaymasterReader } from "./paymaster-contract.js";
 import type { LedgerService } from "./sponsorship-ledger.js";
 
@@ -44,6 +45,8 @@ export type WatcherOptions = {
 	/** Tenant slug for a uuid, for metric labels. Absent for a tenant this deployment does not know. */
 	tenantSlug: (tenantUuid: string) => Promise<string | undefined>;
 	metrics?: WatcherMetrics;
+	/** Each pass's drift between the registry, the ledger and the paymaster (B5). */
+	onDrift?: (drift: ChainDrift) => void;
 	logger?: {
 		info: (o: unknown, m?: string) => void;
 		warn: (o: unknown, m?: string) => void;
@@ -139,6 +142,9 @@ const EVENTS = {
 	registered: parseAbiItem(
 		"event TenantRegistered(bytes16 indexed tenantId, address indexed withdrawAddress, string slug)",
 	),
+	withdrawAddressChanged: parseAbiItem(
+		"event TenantWithdrawAddressChanged(bytes16 indexed tenantId, address oldAddress, address newAddress)",
+	),
 } as const;
 
 export type PaymasterWatcher = {
@@ -146,6 +152,8 @@ export type PaymasterWatcher = {
 	stop: () => Promise<void>;
 	/** One ingestion pass. Exposed so tests can drive it deterministically. */
 	pollOnce: () => Promise<{ from: bigint; to: bigint; events: number }>;
+	/** One drift pass (B5): compares, reports through `onDrift`, changes nothing. */
+	driftOnce: () => Promise<ChainDrift>;
 	/** One reconciliation pass. */
 	reconcileOnce: () => Promise<{
 		breach: boolean;
@@ -324,39 +332,51 @@ export function createPaymasterWatcher(
 			}
 
 			const address = paymaster.address;
-			const [sponsored, deficits, funded, withdrawn, registered] =
-				await Promise.all([
-					client.getLogs({
-						address,
-						event: EVENTS.sponsored,
-						fromBlock: from,
-						toBlock: to,
-					}),
-					client.getLogs({
-						address,
-						event: EVENTS.deficit,
-						fromBlock: from,
-						toBlock: to,
-					}),
-					client.getLogs({
-						address,
-						event: EVENTS.funded,
-						fromBlock: from,
-						toBlock: to,
-					}),
-					client.getLogs({
-						address,
-						event: EVENTS.withdrawn,
-						fromBlock: from,
-						toBlock: to,
-					}),
-					client.getLogs({
-						address,
-						event: EVENTS.registered,
-						fromBlock: from,
-						toBlock: to,
-					}),
-				]);
+			const [
+				sponsored,
+				deficits,
+				funded,
+				withdrawn,
+				registered,
+				addressChanges,
+			] = await Promise.all([
+				client.getLogs({
+					address,
+					event: EVENTS.sponsored,
+					fromBlock: from,
+					toBlock: to,
+				}),
+				client.getLogs({
+					address,
+					event: EVENTS.deficit,
+					fromBlock: from,
+					toBlock: to,
+				}),
+				client.getLogs({
+					address,
+					event: EVENTS.funded,
+					fromBlock: from,
+					toBlock: to,
+				}),
+				client.getLogs({
+					address,
+					event: EVENTS.withdrawn,
+					fromBlock: from,
+					toBlock: to,
+				}),
+				client.getLogs({
+					address,
+					event: EVENTS.registered,
+					fromBlock: from,
+					toBlock: to,
+				}),
+				client.getLogs({
+					address,
+					event: EVENTS.withdrawAddressChanged,
+					fromBlock: from,
+					toBlock: to,
+				}),
+			]);
 
 			// Registrations first, then funding, then spending: a settlement for a tenant whose row does
 			// not exist yet would otherwise be dropped by the insert.
@@ -372,6 +392,30 @@ export function createPaymasterWatcher(
 					blockNumber: entry.blockNumber!,
 					withdrawAddress: args.withdrawAddress,
 				});
+			}
+
+			// In block order, so the ledger's withdrawal address is the chain's as of every block the
+			// watcher has reached, not only as of the last reconcile: drift compares them there.
+			for (const entry of [...addressChanges].sort((a, b) =>
+				a.blockNumber === b.blockNumber
+					? (a.logIndex ?? 0) - (b.logIndex ?? 0)
+					: a.blockNumber! < b.blockNumber!
+						? -1
+						: 1,
+			)) {
+				const args = entry.args as {
+					tenantId: `0x${string}`;
+					newAddress: Address;
+				};
+				await db
+					.update(paymasterTenants)
+					.set({ withdrawAddress: args.newAddress.toLowerCase() })
+					.where(
+						and(
+							eq(paymasterTenants.tenantId, bytes16ToUuid(args.tenantId)),
+							eq(paymasterTenants.chainId, chainId),
+						),
+					);
 			}
 
 			for (const entry of funded) {
@@ -442,13 +486,25 @@ export function createPaymasterWatcher(
 				deficits.length +
 				funded.length +
 				withdrawn.length +
-				registered.length;
+				registered.length +
+				addressChanges.length;
 			if (total > 0)
 				log.info(
 					{ from: from.toString(), to: to.toString(), events: total },
 					"paymaster events ingested",
 				);
 			return { from, to, events: total };
+		},
+
+		async driftOnce() {
+			const drift = await computeDrift({ db, chainId, paymaster });
+			options.onDrift?.(drift);
+			if (drift.entries.length > 0)
+				log.warn(
+					{ alert: "paymaster-drift", drift: drift.entries },
+					"wallet-api's records and the paymaster disagree",
+				);
+			return drift;
 		},
 
 		/**
@@ -724,6 +780,12 @@ export function createPaymasterWatcher(
 		};
 		const runReconcile = async () => {
 			if (!(await holdsLock())) return;
+			// Before the reconcile overwrites the ledger with the chain: after it, they agree by construction.
+			try {
+				await watcher.driftOnce();
+			} catch (error) {
+				log.warn({ err: error }, "paymaster drift check failed");
+			}
 			try {
 				await watcher.reconcileOnce();
 			} catch (error) {
