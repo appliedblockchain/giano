@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import {
+	boundedLogsGuard,
 	createReadRelay,
 	type JsonRpcRequest,
 	jsonRpcRequestSchema,
@@ -34,6 +35,7 @@ export default async function rpcRelayRoutes(
 		limitMessage: `tenant RPC relay limit of ${config.RPC_RELAY_RATE_LIMIT_PER_MINUTE}/minute exceeded`,
 		count: (labels: RelayLabels<{ tenant: string }>) =>
 			app.metrics.rpcRelay.inc(labels),
+		guard: boundedLogsGuard(config.RPC_RELAY_MAX_LOG_BLOCKS),
 	});
 
 	const handle = (request: FastifyRequest) => {
