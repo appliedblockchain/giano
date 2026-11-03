@@ -48,7 +48,10 @@ all land where they point. The deployment is chosen in the header, not in the UR
   filters and totals, *Look further back* with no row cap, and *Export CSV*.
 - **Health** — the checks `giano-doctor` runs, at the same thresholds, grouped as Funds, Keys and
   roles, and Registry and chain, each saying what to do and where; with the platform API, also that
-  every on-chain tenant has a registry row and that wallet-api's ledger matches the chain.
+  every on-chain tenant has a registry row and that wallet-api's ledger matches the chain. Keys and
+  roles also says whether the paymaster's implementation is a contracts release and, with
+  `timelockAddress`, whether the timelock alone holds the four timelocked roles and whether any
+  delay is below `timelockDelays`. Without a timelock, one warning says none is configured.
 - **Admins** — with the platform API: who may sign in, the change history, *Add admin* and *Remove*.
 
 ## The write rules
@@ -138,7 +141,8 @@ console at an arbitrary chain by typing into it.
 | `chainId` | required |
 | `rpcUrl` | required. With `GIANO_WALLET_API_UPSTREAM` set it is replaced by wallet-api's platform read relay, `/api/v1/platform/rpc/<chainId>`; otherwise proxied through this origin unless `GIANO_RPC_PROXY=false` |
 | `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
-| `timelockAddress` | optional: the paymaster's GianoTimelock. Enables the Timelock tab's reads and the proposal flow |
+| `timelockAddress` | optional: the paymaster's GianoTimelock. Enables the Timelock tab's reads and the proposal flow, and Health's timelock checks |
+| `timelockDelays` | optional: the delays the chain publishes, in seconds, as its profile's `timelock.delays` (`deploy/chains/*.json`): `{ "minDelay": 300, "upgradeToAndCall": 3600, … }`. Health fails a delay below its value, as `giano-doctor` does. Unset, Health says the delays were not compared |
 | `refreshSeconds` | poll interval; `0` disables polling |
 | `nativeCurrency` | optional, from the chain descriptor: `{ "symbol": "POL", "decimals": 18 }`. Amounts are shown and typed in it. Absent means ETH |
 | `explorerUrl` | optional: e.g. `https://sepolia.basescan.org`. Transaction hashes and addresses link to `<explorerUrl>/tx/<hash>` and `/address/<address>`. Must be `https:`, or `http:` on localhost. Unset, they are shown in full and copyable |
@@ -150,7 +154,7 @@ So a deployment running them can hand `GIANO_DEPLOYMENTS` that same value and ha
 chain list instead of three.
 
 In that document the console's own settings sit in its section: `paymasterAdmin.walletRpcUrl`,
-`paymasterAdmin.timelockAddress`, `paymasterAdmin.explorerUrl`, `paymasterAdmin.addresses` and
+`paymasterAdmin.timelockAddress`, `paymasterAdmin.timelockDelays`, `paymasterAdmin.explorerUrl`, `paymasterAdmin.addresses` and
 `paymasterAdmin.refreshSeconds`. A standalone list may spell
 them flat, as in the table above.
 

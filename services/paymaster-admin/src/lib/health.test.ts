@@ -18,6 +18,9 @@ describe("groupChecks", () => {
 				"tenants-funded",
 				"signers",
 				"role-UPGRADER_ROLE",
+				"timelocked-roles",
+				"timelock-delays",
+				"implementation",
 				"paused",
 				"something-new",
 			].map(check),
@@ -30,6 +33,9 @@ describe("groupChecks", () => {
 		expect(groups.keys.map((entry) => entry.id)).toEqual([
 			"signers",
 			"role-UPGRADER_ROLE",
+			"timelocked-roles",
+			"timelock-delays",
+			"implementation",
 		]);
 		expect(groups.registry.map((entry) => entry.id)).toEqual([
 			"paused",
@@ -47,6 +53,18 @@ describe("checkLink", () => {
 		expect(checkLink("tenant-deficits")).toEqual({
 			to: "/tenants",
 			label: "Tenants",
+		});
+		expect(checkLink("timelocked-roles")).toEqual({
+			to: "/roles",
+			label: "Roles",
+		});
+		expect(checkLink("timelock-delays")).toEqual({
+			to: "/timelock",
+			label: "Timelock",
+		});
+		expect(checkLink("implementation")).toEqual({
+			to: "/paymaster",
+			label: "Paymaster",
 		});
 		expect(checkLink("stake")).toEqual({
 			to: "/paymaster",

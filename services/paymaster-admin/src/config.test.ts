@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toAddresses, toExplorerUrl } from "./config";
+import { toAddresses, toExplorerUrl, toTimelockDelays } from "./config";
 
 const SAFE = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 
@@ -43,5 +43,27 @@ describe("toAddresses", () => {
 		expect(() =>
 			toAddresses({ [SAFE]: { label: "x", kind: "eoa" } }, "d"),
 		).toThrow(/only kind is "safe"/);
+	});
+});
+
+describe("toTimelockDelays", () => {
+	it("keeps the published delays, in seconds, and treats none as unset", () => {
+		expect(
+			toTimelockDelays({ minDelay: 300, upgradeToAndCall: 3600 }, "d"),
+		).toEqual({ minDelay: 300, upgradeToAndCall: 3600 });
+		expect(toTimelockDelays(undefined, "d")).toBeUndefined();
+		expect(toTimelockDelays({}, "d")).toBeUndefined();
+	});
+
+	it("refuses a name the timelock has no delay for, and a delay that is not whole seconds", () => {
+		expect(() => toTimelockDelays({ upgrade: 3600 }, "d")).toThrow(
+			/"upgrade"; the names are minDelay, upgradeToAndCall/,
+		);
+		expect(() => toTimelockDelays({ minDelay: "2d" }, "d")).toThrow(
+			/minDelay delay that is not a whole number of seconds/,
+		);
+		expect(() => toTimelockDelays({ minDelay: -1 }, "d")).toThrow(
+			/not a whole number/,
+		);
 	});
 });

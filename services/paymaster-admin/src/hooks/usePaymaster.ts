@@ -1,7 +1,5 @@
 import {
-	assessHealth,
 	GianoPaymasterClient,
-	type HealthReport,
 	type PaymasterOverview,
 	type PaymasterRoleName,
 } from "@appliedblockchain/giano-paymaster-sdk";
@@ -20,13 +18,12 @@ import { describeError } from "../lib/format";
  *
  * One `getOverview` call per refresh rather than a request per panel: every panel reads from the
  * same snapshot, so the header cannot show a solvency figure computed from a roster the tenants
- * table has not caught up with yet. Health is derived from that same snapshot locally — it is a
- * pure function of it, so recomputing costs nothing and cannot disagree with what is on screen.
+ * table has not caught up with yet. Health is derived from that same snapshot locally (`useHealth`)
+ * — a pure function of it, so recomputing costs nothing and cannot disagree with what is on screen.
  */
 export type PaymasterState = {
 	client: GianoPaymasterClient | undefined;
 	overview: PaymasterOverview | undefined;
-	health: HealthReport | undefined;
 	/** Roles the connected wallet holds. Empty when read-only — which gates every write control. */
 	myRoles: readonly PaymasterRoleName[];
 	/**
@@ -229,15 +226,9 @@ export function usePaymaster(
 		};
 	}, [client, deployment.refreshSeconds, refresh]);
 
-	const health = useMemo(
-		() => (overview ? assessHealth(overview) : undefined),
-		[overview],
-	);
-
 	return {
 		client,
 		overview,
-		health,
 		myRoles,
 		rosterOnChain,
 		loading,
