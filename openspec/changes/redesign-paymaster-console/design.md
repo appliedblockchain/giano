@@ -122,7 +122,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 12. B2: timelock-aware `assessHealth`, release codehashes, `giano-doctor`. SDK and contracts changesets. **Done** (#205).
 13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
-15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
+15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health. **Done**.
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
 
@@ -215,6 +215,13 @@ A Safe calling the timelock that calls the paymaster so shows the Safe for the t
 A refresh reads the head and then every block since the newest one read, a window at a time (`readForwardPages`), so no request spans more than a window however long the gap.
 
 On the tenant page the chain's events are listed under the registry's history, not interleaved with it: the registry pages by cursor and the chain by window of blocks, and merging them would order entries wrongly wherever one page ends before the other. `tenantId` keeps the tenant's own events, the timelock calls whose arguments name it, and the `Cancelled` of those operations. The tenant page's window is the same 9,000 blocks as Activity's: the relay refuses a wider `eth_getLogs` span, so a topic filter would shrink responses but not let a page cover more.
+
+### D25. Chain status: thresholds, timeouts and the mock node
+The console's thresholds: a head older than 60 seconds warns and 5 minutes fails; a ledger watcher more than 50 blocks behind warns, the line past which wallet-api stops trusting the ledger for a tenant delete (`TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`' default), and more than 1,000 fails. They sit in `lib/health.ts` beside the SDK's deposit and stake thresholds. The repository's local anvil devnets (31337, 31338) mine only when there is a transaction, so an idle one's head is hours old: there the age is shown and not judged, or every local stack would read as failing.
+
+Each part of a chain's status (head, bundler, signer) gets its own 3 seconds, and every chain is read at once, so the response takes about 3 seconds however many chains are down. A bundler that answers `eth_supportedEntryPoints` with a JSON-RPC error is reachable, with `entryPointSupported: null` (a warning in the console), not unreachable.
+
+The Chains section is read with each console refresh while Health is open; each read probes every chain, inside the session's platform rate limit.
 
 ## Risks / Trade-offs
 

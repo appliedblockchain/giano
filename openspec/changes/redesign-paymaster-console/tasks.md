@@ -136,10 +136,10 @@
 
 ## 14. Phase 2: chains (B3, layer 15)
 
-- [ ] 14.1 wallet-api: the prober keeps its last verification and each probe; `BundlerClient.supportedEntryPoints()`.
-- [ ] 14.2 wallet-api: `GET /v1/platform/chains`, probed in parallel with a 3-second timeout, no URLs in the response. Route tests, including one chain down.
-- [ ] 14.3 Console: the Chains section on Health, with the head-age and watcher-lag thresholds next to the doctor's.
-- [ ] 14.4 Update `specs/PLATFORM-ADMIN-SPECS.md` §10 from "follow-up card" to delivered.
+- [x] 14.1 wallet-api: the prober keeps its last verification and each probe; `BundlerClient.supportedEntryPoints()`. The prober moved from `index.ts` to `services/chain-probe.ts`, so it is tested.
+- [x] 14.2 wallet-api: `GET /v1/platform/chains`, probed in parallel with a 3-second timeout, no URLs in the response. Route tests, including one chain down.
+- [x] 14.3 Console: the Chains section on Health, with the head-age and watcher-lag thresholds next to the doctor's (D25). e2e on the real stack.
+- [x] 14.4 Update `specs/PLATFORM-ADMIN-SPECS.md` §10 from "follow-up card" to delivered.
 
 ## 15. Phase 2: drift (B5, layer 16)
 
