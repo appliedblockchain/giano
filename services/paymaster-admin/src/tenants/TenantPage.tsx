@@ -234,16 +234,23 @@ export function TenantPage({
 			<OtherDeployments others={others} ledger={record.detail?.ledger} />
 			<TenantActivity client={client} tenantId={row.id} />
 
-			{slug && (
-				<TenantHistory
-					entries={record.history}
-					error={record.historyError}
-					hasOlder={record.next !== null}
-					loadingOlder={record.loadingOlder}
-					onOlder={() => void record.older()}
-					onRetry={() => void record.reload()}
-				/>
-			)}
+			<TenantHistory
+				client={client}
+				tenantId={row.id}
+				slug={slug}
+				registry={
+					slug
+						? {
+								entries: record.history,
+								error: record.historyError,
+								hasOlder: record.next !== null,
+								loadingOlder: record.loadingOlder,
+								onOlder: () => void record.older(),
+								onRetry: () => void record.reload(),
+							}
+						: undefined
+				}
+			/>
 
 			{tenant && (
 				<>
