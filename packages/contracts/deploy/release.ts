@@ -34,10 +34,28 @@ export const RELEASE_CONTRACTS = {
 
 export type ReleaseContract = keyof typeof RELEASE_CONTRACTS;
 
+/**
+ * A contract's runtime code as solc emits it, before construction: immutables are still zero.
+ * `codehash` is keccak256 of that code, and `immutables` the byte ranges the constructor fills, so
+ * code read from a chain can be matched to the release by zeroing the same ranges first (D13).
+ */
+export type ReleaseRuntime = {
+	codehash: Hex;
+	immutables: { start: number; length: number }[];
+};
+
+/** The contracts whose runtime code a release records: what `assessHealth` matches on a chain. */
+export const RUNTIME_CONTRACTS = [
+	"GianoPaymaster",
+] as const satisfies readonly ReleaseContract[];
+
 export type Release = {
 	version: string;
 	compiler: { solc: string; settings: Record<string, unknown> };
-	contracts: Record<ReleaseContract, { source: string; creationCode: Hex }>;
+	contracts: Record<
+		ReleaseContract,
+		{ source: string; creationCode: Hex; runtime?: ReleaseRuntime }
+	>;
 };
 
 const VERSION = /^v\d+$/;

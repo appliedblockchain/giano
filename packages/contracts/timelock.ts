@@ -175,6 +175,59 @@ export function delayPolicyProblems(delays: TimelockDelays): string[] {
 	return problems;
 }
 
+/** A timelocked role held by something other than the timelock, or not by the timelock at all. */
+export type TimelockedRoleProblem = {
+	role: TimelockedOperation["role"];
+	/** Holders that are not the timelock. */
+	others: Address[];
+	/** The timelock does not hold the role. */
+	missing: boolean;
+};
+
+/**
+ * Which timelocked roles are not held by `timelock` alone (G9 R4, B2). `holders` maps each role in
+ * {@link TIMELOCKED_ROLES} to its holders; a role absent from it counts as held by nobody.
+ * `giano-doctor chain` and the SDK's `assessHealth` both judge the topology with this.
+ */
+export function timelockedRoleProblems(
+	holders: Partial<Record<TimelockedOperation["role"], readonly Address[]>>,
+	timelock: Address,
+): TimelockedRoleProblem[] {
+	const self = getAddress(timelock);
+	return TIMELOCKED_ROLES.flatMap((role) => {
+		const all = (holders[role] ?? []).map((holder) => getAddress(holder));
+		const others = all.filter((holder) => holder !== self);
+		const missing = !all.includes(self);
+		return others.length > 0 || missing ? [{ role, others, missing }] : [];
+	});
+}
+
+/** A delay shorter than its published value. */
+export type DelayShortfall = {
+	name: keyof TimelockDelays;
+	actual: number;
+	expected: number;
+};
+
+/**
+ * Which delays are below their published values (B2). `actual` is what the timelock enforces:
+ * `minDelay`, and each function's effective delay (never below `minDelay`). A name `expected` does
+ * not give is not checked.
+ */
+export function delayShortfalls(
+	actual: TimelockDelays,
+	expected: Partial<TimelockDelays>,
+): DelayShortfall[] {
+	return (["minDelay", ...TIMELOCKED_FUNCTION_NAMES] as const).flatMap(
+		(name) => {
+			const want = expected[name];
+			return want !== undefined && actual[name] < want
+				? [{ name, actual: actual[name], expected: want }]
+				: [];
+		},
+	);
+}
+
 const UNITS: Record<string, number> = {
 	s: 1,
 	m: 60,
