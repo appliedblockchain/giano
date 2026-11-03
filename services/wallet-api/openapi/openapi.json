@@ -9706,6 +9706,272 @@
           }
         }
       }
+    },
+    "/v1/platform/chains": {
+      "get": {
+        "summary": "The status of every served chain, probed in parallel with a 3-second timeout each; never a node or bundler URL",
+        "tags": [
+          "platform"
+        ],
+        "security": [
+          {
+            "platformSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "signer": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unavailable",
+                        "disabled"
+                      ]
+                    },
+                    "chains": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "chainId": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "registryStatus": {
+                            "type": "string",
+                            "enum": [
+                              "ready",
+                              "unavailable"
+                            ]
+                          },
+                          "verification": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "failures": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {}
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "checkedAt",
+                                  "failures"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastProbe": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "at": {
+                                    "type": "string"
+                                  },
+                                  "ok": {
+                                    "type": "boolean"
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "at",
+                                  "ok"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "type": "object",
+                            "properties": {
+                              "reachable": {
+                                "type": "boolean"
+                              },
+                              "headBlock": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "headAgeSeconds": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "reachable",
+                              "headBlock",
+                              "headAgeSeconds"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "bundler": {
+                            "type": "object",
+                            "properties": {
+                              "reachable": {
+                                "type": "boolean"
+                              },
+                              "entryPointSupported": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "reachable",
+                              "entryPointSupported"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "paymaster": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "address": {
+                                    "type": "string"
+                                  },
+                                  "depositWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "treasuryWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "stakeWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "invariantSlackWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "lastSyncedBlock": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "watcherLagBlocks": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "address",
+                                  "depositWei",
+                                  "treasuryWei",
+                                  "stakeWei",
+                                  "invariantSlackWei",
+                                  "lastSyncedBlock",
+                                  "watcherLagBlocks",
+                                  "checkedAt"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "chainId",
+                          "name",
+                          "registryStatus",
+                          "verification",
+                          "lastProbe",
+                          "node",
+                          "bundler",
+                          "paymaster"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "signer",
+                    "chains"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
