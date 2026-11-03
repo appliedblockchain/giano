@@ -68,7 +68,7 @@ const fieldSchema: z.ZodType<unknown> = z.lazy(() =>
 				$ref: z.string().optional(),
 				label: z.string().optional(),
 				format: z.enum(FIELD_FORMATS).optional(),
-				params: z.record(z.unknown()).optional(),
+				params: z.record(z.string(), z.unknown()).optional(),
 				value: z.unknown().optional(),
 				visible: z.unknown().optional(),
 				separator: z.string().optional(),
@@ -92,7 +92,9 @@ const fieldSchema: z.ZodType<unknown> = z.lazy(() =>
 const formatSpecSchema = z
 	.object({
 		$id: z.string().optional(),
-		intent: z.union([z.string().min(1), z.record(z.string())]).optional(),
+		intent: z
+			.union([z.string().min(1), z.record(z.string(), z.string())])
+			.optional(),
 		interpolatedIntent: z.string().min(1).optional(),
 		fields: z.array(fieldSchema).optional(),
 	})
@@ -106,10 +108,12 @@ const formatSpecSchema = z
 const descriptorSchema = z
 	.object({
 		$schema: z.string().optional(),
-		includes: z.undefined({
-			invalid_type_error:
-				"includes is not supported: inline the included descriptor",
-		}),
+		// zod 4 requires a z.undefined() key unless it is marked optional.
+		includes: z
+			.undefined({
+				error: "includes is not supported: inline the included descriptor",
+			})
+			.optional(),
 		context: z.object({
 			contract: z
 				.object({
@@ -117,17 +121,19 @@ const descriptorSchema = z
 						.array(deploymentSchema)
 						.min(1, "at least one deployment binding is required"),
 					abi: z.array(abiItemSchema, {
-						invalid_type_error:
-							"abi must be inline (an array of ABI items), not a URL",
+						error: (issue) =>
+							issue.input === undefined
+								? undefined
+								: "abi must be inline (an array of ABI items), not a URL",
 					}),
 				})
 				.passthrough(),
 		}),
-		metadata: z.record(z.unknown()).optional(),
+		metadata: z.record(z.string(), z.unknown()).optional(),
 		display: z.object({
-			definitions: z.record(z.unknown()).optional(),
+			definitions: z.record(z.string(), z.unknown()).optional(),
 			formats: z
-				.record(formatSpecSchema)
+				.record(z.string(), formatSpecSchema)
 				.refine(
 					(f) => Object.keys(f).length > 0,
 					"at least one function format is required",
