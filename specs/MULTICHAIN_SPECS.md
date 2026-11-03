@@ -485,7 +485,7 @@ chain whose factory ceases to agree is a page, not a log line.
   CREATE3 of the signing key) and the code there. A signing key other than the class deployer
   lands at its own addresses, so every contract it deploys is a deviation; so is an override. On a
   `mainnet` profile the guided wizard warns and requires typing `deviate <profile>`, non-interactive
-  runs refuse, and `deploy:cli core` refuses without `--allow-deviation`. On a `testnet` profile
+  runs refuse, `deploy:cli core` included: nothing skips the typed confirmation. On a `testnet` profile
   deviations are shown and recorded only. A class whose deployer is not configured (`null`) is
   planned but never signed for.
 - **Post-deploy assertion (MC-99).** Every deployment cross-checks the computed address against

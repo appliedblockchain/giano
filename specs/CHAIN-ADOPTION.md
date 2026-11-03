@@ -56,9 +56,10 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
         pnpm --filter @appliedblockchain/giano-contracts \
           deploy:cli core --rpc <url> --chain <profile> --role-admin <timelock>
       On a mainnet profile any deviation (an override, another signing key, a contract recorded
-      away from its deterministic address) is refused unless --allow-deviation is passed; the
-      guided wizard (pnpm contracts:deploy) instead requires typing `deviate <profile>`. Testnet
-      deviations are shown and recorded.
+      away from its deterministic address) is always refused: the command has no prompt, and only
+      the guided wizard (pnpm contracts:deploy), which requires typing `deviate <profile>`, can
+      confirm one. Testnet deviations are shown and recorded. --role-admin must not be a deployer
+      key (the signer or a class deployer).
       Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
       code and sends nothing.
       From a committed release, never a fresh build (MC-26): the release's creation code is

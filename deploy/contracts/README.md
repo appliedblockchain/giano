@@ -83,12 +83,16 @@ address:
 "addresses": { "paymasterProxy": "0x…", "walletImplementation": "0x…" }
 ```
 
-Overridable: `walletImplementation`, `factory`, `paymasterImplementation`, `paymasterProxy`,
-`timelock`. An overridden contract is verified (its code must match a release's fingerprint, and
-its immutables the chain's other addresses) and recorded, never deployed; contracts that depend on
-it use it (the factory is built for an overridden wallet implementation, the proxy initialised with
-an overridden paymaster implementation). An override with no code or foreign code stops the run
-before signing. Every override is a deviation.
+Overridable: `walletImplementation`, `factory`, `paymasterImplementation`, `paymasterProxy`. The
+timelock is not: its address is the profile's `timelock.address`. An overridden contract is verified
+(its code must match a release's fingerprint, and its immutables the chain's other addresses) and
+recorded, never deployed; contracts that depend on it use it (the factory is built for an overridden
+wallet implementation, the proxy initialised with an overridden paymaster implementation). An
+overridden factory must clone the planned wallet implementation, and an overridden paymaster proxy
+must point at the planned paymaster implementation, so overriding the proxy usually means
+overriding `paymasterImplementation` too. The proxy's EntryPoint, fees and ROLE_ADMIN are checked as
+for any existing proxy, and no deployer may hold ROLE_ADMIN on it. An override with no code, foreign
+code or another configuration stops the run before signing. Every override is a deviation.
 The shipped profiles leave ROLE_ADMIN unset until a custodian supplies it. Interactive deployment
 can persist that address and the chosen release after showing the destination file. Review/commit
 those public changes for reproducibility. For a private environment, use an ignored custom profile
