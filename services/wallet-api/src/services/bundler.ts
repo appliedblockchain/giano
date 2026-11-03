@@ -46,6 +46,11 @@ export function createBundlerService(
 			]),
 		getUserOperationByHash: (hash: string) =>
 			rpc<Record<string, unknown> | null>("eth_getUserOperationByHash", [hash]),
+		/**
+		 * The EntryPoints the bundler itself says it serves. The wallet relay answers
+		 * `eth_supportedEntryPoints` from configuration; this asks the bundler, for chain status (B3).
+		 */
+		supportedEntryPoints: () => rpc<Address[]>("eth_supportedEntryPoints", []),
 	};
 }
 
