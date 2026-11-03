@@ -10,7 +10,13 @@ packages:
 
 overrides:
   human-id: "4.1.1"
-  zod-to-json-schema: "3.24.6"
+  # GHSA-mrhx-c7xc-m3w5 — every appkit-wallet release (up to 1.8.24) pins zod 3.22.4 and no
+  # release moves to zod 4. Its W3mFrameSchema uses only APIs that behave the same in zod 4.
+  "@reown/appkit-wallet>zod": "4.6.7"
+  # GHSA-mrhx-c7xc-m3w5 — viem 2.23.2 (via @walletconnect/utils 2.21) pins abitype 1.0.8, whose
+  # optional zod peer accepts only zod 3, so pnpm keeps a zod 3 copy for it. 1.2.3 accepts zod 4.
+  # Drop this once no parent resolves abitype 1.0.8.
+  "abitype@1.0.8": "1.2.3"
   # Security floors for transitive deps (dependency audit, 2026-09). Each selector lifts only the
   # vulnerable range of one version line; drop an entry once its parents resolve past it.
   # GHSA-v6h2-p8h4-qcjw, GHSA-f886-m6hf-6m8v, GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895
