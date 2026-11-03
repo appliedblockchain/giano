@@ -125,9 +125,9 @@
 
 ## 12. Phase 2: admin events (B1, layer 13)
 
-- [ ] 12.1 SDK: `getAdminEvents({ range, kinds })` over the paymaster and timelock, decoded with role names, windowed like `getSponsorships`. Changeset (D12).
-- [ ] 12.2 SDK test: every privileged event in the paymaster ABI is decoded.
-- [ ] 12.3 Console: Admin events in Activity, with *Look further back*; the tenant page's history adds that tenant's on-chain events.
+- [x] 12.1 SDK: `getAdminEvents({ range, kinds })` over the paymaster and timelock, decoded with role names, windowed like `getSponsorships`. Changeset (D12). Also `timelock` (whose events to add) and `tenantId`; each entry has an `actor` beside the transaction's `from` (D24).
+- [x] 12.2 SDK test: every privileged event in the paymaster ABI is decoded.
+- [x] 12.3 Console: Admin events in Activity, with *Look further back*; the tenant page's history adds that tenant's on-chain events. Activity filters them by kind; the tenant page lists them apart from the registry's (D24). e2e: both.
 
 ## 13. Phase 2: sign-ins and sessions (B6, layer 14)
 
