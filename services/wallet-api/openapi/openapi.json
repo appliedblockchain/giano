@@ -9596,8 +9596,8 @@
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": true,
-              "minimum": 0
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             },
             "in": "query",
             "name": "chainId",
@@ -9606,7 +9606,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
             "in": "query",
             "name": "since",
@@ -9615,7 +9616,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
             "in": "query",
             "name": "until",
@@ -9636,7 +9638,9 @@
                   "type": "object",
                   "properties": {
                     "chainId": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "since": {
                       "type": "string"
@@ -9651,25 +9655,37 @@
                           "type": "object",
                           "properties": {
                             "allowed": {
-                              "type": "integer"
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             },
                             "refused": {
-                              "type": "integer"
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             },
                             "refusedBy": {
                               "type": "object",
                               "properties": {
                                 "rules": {
-                                  "type": "integer"
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
                                 },
                                 "funds": {
-                                  "type": "integer"
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
                                 },
                                 "platform": {
-                                  "type": "integer"
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
                                 },
                                 "other": {
-                                  "type": "integer"
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
                                 }
                               },
                               "required": [
@@ -9682,8 +9698,13 @@
                             },
                             "byReason": {
                               "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
                               "additionalProperties": {
-                                "type": "integer"
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
                               }
                             }
                           },
@@ -9696,10 +9717,14 @@
                           "additionalProperties": false
                         },
                         "settled": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
                         },
                         "reverted": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
                         },
                         "gasWei": {
                           "type": "string"
@@ -9730,25 +9755,37 @@
                             "type": "object",
                             "properties": {
                               "allowed": {
-                                "type": "integer"
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
                               },
                               "refused": {
-                                "type": "integer"
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
                               },
                               "refusedBy": {
                                 "type": "object",
                                 "properties": {
                                   "rules": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
                                   },
                                   "funds": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
                                   },
                                   "platform": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
                                   },
                                   "other": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
                                   }
                                 },
                                 "required": [
@@ -9761,8 +9798,13 @@
                               },
                               "byReason": {
                                 "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
                                 "additionalProperties": {
-                                  "type": "integer"
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
                                 }
                               }
                             },
@@ -9775,10 +9817,14 @@
                             "additionalProperties": false
                           },
                           "settled": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "reverted": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "gasWei": {
                             "type": "string"
@@ -9790,12 +9836,16 @@
                             "type": "string"
                           },
                           "tenantId": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "slug": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -9842,7 +9892,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9865,7 +9915,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9888,7 +9938,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
