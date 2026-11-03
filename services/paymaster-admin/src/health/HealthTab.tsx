@@ -2,7 +2,7 @@ import type {
 	HealthCheck,
 	HealthLevel,
 } from "@appliedblockchain/giano-paymaster-sdk";
-import { Button, HStack, Stack, Text } from "@chakra-ui/react";
+import { Button, Heading, HStack, Stack, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { LuArrowRight, LuRefreshCw } from "react-icons/lu";
 import { StatusText } from "../components/status";
@@ -10,14 +10,18 @@ import { SectionCard } from "../components/ui";
 import { getAdminConfig } from "../config";
 import { amount, describeError } from "../lib/format";
 import {
+	CHAIN_THRESHOLDS,
 	type ConsoleHealth,
+	chainChecks,
 	checkGroup,
 	checkLink,
 	groupChecks,
 	HEALTH_GROUPS,
 	type PendingCheck,
 	pendingText,
+	signerCheck,
 } from "../lib/health";
+import type { ChainsStatus } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
 import { Link, tenantPath } from "../lib/router";
 import { compareLedger, type TenantRow } from "../lib/tenants";
@@ -56,6 +60,7 @@ export function HealthTab({
 	// "Every on-chain tenant has a registry row" is only a finding once the registry has been read
 	// in full, deleted tenants included: before that, every tenant would look unknown to wallet-api.
 	const registryRead = registry.tenants !== undefined && !registry.deletedError;
+	const chains = useChains(platformApi);
 	const extra: HealthCheck[] = platformApi
 		? [
 				registryRead
@@ -82,8 +87,20 @@ export function HealthTab({
 			: []),
 	];
 	const comparing = pending.length > 0;
+	const chainRows = chains.status
+		? chains.status.chains.map((chain) => ({
+				chain,
+				checks: chainChecks(chain),
+			}))
+		: [];
+	const signer = chains.status ? signerCheck(chains.status.signer) : undefined;
 	const groups = groupChecks([...health.checks, ...extra]);
-	const all = [...health.checks, ...extra];
+	const all = [
+		...health.checks,
+		...extra,
+		...(signer ? [signer] : []),
+		...chainRows.flatMap((row) => row.checks),
+	];
 	const worst: HealthLevel = all.some((check) => check.level === "fail")
 		? "fail"
 		: all.some((check) => check.level === "warn")
@@ -173,6 +190,67 @@ export function HealthTab({
 					</Stack>
 				</SectionCard>
 			))}
+			{(chains.status || chains.error) && (
+				<SectionCard
+					title="Chains"
+					subtitle={`What wallet-api sees of each chain it serves, as of ${chains.at?.toLocaleTimeString() ?? "now"}. A head older than ${CHAIN_THRESHOLDS.headAgeWarnSeconds}s warns and ${CHAIN_THRESHOLDS.headAgeFailSeconds / 60} minutes fails; a ledger watcher more than ${CHAIN_THRESHOLDS.watcherLagWarnBlocks} blocks behind warns and ${CHAIN_THRESHOLDS.watcherLagFailBlocks.toLocaleString()} fails.`}
+					action={
+						<Button
+							size="sm"
+							variant="ghost"
+							aria-label="Read the chains again"
+							loading={chains.loading}
+							onClick={() => void chains.read()}
+						>
+							<LuRefreshCw />
+						</Button>
+					}
+				>
+					<Stack gap="4" data-testid="health-chains">
+						{chains.error && (
+							<Text fontSize="sm" color="fg.error">
+								Could not read the chains: {chains.error}
+							</Text>
+						)}
+						{signer && (
+							<Stack gap="0">
+								<CheckRow check={signer} first noLink />
+							</Stack>
+						)}
+						{chainRows.map(({ chain, checks }) => {
+							const level = checks.some((check) => check.level === "fail")
+								? "fail"
+								: checks.some((check) => check.level === "warn")
+									? "warn"
+									: "ok";
+							return (
+								<Stack
+									key={chain.chainId}
+									gap="0"
+									data-testid={`chain-${chain.chainId}`}
+								>
+									<HStack gap="3" pb="1">
+										<Heading size="sm">
+											{chain.name} · {chain.chainId}
+										</Heading>
+										<StatusText tone={LEVEL[level].tone}>
+											{LEVEL[level].label}
+										</StatusText>
+									</HStack>
+									{checks.map((check, index) => (
+										<CheckRow
+											key={check.id}
+											check={check}
+											first={index === 0}
+											noLink
+										/>
+									))}
+								</Stack>
+							);
+						})}
+					</Stack>
+				</SectionCard>
+			)}
 		</Stack>
 	);
 }
@@ -194,12 +272,55 @@ function PendingRow({ entry, first }: { entry: PendingCheck; first: boolean }) {
 	);
 }
 
+/**
+ * wallet-api's view of every chain it serves (B3), read when the tab opens and with each console
+ * refresh. Absent, not an error, where wallet-api does not serve the endpoint (D11).
+ */
+function useChains(enabled: boolean) {
+	const { run } = usePlatform();
+	const { block } = useConsole();
+	const [status, setStatus] = useState<ChainsStatus>();
+	const [at, setAt] = useState<Date>();
+	const [error, setError] = useState<string>();
+	const [loading, setLoading] = useState(false);
+	const [served, setServed] = useState(true);
+
+	const read = useCallback(async () => {
+		if (!enabled || !served) return;
+		setLoading(true);
+		try {
+			const result = await run((api) => api.chains());
+			if (!result) return;
+			if (result.ok) {
+				setStatus(result.value);
+				setAt(new Date());
+				setError(undefined);
+			} else if (result.error.status === 404) setServed(false);
+			else setError(result.error.message);
+		} catch (cause) {
+			setError(describeError(cause));
+		} finally {
+			setLoading(false);
+		}
+	}, [enabled, served, run]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: read again with every console refresh
+	useEffect(() => {
+		void read();
+	}, [read, block]);
+
+	return { status: served ? status : undefined, at, error, loading, read };
+}
+
 function CheckRow({
 	check,
 	first,
+	noLink,
 }: {
 	check: HealthCheck & { links?: { to: string; label: string }[] };
 	first: boolean;
+	/** For a check nothing in this console fixes. */
+	noLink?: boolean;
 }) {
 	const level = LEVEL[check.level];
 	const link = checkLink(check.id);
@@ -233,7 +354,7 @@ function CheckRow({
 					</HStack>
 				)}
 			</Stack>
-			{check.level !== "ok" && (
+			{check.level !== "ok" && !noLink && (
 				<Link
 					to={link.to}
 					fontSize="sm"
