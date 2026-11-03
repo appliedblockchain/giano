@@ -52,7 +52,9 @@ all land where they point. The deployment is chosen in the header, not in the UR
   its own delays and roles. Filtered by kind, read a window at a time like the settlements.
 - **Health** — the checks `giano-doctor` runs, at the same thresholds, grouped as Funds, Keys and
   roles, and Registry and chain, each saying what to do and where; with the platform API, also that
-  every on-chain tenant has a registry row and that wallet-api's ledger matches the chain. Keys and
+  every on-chain tenant has a registry row and that wallet-api's ledger matches the chain. Where
+  wallet-api serves `/v1/platform/drift`, those come from its comparison (and add whether each
+  tenant's on-chain state matches its registry status); otherwise the console compares for itself. Keys and
   roles also says whether the paymaster's implementation is a contracts release and, with
   `timelockAddress`, whether the timelock alone holds the four timelocked roles and whether any
   delay is below `timelockDelays`. Without a timelock, one warning says none is configured. With
