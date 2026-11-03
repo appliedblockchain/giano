@@ -118,10 +118,10 @@
 
 ## 11. Phase 2: timelock-aware health (B2, layer 12)
 
-- [ ] 11.1 Contracts: record `GianoPaymaster`'s runtime codehash, with the immutable positions zeroed, in each `releases/<version>/release.json`, and export the map. Changeset (D13).
-- [ ] 11.2 SDK: `assessHealth` takes an optional timelock context; the timelocked-roles and delays checks; the implementation-release check. Replace the "verify this is the timelock" warning. Tests and a changeset.
-- [ ] 11.3 `giano-doctor chain`: pass the profile's delays and the timelock, and apply the same checks.
-- [ ] 11.4 Console: pass the timelock context and the implementation codehash; Health shows the three checks in Keys and roles.
+- [x] 11.1 Contracts: record `GianoPaymaster`'s runtime codehash, with the immutable positions zeroed, in each `releases/<version>/release.json`, and export the map. Changeset (D13). `release:runtime` adds the record to v1 and v2 from their frozen input; `releases.ts` (`paymasterReleaseOf`) is generated and drift-checked in CI; the deploy integration test matches the same code at two addresses.
+- [x] 11.2 SDK: `assessHealth` takes an optional timelock context; the timelocked-roles and delays checks; the implementation-release check. Replace the "verify this is the timelock" warning. Tests and a changeset.
+- [x] 11.3 `giano-doctor chain`: pass the profile's delays and the timelock, and apply the same checks. `contracts:doctor --chain` already passed the profile's timelock, delays and proposers; the doctor now judges them with the SDK's functions (`timelockedRoleProblems`, `delayShortfalls`) and checks the implementation's release.
+- [x] 11.4 Console: pass the timelock context and the implementation codehash; Health shows the three checks in Keys and roles. The published delays come from a new optional `timelockDelays` per deployment (D23). e2e: with the test's timelock, and without one.
 
 ## 12. Phase 2: admin events (B1, layer 13)
 
