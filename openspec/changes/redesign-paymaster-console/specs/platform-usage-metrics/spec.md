@@ -1,8 +1,12 @@
+## Purpose
+
+Defines how platform admins read sponsorship usage per chain and tenant from the decisions and settlements wallet-api records: what was allowed and refused and why, what settled, and what it cost, without reading the chain.
+
 ## ADDED Requirements
 
 ### Requirement: Platform admins read sponsorship usage across tenants
 `GET /v1/platform/usage?chainId=<id>&since=<time>&until=<time>` SHALL require a platform admin session. `since` and `until` SHALL default to the last seven days and SHALL span at most 90 days. It SHALL return, for that chain and range, in total and per tenant by slug:
-- sponsorship decisions allowed and refused, and refusals by reason;
+- sponsorship decisions allowed and refused, refusals by reason, and refusals by whose they are to fix: the tenant's own rules, its funds, the platform, or other;
 - operations settled, and of those reverted;
 - gas sponsored, platform fees and overhead, in wei as decimal strings.
 
@@ -11,6 +15,10 @@ It SHALL be computed from the sponsorship decisions and settlements wallet-api a
 #### Scenario: Last seven days
 - **WHEN** a platform admin requests usage for chain 84532 with no range
 - **THEN** the response covers the last seven days, with totals and one entry per tenant that had a decision or a settlement
+
+#### Scenario: Platform refusals apart from a tenant's
+- **WHEN** a tenant's operations were refused for a contract outside its rules, and others while sponsorship was switched off
+- **THEN** the first count under the tenant's rules and the second under the platform
 
 #### Scenario: Range too long
 - **WHEN** the range spans more than 90 days

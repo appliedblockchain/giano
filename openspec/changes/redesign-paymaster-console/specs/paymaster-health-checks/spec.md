@@ -1,3 +1,7 @@
+## Purpose
+
+Defines the timelock-aware checks the SDK's `assessHealth` and `giano-doctor chain` both apply: that the timelock alone holds the timelocked roles, that its delays are at or above the published values, and that the paymaster's implementation is a contracts release.
+
 ## ADDED Requirements
 
 ### Requirement: Health checks know about the timelock

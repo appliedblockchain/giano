@@ -53,7 +53,8 @@ Selecting a tenant SHALL open its page at `/tenants/<slug>`. The page SHALL show
 - for each other configured chain: registration and enabled state, read through `/v1/platform/rpc/<chainId>`, and the ledger's balance;
 - that sponsorship rules, transaction mappings and passkey origins belong to the tenant, are set with its admin keys through the admin API, and are not edited here;
 - its recent sponsorships on the selected chain, with transaction links;
-- its history, newest first, each entry with the before and after values it changed, and a control that loads older entries.
+- its history, newest first, each entry with the before and after values it changed, and a control that loads older entries;
+- its admin events on the selected chain (registration, funding, withdrawals, enabled state, fee, withdrawal address, and timelock calls that change them), listed apart from the registry's history, with a control that reads older blocks.
 
 Branding SHALL be labelled as stored but not yet used by any UI.
 

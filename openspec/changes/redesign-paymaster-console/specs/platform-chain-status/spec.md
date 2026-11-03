@@ -1,3 +1,7 @@
+## Purpose
+
+Defines what wallet-api reports about each chain it serves, for platform admins: the prober's verdict and what it last found, the node's head, the bundler and its EntryPoint, and the paymaster's ledger and watcher, answering whether the deployment can transact on that chain right now.
+
 ## ADDED Requirements
 
 ### Requirement: Platform admins read the status of each served chain
@@ -8,11 +12,15 @@
 - the bundler: reachable, and whether it supports the configured EntryPoint, asked with `eth_supportedEntryPoints`;
 - for a chain that sponsors: the paymaster address, deposit, treasury, stake, invariant slack, the watcher's last synced block, its lag in blocks behind the head, and when it was checked.
 
-Each chain SHALL be probed in parallel with a 3-second timeout. A chain that times out SHALL be reported as unreachable without delaying the others. The response SHALL NOT include any node or bundler URL.
+Each chain SHALL be probed in parallel, each part (the node's head, the bundler, the signer) with a 3-second timeout. A part that times out SHALL be reported as unreachable without delaying the others. A bundler that answers `eth_supportedEntryPoints` with a JSON-RPC error SHALL be reported reachable, with whether it supports the EntryPoint unknown. The response SHALL NOT include any node or bundler URL.
 
 #### Scenario: One chain down
 - **WHEN** one chain's node does not answer within 3 seconds
 - **THEN** the response returns within about 3 seconds, with that chain's node unreachable and every other chain's status complete
+
+#### Scenario: Bundler refuses the question
+- **WHEN** a chain's bundler answers `eth_supportedEntryPoints` with a JSON-RPC error
+- **THEN** that chain's bundler is reachable and `entryPointSupported` is null
 
 #### Scenario: No session
 - **WHEN** the request has no platform admin session

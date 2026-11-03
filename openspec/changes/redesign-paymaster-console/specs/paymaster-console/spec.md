@@ -348,7 +348,7 @@ Below them it SHALL show:
 - configuration, including the implementation;
 - the queued changes.
 
-Where wallet-api serves `GET /v1/platform/usage`, it SHALL also show the last seven days' usage. Where it does not, the usage card SHALL be absent, not a placeholder.
+Where wallet-api serves `GET /v1/platform/usage`, it SHALL also show the last seven days' usage, with refusals split by whose they are to fix, and each tenant page the same for that tenant. Where it does not, the usage card SHALL be absent, not a placeholder.
 
 Tenants SHALL be named by slug wherever one is known.
 
@@ -391,16 +391,22 @@ Where the platform API is configured, the Registry and chain group SHALL add:
 
 A registry tenant not yet registered on chain SHALL be listed under Needs attention on the Overview, not as a failed check.
 
-Where wallet-api serves `GET /v1/platform/chains`, the tab SHALL show a Chains section with one row per served chain. Where it serves `GET /v1/platform/drift`, the Registry and chain group SHALL use its result. Where it serves neither, those parts SHALL be absent, not placeholders.
+Keys and roles SHALL include whether the implementation is a contracts release and, where the deployment names its timelock, whether the timelock alone holds the timelocked roles and whether any delay is below the published value (paymaster-health-checks). The published delays SHALL come from the deployment's optional `timelockDelays` configuration; without it, Health SHALL say the delays were not compared. A configured timelock not yet read SHALL give no timelock verdict, rather than "no timelock configured".
+
+Where wallet-api serves `GET /v1/platform/chains`, the tab SHALL show a Chains section with one row per served chain, judging head age and watcher lag against thresholds kept beside the SDK's. A local devnet that mines on demand SHALL have its head age shown, not judged. Where it serves `GET /v1/platform/drift`, the Registry and chain group SHALL use its result, including whether each tenant's on-chain state matches its registry status. Where it serves neither, those parts SHALL be absent, not placeholders.
 
 #### Scenario: Ledger behind the chain
 - **WHEN** wallet-api's ledger for `byo` differs from the chain
 - **THEN** the ledger check warns, naming `byo`, both figures and the lag in blocks
 
+#### Scenario: Delay below the published value
+- **WHEN** the deployment publishes an hour for `upgradeToAndCall` and its timelock waits 2 seconds
+- **THEN** Keys and roles fails the delays check, naming `upgradeToAndCall`, 2s and 1h
+
 ### Requirement: Admins shows who may sign in and what changed
 The Admins tab SHALL list the platform admins with id, address, who added them and when. It SHALL offer *Add an admin* with field-level validation of the id and the address, and *Remove* with confirmation. It SHALL NOT offer to remove yourself or the last admin, and SHALL say why. It SHALL state that removing an admin ends their sessions at once. It SHALL list the change history, newest first.
 
-Where wallet-api returns sign-in data, each admin SHALL show their last sign-in and number of active sessions.
+Where wallet-api returns sign-in data, each admin SHALL show their last sign-in and number of active sessions, and the tab SHALL list the signed-in admin's own sessions from the last 30 days, with *End* on every open one but the session in use.
 
 #### Scenario: Invalid address
 - **WHEN** a platform admin types an address with 39 hex characters
