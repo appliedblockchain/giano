@@ -68,7 +68,8 @@ Swagger UI at `/docs` outside production).
 | `GET/POST/DELETE /v1/admin/ror-origins` | tenant admin key | manage the key's tenant's ROR origins |
 | `POST /v1/platform/auth/challenge`, `/verify`, `/logout` | none / platform admin session; any `Origin` refused | platform admin sign-in with a wallet (EIP-4361): a server-issued message, exchanged once for a `gps_` session |
 | `GET/POST /v1/platform/tenants`, `GET/PATCH/DELETE /v1/platform/tenants/:slug`, `…/suspend`, `…/resume`, `…/admin-keys`, `…/history` | platform admin session; any `Origin` refused | runtime tenant CRUD and lifecycle (active → suspended → deleted tombstone), generated admin keys, history |
-| `GET/POST /v1/platform/admins`, `DELETE /v1/platform/admins/:id`, `GET /v1/platform/admins/history` | platform admin session; any `Origin` refused | the platform admins: list, add (can sign in at once), remove (revokes their sessions; `409 self-removal` / `409 last-admin`), and the append-only change history |
+| `GET/POST /v1/platform/admins`, `DELETE /v1/platform/admins/:id`, `GET /v1/platform/admins/history` | platform admin session; any `Origin` refused | the platform admins: list (with each one's `lastSignInAt` and `activeSessions`), add (can sign in at once), remove (revokes their sessions; `409 self-removal` / `409 last-admin`), and the append-only change history |
+| `GET /v1/platform/admins/:id/sessions`, `DELETE /v1/platform/admins/:id/sessions/:sessionId` | platform admin session; any `Origin` refused | an admin's sessions from the last 30 days, newest first, with chain, IP and user agent, the caller's own marked `current` (never a token or its hash); ending one of **your own** sessions (`403 not-your-session` for another admin's: removing them ends all of theirs) |
 | `GET /healthz`, `GET /readyz` | public | liveness / readiness (DB ping) |
 | `GET /metrics` | open, or bearer when `METRICS_BEARER_TOKEN` set | Prometheus metrics, `tenant`-labelled |
 
