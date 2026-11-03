@@ -869,6 +869,7 @@ function reportPlacement(chainId: number, flags: Record<string, string>): void {
 	const classes: NetworkClass[] = profile
 		? [profile.network]
 		: ["mainnet", "testnet", "local"];
+	const record = readRecord(chainId);
 	for (const network of classes) {
 		const deployer = DEPLOYERS[network];
 		if (!deployer) {
@@ -879,7 +880,8 @@ function reportPlacement(chainId: number, flags: Record<string, string>): void {
 			);
 			continue;
 		}
-		for (const p of placements(inUse, deployer))
+		const inUsePlacements = placements(inUse, deployer, record.upgrades);
+		for (const p of inUsePlacements)
 			report(
 				"info",
 				`${p.key} is ${p.deterministic ? "" : "NOT "}the ${network} deterministic address`,
@@ -888,15 +890,14 @@ function reportPlacement(chainId: number, flags: Record<string, string>): void {
 					: `${p.address}, deterministic ${p.expected}`,
 			);
 		if (profile) {
-			const undeclared = undeclaredDeviations(
-				placements(inUse, deployer),
-				readRecord(chainId),
-			);
+			const undeclared = undeclaredDeviations(inUsePlacements, record, {
+				confirmedOnly: network === "mainnet",
+			});
 			for (const p of undeclared)
 				report(
 					network === "mainnet" ? "fail" : "warn",
 					`undeclared ${network} deviation: ${p.key}`,
-					`${p.address} is not the deterministic ${p.expected}, and deployments/${chainId}.json lists no confirmed deviation for it`,
+					`${p.address} is not the deterministic ${p.expected}, and deployments/${chainId}.json lists no ${network === "mainnet" ? "confirmed " : ""}deviation for it`,
 				);
 			if (!undeclared.length)
 				report("ok", "every non-deterministic address is a recorded deviation");

@@ -473,21 +473,24 @@ export type Placement = {
 	deterministic: boolean;
 };
 
-/** For each contract address in use, whether it is the deterministic one for `deployer`. */
+/**
+ * For each contract address in use, whether it is the deterministic one for `deployer`. An upgrade
+ * target deployed under a versioned label (`giano.paymaster.impl@v2`, listed in the record's
+ * `upgrades`) is deterministic too: its expected address is CREATE3 of that label, not the base one.
+ */
 export function placements(
 	addresses: Partial<Record<CoreKey, Address>>,
 	deployer: Address | null,
+	upgrades: DeploymentRecord["upgrades"] = [],
 ): Placement[] {
 	return CORE_KEYS.flatMap((key) => {
 		const address = addresses[key];
 		if (!address) return [];
-		const expected = deployer ? create3Address(deployer, LABELS[key]) : null;
 		return [
 			{
 				key,
 				address: getAddress(address),
-				expected,
-				deterministic: same(address, expected),
+				...placementOf(key, address, deployer, upgrades),
 			},
 		];
 	});
@@ -495,18 +498,24 @@ export function placements(
 
 /**
  * Non-deterministic addresses the chain's record does not list as a deviation. On a mainnet every
- * such address must have been confirmed by an operator when it was deployed or adopted.
+ * such address must have been confirmed by an operator when it was deployed or adopted, so with
+ * `confirmedOnly` (doctor passes it for a mainnet profile) a deviation that was only reported does
+ * not count; on a testnet a recorded one is enough.
  */
 export function undeclaredDeviations(
 	inUse: Placement[],
 	record: DeploymentRecord | undefined,
+	{ confirmedOnly = false }: { confirmedOnly?: boolean } = {},
 ): Placement[] {
 	return inUse.filter(
 		(p) =>
 			p.expected !== null &&
 			!p.deterministic &&
 			!(record?.deviations ?? []).some(
-				(d) => d.contract === p.key && same(d.actual, p.address),
+				(d) =>
+					d.contract === p.key &&
+					same(d.actual, p.address) &&
+					(!confirmedOnly || d.confirmed),
 			),
 	);
 }

@@ -792,6 +792,47 @@ describe("undeclaredDeviations (giano-doctor --profile)", () => {
 		);
 	});
 
+	it("on a mainnet, only a confirmed deviation counts", () => {
+		const reported = record([{ contract: "paymasterProxy", actual: proxy }]);
+		for (const d of reported.deviations) d.confirmed = false;
+		const inUsePlacements = placements(inUse, MAINNET);
+		assert.equal(undeclaredDeviations(inUsePlacements, reported).length, 0);
+		assert.deepEqual(
+			undeclaredDeviations(inUsePlacements, reported, {
+				confirmedOnly: true,
+			}).map((p) => p.key),
+			["paymasterProxy"],
+		);
+	});
+
+	it("an upgrade target at its versioned label's address is deterministic", () => {
+		const label = `${LABELS.paymasterImplementation}@v3`;
+		const upgraded = create3Address(MAINNET, label);
+		const upgrades = [
+			{
+				address: upgraded,
+				label,
+				release: "v3",
+				codehash: "0x00" as Hex,
+				of: "paymasterImplementation" as const,
+			},
+		];
+		const p = placements(
+			{ ...inUse, paymasterImplementation: upgraded },
+			MAINNET,
+			upgrades,
+		).find((x) => x.key === "paymasterImplementation");
+		assert.equal(p?.deterministic, true);
+		assert.equal(p?.expected, upgraded);
+		// Without the record's upgrades it is not.
+		assert.equal(
+			placements({ ...inUse, paymasterImplementation: upgraded }, MAINNET).find(
+				(x) => x.key === "paymasterImplementation",
+			)?.deterministic,
+			false,
+		);
+	});
+
 	it("accepts a deviation the record lists for that contract and address", () => {
 		assert.deepEqual(
 			undeclaredDeviations(
