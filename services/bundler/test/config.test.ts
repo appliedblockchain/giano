@@ -184,6 +184,18 @@ describe("loadConfig", () => {
 		).toThrow(/no longer read: ALTO_EXECUTOR_PRIVATE_KEYS, ALTO_SAFE_MODE/);
 	});
 
+	it("names the right problem for a bad number", () => {
+		expect(() => loadConfig(env([chain()], { BUNDLER_PORT: "abc" }))).toThrow(
+			/BUNDLER_PORT must be a number/,
+		);
+		expect(() =>
+			loadConfig(env([chain()], { BUNDLER_PORT: "8080.5" })),
+		).toThrow(/BUNDLER_PORT must be a positive integer/);
+		expect(() => loadConfig(env([chain()], { BUNDLER_PORT: "-1" }))).toThrow(
+			/BUNDLER_PORT must be a positive integer/,
+		);
+	});
+
 	it("treats empty values as unset", () => {
 		expect(
 			loadConfig({ ...env(), BUNDLER_PORT: "", BUNDLER_RPC_URL: "" }).port,

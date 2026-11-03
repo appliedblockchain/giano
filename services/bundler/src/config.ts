@@ -65,7 +65,7 @@ const RETIRED = [
 const positiveInt = (name: string) =>
 	z.coerce
 		.number({ error: `${name} must be a number` })
-		.int()
+		.int(`${name} must be a positive integer`)
 		.positive(`${name} must be a positive integer`);
 
 const schema = z.object({
