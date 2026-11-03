@@ -3,7 +3,7 @@
  *
  *   pnpm deploy:cli addresses
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
- *                            [--chain <profile> | --network mainnet|testnet]
+ *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
@@ -14,8 +14,9 @@
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
  * Network class: local chains (31337/31338) are `local`. Any other chain takes its class, and any
- * address overrides, from --chain <profile> (deploy/chains/), else from the committed profile with
- * its chain id, else from --network. The class picks the canonical deployer whose CREATE3 addresses
+ * address overrides, from --chain <profile> (deploy/chains/) or --chain-config <file>, else from the
+ * committed profile with its chain id, else from --network. A profile always wins: --network may
+ * restate its class but never change it. The class picks the canonical deployer whose CREATE3 addresses
  * are expected (deploy/config.ts DEPLOYERS); a class whose deployer is not configured yet is
  * planned but never signed for.
  *
@@ -124,6 +125,8 @@ const { positionals, values } = parseArgs({
 		"record-dir": { type: "string" },
 		// network class: a committed profile, or the class alone
 		chain: { type: "string" },
+		/** A profile file outside deploy/chains/ (the operator workflows pass the one they selected). */
+		"chain-config": { type: "string" },
 		network: { type: "string" },
 		// core
 		"role-admin": { type: "string" },
@@ -245,23 +248,31 @@ type Network = {
 /** The chain's network class and overrides (see the header). */
 function resolveNetwork(chainId: number, local: boolean): Network {
 	if (local) {
-		if (values.chain || values.network)
+		if (values.chain || values["chain-config"] || values.network)
 			throw new Error(
-				`chain ${chainId} is a local chain; it is always the local class (no --chain or --network)`,
+				`chain ${chainId} is a local chain; it is always the local class (no --chain, --chain-config or --network)`,
 			);
 		return { network: "local", overrides: {} };
 	}
-	if (values.chain && values.network)
-		throw new Error("pass --chain <profile> or --network, not both");
+	if (values.chain && values["chain-config"])
+		throw new Error(
+			"pass --chain <profile> or --chain-config <file>, not both",
+		);
+	// A committed profile always applies, even with --network: the flag must never move a chain out
+	// of the class (and the overrides) its profile declares, e.g. a mainnet out of the deviation gate.
 	const selected = values.chain
 		? loadProfile({ chain: values.chain })
-		: values.network
-			? undefined
+		: values["chain-config"]
+			? loadProfile({ config: values["chain-config"] })
 			: profileForChain(chainId);
 	if (selected) {
 		if (selected.profile.chainId !== chainId)
 			throw new Error(
 				`profile ${selected.id} is chain ${selected.profile.chainId}, but the RPC is chain ${chainId}`,
+			);
+		if (values.network && values.network !== selected.profile.network)
+			throw new Error(
+				`--network ${values.network} conflicts with profile ${selected.id}, which declares chain ${chainId} ${selected.profile.network}`,
 			);
 		return {
 			network: selected.profile.network,
@@ -398,6 +409,7 @@ async function deployerContext({
  */
 async function planOrRefuse(
 	ctx: Awaited<ReturnType<typeof deployerContext>>,
+	selected: Release,
 ): Promise<
 	Partial<
 		Record<
@@ -414,6 +426,7 @@ async function planOrRefuse(
 		signer: ctx.walletClient?.account.address ?? null,
 		overrides: ctx.target.overrides,
 		record: ctx.record,
+		release: selected.version,
 	});
 	for (const line of formatPlan(plan)) log(line);
 	if (plan.blockers.length)
@@ -495,10 +508,11 @@ async function main(): Promise<void> {
 				ctx.walletClient?.account.address ?? null,
 				ctx.local,
 			);
-			const fixed = await planOrRefuse(ctx);
+			const selected = release(ctx.local);
+			const fixed = await planOrRefuse(ctx, selected);
 			await deployCore(
 				ctx,
-				release(ctx.local),
+				selected,
 				{
 					entryPoint: address("entry-point"),
 					roleAdmin: admin,

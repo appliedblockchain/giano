@@ -180,8 +180,15 @@ test("an existing paymaster with the wrong role admin is rejected", async () => 
 	);
 });
 
-/** Runs `guided.ts --plan` against a stub RPC that answers every read with "nothing here". */
-async function guidedPlan(chainId: number, selection: string[]) {
+/**
+ * Runs `guided.ts --plan` (or `command`, e.g. `deploy/cli.ts core`) against a stub RPC that answers
+ * every read with "nothing here".
+ */
+async function guidedPlan(
+	chainId: number,
+	selection: string[],
+	command: string[] = ["deploy/guided.ts", "--plan"],
+) {
 	const methods: string[] = [];
 	const server = createServer(async (req, res) => {
 		let body = "";
@@ -211,8 +218,7 @@ async function guidedPlan(chainId: number, selection: string[]) {
 			[
 				"--import",
 				"tsx",
-				"deploy/guided.ts",
-				"--plan",
+				...command,
 				...selection,
 				"--rpc",
 				`http://127.0.0.1:${address.port}`,
@@ -224,10 +230,11 @@ async function guidedPlan(chainId: number, selection: string[]) {
 				env: { ...process.env, CANONICAL_DEPLOYER_PRIVATE_KEY: "" },
 			},
 		).then(
-			({ stdout }) => ({ code: 0, stdout }),
-			(error: { code: number; stdout: string }) => ({
+			({ stdout, stderr }) => ({ code: 0, stdout, stderr }),
+			(error: { code: number; stdout: string; stderr: string }) => ({
 				code: error.code,
 				stdout: error.stdout,
+				stderr: error.stderr,
 			}),
 		);
 		return { ...result, methods };
@@ -237,6 +244,19 @@ async function guidedPlan(chainId: number, selection: string[]) {
 }
 
 const READ_METHODS = ["eth_chainId", "eth_getCode", "eth_getBalance"];
+
+test("deploy:cli --network cannot move a chain out of its committed profile's class", async () => {
+	const { code, stdout, stderr } = await guidedPlan(
+		84532,
+		["--network", "mainnet"],
+		["deploy/cli.ts", "core"],
+	);
+	assert.notEqual(code, 0);
+	assert.match(
+		`${stdout}${stderr}`,
+		/--network mainnet conflicts with profile base-sepolia, which declares chain 84532 testnet/,
+	);
+});
 
 test("CLI --plan is read-only and blocks a testnet while its canonical deployer is unset", async () => {
 	for (const [chainId, chain] of [

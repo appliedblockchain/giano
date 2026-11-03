@@ -31,6 +31,7 @@ import {
 } from "./config";
 import { create3Address } from "./create3";
 import type { DeploymentRecord } from "./records";
+import { DEV_RELEASE } from "./release";
 
 export const CORE_KEYS = [
 	"walletImplementation",
@@ -102,7 +103,10 @@ export type PlanInput = {
 	signer: Address | null;
 	overrides?: Partial<Record<OverrideKey, string>>;
 	record?: DeploymentRecord;
-	/** The release the run deploys. Existing code at a non-overridden address must be this release's. */
+	/**
+	 * The release the run deploys. Existing code at a non-overridden address (deterministic or
+	 * recorded) must be this release's; only an explicit override may hold any release.
+	 */
 	release?: string;
 	/** For tests: the class deployer instead of deploy/config.ts. */
 	deployer?: Address | null;
@@ -201,20 +205,24 @@ export async function planCore(
 		});
 
 		const where = `${key} at ${actual}`;
+		// A local `--release dev` run deploys unreleased code, which no fingerprint matches: on a rerun
+		// that code is the run's own, not foreign (deployCore records it the same way).
+		const devCode = input.network === "local" && input.release === DEV_RELEASE;
 		if (source === "override" || source === "recorded") {
 			if (code.state === "empty")
 				blockers.push(
 					`${where} (${source}) has no code. An ${source === "override" ? "override" : "recorded address"} must already hold release code; it is never deployed.`,
 				);
-			else if (code.state === "foreign")
+			else if (code.state === "foreign" && !devCode)
 				blockers.push(
 					`${where} (${source}) holds code ${code.codehash}, which matches no release's ${contract}.`,
 				);
-		} else if (code.state === "foreign")
+		} else if (code.state === "foreign" && !devCode)
 			blockers.push(
 				`${where} is occupied by code ${code.codehash} that matches no release's ${contract}. Stop and investigate; never overwrite the deployment record.`,
 			);
-		else if (
+		if (
+			source !== "override" &&
 			code.state === "release" &&
 			input.release &&
 			code.release !== input.release

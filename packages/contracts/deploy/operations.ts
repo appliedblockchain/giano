@@ -337,6 +337,9 @@ async function timelockWorkflow(
 					"timelock",
 					"--rpc",
 					rpc,
+					// The selected profile, so the child resolves the same class, overrides and proxy.
+					"--chain-config",
+					selected.file,
 					"--release",
 					profile.release,
 					...timelock.proposers.flatMap((p) => ["--proposer", p]),
@@ -352,6 +355,8 @@ async function timelockWorkflow(
 					"handoff",
 					"--rpc",
 					rpc,
+					"--chain-config",
+					selected.file,
 					"--timelock",
 					timelock.address as string,
 					"--execute",

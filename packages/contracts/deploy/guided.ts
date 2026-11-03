@@ -265,6 +265,10 @@ async function main() {
 			);
 		const walletClient = createWalletClient({ chain, transport, account });
 		record.deployer = account.address;
+		// Before the first transaction: deployCore checkpoints the record after every contract, so an
+		// interrupted run still keeps the deviations the operator confirmed, with their reasons.
+		recordDeviations(record, plan.deviations, gate.kind === "confirm");
+		writeRecord(record);
 		await deployCore(
 			{
 				publicClient: client,
@@ -300,7 +304,6 @@ async function main() {
 			record,
 		});
 		await verifyCoreState(client, admin, profile, after);
-		recordDeviations(record, plan.deviations, gate.kind === "confirm");
 		writeRecord(record);
 		const addressEnv = new URL(
 			`../../../deploy/contracts/${chain.id}.addresses.env`,

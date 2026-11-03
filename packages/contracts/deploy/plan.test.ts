@@ -324,6 +324,60 @@ describe("planCore", () => {
 		);
 	});
 
+	it("a recorded contract away from its expected address must hold the selected release", async () => {
+		const wallet = getAddress("0x5000000000000000000000000000000000000005");
+		const plan = await planCore(
+			chain({ [wallet]: place("walletImplementation", wallet) }),
+			{
+				network: "mainnet",
+				signer: MAINNET,
+				deployer: MAINNET,
+				release: "v1",
+				record: {
+					chainId: 8453,
+					deployer: OTHER_KEY,
+					contracts: {
+						walletImplementation: {
+							address: wallet,
+							label: LABELS.walletImplementation,
+							release: "v2",
+							codehash: "0x00",
+						},
+					},
+					upgrades: [],
+				},
+			},
+		);
+		assert.ok(
+			plan.blockers.some((b) =>
+				b.includes(
+					`walletImplementation at ${wallet} already holds release v2, not the selected v1`,
+				),
+			),
+			plan.blockers.join("\n"),
+		);
+	});
+
+	it("a local --release dev rerun accepts its own unreleased code", async () => {
+		const deployer = DEPLOYERS.local;
+		const unreleased = `0x${"60".repeat(64)}` as Hex;
+		const code = Object.fromEntries(
+			CORE_KEYS.map((key) => [expected(key, deployer), unreleased]),
+		);
+		const input = {
+			network: "local" as const,
+			signer: deployer,
+			deployer,
+		};
+		const dev = await planCore(chain(code), { ...input, release: "dev" });
+		assert.deepEqual(
+			dev.blockers.filter((b) => /matches no release/.test(b)),
+			[],
+		);
+		const released = await planCore(chain(code), { ...input, release: "v2" });
+		assert.ok(released.blockers.some((b) => /matches no release/.test(b)));
+	});
+
 	it("still plans, but blocks signing, while the class deployer is not configured", async () => {
 		const plan = await planCore(chain({}), {
 			network: "mainnet",
