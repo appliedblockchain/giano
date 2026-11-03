@@ -8575,11 +8575,15 @@
                             "type": "string"
                           },
                           "lastSignInAt": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "activeSessions": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           }
                         },
                         "required": [
@@ -8666,7 +8670,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8850,7 +8854,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8873,7 +8877,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8896,7 +8900,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -8950,19 +8954,27 @@
                             "type": "string"
                           },
                           "revokedAt": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "chainId": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "ip": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "userAgent": {
-                            "type": "string",
-                            "nullable": true
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "current": {
                             "type": "boolean"
@@ -9008,7 +9020,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9031,7 +9043,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9054,7 +9066,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9077,7 +9089,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9100,7 +9112,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9128,7 +9140,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "in": "path",
             "name": "sessionId",
@@ -9142,17 +9155,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "enum": [
-                    "null"
-                  ],
-                  "nullable": true
-                }
-              }
-            }
+            "description": "Default Response"
           },
           "400": {
             "description": "Default Response",
@@ -9172,7 +9175,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9195,7 +9198,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9218,7 +9221,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9363,7 +9366,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
@@ -9544,7 +9547,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
