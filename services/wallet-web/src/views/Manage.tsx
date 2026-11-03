@@ -9,6 +9,7 @@ import { AddressFlow } from "./manage/AddressFlow";
 import { ClaimFlow } from "./manage/ClaimFlow";
 import { RemoveFlow } from "./manage/RemoveFlow";
 import { RefusalNotice } from "./manage/shared";
+import { PasskeyDeviceGuidance } from "./PasskeyDeviceGuidance";
 
 /**
  * The wallet-management interface (WM-01…WM-11), rendered over the kit's headless
@@ -60,6 +61,7 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 	if (state.view === "signed-out") {
 		return (
 			<>
+				<PasskeyDeviceGuidance />
 				<div className="card">
 					<h2>Manage your wallet</h2>
 					<p>

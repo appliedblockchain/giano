@@ -48,6 +48,12 @@ import { GianoError } from "./giano-error";
 import type { GianoLogger } from "./logger";
 import { defaultGianoLogger } from "./logger";
 import {
+	type PasskeyDevicePreference,
+	passkeyCredentialCreate,
+	passkeyCredentialGet,
+	resolvePasskeyDevicePreference,
+} from "./passkey-device-preference";
+import {
 	DEFAULT_RESIDENT_KEY_REQUIREMENT,
 	DEFAULT_USER_VERIFICATION_REQUIREMENT,
 	type GianoProviderInjection,
@@ -90,6 +96,7 @@ function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
 }
 
 export type CreateGianoProviderParams = {
+	passkeyDevicePreference?: PasskeyDevicePreference;
 	initialChainId: number;
 	/**
 	 * One bundler per chain. A map even when one chain is configured: submission is a
@@ -218,6 +225,10 @@ export const createGianoProvider = (
 	readonly gianoClient: PublicClient;
 	readonly gianoProvider: GianoProvider;
 } => {
+	const preference = resolvePasskeyDevicePreference(
+		options.passkeyDevicePreference,
+	);
+	const getFn = passkeyCredentialGet(preference);
 	const injection = withValidation(options.injection);
 	const { transports, chains, initialChainId, bundlers, factoryAddresses } =
 		options;
@@ -367,6 +378,7 @@ export const createGianoProvider = (
 					client: client!,
 					owners: [
 						toWebAuthnAccount({
+							getFn,
 							credential: {
 								id: toBase64Url(rawId as ArrayBuffer),
 								publicKey: concatHex([x, y]),
@@ -536,6 +548,7 @@ export const createGianoProvider = (
 				const webAuthnAccount = await getWebAuthnAccount(
 					credentialInfo,
 					injection,
+					preference,
 				);
 				if (!webAuthnAccount) {
 					throw new Error("Invalid credential");
@@ -562,6 +575,7 @@ export const createGianoProvider = (
 				DEFAULT_USER_VERIFICATION_REQUIREMENT;
 
 			const credential = await createWebAuthnCredential({
+				createFn: passkeyCredentialCreate(preference),
 				user: {
 					name: credentialName,
 					// The handle deliberately carries NO chain id (MC-78): the credential it names is
@@ -589,7 +603,7 @@ export const createGianoProvider = (
 			if (handlerCreatedAddress) {
 				smartAccount = await toGianoSmartAccount({
 					client: client!,
-					owners: [toWebAuthnAccount({ credential })],
+					owners: [toWebAuthnAccount({ getFn, credential })],
 					address: handlerCreatedAddress,
 					factoryAddress: factoryAddress!,
 				});
@@ -601,7 +615,7 @@ export const createGianoProvider = (
 
 			smartAccount = await toGianoSmartAccount({
 				client: client!,
-				owners: [toWebAuthnAccount({ credential })],
+				owners: [toWebAuthnAccount({ getFn, credential })],
 				factoryAddress: factoryAddress!,
 			});
 

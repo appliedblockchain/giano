@@ -4,6 +4,7 @@ import {
 	createGianoProvider,
 	createWalletApiInjection,
 	type GianoProvider,
+	type PasskeyDevicePreference,
 	type SponsorshipCheck,
 	type SponsorshipRefusalReason,
 	type SponsorshipRuleResult,
@@ -229,6 +230,7 @@ export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
 
 	const injection = createWalletApiInjection({
 		apiUrl: config.walletApiUrl,
+		passkeyDevicePreference: config.passkeyDevicePreference,
 		externalUserId,
 		credentialName: config.branding.name,
 		sessionToken: localStorage.getItem(SESSION_KEY),
@@ -263,6 +265,7 @@ export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
 			injection,
 			externalUserId,
 			config.walletApiUrl,
+			config.passkeyDevicePreference,
 		);
 		runtimes.set(chainId, runtime);
 		return runtime;
@@ -280,6 +283,7 @@ function buildRuntime(
 	injection: WalletApiInjection,
 	externalUserId: string,
 	walletApiUrl: string,
+	passkeyDevicePreference?: PasskeyDevicePreference,
 ): WalletRuntime {
 	// Older callers built a WalletChainConfig by hand without nativeCurrency; ETH is what they meant.
 	const nativeCurrency = chainConfig.nativeCurrency ?? {
@@ -339,6 +343,7 @@ function buildRuntime(
 
 	const { gianoProvider } = createGianoProvider({
 		initialChainId: chainConfig.chainId,
+		passkeyDevicePreference,
 		bundlers: { [chainConfig.chainId]: bundler },
 		chains: [chain],
 		transports: { [chainConfig.chainId]: http(chainConfig.rpcUrl) },

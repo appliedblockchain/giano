@@ -1048,3 +1048,20 @@ P-256 passkey).
 | [`packages/connector/README.md`](../packages/connector/README.md) | full SDK API + 0.x → 1.x (embedded) migration |
 | [`deploy/contracts/DEMO.md`](../deploy/contracts/DEMO.md) | end-to-end real-chain deploy runbook (any EVM chain) |
 | [`README-ROR.md`](../README-ROR.md) | Related Origin Requests (cross-origin passkeys) |
+
+### Prefer a phone for passkeys
+
+For the stock wallet's local Vite server, from the repository root:
+
+```sh
+GIANO_PASSKEY_DEVICE_PREFERENCE=prefer-mobile pnpm -F @appliedblockchain/giano-wallet-web dev
+```
+
+The Vite server serves this setting in `/config.json`; no tracked config edit is
+needed. Keep the wallet origin and RP ID consistent with the registered tenant.
+For a container, set the same environment variable on `wallet-web`. Both scalar
+and multi-chain config templates support it without rebuilding the frontend.
+Unset it or set `browser-default` to roll back.
+
+The browser controls whether a phone or QR chooser appears. Other eligible
+passkeys remain usable, and explicit device enrollment keeps its normal chooser.

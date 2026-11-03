@@ -4,6 +4,7 @@ import type {
 	ManagementState,
 } from "@appliedblockchain/giano-wallet-kit";
 import { useEffect, useRef } from "react";
+import { PasskeyDeviceGuidance } from "../PasskeyDeviceGuidance";
 import {
 	ChainProgressList,
 	ChainsNotice,
@@ -187,6 +188,7 @@ export function AddFlow({
 		return (
 			<FlowShell title="Adding the passkey…">
 				<p>Confirm each network's passkey prompt. Progress per network:</p>
+				<PasskeyDeviceGuidance />
 				<ChainProgressList progress={flow.chains} />
 			</FlowShell>
 		);

@@ -1,4 +1,9 @@
 import type { Hash, Hex } from "viem";
+import {
+	type PasskeyDevicePreference,
+	resolvePasskeyDevicePreference,
+	withPasskeyDevicePreference,
+} from "../../passkey-device-preference";
 import type { ChainType } from "../../provider";
 import type { GianoProviderInjection } from "../injection";
 import type { XYVector } from "../types";
@@ -11,6 +16,7 @@ import {
 } from "./serialization";
 
 export type CreateWalletApiInjectionOptions = {
+	passkeyDevicePreference?: PasskeyDevicePreference;
 	/** Base URL of the giano-wallet-api deployment, e.g. https://wallet.example.com/api */
 	apiUrl: string;
 	/** The client project's user id — the R6a binding point between app auth and credentials. */
@@ -81,6 +87,9 @@ export function createWalletApiInjection(
 		onExternalUserIdChanged,
 		fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 	} = options;
+	const preference = resolvePasskeyDevicePreference(
+		options.passkeyDevicePreference,
+	);
 	const base = apiUrl.replace(/\/$/, "");
 
 	let sessionToken: string | null = options.sessionToken ?? null;
@@ -151,12 +160,17 @@ export function createWalletApiInjection(
 			// No allowCredentials: the authenticator surfaces its resident credentials for this
 			// RP, which is the only way a device can use a credential the local storage has
 			// never heard of. The single passkey prompt IS the ceremony.
-			const credential = (await navigator.credentials.get({
-				publicKey: {
-					challenge: fromBase64Url(options_.challenge) as BufferSource,
-					userVerification: "required",
-				},
-			})) as PublicKeyCredential | null;
+			const credential = (await navigator.credentials.get(
+				withPasskeyDevicePreference(
+					{
+						publicKey: {
+							challenge: fromBase64Url(options_.challenge) as BufferSource,
+							userVerification: "required" as const,
+						},
+					},
+					preference,
+				),
+			)) as PublicKeyCredential | null;
 			if (!credential) throw new Error("no passkey was selected");
 			const result = await api<{
 				walletAddress: Hex;

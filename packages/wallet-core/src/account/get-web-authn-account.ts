@@ -3,6 +3,10 @@ import {
 	toWebAuthnAccount,
 	type WebAuthnAccount,
 } from "viem/account-abstraction";
+import {
+	type PasskeyDevicePreference,
+	passkeyCredentialGet,
+} from "../passkey-device-preference";
 import type {
 	CredentialInfoUse,
 	CredentialInfoUserPick,
@@ -16,9 +20,10 @@ export const getWebAuthnAccount = async (
 		GianoProviderInjection,
 		"onCredentialSignedIn" | "getPublicKeyByCredentialId"
 	>,
+	preference?: PasskeyDevicePreference,
 ): Promise<WebAuthnAccount | null> => {
 	try {
-		const credential = await getCredential(options);
+		const credential = await getCredential(options, preference);
 		if (!credential) {
 			return null;
 		}
@@ -36,6 +41,7 @@ export const getWebAuthnAccount = async (
 		}
 
 		return toWebAuthnAccount({
+			getFn: passkeyCredentialGet(preference),
 			credential: {
 				id: credential.id,
 				publicKey: concatHex([x, y]),

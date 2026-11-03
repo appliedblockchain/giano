@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 import { Connect } from "./views/Connect";
 import { Manage } from "./views/Manage";
+import { PasskeyDeviceGuidance } from "./views/PasskeyDeviceGuidance";
 import { ReviewTransaction } from "./views/ReviewTransaction";
 import { SignMessage } from "./views/SignMessage";
 
@@ -52,6 +53,13 @@ function Popup({ config }: { config: WalletConfig }) {
 			<div className="brand">
 				{config.branding.name} <small>· secure wallet</small>
 			</div>
+
+			{pending?.kind === "connect" ||
+			pending?.kind === "transaction" ||
+			pending?.kind === "sign" ||
+			processing ? (
+				<PasskeyDeviceGuidance />
+			) : null}
 
 			{pending?.kind === "connect" ? (
 				<Connect request={withProcessing(pending)} />

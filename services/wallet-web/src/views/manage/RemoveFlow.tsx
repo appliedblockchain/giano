@@ -3,6 +3,7 @@ import type {
 	ManagementFlow,
 	ManagementState,
 } from "@appliedblockchain/giano-wallet-kit";
+import { PasskeyDeviceGuidance } from "../PasskeyDeviceGuidance";
 import {
 	ChainProgressList,
 	ChainsNotice,
@@ -91,6 +92,7 @@ export function RemoveFlow({
 		return (
 			<FlowShell title="Removing…">
 				<p>Confirm each network's passkey prompt. Progress per network:</p>
+				<PasskeyDeviceGuidance />
 				<ChainProgressList progress={flow.chains} />
 			</FlowShell>
 		);
