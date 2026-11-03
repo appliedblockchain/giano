@@ -232,6 +232,8 @@ export function platformApi(token: string) {
 		chains: () => call<ChainsStatus>("GET", "/chains"),
 		drift: () =>
 			call<{ chains: (ChainDrift | ChainDriftError)[] }>("GET", "/drift"),
+		usage: (chainId: number) =>
+			call<Usage>("GET", `/usage?chainId=${encodeURIComponent(chainId)}`),
 		adminSessions: (id: string) =>
 			call<{ sessions: PlatformAdminSession[] }>(
 				"GET",
@@ -257,6 +259,35 @@ export type PlatformAdminRow = {
 	lastSignInAt?: string | null;
 	/** B6: sessions neither expired nor revoked. Absent from a wallet-api that predates it. */
 	activeSessions?: number;
+};
+
+/** One chain's usage, as GET /v1/platform/usage reports it (B4). */
+export type Usage = {
+	chainId: number;
+	since: string;
+	until: string;
+	total: UsageFigures;
+	tenants: (UsageFigures & { tenantId: string | null; slug: string | null })[];
+};
+
+export type UsageFigures = {
+	decisions: {
+		allowed: number;
+		refused: number;
+		/** Whose to fix: the tenant's rules or funds, the platform, or other. */
+		refusedBy: {
+			rules: number;
+			funds: number;
+			platform: number;
+			other: number;
+		};
+		byReason: Record<string, number>;
+	};
+	settled: number;
+	reverted: number;
+	gasWei: string;
+	feeWei: string;
+	overheadWei: string;
 };
 
 /** One chain's drift, as GET /v1/platform/drift reports it (B5). */

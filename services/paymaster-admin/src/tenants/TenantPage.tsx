@@ -30,6 +30,7 @@ import {
 } from "react-icons/lu";
 import { InlineError } from "../components/status";
 import { Copyable, SectionCard } from "../components/ui";
+import { UsageCard, useUsage } from "../components/usage";
 import { getAdminConfig } from "../config";
 import { describeError } from "../lib/format";
 import type { HistoryEntry, TenantDetail } from "../lib/platform-api";
@@ -246,6 +247,7 @@ export function TenantPage({
 			)}
 
 			<OtherDeployments others={others} ledger={record.detail?.ledger} />
+			<TenantUsage tenantId={row.id} />
 			{client && <TenantActivity client={client} tenantId={row.id} />}
 
 			<TenantHistory
@@ -570,3 +572,33 @@ const list = (values: string[]) =>
 			))}
 		</Stack>
 	);
+
+/** This tenant's last seven days on the selected chain (B4); absent without wallet-api's usage. */
+function TenantUsage({ tenantId }: { tenantId: string }) {
+	const usage = useUsage();
+	if (!usage) return null;
+	const mine = usage.tenants.find(
+		(tenant) => tenant.tenantId?.toLowerCase() === tenantId,
+	);
+	return (
+		<UsageCard
+			figures={
+				mine ?? {
+					decisions: {
+						allowed: 0,
+						refused: 0,
+						refusedBy: { rules: 0, funds: 0, platform: 0, other: 0 },
+						byReason: {},
+					},
+					settled: 0,
+					reverted: 0,
+					gasWei: "0",
+					feeWei: "0",
+					overheadWei: "0",
+				}
+			}
+			title="Usage, last 7 days"
+			subtitle="This tenant's sponsorship decisions and settlements on this chain, from wallet-api. Refusals are split by whose they are to fix."
+		/>
+	);
+}
