@@ -41,8 +41,15 @@ are created. This is the cheapest time to stop the system from expecting specifi
 - Amend MC-17, MC-19, MC-20, MC-27 and MC-28 (`specs/MULTICHAIN_REQUIREMENTS.md`). Update `specs/CHAIN-ADOPTION.md`,
   the contracts README, `deploy/contracts/README.md` and `docs/key-ceremony.md`.
 
+- **The deployer keys hold no authority, and R-29 follows the class.** The deploy tooling refuses a deployer as the
+  paymaster `ROLE_ADMIN`, which is what keeps the deployer keys outside ABIP-8. A chain declared `mainnet` gets the
+  R-29 fixture protection without a code change.
+
 Out of scope: per-chain wallet addresses. Once a factory is deployed on a production chain it does not change, so one
 wallet address per credential (MC-16, MC-24) still holds within a deployment, and wallet-api's storage is unchanged.
+Also out of scope: persisting the deployment's wallet derivation across restarts. The probe check compares the chains
+served now. A deployment that replaced every chain's factory at once would pass it, as it could before this change
+by upgrading the package. A follow-up stores the probe address in the database (design, Risks).
 
 ## Capabilities
 

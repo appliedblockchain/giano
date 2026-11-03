@@ -45,3 +45,14 @@
 - After the development team creates both deployer keys in 1Password, set `DEPLOYERS.testnet` and `DEPLOYERS.mainnet` in a PR that names both 1Password items.
 - Add mainnet profiles (`network: "mainnet"`) once the chains are chosen.
 - Archive this change with `openspec archive per-chain-contract-addresses` after the stack merges.
+
+## 6. Review fixes (PR 196)
+
+- [ ] 6.1 `releaseOf(contract, code, address?)`: refuse code whose ranges of one immutable differ, and, with an address, code whose `__self` ranges are not that address. Verify with unit tests for a modified `__self` and for diverging factory `implementation` ranges.
+- [ ] 6.2 Planner and preflight: pass the address to `releaseOf`; require release `ERC1967Proxy` code at the proxy and bind the proxy's implementation slot to the planned implementation, overrides included; drop `timelock` from the override keys. Verify with `plan.test.ts` cases for a proxy pointing elsewhere and a timelock override key refused.
+- [ ] 6.3 `deploy:cli core`: remove `--allow-deviation`, and always refuse a mainnet deviation, pointing at the wizard. Verify with a `deviationGate` test.
+- [ ] 6.4 Refuse a deployer (the signer, or a configured class deployer) as `ROLE_ADMIN` on non-local chains, and an existing proxy on which one holds it. Verify with tests.
+- [ ] 6.5 `gen:addresses`: refuse a Giano contract field in `address-overrides.json`; treat a record with `network: "mainnet"` as R-29 production. `deploy:cli testing` refuses a mainnet-class chain. Verify with `registry.test.ts` cases.
+- [ ] 6.6 wallet-api: compare a recovering chain's probe address with the served chains' before serving it; pass addresses to `releaseOf`; warn when a chain has no implementation to compare. Verify with a test where a recovering chain with another probe stays unavailable.
+- [ ] 6.7 doctor: the same `releaseOf` address check, and R-29 for a `--chain` mainnet profile.
+- [ ] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.

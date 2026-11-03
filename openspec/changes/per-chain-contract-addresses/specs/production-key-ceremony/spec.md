@@ -18,7 +18,9 @@ The inventory SHALL include at least:
   production.
 
 Both canonical deployers SHALL be listed as out of ABIP-8 scope. The inventory SHALL say why: a deployer only places
-contracts at addresses, and it holds no role or funds on any deployed contract once deployment ends.
+contracts at addresses, and it holds no role or funds on any deployed contract once deployment ends. The deploy
+tooling enforces this: it refuses a deployer as the paymaster `ROLE_ADMIN` (`contract-deployment`). If a deployer
+ever holds a role, it SHALL be reclassified as in scope.
 
 Platform-admin API keys are bearer tokens, not private keys. They SHALL be listed as out of scope, with that reason.
 
