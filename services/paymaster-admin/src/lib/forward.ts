@@ -11,15 +11,17 @@ import {
  * is refused by a capped node or by wallet-api's relay. The SDK then narrows it to its newest
  * blocks (`readWindow`), and the older part would never be read. So the gap is read a window at a
  * time, and where a node narrows a window, what it left out is read next with the narrower span.
- * `read` returns a window's items oldest first, as the SDK's log reads do.
+ * `read` returns a window's items oldest first, as the SDK's log reads do, unless `newestFirst`.
  */
 export async function readForwardPages<T>(
 	read: (range: BlockRange) => Promise<Page & { items: readonly T[] }>,
 	fromBlock: bigint,
 	head: bigint,
 	window: bigint = DEFAULT_LOG_WINDOW,
+	/** `read` returns a window's items newest first, and so should the result. */
+	newestFirst = false,
 ): Promise<{ fromBlock: bigint; toBlock: bigint; items: T[] }> {
-	const items: T[] = [];
+	const ascending: (readonly T[])[] = [];
 	let width = window;
 	for (let start = fromBlock; start <= head; ) {
 		const end = start + width - 1n < head ? start + width - 1n : head;
@@ -32,8 +34,9 @@ export async function readForwardPages<T>(
 			width = page.toBlock - page.fromBlock + 1n;
 			to = page.fromBlock - 1n;
 		}
-		for (const piece of pieces) items.push(...piece);
+		ascending.push(...pieces);
 		start = end + 1n;
 	}
-	return { fromBlock, toBlock: head, items };
+	const ordered = newestFirst ? [...ascending].reverse() : ascending;
+	return { fromBlock, toBlock: head, items: ordered.flat() };
 }
