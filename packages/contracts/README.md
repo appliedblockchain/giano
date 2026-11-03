@@ -117,8 +117,17 @@ shell's environment only; never write it to a file in the repository or to a cli
   expected address, the address it will use and the code there.
 - **Mainnet deviations are gated.** On a mainnet, an override, another signing key or a contract
   recorded away from its deterministic address is a deviation. The wizard prints a warning that names
-  each one and requires typing `deviate <profile>`; non-interactive runs refuse, and `core` needs
-  `--allow-deviation`. Testnet deviations are reported and recorded, not gated.
+  each one and requires typing `deviate <profile>`. Non-interactive runs, `core` included, always
+  refuse: nothing skips the typed confirmation. Testnet deviations are reported and recorded, not
+  gated.
+- **A deployer holds no role.** On a non-local chain the paymaster's `--role-admin` must be a timelock
+  or Safe: the signing key and the class deployers are refused, and so is an existing paymaster on
+  which one of them holds `ROLE_ADMIN`.
+- **Overrides are verified, not trusted.** An overridden paymaster proxy must point at the planned
+  implementation, so overriding the proxy usually means overriding `paymasterImplementation` too.
+  The timelock is not an override key: its address is the profile's `timelock.address`. The
+  `address-overrides.json` file sets only third-party addresses (the EntryPoint).
+- **R-29** covers 8453, 84532 and 11155111, and every chain whose profile or record says `mainnet`.
 - **Local chains** (31337/31338) impersonate the local deployer with `--impersonate` and need no key.
 
 ```bash
@@ -128,8 +137,8 @@ pnpm deploy:cli core --rpc <url> --network testnet --role-admin <timelock>   # a
 pnpm deploy:cli core --rpc <local url> --role-admin <0x…> --impersonate      # local chains
 pnpm deploy:cli p256 --rpc <url>                                   # P-256 verifier, where RIP-7212 is missing
 # With the class's deployer key in DEPLOYER_PRIVATE_KEY (this shell only):
-#   core --rpc <url> --chain <profile> --role-admin <timelock> [--allow-deviation]
-#   testing --rpc <url> --holder <0x…> --owner <0x…>               # never on 8453/84532/11155111
+#   core --rpc <url> --chain <profile> --role-admin <timelock>     # a deviating mainnet: use deploy:guided
+#   testing --rpc <url> --holder <0x…> --owner <0x…>               # never on an R-29 chain
 #   upgrade --rpc <url> --contract paymaster --release v2
 ```
 

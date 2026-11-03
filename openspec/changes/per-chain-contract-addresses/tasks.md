@@ -55,7 +55,7 @@
 - [x] 6.5 `gen:addresses`: refuse a Giano contract field in `address-overrides.json`; treat a record with `network: "mainnet"` as R-29 production. `deploy:cli testing` refuses a mainnet-class chain. Verify with `registry.test.ts` cases.
 - [ ] 6.6 wallet-api: compare a recovering chain's probe address with the served chains' before serving it; pass addresses to `releaseOf`; warn when a chain has no implementation to compare. Verify with a test where a recovering chain with another probe stays unavailable.
 - [ ] 6.7 doctor: the same `releaseOf` address check, and R-29 for a `--chain` mainnet profile.
-- [ ] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.
+- [x] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.
 
 ## 7. Review fixes (stack review)
 

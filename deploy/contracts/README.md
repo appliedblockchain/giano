@@ -188,13 +188,15 @@ the chain's record already lists away from its deterministic address. With any d
 3. records every confirmed deviation, with its reason and time, in `deployments/<chainId>.json`.
 
 Non-interactive runs refuse a deviating mainnet deployment and list the deviations. The low-level
-`deploy:cli core` has no prompt: it refuses mainnet deviations unless `--allow-deviation` is passed.
+`deploy:cli core` has no prompt, so it always refuses a deviating mainnet deployment; use the wizard.
+On every non-local chain the paymaster `ROLE_ADMIN` must not be a deployer key (the signer or a class
+deployer).
 Testnet deviations are shown in the plan and recorded; the usual confirmation is the only gate.
 
 Missing public-chain prerequisites require investigation or the upstream deployment procedure;
 never use anvil impersonation, `setCode`, or local installation commands on either network.
 Neither network receives PrivateERC20 or PermissivePaymaster: both are in the repository's R-29
-protected list despite being testnets. Production GianoPaymaster provides sponsorship.
+protected list despite being testnets. Every chain whose profile declares `mainnet` is protected too. Production GianoPaymaster provides sponsorship.
 
 ## 3. Deploy and verify core contracts
 
