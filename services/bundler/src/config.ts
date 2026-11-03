@@ -64,18 +64,22 @@ const RETIRED = [
 
 const positiveInt = (name: string) =>
 	z.coerce
-		.number({ invalid_type_error: `${name} must be a number` })
+		.number({ error: `${name} must be a number` })
 		.int()
 		.positive(`${name} must be a positive integer`);
 
 const schema = z.object({
 	GIANO_CHAINS: z.string({
-		required_error:
-			"GIANO_CHAINS is required (the backend chain document wallet-api reads too, see packages/contracts/chains.ts)",
+		error: (issue) =>
+			issue.input === undefined
+				? "GIANO_CHAINS is required (the backend chain document wallet-api reads too, see packages/contracts/chains.ts)"
+				: undefined,
 	}),
 	BUNDLER_EXECUTOR_PRIVATE_KEYS: z.string({
-		required_error:
-			"BUNDLER_EXECUTOR_PRIVATE_KEYS is required (executor keys sign the handleOps transactions)",
+		error: (issue) =>
+			issue.input === undefined
+				? "BUNDLER_EXECUTOR_PRIVATE_KEYS is required (executor keys sign the handleOps transactions)"
+				: undefined,
 	}),
 	BUNDLER_PORT: positiveInt("BUNDLER_PORT").default(4337),
 	BUNDLER_HOST: z.string().default("0.0.0.0"),
