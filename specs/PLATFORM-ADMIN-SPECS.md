@@ -59,7 +59,7 @@ Concretely, six deliverables:
 | **D2** | Tenant lifecycle columns, an append-only `tenant_history`, platform admin challenge and session tables, migration `0007_tenant_lifecycle.sql` | `wallet-api` — [§5](#5-tenant-lifecycle-and-data-model) |
 | **D3** | One validation path for every tenant write, with the cross-tenant origin check the retired seed never did | `services/tenants.ts` — [§6](#6-keeping-the-invariant-under-runtime-writes) |
 | **D4** | `/v1/platform/tenants/*` routes, and every tenant resolver made lifecycle-aware | `wallet-api` — [§7](#7-platform-api), [§8](#8-resolution-under-the-lifecycle) |
-| **D5** | `/v1/platform/chains`, a server-side status read per served chain. *Follow-up card (H-k).* | `wallet-api` — [§10](#10-blockchain-status) |
+| **D5** | `/v1/platform/chains`, a server-side status read per served chain. *Not in H5 (H-k); delivered as B3 of `openspec/changes/redesign-paymaster-console`, with drift (§10.3) and usage (§10.4).* | `wallet-api` — [§10](#10-blockchain-status) |
 | **D6** | A *Platform* area in the existing console: wallet sign-in, tenant registry, create/edit/suspend/delete, key issue/revoke, chain status | `services/paymaster-admin` — [§11](#11-the-console) |
 
 D1–D4 and D6's tenant half satisfy R1. D5 and D6's chain half are the provisional answer to the
@@ -72,7 +72,7 @@ Delivery, in order:
 | --- | --- | --- |
 | **1** | D2 → D3 → D1 → D4: migration, single validator, platform admin sign-in, platform routes and lifecycle-aware resolution, with the `wallet-api` tests in §14.1 and E2E steps 1–2 in §14.2 | R1 through the API |
 | **2** | D6's tenant half: console proxy, sign-in, Tenants tab, E2E step 3 | R1 in the console |
-| follow-up card | D5 and the Chains tab, once O-1 has an answer | blockchain status |
+| redesign-paymaster-console | D5 (B3), drift (B5), usage (B4), admin sign-ins and sessions (B6), and the Chains section on Health | blockchain status |
 
 ### 1.2 Decisions taken in this spec
 
@@ -608,7 +608,9 @@ because that is what platform admins type; responses always include the id.
 | `POST /v1/platform/tenants/:slug/admin-keys` | Issue a key. Body `{ label }`. Active tenants only | `201 { id, label, key }` — plaintext once. `409 invalid-transition` |
 | `DELETE /v1/platform/tenants/:slug/admin-keys/:keyId` | Revoke. Refused if it is the last key and `openRegistration` is false | `204`, `409 last-admin-key` |
 | `GET /v1/platform/tenants/:slug/history?before=` | `tenant_history`, newest first, 50 per page | `200 { entries, next }` |
-| `GET /v1/platform/chains` | Blockchain status (§10). *Follow-up card (H-k); not registered by H5.* | `200` |
+| `GET /v1/platform/chains` | Blockchain status (§10.2), every served chain probed in parallel, 3 seconds per part | `200` |
+| `GET /v1/platform/drift` | Where the registry and ledger disagree with each sponsoring chain's paymaster (§10.3) | `200`, `502` when a paymaster cannot be read |
+| `GET /v1/platform/usage?chainId=&since=&until=` | One chain's sponsorship decisions and settlements, in total and per tenant (§10.4); at most 90 days | `200`, `400 range-too-long`, `404` |
 | `POST /v1/platform/rpc/:chainId` | Chain read relay for the console (G10, openspec `platform-chain-reads`): the `/v1/rpc` read allowlist behind a platform admin session, bodies ≤ 16 KiB, `eth_getLogs` bounded to `PLATFORM_RPC_MAX_LOG_BLOCKS`, `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` per session (separate from the routes above) | `200` JSON-RPC (`-32601`, `-32602`, `-32021`, `-32023` as errors), `400`, `401`, `403`, `413` |
 
 ### 7.2 Concurrency
@@ -872,7 +874,7 @@ balance or open reservations from the response.
 
 | # | Item |
 | --- | --- |
-| **O-1** | **Blockchain status has no requirement.** §10 is a guess at the smallest useful thing. Needed: who looks at it (platform admins in the console, or an alerting path too), and whether "status" includes anything beyond node, bundler, paymaster and watcher, e.g. gas price, EntryPoint deposit trend, or per-tenant balance warnings. No longer blocks H5 (H-k); it is the first question for the follow-up card. |
+| **O-1** | **Blockchain status had no requirement.** Built at the size of §10 (B3), with drift (§10.3) and usage (§10.4), for platform admins in the console. What remains open is the alerting half: drift is a metric and a `giano-doctor` check but deliberately not a health failure, and nothing pages on head age or watcher lag beyond the metrics that already existed. |
 | **O-2** | **Estimate.** *Resolved by H-k.* The card says 3 SP and its estimation field says 2.5. D1–D4 plus D6's tenant half fill that. D5 and the Chains tab move to a follow-up card. |
 | **O-3** | **Devops (`infra/iac/`).** Three asks, none of them H5 deliverables. (1) *Done, in a changed form:* `wallet-api` gets `GIANO_ENVIRONMENT = terraform.workspace`, and the platform admins and sign-in domain come from `src/environments.ts` and the `platform_admins` table (§4.1), so no `OPERATOR_*` list is set anywhere. Its task runs the init container (§9). (2) *Done:* `GIANO_WALLET_API_UPSTREAM` on the `paymaster-admin` task. (3) **Still open:** a network restriction **on `/v1/platform/*` at the `api.*` listener**, as an ALB path rule (VPN CIDR or ALB OIDC). Restricting only `paymaster.*` would not cover these routes, because they are equally reachable on `api.*`, as §14.3 itself shows. Wallet sign-in is the control; the restriction is defence in depth for write routes. Restricting `paymaster.*` as well is optional. |
 | **O-4** | **Naming.** `paymaster-admin` now administers more than the paymaster. Renaming the package, image and ECR repository is a separate, mechanical change with an infra component. Not proposed here. |
@@ -900,7 +902,7 @@ intended behaviour. The platform admin who suspends is expected to tell the tena
 | R1 — without a redeploy | §8: per-request resolution, no tenant cache; §9: platform admins the only writer |
 | R1 — the tenant ≡ wallet origin ≡ RP ID invariant holds | §6.1 single validator, §6.2 disjoint origin claims, H-f immutable fields |
 | R1 — platform admin surface, not tenant-facing | §4: a platform-admin-managed `platform_admins` table seeded per environment, wallet sign-in, a separate guard, no cross-origin path |
-| Blockchain status | Follow-up card (H-k); §10 and §11.2's Chains tab are its starting point, pending O-1 |
+| Blockchain status | §10 (B3, B5, B4 of `redesign-paymaster-console`); the Chains section on Health (§11.2); alerting still open (O-1) |
 
 ### Deliverables
 
@@ -912,8 +914,8 @@ intended behaviour. The platform admin who suspends is expected to tell the tena
 | D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `migrations/0008_platform_admins.sql`, `migrations/0009_drop_tenant_managed_by.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
 | D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts` and `src/init.ts` (the init step, which loads local-stack fixtures) replace the seed (§9) |
 | D4 ✅ | `src/routes/platform-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when the environment has a sign-in domain), `openapi/` |
-| D5 *(follow-up card)* | `src/routes/platform-chains.ts`, `src/services/chains.ts` (keep last verification and probe), `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts` (prober stores both) |
-| D6 ✅ (tenant half) | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/platform-api.ts`, `src/lib/platform-session.ts`, `src/platform/{SignIn,TenantsTab,TenantDrawer,AdminsTab}.tsx`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. `ChainsTab.tsx` belongs to the follow-up card. |
+| D5 ✅ (as B3, with B4 and B5) | `src/routes/platform-chains.ts`, `src/services/chain-probe.ts` (the prober keeps its last verification and probe), `src/services/chains.ts`, `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts`; drift: `src/services/drift.ts`, `src/routes/platform-drift.ts`, the watcher (`src/services/paymaster-watcher.ts`); usage: `src/services/usage.ts`, `src/routes/platform-usage.ts`, `migrations/0010_usage_indexes.sql` |
+| D6 ✅ | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/platform-api.ts`, `src/lib/platform-session.ts`, `src/platform/{SignIn,AdminsTab}.tsx`, `src/tenants/`, `src/shell/`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. The chain half is the Chains section on Health (`src/health/HealthTab.tsx`, `src/lib/health.ts`), and usage the Usage card (`src/components/usage.tsx`). |
 
 ---
 
