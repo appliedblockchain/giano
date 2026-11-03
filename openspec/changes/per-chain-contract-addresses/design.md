@@ -151,9 +151,10 @@ that was unreachable at boot and recovers later is compared with the probe addre
 a mismatch keeps it unavailable and raises an alert. The first chain to be admitted sets the reference, so recoveries
 that come back concurrently are compared with each other too.
 
-For chains outside the registry (the local chains), `walletApi.implementation` is the only source of the wallet
-implementation. When it is absent, the factory's clone target is still checked for release code and EntryPoint, and
-wallet-api logs that the implementation comparison was skipped. The shipped dev and e2e configurations set it. `doctor` reports each address together with whether it matches the
+For chains outside the registry (the local chains), `walletApi.implementation`, or `IMPLEMENTATION_ADDRESS` in the
+single-chain shorthand, is the only source of the wallet implementation. When it is absent, the factory's clone
+target is still checked for release code and EntryPoint, and wallet-api logs that the implementation comparison was
+skipped. The e2e configuration sets it. `doctor` reports each address together with whether it matches the
 class's deterministic address. That is information, not a failure, because doctor has no profile in general. With
 `--chain <profile>` (`contracts:doctor`) it also flags mainnet deviations that the record does not list.
 `openapi/generate.ts` uses a fixed dummy address.
@@ -165,8 +166,8 @@ is the signing key or a configured class deployer, on every non-local chain. Ove
 paymaster proxy on which the signer or a class deployer holds `ROLE_ADMIN`.
 
 R-29's fixed list (`8453, 84532, 11155111`) stays. A chain whose profile or record says `network: "mainnet"` is also
-protected: `deploy:cli testing` refuses it, `gen:addresses` refuses test fixtures in its record, and `doctor --chain
-<profile>` fails a test paymaster on it. Adopting a mainnet therefore needs no code change to be protected.
+protected: `deploy:cli testing` refuses it, `gen:addresses` refuses test fixtures in its record, and `doctor --profile
+<profile>` fails a test paymaster on it and requires a timelock. Adopting a mainnet therefore needs no code change to be protected.
 
 ### D7. CI
 `determinism.yml`:
