@@ -303,6 +303,10 @@ export type FakePaymasterState = {
 	tenantBalances: Map<string, bigint>;
 	tenantDeficits: Map<string, bigint>;
 	registered: Set<string>;
+	/** Registered tenants that are disabled on chain; every other registered one is enabled. */
+	disabled: Set<string>;
+	/** A tenant's withdrawal address where it is not {@link FAKE_WITHDRAW_ADDRESS}. */
+	withdrawAddresses: Map<string, `0x${string}`>;
 	treasuryWei: bigint;
 	depositWei: bigint;
 	paused: boolean;
@@ -319,6 +323,8 @@ export function createFakePaymasterState(): FakePaymasterState {
 		tenantBalances: new Map(),
 		tenantDeficits: new Map(),
 		registered: new Set(),
+		disabled: new Set(),
+		withdrawAddresses: new Map(),
 		treasuryWei: 0n,
 		depositWei: 0n,
 		paused: false,
@@ -334,10 +340,21 @@ export function createFakePaymasterState(): FakePaymasterState {
  * this stands in for is the *chain*, so that service and ledger tests can move a balance or a fee
  * without mining a block.
  */
+export const FAKE_WITHDRAW_ADDRESS =
+	"0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" as `0x${string}`;
+
 export function createFakePaymasterReader(state: FakePaymasterState) {
 	const guard = () => {
 		if (state.unreachable) throw new Error("chain unreachable");
 	};
+	const tenantState = (tenantId: string) => ({
+		registered: state.registered.has(tenantId),
+		enabled: state.registered.has(tenantId) && !state.disabled.has(tenantId),
+		withdrawAddress:
+			state.withdrawAddresses.get(tenantId) ?? FAKE_WITHDRAW_ADDRESS,
+		balanceWei: state.tenantBalances.get(tenantId) ?? 0n,
+		deficitWei: state.tenantDeficits.get(tenantId) ?? 0n,
+	});
 	return {
 		address: TEST_PAYMASTER_ADDRESS as `0x${string}`,
 		async params() {
@@ -355,14 +372,22 @@ export function createFakePaymasterReader(state: FakePaymasterState) {
 		async tenant(tenantId: string) {
 			guard();
 			return {
-				registered: state.registered.has(tenantId),
+				...tenantState(tenantId),
 				enabled: true,
-				withdrawAddress:
-					"0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" as `0x${string}`,
-				balanceWei: state.tenantBalances.get(tenantId) ?? 0n,
-				deficitWei: state.tenantDeficits.get(tenantId) ?? 0n,
 				feeWei: state.feeOverrides.get(tenantId) ?? state.defaultFeeWei,
 			};
+		},
+		/** The fake keeps no history: a read at any block is the current state. */
+		async tenantAt(tenantId: string) {
+			guard();
+			return tenantState(tenantId);
+		},
+		async roster() {
+			guard();
+			return [...state.registered].map((tenantId) => ({
+				tenantId: tenantId as `0x${string}`,
+				...tenantState(tenantId),
+			}));
 		},
 		async treasury() {
 			guard();

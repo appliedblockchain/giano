@@ -253,6 +253,13 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
 					);
 				},
 			},
+			onDrift: (drift) => {
+				app.drift.set(drift);
+				app.metrics.paymasterDriftedTenants.set(
+					{ chain: chainLabel },
+					new Set(drift.entries.map((entry) => entry.tenantId)).size,
+				);
+			},
 			logger: app.log.child({ chainId: chain.chainId }),
 		});
 		watchers.push(watcher);

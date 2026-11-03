@@ -27,6 +27,7 @@ import paymasterRoutes from "./routes/paymaster.js";
 import platformAdminRoutes from "./routes/platform-admins.js";
 import platformAuthRoutes from "./routes/platform-auth.js";
 import platformChainRoutes from "./routes/platform-chains.js";
+import platformDriftRoutes from "./routes/platform-drift.js";
 import platformRpcRoutes from "./routes/platform-rpc.js";
 import platformTenantRoutes from "./routes/platform-tenants.js";
 import rpcRelayRoutes from "./routes/rpc-relay.js";
@@ -37,6 +38,7 @@ import webauthnRoutes from "./routes/webauthn.js";
 import wellKnownRoutes from "./routes/well-known.js";
 import { buildChainRegistry, type ChainRegistry } from "./services/chains.js";
 import { createChallengeService } from "./services/challenges.js";
+import { createDriftStore, type DriftStore } from "./services/drift.js";
 import type { PaymasterReader } from "./services/paymaster-contract.js";
 import { createPlatformAdminService } from "./services/platform-admins.js";
 import { createPlatformSessionService } from "./services/platform-sessions.js";
@@ -216,6 +218,8 @@ export async function buildApp({
 		},
 	});
 	app.decorate("chains", registry);
+	const drift = createDriftStore();
+	app.decorate("drift", drift);
 
 	const sponsoringChains = registry.all.filter((chain) => chain.sponsorship);
 	if (sponsoringChains.length > 0) {
@@ -299,6 +303,7 @@ export async function buildApp({
 		});
 		await app.register(platformAdminRoutes, { admins, config });
 		await app.register(platformRpcRoutes, { config });
+		await app.register(platformDriftRoutes, { db, config, registry, drift });
 		await app.register(platformChainRoutes, {
 			db,
 			config,
@@ -317,6 +322,8 @@ declare module "fastify" {
 	interface FastifyInstance {
 		/** The chain registry — the only way this process reaches a chain (MC-96). */
 		chains: ChainRegistry;
+		/** Each chain's latest drift, from the watcher this replica runs for it (B5). */
+		drift: DriftStore;
 	}
 }
 

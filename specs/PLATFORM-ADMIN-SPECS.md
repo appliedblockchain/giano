@@ -758,6 +758,29 @@ The thresholds that turn these figures into a verdict (head age, watcher lag) st
 next to the `giano-doctor` thresholds it already applies, until O-1 says who consumes the status
 and whether it should also alert.
 
+### 10.3 `GET /v1/platform/drift`
+
+Where wallet-api's records and a sponsoring chain's paymaster disagree (B5), per chain with when it
+was checked:
+
+| Kind | Drift when |
+| --- | --- |
+| `unknown-tenant` | a tenant on the paymaster's roster has no registry row: another deployment's on a shared paymaster, or a registration whose tenant was never created |
+| `enabled-state` | an active tenant is disabled on chain, or a suspended or deleted one is enabled. A tenant not yet registered is a step not yet taken, not drift |
+| `ledger-balance` | the ledger's balance or deficit is not what the paymaster held at the block the ledger describes |
+| `withdraw-address` | the ledger's withdrawal address is not the paymaster's at that block |
+
+The ledger is checked at the block it describes: the later of the watcher's cursor (every event up
+to it is in the ledger) and the row's own block (a reconcile writes the head). A watcher that has
+not reached the block that changed a balance is behind, not wrong, and is not reported. A tenant
+the node cannot read at that block is listed as `unchecked`, not guessed.
+
+The watcher computes it at the end of each pass, before the reconcile overwrites the ledger with the
+chain, and keeps it in memory (`src/services/drift.ts`). A replica that does not run that chain's
+watcher computes it on request from the same database and chain. It is also the metric
+`giano_paymaster_drifted_tenants{chain}` and `giano-doctor chain`'s drift check. Drift is reported,
+not a `/healthz` failure: who acts on it is the alerting non-goal.
+
 ---
 
 ## 11. The console
