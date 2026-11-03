@@ -281,6 +281,19 @@ describe("one validator for every tenant write (admin-tenant-lifecycle)", () => 
 		expect(emptied.fields.branding).toEqual({});
 	});
 
+	it("names a perChain key that is not a chain id", () => {
+		const parsed = tenantPatchSchema.safeParse({
+			policy: { perChain: { base: {} } },
+		});
+		expect(parsed.success).toBe(false);
+		expect(parsed.error?.issues).toEqual([
+			expect.objectContaining({
+				path: ["policy", "perChain", "base"],
+				message: "perChain keys are chain ids",
+			}),
+		]);
+	});
+
 	it("refuses fixtures in which one entry claims an origin another entry claims", () => {
 		const other = {
 			...base,

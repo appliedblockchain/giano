@@ -75,11 +75,14 @@ const tenantPolicyPerChainSchema = z
 /** Partial per-tenant overrides of the deployment-wide userop policy defaults. */
 export const tenantPolicySchema = tenantPolicyBaseSchema
 	.extend({
+		// zod 4 drops a key schema's message from the issue callers read.
 		perChain: z
-			.record(
-				z.string().regex(/^\d+$/, "perChain keys are chain ids"),
-				tenantPolicyPerChainSchema,
-			)
+			.record(z.string().regex(/^\d+$/), tenantPolicyPerChainSchema, {
+				error: (issue) =>
+					issue.code === "invalid_key"
+						? "perChain keys are chain ids"
+						: undefined,
+			})
 			.optional(),
 	})
 	.strict();
