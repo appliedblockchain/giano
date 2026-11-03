@@ -38,13 +38,46 @@ export function maskImmutables(
 	return masked as Hex;
 }
 
+/** The 32-byte word holding `address` as an immutable: left-padded to 32 bytes, lowercase, no 0x. */
+function addressWord(address: Hex): string {
+	return address.toLowerCase().slice(2).padStart(64, "0");
+}
+
+/**
+ * The masked ranges themselves, which the fingerprint cannot see: every range of one immutable must
+ * hold the same value (the factory reads `implementation` in several places, and code whose getter
+ * returns one implementation while `createAccount` clones another is not release code), and, given
+ * the address the code was read from, every UUPS `__self` range must hold that address. Code copied
+ * from elsewhere, or with a modified `__self`, would make every UUPS upgrade revert.
+ */
+function immutablesConsistent(
+	runtimeCode: Hex,
+	immutables: ReleaseFingerprint["immutables"],
+	address: Hex | undefined,
+): boolean {
+	const code = runtimeCode.toLowerCase();
+	const values = new Map<string, string>();
+	for (const { name, start, length } of immutables) {
+		const value = code.slice(2 + start * 2, 2 + (start + length) * 2);
+		const seen = values.get(name);
+		if (seen !== undefined && seen !== value) return false;
+		values.set(name, value);
+		if (address && name.endsWith(".__self") && value !== addressWord(address))
+			return false;
+	}
+	return true;
+}
+
 /**
  * The release whose `contract` code `runtimeCode` is, or undefined if it is no release's. Compare
- * against `eth_getCode` at the contract's address, not a creation code.
+ * against `eth_getCode` at the contract's address, not a creation code, and pass that `address`: a
+ * UUPS implementation is then also checked to name itself in `__self`. Without it only the masked
+ * hash and the consistency of each immutable's ranges are checked.
  */
 export function releaseOf(
 	contract: ReleaseContractName,
 	runtimeCode: Hex,
+	address?: Hex,
 ): ReleaseFingerprint | undefined {
 	const size = (runtimeCode.length - 2) / 2;
 	const hashes = new Map<string, Hex>();
@@ -59,7 +92,11 @@ export function releaseOf(
 			hash = keccak256(maskImmutables(runtimeCode, candidate.immutables));
 			hashes.set(key, hash);
 		}
-		if (hash === candidate.fingerprint) return candidate;
+		if (
+			hash === candidate.fingerprint &&
+			immutablesConsistent(runtimeCode, candidate.immutables, address)
+		)
+			return candidate;
 	}
 	return undefined;
 }

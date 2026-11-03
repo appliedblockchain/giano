@@ -48,7 +48,7 @@
 
 ## 6. Review fixes (PR 196)
 
-- [ ] 6.1 `releaseOf(contract, code, address?)`: refuse code whose ranges of one immutable differ, and, with an address, code whose `__self` ranges are not that address. Verify with unit tests for a modified `__self` and for diverging factory `implementation` ranges.
+- [x] 6.1 `releaseOf(contract, code, address?)`: refuse code whose ranges of one immutable differ, and, with an address, code whose `__self` ranges are not that address. Verify with unit tests for a modified `__self` and for diverging factory `implementation` ranges.
 - [ ] 6.2 Planner and preflight: pass the address to `releaseOf`; require release `ERC1967Proxy` code at the proxy and bind the proxy's implementation slot to the planned implementation, overrides included; drop `timelock` from the override keys. Verify with `plan.test.ts` cases for a proxy pointing elsewhere and a timelock override key refused.
 - [ ] 6.3 `deploy:cli core`: remove `--allow-deviation`, and always refuse a mainnet deviation, pointing at the wizard. Verify with a `deviationGate` test.
 - [ ] 6.4 Refuse a deployer (the signer, or a configured class deployer) as `ROLE_ADMIN` on non-local chains, and an existing proxy on which one holds it. Verify with tests.
