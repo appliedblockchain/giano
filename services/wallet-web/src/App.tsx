@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 import { Connect } from "./views/Connect";
 import { Manage } from "./views/Manage";
+import { PasskeyDeviceGuidance } from "./views/PasskeyDeviceGuidance";
 import { ReviewTransaction } from "./views/ReviewTransaction";
 import { SignMessage } from "./views/SignMessage";
 
@@ -53,15 +54,11 @@ function Popup({ config }: { config: WalletConfig }) {
 				{config.branding.name} <small>· secure wallet</small>
 			</div>
 
-			{config.passkeyDevicePreference === "prefer-mobile" &&
-			(pending?.kind === "connect" ||
-				pending?.kind === "transaction" ||
-				pending?.kind === "sign" ||
-				processing) ? (
-				<p data-testid="passkey-device-guidance">
-					Your browser may offer a phone or QR code. You can also choose another
-					available passkey.
-				</p>
+			{pending?.kind === "connect" ||
+			pending?.kind === "transaction" ||
+			pending?.kind === "sign" ||
+			processing ? (
+				<PasskeyDeviceGuidance />
 			) : null}
 
 			{pending?.kind === "connect" ? (
