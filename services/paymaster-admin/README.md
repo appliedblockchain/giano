@@ -56,7 +56,9 @@ all land where they point. The deployment is chosen in the header, not in the UR
   roles also says whether the paymaster's implementation is a contracts release and, with
   `timelockAddress`, whether the timelock alone holds the four timelocked roles and whether any
   delay is below `timelockDelays`. Without a timelock, one warning says none is configured.
-- **Admins** — with the platform API: who may sign in, the change history, *Add admin* and *Remove*.
+- **Admins** — with the platform API: who may sign in, when each last did and how many sessions
+  they have open, the change history, *Add admin* and *Remove*; and your own sessions from the last
+  30 days, with *End* on any open one but the one you are using.
 
 ## The write rules
 

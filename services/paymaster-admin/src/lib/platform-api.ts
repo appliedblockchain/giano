@@ -229,6 +229,16 @@ export function platformApi(token: string) {
 			call<void>("DELETE", `/admins/${encodeURIComponent(id)}`),
 		platformAdminHistory: () =>
 			call<{ entries: PlatformAdminHistoryEntry[] }>("GET", "/admins/history"),
+		adminSessions: (id: string) =>
+			call<{ sessions: PlatformAdminSession[] }>(
+				"GET",
+				`/admins/${encodeURIComponent(id)}/sessions`,
+			),
+		endSession: (id: string, sessionId: string) =>
+			call<void>(
+				"DELETE",
+				`/admins/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`,
+			),
 	};
 }
 
@@ -240,6 +250,23 @@ export type PlatformAdminRow = {
 	address: string;
 	addedBy: string;
 	createdAt: string;
+	/** B6: absent from a wallet-api that predates it (D11); `null` for an admin never signed in. */
+	lastSignInAt?: string | null;
+	/** B6: sessions neither expired nor revoked. Absent from a wallet-api that predates it. */
+	activeSessions?: number;
+};
+
+/** One of an admin's sessions, as GET /v1/platform/admins/:id/sessions lists them (B6). */
+export type PlatformAdminSession = {
+	id: string;
+	createdAt: string;
+	expiresAt: string;
+	revokedAt: string | null;
+	chainId: number;
+	ip: string | null;
+	userAgent: string | null;
+	/** The session this console is signed in with. */
+	current: boolean;
 };
 export type PlatformAdminHistoryEntry = {
 	id: string;
