@@ -9498,7 +9498,9 @@
                         "type": "object",
                         "properties": {
                           "chainId": {
-                            "type": "integer"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
                           },
                           "name": {
                             "type": "string"
@@ -9511,45 +9513,60 @@
                             ]
                           },
                           "verification": {
-                            "type": "object",
-                            "properties": {
-                              "checkedAt": {
-                                "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "failures": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {}
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "checkedAt",
+                                  "failures"
+                                ],
+                                "additionalProperties": false
                               },
-                              "failures": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "additionalProperties": {}
-                                }
+                              {
+                                "type": "null"
                               }
-                            },
-                            "required": [
-                              "checkedAt",
-                              "failures"
-                            ],
-                            "additionalProperties": false,
-                            "nullable": true
+                            ]
                           },
                           "lastProbe": {
-                            "type": "object",
-                            "properties": {
-                              "at": {
-                                "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "at": {
+                                    "type": "string"
+                                  },
+                                  "ok": {
+                                    "type": "boolean"
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "at",
+                                  "ok"
+                                ],
+                                "additionalProperties": false
                               },
-                              "ok": {
-                                "type": "boolean"
-                              },
-                              "detail": {
-                                "type": "string"
+                              {
+                                "type": "null"
                               }
-                            },
-                            "required": [
-                              "at",
-                              "ok"
-                            ],
-                            "additionalProperties": false,
-                            "nullable": true
+                            ]
                           },
                           "node": {
                             "type": "object",
@@ -9558,12 +9575,16 @@
                                 "type": "boolean"
                               },
                               "headBlock": {
-                                "type": "string",
-                                "nullable": true
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "headAgeSeconds": {
-                                "type": "number",
-                                "nullable": true
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -9580,8 +9601,10 @@
                                 "type": "boolean"
                               },
                               "entryPointSupported": {
-                                "type": "boolean",
-                                "nullable": true
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -9591,52 +9614,72 @@
                             "additionalProperties": false
                           },
                           "paymaster": {
-                            "type": "object",
-                            "properties": {
-                              "address": {
-                                "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "address": {
+                                    "type": "string"
+                                  },
+                                  "depositWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "treasuryWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "stakeWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "invariantSlackWei": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "lastSyncedBlock": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "watcherLagBlocks": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "address",
+                                  "depositWei",
+                                  "treasuryWei",
+                                  "stakeWei",
+                                  "invariantSlackWei",
+                                  "lastSyncedBlock",
+                                  "watcherLagBlocks",
+                                  "checkedAt"
+                                ],
+                                "additionalProperties": false
                               },
-                              "depositWei": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "treasuryWei": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "stakeWei": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "invariantSlackWei": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "lastSyncedBlock": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "watcherLagBlocks": {
-                                "type": "number",
-                                "nullable": true
-                              },
-                              "checkedAt": {
-                                "type": "string",
-                                "nullable": true
+                              {
+                                "type": "null"
                               }
-                            },
-                            "required": [
-                              "address",
-                              "depositWei",
-                              "treasuryWei",
-                              "stakeWei",
-                              "invariantSlackWei",
-                              "lastSyncedBlock",
-                              "watcherLagBlocks",
-                              "checkedAt"
-                            ],
-                            "additionalProperties": false,
-                            "nullable": true
+                            ]
                           }
                         },
                         "required": [
@@ -9680,7 +9723,7 @@
                     "error",
                     "message"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": {}
                 }
               }
             }
