@@ -91,8 +91,10 @@ A key that is not the canonical deployer's SHALL deploy at its own CREATE3 addre
 Before signing a mainnet deployment that has any deviation, the deploy tooling SHALL do three things. It SHALL print a
 warning naming each deviation, with the expected and actual address or signer. It SHALL state that addresses on this
 chain will differ from the other mainnets, permanently. It SHALL then require an exact confirmation phrase that names
-the chain. Non-interactive runs SHALL refuse a mainnet deployment that deviates, and no flag or environment
-variable SHALL skip the typed confirmation.
+the chain. Non-interactive runs that sign SHALL refuse a mainnet deployment that deviates, and no flag or
+environment variable SHALL skip the typed confirmation. A run that signs nothing (a plan, or a verify-only run without
+a key) SHALL report the deviations and not refuse. A deviation the deployment record already lists as confirmed, for the
+same contract at the same address, SHALL be reported but SHALL NOT need a new confirmation.
 
 #### Scenario: Interactive deviation
 - **WHEN** an interactive mainnet run has an override
@@ -101,6 +103,14 @@ variable SHALL skip the typed confirmation.
 #### Scenario: Non-interactive deviation
 - **WHEN** a non-interactive mainnet run has any deviation
 - **THEN** it exits non-zero without signing, and lists the deviations
+
+#### Scenario: Verify-only run on a deviating mainnet
+- **WHEN** a run without a signing key plans a mainnet whose plan has a deviation
+- **THEN** it prints the deviations and does not refuse on their account
+
+#### Scenario: Deviation confirmed earlier
+- **WHEN** a mainnet run's only deviations are listed as confirmed in the chain's deployment record
+- **THEN** it reports them and requires no new deviation confirmation
 
 #### Scenario: Promptless CLI on a deviating mainnet
 - **WHEN** `deploy:cli core` targets a mainnet profile whose plan has a deviation

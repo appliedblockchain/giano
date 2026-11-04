@@ -56,3 +56,14 @@
 - [ ] 6.6 wallet-api: compare a recovering chain's probe address with the served chains' before serving it; pass addresses to `releaseOf`; warn when a chain has no implementation to compare. Verify with a test where a recovering chain with another probe stays unavailable.
 - [ ] 6.7 doctor: the same `releaseOf` address check, and R-29 for a `--chain` mainnet profile.
 - [ ] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.
+
+## 7. Review fixes (stack review)
+
+- [ ] 7.1 `releasesOf(contract, code, address?)` returns every release whose code matches; `releaseOf` takes the expected release and otherwise returns the newest. The planner, `deployCore` and `check:determinism` pass the release they expect. Verify with a unit test for two releases that share a fingerprint.
+- [ ] 7.2 `deviationGate` gates only runs that sign, and only deviations the record does not already list as confirmed for the same contract and address. Verify with `plan.test.ts` cases for a verify-only run and a confirmed deviation.
+- [ ] 7.3 `recordDeviations` keeps one entry per contract and address, whatever the reason; `record.deployer` changes only when a run deploys something.
+- [ ] 7.4 A recorded upgrade target at CREATE3(class deployer, versioned label) is deterministic for `planCore`, `deployCore` and doctor (`placementOf`), and is exempt from the selected-release check. `upgrade --execute` records it with its placement.
+- [ ] 7.5 `deploy:cli upgrade` refuses a non-canonical key on a mainnet and records the deviation on other classes (`upgradeDeviation`), before deploying.
+- [ ] 7.6 wallet-api admits a recovering chain only after a complete verification: no failure of any kind and a probe address (`recoveryVerified`).
+- [ ] 7.7 A keyless plan checks the class deployer's balance; the wizard explains an unreadable deployment record.
+- [ ] 7.8 One ERC-1967 implementation reader (`erc1967.ts`) for the planner, preflight, doctor and wallet-api; one changeset per feature.
