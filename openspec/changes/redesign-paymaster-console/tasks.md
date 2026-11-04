@@ -43,23 +43,23 @@
 
 ## 5. Tenants
 
-- [ ] 5.1 One list joining the registry and the roster by id:
+- [x] 5.1 One list joining the registry and the roster by id:
   - search, a state filter, show deleted;
   - balance and deficit;
   - keyboard-reachable rows that open the tenant page (C1, K2, K9).
-- [ ] 5.2 Tenant page:
+- [x] 5.2 Tenant page:
   - registry record with a structured policy editor (K11);
   - admin keys, with close guarded until shown-once keys are copied (K11);
   - history with before/after diffs (K10).
-- [ ] 5.3 Tenant page, on-chain card:
+- [x] 5.3 Tenant page, on-chain card:
   - register, fund, enable/disable;
   - fee override and withdrawal address, each Send or Propose (N2, N9);
   - other deployments.
-- [ ] 5.4 Per-tenant activity on the tenant page (N8).
-- [ ] 5.5 Suspend offers to disable on every chain (K11, spec §11.3); create accepts policy and branding.
-- [ ] 5.6 e2e: list, tenant page, register from the page, fee override Send.
-- [ ] 5.7 Tenant page: wallet-api's ledger compared with the chain, and each other configured chain's registration, enabled state and ledger balance via `/v1/platform/rpc/<chainId>` (G6, D10).
-- [ ] 5.8 List: users column, the next on-chain step per row (Register on chain, Fund), totals under the list, and the roster-only list where `platformApi` is false.
+- [x] 5.4 Per-tenant activity on the tenant page (N8).
+- [x] 5.5 Suspend offers to disable on every chain (K11, spec §11.3); create accepts policy and branding. The follow-up is sent on the selected chain; the other chains where it still applies are named, because a write there needs the console switched to that deployment.
+- [x] 5.6 e2e: list, tenant page, register from the page, fee override Send.
+- [x] 5.7 Tenant page: wallet-api's ledger compared with the chain, and each other configured chain's registration, enabled state and ledger balance via `/v1/platform/rpc/<chainId>` (G6, D10).
+- [x] 5.8 List: users column, the next on-chain step per row (Register on chain, Fund), totals under the list, and the roster-only list where `platformApi` is false.
 
 ## 6. Paymaster tab
 

@@ -85,6 +85,8 @@ export type TenantCreateInput = {
 	corsOrigins?: string[];
 	openRegistration?: boolean;
 	adminKeys?: { label: string }[];
+	policy?: Record<string, unknown>;
+	branding?: Record<string, unknown>;
 	id?: string;
 };
 

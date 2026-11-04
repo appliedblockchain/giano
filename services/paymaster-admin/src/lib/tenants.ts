@@ -1,0 +1,225 @@
+import type { TenantView } from "@appliedblockchain/giano-paymaster-sdk";
+import type { TenantStatus, TenantSummary } from "./platform-api";
+
+/** Where a tenant stands on one chain's paymaster, matched on tenant id. */
+export type OnChainState =
+	| "enabled"
+	| "disabled"
+	| "not-registered"
+	| "unknown";
+
+/**
+ * One tenant as the Tenants tab lists it (openspec platform-console-tenants): its registry row, its
+ * entry on the selected chain's roster, or both — joined on the id the two share.
+ */
+export type TenantRow = {
+	/** The UUID, lowercase. */
+	id: string;
+	registry: TenantSummary | undefined;
+	onChain: TenantView | undefined;
+	state: OnChainState;
+};
+
+export type NextStep = "register" | "fund";
+
+/**
+ * Registry rows newest first, then roster entries no registry row accounts for. `roster` undefined
+ * means the paymaster has not been read, which is not the same as "registered nowhere".
+ */
+export function joinTenants(
+	registry: readonly TenantSummary[] | undefined,
+	roster: readonly TenantView[] | undefined,
+): TenantRow[] {
+	const byId = new Map(
+		(roster ?? []).map((tenant) => [tenant.uuid.toLowerCase(), tenant]),
+	);
+	const rows: TenantRow[] = [...(registry ?? [])]
+		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+		.map((tenant) => {
+			const onChain = byId.get(tenant.id.toLowerCase());
+			return {
+				id: tenant.id.toLowerCase(),
+				registry: tenant,
+				onChain,
+				state: stateOf(roster, onChain),
+			};
+		});
+	const known = new Set(rows.map((row) => row.id));
+	for (const [id, onChain] of byId)
+		if (!known.has(id))
+			rows.push({
+				id,
+				registry: undefined,
+				onChain,
+				state: stateOf(roster, onChain),
+			});
+	return rows;
+}
+
+function stateOf(
+	roster: readonly TenantView[] | undefined,
+	onChain: TenantView | undefined,
+): OnChainState {
+	if (!roster) return "unknown";
+	if (!onChain) return "not-registered";
+	return onChain.enabled ? "enabled" : "disabled";
+}
+
+/** The on-chain step a tenant is waiting for, if any. Nothing is suggested for a tenant being wound down. */
+export function nextStep(row: TenantRow): NextStep | undefined {
+	if (row.registry && row.registry.status !== "active") return undefined;
+	if (row.registry && row.state === "not-registered") return "register";
+	if (row.onChain && row.onChain.deficit > 0n) return "fund";
+	return undefined;
+}
+
+/**
+ * Something an operator should look at: a deficit, a registry and a paymaster that disagree about
+ * whether the tenant may be sponsored, an active tenant not yet registered, or an on-chain tenant
+ * with no registry row.
+ */
+export function needsAttention(row: TenantRow): boolean {
+	if (row.onChain && row.onChain.deficit > 0n) return true;
+	if (!row.registry) return row.state !== "unknown";
+	const status = row.registry.status;
+	if (status === "active")
+		return row.state === "disabled" || row.state === "not-registered";
+	return row.state === "enabled";
+}
+
+export type TenantFilter = "all" | "active" | "suspended" | "attention";
+
+export function filterTenants(
+	rows: readonly TenantRow[],
+	{
+		query,
+		filter,
+		includeDeleted,
+	}: { query: string; filter: TenantFilter; includeDeleted: boolean },
+): TenantRow[] {
+	const needle = query.trim().toLowerCase();
+	return rows.filter((row) => {
+		const status: TenantStatus | undefined = row.registry?.status;
+		if (status === "deleted" && !includeDeleted) return false;
+		if (filter === "active" && status !== "active") return false;
+		if (filter === "suspended" && status !== "suspended") return false;
+		if (filter === "attention" && !needsAttention(row)) return false;
+		if (!needle) return true;
+		return [
+			row.id,
+			row.registry?.slug,
+			row.registry?.rpName,
+			row.registry?.walletOrigin,
+		]
+			.filter((value): value is string => value !== undefined)
+			.some((value) => value.toLowerCase().includes(needle));
+	});
+}
+
+export type TenantTotals = {
+	/** Sum of on-chain balances. */
+	held: bigint;
+	/** Tenants registered on the selected chain. */
+	onChain: number;
+	deficit: bigint;
+	/** On-chain tenants with no registry row. */
+	unregistered: number;
+};
+
+/** Totals for the whole roster on the selected chain, whatever the list is filtered to. */
+export function tenantTotals(rows: readonly TenantRow[]): TenantTotals {
+	const totals: TenantTotals = {
+		held: 0n,
+		onChain: 0,
+		deficit: 0n,
+		unregistered: 0,
+	};
+	for (const row of rows) {
+		if (!row.onChain) continue;
+		totals.held += row.onChain.balance;
+		totals.deficit += row.onChain.deficit;
+		totals.onChain += 1;
+		if (!row.registry) totals.unregistered += 1;
+	}
+	return totals;
+}
+
+/** Fields of a tenant snapshot that change on every write and say nothing about what changed. */
+const BOOKKEEPING = new Set(["version", "updatedAt", "statusChangedAt"]);
+
+export type FieldChange = { field: string; before: unknown; after: unknown };
+
+/**
+ * What a history entry changed (openspec K10): the fields whose value differs between its before
+ * and after snapshots. A create has no before and a delete no after; each lists every field.
+ */
+export function historyChanges(
+	before: Record<string, unknown> | null,
+	after: Record<string, unknown> | null,
+): FieldChange[] {
+	const fields = new Set([
+		...Object.keys(before ?? {}),
+		...Object.keys(after ?? {}),
+	]);
+	const changes: FieldChange[] = [];
+	for (const field of fields) {
+		if (BOOKKEEPING.has(field)) continue;
+		const was = before?.[field];
+		const now = after?.[field];
+		if (JSON.stringify(was) !== JSON.stringify(now))
+			changes.push({ field, before: was, after: now });
+	}
+	return changes;
+}
+
+export type LedgerRow = {
+	chainId: number;
+	balanceWei: string;
+	deficitWei: string;
+	lastSyncedBlock: string | null;
+};
+
+export type LedgerComparison =
+	| { kind: "agrees" }
+	| { kind: "no-ledger" }
+	| {
+			kind: "differs";
+			ledgerBalance: bigint;
+			ledgerDeficit: bigint;
+			/** Blocks the ledger is behind the block the chain was read at; undefined if it never synced. */
+			lag: bigint | undefined;
+	  };
+
+/**
+ * wallet-api's ledger against the paymaster, as read by the console (openspec D10). Approximate: the
+ * console compares at the block it read, and only the ledger's `lastSyncedBlock` says how far behind
+ * that the ledger is.
+ */
+export function compareLedger(
+	ledger: LedgerRow | undefined,
+	onChain: Pick<TenantView, "balance" | "deficit"> | undefined,
+	readAt: bigint | undefined,
+): LedgerComparison {
+	if (!ledger) return onChain ? { kind: "no-ledger" } : { kind: "agrees" };
+	const ledgerBalance = BigInt(ledger.balanceWei);
+	const ledgerDeficit = BigInt(ledger.deficitWei);
+	const balance = onChain?.balance ?? 0n;
+	const deficit = onChain?.deficit ?? 0n;
+	if (ledgerBalance === balance && ledgerDeficit === deficit)
+		return { kind: "agrees" };
+	const synced =
+		ledger.lastSyncedBlock === null
+			? undefined
+			: BigInt(ledger.lastSyncedBlock);
+	return {
+		kind: "differs",
+		ledgerBalance,
+		ledgerDeficit,
+		lag:
+			synced === undefined || readAt === undefined
+				? undefined
+				: readAt > synced
+					? readAt - synced
+					: 0n,
+	};
+}
