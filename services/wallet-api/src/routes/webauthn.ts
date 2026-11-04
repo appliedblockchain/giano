@@ -440,28 +440,38 @@ export default async function webauthnRoutes(
 				);
 			}
 
-			// C2: resolve globally by credential id, then tenant-check explicitly. The global
-			// lookup is deliberate — it makes the rejection ALERTABLE: distinct RP IDs mean
-			// this branch is unreachable through a browser, so if it ever fires, RP resolution
-			// is broken or someone is probing. Externally identical to unknown-credential.
-			let credential = await db.query.credentials.findFirst({
-				where: eq(credentials.credentialId, response.id),
+			// C2: resolve the credential within this tenant only. Credential ids are unique
+			// per tenant, not globally, and with "none" attestation the client chooses the id,
+			// so another tenant can hold a row with the same id. A global lookup could return
+			// that row and refuse this tenant's legitimate sign-in.
+			const credential = await db.query.credentials.findFirst({
+				where: and(
+					eq(credentials.tenantId, tenant.id),
+					eq(credentials.credentialId, response.id),
+				),
 			});
-			if (credential && credential.tenantId !== tenant.id) {
-				request.log.error(
-					{
-						alert: "cross-tenant-credential",
-						credentialTenant: credential.tenantId,
-					},
-					"credential replayed across tenants — RP resolution broken or a probe",
-				);
-				app.metrics.crossTenantRejections.inc({
-					tenant: tenant.slug,
-					kind: "credential",
-				});
-				credential = undefined;
-			}
 			if (!credential) {
+				// Only on a miss: look the id up globally to keep the rejection ALERTABLE.
+				// Distinct RP IDs mean a browser never sends another tenant's credential here,
+				// so a hit means RP resolution is broken or someone is probing. This lookup
+				// feeds logs and metrics only, never the authentication decision.
+				const foreign = await db.query.credentials.findFirst({
+					columns: { tenantId: true },
+					where: eq(credentials.credentialId, response.id),
+				});
+				if (foreign) {
+					request.log.error(
+						{
+							alert: "cross-tenant-credential",
+							credentialTenant: foreign.tenantId,
+						},
+						"credential replayed across tenants — RP resolution broken or a probe",
+					);
+					app.metrics.crossTenantRejections.inc({
+						tenant: tenant.slug,
+						kind: "credential",
+					});
+				}
 				throw new ApiError(
 					400,
 					"unknown-credential",

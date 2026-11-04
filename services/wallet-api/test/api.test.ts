@@ -1010,6 +1010,40 @@ describe("tenant isolation", () => {
 		);
 	});
 
+	it("V2b: another tenant holding the same credential id cannot block a legitimate sign-in", async () => {
+		// credential ids are unique per tenant only, and the client chooses them under "none"
+		// attestation. The attacker registers first, so a global lookup by id would find the
+		// attacker's row before the victim's and refuse the victim's sign-in.
+		const victim = createAuthenticator();
+		const attacker = {
+			...createAuthenticator(),
+			credentialId: Buffer.from(victim.credentialId),
+		};
+		await register("v2b-attacker", attacker, TENANT_B, TENANT_B.adminKey);
+		const registered = await register("v2b-victim", victim, TENANT_A);
+
+		const options = await getOptions("v2b-victim", "authentication", TENANT_A);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/authentication/verify",
+			headers: { origin: TENANT_A.walletOrigin },
+			payload: {
+				response: makeAuthenticationResponse(victim, {
+					challenge: options.challenge,
+					origin: TENANT_A.walletOrigin,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		const body = res.json() as {
+			externalUserId: string;
+			walletAddress: string;
+		};
+		expect(body.externalUserId).toBe("v2b-victim");
+		expect(body.walletAddress).toBe(registered.walletAddress);
+	});
+
 	it("V3: a challenge issued on tenant A cannot be consumed on tenant B", async () => {
 		const options = await getOptions("v3-user", "registration", TENANT_A);
 		const res = await ctx.app.inject({
