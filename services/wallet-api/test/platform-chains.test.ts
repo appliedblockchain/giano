@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { paymasterState } from "../src/db/schema.js";
+import { BundlerRpcError } from "../src/services/bundler.js";
 import { probeChain } from "../src/services/chain-probe.js";
 import type { ChainVerification } from "../src/services/chain-verify.js";
 import {
@@ -109,7 +110,27 @@ describe("two chains, one of them down", () => {
 			name: "Devnet A",
 			registryStatus: "ready",
 			node: { reachable: true, headBlock: "100" },
-			bundler: { reachable: true, entryPointSupported: true },
+			bundler: {
+				reachable: true,
+				entryPointSupported: true,
+				gasPriceWei: "1000000000",
+				executors: [
+					{
+						address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+						balanceWei: "1000000000000000000",
+						busy: true,
+						latestNonce: 41,
+						pendingNonce: 42,
+					},
+					{
+						address: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+						balanceWei: "0",
+						busy: false,
+						latestNonce: 0,
+						pendingNonce: 0,
+					},
+				],
+			},
 			paymaster: null,
 		});
 		expect(chains[0].node.headAgeSeconds).toBeLessThan(10);
@@ -121,6 +142,34 @@ describe("two chains, one of them down", () => {
 		});
 		// no node or bundler URL, internal or keyed, ever leaves the API
 		expect(response.body).not.toMatch(/127\.0\.0\.1|internal|http:/);
+	}, 10_000);
+
+	it("reports executors as unknown, not a failure, where the bundler will not say", async () => {
+		const token = await platformSignIn(ctx.app, ADMIN);
+		const chain = ctx.app.chains.get(31337);
+		const refused = vi
+			.spyOn(chain.bundler, "executors")
+			.mockRejectedValue(new BundlerRpcError(-32601, "Method not found"));
+		try {
+			const [live] = (await get(ctx, token)).json().chains;
+			expect(live.bundler).toMatchObject({
+				reachable: true,
+				gasPriceWei: null,
+				executors: null,
+			});
+		} finally {
+			refused.mockRestore();
+		}
+		const garbled = vi
+			.spyOn(chain.bundler, "executors")
+			.mockResolvedValue({ gasPriceWei: "nonsense", executors: [] });
+		try {
+			const response = await get(ctx, token);
+			expect(response.statusCode).toBe(200);
+			expect(response.json().chains[0].bundler.executors).toBeNull();
+		} finally {
+			garbled.mockRestore();
+		}
 	}, 10_000);
 
 	it("reports when the prober last looked, not the boot time", async () => {

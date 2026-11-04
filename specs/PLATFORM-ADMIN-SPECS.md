@@ -719,7 +719,14 @@ not stall the response:
     "verification": { "checkedAt": "…", "failures": [] },   // last full ChainVerification (boot or recovery)
     "lastProbe": { "at": "…", "ok": true },    // the prober's last reachability probe
     "node":    { "reachable": true, "headBlock": "18234411", "headAgeSeconds": 2 },
-    "bundler": { "reachable": true, "entryPointSupported": true },  // new BundlerClient.supportedEntryPoints()
+    "bundler": {
+      "reachable": true, "entryPointSupported": true,  // BundlerClient.supportedEntryPoints()
+      "gasPriceWei": "1000000000",                     // null where executors are unknown
+      "executors": [{                                  // B7, giano-bundler's giano_executors;
+        "address": "0x…", "balanceWei": "…",           // null from a bundler without it (Alto)
+        "busy": false, "latestNonce": 41, "pendingNonce": 41
+      }]
+    },
     "paymaster": {                             // null when this chain does not sponsor
       "address": "0x…",
       "depositWei": "…", "treasuryWei": "…", "stakeWei": "…",
@@ -741,6 +748,11 @@ No new background job, table or metric. What was added:
 - **The bundler client has `supportedEntryPoints()`.** The wallet relay still answers
   `eth_supportedEntryPoints` from configuration (§3); this asks the bundler itself. A bundler that
   answers with a JSON-RPC error is reachable, with `entryPointSupported: null`.
+- **The bundler reports its executors** (B7). The keys that sign and pay for every `handleOps`
+  transaction live only in the bundler's environment, so it answers `giano_executors` on each
+  chain's endpoint: each executor's address (never the key), balance, whether its lane holds a
+  transaction, and its latest and pending nonces, with the gas price. An executor out of funds
+  stops submission through it; the console judges each by the submissions its balance pays for.
 - **Each part is bounded.** The node's head, the bundler and the signer each get 3 seconds, every
   chain at once, so the response takes about 3 seconds however many chains are down. A part that
   times out is reported unreachable.

@@ -35,6 +35,7 @@ This change specifies the whole redesign: phase 1, console-only (the K, C and N 
 | 15 | Phase 2: B3, chain status | Done, PR #208 |
 | 16 | Phase 2: B5, drift | Done, PR #209 |
 | 17 | Phase 2: B4, usage | Done, PR #210 |
+| 18 | Phase 2: B7, bundler executors | Done, PR #211 |
 
 ### Phase 1: console only
 
@@ -97,6 +98,7 @@ Building and testing the layers found these, each fixed in the layer that introd
 - **B4 · Usage.** `GET /v1/platform/usage`: sponsored and refused operations, refusals by reason, gas sponsored and fees, across tenants and per tenant, for a time range. A Usage card on the Overview and the tenant page.
 - **B5 · Drift.** wallet-api compares its ledger and registry with each paymaster's roster, reports the result at `GET /v1/platform/drift` and as a metric, and `giano-doctor` checks it. The Health tab's registry-and-chain group reads it.
 - **B6 · Sign-ins.** `GET /v1/platform/admins` gains each admin's last sign-in and active session count. `GET /v1/platform/admins/:id/sessions` lists recent sessions, and an admin can end any of their own.
+- **B7 · Bundler executors.** The bundler signs and submits the transaction that wraps each user operation from its executor keys, one lane per key; an executor that runs out of funds stops submission on that chain. The bundler reports each executor's address, balance, lane and nonces (`giano_executors`), `GET /v1/platform/chains` carries them, and Health shows each one with how many submissions its balance pays for, with an empty or low executor under Needs attention.
 
 ### Non-goals
 
@@ -134,6 +136,7 @@ Building and testing the layers found these, each fixed in the layer that introd
   - phase 2: `getAdminEvents` (B1) and timelock-aware `assessHealth` (B2).
 - **contracts:** release codehashes exported for `assessHealth` (B2). No contract change.
 - **wallet-api:** three new platform endpoints (`chains`, `usage`, `drift`), sessions on the admins endpoints (B6), the prober and bundler changes §10.2 names, and a drift metric. No schema migration except an index if usage queries need one.
+- **giano-bundler** (B7): a `giano_executors` JSON-RPC method on each chain's endpoint. Addresses only, never keys; wallet-api is its only caller.
 - **e2e:** `paymaster-admin.spec.ts`, `platform-console.spec.ts` and `platform-admin.spec.ts` follow each layer, with new cases for the tenant page, the Paymaster and Roles tabs, the Overview, Stay signed in and phone width. `timelock-console.spec.ts` (new) deploys its own timelock for the schedule, execute, cancel and rotation cases. Phase 2 adds cases for its endpoints.
 - **Docs:**
   - the console README: its tab list, the write rules, the config fields, and the claim of "a proposal builder for every timelocked action";

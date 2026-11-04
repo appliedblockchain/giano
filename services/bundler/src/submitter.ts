@@ -71,6 +71,17 @@ const MAX_CANCEL_BUMPS = 3;
 
 export type Submitter = ReturnType<typeof createSubmitter>;
 
+/** One executor lane, as `giano_executors` reports it. */
+export type ExecutorStatus = {
+	address: Address;
+	balance: bigint;
+	/** The lane holds a transaction in flight. */
+	busy: boolean;
+	latestNonce: number;
+	/** Ahead of `latestNonce` while a transaction is in the node's mempool. */
+	pendingNonce: number;
+};
+
 export function createSubmitter(options: SubmitterOptions) {
 	const { client, chainId, entryPoint, executors, log, metrics } = options;
 	const chain = String(chainId);
@@ -555,6 +566,40 @@ export function createSubmitter(options: SubmitterOptions) {
 
 	return {
 		executors: executors.map((executor) => executor.address),
+		/**
+		 * Every executor's balance and nonces, read now, and whether its lane holds a transaction, with
+		 * the chain's gas price: what an operator needs to keep submission funded (B7). Addresses only.
+		 */
+		async executorStatus(): Promise<{
+			gasPrice: bigint;
+			executors: ExecutorStatus[];
+		}> {
+			const [gasPrice, rows] = await Promise.all([
+				client.getGasPrice(),
+				Promise.all(
+					executors.map(async (executor) => {
+						const { address } = executor;
+						const [balance, latestNonce, pendingNonce] = await Promise.all([
+							client.getBalance({ address }),
+							client.getTransactionCount({ address, blockTag: "latest" }),
+							client.getTransactionCount({ address, blockTag: "pending" }),
+						]);
+						metrics.executorBalance.set(
+							{ chain, executor: address },
+							Number(balance),
+						);
+						return {
+							address,
+							balance,
+							busy: !idle.includes(executor),
+							latestNonce,
+							pendingNonce,
+						};
+					}),
+				),
+			]);
+			return { gasPrice, executors: rows };
+		},
 		refreshBalances: () =>
 			Promise.all(
 				executors.map((executor) => refreshBalance(executor.address)),
