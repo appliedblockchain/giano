@@ -100,7 +100,7 @@ and **no key**. For a chain adopted with an address override or by another key, 
 profile and committed deployment record (`CHAIN_PROFILE_JSON` and `DEPLOYMENT_RECORD_JSON`;
 `deployer.chainProfile` and `deployer.deploymentRecord`, set with `--set-file`): without them the Job
 looks for the contracts at the class's deterministic addresses only. It checks that every contract is
-on the chain with a release's code (verified by release fingerprint, wherever it sits), that an
+at the chain's registered addresses with a release's code (verified by release fingerprint), that an
 existing paymaster is configured as the run expects, and emits `giano-addresses.<chainId>.json`. Addresses are per
 chain (`getGianoDeployment(chainId)`): every chain of a class normally shares the deterministic
 addresses of that class's canonical deployer, so testnet and mainnet addresses differ. Only the

@@ -72,6 +72,9 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       means the wrong EntryPoint or a contract that did not come from a release — do NOT
       register the chain; find the cause (step 2 is the usual culprit). Review every deviation
       the record lists.
+      A match does not prove the EntryPoint: an older release (EntryPoint v0.7) also has a
+      committed fingerprint. Step 8 checks that implementation.entryPoint() is the configured
+      EntryPoint.
 
 6.  Fund the bundler's executor account on this chain.
       Each chain needs the submission account funded on it (MC-98); the executor fronts gas
@@ -85,7 +88,8 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
 
 8.  giano-doctor chain --rpc <url> --chain-id <id> …  → must be green.
       The same checks the wallet-api runs at boot: endpoint identity, EntryPoint, factory +
-      implementation (release code, and the factory clones the chain's implementation), P-256,
+      implementation (release code, the factory clones the chain's implementation, and
+      implementation.entryPoint() is the configured EntryPoint), P-256,
       paymaster stake/deposit (MC-100). It also reports whether each address is deterministic
       for the class; with --profile it fails on an undeclared mainnet deviation.
 
@@ -106,7 +110,9 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
 Steps 2 and 5 are the ones that fail *silently* if skipped — a deployment against a
 non-canonical EntryPoint produces perfectly working contracts at the deterministic addresses,
 running an implementation bound to an EntryPoint the bundlers do not use. The address checks all
-pass; only the code check (step 5, and the wallet-api's `code-not-release` boot failure) catches it.
+pass; only the code checks catch it: step 5 (`code-not-release` at wallet-api boot) when the code is
+no release's, and step 8's `implementation.entryPoint()` check (`implementation-entrypoint-mismatch`
+at boot) when it is an older release built for EntryPoint v0.7.
 
 ## The single-chain (on-premises) profile
 

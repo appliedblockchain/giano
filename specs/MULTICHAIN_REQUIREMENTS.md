@@ -252,8 +252,8 @@ unenforced. It is rejected because it destroys the product: the user has one cre
 wallets, funds sent to "their address" arrive somewhere that depends on the chain, and every
 address-bearing surface in the system has to become chain-qualified.
 
-*Consequence:* adding a chain acquires a hard prerequisite. A chain whose factory cannot be placed at
-the canonical address cannot join, and that will occasionally be an external constraint rather than
+*Consequence:* adding a chain acquires a hard prerequisite. A chain whose factory cannot run release code
+deriving the same accounts cannot join, and that will occasionally be an external constraint rather than
 something Giano can fix. The failure must be at configuration time with an explanation, never at a
 user's first transaction.
 
@@ -364,7 +364,7 @@ serves, which becomes part of chain configuration rather than something derived.
 ### D11 — A chain is verified before it is served
 
 Before a deployment serves a chain, that chain is verified: the endpoint really is that chain, the
-EntryPoint is present, the factory is present and at the canonical address, and — where sponsorship
+EntryPoint is present, the factory at the chain's registered address holds release code, and — where sponsorship
 is enabled — the paymaster is present, staked and funded. Verification happens at configuration load
 and is repeatable on demand as an operational check.
 
@@ -664,7 +664,7 @@ one-chain list, so no existing deployment must be reconfigured to upgrade.
 
 **MC-48** — For each configured chain, the wallet-api MUST verify at load time that: the read endpoint
 reports the declared chain id; the EntryPoint contract is present at the configured address; the
-account factory is present and at the canonical address (MC-19); and, where sponsorship is enabled,
+account factory at the chain's registered address holds release code (MC-19); and, where sponsorship is enabled,
 that the paymaster is present.
 
 **MC-49** — The chain-id cross-check in MC-48 MUST be treated as a fatal misconfiguration. An endpoint
@@ -839,8 +839,8 @@ omitted.
 interface. Adding a chain MUST be a deployment action.
 
 **MC-92** — Structural misconfiguration and unavailability MUST NOT share a failure mode. A chain
-that fails structural verification — the endpoint reports a different chain id, the factory is
-absent or at a non-canonical address, the EntryPoint is absent — MUST prevent the deployment from
+that fails structural verification — the endpoint reports a different chain id, the factory or
+implementation at the registered address is absent or not release code, the EntryPoint is absent — MUST prevent the deployment from
 starting. A chain that is merely unreachable at load time MUST NOT: the deployment MUST start, report
 that chain unavailable, and serve its other chains (MC-54).
 
@@ -870,8 +870,9 @@ nonce tracking — and funding of the submission account on that chain. These re
 shared submission process, provided they are isolated per chain as MC-50 requires of the wallet-api.
 Per-chain funding MUST be documented as a per-chain cost, and MUST be monitored per chain.
 
-**MC-99** — Contract deployment to a new chain MUST be repeatable, MUST produce the canonical
-addresses, and MUST fail rather than deploy to divergent addresses.
+**MC-99** — Contract deployment to a new chain MUST be repeatable, MUST produce the class's
+deterministic addresses unless the chain's profile declares an override, and MUST fail rather than
+deploy to an undeclared address or code that is no release's *(amended: per-chain-contract-addresses)*.
 
 **MC-100** — There MUST be an operational check that verifies a chain end to end — endpoint identity,
 EntryPoint, factory address, account derivation, and paymaster where enabled — runnable against any
@@ -883,7 +884,7 @@ duplicating the wallet origin, the backend or the database.
 **MC-146** — There MUST be a documented **chain adoption checklist**, and it MUST be a deliverable of
 this work rather than tribal knowledge. Chains are adopted on client demand rather than from a fixed
 list, so adoption is a routine operation and MUST be turnkey: verify the deterministic deployer,
-verify or place the canonical EntryPoint (MC-141), deploy, assert the canonical addresses, fund the
+verify or place the canonical EntryPoint (MC-141), deploy, assert release code at the registered addresses, fund the
 submission account, stake and fund the paymaster, and confirm the per-chain verification passes
 *(decided: Q7)*.
 
@@ -898,8 +899,8 @@ remain bounded, which the closed chain list (D8) guarantees.
 **MC-103** — Endpoint reachability, submission-infrastructure health and chain-state ingestion lag MUST
 be observable per chain.
 
-**MC-104** — There MUST be an alert for a served chain whose factory or implementation address ceases to
-match the canonical one.
+**MC-104** — There MUST be an alert for a served chain whose factory or implementation at its registered
+address ceases to hold release code *(amended: per-chain-contract-addresses)*.
 
 **MC-105** — There MUST be an alert for an account whose owner set differs between served chains
 (MC-37).
