@@ -21,7 +21,7 @@
 		"viem": "2.57.10"
 	},
 	"devDependencies": {
-		"@types/node": "20.17.48",
+		"@types/node": "24.19.2",
 		"@types/react": "19.1.4",
 		"@types/react-dom": "19.2.3",
 		"@vitejs/plugin-react": "4.7.0",
