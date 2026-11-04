@@ -54,6 +54,26 @@ describe.skipIf(!anvilAvailable)("one bundler, several chains", () => {
 		);
 	});
 
+	it("answers a batch of up to 10 requests and refuses a larger one", async () => {
+		const batch = (size: number) =>
+			fetch(`${bundler.base}/31337`, {
+				method: "POST",
+				body: JSON.stringify(
+					Array.from({ length: size }, (_, id) => ({
+						jsonrpc: "2.0",
+						id,
+						method: "eth_chainId",
+					})),
+				),
+			}).then((response) => response.json() as Promise<unknown>);
+		expect(await batch(10)).toHaveLength(10);
+		expect(await batch(11)).toEqual({
+			jsonrpc: "2.0",
+			id: null,
+			error: { code: -32600, message: "batch of 11 exceeds the limit of 10" },
+		});
+	});
+
 	it("submits on both chains through one process, each with its own nonce lane", async () => {
 		const results = await Promise.all(
 			[a, b].map(async (devnet) => {
