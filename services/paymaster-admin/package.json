@@ -9,7 +9,8 @@
 		"dev": "vite --host --port 4402",
 		"build": "tsc --noEmit && vite build",
 		"preview": "vite preview --port 4402",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@appliedblockchain/giano-paymaster-sdk": "workspace:^6.0.0",
@@ -26,6 +27,7 @@
 		"@types/react-dom": "19.2.3",
 		"@vitejs/plugin-react": "4.7.0",
 		"typescript": "7.0.2",
-		"vite": "6.4.5"
+		"vite": "6.4.5",
+		"vitest": "4.1.12"
 	}
 }

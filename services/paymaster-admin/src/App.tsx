@@ -25,6 +25,10 @@ import {
 } from "./config";
 import { usePaymaster } from "./hooks/usePaymaster";
 import {
+	type TimelockOperationsState,
+	usePendingOperations,
+} from "./hooks/usePendingOperations";
+import {
 	ChainNotAddedError,
 	type ConnectedWallet,
 	connectOnChain,
@@ -47,6 +51,11 @@ import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
 import { TenantsTab } from "./platform/TenantsTab";
+import {
+	type ConsoleContextValue,
+	ConsoleProvider,
+	useSafes,
+} from "./shell/ConsoleContext";
 import { Header } from "./shell/Header";
 import { SessionWarning } from "./shell/SessionWarning";
 import { TabBar } from "./shell/TabBar";
@@ -113,6 +122,7 @@ function Console({
 		loading,
 		error,
 		lastUpdated,
+		block,
 		refresh,
 	} = usePaymaster(deployment, wallet, readAuth);
 	const signedOut = platformApi && !session;
@@ -131,6 +141,8 @@ function Console({
 	);
 	const [proposal, setProposal] = useState<ProposalRequest>();
 	const propose = timelock ? setProposal : undefined;
+	const timelockOperations = usePendingOperations(timelock, lastUpdated);
+	const safes = useSafes(deployment, client?.publicClient);
 
 	const selectDeployment = useCallback(
 		(next: Deployment) => {
@@ -203,6 +215,17 @@ function Console({
 	}, [session, signOut]);
 
 	const route = useRoute();
+	const consoleContext: ConsoleContextValue = {
+		deployment,
+		wallet,
+		myRoles,
+		paymaster: client?.address,
+		timelock,
+		propose,
+		refresh,
+		timelockOperations,
+		safes,
+	};
 	const platformProps = {
 		deployment,
 		wallet,
@@ -215,137 +238,146 @@ function Console({
 	};
 
 	return (
-		<Box minH="100vh">
-			<Header
-				deployment={deployment}
-				selectDeployment={selectDeployment}
-				overview={overview}
-				health={health}
-				lastUpdated={lastUpdated}
-				loading={loading}
-				refresh={refresh}
-				wallet={wallet}
-				roles={myRoles.length}
-				connect={connect}
-				connecting={connecting}
-				disconnect={disconnect}
-			/>
+		<ConsoleProvider value={consoleContext}>
+			<Box minH="100vh">
+				<Header
+					deployment={deployment}
+					selectDeployment={selectDeployment}
+					overview={overview}
+					health={health}
+					lastUpdated={lastUpdated}
+					block={block}
+					loading={loading}
+					refresh={refresh}
+					wallet={wallet}
+					roles={myRoles.length}
+					connect={connect}
+					connecting={connecting}
+					disconnect={disconnect}
+				/>
 
-			<Container maxW="7xl" py="6">
-				{!wallet && notAdded && (
-					<Alert.Root status="warning" mb="4">
-						<Alert.Indicator />
-						<Alert.Content>
-							<Alert.Title>
-								Add {notAdded.deployment.name} in your wallet
-							</Alert.Title>
-							<Alert.Description>
-								Your wallet would not take this network from the console. It
-								said: {notAdded.walletMessage}
-							</Alert.Description>
-							<Stack gap="1" mt="3">
-								{networkDetails(notAdded.deployment, notAdded.rpcUrl).map(
-									({ label, value }) => (
-										<HStack key={label} gap="3">
-											<Text
-												fontSize="xs"
-												color="fg.muted"
-												minW="28"
-												textAlign="right"
-											>
-												{label}
-											</Text>
-											<Copyable value={value} label={label} />
-										</HStack>
-									),
-								)}
-							</Stack>
-							<Text fontSize="xs" color="fg.muted" mt="2">
-								Wallets generally accept only an HTTPS address, localhost or
-								127.0.0.1 as an RPC URL. If yours will not take the address
-								above, any address of your own that reaches the same node does
-								just as well.
-							</Text>
-							<Box mt="3">
-								<Button
-									size="sm"
-									colorPalette="brand"
-									onClick={() => void connect()}
-									loading={connecting}
-									loadingText="Connecting"
-								>
-									Connect again
-								</Button>
-							</Box>
-						</Alert.Content>
-					</Alert.Root>
-				)}
+				<Container maxW="7xl" py="6">
+					{!wallet && notAdded && (
+						<Alert.Root status="warning" mb="4">
+							<Alert.Indicator />
+							<Alert.Content>
+								<Alert.Title>
+									Add {notAdded.deployment.name} in your wallet
+								</Alert.Title>
+								<Alert.Description>
+									Your wallet would not take this network from the console. It
+									said: {notAdded.walletMessage}
+								</Alert.Description>
+								<Stack gap="1" mt="3">
+									{networkDetails(notAdded.deployment, notAdded.rpcUrl).map(
+										({ label, value }) => (
+											<HStack key={label} gap="3">
+												<Text
+													fontSize="xs"
+													color="fg.muted"
+													minW="28"
+													textAlign="right"
+												>
+													{label}
+												</Text>
+												<Copyable value={value} label={label} />
+											</HStack>
+										),
+									)}
+								</Stack>
+								<Text fontSize="xs" color="fg.muted" mt="2">
+									Wallets generally accept only an HTTPS address, localhost or
+									127.0.0.1 as an RPC URL. If yours will not take the address
+									above, any address of your own that reaches the same node does
+									just as well.
+								</Text>
+								<Box mt="3">
+									<Button
+										size="sm"
+										colorPalette="brand"
+										onClick={() => void connect()}
+										loading={connecting}
+										loadingText="Connecting"
+									>
+										Connect again
+									</Button>
+								</Box>
+							</Alert.Content>
+						</Alert.Root>
+					)}
 
-				{!wallet && !notAdded && !platformApi && (
-					<Alert.Root status="info" mb="4">
-						<Alert.Indicator />
-						<Alert.Content>
-							<Alert.Title>Read-only</Alert.Title>
-							<Alert.Description>
-								Everything here is read straight from the chain, so no wallet is
-								needed to inspect a deployment. Connect one to act — the console
-								never sees a key, it only asks your wallet to sign.
-							</Alert.Description>
-						</Alert.Content>
-					</Alert.Root>
-				)}
+					{!wallet && !notAdded && !platformApi && (
+						<Alert.Root status="info" mb="4">
+							<Alert.Indicator />
+							<Alert.Content>
+								<Alert.Title>Read-only</Alert.Title>
+								<Alert.Description>
+									Everything here is read straight from the chain, so no wallet
+									is needed to inspect a deployment. Connect one to act — the
+									console never sees a key, it only asks your wallet to sign.
+								</Alert.Description>
+							</Alert.Content>
+						</Alert.Root>
+					)}
 
-				{error && (
-					<Alert.Root status="error" mb="4">
-						<Alert.Indicator />
-						<Alert.Content>
-							<Alert.Title>Could not read the paymaster</Alert.Title>
-							<Alert.Description>{error}</Alert.Description>
-						</Alert.Content>
-					</Alert.Root>
-				)}
+					{error && (
+						<Alert.Root status="error" mb="4">
+							<Alert.Indicator />
+							<Alert.Content>
+								<Alert.Title>Could not read the paymaster</Alert.Title>
+								<Alert.Description>{error}</Alert.Description>
+							</Alert.Content>
+						</Alert.Root>
+					)}
 
-				{signedOut ? (
-					<SignIn
-						deployment={deployment}
+					{signedOut ? (
+						<SignIn
+							deployment={deployment}
+							wallet={wallet}
+							connect={connect}
+							connecting={connecting}
+						/>
+					) : (
+						<>
+							<TabBar
+								route={route}
+								platformApi={platformApi}
+								tenants={overview?.tenants.length}
+								pendingOperations={
+									timelock && timelockOperations.settled
+										? timelockOperations.pending.length
+										: undefined
+								}
+								healthLevel={health?.level}
+							/>
+							<RouteView
+								route={route}
+								platformProps={platformProps}
+								health={health}
+								propose={propose}
+								timelock={timelock}
+								refresh={refresh}
+								lastUpdated={lastUpdated}
+								rosterOnChain={rosterOnChain}
+								loading={loading}
+								timelockOperations={timelockOperations}
+							/>
+						</>
+					)}
+
+					<ProposalDialog
+						timelock={timelock}
+						request={proposal}
+						onClose={() => setProposal(undefined)}
+					/>
+					<SessionWarning
 						wallet={wallet}
 						connect={connect}
-						connecting={connecting}
+						chainId={deployment.chainId}
 					/>
-				) : (
-					<>
-						<TabBar
-							route={route}
-							platformApi={platformApi}
-							tenants={overview?.tenants.length}
-							healthLevel={health?.level}
-						/>
-						<RouteView
-							route={route}
-							platformProps={platformProps}
-							health={health}
-							propose={propose}
-							timelock={timelock}
-							refresh={refresh}
-							lastUpdated={lastUpdated}
-							rosterOnChain={rosterOnChain}
-							loading={loading}
-						/>
-					</>
-				)}
-
-				<ProposalDialog
-					timelock={timelock}
-					request={proposal}
-					onClose={() => setProposal(undefined)}
-				/>
-				<SessionWarning
-					wallet={wallet}
-					connect={connect}
-					chainId={deployment.chainId}
-				/>
-			</Container>
-		</Box>
+				</Container>
+			</Box>
+		</ConsoleProvider>
 	);
 }
 
@@ -363,6 +395,7 @@ function RouteView({
 	lastUpdated,
 	rosterOnChain,
 	loading,
+	timelockOperations,
 }: {
 	route: Route;
 	platformProps: PlatformAreaProps;
@@ -373,6 +406,7 @@ function RouteView({
 	lastUpdated: Date | undefined;
 	rosterOnChain: boolean;
 	loading: boolean;
+	timelockOperations: TimelockOperationsState;
 }) {
 	const { platformApi } = getAdminConfig();
 	const { client, overview, myRoles, wallet, deployment } = platformProps;
@@ -444,6 +478,7 @@ function RouteView({
 					propose={propose}
 					refresh={refresh}
 					lastUpdated={lastUpdated}
+					timelockOperations={timelockOperations}
 				/>
 			);
 		case "activity":

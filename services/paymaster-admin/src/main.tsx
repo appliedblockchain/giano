@@ -32,8 +32,8 @@ loadAdminConfig()
 					</Heading>
 					<Text color="fg.muted">{error.message}</Text>
 					<Text color="fg.muted" mt="2" fontSize="sm">
-						/config.json must set at least <code>chainId</code> and{" "}
-						<code>rpcUrl</code>.
+						Fix <code>/config.json</code>, or the variables the container
+						renders it from, and reload.
 					</Text>
 				</Box>
 			</Provider>,
