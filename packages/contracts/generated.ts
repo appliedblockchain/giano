@@ -3,7 +3,13 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const accessControlAbi = [
-  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DEFAULT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
@@ -63,8 +69,18 @@ export const accessControlAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -73,8 +89,18 @@ export const accessControlAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -83,8 +109,18 @@ export const accessControlAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -104,7 +140,13 @@ export const accessControlAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const accessControlEnumerableUpgradeableAbi = [
-  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DEFAULT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
@@ -183,14 +225,36 @@ export const accessControlEnumerableUpgradeableAbi = [
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   {
     type: 'event',
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -199,8 +263,18 @@ export const accessControlEnumerableUpgradeableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -209,8 +283,18 @@ export const accessControlEnumerableUpgradeableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -232,7 +316,13 @@ export const accessControlEnumerableUpgradeableAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const accessControlUpgradeableAbi = [
-  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DEFAULT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
@@ -287,14 +377,36 @@ export const accessControlUpgradeableAbi = [
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   {
     type: 'event',
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -303,8 +415,18 @@ export const accessControlUpgradeableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -313,8 +435,18 @@ export const accessControlUpgradeableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -335,14 +467,26 @@ export const accessControlUpgradeableAbi = [
 // Address
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-export const addressAbi = [{ type: 'error', inputs: [{ name: 'target', internalType: 'address', type: 'address' }], name: 'AddressEmptyCode' }] as const
+export const addressAbi = [
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
+] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AuthenticatedStaticCaller
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const authenticatedStaticCallerAbi = [
-  { type: 'function', inputs: [], name: 'domainSeparator', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'domainSeparator',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [],
@@ -358,7 +502,13 @@ export const authenticatedStaticCallerAbi = [
     ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'getSignatureLifetime', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getSignatureLifetime',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -411,32 +561,86 @@ export const authenticatedStaticCallerAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const basePaymasterAbi = [
-  { type: 'function', inputs: [], name: 'acceptOwnership', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' }],
+    inputs: [],
+    name: 'acceptOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' },
+    ],
     name: 'addStake',
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'deposit', outputs: [], stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'entryPoint', outputs: [{ name: '', internalType: 'contract IEntryPoint', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'getDeposit', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'owner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'pendingOwner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'deposit',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'entryPoint',
+    outputs: [
+      { name: '', internalType: 'contract IEntryPoint', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getDeposit',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'pendingOwner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
-      { name: 'mode', internalType: 'enum IPaymaster.PostOpMode', type: 'uint8' },
+      {
+        name: 'mode',
+        internalType: 'enum IPaymaster.PostOpMode',
+        type: 'uint8',
+      },
       { name: 'context', internalType: 'bytes', type: 'bytes' },
       { name: 'actualGasCost', internalType: 'uint256', type: 'uint256' },
-      { name: 'actualUserOpFeePerGas', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'actualUserOpFeePerGas',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
     ],
     name: 'postOp',
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'renounceOwnership', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
@@ -444,7 +648,13 @@ export const basePaymasterAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'unlockStake', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'unlockStake',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [
@@ -457,8 +667,16 @@ export const basePaymasterAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -476,7 +694,13 @@ export const basePaymasterAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'withdrawAddress', internalType: 'address payable', type: 'address' }],
+    inputs: [
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
+    ],
     name: 'withdrawStake',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -484,7 +708,11 @@ export const basePaymasterAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'withdrawAddress', internalType: 'address payable', type: 'address' },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
       { name: 'amount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'withdrawTo',
@@ -495,8 +723,18 @@ export const basePaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferStarted',
   },
@@ -504,8 +742,18 @@ export const basePaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferred',
   },
@@ -527,22 +775,44 @@ export const basePaymasterAbi = [
     ],
     name: 'NotFromEntryPoint',
   },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'address', type: 'address' }], name: 'OwnableInvalidOwner' },
-  { type: 'error', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'OwnableUnauthorizedAccount' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CallContextChecker
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-export const callContextCheckerAbi = [{ type: 'error', inputs: [], name: 'UnauthorizedCallContext' }] as const
+export const callContextCheckerAbi = [
+  { type: 'error', inputs: [], name: 'UnauthorizedCallContext' },
+] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ContextUpgradeable
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const contextUpgradeableAbi = [
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
 ] as const
@@ -553,8 +823,16 @@ export const contextUpgradeableAbi = [
 
 export const ecdsaAbi = [
   { type: 'error', inputs: [], name: 'ECDSAInvalidSignature' },
-  { type: 'error', inputs: [{ name: 'length', internalType: 'uint256', type: 'uint256' }], name: 'ECDSAInvalidSignatureLength' },
-  { type: 'error', inputs: [{ name: 's', internalType: 'bytes32', type: 'bytes32' }], name: 'ECDSAInvalidSignatureS' },
+  {
+    type: 'error',
+    inputs: [{ name: 'length', internalType: 'uint256', type: 'uint256' }],
+    name: 'ECDSAInvalidSignatureLength',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 's', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ECDSAInvalidSignatureS',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -578,7 +856,19 @@ export const eip712UpgradeableAbi = [
     stateMutability: 'view',
   },
   { type: 'event', anonymous: false, inputs: [], name: 'EIP712DomainChanged' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
 ] as const
@@ -628,7 +918,13 @@ export const erc1155HolderAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const erc1271Abi = [
-  { type: 'function', inputs: [], name: 'domainSeparator', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'domainSeparator',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [],
@@ -671,7 +967,11 @@ export const erc1271InputGeneratorAbi = [
   {
     type: 'constructor',
     inputs: [
-      { name: 'account', internalType: 'contract GianoSmartWallet', type: 'address' },
+      {
+        name: 'account',
+        internalType: 'contract GianoSmartWallet',
+        type: 'address',
+      },
       { name: 'hash', internalType: 'bytes32', type: 'bytes32' },
       { name: 'accountFactory', internalType: 'address', type: 'address' },
       { name: 'factoryCalldata', internalType: 'bytes', type: 'bytes' },
@@ -715,7 +1015,19 @@ export const erc165UpgradeableAbi = [
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
 ] as const
@@ -734,9 +1046,31 @@ export const erc1967ProxyAbi = [
     stateMutability: 'payable',
   },
   { type: 'fallback', stateMutability: 'payable' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'implementation', internalType: 'address', type: 'address', indexed: true }], name: 'Upgraded' },
-  { type: 'error', inputs: [{ name: 'target', internalType: 'address', type: 'address' }], name: 'AddressEmptyCode' },
-  { type: 'error', inputs: [{ name: 'implementation', internalType: 'address', type: 'address' }], name: 'ERC1967InvalidImplementation' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'implementation', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC1967InvalidImplementation',
+  },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
   { type: 'error', inputs: [], name: 'FailedCall' },
 ] as const
@@ -746,9 +1080,23 @@ export const erc1967ProxyAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const erc1967UtilsAbi = [
-  { type: 'error', inputs: [{ name: 'admin', internalType: 'address', type: 'address' }], name: 'ERC1967InvalidAdmin' },
-  { type: 'error', inputs: [{ name: 'beacon', internalType: 'address', type: 'address' }], name: 'ERC1967InvalidBeacon' },
-  { type: 'error', inputs: [{ name: 'implementation', internalType: 'address', type: 'address' }], name: 'ERC1967InvalidImplementation' },
+  {
+    type: 'error',
+    inputs: [{ name: 'admin', internalType: 'address', type: 'address' }],
+    name: 'ERC1967InvalidAdmin',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'beacon', internalType: 'address', type: 'address' }],
+    name: 'ERC1967InvalidBeacon',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'implementation', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC1967InvalidImplementation',
+  },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
 ] as const
 
@@ -784,10 +1132,34 @@ export const erc20Abi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'decimals', outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'name', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'symbol', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'totalSupply', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'decimals',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'name',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'symbol',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -813,9 +1185,24 @@ export const erc20Abi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'owner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'spender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'spender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Approval',
   },
@@ -825,7 +1212,12 @@ export const erc20Abi = [
     inputs: [
       { name: 'from', internalType: 'address', type: 'address', indexed: true },
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Transfer',
   },
@@ -847,10 +1239,26 @@ export const erc20Abi = [
     ],
     name: 'ERC20InsufficientBalance',
   },
-  { type: 'error', inputs: [{ name: 'approver', internalType: 'address', type: 'address' }], name: 'ERC20InvalidApprover' },
-  { type: 'error', inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }], name: 'ERC20InvalidReceiver' },
-  { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'ERC20InvalidSender' },
-  { type: 'error', inputs: [{ name: 'spender', internalType: 'address', type: 'address' }], name: 'ERC20InvalidSpender' },
+  {
+    type: 'error',
+    inputs: [{ name: 'approver', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidApprover',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidReceiver',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidSender',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'spender', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidSpender',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -887,7 +1295,11 @@ export const errorsAbi = [
     ],
     name: 'InsufficientBalance',
   },
-  { type: 'error', inputs: [{ name: '', internalType: 'address', type: 'address' }], name: 'MissingPrecompile' },
+  {
+    type: 'error',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'MissingPrecompile',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -897,17 +1309,83 @@ export const errorsAbi = [
 export const gianoPaymasterAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
   { type: 'receive', stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'FEE_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'FEE_COLLECTOR_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'PARAM_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'PAUSER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'ROLE_ADMIN', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'SIGNER_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'STAKE_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'TENANT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'UPGRADER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'UPGRADE_INTERFACE_VERSION', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DEFAULT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'FEE_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'FEE_COLLECTOR_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'PARAM_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'PAUSER_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ROLE_ADMIN',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'SIGNER_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'STAKE_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'TENANT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'UPGRADER_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'UPGRADE_INTERFACE_VERSION',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [],
@@ -915,16 +1393,36 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [{ name: 'signer', internalType: 'address', type: 'address' }], name: 'addSigner', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' }],
+    inputs: [{ name: 'signer', internalType: 'address', type: 'address' }],
+    name: 'addSigner',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' },
+    ],
     name: 'addStake',
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'defaultFeeWei', outputs: [{ name: '', internalType: 'uint128', type: 'uint128' }], stateMutability: 'view' },
-  { type: 'function', inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }], name: 'depositFor', outputs: [], stateMutability: 'payable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'defaultFeeWei',
+    outputs: [{ name: '', internalType: 'uint128', type: 'uint128' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }],
+    name: 'depositFor',
+    outputs: [],
+    stateMutability: 'payable',
+  },
   {
     type: 'function',
     inputs: [],
@@ -940,7 +1438,15 @@ export const gianoPaymasterAbi = [
     ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'entryPoint', outputs: [{ name: '', internalType: 'contract IEntryPoint', type: 'address' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'entryPoint',
+    outputs: [
+      { name: '', internalType: 'contract IEntryPoint', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }],
@@ -948,7 +1454,13 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'uint128', type: 'uint128' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'getDeposit', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getDeposit',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
@@ -980,7 +1492,13 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'address[]', type: 'address[]' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'getSigners', outputs: [{ name: '', internalType: 'address[]', type: 'address[]' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getSigners',
+    outputs: [{ name: '', internalType: 'address[]', type: 'address[]' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }],
@@ -1003,7 +1521,13 @@ export const gianoPaymasterAbi = [
     ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'getTenantIds', outputs: [{ name: 'ids', internalType: 'bytes16[]', type: 'bytes16[]' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getTenantIds',
+    outputs: [{ name: 'ids', internalType: 'bytes16[]', type: 'bytes16[]' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -1070,23 +1594,61 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'pause', outputs: [], stateMutability: 'nonpayable' },
-  { type: 'function', inputs: [], name: 'paused', outputs: [{ name: '', internalType: 'bool', type: 'bool' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'penaltyBps', outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'pause',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'paused',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'penaltyBps',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
-      { name: 'mode', internalType: 'enum IPaymaster.PostOpMode', type: 'uint8' },
+      {
+        name: 'mode',
+        internalType: 'enum IPaymaster.PostOpMode',
+        type: 'uint8',
+      },
       { name: 'context', internalType: 'bytes', type: 'bytes' },
       { name: 'actualGasCost', internalType: 'uint256', type: 'uint256' },
-      { name: 'actualUserOpFeePerGas', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'actualUserOpFeePerGas',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
     ],
     name: 'postOp',
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'postOpGasAllowance', outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'proxiableUUID', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'postOpGasAllowance',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'proxiableUUID',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -1132,7 +1694,13 @@ export const gianoPaymasterAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [{ name: 'bps', internalType: 'uint16', type: 'uint16' }], name: 'setPenaltyBps', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [{ name: 'bps', internalType: 'uint16', type: 'uint16' }],
+    name: 'setPenaltyBps',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'gasUnits', internalType: 'uint32', type: 'uint32' }],
@@ -1178,7 +1746,13 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'signerCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'signerCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
@@ -1186,7 +1760,13 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'tenantCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'tenantCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
@@ -1194,9 +1774,27 @@ export const gianoPaymasterAbi = [
     outputs: [{ name: '', internalType: 'bytes16', type: 'bytes16' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'treasury', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'unlockStake', outputs: [], stateMutability: 'nonpayable' },
-  { type: 'function', inputs: [], name: 'unpause', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'treasury',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'unlockStake',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'unpause',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [
@@ -1219,8 +1817,16 @@ export const gianoPaymasterAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -1269,8 +1875,18 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'oldFeeWei', internalType: 'uint128', type: 'uint128', indexed: false },
-      { name: 'newFeeWei', internalType: 'uint128', type: 'uint128', indexed: false },
+      {
+        name: 'oldFeeWei',
+        internalType: 'uint128',
+        type: 'uint128',
+        indexed: false,
+      },
+      {
+        name: 'newFeeWei',
+        internalType: 'uint128',
+        type: 'uint128',
+        indexed: false,
+      },
     ],
     name: 'FeeChanged',
   },
@@ -1278,9 +1894,24 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newTreasury', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newTreasury',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'FeesAccrued',
   },
@@ -1289,30 +1920,84 @@ export const gianoPaymasterAbi = [
     anonymous: false,
     inputs: [
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newTreasury', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newTreasury',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'FeesWithdrawn',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   {
     type: 'event',
     anonymous: false,
     inputs: [
       { name: 'name', internalType: 'string', type: 'string', indexed: true },
-      { name: 'oldValue', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newValue', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'oldValue',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newValue',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'ParamChanged',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'account', internalType: 'address', type: 'address', indexed: false }], name: 'Paused' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+    ],
+    name: 'Paused',
+  },
   {
     type: 'event',
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -1321,8 +2006,18 @@ export const gianoPaymasterAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -1331,24 +2026,93 @@ export const gianoPaymasterAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'signer', internalType: 'address', type: 'address', indexed: true }], name: 'SignerAdded' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'signer', internalType: 'address', type: 'address', indexed: true }], name: 'SignerRemoved' },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'gasCostWei', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'feeWei', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'overheadWei', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newBalance', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'signer',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'SignerAdded',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'signer',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'SignerRemoved',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'gasCostWei',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'feeWei',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'overheadWei',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newBalance',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
       { name: 'success', internalType: 'bool', type: 'bool', indexed: false },
     ],
     name: 'Sponsored',
@@ -1357,10 +2121,30 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'shortfallWei', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'totalDeficitWei', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'shortfallWei',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'totalDeficitWei',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'SponsorshipDeficit',
   },
@@ -1368,9 +2152,19 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
       { name: 'enabled', internalType: 'bool', type: 'bool', indexed: false },
-      { name: 'actor', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'TenantEnabledChanged',
   },
@@ -1378,9 +2172,24 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
-      { name: 'hasOverride', internalType: 'bool', type: 'bool', indexed: false },
-      { name: 'feeWei', internalType: 'uint128', type: 'uint128', indexed: false },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
+      {
+        name: 'hasOverride',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+      {
+        name: 'feeWei',
+        internalType: 'uint128',
+        type: 'uint128',
+        indexed: false,
+      },
     ],
     name: 'TenantFeeChanged',
   },
@@ -1388,11 +2197,31 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
       { name: 'from', internalType: 'address', type: 'address', indexed: true },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'deficitCleared', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newBalance', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'deficitCleared',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newBalance',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'TenantFunded',
   },
@@ -1400,8 +2229,18 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
-      { name: 'withdrawAddress', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
       { name: 'slug', internalType: 'string', type: 'string', indexed: false },
     ],
     name: 'TenantRegistered',
@@ -1410,9 +2249,24 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
-      { name: 'oldAddress', internalType: 'address', type: 'address', indexed: false },
-      { name: 'newAddress', internalType: 'address', type: 'address', indexed: false },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
+      {
+        name: 'oldAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'newAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
     ],
     name: 'TenantWithdrawAddressChanged',
   },
@@ -1420,15 +2274,54 @@ export const gianoPaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16', indexed: true },
+      {
+        name: 'tenantId',
+        internalType: 'bytes16',
+        type: 'bytes16',
+        indexed: true,
+      },
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newBalance', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newBalance',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'TenantWithdrawn',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'account', internalType: 'address', type: 'address', indexed: false }], name: 'Unpaused' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'implementation', internalType: 'address', type: 'address', indexed: true }], name: 'Upgraded' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+    ],
+    name: 'Unpaused',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
   { type: 'error', inputs: [], name: 'AccessControlBadConfirmation' },
   {
     type: 'error',
@@ -1438,11 +2331,25 @@ export const gianoPaymasterAbi = [
     ],
     name: 'AccessControlUnauthorizedAccount',
   },
-  { type: 'error', inputs: [{ name: 'target', internalType: 'address', type: 'address' }], name: 'AddressEmptyCode' },
-  { type: 'error', inputs: [{ name: 'signer', internalType: 'address', type: 'address' }], name: 'AlreadySigner' },
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'signer', internalType: 'address', type: 'address' }],
+    name: 'AlreadySigner',
+  },
   { type: 'error', inputs: [], name: 'BadPaymasterData' },
   { type: 'error', inputs: [], name: 'DirectTransferNotAllowed' },
-  { type: 'error', inputs: [{ name: 'implementation', internalType: 'address', type: 'address' }], name: 'ERC1967InvalidImplementation' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'implementation', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC1967InvalidImplementation',
+  },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
   { type: 'error', inputs: [], name: 'EnforcedPause' },
   {
@@ -1465,7 +2372,11 @@ export const gianoPaymasterAbi = [
     name: 'InsufficientTenantBalance',
   },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
-  { type: 'error', inputs: [{ name: 'signer', internalType: 'address', type: 'address' }], name: 'NotASigner' },
+  {
+    type: 'error',
+    inputs: [{ name: 'signer', internalType: 'address', type: 'address' }],
+    name: 'NotASigner',
+  },
   { type: 'error', inputs: [], name: 'NotEntryPoint' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   {
@@ -1477,7 +2388,11 @@ export const gianoPaymasterAbi = [
     name: 'NotWithdrawAddress',
   },
   { type: 'error', inputs: [], name: 'PaymasterPaused' },
-  { type: 'error', inputs: [{ name: 'penaltyBps', internalType: 'uint16', type: 'uint16' }], name: 'PenaltyBpsTooHigh' },
+  {
+    type: 'error',
+    inputs: [{ name: 'penaltyBps', internalType: 'uint16', type: 'uint16' }],
+    name: 'PenaltyBpsTooHigh',
+  },
   {
     type: 'error',
     inputs: [
@@ -1486,8 +2401,16 @@ export const gianoPaymasterAbi = [
     ],
     name: 'SafeCastOverflowedUintDowncast',
   },
-  { type: 'error', inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }], name: 'TenantAlreadyRegistered' },
-  { type: 'error', inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }], name: 'TenantDisabled' },
+  {
+    type: 'error',
+    inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }],
+    name: 'TenantAlreadyRegistered',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }],
+    name: 'TenantDisabled',
+  },
   {
     type: 'error',
     inputs: [
@@ -1497,9 +2420,21 @@ export const gianoPaymasterAbi = [
     name: 'TenantInDeficit',
   },
   { type: 'error', inputs: [], name: 'UUPSUnauthorizedCallContext' },
-  { type: 'error', inputs: [{ name: 'slot', internalType: 'bytes32', type: 'bytes32' }], name: 'UUPSUnsupportedProxiableUUID' },
-  { type: 'error', inputs: [{ name: 'signer', internalType: 'address', type: 'address' }], name: 'UnauthorisedSigner' },
-  { type: 'error', inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }], name: 'UnknownTenant' },
+  {
+    type: 'error',
+    inputs: [{ name: 'slot', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'UUPSUnsupportedProxiableUUID',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'signer', internalType: 'address', type: 'address' }],
+    name: 'UnauthorisedSigner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'tenantId', internalType: 'bytes16', type: 'bytes16' }],
+    name: 'UnknownTenant',
+  },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
   { type: 'error', inputs: [], name: 'ZeroAmount' },
 ] as const
@@ -1512,7 +2447,13 @@ export const gianoSmartWalletAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
   { type: 'fallback', stateMutability: 'payable' },
   { type: 'receive', stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'REPLAYABLE_NONCE_KEY', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'REPLAYABLE_NONCE_KEY',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
@@ -1532,12 +2473,20 @@ export const gianoSmartWalletAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'functionSelector', internalType: 'bytes4', type: 'bytes4' }],
+    inputs: [
+      { name: 'functionSelector', internalType: 'bytes4', type: 'bytes4' },
+    ],
     name: 'canSkipChainIdValidation',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'pure',
   },
-  { type: 'function', inputs: [], name: 'domainSeparator', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'domainSeparator',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [],
@@ -1553,7 +2502,13 @@ export const gianoSmartWalletAbi = [
     ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'entryPoint', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'entryPoint',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -1590,7 +2545,13 @@ export const gianoSmartWalletAbi = [
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'getSignatureLifetime', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getSignatureLifetime',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -1603,8 +2564,16 @@ export const gianoSmartWalletAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -1615,8 +2584,20 @@ export const gianoSmartWalletAbi = [
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'implementation', outputs: [{ name: '$', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [{ name: 'owners', internalType: 'bytes[]', type: 'bytes[]' }], name: 'initialize', outputs: [], stateMutability: 'payable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'implementation',
+    outputs: [{ name: '$', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'owners', internalType: 'bytes[]', type: 'bytes[]' }],
+    name: 'initialize',
+    outputs: [],
+    stateMutability: 'payable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
@@ -1651,7 +2632,13 @@ export const gianoSmartWalletAbi = [
     outputs: [{ name: 'result', internalType: 'bytes4', type: 'bytes4' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'nextOwnerIndex', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'nextOwnerIndex',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
@@ -1659,8 +2646,20 @@ export const gianoSmartWalletAbi = [
     outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'ownerCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'proxiableUUID', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ownerCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'proxiableUUID',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -1681,7 +2680,13 @@ export const gianoSmartWalletAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'removedOwnersCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'removedOwnersCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'hash', internalType: 'bytes32', type: 'bytes32' }],
@@ -1730,8 +2735,16 @@ export const gianoSmartWalletAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -1741,14 +2754,21 @@ export const gianoSmartWalletAbi = [
       { name: 'missingAccountFunds', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'validateUserOp',
-    outputs: [{ name: 'validationData', internalType: 'uint256', type: 'uint256' }],
+    outputs: [
+      { name: 'validationData', internalType: 'uint256', type: 'uint256' },
+    ],
     stateMutability: 'nonpayable',
   },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
       { name: 'owner', internalType: 'bytes', type: 'bytes', indexed: false },
     ],
     name: 'AddOwner',
@@ -1757,19 +2777,58 @@ export const gianoSmartWalletAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
       { name: 'owner', internalType: 'bytes', type: 'bytes', indexed: false },
     ],
     name: 'RemoveOwner',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'implementation', internalType: 'address', type: 'address', indexed: true }], name: 'Upgraded' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }], name: 'AlreadyOwner' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }],
+    name: 'AlreadyOwner',
+  },
   { type: 'error', inputs: [], name: 'FnSelectorNotRecognized' },
   { type: 'error', inputs: [], name: 'Initialized' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }], name: 'InvalidEthereumAddressOwner' },
-  { type: 'error', inputs: [{ name: 'implementation', internalType: 'address', type: 'address' }], name: 'InvalidImplementation' },
-  { type: 'error', inputs: [{ name: 'key', internalType: 'uint256', type: 'uint256' }], name: 'InvalidNonceKey' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }], name: 'InvalidOwnerBytesLength' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }],
+    name: 'InvalidEthereumAddressOwner',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'implementation', internalType: 'address', type: 'address' },
+    ],
+    name: 'InvalidImplementation',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'uint256', type: 'uint256' }],
+    name: 'InvalidNonceKey',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }],
+    name: 'InvalidOwnerBytesLength',
+  },
   {
     type: 'error',
     inputs: [
@@ -1780,9 +2839,23 @@ export const gianoSmartWalletAbi = [
   },
   { type: 'error', inputs: [], name: 'InvalidSignature' },
   { type: 'error', inputs: [], name: 'LastOwner' },
-  { type: 'error', inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }], name: 'NoOwnerAtIndex' },
-  { type: 'error', inputs: [{ name: 'ownersRemaining', internalType: 'uint256', type: 'uint256' }], name: 'NotLastOwner' },
-  { type: 'error', inputs: [{ name: 'selector', internalType: 'bytes4', type: 'bytes4' }], name: 'SelectorNotAllowed' },
+  {
+    type: 'error',
+    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
+    name: 'NoOwnerAtIndex',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'ownersRemaining', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'NotLastOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'selector', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'SelectorNotAllowed',
+  },
   {
     type: 'error',
     inputs: [
@@ -1810,7 +2883,13 @@ export const gianoSmartWalletAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const gianoSmartWalletFactoryAbi = [
-  { type: 'constructor', inputs: [{ name: 'implementation_', internalType: 'address', type: 'address' }], stateMutability: 'payable' },
+  {
+    type: 'constructor',
+    inputs: [
+      { name: 'implementation_', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'payable',
+  },
   {
     type: 'function',
     inputs: [
@@ -1818,7 +2897,13 @@ export const gianoSmartWalletFactoryAbi = [
       { name: 'nonce', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'createAccount',
-    outputs: [{ name: 'account', internalType: 'contract GianoSmartWallet', type: 'address' }],
+    outputs: [
+      {
+        name: 'account',
+        internalType: 'contract GianoSmartWallet',
+        type: 'address',
+      },
+    ],
     stateMutability: 'payable',
   },
   {
@@ -1831,15 +2916,42 @@ export const gianoSmartWalletFactoryAbi = [
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'implementation', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'initCodeHash', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'implementation',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'initCodeHash',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'owners', internalType: 'bytes[]', type: 'bytes[]', indexed: false },
-      { name: 'nonce', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'owners',
+        internalType: 'bytes[]',
+        type: 'bytes[]',
+        indexed: false,
+      },
+      {
+        name: 'nonce',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'AccountCreated',
   },
@@ -1872,11 +2984,41 @@ export const gianoTimelockAbi = [
     stateMutability: 'nonpayable',
   },
   { type: 'receive', stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'CANCELLER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'EXECUTOR_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'PROPOSER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }], name: 'cancel', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'CANCELLER_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DEFAULT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'EXECUTOR_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'PROPOSER_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'cancel',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [
@@ -1943,12 +3085,24 @@ export const gianoTimelockAbi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'getMinDelay', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getMinDelay',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
     name: 'getOperationState',
-    outputs: [{ name: '', internalType: 'enum TimelockController.OperationState', type: 'uint8' }],
+    outputs: [
+      {
+        name: '',
+        internalType: 'enum TimelockController.OperationState',
+        type: 'uint8',
+      },
+    ],
     stateMutability: 'view',
   },
   {
@@ -2155,9 +3309,24 @@ export const gianoTimelockAbi = [
     anonymous: false,
     inputs: [
       { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
-      { name: 'target', internalType: 'address', type: 'address', indexed: false },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'target',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
       { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
     ],
     name: 'CallExecuted',
@@ -2167,7 +3336,12 @@ export const gianoTimelockAbi = [
     anonymous: false,
     inputs: [
       { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'salt', internalType: 'bytes32', type: 'bytes32', indexed: false },
+      {
+        name: 'salt',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
     ],
     name: 'CallSalt',
   },
@@ -2176,24 +3350,76 @@ export const gianoTimelockAbi = [
     anonymous: false,
     inputs: [
       { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
-      { name: 'target', internalType: 'address', type: 'address', indexed: false },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'target',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
       { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
-      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32', indexed: false },
-      { name: 'delay', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'predecessor',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+      {
+        name: 'delay',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'CallScheduled',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true }], name: 'Cancelled' },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'target', internalType: 'address', type: 'address', indexed: true },
-      { name: 'selector', internalType: 'bytes4', type: 'bytes4', indexed: true },
-      { name: 'oldDuration', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+    ],
+    name: 'Cancelled',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'target',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'selector',
+        internalType: 'bytes4',
+        type: 'bytes4',
+        indexed: true,
+      },
+      {
+        name: 'oldDuration',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newDuration',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'FunctionDelayChange',
   },
@@ -2201,8 +3427,18 @@ export const gianoTimelockAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'oldDuration', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'oldDuration',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newDuration',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'MinDelayChange',
   },
@@ -2211,8 +3447,18 @@ export const gianoTimelockAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -2221,8 +3467,18 @@ export const gianoTimelockAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -2231,8 +3487,18 @@ export const gianoTimelockAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -2263,8 +3529,18 @@ export const gianoTimelockAbi = [
     ],
     name: 'TimelockInvalidOperationLength',
   },
-  { type: 'error', inputs: [{ name: 'caller', internalType: 'address', type: 'address' }], name: 'TimelockUnauthorizedCaller' },
-  { type: 'error', inputs: [{ name: 'predecessorId', internalType: 'bytes32', type: 'bytes32' }], name: 'TimelockUnexecutedPredecessor' },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'TimelockUnauthorizedCaller',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'predecessorId', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'TimelockUnexecutedPredecessor',
+  },
   {
     type: 'error',
     inputs: [
@@ -2332,8 +3608,18 @@ export const iAccessControlAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -2342,8 +3628,18 @@ export const iAccessControlAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -2352,8 +3648,18 @@ export const iAccessControlAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -2442,8 +3748,18 @@ export const iAccessControlEnumerableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -2452,8 +3768,18 @@ export const iAccessControlEnumerableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -2462,8 +3788,18 @@ export const iAccessControlEnumerableAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -2495,8 +3831,16 @@ export const iAccountAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -2506,7 +3850,9 @@ export const iAccountAbi = [
       { name: 'missingAccountFunds', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'validateUserOp',
-    outputs: [{ name: 'validationData', internalType: 'uint256', type: 'uint256' }],
+    outputs: [
+      { name: 'validationData', internalType: 'uint256', type: 'uint256' },
+    ],
     stateMutability: 'nonpayable',
   },
 ] as const
@@ -2528,8 +3874,16 @@ export const iAggregatorAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -2537,7 +3891,9 @@ export const iAggregatorAbi = [
       },
     ],
     name: 'aggregateSignatures',
-    outputs: [{ name: 'aggregatedSignature', internalType: 'bytes', type: 'bytes' }],
+    outputs: [
+      { name: 'aggregatedSignature', internalType: 'bytes', type: 'bytes' },
+    ],
     stateMutability: 'view',
   },
   {
@@ -2552,8 +3908,16 @@ export const iAggregatorAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -2577,8 +3941,16 @@ export const iAggregatorAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -2596,7 +3968,13 @@ export const iAggregatorAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const iBeaconAbi = [
-  { type: 'function', inputs: [], name: 'implementation', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'implementation',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2614,7 +3992,11 @@ export const ierc1155ErrorsAbi = [
     ],
     name: 'ERC1155InsufficientBalance',
   },
-  { type: 'error', inputs: [{ name: 'approver', internalType: 'address', type: 'address' }], name: 'ERC1155InvalidApprover' },
+  {
+    type: 'error',
+    inputs: [{ name: 'approver', internalType: 'address', type: 'address' }],
+    name: 'ERC1155InvalidApprover',
+  },
   {
     type: 'error',
     inputs: [
@@ -2623,9 +4005,21 @@ export const ierc1155ErrorsAbi = [
     ],
     name: 'ERC1155InvalidArrayLength',
   },
-  { type: 'error', inputs: [{ name: 'operator', internalType: 'address', type: 'address' }], name: 'ERC1155InvalidOperator' },
-  { type: 'error', inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }], name: 'ERC1155InvalidReceiver' },
-  { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'ERC1155InvalidSender' },
+  {
+    type: 'error',
+    inputs: [{ name: 'operator', internalType: 'address', type: 'address' }],
+    name: 'ERC1155InvalidOperator',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }],
+    name: 'ERC1155InvalidReceiver',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'ERC1155InvalidSender',
+  },
   {
     type: 'error',
     inputs: [
@@ -2712,7 +4106,13 @@ export const ierc165Abi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const ierc1822ProxiableAbi = [
-  { type: 'function', inputs: [], name: 'proxiableUUID', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'proxiableUUID',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2724,13 +4124,47 @@ export const ierc1967Abi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousAdmin', internalType: 'address', type: 'address', indexed: false },
-      { name: 'newAdmin', internalType: 'address', type: 'address', indexed: false },
+      {
+        name: 'previousAdmin',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'newAdmin',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
     ],
     name: 'AdminChanged',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'beacon', internalType: 'address', type: 'address', indexed: true }], name: 'BeaconUpgraded' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'implementation', internalType: 'address', type: 'address', indexed: true }], name: 'Upgraded' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'beacon',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'BeaconUpgraded',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2765,7 +4199,13 @@ export const ierc20Abi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'totalSupply', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -2791,9 +4231,24 @@ export const ierc20Abi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'owner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'spender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'spender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Approval',
   },
@@ -2803,7 +4258,12 @@ export const ierc20Abi = [
     inputs: [
       { name: 'from', internalType: 'address', type: 'address', indexed: true },
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Transfer',
   },
@@ -2832,10 +4292,26 @@ export const ierc20ErrorsAbi = [
     ],
     name: 'ERC20InsufficientBalance',
   },
-  { type: 'error', inputs: [{ name: 'approver', internalType: 'address', type: 'address' }], name: 'ERC20InvalidApprover' },
-  { type: 'error', inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }], name: 'ERC20InvalidReceiver' },
-  { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'ERC20InvalidSender' },
-  { type: 'error', inputs: [{ name: 'spender', internalType: 'address', type: 'address' }], name: 'ERC20InvalidSpender' },
+  {
+    type: 'error',
+    inputs: [{ name: 'approver', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidApprover',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidReceiver',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidSender',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'spender', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidSpender',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2870,10 +4346,34 @@ export const ierc20MetadataAbi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'decimals', outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'name', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'symbol', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'totalSupply', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'decimals',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'name',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'symbol',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -2899,9 +4399,24 @@ export const ierc20MetadataAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'owner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'spender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'spender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Approval',
   },
@@ -2911,7 +4426,12 @@ export const ierc20MetadataAbi = [
     inputs: [
       { name: 'from', internalType: 'address', type: 'address', indexed: true },
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Transfer',
   },
@@ -2962,12 +4482,36 @@ export const ierc721ErrorsAbi = [
     ],
     name: 'ERC721InsufficientApproval',
   },
-  { type: 'error', inputs: [{ name: 'approver', internalType: 'address', type: 'address' }], name: 'ERC721InvalidApprover' },
-  { type: 'error', inputs: [{ name: 'operator', internalType: 'address', type: 'address' }], name: 'ERC721InvalidOperator' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'address', type: 'address' }], name: 'ERC721InvalidOwner' },
-  { type: 'error', inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }], name: 'ERC721InvalidReceiver' },
-  { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'ERC721InvalidSender' },
-  { type: 'error', inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }], name: 'ERC721NonexistentToken' },
+  {
+    type: 'error',
+    inputs: [{ name: 'approver', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidApprover',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'operator', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidOperator',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidReceiver',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidSender',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
+    name: 'ERC721NonexistentToken',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2996,7 +4540,9 @@ export const ierc721ReceiverAbi = [
 export const iEntryPointAbi = [
   {
     type: 'function',
-    inputs: [{ name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' }],
+    inputs: [
+      { name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' },
+    ],
     name: 'addStake',
     outputs: [],
     stateMutability: 'payable',
@@ -3018,8 +4564,20 @@ export const iEntryPointAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'depositTo', outputs: [], stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'getCurrentUserOpHash', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'depositTo',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getCurrentUserOpHash',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
@@ -3069,8 +4627,16 @@ export const iEntryPointAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -3098,14 +4664,30 @@ export const iEntryPointAbi = [
               { name: 'nonce', internalType: 'uint256', type: 'uint256' },
               { name: 'initCode', internalType: 'bytes', type: 'bytes' },
               { name: 'callData', internalType: 'bytes', type: 'bytes' },
-              { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+              {
+                name: 'accountGasLimits',
+                internalType: 'bytes32',
+                type: 'bytes32',
+              },
+              {
+                name: 'preVerificationGas',
+                internalType: 'uint256',
+                type: 'uint256',
+              },
               { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
+              {
+                name: 'paymasterAndData',
+                internalType: 'bytes',
+                type: 'bytes',
+              },
               { name: 'signature', internalType: 'bytes', type: 'bytes' },
             ],
           },
-          { name: 'aggregator', internalType: 'contract IAggregator', type: 'address' },
+          {
+            name: 'aggregator',
+            internalType: 'contract IAggregator',
+            type: 'address',
+          },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
         ],
       },
@@ -3127,8 +4709,16 @@ export const iEntryPointAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -3140,18 +4730,38 @@ export const iEntryPointAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [{ name: 'key', internalType: 'uint192', type: 'uint192' }], name: 'incrementNonce', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [{ name: 'key', internalType: 'uint192', type: 'uint192' }],
+    name: 'incrementNonce',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [],
     name: 'senderCreator',
-    outputs: [{ name: '', internalType: 'contract ISenderCreator', type: 'address' }],
+    outputs: [
+      { name: '', internalType: 'contract ISenderCreator', type: 'address' },
+    ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'unlockStake', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'withdrawAddress', internalType: 'address payable', type: 'address' }],
+    inputs: [],
+    name: 'unlockStake',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
+    ],
     name: 'withdrawStake',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -3159,7 +4769,11 @@ export const iEntryPointAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'withdrawAddress', internalType: 'address payable', type: 'address' },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
       { name: 'withdrawAmount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'withdrawTo',
@@ -3170,10 +4784,30 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'factory', internalType: 'address', type: 'address', indexed: false },
-      { name: 'paymaster', internalType: 'address', type: 'address', indexed: false },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'factory',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'paymaster',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
     ],
     name: 'AccountDeployed',
   },
@@ -3182,8 +4816,18 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'totalDeposit', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'totalDeposit',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Deposited',
   },
@@ -3191,9 +4835,24 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'delegate', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'delegate',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'EIP7702AccountInitialized',
   },
@@ -3201,9 +4860,24 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'unusedFactory', internalType: 'address', type: 'address', indexed: false },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'unusedFactory',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
     ],
     name: 'IgnoredInitCode',
   },
@@ -3211,26 +4885,68 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'nonce', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'revertReason', internalType: 'bytes', type: 'bytes', indexed: false },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'nonce',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'revertReason',
+        internalType: 'bytes',
+        type: 'bytes',
+        indexed: false,
+      },
     ],
     name: 'PostOpRevertReason',
   },
   {
     type: 'event',
     anonymous: false,
-    inputs: [{ name: 'aggregator', internalType: 'address', type: 'address', indexed: true }],
+    inputs: [
+      {
+        name: 'aggregator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
     name: 'SignatureAggregatorChanged',
   },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'totalStaked', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'unstakeDelaySec', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'totalStaked',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'unstakeDelaySec',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'StakeLocked',
   },
@@ -3238,8 +4954,18 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'withdrawTime', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'withdrawTime',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'StakeUnlocked',
   },
@@ -3247,9 +4973,24 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'withdrawAddress', internalType: 'address', type: 'address', indexed: false },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'StakeWithdrawn',
   },
@@ -3257,13 +4998,43 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'paymaster', internalType: 'address', type: 'address', indexed: true },
-      { name: 'nonce', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'paymaster',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'nonce',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
       { name: 'success', internalType: 'bool', type: 'bool', indexed: false },
-      { name: 'actualGasCost', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'actualGasUsed', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'actualGasCost',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'actualGasUsed',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'UserOperationEvent',
   },
@@ -3271,9 +5042,24 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'nonce', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'nonce',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'UserOperationPrefundTooLow',
   },
@@ -3281,10 +5067,30 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'userOpHash', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'nonce', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'revertReason', internalType: 'bytes', type: 'bytes', indexed: false },
+      {
+        name: 'userOpHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'nonce',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'revertReason',
+        internalType: 'bytes',
+        type: 'bytes',
+        indexed: false,
+      },
     ],
     name: 'UserOperationRevertReason',
   },
@@ -3292,9 +5098,24 @@ export const iEntryPointAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'withdrawAddress', internalType: 'address', type: 'address', indexed: false },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Withdrawn',
   },
@@ -3351,9 +5172,27 @@ export const iEntryPointAbi = [
     name: 'InsufficientDeposit',
   },
   { type: 'error', inputs: [], name: 'InternalFunction' },
-  { type: 'error', inputs: [{ name: 'beneficiary', internalType: 'address', type: 'address' }], name: 'InvalidBeneficiary' },
-  { type: 'error', inputs: [{ name: 'paymaster', internalType: 'address', type: 'address' }], name: 'InvalidPaymaster' },
-  { type: 'error', inputs: [{ name: 'paymasterAndDataLength', internalType: 'uint256', type: 'uint256' }], name: 'InvalidPaymasterData' },
+  {
+    type: 'error',
+    inputs: [{ name: 'beneficiary', internalType: 'address', type: 'address' }],
+    name: 'InvalidBeneficiary',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'paymaster', internalType: 'address', type: 'address' }],
+    name: 'InvalidPaymaster',
+  },
+  {
+    type: 'error',
+    inputs: [
+      {
+        name: 'paymasterAndDataLength',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
+    ],
+    name: 'InvalidPaymasterData',
+  },
   {
     type: 'error',
     inputs: [
@@ -3366,7 +5205,11 @@ export const iEntryPointAbi = [
     type: 'error',
     inputs: [
       { name: 'newUnstakeDelaySec', internalType: 'uint256', type: 'uint256' },
-      { name: 'currentUnstakeDelaySec', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'currentUnstakeDelaySec',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
     ],
     name: 'InvalidUnstakeDelay',
   },
@@ -3379,9 +5222,21 @@ export const iEntryPointAbi = [
     ],
     name: 'NotStaked',
   },
-  { type: 'error', inputs: [{ name: 'returnData', internalType: 'bytes', type: 'bytes' }], name: 'PostOpReverted' },
-  { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'SenderAddressResult' },
-  { type: 'error', inputs: [{ name: 'aggregator', internalType: 'address', type: 'address' }], name: 'SignatureValidationFailed' },
+  {
+    type: 'error',
+    inputs: [{ name: 'returnData', internalType: 'bytes', type: 'bytes' }],
+    name: 'PostOpReverted',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'SenderAddressResult',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'aggregator', internalType: 'address', type: 'address' }],
+    name: 'SignatureValidationFailed',
+  },
   {
     type: 'error',
     inputs: [
@@ -3425,7 +5280,13 @@ export const iNonceManagerAbi = [
     outputs: [{ name: 'nonce', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [{ name: 'key', internalType: 'uint192', type: 'uint192' }], name: 'incrementNonce', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [{ name: 'key', internalType: 'uint192', type: 'uint192' }],
+    name: 'incrementNonce',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3436,10 +5297,18 @@ export const iPaymasterAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'mode', internalType: 'enum IPaymaster.PostOpMode', type: 'uint8' },
+      {
+        name: 'mode',
+        internalType: 'enum IPaymaster.PostOpMode',
+        type: 'uint8',
+      },
       { name: 'context', internalType: 'bytes', type: 'bytes' },
       { name: 'actualGasCost', internalType: 'uint256', type: 'uint256' },
-      { name: 'actualUserOpFeePerGas', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'actualUserOpFeePerGas',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
     ],
     name: 'postOp',
     outputs: [],
@@ -3457,8 +5326,16 @@ export const iPaymasterAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -3507,7 +5384,9 @@ export const iSenderCreatorAbi = [
 export const iStakeManagerAbi = [
   {
     type: 'function',
-    inputs: [{ name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' }],
+    inputs: [
+      { name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' },
+    ],
     name: 'addStake',
     outputs: [],
     stateMutability: 'payable',
@@ -3519,7 +5398,13 @@ export const iStakeManagerAbi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'depositTo', outputs: [], stateMutability: 'payable' },
+  {
+    type: 'function',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'depositTo',
+    outputs: [],
+    stateMutability: 'payable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
@@ -3540,10 +5425,22 @@ export const iStakeManagerAbi = [
     ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'unlockStake', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'withdrawAddress', internalType: 'address payable', type: 'address' }],
+    inputs: [],
+    name: 'unlockStake',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
+    ],
     name: 'withdrawStake',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -3551,7 +5448,11 @@ export const iStakeManagerAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'withdrawAddress', internalType: 'address payable', type: 'address' },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
       { name: 'withdrawAmount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'withdrawTo',
@@ -3562,8 +5463,18 @@ export const iStakeManagerAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'totalDeposit', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'totalDeposit',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Deposited',
   },
@@ -3571,9 +5482,24 @@ export const iStakeManagerAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'totalStaked', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'unstakeDelaySec', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'totalStaked',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'unstakeDelaySec',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'StakeLocked',
   },
@@ -3581,8 +5507,18 @@ export const iStakeManagerAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'withdrawTime', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'withdrawTime',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'StakeUnlocked',
   },
@@ -3590,9 +5526,24 @@ export const iStakeManagerAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'withdrawAddress', internalType: 'address', type: 'address', indexed: false },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'StakeWithdrawn',
   },
@@ -3600,9 +5551,24 @@ export const iStakeManagerAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'withdrawAddress', internalType: 'address', type: 'address', indexed: false },
-      { name: 'amount', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Withdrawn',
   },
@@ -3636,7 +5602,11 @@ export const iStakeManagerAbi = [
     type: 'error',
     inputs: [
       { name: 'newUnstakeDelaySec', internalType: 'uint256', type: 'uint256' },
-      { name: 'currentUnstakeDelaySec', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'currentUnstakeDelaySec',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
     ],
     name: 'InvalidUnstakeDelay',
   },
@@ -3682,7 +5652,19 @@ export const iStakeManagerAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const initializableAbi = [
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
 ] as const
@@ -3753,7 +5735,13 @@ export const multiOwnableAbi = [
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'nextOwnerIndex', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'nextOwnerIndex',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
@@ -3761,7 +5749,13 @@ export const multiOwnableAbi = [
     outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'ownerCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ownerCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -3782,12 +5776,23 @@ export const multiOwnableAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'removedOwnersCount', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'removedOwnersCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
       { name: 'owner', internalType: 'bytes', type: 'bytes', indexed: false },
     ],
     name: 'AddOwner',
@@ -3796,17 +5801,44 @@ export const multiOwnableAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
       { name: 'owner', internalType: 'bytes', type: 'bytes', indexed: false },
     ],
     name: 'RemoveOwner',
   },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }], name: 'AlreadyOwner' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }], name: 'InvalidEthereumAddressOwner' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }], name: 'InvalidOwnerBytesLength' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }],
+    name: 'AlreadyOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }],
+    name: 'InvalidEthereumAddressOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'bytes', type: 'bytes' }],
+    name: 'InvalidOwnerBytesLength',
+  },
   { type: 'error', inputs: [], name: 'LastOwner' },
-  { type: 'error', inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }], name: 'NoOwnerAtIndex' },
-  { type: 'error', inputs: [{ name: 'ownersRemaining', internalType: 'uint256', type: 'uint256' }], name: 'NotLastOwner' },
+  {
+    type: 'error',
+    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
+    name: 'NoOwnerAtIndex',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'ownersRemaining', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'NotLastOwner',
+  },
   { type: 'error', inputs: [], name: 'Unauthorized' },
   {
     type: 'error',
@@ -3824,8 +5856,20 @@ export const multiOwnableAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const ownableAbi = [
-  { type: 'function', inputs: [], name: 'owner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'renounceOwnership', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
@@ -3837,13 +5881,31 @@ export const ownableAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferred',
   },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'address', type: 'address' }], name: 'OwnableInvalidOwner' },
-  { type: 'error', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'OwnableUnauthorizedAccount' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3851,10 +5913,34 @@ export const ownableAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const ownable2StepAbi = [
-  { type: 'function', inputs: [], name: 'acceptOwnership', outputs: [], stateMutability: 'nonpayable' },
-  { type: 'function', inputs: [], name: 'owner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'pendingOwner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'renounceOwnership', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'acceptOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'pendingOwner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
@@ -3866,8 +5952,18 @@ export const ownable2StepAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferStarted',
   },
@@ -3875,13 +5971,31 @@ export const ownable2StepAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferred',
   },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'address', type: 'address' }], name: 'OwnableInvalidOwner' },
-  { type: 'error', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'OwnableUnauthorizedAccount' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3889,10 +6003,52 @@ export const ownable2StepAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const pausableUpgradeableAbi = [
-  { type: 'function', inputs: [], name: 'paused', outputs: [{ name: '', internalType: 'bool', type: 'bool' }], stateMutability: 'view' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'version', internalType: 'uint64', type: 'uint64', indexed: false }], name: 'Initialized' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'account', internalType: 'address', type: 'address', indexed: false }], name: 'Paused' },
-  { type: 'event', anonymous: false, inputs: [{ name: 'account', internalType: 'address', type: 'address', indexed: false }], name: 'Unpaused' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'paused',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+    ],
+    name: 'Paused',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+    ],
+    name: 'Unpaused',
+  },
   { type: 'error', inputs: [], name: 'EnforcedPause' },
   { type: 'error', inputs: [], name: 'ExpectedPause' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
@@ -3913,32 +6069,86 @@ export const permissivePaymasterAbi = [
     stateMutability: 'nonpayable',
   },
   { type: 'receive', stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'acceptOwnership', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' }],
+    inputs: [],
+    name: 'acceptOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' },
+    ],
     name: 'addStake',
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'deposit', outputs: [], stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'entryPoint', outputs: [{ name: '', internalType: 'contract IEntryPoint', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'getDeposit', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'owner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'pendingOwner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'deposit',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'entryPoint',
+    outputs: [
+      { name: '', internalType: 'contract IEntryPoint', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getDeposit',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'pendingOwner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
-      { name: 'mode', internalType: 'enum IPaymaster.PostOpMode', type: 'uint8' },
+      {
+        name: 'mode',
+        internalType: 'enum IPaymaster.PostOpMode',
+        type: 'uint8',
+      },
       { name: 'context', internalType: 'bytes', type: 'bytes' },
       { name: 'actualGasCost', internalType: 'uint256', type: 'uint256' },
-      { name: 'actualUserOpFeePerGas', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'actualUserOpFeePerGas',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
     ],
     name: 'postOp',
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'renounceOwnership', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
@@ -3946,7 +6156,13 @@ export const permissivePaymasterAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'unlockStake', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'unlockStake',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [
@@ -3959,8 +6175,16 @@ export const permissivePaymasterAbi = [
           { name: 'nonce', internalType: 'uint256', type: 'uint256' },
           { name: 'initCode', internalType: 'bytes', type: 'bytes' },
           { name: 'callData', internalType: 'bytes', type: 'bytes' },
-          { name: 'accountGasLimits', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'preVerificationGas', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'accountGasLimits',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          {
+            name: 'preVerificationGas',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
           { name: 'gasFees', internalType: 'bytes32', type: 'bytes32' },
           { name: 'paymasterAndData', internalType: 'bytes', type: 'bytes' },
           { name: 'signature', internalType: 'bytes', type: 'bytes' },
@@ -3978,7 +6202,13 @@ export const permissivePaymasterAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'withdrawAddress', internalType: 'address payable', type: 'address' }],
+    inputs: [
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
+    ],
     name: 'withdrawStake',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -3986,7 +6216,11 @@ export const permissivePaymasterAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'withdrawAddress', internalType: 'address payable', type: 'address' },
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
       { name: 'amount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'withdrawTo',
@@ -3997,8 +6231,18 @@ export const permissivePaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferStarted',
   },
@@ -4006,8 +6250,18 @@ export const permissivePaymasterAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferred',
   },
@@ -4030,8 +6284,16 @@ export const permissivePaymasterAbi = [
     name: 'NotFromEntryPoint',
   },
   { type: 'error', inputs: [], name: 'OnlyEntrypoint' },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'address', type: 'address' }], name: 'OwnableInvalidOwner' },
-  { type: 'error', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'OwnableUnauthorizedAccount' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -4047,8 +6309,20 @@ export const privateErc20Abi = [
     ],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'DOMAIN_SEPARATOR', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'MESSAGE_TYPEHASH', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DOMAIN_SEPARATOR',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MESSAGE_TYPEHASH',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -4088,11 +6362,41 @@ export const privateErc20Abi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'decimals', outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'getDomainSeparator', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'getMessageTypeHash', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'pure' },
-  { type: 'function', inputs: [{ name: 'amount', internalType: 'uint256', type: 'uint256' }], name: 'mint', outputs: [], stateMutability: 'nonpayable' },
-  { type: 'function', inputs: [], name: 'name', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'decimals',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getDomainSeparator',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getMessageTypeHash',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'amount', internalType: 'uint256', type: 'uint256' }],
+    name: 'mint',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'name',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
@@ -4100,8 +6404,20 @@ export const privateErc20Abi = [
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'symbol', outputs: [{ name: '', internalType: 'string', type: 'string' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'totalSupply', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'symbol',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -4127,9 +6443,24 @@ export const privateErc20Abi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'owner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'spender', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'spender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Approval',
   },
@@ -4139,7 +6470,12 @@ export const privateErc20Abi = [
     inputs: [
       { name: 'from', internalType: 'address', type: 'address', indexed: true },
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'Transfer',
   },
@@ -4161,10 +6497,26 @@ export const privateErc20Abi = [
     ],
     name: 'ERC20InsufficientBalance',
   },
-  { type: 'error', inputs: [{ name: 'approver', internalType: 'address', type: 'address' }], name: 'ERC20InvalidApprover' },
-  { type: 'error', inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }], name: 'ERC20InvalidReceiver' },
-  { type: 'error', inputs: [{ name: 'sender', internalType: 'address', type: 'address' }], name: 'ERC20InvalidSender' },
-  { type: 'error', inputs: [{ name: 'spender', internalType: 'address', type: 'address' }], name: 'ERC20InvalidSpender' },
+  {
+    type: 'error',
+    inputs: [{ name: 'approver', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidApprover',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidReceiver',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidSender',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'spender', internalType: 'address', type: 'address' }],
+    name: 'ERC20InvalidSpender',
+  },
   { type: 'error', inputs: [], name: 'InvalidMessageType' },
   { type: 'error', inputs: [], name: 'InvalidSignature' },
   {
@@ -4181,7 +6533,9 @@ export const privateErc20Abi = [
 // Proxy
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-export const proxyAbi = [{ type: 'fallback', stateMutability: 'payable' }] as const
+export const proxyAbi = [
+  { type: 'fallback', stateMutability: 'payable' },
+] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Receiver
@@ -4206,7 +6560,11 @@ export const safeCastAbi = [
     ],
     name: 'SafeCastOverflowedIntDowncast',
   },
-  { type: 'error', inputs: [{ name: 'value', internalType: 'int256', type: 'int256' }], name: 'SafeCastOverflowedIntToUint' },
+  {
+    type: 'error',
+    inputs: [{ name: 'value', internalType: 'int256', type: 'int256' }],
+    name: 'SafeCastOverflowedIntToUint',
+  },
   {
     type: 'error',
     inputs: [
@@ -4215,7 +6573,11 @@ export const safeCastAbi = [
     ],
     name: 'SafeCastOverflowedUintDowncast',
   },
-  { type: 'error', inputs: [{ name: 'value', internalType: 'uint256', type: 'uint256' }], name: 'SafeCastOverflowedUintToInt' },
+  {
+    type: 'error',
+    inputs: [{ name: 'value', internalType: 'uint256', type: 'uint256' }],
+    name: 'SafeCastOverflowedUintToInt',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -4223,18 +6585,52 @@ export const safeCastAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const stakeableAbi = [
-  { type: 'function', inputs: [], name: 'acceptOwnership', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' }],
+    inputs: [],
+    name: 'acceptOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'unstakeDelaySec', internalType: 'uint32', type: 'uint32' },
+    ],
     name: 'addStake',
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'entryPoint', outputs: [{ name: '', internalType: 'contract IEntryPoint', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'owner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'pendingOwner', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'renounceOwnership', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'entryPoint',
+    outputs: [
+      { name: '', internalType: 'contract IEntryPoint', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'pendingOwner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
@@ -4242,10 +6638,22 @@ export const stakeableAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
-  { type: 'function', inputs: [], name: 'unlockStake', outputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
-    inputs: [{ name: 'withdrawAddress', internalType: 'address payable', type: 'address' }],
+    inputs: [],
+    name: 'unlockStake',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'withdrawAddress',
+        internalType: 'address payable',
+        type: 'address',
+      },
+    ],
     name: 'withdrawStake',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -4254,8 +6662,18 @@ export const stakeableAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferStarted',
   },
@@ -4263,13 +6681,31 @@ export const stakeableAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'previousOwner', internalType: 'address', type: 'address', indexed: true },
-      { name: 'newOwner', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'OwnershipTransferred',
   },
-  { type: 'error', inputs: [{ name: 'owner', internalType: 'address', type: 'address' }], name: 'OwnableInvalidOwner' },
-  { type: 'error', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'OwnableUnauthorizedAccount' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -4305,11 +6741,41 @@ export const timelockControllerAbi = [
     stateMutability: 'nonpayable',
   },
   { type: 'receive', stateMutability: 'payable' },
-  { type: 'function', inputs: [], name: 'CANCELLER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'EXECUTOR_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [], name: 'PROPOSER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
-  { type: 'function', inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }], name: 'cancel', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'CANCELLER_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DEFAULT_ADMIN_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'EXECUTOR_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'PROPOSER_ROLE',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'cancel',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [
@@ -4336,12 +6802,24 @@ export const timelockControllerAbi = [
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'getMinDelay', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getMinDelay',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
     name: 'getOperationState',
-    outputs: [{ name: '', internalType: 'enum TimelockController.OperationState', type: 'uint8' }],
+    outputs: [
+      {
+        name: '',
+        internalType: 'enum TimelockController.OperationState',
+        type: 'uint8',
+      },
+    ],
     stateMutability: 'view',
   },
   {
@@ -4537,9 +7015,24 @@ export const timelockControllerAbi = [
     anonymous: false,
     inputs: [
       { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
-      { name: 'target', internalType: 'address', type: 'address', indexed: false },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'target',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
       { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
     ],
     name: 'CallExecuted',
@@ -4549,7 +7042,12 @@ export const timelockControllerAbi = [
     anonymous: false,
     inputs: [
       { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'salt', internalType: 'bytes32', type: 'bytes32', indexed: false },
+      {
+        name: 'salt',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
     ],
     name: 'CallSalt',
   },
@@ -4558,22 +7056,64 @@ export const timelockControllerAbi = [
     anonymous: false,
     inputs: [
       { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'index', internalType: 'uint256', type: 'uint256', indexed: true },
-      { name: 'target', internalType: 'address', type: 'address', indexed: false },
-      { name: 'value', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'index',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'target',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'value',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
       { name: 'data', internalType: 'bytes', type: 'bytes', indexed: false },
-      { name: 'predecessor', internalType: 'bytes32', type: 'bytes32', indexed: false },
-      { name: 'delay', internalType: 'uint256', type: 'uint256', indexed: false },
+      {
+        name: 'predecessor',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+      {
+        name: 'delay',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'CallScheduled',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true }], name: 'Cancelled' },
   {
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'oldDuration', internalType: 'uint256', type: 'uint256', indexed: false },
-      { name: 'newDuration', internalType: 'uint256', type: 'uint256', indexed: false },
+      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
+    ],
+    name: 'Cancelled',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'oldDuration',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newDuration',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
     ],
     name: 'MinDelayChange',
   },
@@ -4582,8 +7122,18 @@ export const timelockControllerAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'previousAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'newAdminRole', internalType: 'bytes32', type: 'bytes32', indexed: true },
+      {
+        name: 'previousAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'newAdminRole',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
     ],
     name: 'RoleAdminChanged',
   },
@@ -4592,8 +7142,18 @@ export const timelockControllerAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleGranted',
   },
@@ -4602,8 +7162,18 @@ export const timelockControllerAbi = [
     anonymous: false,
     inputs: [
       { name: 'role', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      { name: 'account', internalType: 'address', type: 'address', indexed: true },
-      { name: 'sender', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
     ],
     name: 'RoleRevoked',
   },
@@ -4634,8 +7204,18 @@ export const timelockControllerAbi = [
     ],
     name: 'TimelockInvalidOperationLength',
   },
-  { type: 'error', inputs: [{ name: 'caller', internalType: 'address', type: 'address' }], name: 'TimelockUnauthorizedCaller' },
-  { type: 'error', inputs: [{ name: 'predecessorId', internalType: 'bytes32', type: 'bytes32' }], name: 'TimelockUnexecutedPredecessor' },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'TimelockUnauthorizedCaller',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'predecessorId', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'TimelockUnexecutedPredecessor',
+  },
   {
     type: 'error',
     inputs: [
@@ -4651,7 +7231,13 @@ export const timelockControllerAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const uupsUpgradeableAbi = [
-  { type: 'function', inputs: [], name: 'proxiableUUID', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'proxiableUUID',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [
@@ -4662,7 +7248,19 @@ export const uupsUpgradeableAbi = [
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'event', anonymous: false, inputs: [{ name: 'implementation', internalType: 'address', type: 'address', indexed: true }], name: 'Upgraded' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
   { type: 'error', inputs: [], name: 'UnauthorizedCallContext' },
   { type: 'error', inputs: [], name: 'UpgradeFailed' },
 ] as const
@@ -4672,7 +7270,13 @@ export const uupsUpgradeableAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export const userOperationLibAbi = [
-  { type: 'function', inputs: [], name: 'PAYMASTER_DATA_OFFSET', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'PAYMASTER_DATA_OFFSET',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
   {
     type: 'function',
     inputs: [],
