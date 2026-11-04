@@ -35,7 +35,7 @@ This change specifies the whole redesign: phase 1, console-only (the K, C and N 
 | 15 | Phase 2: B3, chain status | Done, PR #208 |
 | 16 | Phase 2: B5, drift | Done, PR #209 |
 | 17 | Phase 2: B4, usage | Done, PR #210 |
-| 18 | Phase 2: B7, bundler executors | To do |
+| 18 | Phase 2: B7, bundler executors | Done, PR #211 |
 
 ### Phase 1: console only
 
