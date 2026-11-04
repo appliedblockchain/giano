@@ -8,13 +8,7 @@ import {
 	type ReleaseContractName,
 	releaseOf,
 } from "@appliedblockchain/giano-contracts";
-import {
-	getAddress,
-	type Hex,
-	keccak256,
-	type PublicClient,
-	zeroAddress,
-} from "viem";
+import { type Hex, keccak256, type PublicClient, zeroAddress } from "viem";
 import type { ResolvedChain } from "../config.js";
 
 /**
