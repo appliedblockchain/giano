@@ -153,6 +153,27 @@ export type BundlerCall = { method: string; params: unknown[]; url: string };
 
 /** Fetch stub for the bundler URL, recording calls (with the URL — per-chain routing is
  *  observable, MC-113) and answering with canned results. */
+/** What the mock bundler reports for `giano_executors`: one funded lane in flight, one empty. */
+export const MOCK_EXECUTORS = {
+	gasPriceWei: "0x3b9aca00",
+	executors: [
+		{
+			address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+			balanceWei: "0xde0b6b3a7640000",
+			busy: true,
+			latestNonce: "0x29",
+			pendingNonce: "0x2a",
+		},
+		{
+			address: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+			balanceWei: "0x0",
+			busy: false,
+			latestNonce: "0x0",
+			pendingNonce: "0x0",
+		},
+	],
+};
+
 export function createMockBundlerFetch(results: Record<string, unknown> = {}) {
 	const calls: BundlerCall[] = [];
 	const fetchImpl: typeof fetch = async (url, init) => {
@@ -169,13 +190,15 @@ export function createMockBundlerFetch(results: Record<string, unknown> = {}) {
 					? "0x" + "ab".repeat(32)
 					: method === "eth_supportedEntryPoints"
 						? ["0x433709009B8330FDa32311DF1C2AFA402eD8D009"]
-						: method === "eth_estimateUserOperationGas"
-							? {
-									preVerificationGas: "0x10000",
-									verificationGasLimit: "0xc3500",
-									callGasLimit: "0x30000",
-								}
-							: null;
+						: method === "giano_executors"
+							? MOCK_EXECUTORS
+							: method === "eth_estimateUserOperationGas"
+								? {
+										preVerificationGas: "0x10000",
+										verificationGasLimit: "0xc3500",
+										callGasLimit: "0x30000",
+									}
+								: null;
 		return new Response(JSON.stringify({ jsonrpc: "2.0", id, result }), {
 			headers: { "content-type": "application/json" },
 		});

@@ -51,6 +51,21 @@ export function createBundlerService(
 		 * `eth_supportedEntryPoints` from configuration; this asks the bundler, for chain status (B3).
 		 */
 		supportedEntryPoints: () => rpc<Address[]>("eth_supportedEntryPoints", []),
+		/**
+		 * giano-bundler's executor lanes on this chain and the chain's gas price, as hex (B7). Not
+		 * ERC-4337: a bundler without it (Alto) answers method-not-found.
+		 */
+		executors: () =>
+			rpc<{
+				gasPriceWei: string;
+				executors: {
+					address: Address;
+					balanceWei: string;
+					busy: boolean;
+					latestNonce: string;
+					pendingNonce: string;
+				}[];
+			}>("giano_executors", []),
 	};
 }
 
