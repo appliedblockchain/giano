@@ -319,7 +319,9 @@ TypeScript 7.0 has no programmatic API (it is planned for 7.1): `import 'typescr
 its version. Nothing here needs one:
 
 - **Lint and format**: [Biome](https://biomejs.dev), a native binary with no TypeScript dependency
-  (`pnpm lint`, `pnpm format`; CI runs `biome ci`).
+  (`pnpm lint`, `pnpm format`; CI runs `biome ci`). The root `.prettierrc` is not for Biome: it is
+  kept for `@wagmi/cli`, which formats `packages/contracts/generated.ts` with Prettier. If you
+  delete or change it, `generated.ts` changes and the drift check fails.
 - **Builds**: every package and service builds with [tsdown](https://tsdown.dev) (tsup is no longer
   maintained and points there). Declarations come from tsdown's `oxc` generator, which emits each
   `.d.ts` from its source file alone (`isolatedDeclarations`): every export must carry explicit

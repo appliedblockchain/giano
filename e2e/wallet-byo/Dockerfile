@@ -30,8 +30,8 @@ COPY packages/wallet-kit/package.json packages/wallet-kit/package.json
 COPY packages/tx-describe/package.json packages/tx-describe/package.json
 COPY packages/connector/package.json packages/connector/package.json
 COPY e2e/package.json e2e/package.json
-# The SPA's dependencies (esbuild, viem, wallet-core, wallet-transport, wallet-kit) are all
-# devDependencies of the e2e workspace, so this install cannot be --prod.
+# The SPA's dependencies (esbuild, viem, wallet-kit) are all devDependencies of the e2e
+# workspace, so this install cannot be --prod. wallet-kit brings in wallet-core and wallet-transport.
 RUN pnpm install --frozen-lockfile --filter @appliedblockchain/giano-e2e...
 COPY packages/contracts packages/contracts
 COPY packages/wallet-core packages/wallet-core
