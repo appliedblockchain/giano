@@ -4,6 +4,7 @@ import {
 	ConfigError,
 	DEFAULT_ENTRYPOINT,
 	loadConfig,
+	WELL_KNOWN_DEV_ADDRESSES,
 } from "../src/config.js";
 
 const KEY = `0x${"11".repeat(32)}`;
@@ -52,6 +53,38 @@ describe("loadConfig", () => {
 				}),
 			),
 		).toThrow(/well-known Anvil key/);
+	});
+
+	it("refuses every well-known Anvil account key outside dev mode", () => {
+		// Anvil/Hardhat account 1 and account 9 of the public test mnemonic.
+		for (const key of [
+			"0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+			"0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6",
+		]) {
+			expect(() =>
+				loadConfig(env([chain()], { BUNDLER_EXECUTOR_PRIVATE_KEYS: key })),
+			).toThrow(/well-known Anvil key/);
+		}
+	});
+
+	it("lists Hardhat's 20 default accounts as well-known", () => {
+		expect(WELL_KNOWN_DEV_ADDRESSES.size).toBe(20);
+		expect(
+			WELL_KNOWN_DEV_ADDRESSES.has(
+				"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+			),
+		).toBe(true);
+		expect(
+			WELL_KNOWN_DEV_ADDRESSES.has(
+				"0xa0Ee7A142d267C1f36714E4a8F75612F20a79720",
+			),
+		).toBe(true);
+		// Hardhat account 19: the last default account, beyond Anvil's 10.
+		expect(
+			WELL_KNOWN_DEV_ADDRESSES.has(
+				"0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+			),
+		).toBe(true);
 	});
 
 	it("allows the Anvil key in dev mode, with a warning", () => {

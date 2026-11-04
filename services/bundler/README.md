@@ -150,7 +150,7 @@ hold the keys that fund submission.
 | `BUNDLER_MAX_REPLACEMENTS` | `3` | |
 | `BUNDLER_POLL_INTERVAL_MS` | `1000` | |
 | `BUNDLER_LOG_LEVEL` | `info` | |
-| `GIANO_DEV_MODE` | `false` | Must be `true` to start with the well-known Anvil key. |
+| `GIANO_DEV_MODE` | `false` | Must be `true` to start with a well-known Anvil key (any of Hardhat's 20 default accounts of the public test mnemonic, which include Anvil's 10). |
 
 The single-chain variables `GIANO_CHAINS` replaced are refused at boot, so a stale deployment
 fails loudly rather than half-configured:

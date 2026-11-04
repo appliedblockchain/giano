@@ -5,12 +5,32 @@ import {
 	validateChainList,
 } from "@appliedblockchain/giano-contracts";
 import { type Address, getAddress, type Hex, isHex } from "viem";
-import { type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
+import {
+	mnemonicToAccount,
+	type PrivateKeyAccount,
+	privateKeyToAccount,
+} from "viem/accounts";
 import { z } from "zod";
 
 /** The well-known Anvil account 0 key — never legitimate outside a devnet. */
 export const ANVIL_KEY =
 	"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+/** The public Anvil/Hardhat test mnemonic that ANVIL_KEY and its sibling dev keys derive from. */
+export const TEST_MNEMONIC =
+	"test test test test test test test test test test test junk";
+
+/**
+ * Addresses of the first 20 accounts of TEST_MNEMONIC: Hardhat's default funded accounts
+ * (count 20). Anvil's default 10 accounts are the first 10 of these.
+ */
+export const WELL_KNOWN_DEV_ADDRESSES: ReadonlySet<Address> = new Set(
+	Array.from(
+		{ length: 20 },
+		(_, addressIndex) =>
+			mnemonicToAccount(TEST_MNEMONIC, { addressIndex }).address,
+	),
+);
 export const DEFAULT_ENTRYPOINT: Address = ENTRY_POINT_ADDRESS;
 
 export class ConfigError extends Error {}
@@ -137,20 +157,23 @@ export function loadConfig(
 		);
 	}
 
-	if (keys.some((key) => key.toLowerCase() === ANVIL_KEY)) {
+	const executors = keys.map((key) => privateKeyToAccount(key as Hex));
+	if (
+		executors.some((executor) => WELL_KNOWN_DEV_ADDRESSES.has(executor.address))
+	) {
 		if (values.GIANO_DEV_MODE !== "true") {
 			throw new ConfigError(
-				"FATAL: refusing to start with the well-known Anvil key outside dev mode (set GIANO_DEV_MODE=true for local devnets only)",
+				"FATAL: refusing to start with a well-known Anvil key outside dev mode (set GIANO_DEV_MODE=true for local devnets only)",
 			);
 		}
 		warnings.push(
-			"running with the well-known Anvil key (GIANO_DEV_MODE=true) — never do this against a real chain",
+			"running with a well-known Anvil key (GIANO_DEV_MODE=true) — never do this against a real chain",
 		);
 	}
 
 	return {
 		chains: parseChains(values.GIANO_CHAINS),
-		executors: keys.map((key) => privateKeyToAccount(key as Hex)),
+		executors,
 		port: values.BUNDLER_PORT,
 		host: values.BUNDLER_HOST,
 		resubmitTimeoutMs: values.BUNDLER_RESUBMIT_TIMEOUT_SECONDS * 1000,
