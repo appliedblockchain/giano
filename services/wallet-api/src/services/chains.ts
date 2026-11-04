@@ -87,13 +87,23 @@ export type BuildChainRegistryOptions = {
 	onDecision?: (
 		chainId: number,
 	) => Parameters<typeof createSponsorshipService>[0]["onDecision"];
+	/** Receives the raw errors behind sponsorship outages; see `SponsorshipServiceOptions.log`. */
+	log?: Parameters<typeof createSponsorshipService>[0]["log"];
 };
 
 export function buildChainRegistry(
 	options: BuildChainRegistryOptions,
 ): ChainRegistry {
-	const { config, db, ledger, fetchImpl, signer, paymasterReader, onDecision } =
-		options;
+	const {
+		config,
+		db,
+		ledger,
+		fetchImpl,
+		signer,
+		paymasterReader,
+		onDecision,
+		log,
+	} = options;
 
 	const entries = new Map<number, ChainServices>();
 
@@ -136,6 +146,7 @@ export function buildChainRegistry(
 				walletManagementCapWei: config.SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI,
 				isEmergencyStopped: () => config.SPONSORSHIP_EMERGENCY_STOP,
 				onDecision: onDecision?.(descriptor.chainId),
+				log,
 			});
 		}
 

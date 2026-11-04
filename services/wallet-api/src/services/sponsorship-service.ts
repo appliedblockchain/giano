@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { FastifyBaseLogger } from "fastify";
 import type { Address, Hex } from "viem";
 import type { Db } from "../db/index.js";
 import { sponsorshipDecisions, tenantSponsorship } from "../db/schema.js";
@@ -102,6 +103,12 @@ export type SponsorshipServiceOptions = {
 	entryPoint: Address;
 	/** Flips issuance off immediately, without a restart. The first response to a suspected compromise. */
 	isEmergencyStopped: () => boolean;
+	/**
+	 * Receives the raw error behind a "temporarily-unavailable" refusal. The refusal itself carries
+	 * only a fixed detail string: an internal error message can name hosts, RPC URLs or signer
+	 * internals, and the refusal reaches the API client and the tenant's decision log.
+	 */
+	log?: Pick<FastifyBaseLogger, "error">;
 	onDecision?: (event: {
 		tenantId: string;
 		method: SponsorshipMethod;
@@ -246,6 +253,10 @@ export function createSponsorshipService(
 				onChain = params;
 				feeWei = fee;
 			} catch (error) {
+				options.log?.error(
+					{ err: error, tenantId: session.tenantId, chainId },
+					"sponsorship refused: the paymaster could not be read",
+				);
 				return refuse({
 					session,
 					method,
@@ -256,7 +267,7 @@ export function createSponsorshipService(
 						{
 							rule: "paymaster-reachable",
 							passed: false,
-							detail: (error as Error).message,
+							detail: "paymaster read failed",
 						},
 					],
 				});
@@ -382,6 +393,10 @@ export function createSponsorshipService(
 				// Release immediately rather than letting the TTL run: a signing failure that held the
 				// tenant's funds for minutes would be indistinguishable from having spent them.
 				await ledger.release(reservation.id);
+				options.log?.error(
+					{ err: error, tenantId: session.tenantId, chainId },
+					"sponsorship refused: the sponsorship signer is unavailable",
+				);
 				return refuse({
 					session,
 					method,
@@ -390,7 +405,7 @@ export function createSponsorshipService(
 					message: "the sponsorship signer is unavailable",
 					ruleResults: [
 						...decision.results,
-						{ rule: "sign", passed: false, detail: (error as Error).message },
+						{ rule: "sign", passed: false, detail: "signer unavailable" },
 					],
 					feeWei,
 				});

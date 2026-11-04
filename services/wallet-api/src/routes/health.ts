@@ -50,9 +50,11 @@ export default async function healthRoutes(
 			try {
 				await opts.db.execute(sql`SELECT 1`);
 			} catch (error) {
+				// The raw error can name the database host or user; it belongs in the log, not the response.
+				request.log.error({ err: error }, "readiness: database unavailable");
 				return reply.code(503).send({
 					status: "unavailable" as const,
-					message: (error as Error).message,
+					message: "database unavailable",
 				});
 			}
 
