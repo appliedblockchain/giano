@@ -155,6 +155,7 @@ export function buildChainRegistry(
 				ledger,
 				signer,
 				entryPoint: descriptor.entryPoint,
+				factory: descriptor.factory,
 				validitySeconds: config.SPONSORSHIP_VALIDITY_SECONDS,
 				reservationTtlSeconds: config.SPONSORSHIP_RESERVATION_TTL_SECONDS,
 				walletManagementCapWei: config.SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI,
