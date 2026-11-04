@@ -379,7 +379,7 @@ const envSchema = z
 		/** The widest eth_getLogs range the tenant RPC read relay forwards. The Origin check is spoofable, so this bounds what one request can cost. */
 		RPC_RELAY_MAX_LOG_BLOCKS: z.coerce.number().int().positive().default(10000),
 
-		/** When set (non-empty), GET /metrics requires this bearer token; unset = open (dev only). */
+		/** When set (non-empty), GET /metrics requires this bearer token. Unset leaves it open, which only a development deployment accepts. */
 		METRICS_BEARER_TOKEN: z
 			.string()
 			.optional()
@@ -390,6 +390,20 @@ const envSchema = z
 			),
 	})
 	.superRefine((env, ctx) => {
+		// GET /metrics exposes tenant slugs, signer key ids and refusal counters. Without a token it
+		// is open to anyone who can reach the port, so only a development deployment may omit it.
+		// Gated on the deployment class, like the signer-kind check below, not on NODE_ENV.
+		if (
+			env.METRICS_BEARER_TOKEN === undefined &&
+			env.GIANO_DEPLOYMENT_CLASS !== "development"
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["METRICS_BEARER_TOKEN"],
+				message: `required when GIANO_DEPLOYMENT_CLASS=${env.GIANO_DEPLOYMENT_CLASS}: without it GET /metrics is open to anyone who can reach wallet-api`,
+			});
+		}
+
 		const scalarsPresent =
 			env.CHAIN_ID !== undefined ||
 			env.RPC_URL !== undefined ||

@@ -86,8 +86,9 @@ services:
       # --- sessions / challenges / observability ---
       CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-300}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
-      # when set, GET /metrics requires this bearer token (recommended in production)
-      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:-}
+      # GET /metrics requires this bearer token (at least 16 characters). wallet-api refuses to
+      # start without it unless GIANO_DEPLOYMENT_CLASS=development.
+      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:?set METRICS_BEARER_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   wallet-web:
