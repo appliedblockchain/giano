@@ -331,4 +331,52 @@ describe("groupAttention", () => {
 			linkLabel: "Tenants",
 		});
 	});
+
+	it("puts an empty or nearly empty bundler executor first, and not one that is merely low", () => {
+		const executor = (address: string, balanceWei: string) => ({
+			address,
+			balanceWei,
+			busy: false,
+			latestNonce: 0,
+			pendingNonce: 0,
+		});
+		const items = attentionItems({
+			overview: overview(),
+			rows: [],
+			ready: [],
+			now: 0,
+			sources: READ,
+			chain: {
+				chainId: 84532,
+				name: "Base Sepolia",
+				bundler: {
+					reachable: true,
+					entryPointSupported: true,
+					// 1 gwei × 400,000 gas = 0.0004 ETH a submission
+					gasPriceWei: "1000000000",
+					executors: [
+						executor("0x90F79bf6EB2c4f870365E785982E1f101E93b906", "0"),
+						executor(
+							"0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+							"2000000000000000", // 5 submissions
+						),
+						executor(
+							"0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+							"20000000000000000", // 50: low, not urgent
+						),
+					],
+				},
+			} as never,
+		});
+		expect(keys(items)).toEqual([
+			"executor:0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+			"executor:0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+		]);
+		expect(items[0]).toMatchObject({
+			severity: "critical",
+			title: "Bundler executor 0x90F7…b906 is empty",
+			link: "/health",
+		});
+		expect(items[1].detail).toContain("About 5 submissions left");
+	});
 });

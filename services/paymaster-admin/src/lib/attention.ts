@@ -3,6 +3,8 @@ import type {
 	PaymasterOverview,
 	TimelockOperation,
 } from "@appliedblockchain/giano-paymaster-sdk";
+import { executorStanding } from "./health";
+import type { ChainStatus } from "./platform-api";
 import { TAB_PATHS, tenantPath } from "./router";
 import type { TenantRow } from "./tenants";
 
@@ -93,7 +95,8 @@ const pathOf = (row: TenantRow) => tenantPath(row.registry?.slug ?? row.id);
  * the chain, the registry and the timelock, and this decides what of it is a problem.
  *
  * `rows` is the registry joined to the roster; `ready` the timelock operations ready to execute;
- * `now` is unix seconds, for the stake's unlock time.
+ * `now` is unix seconds, for the stake's unlock time. `chain` is wallet-api's status of the selected
+ * chain, where it serves one, for the bundler's executors (B7).
  */
 export function attentionItems({
 	overview,
@@ -101,14 +104,36 @@ export function attentionItems({
 	ready,
 	now,
 	sources,
+	chain,
 }: {
 	overview: PaymasterOverview;
 	rows: readonly TenantRow[];
 	ready: readonly TimelockOperation[];
 	now: number;
 	sources: AttentionSources;
+	chain?: ChainStatus;
 }): AttentionItem[] {
 	const items: AttentionItem[] = [];
+
+	// An executor out of funds fails every operation the bundler hands it on this chain.
+	for (const executor of chain?.bundler.executors ?? []) {
+		const { level, submissions } = executorStanding(
+			executor,
+			chain?.bundler.gasPriceWei,
+		);
+		if (level !== "fail") continue;
+		const short = `${executor.address.slice(0, 6)}…${executor.address.slice(-4)}`;
+		const empty = BigInt(executor.balanceWei) === 0n;
+		items.push({
+			key: `executor:${executor.address.toLowerCase()}`,
+			kind: "executor",
+			severity: "critical",
+			title: `Bundler executor ${short} ${empty ? "is empty" : "is nearly empty"}`,
+			detail: `It signs and pays for the transactions that submit user operations, and every one it takes fails until it can pay for gas.${empty || submissions === null ? "" : ` About ${submissions} submission${submissions === 1 ? "" : "s"} left at the current gas price.`} Fund ${executor.address}.`,
+			link: TAB_PATHS.health,
+			linkLabel: "Health",
+		});
+	}
 	const { solvency, config, stake } = overview;
 	const { registry, timelock } = sources;
 	// The registry rules wait for its first successful read: before it, every row lacks a registry

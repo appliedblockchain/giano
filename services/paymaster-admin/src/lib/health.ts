@@ -2,7 +2,11 @@ import type {
 	HealthCheck,
 	HealthReport,
 } from "@appliedblockchain/giano-paymaster-sdk";
-import type { ChainStatus, ChainsStatus } from "./platform-api";
+import type {
+	BundlerExecutor,
+	ChainStatus,
+	ChainsStatus,
+} from "./platform-api";
 import { TAB_PATHS } from "./router";
 
 /** A check the console has not been able to make yet: shown as being read, never as a pass. */
@@ -188,6 +192,15 @@ export const CHAIN_THRESHOLDS = {
 	headAgeFailSeconds: 300,
 	watcherLagWarnBlocks: 50,
 	watcherLagFailBlocks: 1_000,
+	/**
+	 * A bundler executor pays for every handleOps it sends; out of funds, submission through it stops
+	 * (B7, D28). Judged by submissions left at the chain's gas price, not by an amount of ETH that
+	 * means different things on different chains.
+	 */
+	executorWarnSubmissions: 100,
+	executorFailSubmissions: 10,
+	/** Gas one handleOps([op]) is taken to use: one operation with a paymaster stays well under it. */
+	gasPerSubmission: 400_000n,
 };
 
 export type ChainThresholds = typeof CHAIN_THRESHOLDS;
@@ -203,6 +216,89 @@ export function chainThresholds(status?: ChainsStatus): ChainThresholds {
 	};
 }
 
+export type ExecutorStanding = {
+	level: HealthCheck["level"];
+	/** Submissions the balance pays for at the gas price; null when the gas price is unknown or 0. */
+	submissions: number | null;
+	/** A transaction has sat in the mempool: a pending nonce ahead of an idle lane, or by more than one. */
+	stuck: boolean;
+};
+
+/** How an executor stands: empty or nearly so fails, low warns, a stuck nonce warns. */
+export function executorStanding(
+	executor: BundlerExecutor,
+	gasPriceWei: string | null | undefined,
+): ExecutorStanding {
+	const t = CHAIN_THRESHOLDS;
+	const balance = BigInt(executor.balanceWei);
+	const perSubmission = gasPriceWei
+		? BigInt(gasPriceWei) * t.gasPerSubmission
+		: 0n;
+	const submissions =
+		perSubmission > 0n ? Number(balance / perSubmission) : null;
+	const ahead = executor.pendingNonce - executor.latestNonce;
+	const stuck = ahead > 1 || (ahead > 0 && !executor.busy);
+	const level =
+		balance === 0n ||
+		(submissions !== null && submissions < t.executorFailSubmissions)
+			? "fail"
+			: (submissions !== null && submissions < t.executorWarnSubmissions) ||
+					stuck
+				? "warn"
+				: "ok";
+	return { level, submissions, stuck };
+}
+
+/** The bundler's executors on one chain, one check each; one warning where they are unknown. */
+export function executorChecks(
+	chain: ChainStatus,
+	money: (wei: bigint) => string,
+): HealthCheck[] {
+	const { bundler } = chain;
+	// Absent from a wallet-api older than B7: nothing to say, as for every phase 2 field (D11).
+	if (!bundler.reachable || bundler.executors === undefined) return [];
+	if (bundler.executors === null)
+		return [
+			{
+				id: `chain-${chain.chainId}-executors`,
+				level: "warn",
+				label: "bundler executors",
+				detail: "the bundler does not report them, so they are not checked",
+				remedy:
+					"giano-bundler reports its executors; check this chain's bundler is giano-bundler and current.",
+			},
+		];
+	const t = CHAIN_THRESHOLDS;
+	return bundler.executors.map((executor, index) => {
+		const { level, submissions, stuck } = executorStanding(
+			executor,
+			bundler.gasPriceWei,
+		);
+		const balance = BigInt(executor.balanceWei);
+		const covers =
+			balance === 0n
+				? ", nothing to pay gas with"
+				: submissions === null
+					? ""
+					: `, about ${submissions.toLocaleString()} submission${submissions === 1 ? "" : "s"} at the current gas price`;
+		return {
+			id: `chain-${chain.chainId}-executor-${executor.address.toLowerCase()}`,
+			level,
+			label: `bundler executor ${index + 1}`,
+			detail: `${executor.address}: ${money(balance)}${covers}; ${executor.busy ? "submitting" : "idle"}${stuck ? `, nonce ${executor.latestNonce} with ${executor.pendingNonce - executor.latestNonce} pending` : ""}`,
+			...(level === "ok"
+				? {}
+				: {
+						remedy:
+							balance === 0n ||
+							(submissions !== null && submissions < t.executorWarnSubmissions)
+								? `Fund this address on ${chain.name}: every operation it takes fails until it can pay for gas, and the bundler keeps giving it work.`
+								: "A transaction from this executor has sat in the mempool; check the bundler's logs for a replacement that is not being mined.",
+					}),
+		};
+	});
+}
+
 /**
  * The repository's local anvil devnets (`packages/contracts/chains.ts` names them). They mine only
  * when there is a transaction, so an idle one's head is hours old and says nothing about the node:
@@ -213,6 +309,7 @@ export const LOCAL_DEVNET_CHAIN_IDS: readonly number[] = [31337, 31338];
 /** The checks for one chain wallet-api serves, worst first within each part. */
 export function chainChecks(
 	chain: ChainStatus,
+	money: (wei: bigint) => string = (wei) => `${wei} wei`,
 	t: ChainThresholds = CHAIN_THRESHOLDS,
 ): HealthCheck[] {
 	const id = (part: string) => `chain-${chain.chainId}-${part}`;
@@ -345,6 +442,7 @@ export function chainChecks(
 					},
 		);
 	}
+	checks.push(...executorChecks(chain, money));
 	return checks;
 }
 
