@@ -531,6 +531,57 @@ describe("transactions & user operations", () => {
 		expect(hash).toMatch(/^0x/);
 	});
 
+	it("eth_signUserOperation signs only for the connected chain and account", async () => {
+		const { provider } = buildProvider(mock.authenticator);
+		await connect(provider);
+		const prepared = (await provider.request({
+			method: "eth_prepareUserOperation",
+			params: [
+				[
+					{
+						to: "0x1111111111111111111111111111111111111111",
+						value: 0n,
+						data: "0x",
+					},
+				],
+			] as never,
+		})) as Record<string, unknown>;
+		const { chainId: _ignored, ...operation } = prepared;
+
+		await expect(
+			provider.request({
+				method: "eth_signUserOperation",
+				params: [{ ...operation, chainId: TEST_CHAIN_ID }] as never,
+			}),
+		).resolves.toMatch(/^0x/);
+		await expect(
+			provider.request({
+				method: "eth_signUserOperation",
+				params: [
+					{ ...operation, chainId: `0x${TEST_CHAIN_ID.toString(16)}` },
+				] as never,
+			}),
+		).resolves.toMatch(/^0x/);
+
+		await expect(
+			provider.request({
+				method: "eth_signUserOperation",
+				params: [{ ...operation, chainId: TEST_CHAIN_ID + 1 }] as never,
+			}),
+		).rejects.toThrow("Chain mismatch");
+		await expect(
+			provider.request({
+				method: "eth_signUserOperation",
+				params: [
+					{
+						...operation,
+						sender: "0x1111111111111111111111111111111111111111",
+					},
+				] as never,
+			}),
+		).rejects.toThrow("Address mismatch");
+	});
+
 	it("submits a raw signed operation unchanged without preparing or signing again", async () => {
 		const { bundler } = createMockBundler();
 		// prepareUserOperation is generic over its request, which vi.spyOn's typing collapses to never.

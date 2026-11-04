@@ -712,7 +712,22 @@ export const createGianoProvider = (
 				throw new Error("Giano not connected");
 			}
 
-			return smartAccount.signUserOperation({ ...userOp });
+			// The signature is only valid on the chain whose id is in the hash. Sign for the
+			// connected chain only: a dApp-supplied chainId would produce a signature for a chain
+			// the user never chose.
+			const { chainId, ...operation } = userOp;
+			if (chainId !== undefined && Number(chainId) !== chain?.id) {
+				throw new Error("Chain mismatch");
+			}
+			const sender = await smartAccount.getAddress();
+			if (
+				operation.sender !== undefined &&
+				String(operation.sender).toLowerCase() !== sender.toLowerCase()
+			) {
+				throw new Error("Address mismatch");
+			}
+
+			return smartAccount.signUserOperation(operation);
 		},
 		eth_sendSignedUserOperation: async ([signedUserOp]: [
 			UserOperation<GianoEntryPointVersion>,
