@@ -47,8 +47,8 @@ Set `PAYMASTER_ROLE_ADMIN` to the intended operator address first. Use `DEPLOY_R
 endpoint without putting its credentials in shell arguments. Without it, plans use the public
 network default. RPC identity must match the selected network; failures suppress provider error
 bodies because they may contain credentials. Noninteractive runs only print a plan and never sign;
-a plan for a class whose deployer is not configured, or a mainnet plan with a deviation, exits
-nonzero.
+a plan for a class whose deployer is not configured exits nonzero. A mainnet plan with a deviation
+prints the warning and exits zero: the typed confirmation is asked only by a run that will sign.
 The checked-in bootstrap script (`bash deploy/contracts/run.sh deploy`) also explains missing Node,
 pnpm or installed dependencies before loading TypeScript. Use it if pnpm itself is unavailable.
 No Foundry installation or Solidity compilation is needed to deploy the committed release.
