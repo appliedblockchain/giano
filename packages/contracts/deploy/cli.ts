@@ -27,7 +27,10 @@
  * mainnet deployment goes through the guided wizard (deploy/guided.ts), which shows the deviations
  * and asks for it. On a non-local chain `--role-admin` must not be a deployer key. Without a key,
  * `core` and `testing` only verify: every contract must already be in place with a release's code,
- * and nothing is sent. The canonical deployer keys are development-team keys kept in 1Password
+ * and nothing is sent. An existing paymaster proxy must already be configured as `core` would
+ * deploy it (implementation, ROLE_ADMIN, EntryPoint, fees, no deployer holding ROLE_ADMIN); the fees
+ * are the paymaster flags, else the profile's. A deployment record that states another network
+ * class than the one resolved here is refused: a chain's class never changes. The canonical deployer keys are development-team keys kept in 1Password
  * (docs/key-ceremony.md): load one into this shell's environment only, never into a file or a
  * client's configuration.
  * `upgrade --execute` sends the paymaster's upgradeToAndCall from UPGRADER_PRIVATE_KEY;
@@ -105,17 +108,28 @@ import {
 	deviationGate,
 	fixedAddresses,
 	formatPlan,
+	type Plan,
 	placementOf,
 	planCore,
 	upgradeDeviation,
 } from "./plan";
-import { assertRoleAdminNotDeployer } from "./preflight";
-import { loadProfile, profileForChain } from "./profiles";
+import {
+	assertRoleAdminNotDeployer,
+	type CoreConfig,
+	verifyCoreState,
+} from "./preflight";
+import {
+	type ChainProfile,
+	loadProfile,
+	paymasterParams,
+	profileForChain,
+} from "./profiles";
 import {
 	DEPLOYMENTS_DIR,
 	type DeploymentRecord,
 	readRecord,
 	recordDeviations,
+	recordPath,
 	writeRecord,
 } from "./records";
 import {
@@ -140,11 +154,10 @@ const { positionals, values } = parseArgs({
 		// core
 		"role-admin": { type: "string" },
 		"entry-point": { type: "string", default: ENTRY_POINT_V09 },
-		"default-fee-wei": { type: "string", default: "100000000000000" }, // 0.0001 ETH per sponsored op
-		// Gas units charged for settlement's own gas: ~9.7k warm, ~49k cold (test/GianoPaymaster/Gas.t.sol).
-		"post-op-gas-allowance": { type: "string", default: "40000" },
-		// Basis points of the execution gas limits charged against the EntryPoint's unused-gas penalty.
-		"penalty-bps": { type: "string", default: "1000" },
+		// The paymaster parameters: these flags, else the chain profile's, else PAYMASTER_DEFAULTS.
+		"default-fee-wei": { type: "string" },
+		"post-op-gas-allowance": { type: "string" },
+		"penalty-bps": { type: "string" },
 		// testing
 		holder: { type: "string" },
 		owner: { type: "string" },
@@ -164,6 +177,14 @@ const { positionals, values } = parseArgs({
 });
 
 const log = (line: string) => console.log(line);
+
+const PAYMASTER_DEFAULTS = {
+	defaultFeeWei: "100000000000000", // 0.0001 ETH per sponsored op
+	// Gas units charged for settlement's own gas: ~9.7k warm, ~49k cold (test/GianoPaymaster/Gas.t.sol).
+	postOpGasAllowance: "40000",
+	// Basis points of the execution gas limits charged against the EntryPoint's unused-gas penalty.
+	penaltyBps: "1000",
+};
 const [command] = positionals;
 
 function required(name: keyof typeof values): string {
@@ -251,6 +272,8 @@ type Network = {
 	network: NetworkClass;
 	/** The committed profile's id, when the class came from one. */
 	profileId?: string;
+	/** The profile itself, when the class came from one. */
+	profile?: ChainProfile;
 	overrides: Partial<Record<OverrideKey, string>>;
 };
 
@@ -286,6 +309,7 @@ function resolveNetwork(chainId: number, local: boolean): Network {
 		return {
 			network: selected.profile.network,
 			profileId: selected.id,
+			profile: selected.profile,
 			overrides: selected.profile.addresses ?? {},
 		};
 	}
@@ -298,6 +322,44 @@ function resolveNetwork(chainId: number, local: boolean): Network {
 			`--network is ${PROFILE_NETWORKS.join(" or ")}, not ${values.network}`,
 		);
 	return { network: values.network as NetworkClass, overrides: {} };
+}
+
+/**
+ * The chain's deployment record. A record that states another network class than this run resolved
+ * is refused: a chain's class never changes, and `--network testnet` on a chain recorded as mainnet
+ * would otherwise skip the mainnet deviation gate and the R-29 test-fixture refusal.
+ */
+function chainRecord(chainId: number, target: Network): DeploymentRecord {
+	const dir = values["record-dir"] ?? DEPLOYMENTS_DIR;
+	const record = readRecord(chainId, undefined, dir);
+	if (record.network && record.network !== target.network)
+		throw new Error(
+			`the deployment record ${recordPath(chainId, dir)} states chain ${chainId} is ${record.network}, but this run resolved it as ${target.network}${target.profileId ? ` (profile ${target.profileId})` : " (--network)"}. A chain's network class never changes; pass --network ${record.network}, or fix the profile.`,
+		);
+	return record;
+}
+
+/** The paymaster parameters: the flags, else the chain profile's, else PAYMASTER_DEFAULTS. */
+function paymasterConfig(target: Network): CoreConfig {
+	const profile = target.profile ? paymasterParams(target.profile) : undefined;
+	return {
+		entryPoint: address("entry-point"),
+		defaultFeeWei: BigInt(
+			values["default-fee-wei"] ??
+				profile?.defaultFeeWei ??
+				PAYMASTER_DEFAULTS.defaultFeeWei,
+		),
+		postOpGasAllowance: Number(
+			values["post-op-gas-allowance"] ??
+				profile?.postOpGasAllowance ??
+				PAYMASTER_DEFAULTS.postOpGasAllowance,
+		),
+		penaltyBps: Number(
+			values["penalty-bps"] ??
+				profile?.penaltyBps ??
+				PAYMASTER_DEFAULTS.penaltyBps,
+		),
+	};
 }
 
 function writeSafeJson(contents: unknown): void {
@@ -351,6 +413,8 @@ async function deployerContext({
 > {
 	const { chainId, chain, transport, publicClient, local } = await connect();
 	const target = resolveNetwork(chainId, local);
+	// Before anything else: a record of another class means this run resolved the class wrongly.
+	const record = chainRecord(chainId, target);
 	const canonical = classDeployer(target.network);
 	let walletClient: WalletClient<Transport, Chain, Account> | undefined;
 	if (values.impersonate) {
@@ -392,11 +456,6 @@ async function deployerContext({
 		throw new Error(
 			`the ${target.network} canonical deployer is not configured (DEPLOYERS.${target.network} in deploy/config.ts); refusing to sign for chain ${chainId}`,
 		);
-	const record = readRecord(
-		chainId,
-		undefined,
-		values["record-dir"] ?? DEPLOYMENTS_DIR,
-	);
 	return {
 		publicClient,
 		walletClient,
@@ -414,23 +473,13 @@ async function deployerContext({
 /**
  * Prints the plan and refuses what must not be signed: a blocker (an override without release
  * code, foreign code, a class deployer that is not configured), or, when signing, a mainnet
- * deviation the record does not already list as confirmed (see deviationGate). Returns the
- * addresses deployCore must use.
+ * deviation the record does not already list as confirmed (see deviationGate). Returns the plan
+ * and the addresses deployCore must use.
  */
 async function planOrRefuse(
 	ctx: Awaited<ReturnType<typeof deployerContext>>,
 	selected: Release,
-): Promise<
-	Partial<
-		Record<
-			| "walletImplementation"
-			| "factory"
-			| "paymasterImplementation"
-			| "paymasterProxy",
-			Address
-		>
-	>
-> {
+): Promise<{ plan: Plan; fixed: ReturnType<typeof fixedAddresses> }> {
 	const plan = await planCore(ctx.publicClient, {
 		network: ctx.network,
 		signer: ctx.walletClient?.account.address ?? null,
@@ -453,7 +502,7 @@ async function planOrRefuse(
 	// nothing and leaves it.
 	if (ctx.walletClient && plan.contracts.some((c) => c.code.state === "empty"))
 		ctx.record.deployer = ctx.walletClient.account.address;
-	return fixedAddresses(plan);
+	return { plan, fixed: fixedAddresses(plan) };
 }
 
 /** Refuses or records a non-canonical upgrade signer (plan.ts upgradeDeviation) before deploying. */
@@ -542,19 +591,13 @@ async function main(): Promise<void> {
 				ctx.local,
 			);
 			const selected = release(ctx.local);
-			const fixed = await planOrRefuse(ctx, selected);
-			await deployCore(
-				ctx,
-				selected,
-				{
-					entryPoint: address("entry-point"),
-					roleAdmin: admin,
-					defaultFeeWei: BigInt(required("default-fee-wei")),
-					postOpGasAllowance: Number(required("post-op-gas-allowance")),
-					penaltyBps: Number(required("penalty-bps")),
-				},
-				fixed,
-			);
+			const config = paymasterConfig(ctx.target);
+			const { plan, fixed } = await planOrRefuse(ctx, selected);
+			// An existing proxy must already be configured as this run would deploy it (implementation,
+			// ROLE_ADMIN, EntryPoint, fees, no deployer holding ROLE_ADMIN) before anything is recorded:
+			// the same check the guided wizard runs, here also for the verify-only Helm Job.
+			await verifyCoreState(ctx.publicClient, admin, config, plan);
+			await deployCore(ctx, selected, { ...config, roleAdmin: admin }, fixed);
 			save(ctx);
 			return;
 		}
@@ -679,11 +722,7 @@ async function main(): Promise<void> {
 				await connect();
 			const walletClient = await roleAdminClient(chain, transport, local);
 			const target = resolveNetwork(chainId, local);
-			const record = readRecord(
-				chainId,
-				undefined,
-				values["record-dir"] ?? DEPLOYMENTS_DIR,
-			);
+			const record = chainRecord(chainId, target);
 			const params = {
 				paymaster: paymasterProxy(record, target.network, target.overrides),
 				proposers: (values.proposer ?? []).map((p) => getAddress(p)),
@@ -723,11 +762,7 @@ async function main(): Promise<void> {
 			const { chainId, chain, transport, publicClient, local } =
 				await connect();
 			const target = resolveNetwork(chainId, local);
-			const record = readRecord(
-				chainId,
-				undefined,
-				values["record-dir"] ?? DEPLOYMENTS_DIR,
-			);
+			const record = chainRecord(chainId, target);
 			const proxy = paymasterProxy(record, target.network, target.overrides);
 			const timelock = address("timelock");
 			// A typo here would hand the paymaster to an address nobody controls, irreversibly.

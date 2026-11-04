@@ -84,8 +84,15 @@ deployer:
   # the sponsorship paymaster's sole ROLE_ADMIN (a TimelockController in production); required
   roleAdmin: ""
   # the chain's network class, mainnet or testnet: which canonical deployer's deterministic addresses
-  # the Job verifies. Required for any chain but a local one (31337/31338).
+  # the Job expects. Required for any chain but a local one (31337/31338), unless chainProfile is set.
   network: ""
+  # the chain's profile, packages/contracts/deploy/chains/<profile>.json verbatim
+  # (--set-file deployer.chainProfile=…): its class, address overrides and paymaster parameters.
+  chainProfile: ""
+  # the chain's committed record, packages/contracts/deployments/<chainId>.json verbatim
+  # (--set-file deployer.deploymentRecord=…). Set it for any chain adopted with an override or by
+  # another key: without it the Job looks for the contracts at the deterministic addresses only.
+  deploymentRecord: ""
   deployTesting: false
 
 ingress:

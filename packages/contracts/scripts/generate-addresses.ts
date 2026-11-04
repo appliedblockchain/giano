@@ -9,7 +9,8 @@
  *
  *   pnpm gen:addresses  (CI re-runs it and fails on drift)
  *
- * Exported for tests: generateRegistry(dir, overrides) returns the file's text instead of writing it.
+ * Exported for tests: generateRegistry(dir, overrides, fingerprints) returns the file's text instead
+ * of writing it.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -21,7 +22,7 @@ import {
 	type NetworkClass,
 } from "../deploy/config";
 import { DEPLOYMENTS_DIR, type DeploymentRecord } from "../deploy/records";
-import { RELEASE_FINGERPRINTS } from "../release-code";
+import { RELEASE_FINGERPRINTS, type ReleaseFingerprint } from "../release-code";
 
 const pkgRoot = path.resolve(import.meta.dirname, "..");
 const overridesPath = path.join(pkgRoot, "address-overrides.json");
@@ -58,6 +59,7 @@ function isAddress(value: unknown): value is string {
 export function generateRegistry(
 	dir: string = DEPLOYMENTS_DIR,
 	overrides: Overrides = JSON.parse(fs.readFileSync(overridesPath, "utf8")),
+	fingerprints: readonly ReleaseFingerprint[] = RELEASE_FINGERPRINTS,
 ): { text: string; chains: number } {
 	overrides = { ...overrides };
 	delete overrides.$comment;
@@ -92,19 +94,23 @@ export function generateRegistry(
 				);
 			// MC-19/MC-27: an address proves nothing about the code; the recorded fingerprint must be a
 			// release's, for this contract and the release the record names.
+			// A release that leaves a contract unchanged shares its fingerprint with the one before, so a
+			// fingerprint can be several releases'; the recorded release must be one of them.
 			const contract = CONTRACT_OF[key];
-			const release = RELEASE_FINGERPRINTS.find(
-				(r) =>
-					r.contract === contract &&
-					r.fingerprint.toLowerCase() === deployed.fingerprint?.toLowerCase(),
-			);
-			if (!release)
+			const releases = fingerprints
+				.filter(
+					(r) =>
+						r.contract === contract &&
+						r.fingerprint.toLowerCase() === deployed.fingerprint?.toLowerCase(),
+				)
+				.map((r) => r.release);
+			if (releases.length === 0)
 				throw new Error(
 					`chain ${chainId}: ${key} at ${deployed.address} has ${deployed.fingerprint ? `fingerprint ${deployed.fingerprint}` : `no fingerprint (code hash ${deployed.codehash})`}, which matches no release's ${contract} (release-fingerprints.ts)`,
 				);
-			if (release.release !== deployed.release)
+			if (!releases.includes(deployed.release))
 				throw new Error(
-					`chain ${chainId}: ${key} at ${deployed.address} is recorded as ${deployed.release} but its fingerprint is ${release.release}'s`,
+					`chain ${chainId}: ${key} at ${deployed.address} is recorded as ${deployed.release} but its fingerprint is ${releases.join(", ")}'s`,
 				);
 			out[field] = deployed.address;
 		}

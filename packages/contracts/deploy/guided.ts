@@ -23,7 +23,12 @@ import {
 	type Plan,
 	planCore,
 } from "./plan";
-import { inspectDeployment, roleAdmin, verifyCoreState } from "./preflight";
+import {
+	inspectDeployment,
+	profileCoreConfig,
+	roleAdmin,
+	verifyCoreState,
+} from "./preflight";
 import {
 	listProfiles,
 	loadProfile,
@@ -316,7 +321,7 @@ async function main() {
 			overrides: profile.addresses,
 			record,
 		});
-		await verifyCoreState(client, admin, profile, after);
+		await verifyCoreState(client, admin, profileCoreConfig(profile), after);
 		writeRecord(record);
 		const addressEnv = new URL(
 			`../../../deploy/contracts/${chain.id}.addresses.env`,

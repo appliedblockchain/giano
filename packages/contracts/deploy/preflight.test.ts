@@ -13,6 +13,7 @@ import { planCore } from "./plan";
 import {
 	assertRoleAdminNotDeployer,
 	inspectDeployment,
+	profileCoreConfig,
 	roleAdmin,
 	verifyCoreState,
 } from "./preflight";
@@ -164,7 +165,12 @@ const planFor = (chain: PublicClient) =>
 
 test("absent contracts require no storage reads, including providers returning 0x", async () => {
 	const chain = client({ getCode: async () => "0x" });
-	await verifyCoreState(chain, admin, profile, await planFor(chain));
+	await verifyCoreState(
+		chain,
+		admin,
+		profileCoreConfig(profile),
+		await planFor(chain),
+	);
 });
 
 test("existing proxy storage must point to the planned implementation", async () => {
@@ -175,7 +181,12 @@ test("existing proxy storage must point to the planned implementation", async ()
 		getStorageAt: async () => `0x${"0".repeat(64)}`,
 	});
 	await assert.rejects(
-		verifyCoreState(chain, admin, profile, await planFor(chain)),
+		verifyCoreState(
+			chain,
+			admin,
+			profileCoreConfig(profile),
+			await planFor(chain),
+		),
 		/unexpected implementation/,
 	);
 });
@@ -194,7 +205,59 @@ test("an existing paymaster with the wrong role admin is rejected", async () => 
 			functionName === "hasRole" ? false : 0n,
 	});
 	await assert.rejects(
-		verifyCoreState(chain, admin, profile, await planFor(chain)),
+		verifyCoreState(
+			chain,
+			admin,
+			profileCoreConfig(profile),
+			await planFor(chain),
+		),
+	);
+});
+
+test("an existing paymaster is checked against the run's configuration, and no deployer may hold ROLE_ADMIN", async () => {
+	const proxy = create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy);
+	const implementation = create3Address(
+		CANONICAL_DEPLOYER,
+		LABELS.paymasterImplementation,
+	);
+	const config = profileCoreConfig(profile);
+	const chain = (holders: Address[]) =>
+		client({
+			getCode: async ({ address }: { address: Address }) =>
+				address === proxy ? "0x6000" : undefined,
+			getStorageAt: async () => `0x${"0".repeat(24)}${implementation.slice(2)}`,
+			readContract: async ({
+				functionName,
+				args,
+			}: {
+				functionName: string;
+				args?: [unknown, Address];
+			}) =>
+				({
+					ROLE_ADMIN: `0x${"0".repeat(64)}`,
+					hasRole: holders.includes(args?.[1] as Address),
+					entryPoint: config.entryPoint,
+					defaultFeeWei: config.defaultFeeWei,
+					postOpGasAllowance: config.postOpGasAllowance,
+					penaltyBps: config.penaltyBps,
+				})[functionName],
+		});
+	const ok = chain([admin]);
+	await verifyCoreState(ok, admin, config, await planFor(ok));
+	// `deploy:cli core` passes its own flags: a fee that differs from the chain's is refused.
+	await assert.rejects(
+		verifyCoreState(
+			ok,
+			admin,
+			{ ...config, penaltyBps: config.penaltyBps + 1 },
+			await planFor(ok),
+		),
+		/EntryPoint or fee parameters differ/,
+	);
+	const held = chain([admin, CANONICAL_DEPLOYER]);
+	await assert.rejects(
+		verifyCoreState(held, admin, config, await planFor(held)),
+		/A deployer must hold no role/,
 	);
 });
 
@@ -274,6 +337,36 @@ test("deploy:cli --network cannot move a chain out of its committed profile's cl
 		`${stdout}${stderr}`,
 		/--network mainnet conflicts with profile base-sepolia, which declares chain 84532 testnet/,
 	);
+});
+
+test("deploy:cli refuses a deployment record that states another network class", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "giano-record-class-"));
+	try {
+		// Chain 4242 has no committed profile, so --network alone picks its class.
+		writeFileSync(
+			join(dir, "4242.json"),
+			JSON.stringify({
+				chainId: 4242,
+				network: "mainnet",
+				deployer: zeroAddress,
+				contracts: {},
+				upgrades: [],
+			}),
+		);
+		const { code, stdout, stderr, methods } = await guidedPlan(
+			4242,
+			["--network", "testnet", "--record-dir", dir],
+			["deploy/cli.ts", "core"],
+		);
+		assert.notEqual(code, 0);
+		assert.match(
+			`${stdout}${stderr}`,
+			/states chain 4242 is mainnet, but this run resolved it as testnet \(--network\)/,
+		);
+		assert.deepEqual(methods, ["eth_chainId"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("CLI --plan is read-only and blocks a testnet while its canonical deployer is unset", async () => {

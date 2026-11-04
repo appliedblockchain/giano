@@ -33,6 +33,14 @@ spec:
             - name: NETWORK
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.deployer.chainProfile }}
+            - name: CHAIN_PROFILE_JSON
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.deployer.deploymentRecord }}
+            - name: DEPLOYMENT_RECORD_JSON
+              value: {{ . | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}

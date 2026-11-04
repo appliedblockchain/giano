@@ -65,14 +65,19 @@ const record = (): DeploymentRecord => ({
 function generate(
 	input: DeploymentRecord,
 	overrides: Record<string, Record<string, string>> = {},
+	fingerprints = RELEASE_FINGERPRINTS,
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "giano-registry-"));
 	try {
 		writeFileSync(join(dir, `${input.chainId}.json`), JSON.stringify(input));
-		return generateRegistry(dir, {
-			default: { entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" },
-			...overrides,
-		});
+		return generateRegistry(
+			dir,
+			{
+				default: { entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" },
+				...overrides,
+			},
+			fingerprints,
+		);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -99,6 +104,25 @@ test("a recorded contract whose code matches no release fails, naming the chain,
 		new RegExp(
 			`chain 8453: paymasterProxy at 0x4444444444444444444444444444444444444444 has fingerprint ${proxy.fingerprint}, which matches no release's ERC1967Proxy`,
 		),
+	);
+});
+
+test("a release that leaves a contract unchanged can be recorded under either release", () => {
+	// A v3 that ships v2's factory unchanged: one fingerprint, two releases.
+	const v3 = RELEASE_FINGERPRINTS.filter((r) => r.release === "v2").map(
+		(r) => ({ ...r, release: "v3" }),
+	);
+	const fingerprints = [...RELEASE_FINGERPRINTS, ...v3];
+	const newer = record();
+	for (const deployed of Object.values(newer.contracts))
+		if (deployed) deployed.release = "v3";
+	assert.equal(generate(newer, {}, fingerprints).chains, 1);
+	assert.equal(generate(record(), {}, fingerprints).chains, 1);
+	const older = record();
+	if (older.contracts.factory) older.contracts.factory.release = "v1";
+	assert.throws(
+		() => generate(older, {}, fingerprints),
+		/factory .* is recorded as v1 but its fingerprint is v2, v3's/,
 	);
 });
 

@@ -3,16 +3,24 @@
 // runtime has none (ABIP-2), so the CLI runs as a child `node` process with an argument array.
 //
 //   RPC_URL, CHAIN_ID          the chain (CHAIN_ID is checked against what the endpoint reports)
-//   DEPLOYER_PRIVATE_KEY       optional. Unset, the run only verifies: every canonical contract must
+//   DEPLOYER_PRIVATE_KEY       optional. Unset, the run only verifies: every Giano contract must
 //                              already be on the chain with a release's code, and nothing is sent.
-//                              The canonical deployer key comes from an ABIP-8 ceremony and is held
-//                              by Applied Blockchain DevOps (docs/key-ceremony.md): never put it in a
-//                              client's secret. Adopting a new chain is their operation.
+//                              The canonical deployer keys are Applied Blockchain development-team
+//                              keys kept in 1Password (docs/key-ceremony.md): never put one in a
+//                              client's secret. Adopting a new chain is Applied Blockchain's operation.
 //   DEPLOYER_IMPERSONATE=true  local chains (31337/31338) only: impersonate the canonical deployer
 //                              instead of signing; the CLI refuses it on any other chain
+//   CHAIN_PROFILE_JSON         the chain's profile (deploy/chains/<profile>.json, verbatim): its network
+//                              class, address overrides and paymaster parameters. The image ships no
+//                              profiles, so a chain with overrides needs this or DEPLOYMENT_RECORD_JSON.
+//   DEPLOYMENT_RECORD_JSON     the chain's committed record (deployments/<chainId>.json, verbatim). It
+//                              seeds OUT_DIR when OUT_DIR has no record yet, so a chain recorded at
+//                              non-deterministic addresses is verified where it is, not at the
+//                              class's deterministic addresses.
 //   NETWORK                    mainnet or testnet: the chain's network class, which picks the
-//                              canonical deployer whose addresses are verified. Required for any
-//                              chain but a local one (31337/31338).
+//                              canonical deployer whose addresses are expected. Required for any
+//                              chain but a local one (31337/31338) unless CHAIN_PROFILE_JSON is set;
+//                              with it, it must agree with the profile.
 //   ROLE_ADMIN                 the paymaster's sole ROLE_ADMIN; a TimelockController in production
 //   RELEASE                    optional; the latest release by default
 //   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111)
@@ -20,7 +28,7 @@
 //   OUT_DIR                    where the record and the registry JSON go (default /out)
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,6 +63,43 @@ const common = [
 if (impersonate) common.push("--impersonate");
 if (env.NETWORK) common.push("--network", env.NETWORK);
 
+function parseJson(name) {
+	try {
+		return JSON.parse(env[name]);
+	} catch {
+		// Never echo the value: it is operator input.
+		console.error(`${name} is not valid JSON`);
+		process.exit(1);
+	}
+}
+
+if (env.CHAIN_PROFILE_JSON) {
+	const profile = parseJson("CHAIN_PROFILE_JSON");
+	if (profile.chainId !== chainId) {
+		console.error(
+			`CHAIN_PROFILE_JSON is chain ${profile.chainId}, not CHAIN_ID=${chainId}`,
+		);
+		process.exit(1);
+	}
+	const file = `${outDir}/chain-profile.${chainId}.json`;
+	writeFileSync(file, JSON.stringify(profile, null, 2));
+	common.push("--chain-config", file);
+}
+
+// A record already in OUT_DIR is this volume's own (a re-run picks up where it left off); otherwise the
+// committed record tells the CLI where the chain's contracts are.
+const recordFile = `${outDir}/${chainId}.json`;
+if (env.DEPLOYMENT_RECORD_JSON && !existsSync(recordFile)) {
+	const seed = parseJson("DEPLOYMENT_RECORD_JSON");
+	if (seed.chainId !== chainId) {
+		console.error(
+			`DEPLOYMENT_RECORD_JSON is chain ${seed.chainId}, not CHAIN_ID=${chainId}`,
+		);
+		process.exit(1);
+	}
+	writeFileSync(recordFile, JSON.stringify(seed, null, 2));
+}
+
 function cli(args) {
 	const { status, error } = spawnSync(process.execPath, [CLI, ...args], {
 		stdio: "inherit",
@@ -81,7 +126,7 @@ if (env.DEPLOY_TESTING === "true") {
 }
 
 // The registry entry for this chain in the shared schema (GianoDeployment in addresses.ts).
-const record = JSON.parse(readFileSync(`${outDir}/${chainId}.json`, "utf8"));
+const record = JSON.parse(readFileSync(recordFile, "utf8"));
 if (record.chainId !== chainId) {
 	throw new Error(
 		`the endpoint is chain ${record.chainId}, not CHAIN_ID=${chainId}`,

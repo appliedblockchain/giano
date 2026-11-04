@@ -11,6 +11,7 @@ import { isCanonicalEntryPointCode } from "../entrypoint";
 import { gianoPaymasterAbi } from "../generated";
 import { DEPLOYERS, ENTRY_POINT_V09, isClassDeployer } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
+import type { PaymasterParams } from "./deploy";
 import {
 	CORE_KEYS,
 	formatPlan,
@@ -57,15 +58,31 @@ export function assertRoleAdminNotDeployer(
 const planned = (plan: Plan, key: (typeof CORE_KEYS)[number]) =>
 	plan.contracts.find((c) => c.key === key);
 
+/** What an existing paymaster proxy must be configured with, besides its ROLE_ADMIN. */
+export type CoreConfig = Omit<PaymasterParams, "roleAdmin">;
+
+/** The configuration a profile publishes: the canonical EntryPoint and the profile's fees. */
+export function profileCoreConfig(profile: ChainProfile): CoreConfig {
+	const { defaultFeeWei, postOpGasAllowance, penaltyBps } =
+		paymasterParams(profile);
+	return {
+		entryPoint: ENTRY_POINT_V09,
+		defaultFeeWei,
+		postOpGasAllowance,
+		penaltyBps,
+	};
+}
+
 /**
  * An existing paymaster proxy, overridden or not, must be configured as this plan says: pointing at
- * the planned implementation, with ROLE_ADMIN, EntryPoint and fees as the profile publishes them, and
- * (on a non-local chain) no deployer holding ROLE_ADMIN.
+ * the planned implementation, with `admin` holding ROLE_ADMIN, the EntryPoint and fees of `config`,
+ * and (on a non-local chain) no deployer holding ROLE_ADMIN. Shared by the guided wizard and
+ * `deploy:cli core`, which both run it before deployCore records anything.
  */
 export async function verifyCoreState(
 	client: PublicClient,
 	admin: Address,
-	profile: ChainProfile,
+	config: CoreConfig,
 	plan: Plan,
 ): Promise<void> {
 	const proxy = planned(plan, "paymasterProxy");
@@ -103,10 +120,10 @@ export async function verifyCoreState(
 	]);
 	if (
 		!allowed ||
-		getAddress(entryPoint) !== getAddress(ENTRY_POINT_V09) ||
-		fee !== paymasterParams(profile).defaultFeeWei ||
-		allowance !== profile.paymaster.postOpGasAllowance ||
-		penalty !== profile.paymaster.penaltyBps
+		getAddress(entryPoint) !== getAddress(config.entryPoint) ||
+		fee !== config.defaultFeeWei ||
+		allowance !== config.postOpGasAllowance ||
+		penalty !== config.penaltyBps
 	)
 		throw new GateError(
 			"Existing paymaster admin, EntryPoint or fee parameters differ from this plan. Review its configuration before continuing.",
@@ -225,7 +242,12 @@ export async function inspectDeployment(
 		"Existing paymaster configuration matches the plan (when present)",
 		async () => {
 			try {
-				await verifyCoreState(client, admin, profile, plan as Plan);
+				await verifyCoreState(
+					client,
+					admin,
+					profileCoreConfig(profile),
+					plan as Plan,
+				);
 			} catch (error) {
 				throw error instanceof GateError
 					? error

@@ -27,7 +27,7 @@ import { create3Address } from "./create3";
 import { type DeployContext, deployCore } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { fixedAddresses, planCore } from "./plan";
-import { verifyCoreState } from "./preflight";
+import { profileCoreConfig, verifyCoreState } from "./preflight";
 import { loadProfile, paymasterParams } from "./profiles";
 import { recordDeviations } from "./records";
 import { loadRelease } from "./release";
@@ -194,7 +194,12 @@ test("overridden wallet implementation and paymaster are verified and reused, de
 			record: ctx.record,
 		});
 		assert.deepEqual(after.blockers, []);
-		await verifyCoreState(client, EARLIER_KEY, profile, after);
+		await verifyCoreState(
+			client,
+			EARLIER_KEY,
+			profileCoreConfig(profile),
+			after,
+		);
 	} finally {
 		anvil.kill();
 	}
