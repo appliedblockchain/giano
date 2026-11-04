@@ -14,7 +14,7 @@ import {
 	Stack,
 	Text,
 } from "@chakra-ui/react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { LuPause, LuPlay, LuTrash2 } from "react-icons/lu";
 import type { Address } from "viem";
 import { ActionButton } from "../components/actions";
@@ -36,7 +36,7 @@ import {
 } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { AddressLabel, Amount } from "../components/values";
-import { describeError } from "../lib/format";
+import { useImplementation } from "../hooks/useImplementation";
 import { queuedKeys } from "../lib/queued";
 import { MAX_PENALTY_BPS, MAX_UINT32 } from "../lib/validate";
 import { useConsole } from "../shell/ConsoleContext";
@@ -528,26 +528,11 @@ function StakeCard({
 
 function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 	const { block } = useConsole();
-	const [implementation, setImplementation] = useState<Address>();
-	const [error, setError] = useState<string>();
+	const { implementation, error, read } = useImplementation(client, block);
 	const next = useAddressInput();
 	const data = useCalldataInput();
 	const address = next.value;
 	const calldata = data.value ?? "0x";
-
-	const read = useCallback(async () => {
-		try {
-			setImplementation(await client.getImplementation());
-			setError(undefined);
-		} catch (cause) {
-			setError(describeError(cause));
-		}
-	}, [client]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: re-read with every console refresh
-	useEffect(() => {
-		void read();
-	}, [read, block]);
 
 	return (
 		<Card
