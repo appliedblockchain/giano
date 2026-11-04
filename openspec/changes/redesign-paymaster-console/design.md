@@ -125,6 +125,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health. **Done** (#208).
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health. **Done** (#209).
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page. **Done** (#210).
+18. B7: the bundler reports its executors, `GET /v1/platform/chains` carries them, and Health and the Overview show them.
 
 A bug found in a later layer is fixed on the branch of the layer that introduced it, and the layers above are restacked (`gh stack rebase --upstack`), so each PR stays correct on its own: the edit-dialog reset found by CI on #186 was fixed in #185, and an unformatted test in #187 in #187. A bug older than the redesign is fixed, as its own commit, in the layer that found it.
 
@@ -240,6 +241,13 @@ The Chains section is read with each console refresh while Health is open; each 
 - **Indexed by chain and time.** The existing indexes lead with the tenant, which a query across every tenant of one chain cannot use. Migration 0010 adds `(chain_id, created_at)` and `(chain_id, observed_at)`, one per file with a 5-second `lock_timeout`, so each table is locked only while its own index builds and a long transaction fails the migration rather than queue every insert behind it. A test fills two years of a busy chain inside a rolled-back transaction and checks the plan of the queries `readUsage` runs uses both; on a few rows the planner was free to pick the settlements' primary key, which also leads with the chain. The runner applies each migration in a transaction, so the indexes are not built `CONCURRENTLY`; writes wait while they build.
 - **Settlements are dated by when the watcher observed them**, the only time the table has: after a catch-up, settlements are dated to it (dating them by block time is a follow-up). Tenants are never hard-deleted, so a deleted tenant keeps its usage under its slug; settlements for a tenant id the deployment does not know (another deployment's, on a shared paymaster) are `unknownTenant`, apart from the total.
 - **The console reads the last seven days** with the console's refreshes, at most once a minute, on the Overview and on the page of a tenant with a registry row, and keeps the figures it has when a read fails or throws.
+
+### D28. Bundler executors are read from the bundler, through wallet-api
+The executor keys live in the bundler's environment (`BUNDLER_EXECUTOR_PRIVATE_KEYS`), which is the only place their addresses are known, and the bundler sits behind an internal hostname the browser cannot reach (§10.1). So the bundler answers a JSON-RPC method on each chain's endpoint, `giano_executors`: per executor, the address, its balance read live, whether its lane holds a transaction, and its latest and pending nonces, plus the chain's gas price. wallet-api, its only client, adds that to each chain in `GET /v1/platform/chains` within the same 3-second bundler budget. A bundler without the method (Alto, or one older than this) is reported with its executors unknown, not as a failure.
+
+Addresses, not keys: a key never leaves the bundler. The addresses are public on chain anyway, as every `handleOps` transaction's sender.
+
+The console judges an executor by the submissions its balance pays for at the chain's current gas price, assuming 400,000 gas per `handleOps([op])` (one operation with a paymaster stays well under it), rather than by a fixed amount of ETH that means different things on different chains: under 10 fails, under 100 warns. A pending nonce more than one ahead of the latest, or ahead while the lane is idle, is a stuck transaction. An empty or low executor also goes under Needs attention on the Overview, since every submission it takes fails until it is funded.
 
 ## Risks / Trade-offs
 
