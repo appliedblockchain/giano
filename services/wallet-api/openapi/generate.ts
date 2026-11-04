@@ -41,6 +41,9 @@ const config = loadConfig({
 	SPONSORSHIP_SIGNER_KIND: "hsm",
 	SPONSORSHIP_SIGNER_KEY_REF:
 		"arn:aws:kms:eu-west-1:000000000000:key/giano-sponsorship",
+	// A production deployment class refuses to start with GET /metrics open. The route is hidden
+	// from the document, so this dummy value does not change it.
+	METRICS_BEARER_TOKEN: "openapi-codegen-metrics-token",
 	// The platform admin routes are registered only where the environment has a sign-in domain; the
 	// document describes them, so it is generated as a live environment that has one.
 	GIANO_ENVIRONMENT: "prd",
