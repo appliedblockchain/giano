@@ -15,9 +15,11 @@ import {
 	encodeFunctionData,
 	getAddress,
 	http,
+	keccak256,
 	type PublicClient,
 } from "viem";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { paymasterReleaseOf } from "../releases";
 import {
 	encodeTimelockProposal,
 	paymasterSelector,
@@ -148,6 +150,32 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			nonceBefore,
 		);
 		assert.equal(readFileSync(join(dir, "84532.json"), "utf8"), before);
+
+		// D13: the implementation is matched to its release wherever it was deployed. The same
+		// creation code at a plain CREATE address embeds a different `__self`, so its raw codehash
+		// differs, and the zeroed one still matches.
+		const canonicalImpl = ctx.record.contracts.paymasterImplementation?.address;
+		assert.ok(canonicalImpl);
+		const canonicalCode = await client.getCode({ address: canonicalImpl });
+		assert.ok(canonicalCode);
+		assert.equal(paymasterReleaseOf(canonicalCode)?.release, "v2");
+		const plain = await walletClient.sendTransaction({
+			data: loadRelease("v2").contracts.GianoPaymaster.creationCode,
+		});
+		const plainAddress = (
+			await client.waitForTransactionReceipt({ hash: plain })
+		).contractAddress;
+		assert.ok(plainAddress);
+		const plainCode = await client.getCode({ address: plainAddress });
+		assert.ok(plainCode);
+		assert.notEqual(keccak256(plainCode), keccak256(canonicalCode));
+		assert.equal(paymasterReleaseOf(plainCode)?.release, "v2");
+		assert.equal(
+			paymasterReleaseOf(
+				loadRelease("v1").contracts.GianoPaymaster.creationCode,
+			),
+			undefined,
+		);
 
 		// G9: the release's GianoTimelock with the profile's published delays, then the hand-off.
 		const proxy = ctx.record.contracts.paymasterProxy?.address;

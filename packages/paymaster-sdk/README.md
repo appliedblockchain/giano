@@ -46,13 +46,25 @@ replay**:
 | `getSolvency()` | `Σ balances + treasury ≤ deposit`, evaluated |
 | `getStakeInfo()` | deposit, stake, unstake delay, unlock time |
 | `getSigners()`, `getRoleHolders()`, `getRolesOf(account)` | authority |
-| `getHealth()` | the checks `giano-doctor` runs, same thresholds |
+| `getHealth({ timelock })` | the checks `giano-doctor` runs, same thresholds |
+| `getImplementation()`, `getImplementationCode()` | the proxy's implementation, and the code there |
 | `getSponsorships()`, `watchSponsorships()` | settled sponsorships in a window of blocks — see below |
 | `getTenantSlugs()` | the one field that needs logs — slugs are emitted, not stored |
 | `assertDeployed()` | catches a wrong address or a wrong chain, in a sentence |
 
 `getHealth()` is a pure function of an overview (`assessHealth`), so a UI can re-evaluate it
 against data it already has, and it cannot disagree with the deployment gate.
+
+Two checks need more than an overview, so `assessHealth(overview, context)` takes them:
+
+- `timelock`: the timelock's address, its delays as read from it (`timelockDelays(await
+  timelockClient.getConfig())`) and, optionally, the published delays from the deployment's profile.
+  With it, the report checks that the timelock alone holds `ROLE_ADMIN`, `UPGRADER_ROLE`,
+  `FEE_ADMIN_ROLE` and `WITHDRAW_ADDRESS_ADMIN_ROLE`, and that no delay is below its published
+  value. Without it, one warning says no timelock is configured. The paymaster cannot name its
+  timelock, so this is the caller's to pass.
+- `implementation`: the implementation's address and runtime code (`getImplementationCode()`),
+  matched to a contracts release. Code that is no release fails. `getHealth()` reads it itself.
 
 ### The two reads that are windows
 

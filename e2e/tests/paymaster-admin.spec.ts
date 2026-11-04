@@ -310,6 +310,28 @@ test("the Roles tab grants, rotates and revokes a role, each change landing on c
  * hosted console reads the chain only through wallet-api's platform relay, with a platform admin
  * session, and its own nginx no longer proxies the keyed RPC URL to anyone who asks.
  */
+test("Health says once that no timelock is configured, and names the implementation's release", async ({
+	page,
+}) => {
+	await installWallet(page, { known: [CHAINS.a.chainId] });
+	await openConsole(page);
+	await chooseDeployment(page, CHAINS.a.chainId);
+	await signInToPaymaster(page);
+	await tab(page, /Health/).click();
+
+	const keys = page.getByTestId("health-keys");
+	await expect(keys.getByTestId("check-timelock")).toContainText(
+		"no timelock configured",
+	);
+	await expect(keys.getByTestId("check-timelock")).toContainText("warning");
+	await expect(keys.getByTestId("check-implementation")).toContainText(
+		"release v2",
+	);
+	// One warning for the deployment, not one per holder asking to verify it.
+	await expect(page.getByText(/verify this is the timelock/)).toHaveCount(0);
+	await expect(keys.getByTestId("check-role-ROLE_ADMIN")).toHaveCount(0);
+});
+
 test.describe("access", () => {
 	const PLATFORM_RPC = /\/api\/v1\/platform\/rpc\/(\d+)$/;
 

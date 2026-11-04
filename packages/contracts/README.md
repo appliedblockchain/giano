@@ -75,13 +75,19 @@ while it is set. Switching to the real deployer:
 
 The deploy CLI deploys **releases**, never a fresh build. `releases/<vN>/` holds:
 
-- `release.json`: the creation code of every deployable contract and the compiler identity.
+- `release.json`: the creation code of every deployable contract and the compiler identity. For
+  `GianoPaymaster` it also records the runtime codehash with every immutable zeroed, and where the
+  immutables are, so `paymasterReleaseOf` (`releases.ts`) can tell which release an implementation
+  on any chain runs, whatever address it was deployed at. `pnpm release:runtime` adds the record to
+  a release cut before it existed; it is derived from the frozen input, and `release:verify` checks
+  it.
 - `standard-input.json`: the exact solc standard-JSON input (sources, settings, remappings).
 
 ```bash
 pnpm release:status    # which contracts differ from the latest release
 pnpm release:cut v2    # build with Foundry and freeze releases/v2 (refuses an existing version)
 pnpm release:verify    # recompile every release with plain solc and check it reproduces
+pnpm release:runtime   # record GianoPaymaster's runtime codehash in a release cut before it existed
 ```
 
 Releases are immutable. A contract change is a new release; deploying it to an existing chain is an
@@ -173,9 +179,10 @@ submodules and no network:
 | --- | --- | --- |
 | `generated.ts` | wagmi's `foundry` plugin over a build of `src/` | `pnpm gen:abis` |
 | `canonical.ts` | `deploy/config.ts` + `releases/`, deployed to a throwaway anvil | `pnpm gen:canonical` |
+| `releases.ts` | the `GianoPaymaster` runtime record in each `releases/<vN>/release.json` | `pnpm gen:releases` |
 | `addresses.ts` | `deployments/<chainId>.json` + `address-overrides.json` | `pnpm gen:addresses` |
 
-CI regenerates all three and fails on drift.
+CI regenerates all four and fails on drift.
 
 ```bash
 pnpm build:ts    # tsdown only — what prepublishOnly runs; needs no solc

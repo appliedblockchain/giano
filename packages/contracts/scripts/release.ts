@@ -3,7 +3,9 @@
  *
  *   pnpm release:cut <version>   build with Foundry and freeze releases/<version>/
  *   pnpm release:verify          recompile every release's standard-JSON input with plain solc and
- *                                check it reproduces the release's creation code
+ *                                check it reproduces the release's creation code and runtime record
+ *   pnpm release:runtime         record the runtime codehash of RUNTIME_CONTRACTS in a release that
+ *                                predates it; derived from the frozen input, never a fresh build
  *   pnpm release:status          say which contracts differ from the latest release
  *
  * `verify` needs the release's solc. It uses $SOLC if set, otherwise the binary Foundry installs
@@ -13,7 +15,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { Hex } from "viem";
+import { type Hex, keccak256 } from "viem";
 import {
 	latestRelease,
 	listReleases,
@@ -22,12 +24,25 @@ import {
 	RELEASES_DIR,
 	type Release,
 	type ReleaseContract,
+	type ReleaseRuntime,
+	RUNTIME_CONTRACTS,
 } from "../deploy/release";
 
 const pkgRoot = path.resolve(import.meta.dirname, "..");
 
 /** Only bytecode is needed to check a release; solc's output does not depend on the selection. */
 const OUTPUT_SELECTION = { "*": { "*": ["evm.bytecode.object"] } };
+
+/** What `verify` and `runtime` ask solc for: the creation code, and the runtime code with its immutables. */
+const VERIFY_SELECTION = {
+	"*": {
+		"*": [
+			"evm.bytecode.object",
+			"evm.deployedBytecode.object",
+			"evm.deployedBytecode.immutableReferences",
+		],
+	},
+};
 
 type StandardInput = {
 	language: string;
@@ -40,7 +55,21 @@ type BuildInfo = {
 	output: {
 		contracts: Record<
 			string,
-			Record<string, { evm: { bytecode: { object: string } } }>
+			Record<
+				string,
+				{
+					evm: {
+						bytecode: { object: string };
+						deployedBytecode?: {
+							object: string;
+							immutableReferences?: Record<
+								string,
+								{ start: number; length: number }[]
+							>;
+						};
+					};
+				}
+			>
 		>;
 	};
 };
@@ -107,6 +136,75 @@ function creationCodes(
 	return codes;
 }
 
+/**
+ * The runtime record of `name`: solc's runtime object has every immutable still zero, so its hash
+ * is the hash of the deployed code with those ranges zeroed, wherever and however it was deployed.
+ */
+function runtimeOf(
+	output: BuildInfo["output"],
+	name: ReleaseContract,
+): ReleaseRuntime {
+	const deployed =
+		output.contracts[RELEASE_CONTRACTS[name]]?.[name]?.evm.deployedBytecode;
+	if (!deployed?.object)
+		throw new Error(`${name} has no runtime code in the build output`);
+	const immutables = Object.values(deployed.immutableReferences ?? {})
+		.flat()
+		.map(({ start, length }) => ({ start, length }))
+		.sort((a, b) => a.start - b.start);
+	return { codehash: keccak256(hex(deployed.object)), immutables };
+}
+
+/** Compiles a frozen release's standard-JSON input with the solc it names. */
+function compileRelease(
+	version: string,
+	release: Release,
+): BuildInfo["output"] {
+	const input = JSON.parse(
+		fs.readFileSync(
+			path.join(RELEASES_DIR, version, "standard-input.json"),
+			"utf8",
+		),
+	) as StandardInput;
+	const solc = solcFor(release.compiler.solc);
+	const reported = execFileSync(solc, ["--version"]).toString();
+	if (!reported.includes(release.compiler.solc.replace(/^v/, "")))
+		throw new Error(
+			`${solc} is not solc ${release.compiler.solc}:\n${reported}`,
+		);
+	// solc resolves nothing from disk here: every source is inlined in the input.
+	const output = JSON.parse(
+		execFileSync(solc, ["--standard-json"], {
+			input: JSON.stringify({
+				...input,
+				settings: { ...input.settings, outputSelection: VERIFY_SELECTION },
+			}),
+			maxBuffer: 1 << 30,
+			cwd: os.tmpdir(),
+		}).toString(),
+	);
+	const errors = (output.errors ?? []).filter(
+		(e: { severity: string }) => e.severity === "error",
+	);
+	if (errors.length)
+		throw new Error(
+			`${version}: solc reported errors:\n${errors.map((e: { formattedMessage: string }) => e.formattedMessage).join("\n")}`,
+		);
+	return output;
+}
+
+/** Writes release.json, keeping a committed file's layout (v2's is one line) so a diff shows only what changed. */
+function writeRelease(version: string, release: Release): void {
+	const file = path.join(RELEASES_DIR, version, "release.json");
+	const oneLine =
+		fs.existsSync(file) &&
+		fs.readFileSync(file, "utf8").trimEnd().split("\n").length === 1;
+	fs.writeFileSync(
+		file,
+		`${oneLine ? JSON.stringify(release) : JSON.stringify(release, null, 2)}\n`,
+	);
+}
+
 function cut(version: string | undefined): void {
 	if (!version || !/^v\d+$/.test(version))
 		throw new Error("usage: pnpm release:cut v<N>");
@@ -150,6 +248,11 @@ function cut(version: string | undefined): void {
 		path.join(dir, "standard-input.json"),
 		`${JSON.stringify(input)}\n`,
 	);
+	// The runtime record comes from the frozen input, as `verify` recomputes it.
+	const output = compileRelease(version, release);
+	for (const name of RUNTIME_CONTRACTS)
+		release.contracts[name].runtime = runtimeOf(output, name);
+	writeRelease(version, release);
 	console.log(
 		`Cut ${version}: ${Object.keys(codes).join(", ")} (solc ${build.solcLongVersion})`,
 	);
@@ -183,30 +286,7 @@ function verify(): void {
 	if (versions.length === 0) throw new Error("no releases to verify");
 	for (const version of versions) {
 		const release = loadRelease(version);
-		const input = fs.readFileSync(
-			path.join(RELEASES_DIR, version, "standard-input.json"),
-		);
-		const solc = solcFor(release.compiler.solc);
-		const reported = execFileSync(solc, ["--version"]).toString();
-		if (!reported.includes(release.compiler.solc.replace(/^v/, "")))
-			throw new Error(
-				`${solc} is not solc ${release.compiler.solc}:\n${reported}`,
-			);
-		// solc resolves nothing from disk here: every source is inlined in the input.
-		const output = JSON.parse(
-			execFileSync(solc, ["--standard-json"], {
-				input,
-				maxBuffer: 1 << 30,
-				cwd: os.tmpdir(),
-			}).toString(),
-		);
-		const errors = (output.errors ?? []).filter(
-			(e: { severity: string }) => e.severity === "error",
-		);
-		if (errors.length)
-			throw new Error(
-				`${version}: solc reported errors:\n${errors.map((e: { formattedMessage: string }) => e.formattedMessage).join("\n")}`,
-			);
+		const output = compileRelease(version, release);
 		const names = Object.keys(release.contracts) as ReleaseContract[];
 		const codes = creationCodes(output, names);
 		for (const name of names) {
@@ -219,9 +299,40 @@ function verify(): void {
 				);
 			}
 		}
+		for (const name of RUNTIME_CONTRACTS) {
+			const recorded = release.contracts[name].runtime;
+			if (!recorded)
+				throw new Error(
+					`${version}: ${name} has no runtime record; run \`pnpm release:runtime\``,
+				);
+			if (JSON.stringify(recorded) !== JSON.stringify(runtimeOf(output, name)))
+				throw new Error(
+					`${version}: ${name}'s runtime record does not reproduce from standard-input.json`,
+				);
+		}
 		console.log(
-			`OK ${version}: every contract reproduces from its standard-JSON input with ${path.basename(solc)}`,
+			`OK ${version}: every contract reproduces from its standard-JSON input with solc ${release.compiler.solc}`,
 		);
+	}
+}
+
+/**
+ * Records the runtime of RUNTIME_CONTRACTS in each release that predates the record (D13). It is
+ * derived from the frozen input, which stays as it was, so the release deploys exactly what it did;
+ * a record already there is left alone, and `verify` checks it.
+ */
+function runtime(): void {
+	for (const version of listReleases()) {
+		const release = loadRelease(version);
+		const missing = RUNTIME_CONTRACTS.filter(
+			(name) => !release.contracts[name].runtime,
+		);
+		if (missing.length === 0) continue;
+		const output = compileRelease(version, release);
+		for (const name of missing)
+			release.contracts[name].runtime = runtimeOf(output, name);
+		writeRelease(version, release);
+		console.log(`Recorded ${version}: ${missing.join(", ")}`);
 	}
 }
 
@@ -244,8 +355,9 @@ function status(): void {
 const [command, arg] = process.argv.slice(2);
 if (command === "cut") cut(arg);
 else if (command === "verify") verify();
+else if (command === "runtime") runtime();
 else if (command === "status") status();
 else {
-	console.error("usage: release.ts cut <version> | verify | status");
+	console.error("usage: release.ts cut <version> | verify | runtime | status");
 	process.exit(2);
 }

@@ -65,6 +65,7 @@ GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
     | { name, chainId, rpcUrl, sponsorshipPaymaster, nativeCurrency,
         walletRpcUrl: (.paymasterAdmin.walletRpcUrl // .walletRpcUrl),
         timelockAddress: (.paymasterAdmin.timelockAddress // .timelockAddress),
+        timelockDelays: (.paymasterAdmin.timelockDelays // .timelockDelays),
         explorerUrl: (.paymasterAdmin.explorerUrl // .explorerUrl),
         addresses: (.paymasterAdmin.addresses // .addresses),
         refreshSeconds: (.paymasterAdmin.refreshSeconds // .refreshSeconds // 15) }

@@ -22,10 +22,13 @@
  * GIANO_REQUIRE_PAYMASTER, PAYMASTER_TIMELOCK, PAYMASTER_TIMELOCK_DELAYS, PAYMASTER_TIMELOCK_PROPOSERS,
  * GIANO_REQUIRE_TIMELOCK.
  *
- * Timelock (G9 R4): with --timelock, every timelocked role (timelock.ts) must be held by that
+ * Timelock (G9 R4, B2): with --timelock, every timelocked role (timelock.ts) must be held by that
  * GianoTimelock alone and each timelocked function must wait at least its --timelock-delays value.
- * A timelocked role on a key fails the run when a timelock is required (--require-timelock, or a
- * mainnet chain), and warns otherwise.
+ * `pnpm contracts:doctor --chain <profile>` passes the profile's timelock, delays and proposers
+ * (deploy/operations.ts), so a published policy is asserted without flags. A timelocked role on a
+ * key fails the run when a timelock is required (--require-timelock, or a mainnet chain), and warns
+ * otherwise. The paymaster implementation must be a release's code (releases.ts), whatever its
+ * address. The verdicts are the ones the SDK's `assessHealth` reaches, from the same functions.
  * For registry chains (8453 / 84532 / 381185) the addresses default from the contracts registry.
  *
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
@@ -63,8 +66,10 @@ import {
 	iEntryPointAbi,
 	multiOwnableAbi,
 } from "../generated";
+import { paymasterReleaseOf } from "../releases";
 import {
 	delayPolicyProblems,
+	delayShortfalls,
 	formatDuration,
 	parseDuration,
 	paymasterSelector,
@@ -72,6 +77,7 @@ import {
 	TIMELOCKED_ROLES,
 	type TimelockDelays,
 	type TimelockedFunctionName,
+	timelockedRoleProblems,
 } from "../timelock";
 
 // --- well-known addresses (identical on every EVM chain) ---
@@ -380,6 +386,23 @@ async function checkSponsorshipPaymaster(
 		const impl = getAddress(`0x${raw.slice(-40)}`);
 		report("info", "implementation", impl);
 		await reportCanonicalCode(provider, impl, "paymaster implementation");
+		// B2: canonical or not, the implementation must be a release's code (D13).
+		const code = await provider.getCode(impl);
+		const release =
+			code && code !== "0x"
+				? paymasterReleaseOf(code as `0x${string}`)
+				: undefined;
+		report(
+			release ? "ok" : "fail",
+			release
+				? "paymaster implementation is a release"
+				: "paymaster implementation matches no release",
+			release
+				? `release ${release.release}`
+				: code && code !== "0x"
+					? `${impl}, codehash ${keccak256(code)}`
+					: `no code at ${impl}`,
+		);
 		if (deployment.sponsorshipPaymasterImplementation) {
 			const expected = getAddress(
 				deployment.sponsorshipPaymasterImplementation,
@@ -657,21 +680,30 @@ async function checkTimelock(
 		const timelock = timelockFlag
 			? requireAddress(timelockFlag, "timelock")
 			: undefined;
+		const held: Partial<
+			Record<(typeof TIMELOCKED_ROLES)[number], `0x${string}`[]>
+		> = {};
 		for (const name of TIMELOCKED_ROLES) {
 			const role: string = await paymaster[name]();
 			const count: bigint = await paymaster.getRoleMemberCount(role);
 			const holders: string[] = [];
 			for (let i = 0n; i < count; i++)
 				holders.push(getAddress(await paymaster.getRoleMember(role, i)));
+			held[name] = holders as `0x${string}`[];
+		}
+		const roleProblems = timelock
+			? timelockedRoleProblems(held, timelock as `0x${string}`)
+			: [];
+		for (const name of TIMELOCKED_ROLES) {
+			const holders = held[name] ?? [];
 			if (timelock) {
-				const alone =
-					holders.length === 1 && holders[0] === getAddress(timelock);
+				const problem = roleProblems.find((entry) => entry.role === name);
 				report(
-					alone ? "ok" : "fail",
+					problem ? "fail" : "ok",
 					`${name} held by the timelock alone`,
-					alone
-						? timelock
-						: `held by ${holders.join(", ") || "nobody"} — expected only ${getAddress(timelock)}`,
+					problem
+						? `held by ${holders.join(", ") || "nobody"} — expected only ${getAddress(timelock)}`
+						: timelock,
 				);
 				continue;
 			}
@@ -721,10 +753,13 @@ async function checkTimelock(
 				await tl.getEffectiveDelay(paymasterAddress, paymasterSelector(name)),
 			);
 
-		const published = delaysFlag ? parseDelayList(delaysFlag) : undefined;
+		const published: Partial<TimelockDelays> | undefined = delaysFlag
+			? parseDelayList(delaysFlag)
+			: undefined;
+		const short = published ? delayShortfalls(actual, published) : [];
 		for (const name of ["minDelay", ...TIMELOCKED_FUNCTION_NAMES] as const) {
 			const want = published?.[name];
-			const ok = want === undefined || actual[name] >= want;
+			const ok = !short.some((entry) => entry.name === name);
 			report(
 				!ok ? "fail" : want === undefined ? "warn" : "ok",
 				`${name} delay`,
