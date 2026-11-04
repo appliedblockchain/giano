@@ -152,12 +152,18 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			assert.ok(deployed);
 			const code = await client.getCode({ address: deployed.address });
 			assert.ok(code);
-			assert.equal(releaseOf(contract, code)?.release, "v2", key);
+			// The release this run deployed: a later release that leaves a contract unchanged shares its
+			// fingerprint, and releaseOf would otherwise name the newest.
+			assert.equal(
+				releaseOf(contract, code, deployed.address, "v2")?.release,
+				"v2",
+				key,
+			);
 			// Code is checked against the contract it claims to be, not any release contract.
 			assert.equal(releaseOf("GianoTimelock", code), undefined, key);
 			// The fingerprint itself, not only the size: one byte changed outside every immutable range,
 			// same length, is no release's code.
-			const fingerprint = releaseOf(contract, code);
+			const fingerprint = releaseOf(contract, code, deployed.address, "v2");
 			assert.ok(fingerprint);
 			const outside = [...Array(fingerprint.size).keys()].find(
 				(i) =>
@@ -199,7 +205,10 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		});
 		const timelockCode = await client.getCode({ address: timelock.address });
 		assert.ok(timelockCode);
-		assert.equal(releaseOf("GianoTimelock", timelockCode)?.release, "v2");
+		assert.equal(
+			releaseOf("GianoTimelock", timelockCode, timelock.address, "v2")?.release,
+			"v2",
+		);
 		for (const name of TIMELOCKED_FUNCTION_NAMES)
 			assert.equal(
 				await client.readContract({
