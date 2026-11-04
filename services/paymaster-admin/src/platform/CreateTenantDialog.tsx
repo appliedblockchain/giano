@@ -15,7 +15,7 @@ import type { Address } from "viem";
 import { useWrite } from "../hooks/useWrite";
 import type { IssuedAdminKey, PlatformTenant } from "../lib/platform-api";
 import { ShownOnce, usePlatformAction } from "./LifecycleDialogs";
-import type { PlatformAreaProps } from "./PlatformArea";
+import type { PlatformAreaProps } from "./shared";
 import {
 	ApiErrorAlert,
 	canAdministerOnChain,
