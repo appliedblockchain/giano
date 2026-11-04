@@ -27,6 +27,7 @@ export type ProposalRequest =
 			tenantId: Hex;
 			withdrawAddress: Address;
 	  }
+	| { kind: "upgradeToAndCall"; implementation: Address; data: Hex }
 	| {
 			kind: "grantRole" | "revokeRole";
 			role: PaymasterRoleName;
@@ -61,6 +62,8 @@ export function buildProposal(
 				request.tenantId,
 				request.withdrawAddress,
 			);
+		case "upgradeToAndCall":
+			return timelock.proposeUpgrade(request.implementation, request.data);
 		case "grantRole":
 			return timelock.proposeGrantRole(request.role, request.account);
 		case "revokeRole":

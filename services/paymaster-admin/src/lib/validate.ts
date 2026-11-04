@@ -1,4 +1,10 @@
-import { type Address, getAddress, isAddress, parseUnits } from "viem";
+import {
+	type Address,
+	getAddress,
+	type Hex,
+	isAddress,
+	parseUnits,
+} from "viem";
 import type { NativeCurrency } from "../config";
 import { exactAmount } from "./format";
 
@@ -99,3 +105,19 @@ export const MAX_PENALTY_BPS = 5000n;
 
 export const parsePenaltyBps = (text: string): Parsed<bigint> =>
 	parseWholeNumber(text, { max: MAX_PENALTY_BPS, unit: "basis points" });
+
+/** Calldata: `0x` and whole bytes of hex. Empty is no call. */
+export function parseCalldata(text: string): Parsed<Hex> {
+	const trimmed = text.trim();
+	if (!trimmed) return EMPTY;
+	if (!/^0x[0-9a-fA-F]*$/.test(trimmed))
+		return { error: "Calldata is 0x followed by hex characters." };
+	if (trimmed.length % 2 !== 0)
+		return {
+			error: "Calldata is whole bytes: an even number of hex characters.",
+		};
+	return { value: trimmed.toLowerCase() as Hex };
+}
+
+/** The largest value a `uint32` parameter takes: the post-op gas allowance, the unstake delay. */
+export const MAX_UINT32 = 4_294_967_295n;

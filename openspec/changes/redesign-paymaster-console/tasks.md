@@ -63,11 +63,11 @@
 
 ## 6. Paymaster tab
 
-- [ ] 6.1 Move Settings to `/paymaster` as role-labelled cards, using the shared primitives (K4).
-- [ ] 6.2 Stake lifecycle: add, unlock, withdraw; the unstake delay in human units and unlocking as a date (N1, K1).
-- [ ] 6.3 Upgrade: the current implementation from the ERC-1967 slot, and Propose `upgradeToAndCall` (N3).
-- [ ] 6.4 Treasury withdraw with Max and confirmation; confirmation on pause, stake unlock and signer removal (C4).
-- [ ] 6.5 Unpause; clear each input after its write succeeds; validate gas and delays as whole numbers (K4).
+- [x] 6.1 Move Settings to `/paymaster` as role-labelled cards, using the shared primitives (K4).
+- [x] 6.2 Stake lifecycle: add, unlock, withdraw; the unstake delay in human units and unlocking as a date (N1, K1).
+- [x] 6.3 Upgrade: the current implementation from the ERC-1967 slot, and Propose `upgradeToAndCall` (N3). The SDK gains `getImplementation` and `upgradeToAndCall`, with a changeset, so a wallet holding `UPGRADER_ROLE` (a devnet) can Send.
+- [x] 6.4 Treasury withdraw with Max and confirmation; confirmation on pause, stake unlock and signer removal (C4).
+- [x] 6.5 Unpause; clear each input after its write succeeds; validate gas and delays as whole numbers (K4).
 
 ## 7. Roles
 
