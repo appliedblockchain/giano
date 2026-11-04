@@ -121,7 +121,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 
 12. B2: timelock-aware `assessHealth`, release codehashes, `giano-doctor`. SDK and contracts changesets. **Done** (#205).
 13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
-14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns.
+14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
@@ -170,6 +170,8 @@ wallet-api's paymaster watcher already reads each paymaster and writes `paymaste
 `platform_admin_sessions` already records start, expiry, revocation, chain, IP and user agent. The last sign-in is the newest `created_at` for the admin; active sessions are those neither expired nor revoked. No migration.
 
 An admin can end only their own sessions. Ending someone else's is already possible by removing them, which is recorded in the admin history; a second, unrecorded way to lock someone out is not worth adding.
+
+As built: sessions are matched to an admin by address, as a session is resolved, not by the id recorded at sign-in (an id can be reused after removal; the address is who signed). The list marks the caller's own session `current`, so the console can offer *End* on every open session but the one it is using. Ending a session already ended is `204`, and ending another admin's by naming yourself is `404`, since that session is not one of yours.
 
 ### D16. One console context
 `shell/ConsoleContext.tsx` provides what every primitive needs about the console around it: the deployment, the wallet and its paymaster roles, the paymaster address, the timelock client, the `propose` callback, the console refresh and the block it read at, the timelock's operations and access (D17), and each configured Safe's threshold. A control deep in a tab reads it with `useConsole()` instead of having half a dozen props threaded down to it. The paymaster overview and the joined tenant rows stay props: they are what a tab renders, not what a control decides with.

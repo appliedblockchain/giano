@@ -5,7 +5,9 @@ import type { AppConfig } from "../config.js";
 import {
 	type PlatformAdmin,
 	type PlatformAdminService,
+	type PlatformAdminWithSessions,
 	platformAdminInputSchema,
+	SESSION_HISTORY_DAYS,
 } from "../services/platform-admins.js";
 import { TenantWriteError } from "../services/tenants.js";
 
@@ -17,6 +19,7 @@ const errorSchema = z
 const errors = {
 	400: errorSchema,
 	401: errorSchema,
+	403: errorSchema,
 	404: errorSchema,
 	409: errorSchema,
 };
@@ -32,6 +35,28 @@ const adminView = (row: PlatformAdmin) => ({
 	address: row.address,
 	addedBy: row.addedBy,
 	createdAt: row.createdAt.toISOString(),
+});
+const listedAdminSchema = adminSchema.extend({
+	/** The newest sign-in, or null for an admin who never signed in. */
+	lastSignInAt: z.string().nullable(),
+	/** Sessions neither expired nor revoked. */
+	activeSessions: z.number().int(),
+});
+const listedAdminView = (row: PlatformAdminWithSessions) => ({
+	...adminView(row),
+	lastSignInAt: row.lastSignInAt?.toISOString() ?? null,
+	activeSessions: row.activeSessions,
+});
+const sessionSchema = z.object({
+	id: z.string(),
+	createdAt: z.string(),
+	expiresAt: z.string(),
+	revokedAt: z.string().nullable(),
+	chainId: z.number().int(),
+	ip: z.string().nullable(),
+	userAgent: z.string().nullable(),
+	/** The session making this request. */
+	current: z.boolean(),
 });
 
 function sendWriteError(reply: FastifyReply, error: unknown) {
@@ -71,14 +96,83 @@ export default async function platformAdminRoutes(
 			...route,
 			schema: {
 				...docs,
-				summary: "The platform admins, oldest first",
+				summary:
+					"The platform admins, oldest first, with each one's last sign-in and open sessions",
 				response: {
-					200: z.object({ admins: z.array(adminSchema) }),
+					200: z.object({ admins: z.array(listedAdminSchema) }),
 					...errors,
 				},
 			},
 		},
-		async () => ({ admins: (await opts.admins.list()).map(adminView) }),
+		async () => ({ admins: (await opts.admins.list()).map(listedAdminView) }),
+	);
+
+	app.get(
+		"/v1/platform/admins/:id/sessions",
+		{
+			...route,
+			schema: {
+				...docs,
+				summary: `A platform admin's sessions from the last ${SESSION_HISTORY_DAYS} days, newest first; never a token or its hash`,
+				params: z.object({ id: z.string().min(1).max(64) }),
+				response: {
+					200: z.object({ sessions: z.array(sessionSchema) }),
+					...errors,
+				},
+			},
+		},
+		async (request, reply) => {
+			try {
+				const rows = await opts.admins.sessions(request.params.id);
+				return {
+					sessions: rows.map((row) => ({
+						id: row.id,
+						createdAt: row.createdAt.toISOString(),
+						expiresAt: row.expiresAt.toISOString(),
+						revokedAt: row.revokedAt?.toISOString() ?? null,
+						chainId: row.chainId,
+						ip: row.ip,
+						userAgent: row.userAgent,
+						current: row.id === request.platformAdmin?.sessionId,
+					})),
+				};
+			} catch (error) {
+				return sendWriteError(reply, error);
+			}
+		},
+	);
+
+	app.delete(
+		"/v1/platform/admins/:id/sessions/:sessionId",
+		{
+			...route,
+			schema: {
+				...docs,
+				summary:
+					"End one of your own sessions; another admin's is refused (remove them to end all of theirs)",
+				params: z.object({
+					id: z.string().min(1).max(64),
+					sessionId: z.string().uuid(),
+				}),
+				response: { 204: z.null(), ...errors },
+			},
+		},
+		async (request, reply) => {
+			try {
+				await opts.admins.endSession(
+					request.params.id,
+					request.params.sessionId,
+					request.platformAdmin!,
+				);
+				request.log.info(
+					{ sessionId: request.params.sessionId },
+					"platform admin session ended",
+				);
+				return reply.code(204).send(null);
+			} catch (error) {
+				return sendWriteError(reply, error);
+			}
+		},
 	);
 
 	app.post(

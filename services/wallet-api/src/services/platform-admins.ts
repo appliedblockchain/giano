@@ -1,4 +1,4 @@
-import { count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import {
@@ -18,6 +18,26 @@ import { TenantWriteError, type Tx } from "./tenants.js";
  */
 
 export type PlatformAdmin = typeof platformAdmins.$inferSelect;
+
+/** A platform admin with when they last signed in and how many of their sessions are open (D15). */
+export type PlatformAdminWithSessions = PlatformAdmin & {
+	lastSignInAt: Date | null;
+	activeSessions: number;
+};
+
+/** How far back an admin's sessions are listed. */
+export const SESSION_HISTORY_DAYS = 30;
+
+/** A session as an admin sees it: never its token, nor the token's hash. */
+export type PlatformAdminSessionView = {
+	id: string;
+	createdAt: Date;
+	expiresAt: Date;
+	revokedAt: Date | null;
+	chainId: number;
+	ip: string | null;
+	userAgent: string | null;
+};
 
 export const platformAdminInputSchema = z
 	.object({
@@ -75,12 +95,120 @@ export async function bootstrapAdmins(
 }
 
 export function createPlatformAdminService(db: Db) {
+	async function adminById(id: string): Promise<PlatformAdmin> {
+		const [row] = await db
+			.select()
+			.from(platformAdmins)
+			.where(eq(platformAdmins.id, id));
+		if (!row)
+			throw new TenantWriteError(
+				404,
+				"not-found",
+				`platform admin "${id}" not found`,
+			);
+		return row;
+	}
+
 	return {
-		async list(): Promise<PlatformAdmin[]> {
+		/**
+		 * Oldest first, each with their last sign-in and open sessions. Sessions are matched by address,
+		 * as a session is resolved (an admin's id can be reused after removal; an address is who signed).
+		 */
+		async list(): Promise<PlatformAdminWithSessions[]> {
+			const [admins, sessions] = await Promise.all([
+				db
+					.select()
+					.from(platformAdmins)
+					.orderBy(platformAdmins.createdAt, platformAdmins.id),
+				db
+					.select({
+						address: platformAdminSessions.address,
+						lastSignInAt: sql<Date>`max(${platformAdminSessions.createdAt})`,
+						activeSessions: sql<number>`count(*) filter (where ${platformAdminSessions.revokedAt} is null and ${platformAdminSessions.expiresAt} > now())`,
+					})
+					.from(platformAdminSessions)
+					.groupBy(platformAdminSessions.address),
+			]);
+			const byAddress = new Map(sessions.map((row) => [row.address, row]));
+			return admins.map((admin) => {
+				const found = byAddress.get(admin.address);
+				return {
+					...admin,
+					lastSignInAt: found ? new Date(found.lastSignInAt) : null,
+					activeSessions: Number(found?.activeSessions ?? 0),
+				};
+			});
+		},
+
+		/** The admin's sessions from the last {@link SESSION_HISTORY_DAYS} days, newest first. */
+		async sessions(id: string): Promise<PlatformAdminSessionView[]> {
+			const admin = await adminById(id);
 			return db
-				.select()
-				.from(platformAdmins)
-				.orderBy(platformAdmins.createdAt, platformAdmins.id);
+				.select({
+					id: platformAdminSessions.id,
+					createdAt: platformAdminSessions.createdAt,
+					expiresAt: platformAdminSessions.expiresAt,
+					revokedAt: platformAdminSessions.revokedAt,
+					chainId: platformAdminSessions.chainId,
+					ip: platformAdminSessions.ip,
+					userAgent: platformAdminSessions.userAgent,
+				})
+				.from(platformAdminSessions)
+				.where(
+					and(
+						eq(platformAdminSessions.address, admin.address),
+						gt(
+							platformAdminSessions.createdAt,
+							sql`now() - make_interval(days => ${SESSION_HISTORY_DAYS})`,
+						),
+					),
+				)
+				.orderBy(
+					desc(platformAdminSessions.createdAt),
+					desc(platformAdminSessions.id),
+				);
+		},
+
+		/**
+		 * Ends one of the caller's own sessions (D15). Another admin's is refused: removing them is the
+		 * recorded way to end all of theirs. Ending one already ended is a no-op.
+		 */
+		async endSession(
+			id: string,
+			sessionId: string,
+			by: PlatformAdminContext,
+		): Promise<void> {
+			const admin = await adminById(id);
+			if (admin.address !== by.address)
+				throw new TenantWriteError(
+					403,
+					"not-your-session",
+					"you can end only your own sessions; removing an admin ends all of theirs",
+				);
+			const [session] = await db
+				.select({ id: platformAdminSessions.id })
+				.from(platformAdminSessions)
+				.where(
+					and(
+						eq(platformAdminSessions.id, sessionId),
+						eq(platformAdminSessions.address, admin.address),
+					),
+				);
+			if (!session)
+				throw new TenantWriteError(
+					404,
+					"not-found",
+					`session "${sessionId}" not found`,
+				);
+			await db
+				.update(platformAdminSessions)
+				.set({ revokedAt: sql`now()` })
+				.where(
+					and(
+						eq(platformAdminSessions.id, sessionId),
+						isNull(platformAdminSessions.revokedAt),
+					),
+				);
 		},
 
 		async byAddress(address: string): Promise<PlatformAdmin | undefined> {
