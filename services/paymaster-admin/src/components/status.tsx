@@ -114,7 +114,7 @@ export function InlineError({
 			<Alert.Indicator />
 			<Alert.Content>
 				<Alert.Title>{title}</Alert.Title>
-				<Alert.Description>
+				<Alert.Description overflowWrap="anywhere">
 					{error}
 					{stale && " What is shown below is from the last read that worked."}
 				</Alert.Description>

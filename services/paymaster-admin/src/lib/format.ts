@@ -59,6 +59,19 @@ export const exactAmount = (wei: bigint, currency: NativeCurrency): string =>
  */
 export function describeError(error: unknown): string {
 	if (typeof error === "string") return error;
+	// viem's message runs to the request body, the arguments and a docs link; its short message and
+	// the node's own words are what an operator reads, and fit a phone.
+	const { shortMessage, details } = (error ?? {}) as {
+		shortMessage?: unknown;
+		details?: unknown;
+	};
+	if (typeof shortMessage === "string" && shortMessage) {
+		const why =
+			typeof details === "string" && details && !shortMessage.includes(details)
+				? details
+				: undefined;
+		return why ? `${shortMessage.replace(/\.$/, "")}: ${why}` : shortMessage;
+	}
 	if (error instanceof Error && error.message) return error.message;
 
 	if (error && typeof error === "object") {
