@@ -104,7 +104,7 @@ export function AdminsTab() {
 						<Table.Root size="sm">
 							<Table.Header>
 								<Table.Row>
-									<Table.ColumnHeader>PlatformAdmin</Table.ColumnHeader>
+									<Table.ColumnHeader>Admin</Table.ColumnHeader>
 									<Table.ColumnHeader>Address</Table.ColumnHeader>
 									<Table.ColumnHeader>Added by</Table.ColumnHeader>
 									<Table.ColumnHeader />
@@ -235,7 +235,6 @@ function AddAdminDialog({
 	const confirm = async () => {
 		const result = await act((api) => api.addAdmin(id, address.trim()));
 		if (result?.ok) {
-			console.log("[admins] added", result.value);
 			onDone();
 			onClose();
 		} else if (result) {
@@ -306,7 +305,6 @@ function RemoveAdminDialog({
 	const confirm = async () => {
 		const result = await act((api) => api.removeAdmin(admin.id));
 		if (result?.ok) {
-			console.log("[admins] removed", admin.id);
 			onDone();
 			onClose();
 		} else if (result) {
