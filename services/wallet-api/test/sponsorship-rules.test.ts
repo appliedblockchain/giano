@@ -17,7 +17,7 @@ import {
 	decodeInnerCalls,
 	type EvaluationInput,
 	evaluateSponsorship,
-	NESTED_EXECUTE_SELECTORS,
+	WRAPPING_SELF_CALL_SELECTORS,
 } from "../src/services/sponsorship-rules.js";
 
 const WALLET = "0x1111111111111111111111111111111111111234" as Address;
@@ -383,11 +383,19 @@ describe("wallet management", () => {
 	});
 });
 
-// The wallet's execute functions accept a call from the wallet itself, so a self-call to them
-// runs arbitrary inner calls. Treating that as wallet management would sponsor any call while
-// skipping the allowlist.
-describe("nested execute self-calls", () => {
-	const nestedCases: Array<[string, Hex]> = [
+function upgradeToAndCall(implementation: Address, data: Hex = "0x"): Hex {
+	return encodeFunctionData({
+		abi: gianoSmartWalletAbi,
+		functionName: "upgradeToAndCall",
+		args: [implementation, data],
+	});
+}
+
+// The wallet's execute functions accept a call from the wallet itself, and upgradeToAndCall runs
+// its payload as the wallet. A self-call to any of them runs code the allowlist never sees.
+// Treating that as wallet management would sponsor any call while skipping the allowlist.
+describe("wrapping self-calls", () => {
+	const wrappingCases: Array<[string, Hex]> = [
 		[
 			"execute(self, execute(other))",
 			execute(WALLET, execute(OTHER, TRANSFER)),
@@ -417,9 +425,19 @@ describe("nested execute self-calls", () => {
 			"execute(self, execute(allowed))",
 			execute(WALLET, execute(TOKEN, TRANSFER)),
 		],
+		// The payload is delegatecalled as the wallet, so its inner execute passes the owner check.
+		[
+			"execute(self, upgradeToAndCall(impl, execute(other)))",
+			execute(WALLET, upgradeToAndCall(OTHER, execute(OTHER, TRANSFER))),
+		],
+		// Even with no payload: the new implementation can run any code, now or later.
+		[
+			"execute(self, upgradeToAndCall(impl, 0x))",
+			execute(WALLET, upgradeToAndCall(OTHER)),
+		],
 	];
 
-	it.each(nestedCases)("refuses %s", (_label, callData) => {
+	it.each(wrappingCases)("refuses %s", (_label, callData) => {
 		const decision = evaluate({ candidate: { ...candidate, callData } });
 		expect(decision.allowed).toBe(false);
 		expect(decision.reason).toBe("contract-not-allowed");
@@ -442,8 +460,8 @@ describe("nested execute self-calls", () => {
 		expect(decision.reason).toBe("contract-not-allowed");
 	});
 
-	it("covers every execute entry point in the wallet ABI", () => {
-		expect(NESTED_EXECUTE_SELECTORS.size).toBe(3);
+	it("covers the three execute entry points and upgradeToAndCall", () => {
+		expect(WRAPPING_SELF_CALL_SELECTORS.size).toBe(4);
 	});
 });
 
