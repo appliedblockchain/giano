@@ -21,6 +21,7 @@ import {
 	keccak256,
 	type PublicClient,
 } from "viem";
+import { proxyImplementation } from "../erc1967";
 import { gianoSmartWalletFactoryAbi } from "../generated";
 import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
@@ -43,9 +44,7 @@ export const CORE_KEYS = [
 ] as const;
 export type CoreKey = (typeof CORE_KEYS)[number];
 
-/** ERC-1967 implementation slot. */
-export const IMPLEMENTATION_SLOT =
-	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+export { IMPLEMENTATION_SLOT } from "../erc1967";
 
 export type DeviationReason =
 	/** The profile overrides the contract's address. */
@@ -349,11 +348,7 @@ async function immutableProblems(
 	const proxy = find("paymasterProxy");
 	const paymaster = find("paymasterImplementation");
 	if (proxy?.actual && proxy.code.state === "release") {
-		const slot = await client.getStorageAt({
-			address: proxy.actual,
-			slot: IMPLEMENTATION_SLOT,
-		});
-		const implementation = slot ? getAddress(`0x${slot.slice(-40)}`) : null;
+		const implementation = await proxyImplementation(client, proxy.actual);
 		const code = implementation
 			? await codeAt(client, "GianoPaymaster", implementation)
 			: ({ state: "empty" } as const);

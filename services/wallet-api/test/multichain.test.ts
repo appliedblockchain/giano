@@ -16,6 +16,7 @@ import {
 	isFatalFailure,
 	probeDivergence,
 	recoveryDivergence,
+	recoveryVerified,
 	verifyChain,
 } from "../src/services/chain-verify.js";
 import type { ChainRegistry, ChainServices } from "../src/services/chains.js";
@@ -731,6 +732,25 @@ describe("verifyChain", () => {
 				"0x00000000000000000000000000000000000fffff",
 			),
 		).toBeNull();
+	});
+
+	it("a recovering chain whose verification aborts part-way is not admitted", async () => {
+		const healthy = await verifyChain(descriptor, fakeClient({}), fakeRelease);
+		expect(recoveryVerified(healthy)).toBe(true);
+
+		// Reachable, but the probe read times out after the structural reads began.
+		const timingOut = fakeClient({});
+		const readContract = timingOut.readContract.bind(timingOut);
+		timingOut.readContract = (async (args: { functionName: string }) => {
+			if (args.functionName === "getAddress")
+				throw new Error("request timed out");
+			return readContract(args as never);
+		}) as typeof timingOut.readContract;
+		const aborted = await verifyChain(descriptor, timingOut, fakeRelease);
+		expect(aborted.reachable).toBe(true);
+		expect(aborted.failures.filter(isFatalFailure)).toEqual([]);
+		expect(aborted.probeAddress).toBeUndefined();
+		expect(recoveryVerified(aborted)).toBe(false);
 	});
 
 	it("a missing EntryPoint is FATAL (MC-141)", async () => {

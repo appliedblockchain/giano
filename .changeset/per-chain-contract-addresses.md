@@ -7,6 +7,7 @@ Remove the fixed contract addresses. `canonical.ts` is gone, and with it `CANONI
 Replacements:
 - addresses: `getGianoDeployment(chainId)` (or `gianoAddresses[chainId]`), which now also gives `implementation`;
 - code verification: `releaseOf(contract, runtimeCode)` with `RELEASE_FINGERPRINTS`, which matches code against a release wherever it sits;
-- the account nonce: always `0n`.
+- the account nonce: always `0n`;
+- a paymaster proxy's implementation: `proxyImplementation(client, proxy)`, or `implementationFromSlot(word)` with `IMPLEMENTATION_SLOT` for a non-viem client.
 
 The `walletApi` section of the backend chain document (`walletApiChainSchema`) accepts an optional `implementation`.

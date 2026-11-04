@@ -9,6 +9,7 @@ import {
 	isFatalFailure,
 	probeDivergence,
 	recoveryDivergence,
+	recoveryVerified,
 	verifyChain,
 } from "./services/chain-verify.js";
 import {
@@ -172,24 +173,29 @@ const prober = setInterval(() => {
 							},
 							`ALERT: ${divergence} — chain ${chain.chainId} stays unavailable`,
 						);
-					} else if (verification.reachable && fatalFailures.length === 0) {
-						if (verification.probeAddress)
-							servedProbes.set(
-								chain.chainId,
-								verification.probeAddress.toLowerCase(),
-							);
+					} else if (recoveryVerified(verification)) {
+						servedProbes.set(
+							chain.chainId,
+							verification.probeAddress.toLowerCase(),
+						);
 						app.log.info(
 							{ chainId: chain.chainId },
 							"chain is reachable and verified — serving it again",
 						);
 						chain.status = "ready";
-					} else if (verification.reachable) {
+					} else if (fatalFailures.length > 0) {
 						for (const failure of fatalFailures) {
 							app.log.error(
 								{ chainId: chain.chainId, failure },
 								`ALERT: ${describeFailure(chain.chainId, failure)}`,
 							);
 						}
+					} else if (verification.reachable) {
+						// Reachable, but the verification did not complete: not admitted until one does.
+						app.log.warn(
+							{ chainId: chain.chainId, failures: verification.failures },
+							"chain answered but its verification did not complete — it stays unavailable",
+						);
 					}
 					app.metrics.chainAvailable.set(
 						{ chain: String(chain.chainId) },

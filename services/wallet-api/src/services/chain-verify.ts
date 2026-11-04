@@ -4,10 +4,17 @@ import {
 	gianoSmartWalletFactoryAbi,
 	isCanonicalEntryPointCode,
 	isEntryPointAddress,
+	proxyImplementation,
 	type ReleaseContractName,
 	releaseOf,
 } from "@appliedblockchain/giano-contracts";
-import { getAddress, type Hex, keccak256, type PublicClient } from "viem";
+import {
+	getAddress,
+	type Hex,
+	keccak256,
+	type PublicClient,
+	zeroAddress,
+} from "viem";
 import type { ResolvedChain } from "../config.js";
 
 /**
@@ -69,10 +76,6 @@ export const VERIFIED_CONTRACTS = {
 	"paymaster-implementation": "GianoPaymaster",
 } as const satisfies Record<string, ReleaseContractName>;
 export type VerifiedContract = keyof typeof VERIFIED_CONTRACTS;
-
-/** ERC-1967 implementation slot. */
-const IMPLEMENTATION_SLOT =
-	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 export type ChainVerification = {
 	chainId: number;
@@ -278,17 +281,15 @@ export async function verifyChain(
 			} else if (releaseAt("paymaster", paymaster, paymasterCode)) {
 				// A stock ERC1967Proxy proves nothing about what it delegates to: the implementation
 				// slot must hold paymaster release code.
-				const slot = await client.getStorageAt({
-					address: paymaster,
-					slot: IMPLEMENTATION_SLOT,
-				});
-				const implementation = getAddress(
-					`0x${(slot ?? "0x").slice(2).padStart(64, "0").slice(-40)}`,
-				);
+				// An empty slot delegates to nothing: reported as no release code at the zero address.
+				const implementation =
+					(await proxyImplementation(client, paymaster)) ?? zeroAddress;
 				releaseAt(
 					"paymaster-implementation",
 					implementation,
-					await client.getCode({ address: implementation }),
+					implementation === zeroAddress
+						? undefined
+						: await client.getCode({ address: implementation }),
 				);
 			}
 		}
@@ -346,6 +347,23 @@ export function probeDivergence(
 		.map(([chainId, address]) => `chain ${chainId} → ${address}`)
 		.join(", ");
 	return `address-identity violation: the served chains derive DIFFERENT account addresses for the same owner (${listed}) (MC-16, MC-22)`;
+}
+
+/**
+ * Whether a chain coming back after being unavailable completed its verification: reachable, with
+ * no failure at all, and with the probe address. An `unreachable` failure is not fatal at boot, but
+ * on recovery it means the verification aborted part-way (a timeout on the implementation's code or
+ * on the probe), so the structural checks and the MC-22 comparison never ran; such a chain stays
+ * unavailable until a later probe completes.
+ */
+export function recoveryVerified(
+	verification: ChainVerification,
+): verification is ChainVerification & { probeAddress: `0x${string}` } {
+	return (
+		verification.reachable &&
+		verification.failures.length === 0 &&
+		verification.probeAddress !== undefined
+	);
 }
 
 /**

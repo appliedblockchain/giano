@@ -65,6 +65,7 @@ import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
 import { loadProfile, type ProfileFile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
+import { IMPLEMENTATION_SLOT, implementationFromSlot } from "../erc1967";
 import {
 	gianoPaymasterAbi,
 	gianoSmartWalletAbi,
@@ -376,17 +377,26 @@ async function checkSponsorshipPaymaster(
 	try {
 		// The proxy's code proves nothing about what it delegates to: the slot must hold paymaster
 		// release code.
-		const raw = await provider.getStorage(address, IMPLEMENTATION_SLOT);
-		const impl = getAddress(`0x${raw.slice(-40)}`);
-		report("info", "implementation", impl);
-		inUse.paymasterImplementation = impl as `0x${string}`;
-		await reportReleaseCode(
-			provider,
-			impl,
-			"GianoPaymaster",
-			"paymaster implementation",
+		const impl = implementationFromSlot(
+			await provider.getStorage(address, IMPLEMENTATION_SLOT),
 		);
-		if (deployment.sponsorshipPaymasterImplementation) {
+		if (!impl)
+			report(
+				"fail",
+				"paymaster implementation",
+				`the implementation slot of ${address} is empty: the proxy delegates to nothing`,
+			);
+		else {
+			report("info", "implementation", impl);
+			inUse.paymasterImplementation = impl;
+			await reportReleaseCode(
+				provider,
+				impl,
+				"GianoPaymaster",
+				"paymaster implementation",
+			);
+		}
+		if (impl && deployment.sponsorshipPaymasterImplementation) {
 			const expected = getAddress(
 				deployment.sponsorshipPaymasterImplementation,
 			);
@@ -811,10 +821,6 @@ async function hasCode(
 	const code = await provider.getCode(address);
 	return code !== undefined && code !== "0x";
 }
-
-/** ERC-1967 implementation slot. */
-const IMPLEMENTATION_SLOT =
-	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 /** The core contract addresses this run found in use, for the placement report. */
 const inUse: Partial<Record<CoreKey, `0x${string}`>> = {};
