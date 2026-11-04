@@ -188,7 +188,15 @@ async function main() {
 			console.log(
 				`INFO: No signing key supplied. For execution, load the ${profile.network} canonical deployer key from its 1Password item into CANONICAL_DEPLOYER_PRIVATE_KEY in this shell only, and rerun; plans do not need it.`,
 			);
-		const record = readRecord(chain.id);
+		// Never silently replace a record that cannot be read: it is the chain's deployment history.
+		let record: ReturnType<typeof readRecord>;
+		try {
+			record = readRecord(chain.id);
+		} catch (error) {
+			throw new GuidanceError(
+				`The existing deployment record for chain ${chain.id} is unreadable (${error instanceof Error ? error.message : String(error)}). Archive and review it before deploying; do not overwrite it blindly. No transactions sent.`,
+			);
+		}
 		const signer = account?.address ?? null;
 		const { checks, plan } = await inspectDeployment(
 			client,
@@ -211,8 +219,11 @@ async function main() {
 		if (profile.network === "mainnet" && plan.deviations.length)
 			for (const line of deviationWarning(plan, profile.name))
 				console.log(line);
+		// Only a run that goes on to sign confirms; a read-only plan shows the warning above and stops.
+		const signs = Boolean(rl && !values.plan);
 		const gate = deviationGate(plan, selected.id, {
-			interactive: Boolean(rl && !values.plan),
+			interactive: signs,
+			signs,
 		});
 		if (gate.kind === "refuse") {
 			console.log(`BLOCKED: ${gate.reason}`);
@@ -264,7 +275,9 @@ async function main() {
 				"Requirements or deviations changed during review. Rerun the plan. No transactions sent.",
 			);
 		const walletClient = createWalletClient({ chain, transport, account });
-		record.deployer = account.address;
+		// The record names the key that deployed; a rerun that finds everything in place leaves it.
+		if (plan.contracts.some((c) => c.code.state === "empty"))
+			record.deployer = account.address;
 		// Before the first transaction: deployCore checkpoints the record after every contract, so an
 		// interrupted run still keeps the deviations the operator confirmed, with their reasons.
 		recordDeviations(record, plan.deviations, gate.kind === "confirm");

@@ -15,7 +15,7 @@ import {
 	pad,
 } from "viem";
 import { RELEASE_FINGERPRINTS } from "../release-code";
-import { CONTRACT_OF, DEPLOYERS, LABELS } from "./config";
+import { CONTRACT_OF, DEPLOYERS, LABELS, upgradeLabel } from "./config";
 import { create3Address } from "./create3";
 import {
 	CORE_KEYS,
@@ -25,7 +25,9 @@ import {
 	fixedAddresses,
 	IMPLEMENTATION_SLOT,
 	planCore,
+	upgradeDeviation,
 } from "./plan";
+import { type DeploymentRecord, recordDeviations } from "./records";
 
 const state = JSON.parse(
 	fs.readFileSync(
@@ -181,6 +183,7 @@ describe("planCore", () => {
 				reason: "override",
 				expected: expected("paymasterProxy"),
 				actual: proxy,
+				acknowledged: false,
 			},
 		]);
 		assert.equal(fixedAddresses(plan).paymasterProxy, proxy);
@@ -401,6 +404,7 @@ describe("deviationGate", () => {
 		assert.deepEqual(
 			deviationGate(await plan("mainnet", MAINNET), "base", {
 				interactive: true,
+				signs: true,
 			}),
 			{ kind: "none" },
 		);
@@ -408,10 +412,13 @@ describe("deviationGate", () => {
 
 	it("a mainnet run with another key needs the typed deviation phrase", async () => {
 		const p = await plan("mainnet", OTHER_KEY);
-		assert.deepEqual(deviationGate(p, "base", { interactive: true }), {
-			kind: "confirm",
-			phrase: "deviate base",
-		});
+		assert.deepEqual(
+			deviationGate(p, "base", { interactive: true, signs: true }),
+			{
+				kind: "confirm",
+				phrase: "deviate base",
+			},
+		);
 		const warning = deviationWarning(p, "Base").join("\n");
 		for (const key of CORE_KEYS) {
 			assert.ok(warning.includes(expected(key)), key);
@@ -423,6 +430,7 @@ describe("deviationGate", () => {
 	it("a non-interactive mainnet run refuses any deviation and lists them", async () => {
 		const gate = deviationGate(await plan("mainnet", OTHER_KEY), "base", {
 			interactive: false,
+			signs: true,
 		});
 		assert.equal(gate.kind, "refuse");
 		assert.match(
@@ -434,6 +442,7 @@ describe("deviationGate", () => {
 	it("a non-interactive mainnet run points at the guided wizard", async () => {
 		const gate = deviationGate(await plan("mainnet", OTHER_KEY), "base", {
 			interactive: false,
+			signs: true,
 		});
 		assert.match(gate.kind === "refuse" ? gate.reason : "", /deploy:guided/);
 	});
@@ -457,8 +466,225 @@ describe("deviationGate", () => {
 			},
 		);
 		assert.equal(p.deviations.length, 1);
-		assert.deepEqual(deviationGate(p, "base-sepolia", { interactive: false }), {
-			kind: "none",
+		assert.deepEqual(
+			deviationGate(p, "base-sepolia", { interactive: false, signs: true }),
+			{
+				kind: "none",
+			},
+		);
+	});
+});
+
+describe("deviations already in the record", () => {
+	const wallet = getAddress("0x5000000000000000000000000000000000000005");
+	const record = (confirmed: boolean): DeploymentRecord => ({
+		chainId: 8453,
+		deployer: OTHER_KEY,
+		contracts: {
+			walletImplementation: {
+				address: wallet,
+				label: LABELS.walletImplementation,
+				release: "v2",
+				codehash: "0x00",
+			},
+		},
+		upgrades: [],
+		deviations: [
+			{
+				contract: "walletImplementation",
+				// Deployed by another key; a rerun now reads it as existing-elsewhere.
+				reason: "non-canonical-signer",
+				expected: expected("walletImplementation"),
+				actual: wallet,
+				at: "2026-11-01T00:00:00.000Z",
+				confirmed,
+			},
+		],
+	});
+	const plan = (confirmed: boolean) =>
+		planCore(chain({ [wallet]: place("walletImplementation", wallet) }), {
+			network: "mainnet",
+			signer: MAINNET,
+			deployer: MAINNET,
+			record: record(confirmed),
+		});
+
+	it("a deviation an operator confirmed is reported but not gated again", async () => {
+		const p = await plan(true);
+		assert.deepEqual(
+			p.deviations.map((d) => [d.key, d.reason, d.acknowledged]),
+			[["walletImplementation", "existing-elsewhere", true]],
+		);
+		assert.deepEqual(
+			deviationGate(p, "base", { interactive: false, signs: true }),
+			{ kind: "none" },
+		);
+		assert.match(
+			deviationWarning(p, "Base").join("\n"),
+			/already confirmed in the deployment record/,
+		);
+	});
+
+	it("a deviation that was only reported still needs the typed confirmation", async () => {
+		const p = await plan(false);
+		assert.equal(
+			deviationGate(p, "base", { interactive: false, signs: true }).kind,
+			"refuse",
+		);
+		assert.equal(
+			deviationGate(p, "base", { interactive: true, signs: true }).kind,
+			"confirm",
+		);
+	});
+
+	it("a run that signs nothing is never gated", async () => {
+		const p = await planCore(chain({}), {
+			network: "mainnet",
+			signer: null,
+			deployer: MAINNET,
+			overrides: { factory: wallet },
+		});
+		assert.ok(p.deviations.length > 0);
+		assert.deepEqual(
+			deviationGate(p, "base", { interactive: false, signs: false }),
+			{ kind: "none" },
+		);
+	});
+
+	it("recordDeviations keeps one entry per contract and address, whatever the reason", () => {
+		const r = record(false);
+		recordDeviations(
+			r,
+			[
+				{
+					key: "walletImplementation",
+					reason: "existing-elsewhere",
+					expected: expected("walletImplementation"),
+					actual: wallet,
+				},
+			],
+			true,
+		);
+		assert.equal(r.deviations?.length, 1);
+		assert.equal(r.deviations?.[0].reason, "non-canonical-signer");
+		assert.equal(r.deviations?.[0].confirmed, true);
+	});
+});
+
+describe("upgrade targets", () => {
+	const label = upgradeLabel(LABELS.paymasterImplementation, "v3");
+	const target = create3Address(MAINNET, label);
+	const record = (address: Address): DeploymentRecord => ({
+		chainId: 8453,
+		deployer: MAINNET,
+		contracts: {
+			paymasterImplementation: {
+				address,
+				label,
+				release: "v2",
+				codehash: "0x00",
+			},
+		},
+		upgrades: [
+			{
+				address,
+				label,
+				release: "v2",
+				codehash: "0x00",
+				of: "paymasterImplementation",
+			},
+		],
+	});
+
+	it("an implementation upgraded to its versioned deterministic address is expected there", async () => {
+		const p = await planCore(
+			chain({ [target]: place("paymasterImplementation", target) }),
+			{
+				network: "mainnet",
+				signer: null,
+				deployer: MAINNET,
+				// Older than the upgrade: the upgraded implementation may hold a newer release.
+				release: "v1",
+				record: record(target),
+			},
+		);
+		const planned = p.contracts.find(
+			(c) => c.key === "paymasterImplementation",
+		);
+		assert.equal(planned?.expected, target);
+		assert.equal(planned?.actual, target);
+		assert.equal(planned?.label, label);
+		assert.deepEqual(p.deviations, []);
+		assert.deepEqual(
+			p.blockers.filter((b) => b.includes("paymasterImplementation")),
+			[],
+		);
+		assert.equal(fixedAddresses(p).paymasterImplementation, target);
+	});
+
+	it("an upgrade target deployed by another key stays a deviation", async () => {
+		const elsewhere = create3Address(OTHER_KEY, label);
+		const p = await planCore(
+			chain({ [elsewhere]: place("paymasterImplementation", elsewhere) }),
+			{
+				network: "mainnet",
+				signer: null,
+				deployer: MAINNET,
+				record: record(elsewhere),
+			},
+		);
+		assert.deepEqual(
+			p.deviations.map((d) => [d.key, d.reason, d.actual]),
+			[["paymasterImplementation", "existing-elsewhere", elsewhere]],
+		);
+	});
+});
+
+describe("upgradeDeviation", () => {
+	const label = upgradeLabel(LABELS.paymasterImplementation, "v3");
+
+	it("the canonical deployer deploys an upgrade target where every chain has it", () => {
+		assert.deepEqual(
+			upgradeDeviation(
+				"mainnet",
+				MAINNET,
+				MAINNET,
+				"paymasterImplementation",
+				label,
+			),
+			{ kind: "none" },
+		);
+	});
+
+	it("another key is refused on a mainnet", () => {
+		const check = upgradeDeviation(
+			"mainnet",
+			MAINNET,
+			OTHER_KEY,
+			"paymasterImplementation",
+			label,
+		);
+		assert.equal(check.kind, "refuse");
+		assert.match(
+			check.kind === "refuse" ? check.reason : "",
+			new RegExp(create3Address(OTHER_KEY, label)),
+		);
+	});
+
+	it("another key on a testnet is recorded as a deviation", () => {
+		const check = upgradeDeviation(
+			"testnet",
+			MAINNET,
+			OTHER_KEY,
+			"paymasterImplementation",
+			label,
+		);
+		assert.equal(check.kind, "record");
+		assert.deepEqual(check.kind === "record" ? check.deviation : undefined, {
+			key: "paymasterImplementation",
+			reason: "non-canonical-signer",
+			expected: create3Address(MAINNET, label),
+			actual: create3Address(OTHER_KEY, label),
 		});
 	});
 });

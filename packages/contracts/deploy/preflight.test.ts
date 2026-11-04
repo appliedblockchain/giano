@@ -137,6 +137,24 @@ test("existing code of another release than the selected one blocks adoption", a
 	);
 });
 
+test("a plan without a key checks the canonical deployer's balance, naming the address to fund", async () => {
+	const { checks } = await inspectDeployment(
+		client(),
+		profile,
+		"v2",
+		admin,
+		options,
+	);
+	assert.ok(
+		checks.some(
+			(c) =>
+				!c.ok &&
+				c.message.includes(`Fund ${CANONICAL_DEPLOYER} on ${profile.name}`),
+		),
+		JSON.stringify(checks),
+	);
+});
+
 const planFor = (chain: PublicClient) =>
 	planCore(chain, {
 		network: "testnet",

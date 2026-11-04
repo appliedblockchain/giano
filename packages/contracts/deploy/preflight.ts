@@ -235,20 +235,22 @@ export async function inspectDeployment(
 			}
 		},
 	);
-	const signer = plan.signer;
+	// The key that will pay: the loaded signer, or, for a plan run without a key, the class's
+	// canonical deployer, so the plan says which address to fund before the key is ever loaded.
+	const payer = plan.signer ?? plan.classDeployer;
 	const missing = plan.contracts.some(
 		(c) => c.code.state === "empty" && c.source !== "override",
 	);
-	if (missing && signer)
+	if (missing && payer)
 		await check(
-			`Signer ${signer} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
+			`${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
 			async () => {
 				if (
-					(await client.getBalance({ address: signer })) <
+					(await client.getBalance({ address: payer })) <
 					parseEther(profile.minDeployerBalanceEth)
 				)
 					throw new GateError(
-						`Fund ${signer} on ${profile.name}, then rerun. Reserve is not a gas quote; L1 data fees and changing gas prices need headroom.`,
+						`Fund ${payer} on ${profile.name}, then rerun. Reserve is not a gas quote; L1 data fees and changing gas prices need headroom.`,
 					);
 			},
 		);

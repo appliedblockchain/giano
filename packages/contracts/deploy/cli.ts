@@ -96,10 +96,19 @@ import {
 	paymasterUpgradeCalldata,
 	paymasterUpgradeProposal,
 	planHandOff,
+	type UpgradeOf,
+	upgradeTargetLabel,
 } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
 import { deployP256Verifier } from "./p256";
-import { deviationGate, fixedAddresses, formatPlan, planCore } from "./plan";
+import {
+	deviationGate,
+	fixedAddresses,
+	formatPlan,
+	placementOf,
+	planCore,
+	upgradeDeviation,
+} from "./plan";
 import { assertRoleAdminNotDeployer } from "./preflight";
 import { loadProfile, profileForChain } from "./profiles";
 import {
@@ -404,8 +413,9 @@ async function deployerContext({
 
 /**
  * Prints the plan and refuses what must not be signed: a blocker (an override without release
- * code, foreign code, a class deployer that is not configured), or a mainnet deviation without
- * a mainnet deviation (always: see deviationGate). Returns the addresses deployCore must use.
+ * code, foreign code, a class deployer that is not configured), or, when signing, a mainnet
+ * deviation the record does not already list as confirmed (see deviationGate). Returns the
+ * addresses deployCore must use.
  */
 async function planOrRefuse(
 	ctx: Awaited<ReturnType<typeof deployerContext>>,
@@ -434,13 +444,36 @@ async function planOrRefuse(
 	const gate = deviationGate(
 		plan,
 		ctx.target.profileId ?? `chain-${ctx.chainId}`,
-		{ interactive: false },
+		{ interactive: false, signs: Boolean(ctx.walletClient) },
 	);
 	if (gate.kind === "refuse") throw new Error(gate.reason);
 	if (plan.deviations.length && ctx.walletClient)
 		recordDeviations(ctx.record, plan.deviations, false);
-	if (ctx.walletClient) ctx.record.deployer = ctx.walletClient.account.address;
+	// The record names the key that deployed; a run that only finds every contract in place deploys
+	// nothing and leaves it.
+	if (ctx.walletClient && plan.contracts.some((c) => c.code.state === "empty"))
+		ctx.record.deployer = ctx.walletClient.account.address;
 	return fixedAddresses(plan);
+}
+
+/** Refuses or records a non-canonical upgrade signer (plan.ts upgradeDeviation) before deploying. */
+function upgradeSignerGuard(
+	ctx: Awaited<ReturnType<typeof deployerContext>>,
+	selected: Release,
+	of: UpgradeOf,
+): void {
+	const check = upgradeDeviation(
+		ctx.network,
+		classDeployer(ctx.network),
+		signer(ctx).account.address,
+		of,
+		upgradeTargetLabel(selected, of),
+	);
+	if (check.kind === "refuse") throw new Error(check.reason);
+	if (check.kind === "record") {
+		log(`  ⚠ DEVIATION: ${check.message}. Recorded in the deployment record.`);
+		recordDeviations(ctx.record, [check.deviation], false);
+	}
 }
 
 function signer(ctx: DeployContext): WalletClient<Transport, Chain, Account> {
@@ -546,13 +579,13 @@ async function main(): Promise<void> {
 			const which = required("contract");
 			if (which !== "paymaster" && which !== "wallet")
 				throw new Error("--contract is paymaster or wallet");
-			const target = await deployUpgradeTarget(
-				ctx,
-				release(ctx.local),
+			const of =
 				which === "paymaster"
 					? "paymasterImplementation"
-					: "walletImplementation",
-			);
+					: "walletImplementation";
+			const selected = release(ctx.local);
+			upgradeSignerGuard(ctx, selected, of);
+			const target = await deployUpgradeTarget(ctx, selected, of);
 			save(ctx);
 			if (which === "wallet") {
 				log(
@@ -626,7 +659,17 @@ async function main(): Promise<void> {
 			});
 			if (receipt.status !== "success")
 				throw new Error(`upgradeToAndCall reverted (${hash})`);
-			ctx.record.contracts.paymasterImplementation = target;
+			// Recorded with its placement: at CREATE3(class deployer, versioned label) the upgrade is
+			// deterministic, and planCore and doctor read it as expected, not as a deviation.
+			ctx.record.contracts.paymasterImplementation = {
+				...target,
+				...placementOf(
+					"paymasterImplementation",
+					target.address,
+					classDeployer(ctx.network),
+					ctx.record.upgrades,
+				),
+			};
 			save(ctx);
 			log(`Upgraded ${proxy} to ${target.address} (${hash})`);
 			return;

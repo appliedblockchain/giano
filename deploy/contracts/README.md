@@ -187,8 +187,13 @@ the chain's record already lists away from its deterministic address. With any d
    `deploy <chainId> <release>` confirmation;
 3. records every confirmed deviation, with its reason and time, in `deployments/<chainId>.json`.
 
-Non-interactive runs refuse a deviating mainnet deployment and list the deviations. The low-level
-`deploy:cli core` has no prompt, so it always refuses a deviating mainnet deployment; use the wizard.
+Non-interactive runs that sign refuse a deviating mainnet deployment and list the deviations. The
+low-level `deploy:cli core` has no prompt, so with a key it refuses a deviating mainnet deployment;
+use the wizard. Runs that sign nothing (`deploy:cli core` without a key, as the Helm deployer Job
+runs it, or `deploy:guided --plan`) print the deviations and go on. A deviation the record already
+lists as confirmed, for the same contract at the same address, is shown but not confirmed again.
+`deploy:cli upgrade` refuses, on a mainnet, any key other than the canonical deployer: the upgrade
+target would land at that key's own CREATE3 address. On a testnet it records the deviation.
 On every non-local chain the paymaster `ROLE_ADMIN` must not be a deployer key (the signer or a class
 deployer).
 Testnet deviations are shown in the plan and recorded; the usual confirmation is the only gate.

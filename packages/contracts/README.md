@@ -117,9 +117,10 @@ shell's environment only; never write it to a file in the repository or to a cli
   expected address, the address it will use and the code there.
 - **Mainnet deviations are gated.** On a mainnet, an override, another signing key or a contract
   recorded away from its deterministic address is a deviation. The wizard prints a warning that names
-  each one and requires typing `deviate <profile>`. Non-interactive runs, `core` included, always
-  refuse: nothing skips the typed confirmation. Testnet deviations are reported and recorded, not
-  gated.
+  each one and requires typing `deviate <profile>`. Non-interactive runs that sign, `core` included,
+  refuse: nothing skips the typed confirmation. A run without a key only reports, and a deviation the
+  record already lists as confirmed is reported but not confirmed again. `upgrade` refuses a key
+  other than the mainnet canonical deployer. Testnet deviations are reported and recorded, not gated.
 - **A deployer holds no role.** On a non-local chain the paymaster's `--role-admin` must be a timelock
   or Safe: the signing key and the class deployers are refused, and so is an existing paymaster on
   which one of them holds `ROLE_ADMIN`.

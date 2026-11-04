@@ -114,7 +114,9 @@ async function check(
 				continue;
 			}
 			const code = await publicClient.getCode({ address: want });
-			const match = code ? releaseOf(CONTRACT_OF[key], code) : undefined;
+			const match = code
+				? releaseOf(CONTRACT_OF[key], code, want, release.version)
+				: undefined;
 			if (match?.release !== release.version)
 				failures.push(
 					`${network} ${key} at ${want}: code is ${match ? match.release : "no release"}'s, not ${release.version}'s`,

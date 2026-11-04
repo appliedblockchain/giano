@@ -2,8 +2,9 @@
  * The deployment plan: for every core contract, where its class says it should be (expected), where
  * this run will put or find it (actual), what code is there, and whether that is a deviation.
  *
- * The expected address is CREATE3(the chain's class deployer, the contract's label). The actual
- * address is, in order:
+ * The expected address is CREATE3(the chain's class deployer, the contract's label), or, for an
+ * implementation the chain has been upgraded to, CREATE3 of its versioned label
+ * (`giano.paymaster.impl@v2`, listed in the record's `upgrades`). The actual address is, in order:
  *   1. the profile's override (`addresses` in deploy/chains/<profile>.json);
  *   2. the address the chain's deployment record already lists, when that is not the expected one;
  *   3. the expected address, when a contract is already there;
@@ -26,6 +27,7 @@ import {
 	CONTRACT_OF,
 	classDeployer,
 	LABELS,
+	type LabelKey,
 	type NetworkClass,
 	type OverrideKey,
 } from "./config";
@@ -68,6 +70,7 @@ export type CodeState =
 
 export type PlannedContract = {
 	key: CoreKey;
+	/** The base label, or the versioned one of a canonical upgrade target the record lists. */
 	label: string;
 	contract: ReleaseContractName;
 	/** CREATE3(class deployer, label); null when the class's deployer is not configured, or for the timelock. */
@@ -84,6 +87,12 @@ export type Deviation = {
 	reason: DeviationReason;
 	expected: Address | null;
 	actual: Address | null;
+	/**
+	 * True when the deployment record already lists this contract at this address as a confirmed
+	 * deviation (whatever reason a rerun now gives for it): an operator accepted it, so it is reported
+	 * but not confirmed again.
+	 */
+	acknowledged: boolean;
 };
 
 export type Plan = {
@@ -112,14 +121,16 @@ export type PlanInput = {
 	deployer?: Address | null;
 };
 
+/** The code at `address`; when it is several releases' code, `release` (the run's) if one of them. */
 async function codeAt(
 	client: PublicClient,
 	contract: ReleaseContractName,
 	address: Address,
+	release?: string,
 ): Promise<CodeState> {
 	const code = await client.getCode({ address });
 	if (!code || code === "0x") return { state: "empty" };
-	const match = releaseOf(contract, code, address);
+	const match = releaseOf(contract, code, address, release);
 	return match
 		? { state: "release", release: match.release }
 		: { state: "foreign", codehash: keccak256(code) };
@@ -127,6 +138,43 @@ async function codeAt(
 
 const same = (a: Address | null, b: Address | null) =>
 	a !== null && b !== null && getAddress(a) === getAddress(b);
+
+/**
+ * The record's upgrade target for `key` at `address`, when it is the deterministic one: deployed by
+ * `deployer` under its versioned label, so CREATE3(deployer, that label) is `address`. Such an
+ * address is where every chain of the class has that upgrade, not a deviation.
+ */
+export function canonicalUpgrade(
+	key: LabelKey,
+	address: Address,
+	deployer: Address | null,
+	upgrades: DeploymentRecord["upgrades"] = [],
+): DeploymentRecord["upgrades"][number] | undefined {
+	if (!deployer) return undefined;
+	return upgrades.find(
+		(u) =>
+			u.of === key &&
+			same(u.address, address) &&
+			same(create3Address(deployer, u.label), address),
+	);
+}
+
+/**
+ * Where `address`, recorded under `key`, sits for the class deployer: its expected address (the
+ * versioned label's for a canonical upgrade target, else the base label's) and whether it is there.
+ */
+export function placementOf(
+	key: LabelKey,
+	address: Address,
+	deployer: Address | null,
+	upgrades: DeploymentRecord["upgrades"] = [],
+): { expected: Address | null; deterministic: boolean } {
+	const upgrade = canonicalUpgrade(key, address, deployer, upgrades);
+	const expected = deployer
+		? create3Address(deployer, upgrade?.label ?? LABELS[key])
+		: null;
+	return { expected, deterministic: same(address, expected) };
+}
 
 /** Builds the plan from the chain's state. Reads only. */
 export async function planCore(
@@ -147,27 +195,33 @@ export async function planCore(
 
 	const contracts: PlannedContract[] = [];
 	for (const key of CORE_KEYS) {
-		const label = LABELS[key];
 		const contract = CONTRACT_OF[key];
-		const expected = deployer ? create3Address(deployer, label) : null;
 		const override = overrides[key] ? getAddress(overrides[key]) : null;
 		const recorded = input.record?.contracts[key]?.address
 			? getAddress(input.record.contracts[key].address)
 			: null;
+		// A recorded upgrade target at its own deterministic address (`upgrade --execute` records the
+		// implementation the proxy now uses) is expected there; it may hold a newer release.
+		const upgrade =
+			recorded && !override
+				? canonicalUpgrade(key, recorded, deployer, input.record?.upgrades)
+				: undefined;
+		const label = upgrade?.label ?? LABELS[key];
+		const expected = deployer ? create3Address(deployer, label) : null;
 		let actual: Address | null;
 		let source: PlannedContract["source"];
 		let code: CodeState = { state: "empty" };
 		if (override) {
 			actual = override;
 			source = "override";
-			code = await codeAt(client, contract, actual);
-		} else if (recorded && !same(recorded, expected)) {
+			code = await codeAt(client, contract, actual, input.release);
+		} else if (recorded && (upgrade || !same(recorded, expected))) {
 			actual = recorded;
 			source = "recorded";
-			code = await codeAt(client, contract, actual);
+			code = await codeAt(client, contract, actual, input.release);
 		} else {
 			const atExpected = expected
-				? await codeAt(client, contract, expected)
+				? await codeAt(client, contract, expected, input.release)
 				: undefined;
 			if (expected && atExpected && atExpected.state !== "empty") {
 				actual = expected;
@@ -178,7 +232,7 @@ export async function planCore(
 				source = same(actual, expected) ? "deterministic" : "signer";
 				code = same(actual, expected)
 					? (atExpected ?? { state: "empty" })
-					: await codeAt(client, contract, actual);
+					: await codeAt(client, contract, actual, input.release);
 			} else {
 				actual = expected;
 				source = expected ? "deterministic" : "unknown";
@@ -223,6 +277,7 @@ export async function planCore(
 			);
 		if (
 			source !== "override" &&
+			!upgrade &&
 			code.state === "release" &&
 			input.release &&
 			code.release !== input.release
@@ -241,6 +296,9 @@ export async function planCore(
 			reason: deviation as DeviationReason,
 			expected,
 			actual,
+			acknowledged: (input.record?.deviations ?? []).some(
+				(d) => d.confirmed && d.contract === key && same(d.actual, actual),
+			),
 		}));
 	return {
 		network: input.network,
@@ -351,7 +409,7 @@ export function deviationWarning(plan: Plan, chainName: string): string[] {
 		`WARNING: this ${plan.network} deployment on ${chainName} deviates from the deterministic addresses.`,
 		...plan.deviations.map(
 			(d) =>
-				`  - ${d.key}: expected ${d.expected ?? "(none)"}, actual ${d.actual ?? "(unknown)"} — ${DEVIATION_REASONS[d.reason]}${d.reason === "non-canonical-signer" ? ` (signer ${plan.signer}, canonical ${plan.classDeployer})` : ""}`,
+				`  - ${d.key}: expected ${d.expected ?? "(none)"}, actual ${d.actual ?? "(unknown)"} — ${DEVIATION_REASONS[d.reason]}${d.reason === "non-canonical-signer" ? ` (signer ${plan.signer}, canonical ${plan.classDeployer})` : ""}${d.acknowledged ? " (already confirmed in the deployment record)" : ""}`,
 		),
 		`Contract addresses on ${chainName} will differ from the other ${plan.network} chains, permanently.`,
 		"The deployment record keeps every deviation, and giano-doctor reports it.",
@@ -367,22 +425,66 @@ export type DeviationGate =
 	/** The run must not sign: a mainnet deviation with no way to confirm it. */
 	| { kind: "refuse"; reason: string };
 
+/** The deviations no operator has confirmed yet: those the record does not already list as confirmed. */
+export function unacknowledged(plan: Plan): Deviation[] {
+	return plan.deviations.filter((d) => !d.acknowledged);
+}
+
 /**
- * What a plan's deviations require before signing. Only mainnets gate: an interactive run must type
- * `deviate <profile>`, and a non-interactive one (`deploy:cli core`) always refuses. Nothing skips the
- * typed confirmation. Testnets and local chains only report.
+ * What a plan's deviations require before signing. Only mainnets gate, and only a run that signs: a
+ * plan or verify-only run reports the deviations and goes on. A deviation the record already lists as
+ * confirmed needs no new confirmation. Otherwise an interactive run must type `deviate <profile>`, and
+ * a non-interactive one (`deploy:cli core` with a key) refuses. Nothing skips the typed confirmation.
+ * Testnets and local chains only report.
  */
 export function deviationGate(
 	plan: Plan,
 	profileId: string,
-	options: { interactive: boolean },
+	options: { interactive: boolean; signs: boolean },
 ): DeviationGate {
-	if (plan.network !== "mainnet" || plan.deviations.length === 0)
+	const pending = unacknowledged(plan);
+	if (plan.network !== "mainnet" || pending.length === 0 || !options.signs)
 		return { kind: "none" };
 	if (!options.interactive)
 		return {
 			kind: "refuse",
-			reason: `A non-interactive run refuses a mainnet deployment that deviates (${plan.deviations.map((d) => `${d.key}: ${d.reason}`).join("; ")}). Run the guided wizard (pnpm deploy:guided) to review and confirm it, or fix the deviation.`,
+			reason: `A non-interactive run refuses a mainnet deployment that deviates (${pending.map((d) => `${d.key}: ${d.reason}`).join("; ")}). Run the guided wizard (pnpm deploy:guided) to review and confirm it, or fix the deviation.`,
 		};
 	return { kind: "confirm", phrase: `deviate ${profileId}` };
+}
+
+/**
+ * Whether deploying an upgrade target under `label` with `signer` deviates. The target lands at
+ * CREATE3(signer, label), so only the class's canonical deployer puts it where every chain of the
+ * class has it. Another key is refused on a mainnet (like `deploy:cli core`, the CLI cannot take the
+ * typed confirmation) and recorded as a deviation elsewhere, before anything is deployed.
+ */
+export function upgradeDeviation(
+	network: NetworkClass,
+	canonical: Address | null,
+	signer: Address,
+	key: "paymasterImplementation" | "walletImplementation",
+	label: string,
+):
+	| { kind: "none" }
+	| { kind: "refuse"; reason: string }
+	| {
+			kind: "record";
+			message: string;
+			deviation: Omit<Deviation, "acknowledged">;
+	  } {
+	if (!canonical || same(signer, canonical)) return { kind: "none" };
+	const deviation = {
+		key,
+		reason: "non-canonical-signer" as const,
+		expected: create3Address(canonical, label),
+		actual: create3Address(signer, label),
+	};
+	const message = `${label} would be deployed by ${signer}, not the ${network} canonical deployer ${canonical}: at ${deviation.actual} instead of ${deviation.expected}`;
+	if (network === "mainnet")
+		return {
+			kind: "refuse",
+			reason: `refusing to upgrade: ${message}. Load the mainnet canonical deployer key from its 1Password item into DEPLOYER_PRIVATE_KEY.`,
+		};
+	return { kind: "record", message, deviation };
 }

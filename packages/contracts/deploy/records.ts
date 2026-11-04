@@ -109,7 +109,9 @@ export function writeRecord(
 
 /**
  * Appends the run's deviations to the record. `confirmed` is true when the operator typed the
- * deviation phrase (mainnet). Deviations already recorded for the same contract and address stay.
+ * deviation phrase (mainnet). A contract already recorded at the same address is one deviation, not a
+ * new one, whatever reason a rerun gives (a key's own address is `non-canonical-signer` when it is
+ * deployed and `existing-elsewhere` once recorded); a later confirmation marks it confirmed.
  */
 export function recordDeviations(
 	record: DeploymentRecord,
@@ -124,15 +126,15 @@ export function recordDeviations(
 ): void {
 	const existing = record.deviations ?? [];
 	for (const d of deviations) {
-		if (
-			existing.some(
-				(e) =>
-					e.contract === d.key &&
-					e.reason === d.reason &&
-					e.actual?.toLowerCase() === d.actual?.toLowerCase(),
-			)
-		)
+		const recorded = existing.find(
+			(e) =>
+				e.contract === d.key &&
+				e.actual?.toLowerCase() === d.actual?.toLowerCase(),
+		);
+		if (recorded) {
+			if (confirmed) recorded.confirmed = true;
 			continue;
+		}
 		existing.push({
 			contract: d.key,
 			reason: d.reason,

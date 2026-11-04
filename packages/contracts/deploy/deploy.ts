@@ -45,7 +45,7 @@ import {
 	guardedSalt,
 } from "./create3";
 import { createxAbi } from "./createx";
-import type { CoreKey } from "./plan";
+import { type CoreKey, placementOf } from "./plan";
 import type { DeployedContract, DeploymentRecord } from "./records";
 import { DEV_RELEASE, type Release } from "./release";
 
@@ -223,7 +223,9 @@ function releaseCode(
 	code: Hex,
 ): DeployedContract {
 	const codehash = keccak256(code);
-	const match = releaseOf(contract, code, address);
+	// Prefer the release being deployed: a release can leave a contract unchanged, and its code is
+	// then every such release's.
+	const match = releaseOf(contract, code, address, release);
 	if (!match && release !== DEV_RELEASE)
 		throw new Error(
 			`${label} at ${address} holds code ${codehash}, which matches no release's ${contract}`,
@@ -278,13 +280,12 @@ function record(
 		ctx.classDeployer === undefined
 			? classDeployer(ctx.network)
 			: ctx.classDeployer;
-	const expected = deployer ? create3Address(deployer, LABELS[key]) : null;
-	const placement = {
-		expected,
-		deterministic:
-			expected !== null &&
-			getAddress(expected) === getAddress(deployed.address),
-	};
+	const placement = placementOf(
+		key,
+		deployed.address,
+		deployer,
+		ctx.record.upgrades,
+	);
 	const merged =
 		previous &&
 		previous.address === deployed.address &&
@@ -432,6 +433,24 @@ export async function deployTesting(
 	}
 }
 
+export type UpgradeOf = "paymasterImplementation" | "walletImplementation";
+
+function upgradeCreationCode(release: Release, of: UpgradeOf): Hex {
+	return of === "paymasterImplementation"
+		? release.contracts.GianoPaymaster.creationCode
+		: release.contracts.GianoSmartWallet.creationCode;
+}
+
+/** The versioned label `release`'s `of` is deployed under as an upgrade target. */
+export function upgradeTargetLabel(release: Release, of: UpgradeOf): string {
+	// A working-tree build changes between runs, so its label names the code rather than a version.
+	const version =
+		release.version === DEV_RELEASE
+			? `${DEV_RELEASE}-${keccak256(upgradeCreationCode(release, of)).slice(2, 10)}`
+			: release.version;
+	return upgradeLabel(LABELS[of], version);
+}
+
 /**
  * A newer release's implementation as an upgrade target on a chain that already has the fixed one:
  * `giano.paymaster.impl@v2`, `giano.wallet.impl@v2`. The fixed-label contracts do not change.
@@ -439,22 +458,13 @@ export async function deployTesting(
 export async function deployUpgradeTarget(
 	ctx: DeployContext,
 	release: Release,
-	of: "paymasterImplementation" | "walletImplementation",
+	of: UpgradeOf,
 ): Promise<DeployedContract> {
-	const creationCode =
-		of === "paymasterImplementation"
-			? release.contracts.GianoPaymaster.creationCode
-			: release.contracts.GianoSmartWallet.creationCode;
-	// A working-tree build changes between runs, so its label names the code rather than a version.
-	const version =
-		release.version === DEV_RELEASE
-			? `${DEV_RELEASE}-${keccak256(creationCode).slice(2, 10)}`
-			: release.version;
 	const deployed = await deployLabel(ctx, {
-		label: upgradeLabel(LABELS[of], version),
+		label: upgradeTargetLabel(release, of),
 		release: release.version,
 		contract: CONTRACT_OF[of],
-		initCode: creationCode,
+		initCode: upgradeCreationCode(release, of),
 	});
 	if (!ctx.record.upgrades.some((u) => u.address === deployed.address))
 		ctx.record.upgrades.push({ ...deployed, of });
