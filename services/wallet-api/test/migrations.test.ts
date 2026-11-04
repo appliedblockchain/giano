@@ -200,9 +200,9 @@ describe("migration 0007_tenant_lifecycle", () => {
 		await client.query(
 			`UPDATE tenants SET managed_by = 'operator', version = 2 WHERE slug = 'acme'`,
 		);
-		expect(await runMigrations(container.getConnectionUri())).toEqual([
-			"0009_drop_tenant_managed_by.sql",
-		]);
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0009")),
+		).toEqual(["0009_drop_tenant_managed_by.sql"]);
 		const { rows } = await client.query(
 			`SELECT column_name FROM information_schema.columns WHERE table_name = 'tenants' AND column_name = 'managed_by'`,
 		);
@@ -213,5 +213,19 @@ describe("migration 0007_tenant_lifecycle", () => {
 		expect(
 			(await client.query(`SELECT created_by FROM tenant_admin_keys`)).rows,
 		).toEqual([{ created_by: "seed" }]);
+	});
+	it("0010 adds the usage indexes, leading with the chain and the time", async () => {
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0010")),
+		).toEqual(["0010_usage_indexes.sql"]);
+		const { rows } = await client.query(
+			`SELECT indexname, indexdef FROM pg_indexes WHERE indexname IN ('sponsorship_decisions_chain_created_idx', 'sponsorship_settlements_chain_observed_idx') ORDER BY 1`,
+		);
+		expect(rows.map((row) => row.indexname)).toEqual([
+			"sponsorship_decisions_chain_created_idx",
+			"sponsorship_settlements_chain_observed_idx",
+		]);
+		expect(rows[0].indexdef).toContain("(chain_id, created_at)");
+		expect(rows[1].indexdef).toContain("(chain_id, observed_at)");
 	});
 });

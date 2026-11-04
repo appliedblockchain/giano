@@ -7,11 +7,12 @@
 - when it started and when it ends;
 - whether it was revoked, and when;
 - the chain it was signed for;
-- the IP address and user agent recorded at sign-in.
+- the IP address and user agent recorded at sign-in;
+- whether it is the session making the request.
 
 It SHALL never return a session token or its hash.
 
-`DELETE /v1/platform/admins/:id/sessions/:sessionId` SHALL end one of the caller's own sessions. Ending another admin's session SHALL return 403; removing the admin is the way to end all of them.
+`DELETE /v1/platform/admins/:id/sessions/:sessionId` SHALL end one of the caller's own sessions. Ending another admin's session SHALL return 403; removing the admin is the way to end all of them. Ending a session already ended SHALL succeed and change nothing. Sessions SHALL be matched to an admin by the address that signed in.
 
 #### Scenario: Last sign-in
 - **WHEN** `ops-diogo` signed in yesterday and has no open session
