@@ -381,6 +381,31 @@ describe("planCore", () => {
 		assert.ok(released.blockers.some((b) => /matches no release/.test(b)));
 	});
 
+	it("a local --release dev run accepts release code already on the chain", async () => {
+		const input = {
+			network: "local" as const,
+			signer: DEPLOYERS.local,
+			deployer: DEPLOYERS.local,
+		};
+		const held = /already holds release/;
+		const dev = await planCore(deployedBy(DEPLOYERS.local), {
+			...input,
+			release: "dev",
+		});
+		assert.deepEqual(
+			dev.blockers.filter((b) => held.test(b)),
+			[],
+		);
+		const v1 = await planCore(deployedBy(DEPLOYERS.local), {
+			...input,
+			release: "v1",
+		});
+		assert.ok(
+			v1.blockers.some((b) => held.test(b)),
+			v1.blockers.join("\n"),
+		);
+	});
+
 	it("still plans, but blocks signing, while the class deployer is not configured", async () => {
 		const plan = await planCore(chain({}), {
 			network: "mainnet",

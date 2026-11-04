@@ -260,7 +260,8 @@ export async function planCore(
 
 		const where = `${key} at ${actual}`;
 		// A local `--release dev` run deploys unreleased code, which no fingerprint matches: on a rerun
-		// that code is the run's own, not foreign (deployCore records it the same way).
+		// that code is the run's own, not foreign (deployCore records it the same way). `dev` is no
+		// published release either, so any release already on the local chain is accepted as is.
 		const devCode = input.network === "local" && input.release === DEV_RELEASE;
 		if (source === "override" || source === "recorded") {
 			if (code.state === "empty")
@@ -278,6 +279,7 @@ export async function planCore(
 		if (
 			source !== "override" &&
 			!upgrade &&
+			!devCode &&
 			code.state === "release" &&
 			input.release &&
 			code.release !== input.release
