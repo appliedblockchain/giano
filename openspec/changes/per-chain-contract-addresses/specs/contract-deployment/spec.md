@@ -42,29 +42,31 @@ mainnet deployer SHALL NOT change any local-chain address.
 
 ### Requirement: Expected addresses are deterministic per class
 For each contract, the expected address on a chain SHALL be the CREATE3 address of the chain's class deployer and the
-contract's fixed label, so every chain in a class shares one set of expected addresses. One exception applies: an
-implementation the chain was upgraded to, which its deployment record lists among its upgrade targets at the CREATE3
-address of the class deployer and that target's versioned label (`giano.paymaster.impl@v3`), SHALL have that
-address as its expected address. It is where every chain of the class has that upgrade, so it is deterministic and
-not a deviation, whatever release it holds.
-
-A deployment run SHALL print, for every contract, the expected address, the address it will use, and whether that is
-a deviation. While the class deployer is unset, the expected address SHALL be shown as unresolved and no deviation
-SHALL be derived from it. The address a run uses SHALL be resolved in this order: the profile's override, then the
-address the chain's deployment record lists, then the expected address when it already holds code, and otherwise
-the CREATE3 address of the signing key. A plan without a signing key SHALL use the expected address only when neither
-an override nor a recorded address applies.
+contract's fixed label, so every chain in a class shares one set of expected addresses. A deployment run SHALL print,
+for every contract, the expected address, the address it will use, and whether that is a deviation. While the class
+deployer is unset, the expected address SHALL be shown as unresolved and no deviation SHALL be derived from it.
 
 #### Scenario: Default mainnet plan
 - **WHEN** an operator plans a deployment for a mainnet profile with no overrides
 - **THEN** every planned address is the CREATE3 address of the mainnet deployer and the contract's label, and none is
   marked as a deviation
 
+### Requirement: Canonical upgrade targets are deterministic
+An implementation the chain was upgraded to, which its deployment record lists among its upgrade targets at the
+CREATE3 address of the class deployer and the target's versioned label (`giano.paymaster.impl@v3`), SHALL have that
+address as its expected address. It is where every chain of the class has that upgrade: it SHALL be deterministic, not
+a deviation, whatever release it holds.
+
 #### Scenario: Plan after a canonical paymaster upgrade
 - **WHEN** a chain's paymaster was upgraded by the class deployer, and its record lists the paymaster implementation
   at the CREATE3 address of the class deployer and the versioned label
 - **THEN** the plan expects the paymaster implementation at that address, marks it deterministic, reports no
   deviation for it, and does not refuse it for holding a release other than the selected one
+
+### Requirement: A run resolves the address it uses from the profile and the record first
+The address a run uses for a contract SHALL be, in order: the profile's override; the address the chain's deployment
+record lists; the expected address when it already holds code; otherwise the CREATE3 address of the signing key. A
+run without a signing key SHALL use the expected address only when neither an override nor a recorded address applies.
 
 #### Scenario: Keyless verification of a recorded non-canonical deployment
 - **WHEN** a run without a signing key verifies a chain whose record lists a contract at an address other than the
@@ -160,6 +162,11 @@ Each deployment record SHALL hold:
 
 Records for non-local chains SHALL be committed.
 
+#### Scenario: Record after a confirmed deviation
+- **WHEN** a mainnet run completes after the operator confirmed an overridden paymaster
+- **THEN** the chain's record marks the paymaster as non-deterministic and lists the confirmed deviation, and the
+  other contracts are marked deterministic
+
 ### Requirement: Deployers hold no authority on deployed contracts
 On every non-local chain, the deploy tooling SHALL refuse a paymaster `ROLE_ADMIN` that is the signing key or a
 configured canonical deployer, and SHALL refuse to adopt an existing paymaster proxy on which either holds
@@ -177,8 +184,3 @@ unreported on any chain in R-29's fixed production list or any chain whose profi
 - **WHEN** an operator runs `deploy:cli testing` against a chain whose profile declares `mainnet`, and the chain is not
   in the fixed list
 - **THEN** it refuses, naming R-29
-
-#### Scenario: Record after a confirmed deviation
-- **WHEN** a mainnet run completes after the operator confirmed an overridden paymaster
-- **THEN** the chain's record marks the paymaster as non-deterministic and lists the confirmed deviation, and the
-  other contracts are marked deterministic
