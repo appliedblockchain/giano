@@ -23,6 +23,11 @@ import {
 	useState,
 } from "react";
 import { LuChevronsDown, LuDownload, LuRefreshCw } from "react-icons/lu";
+import {
+	AdminEventList,
+	useAdminEvents,
+	useNamer,
+} from "../components/admin-events";
 import { InlineError } from "../components/status";
 import {
 	Copyable,
@@ -31,18 +36,17 @@ import {
 	SectionCard,
 } from "../components/ui";
 import { Amount, TxLink } from "../components/values";
+import { useWindows } from "../hooks/useWindows";
 import {
 	filterSettlements,
 	type Outcome,
 	settlementsCsv,
 	settlementTotals,
 } from "../lib/activity";
-import { describeError } from "../lib/format";
+import { EVENT_GROUPS, type EventGroup, eventGroup } from "../lib/admin-events";
 import { Link, tenantPath } from "../lib/router";
 import type { TenantRow } from "../lib/tenants";
 import { useConsole } from "../shell/ConsoleContext";
-
-type Window = BlockRange & { records: readonly SponsorshipRecord[] };
 
 /**
  * Settled sponsorships, read a window of blocks at a time (openspec K6, G5).
@@ -115,216 +119,332 @@ export function ActivityTab({
 	};
 
 	return (
+		<Stack gap="4">
+			<SectionCard
+				title="Sponsorships"
+				subtitle={
+					settlements.range
+						? `Settled in blocks ${settlements.range.fromBlock}–${settlements.range.toBlock}, newest first. A shortfall becomes a recorded deficit rather than a revert: by then the network has been paid.`
+						: "Settled sponsorships, newest first."
+				}
+				action={
+					<HStack gap="2" flexWrap="wrap">
+						<Button
+							size="sm"
+							variant="ghost"
+							aria-label="Read new settlements"
+							loading={settlements.loading}
+							onClick={() => void settlements.refresh()}
+						>
+							<LuRefreshCw />
+						</Button>
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={shown.length === 0}
+							onClick={exportCsv}
+						>
+							<LuDownload /> Export CSV
+						</Button>
+					</HStack>
+				}
+			>
+				<Stack gap="3">
+					{settlements.error && (
+						<InlineError
+							title="Could not read the settlements"
+							error={settlements.error}
+							retry={() => void settlements.refresh()}
+							retrying={settlements.loading}
+							stale={settlements.windows.length > 0}
+						/>
+					)}
+
+					<HStack gap="3" flexWrap="wrap">
+						<NativeSelect.Root size="sm" width="auto" minW="44">
+							<NativeSelect.Field
+								aria-label="Tenant"
+								value={tenant}
+								onChange={(event) => setTenant(event.currentTarget.value)}
+							>
+								<option value="">Every tenant</option>
+								{tenantsSeen.map((uuid) => (
+									<option key={uuid} value={uuid}>
+										{nameOf(uuid)}
+									</option>
+								))}
+							</NativeSelect.Field>
+							<NativeSelect.Indicator />
+						</NativeSelect.Root>
+						<NativeSelect.Root size="sm" width="auto">
+							<NativeSelect.Field
+								aria-label="Outcome"
+								value={outcome}
+								onChange={(event) =>
+									setOutcome(event.currentTarget.value as Outcome)
+								}
+							>
+								<option value="all">Every outcome</option>
+								<option value="succeeded">Succeeded</option>
+								<option value="reverted">Reverted</option>
+							</NativeSelect.Field>
+							<NativeSelect.Indicator />
+						</NativeSelect.Root>
+						<Input
+							size="sm"
+							flex="1"
+							minW="48"
+							fontFamily="mono"
+							placeholder="Account 0x…"
+							aria-label="Account"
+							value={account}
+							onChange={(event) => setAccount(event.target.value)}
+						/>
+					</HStack>
+
+					<SimpleGrid
+						columns={{ base: 2, md: 4 }}
+						gap="3"
+						data-testid="activity-totals"
+					>
+						<Total label="Settlements">
+							{totals.count}
+							{totals.reverted > 0 && (
+								<Text as="span" fontSize="sm" color="fg.muted">
+									{" "}
+									({totals.reverted} reverted)
+								</Text>
+							)}
+						</Total>
+						<Total label="Gas">
+							<Amount wei={totals.gasWei} decimals={6} />
+						</Total>
+						<Total label="Fees">
+							<Amount wei={totals.feeWei} decimals={6} />
+						</Total>
+						<Total label="Overhead">
+							<Amount wei={totals.overheadWei} decimals={6} />
+						</Total>
+					</SimpleGrid>
+
+					{!settlements.settled ? (
+						<Text color="fg.muted">Reading the settlements…</Text>
+					) : shown.length === 0 ? (
+						!settlements.error && (
+							<Text color="fg.muted">
+								{settlements.records.length === 0
+									? `Nothing settled in these blocks.${settlements.older ? " Look further back to read the window before." : ""}`
+									: "No settlement matches the filters."}
+							</Text>
+						)
+					) : (
+						<Table.ScrollArea borderWidth="1px" rounded="md" maxH="36rem">
+							<Table.Root size="sm" stickyHeader data-testid="activity-table">
+								<Table.Header>
+									<Table.Row>
+										<Table.ColumnHeader>When</Table.ColumnHeader>
+										<Table.ColumnHeader>Tenant</Table.ColumnHeader>
+										<Table.ColumnHeader>Account</Table.ColumnHeader>
+										<Table.ColumnHeader>Outcome</Table.ColumnHeader>
+										<Table.ColumnHeader textAlign="end">Gas</Table.ColumnHeader>
+										<Table.ColumnHeader textAlign="end">Fee</Table.ColumnHeader>
+										<Table.ColumnHeader textAlign="end">
+											Overhead
+										</Table.ColumnHeader>
+										<Table.ColumnHeader textAlign="end">
+											Balance after
+										</Table.ColumnHeader>
+										<Table.ColumnHeader>Transaction</Table.ColumnHeader>
+									</Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{shown.map((record) => {
+										const time = times.get(record.blockNumber);
+										const slug = names.get(record.uuid.toLowerCase());
+										return (
+											<Table.Row
+												key={`${record.transactionHash}:${record.userOpHash}`}
+											>
+												<Table.Cell fontSize="xs" whiteSpace="nowrap">
+													<Text>
+														{time
+															? new Date(time * 1000).toLocaleString()
+															: "…"}
+													</Text>
+													<Text color="fg.muted" fontFamily="mono">
+														block {record.blockNumber.toString()}
+													</Text>
+												</Table.Cell>
+												<Table.Cell>
+													{slug ? (
+														<Link to={tenantPath(slug)} fontSize="sm">
+															{slug}
+														</Link>
+													) : (
+														<Copyable value={record.uuid} label="Tenant id" />
+													)}
+												</Table.Cell>
+												<Table.Cell>
+													<Copyable value={record.sender} label="Account" />
+												</Table.Cell>
+												<Table.Cell>
+													<Badge
+														colorPalette={record.success ? "green" : "orange"}
+														variant="subtle"
+													>
+														{record.success ? "succeeded" : "reverted, charged"}
+													</Badge>
+												</Table.Cell>
+												<Table.Cell textAlign="end">
+													<Amount wei={record.gasCostWei} decimals={6} />
+												</Table.Cell>
+												<Table.Cell textAlign="end">
+													<Amount wei={record.feeWei} decimals={6} />
+												</Table.Cell>
+												<Table.Cell textAlign="end">
+													<Amount wei={record.overheadWei} decimals={6} />
+												</Table.Cell>
+												<Table.Cell textAlign="end">
+													<Amount wei={record.newBalanceWei} />
+												</Table.Cell>
+												<Table.Cell>
+													<TxLink hash={record.transactionHash} />
+												</Table.Cell>
+											</Table.Row>
+										);
+									})}
+								</Table.Body>
+							</Table.Root>
+						</Table.ScrollArea>
+					)}
+
+					{settlements.older ? (
+						<Button
+							size="sm"
+							variant="outline"
+							alignSelf="flex-start"
+							loading={settlements.loading}
+							onClick={() => void settlements.lookFurther()}
+						>
+							<LuChevronsDown /> Look further back
+						</Button>
+					) : (
+						settlements.settled && (
+							<Text fontSize="xs" color="fg.muted">
+								That reaches the first block: this is every settlement.
+							</Text>
+						)
+					)}
+				</Stack>
+			</SectionCard>
+			<AdminEventsCard
+				client={client}
+				lastUpdated={lastUpdated}
+				nameOf={nameOf}
+			/>
+		</Stack>
+	);
+}
+
+/**
+ * Who changed what (B1): role changes, fees, parameters, signing keys, pause and upgrades, tenants,
+ * funds, and the timelock's operations, a window of blocks at a time like the settlements.
+ */
+function AdminEventsCard({
+	client,
+	lastUpdated,
+	nameOf,
+}: {
+	client: GianoPaymasterClient;
+	lastUpdated: Date | undefined;
+	nameOf: (uuid: string) => string;
+}) {
+	const { deployment } = useConsole();
+	const events = useAdminEvents(client, lastUpdated);
+	const namer = useNamer(nameOf);
+	const [group, setGroup] = useState<EventGroup | "">("");
+	const shown = useMemo(
+		() =>
+			group
+				? events.items.filter((event) => eventGroup(event) === group)
+				: events.items,
+		[events.items, group],
+	);
+
+	return (
 		<SectionCard
-			title="Sponsorships"
+			title="Admin events"
 			subtitle={
-				settlements.range
-					? `Settled in blocks ${settlements.range.fromBlock}–${settlements.range.toBlock}, newest first. A shortfall becomes a recorded deficit rather than a revert: by then the network has been paid.`
-					: "Settled sponsorships, newest first."
+				events.range
+					? `Who changed what on the paymaster${deployment.timelockAddress ? " and its timelock" : ""}, in blocks ${events.range.fromBlock}–${events.range.toBlock}, newest first.`
+					: "Who changed what on the paymaster, newest first."
 			}
 			action={
-				<HStack gap="2" flexWrap="wrap">
-					<Button
-						size="sm"
-						variant="ghost"
-						aria-label="Read new settlements"
-						loading={settlements.loading}
-						onClick={() => void settlements.refresh()}
-					>
-						<LuRefreshCw />
-					</Button>
-					<Button
-						size="sm"
-						variant="outline"
-						disabled={shown.length === 0}
-						onClick={exportCsv}
-					>
-						<LuDownload /> Export CSV
-					</Button>
-				</HStack>
+				<Button
+					size="sm"
+					variant="ghost"
+					aria-label="Read new admin events"
+					loading={events.loading}
+					onClick={() => void events.refresh()}
+				>
+					<LuRefreshCw />
+				</Button>
 			}
 		>
 			<Stack gap="3">
-				{settlements.error && (
+				{events.error && (
 					<InlineError
-						title="Could not read the settlements"
-						error={settlements.error}
-						retry={() => void settlements.refresh()}
-						retrying={settlements.loading}
-						stale={settlements.windows.length > 0}
+						title="Could not read the admin events"
+						error={events.error}
+						retry={() => void events.refresh()}
+						retrying={events.loading}
+						stale={events.windows.length > 0}
 					/>
 				)}
-
-				<HStack gap="3" flexWrap="wrap">
-					<NativeSelect.Root size="sm" width="auto" minW="44">
-						<NativeSelect.Field
-							aria-label="Tenant"
-							value={tenant}
-							onChange={(event) => setTenant(event.currentTarget.value)}
-						>
-							<option value="">Every tenant</option>
-							{tenantsSeen.map((uuid) => (
-								<option key={uuid} value={uuid}>
-									{nameOf(uuid)}
-								</option>
-							))}
-						</NativeSelect.Field>
-						<NativeSelect.Indicator />
-					</NativeSelect.Root>
-					<NativeSelect.Root size="sm" width="auto">
-						<NativeSelect.Field
-							aria-label="Outcome"
-							value={outcome}
-							onChange={(event) =>
-								setOutcome(event.currentTarget.value as Outcome)
-							}
-						>
-							<option value="all">Every outcome</option>
-							<option value="succeeded">Succeeded</option>
-							<option value="reverted">Reverted</option>
-						</NativeSelect.Field>
-						<NativeSelect.Indicator />
-					</NativeSelect.Root>
-					<Input
-						size="sm"
-						flex="1"
-						minW="48"
-						fontFamily="mono"
-						placeholder="Account 0x…"
-						aria-label="Account"
-						value={account}
-						onChange={(event) => setAccount(event.target.value)}
-					/>
-				</HStack>
-
-				<SimpleGrid
-					columns={{ base: 2, md: 4 }}
-					gap="3"
-					data-testid="activity-totals"
-				>
-					<Total label="Settlements">
-						{totals.count}
-						{totals.reverted > 0 && (
-							<Text as="span" fontSize="sm" color="fg.muted">
-								{" "}
-								({totals.reverted} reverted)
-							</Text>
-						)}
-					</Total>
-					<Total label="Gas">
-						<Amount wei={totals.gasWei} decimals={6} />
-					</Total>
-					<Total label="Fees">
-						<Amount wei={totals.feeWei} decimals={6} />
-					</Total>
-					<Total label="Overhead">
-						<Amount wei={totals.overheadWei} decimals={6} />
-					</Total>
-				</SimpleGrid>
-
-				{!settlements.settled ? (
-					<Text color="fg.muted">Reading the settlements…</Text>
+				<NativeSelect.Root size="sm" width="auto" alignSelf="flex-start">
+					<NativeSelect.Field
+						aria-label="Kind of change"
+						value={group}
+						onChange={(event) =>
+							setGroup(event.currentTarget.value as EventGroup | "")
+						}
+					>
+						<option value="">Every change</option>
+						{EVENT_GROUPS.map((entry) => (
+							<option key={entry.group} value={entry.group}>
+								{entry.label}
+							</option>
+						))}
+					</NativeSelect.Field>
+					<NativeSelect.Indicator />
+				</NativeSelect.Root>
+				{!events.settled ? (
+					<Text color="fg.muted">Reading the admin events…</Text>
 				) : shown.length === 0 ? (
-					!settlements.error && (
+					!events.error && (
 						<Text color="fg.muted">
-							{settlements.records.length === 0
-								? `Nothing settled in these blocks.${settlements.older ? " Look further back to read the window before." : ""}`
-								: "No settlement matches the filters."}
+							{events.items.length === 0
+								? `No admin change in these blocks.${events.older ? " Look further back to read the window before." : ""}`
+								: "No change of this kind in these blocks."}
 						</Text>
 					)
 				) : (
-					<Table.ScrollArea borderWidth="1px" rounded="md" maxH="36rem">
-						<Table.Root size="sm" stickyHeader data-testid="activity-table">
-							<Table.Header>
-								<Table.Row>
-									<Table.ColumnHeader>When</Table.ColumnHeader>
-									<Table.ColumnHeader>Tenant</Table.ColumnHeader>
-									<Table.ColumnHeader>Account</Table.ColumnHeader>
-									<Table.ColumnHeader>Outcome</Table.ColumnHeader>
-									<Table.ColumnHeader textAlign="end">Gas</Table.ColumnHeader>
-									<Table.ColumnHeader textAlign="end">Fee</Table.ColumnHeader>
-									<Table.ColumnHeader textAlign="end">
-										Overhead
-									</Table.ColumnHeader>
-									<Table.ColumnHeader textAlign="end">
-										Balance after
-									</Table.ColumnHeader>
-									<Table.ColumnHeader>Transaction</Table.ColumnHeader>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{shown.map((record) => {
-									const time = times.get(record.blockNumber);
-									const slug = names.get(record.uuid.toLowerCase());
-									return (
-										<Table.Row
-											key={`${record.transactionHash}:${record.userOpHash}`}
-										>
-											<Table.Cell fontSize="xs" whiteSpace="nowrap">
-												<Text>
-													{time ? new Date(time * 1000).toLocaleString() : "…"}
-												</Text>
-												<Text color="fg.muted" fontFamily="mono">
-													block {record.blockNumber.toString()}
-												</Text>
-											</Table.Cell>
-											<Table.Cell>
-												{slug ? (
-													<Link to={tenantPath(slug)} fontSize="sm">
-														{slug}
-													</Link>
-												) : (
-													<Copyable value={record.uuid} label="Tenant id" />
-												)}
-											</Table.Cell>
-											<Table.Cell>
-												<Copyable value={record.sender} label="Account" />
-											</Table.Cell>
-											<Table.Cell>
-												<Badge
-													colorPalette={record.success ? "green" : "orange"}
-													variant="subtle"
-												>
-													{record.success ? "succeeded" : "reverted, charged"}
-												</Badge>
-											</Table.Cell>
-											<Table.Cell textAlign="end">
-												<Amount wei={record.gasCostWei} decimals={6} />
-											</Table.Cell>
-											<Table.Cell textAlign="end">
-												<Amount wei={record.feeWei} decimals={6} />
-											</Table.Cell>
-											<Table.Cell textAlign="end">
-												<Amount wei={record.overheadWei} decimals={6} />
-											</Table.Cell>
-											<Table.Cell textAlign="end">
-												<Amount wei={record.newBalanceWei} />
-											</Table.Cell>
-											<Table.Cell>
-												<TxLink hash={record.transactionHash} />
-											</Table.Cell>
-										</Table.Row>
-									);
-								})}
-							</Table.Body>
-						</Table.Root>
-					</Table.ScrollArea>
+					<AdminEventList events={shown} namer={namer} />
 				)}
-
-				{settlements.older ? (
+				{events.older ? (
 					<Button
 						size="sm"
 						variant="outline"
 						alignSelf="flex-start"
-						loading={settlements.loading}
-						onClick={() => void settlements.lookFurther()}
+						loading={events.loading}
+						onClick={() => void events.lookFurther()}
 					>
 						<LuChevronsDown /> Look further back
 					</Button>
 				) : (
-					settlements.settled && (
+					events.settled && (
 						<Text fontSize="xs" color="fg.muted">
-							That reaches the first block: this is every settlement.
+							That reaches the first block: this is every admin event.
 						</Text>
 					)
 				)}
@@ -356,97 +476,16 @@ function useSettlements(
 	client: GianoPaymasterClient,
 	lastUpdated: Date | undefined,
 ) {
-	const [windows, setWindows] = useState<readonly Window[]>([]);
-	const [older, setOlder] = useState<BlockRange>();
-	const [loading, setLoading] = useState(false);
-	const [error, setError] = useState<string>();
-	const [settled, setSettled] = useState(false);
-	const newest = useRef<bigint | undefined>(undefined);
-	const running = useRef(false);
-
-	const refresh = useCallback(async () => {
-		if (running.current) return;
-		running.current = true;
-		setLoading(true);
-		try {
-			const from = newest.current;
-			const page = await client.getSponsorships(
-				from === undefined ? {} : { range: { fromBlock: from + 1n } },
-			);
-			const window = {
-				fromBlock: page.fromBlock,
-				toBlock: page.toBlock,
-				records: page.records,
-			};
-			if (from === undefined) {
-				setWindows([window]);
-				setOlder(page.older);
-			} else if (page.toBlock > from) {
-				setWindows((current) => [window, ...current]);
-			}
-			if (from === undefined || page.toBlock > from)
-				newest.current = page.toBlock;
-			setError(undefined);
-		} catch (cause) {
-			setError(describeError(cause));
-		} finally {
-			running.current = false;
-			setLoading(false);
-			setSettled(true);
-		}
-	}, [client]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: read the new blocks with every console refresh
-	useEffect(() => {
-		void refresh();
-	}, [refresh, lastUpdated]);
-
-	const lookFurther = useCallback(async () => {
-		if (!older) return;
-		setLoading(true);
-		try {
-			const page = await client.getSponsorships({ range: older });
-			setWindows((current) => [
-				...current,
-				{
-					fromBlock: page.fromBlock,
-					toBlock: page.toBlock,
-					records: page.records,
-				},
-			]);
-			setOlder(page.older);
-			setError(undefined);
-		} catch (cause) {
-			setError(describeError(cause));
-		} finally {
-			setLoading(false);
-		}
-	}, [client, older]);
-
-	// Within a window the SDK returns settlements oldest first.
-	const records = useMemo(
-		() => windows.flatMap((window) => [...window.records].reverse()),
-		[windows],
+	const read = useCallback(
+		async (range?: Partial<BlockRange>) => {
+			const page = await client.getSponsorships({ range });
+			// Within a window the SDK returns settlements oldest first.
+			return { ...page, items: [...page.records].reverse() };
+		},
+		[client],
 	);
-	const range =
-		windows.length > 0
-			? {
-					fromBlock: windows[windows.length - 1].fromBlock,
-					toBlock: windows[0].toBlock,
-				}
-			: undefined;
-
-	return {
-		windows,
-		records,
-		range,
-		older,
-		loading,
-		error,
-		settled,
-		refresh,
-		lookFurther,
-	};
+	const windows = useWindows(read, lastUpdated);
+	return { ...windows, records: windows.items };
 }
 
 /** Each shown block's timestamp, read once and kept for the session. */

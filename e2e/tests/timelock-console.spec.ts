@@ -371,3 +371,35 @@ test("Health checks the timelock: who else holds its roles, a delay below the pu
 			page.getByTestId("health-keys").getByTestId(`check-${id}`),
 		).toBeVisible();
 });
+
+test("Activity lists the admin events of the paymaster and its timelock, saying who did what", async ({
+	page,
+}) => {
+	await openWithTimelock(page);
+	await tab(page, /Activity/).click();
+
+	const events = page.getByTestId("admin-events");
+	// beforeAll granted this file's timelock ROLE_ADMIN on the paymaster, from admin-console
+	const granted = events
+		.getByTestId("admin-event-RoleGranted")
+		.filter({ hasText: "granted ROLE_ADMIN to the timelock" })
+		.first();
+	await expect(granted).toBeVisible({ timeout: 30_000 });
+	await expect(granted).toContainText("you");
+	// and its constructor made admin-console its proposer: the timelock's own event, marked as such
+	await expect(
+		events.getByText("granted PROPOSER_ROLE on the timelock to you", {
+			exact: false,
+		}),
+	).toBeVisible();
+
+	await page.getByLabel("Kind of change").selectOption("timelock");
+	await expect(
+		events.getByText("granted ROLE_ADMIN to the timelock", { exact: false }),
+	).toHaveCount(0);
+	await expect(
+		events
+			.getByText("granted PROPOSER_ROLE on the timelock", { exact: false })
+			.first(),
+	).toBeVisible();
+});

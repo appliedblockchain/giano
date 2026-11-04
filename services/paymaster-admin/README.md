@@ -33,8 +33,9 @@ all land where they point. The deployment is chosen in the header, not in the UR
 - **A tenant** (`/tenants/<slug>`) — its state on this chain with register, fund, enable or disable,
   fee override and withdrawal address; wallet-api's ledger compared with the chain; the tenant on
   every other configured chain; its recent sponsorships; the registry record and admin keys (never
-  key material); its history with each edit's before and after; and the lifecycle actions its state
-  allows.
+  key material); its history with each edit's before and after, and its admin events on the chain
+  (registration, funding, withdrawals, enabled state, fee, withdrawal address); and the lifecycle
+  actions its state allows.
 - **Paymaster** — one card per setting, each naming the role it needs: pause, signing keys,
   pricing, operational parameters, treasury (with *Max*), stake (add, unlock, withdraw, with the
   unlock date) and upgrade (the implementation from the ERC-1967 slot).
@@ -45,7 +46,10 @@ all land where they point. The deployment is chosen in the header, not in the UR
   wallet may do, its operations with *Execute* and *Cancel*, its delays and its own roles, each with
   a proposal to change them.
 - **Activity** — settled sponsorships with time, tenant, account, outcome, gas, fee and overhead,
-  filters and totals, *Look further back* with no row cap, and *Export CSV*.
+  filters and totals, *Look further back* with no row cap, and *Export CSV*. Below them, the admin
+  events: who changed a role, a fee, a parameter, a signing key, the pause state, the code or a
+  tenant, and, with `timelockAddress`, what was scheduled, executed or cancelled on the timelock and
+  its own delays and roles. Filtered by kind, read a window at a time like the settlements.
 - **Health** — the checks `giano-doctor` runs, at the same thresholds, grouped as Funds, Keys and
   roles, and Registry and chain, each saying what to do and where; with the platform API, also that
   every on-chain tenant has a registry row and that wallet-api's ledger matches the chain. Keys and
@@ -254,8 +258,8 @@ The console answers the two differently:
 - **Activity** reads one window ending at the head and says which blocks those are. *Look
   further back* reads the preceding window and adds to the table; each refresh reads only the new
   blocks. A settlement record exists nowhere else, so a window is the affordable version of a read
-  that has no substitute. The Timelock tab's operations are read the same way, going back far enough
-  to cover its longest delay.
+  that has no substitute. The admin events, and a tenant page's events, are read the same way. The
+  Timelock tab's operations are too, going back far enough to cover its longest delay.
 - **Tenants** take their slug from wallet-api's registry, matched on the tenant id, which is the
   same value as the contract's id. Without the platform API they are listed by id: the roster itself
   is entirely view calls, complete and exact.

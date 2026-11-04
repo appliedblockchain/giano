@@ -266,6 +266,29 @@ test.describe("admin console", () => {
 		await expect(page.getByText("override", { exact: true })).toBeVisible({
 			timeout: 30_000,
 		});
+
+		// its history on this chain has each of those, newest first, with who did it
+		const onChain = page.getByTestId("tenant-chain-history");
+		await expect(onChain).toContainText(`set ${slug}'s fee to 0.0002 ETH`, {
+			timeout: 30_000,
+		});
+		await expect(onChain).toContainText(`funded ${slug} with 0.01 ETH`);
+		await expect(onChain).toContainText(
+			`registered ${slug}, withdrawing to 0x7099…79C8`,
+		);
+		await expect(
+			onChain.getByTestId("admin-event-TenantRegistered"),
+		).toContainText("you");
+		const kinds = await onChain
+			.locator("[data-testid^=admin-event-]")
+			.evaluateAll((rows) =>
+				rows.map((row) => row.getAttribute("data-testid")),
+			);
+		expect(kinds.slice(0, 3)).toEqual([
+			"admin-event-TenantFeeChanged",
+			"admin-event-TenantFunded",
+			"admin-event-TenantRegistered",
+		]);
 	});
 
 	test("the Overview lists a tenant not registered on this chain by slug, linking to its page", async ({

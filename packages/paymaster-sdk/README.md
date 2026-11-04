@@ -49,6 +49,7 @@ replay**:
 | `getHealth({ timelock })` | the checks `giano-doctor` runs, same thresholds |
 | `getImplementation()`, `getImplementationCode()` | the proxy's implementation, and the code there |
 | `getSponsorships()`, `watchSponsorships()` | settled sponsorships in a window of blocks — see below |
+| `getAdminEvents({ timelock })` | who changed a role, a fee, a parameter, a signer, the pause state, the code or a tenant, and the timelock's operations, in a window of blocks, newest first |
 | `getTenantSlugs()` | the one field that needs logs — slugs are emitted, not stored |
 | `assertDeployed()` | catches a wrong address or a wrong chain, in a sentence |
 
@@ -66,12 +67,13 @@ Two checks need more than an overview, so `assessHealth(overview, context)` take
 - `implementation`: the implementation's address and runtime code (`getImplementationCode()`),
   matched to a contracts release. Code that is no release fails. `getHealth()` reads it itself.
 
-### The two reads that are windows
+### The reads that are windows
 
-`getSponsorships()` and `getTenantSlugs()` are the exceptions. A settlement is only ever an event,
-and a slug is emitted rather than stored, so neither can be a view call. Both therefore read **one
-`eth_getLogs` over a window of blocks ending at the head** — not the whole history — and both return
-the window they read:
+`getSponsorships()`, `getTenantSlugs()` and `getAdminEvents()` are the exceptions. A settlement or a
+change is only ever an event, and a slug is emitted rather than stored, so none can be a view call.
+Each therefore reads **one
+window of blocks ending at the head** (one `eth_getLogs` per contract) — not the whole history — and
+returns the window it read:
 
 ```ts
 const page = await paymaster.getSponsorships();
