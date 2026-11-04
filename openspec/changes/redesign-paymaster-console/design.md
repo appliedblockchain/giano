@@ -122,7 +122,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 12. B2: timelock-aware `assessHealth`, release codehashes, `giano-doctor`. SDK and contracts changesets. **Done** (#205).
 13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
-15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
+15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health. **Done** (#208).
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
 
@@ -208,6 +208,13 @@ A chain's published delays are in its profile (`deploy/chains/*.json`), which th
 `getAdminEvents` asks the node for the admin events only (one `eth_getLogs` per contract with the events' topics), so a window busy with settlements costs no more. Each entry carries the transaction's `from` and an `actor`: the account the event names (a role change's `sender`, a pause's `account`, an enable's `actor`), otherwise the contract the transaction was sent to when it was not the emitter (the timelock executing, a Safe), otherwise `from`. One hop only; a Safe calling the timelock that calls the paymaster shows the Safe for the timelock's event and the timelock for the paymaster's. Block times and senders are one read per distinct block and transaction, five at a time; one that fails leaves its field empty rather than failing the list. The event lists are `PAYMASTER_ADMIN_EVENTS` and `TIMELOCK_ADMIN_EVENTS`, beside lists of the events that are not admin events and why (settlements, `Initialized`, `CallSalt`); the test fails on an ABI event in neither.
 
 On the tenant page the chain's events are listed under the registry's history, not interleaved with it: the registry pages by cursor and the chain by window of blocks, and merging them would order entries wrongly wherever one page ends before the other. `tenantId` keeps the tenant's own events and the timelock calls whose arguments name it.
+
+### D25. Chain status: thresholds, timeouts and the mock node
+The console's thresholds: a head older than 60 seconds warns and 5 minutes fails; a ledger watcher more than 50 blocks behind warns, the line past which wallet-api stops trusting the ledger for a tenant delete (`TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS`' default), and more than 1,000 fails. They sit in `lib/health.ts` beside the SDK's deposit and stake thresholds. The repository's local anvil devnets (31337, 31338) mine only when there is a transaction, so an idle one's head is hours old: there the age is shown and not judged, or every local stack would read as failing.
+
+Each part of a chain's status (head, bundler, signer) gets its own 3 seconds, and every chain is read at once, so the response takes about 3 seconds however many chains are down. A bundler that answers `eth_supportedEntryPoints` with a JSON-RPC error is reachable, with `entryPointSupported: null` (a warning in the console), not unreachable.
+
+The Chains section is read with each console refresh while Health is open; each read probes every chain, inside the session's platform rate limit.
 
 ## Risks / Trade-offs
 

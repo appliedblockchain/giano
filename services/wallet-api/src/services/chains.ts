@@ -2,6 +2,10 @@ import { createPublicClient, http, type PublicClient } from "viem";
 import type { AppConfig, ResolvedChain } from "../config.js";
 import type { Db } from "../db/index.js";
 import { type BundlerService, createBundlerService } from "./bundler.js";
+import type {
+	ChainProbeRecord,
+	ChainVerificationRecord,
+} from "./chain-probe.js";
 import { createNodeRpcService, type NodeRpcService } from "./node-rpc.js";
 import {
 	createPaymasterReader,
@@ -41,6 +45,10 @@ export type ChainServices = {
 	 * the background, distinct from a structural misconfiguration (which refuses boot, MC-92).
 	 */
 	status: "ready" | "unavailable";
+	/** The last full verification (boot, or recovery); unset until one has run (B3). */
+	verification?: ChainVerificationRecord;
+	/** The prober's last reachability probe; unset until one has run (B3). */
+	lastProbe?: ChainProbeRecord;
 };
 
 export class UnknownChainError extends Error {

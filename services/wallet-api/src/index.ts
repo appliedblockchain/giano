@@ -5,6 +5,11 @@ import { createDb } from "./db/index.js";
 import { tenants as tenantsTable } from "./db/schema.js";
 import { runMigrations } from "./migrate.js";
 import {
+	CHAIN_PROBE_INTERVAL_MS,
+	probeChain,
+	recordVerification,
+} from "./services/chain-probe.js";
+import {
 	describeFailure,
 	isFatalFailure,
 	verifyChain,
@@ -74,6 +79,7 @@ const registry = app.chains;
 		) {
 			chain.status = "unavailable";
 		}
+		recordVerification(chain, verification);
 		if (verification.probeAddress)
 			probeAddresses.set(
 				chain.chainId,
@@ -106,68 +112,17 @@ for (const chain of registry.all) {
 }
 
 // Background prober: re-runs the reachability half of verifyChain and flips status
-// (MC-54). It never re-runs the structural half as a status flip — a factory that ceases
-// to match canonical is an alert and a page (MC-104), not a silent 'unavailable'.
-const CHAIN_PROBE_INTERVAL_MS = 15_000;
+// (MC-54), keeping what it found on each chain for GET /v1/platform/chains (B3).
 const prober = setInterval(() => {
-	for (const chain of registry.all) {
-		if (chain.status === "ready") {
-			// Reachability only: a factory that ceases to match canonical is a page (MC-104),
-			// never a silent flip to 'unavailable'.
-			void chain.publicClient
-				.getChainId()
-				.then((reported) => {
-					if (reported !== chain.chainId) {
-						app.log.error(
-							{ chainId: chain.chainId, reported },
-							"ALERT: chain endpoint reports a different chain id than declared",
-						);
-						chain.status = "unavailable";
-					}
-					app.metrics.chainAvailable.set(
-						{ chain: String(chain.chainId) },
-						chain.status === "ready" ? 1 : 0,
-					);
-				})
-				.catch((error: Error) => {
-					app.log.warn(
-						{ chainId: chain.chainId, error: error.message },
-						"chain became unreachable",
-					);
-					chain.status = "unavailable";
-					app.metrics.chainAvailable.set({ chain: String(chain.chainId) }, 0);
-				});
-		} else {
-			// A chain coming BACK must pass the full structural verification before it is served
-			// again — it may have missed the boot-time gate entirely (it was unreachable then),
-			// and an endpoint swapped out during the outage must not slip in unverified.
-			void verifyChain(chain.descriptor, chain.publicClient)
-				.then((verification) => {
-					const fatalFailures = verification.failures.filter(isFatalFailure);
-					if (verification.reachable && fatalFailures.length === 0) {
-						app.log.info(
-							{ chainId: chain.chainId },
-							"chain is reachable and verified — serving it again",
-						);
-						chain.status = "ready";
-					} else if (verification.reachable) {
-						for (const failure of fatalFailures) {
-							app.log.error(
-								{ chainId: chain.chainId, failure },
-								`ALERT: ${describeFailure(chain.chainId, failure)}`,
-							);
-						}
-					}
-					app.metrics.chainAvailable.set(
-						{ chain: String(chain.chainId) },
-						chain.status === "ready" ? 1 : 0,
-					);
-				})
-				.catch(() => {
-					app.metrics.chainAvailable.set({ chain: String(chain.chainId) }, 0);
-				});
-		}
-	}
+	for (const chain of registry.all)
+		void probeChain(chain, {
+			log: app.log,
+			onStatus: (probed) =>
+				app.metrics.chainAvailable.set(
+					{ chain: String(probed.chainId) },
+					probed.status === "ready" ? 1 : 0,
+				),
+		});
 }, CHAIN_PROBE_INTERVAL_MS);
 prober.unref();
 

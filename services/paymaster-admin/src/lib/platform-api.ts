@@ -229,6 +229,7 @@ export function platformApi(token: string) {
 			call<void>("DELETE", `/admins/${encodeURIComponent(id)}`),
 		platformAdminHistory: () =>
 			call<{ entries: PlatformAdminHistoryEntry[] }>("GET", "/admins/history"),
+		chains: () => call<ChainsStatus>("GET", "/chains"),
 		adminSessions: (id: string) =>
 			call<{ sessions: PlatformAdminSession[] }>(
 				"GET",
@@ -254,6 +255,39 @@ export type PlatformAdminRow = {
 	lastSignInAt?: string | null;
 	/** B6: sessions neither expired nor revoked. Absent from a wallet-api that predates it. */
 	activeSessions?: number;
+};
+
+/** GET /v1/platform/chains (B3): what only wallet-api can see about each chain it serves. */
+export type ChainsStatus = {
+	signer: "ok" | "unavailable" | "disabled";
+	chains: ChainStatus[];
+};
+
+export type ChainStatus = {
+	chainId: number;
+	name: string;
+	registryStatus: "ready" | "unavailable";
+	verification: {
+		checkedAt: string;
+		failures: ({ kind: string } & Record<string, unknown>)[];
+	} | null;
+	lastProbe: { at: string; ok: boolean; detail?: string } | null;
+	node: {
+		reachable: boolean;
+		headBlock: string | null;
+		headAgeSeconds: number | null;
+	};
+	bundler: { reachable: boolean; entryPointSupported: boolean | null };
+	paymaster: {
+		address: string;
+		depositWei: string | null;
+		treasuryWei: string | null;
+		stakeWei: string | null;
+		invariantSlackWei: string | null;
+		lastSyncedBlock: string | null;
+		watcherLagBlocks: number | null;
+		checkedAt: string | null;
+	} | null;
 };
 
 /** One of an admin's sessions, as GET /v1/platform/admins/:id/sessions lists them (B6). */

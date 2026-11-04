@@ -32,7 +32,8 @@ This change specifies the whole redesign: phase 1, console-only (the K, C and N 
 | 12 | Phase 2: B2, timelock-aware health | Done, PR #205 |
 | 13 | Phase 2: B1, admin events | Done, PR #206 |
 | 14 | Phase 2: B6, sign-ins and sessions | Done, PR #207 |
-| 15–17 | Phase 2: B3, B5, B4 | To do |
+| 15 | Phase 2: B3, chain status | Done, PR #208 |
+| 16–17 | Phase 2: B5, B4 | To do |
 
 ### Phase 1: console only
 
