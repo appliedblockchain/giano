@@ -64,8 +64,12 @@ for (const version of listReleases()) {
 			for (const name of ["GianoSmartWallet", "GianoPaymaster"] as const) {
 				const { runtimeCode, immutables } = compiled[name] ?? assert.fail(name);
 				const code = fill(runtimeCode, immutables[0].ranges, word(A));
-				assert.equal(releaseOf(name, code, A)?.release, version, name);
-				assert.equal(releaseOf(name, code)?.release, version, name);
+				assert.equal(releaseOf(name, code, A, version)?.release, version, name);
+				assert.equal(
+					releaseOf(name, code, undefined, version)?.release,
+					version,
+					name,
+				);
 				assert.equal(releaseOf(name, code, B), undefined, name);
 			}
 		});
@@ -76,7 +80,8 @@ for (const version of listReleases()) {
 			const [first, ...rest] = immutables[0].ranges;
 			const consistent = fill(runtimeCode, immutables[0].ranges, word(A));
 			assert.equal(
-				releaseOf("GianoSmartWalletFactory", consistent)?.release,
+				releaseOf("GianoSmartWalletFactory", consistent, undefined, version)
+					?.release,
 				version,
 			);
 			const split = fill(fill(runtimeCode, [first], word(B)), rest, word(A));

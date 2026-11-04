@@ -67,7 +67,7 @@
 		"provision:paymaster": "tsx scripts/provision-paymaster.ts",
 		"storage": "node scripts/storage-layout.mjs",
 		"storage:check": "node scripts/storage-layout.mjs --check",
-		"test:deploy": "node --import tsx --test deploy/deploy.test.ts deploy/immutable-checks.test.ts deploy/preflight.test.ts deploy/profiles.test.ts deploy/operations.test.ts deploy/timelock.test.ts",
+		"test:deploy": "node --import tsx --test deploy/deploy.test.ts deploy/release-code.test.ts deploy/immutable-checks.test.ts deploy/preflight.test.ts deploy/profiles.test.ts deploy/operations.test.ts deploy/timelock.test.ts",
 		"test:deploy:integration": "node --import tsx --test deploy/integration.test.ts",
 		"test:releases": "node --import tsx --test deploy/release-compile.test.ts",
 		"deploy:guided": "node --import tsx deploy/guided.ts",

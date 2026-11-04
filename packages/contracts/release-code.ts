@@ -69,19 +69,23 @@ function immutablesConsistent(
 }
 
 /**
- * The release whose `contract` code `runtimeCode` is, or undefined if it is no release's. Compare
- * against `eth_getCode` at the contract's address, not a creation code, and pass that `address`: a
- * UUPS implementation is then also checked to name itself in `__self`. Without it only the masked
- * hash and the consistency of each immutable's ranges are checked.
+ * Every release whose `contract` code `runtimeCode` is, oldest first; empty if none. Two releases
+ * that leave a contract unchanged share its fingerprint, so code can be several releases' at once.
+ * Compare against `eth_getCode` at the contract's address, not a creation code, and pass that
+ * `address`: a UUPS implementation is then also checked to name itself in `__self`. Without it only
+ * the masked hash and the consistency of each immutable's ranges are checked. `fingerprints` defaults
+ * to every committed release's.
  */
-export function releaseOf(
+export function releasesOf(
 	contract: ReleaseContractName,
 	runtimeCode: Hex,
 	address?: Hex,
-): ReleaseFingerprint | undefined {
+	fingerprints: readonly ReleaseFingerprint[] = RELEASE_FINGERPRINTS,
+): ReleaseFingerprint[] {
 	const size = (runtimeCode.length - 2) / 2;
 	const hashes = new Map<string, Hex>();
-	for (const candidate of RELEASE_FINGERPRINTS) {
+	const matches: ReleaseFingerprint[] = [];
+	for (const candidate of fingerprints) {
 		if (candidate.contract !== contract || candidate.size !== size) continue;
 		// Releases of one contract usually share a mask; hash each distinct one once.
 		const key = candidate.immutables
@@ -96,7 +100,27 @@ export function releaseOf(
 			hash === candidate.fingerprint &&
 			immutablesConsistent(runtimeCode, candidate.immutables, address)
 		)
-			return candidate;
+			matches.push(candidate);
 	}
-	return undefined;
+	return matches;
+}
+
+/**
+ * The release whose `contract` code `runtimeCode` is, or undefined if it is no release's (see
+ * releasesOf). When the code is several releases', `release` is returned if it is one of them —
+ * pass the release you expect, so code a newer release left unchanged is not mistaken for an older
+ * one — and otherwise the newest.
+ */
+export function releaseOf(
+	contract: ReleaseContractName,
+	runtimeCode: Hex,
+	address?: Hex,
+	release?: string,
+): ReleaseFingerprint | undefined {
+	const matches = releasesOf(contract, runtimeCode, address);
+	return (
+		(release !== undefined
+			? matches.find((match) => match.release === release)
+			: undefined) ?? matches.at(-1)
+	);
 }
