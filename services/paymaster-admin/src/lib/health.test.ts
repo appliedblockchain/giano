@@ -1,6 +1,12 @@
 import type { HealthCheck } from "@appliedblockchain/giano-paymaster-sdk";
 import { describe, expect, it } from "vitest";
-import { chainChecks, checkLink, groupChecks, signerCheck } from "./health";
+import {
+	chainChecks,
+	checkLink,
+	executorStanding,
+	groupChecks,
+	signerCheck,
+} from "./health";
 import type { ChainStatus } from "./platform-api";
 
 const check = (id: string): HealthCheck => ({
@@ -182,5 +188,108 @@ describe("signerCheck", () => {
 		expect(signerCheck("unavailable")?.level).toBe("fail");
 		expect(signerCheck("ok")?.level).toBe("ok");
 		expect(signerCheck("disabled")).toBeUndefined();
+	});
+});
+
+describe("executorStanding", () => {
+	const lane = (
+		balanceWei: string,
+		nonces: [number, number] = [5, 5],
+		busy = false,
+	) => ({
+		address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+		balanceWei,
+		busy,
+		latestNonce: nonces[0],
+		pendingNonce: nonces[1],
+	});
+	// 1 gwei: 0.0004 ETH a submission
+	const gwei = "1000000000";
+
+	it("judges by the submissions a balance pays for at the gas price: under 10 fails, under 100 warns", () => {
+		expect(executorStanding(lane("0"), gwei)).toMatchObject({
+			level: "fail",
+			submissions: 0,
+		});
+		expect(executorStanding(lane("3600000000000000"), gwei)).toMatchObject({
+			level: "fail",
+			submissions: 9,
+		});
+		expect(executorStanding(lane("4000000000000000"), gwei).level).toBe("warn");
+		expect(executorStanding(lane("40000000000000000"), gwei)).toMatchObject({
+			level: "ok",
+			submissions: 100,
+		});
+	});
+
+	it("fails an empty executor even when the gas price is unknown", () => {
+		expect(executorStanding(lane("0"), null)).toMatchObject({
+			level: "fail",
+			submissions: null,
+		});
+		expect(executorStanding(lane("1"), null).level).toBe("ok");
+	});
+
+	it("warns on a stuck nonce: pending while the lane is idle, or more than one ahead", () => {
+		const funded = "1000000000000000000";
+		expect(executorStanding(lane(funded, [5, 6], true), gwei).stuck).toBe(
+			false,
+		);
+		expect(executorStanding(lane(funded, [5, 6], false), gwei)).toMatchObject({
+			level: "warn",
+			stuck: true,
+		});
+		expect(executorStanding(lane(funded, [5, 7], true), gwei).stuck).toBe(true);
+	});
+});
+
+describe("executor checks on a chain", () => {
+	it("lists each executor, and warns once where the bundler does not report them", () => {
+		const money = (wei: bigint) => `${wei} wei`;
+		const withLanes = chainChecks(
+			{
+				...healthy,
+				bundler: {
+					reachable: true,
+					entryPointSupported: true,
+					gasPriceWei: "1000000000",
+					executors: [
+						{
+							address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+							balanceWei: "0",
+							busy: false,
+							latestNonce: 0,
+							pendingNonce: 0,
+						},
+					],
+				},
+			},
+			money,
+		).filter((check) => check.id.includes("executor"));
+		expect(withLanes).toEqual([
+			expect.objectContaining({
+				id: "chain-84532-executor-0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+				level: "fail",
+				label: "bundler executor 1",
+				detail:
+					"0x90F79bf6EB2c4f870365E785982E1f101E93b906: 0 wei, nothing to pay gas with; idle",
+			}),
+		]);
+		expect(withLanes[0].remedy).toContain("Fund this address on Base Sepolia");
+
+		const unknown = chainChecks(
+			{
+				...healthy,
+				bundler: {
+					reachable: true,
+					entryPointSupported: true,
+					executors: null,
+				},
+			},
+			money,
+		).filter((check) => check.id.includes("executor"));
+		expect(unknown).toEqual([
+			expect.objectContaining({ id: "chain-84532-executors", level: "warn" }),
+		]);
 	});
 });

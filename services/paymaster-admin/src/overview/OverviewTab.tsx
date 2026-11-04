@@ -18,6 +18,7 @@ import { SectionCard } from "../components/ui";
 import { UsageCard, useUsage } from "../components/usage";
 import { AddressLabel, Amount } from "../components/values";
 import { getAdminConfig } from "../config";
+import { useChains } from "../hooks/useChains";
 import { useImplementation } from "../hooks/useImplementation";
 import {
 	type AttentionItem,
@@ -44,7 +45,9 @@ export function OverviewTab({
 	overview: PaymasterOverview;
 	rows: readonly TenantRow[];
 }) {
-	const { timelockOperations } = useConsole();
+	const { timelockOperations, deployment } = useConsole();
+	const { platformApi } = getAdminConfig();
+	const chains = useChains(platformApi);
 	const now = useNow(30_000) / 1000;
 	const items = groupAttention(
 		attentionItems({
@@ -54,7 +57,10 @@ export function OverviewTab({
 				(operation) => operation.state === "ready",
 			),
 			now,
-			platformApi: getAdminConfig().platformApi,
+			platformApi,
+			chain: chains.status?.chains.find(
+				(entry) => entry.chainId === deployment.chainId,
+			),
 		}),
 	);
 	const { solvency, stake } = overview;

@@ -418,6 +418,17 @@ test.describe("admin console", () => {
 			await expect(
 				chain.getByTestId(`check-chain-${chainId}-bundler`),
 			).toContainText("lists the configured EntryPoint");
+			// the bundler's one executor here (anvil account 0), with its balance and what it pays for
+			const executor = chain.getByTestId(
+				`check-chain-${chainId}-executor-0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266`,
+			);
+			await expect(executor).toContainText("bundler executor 1");
+			await expect(executor).toContainText(
+				"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+			);
+			await expect(executor).toContainText(
+				"submissions at the current gas price",
+			);
 			// an idle devnet's head is old by design; it is shown, not failed
 			await expect(chain).not.toContainText("failing");
 		}
