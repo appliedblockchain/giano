@@ -362,16 +362,20 @@ export function recoveryVerified(
 
 /**
  * MC-22 for a chain coming back after being unavailable: its probe address must equal the served
- * chains'. Returns the refusal, or null when it may be served. On null the caller records the probe
- * in `served`, so the first chain admitted sets the reference and recoveries that come back together
- * are compared with each other (the check and the update run in one synchronous step).
+ * chains', and, when the chain was admitted before, the probe it was admitted with (its wallets keep
+ * the addresses that factory derived, even when it is the only chain). Returns the refusal, or null
+ * when it may be served. On null the caller records the probe in `served`, so the first chain
+ * admitted sets the reference and recoveries that come back together are compared with each other
+ * (the check and the update run in one synchronous step).
  */
 export function recoveryDivergence(
 	served: ReadonlyMap<number, string>,
 	chainId: number,
 	probeAddress: string,
 ): string | null {
-	return probeDivergence(
-		new Map([...served, [chainId, probeAddress.toLowerCase()]]),
-	);
+	const probe = probeAddress.toLowerCase();
+	const previous = served.get(chainId)?.toLowerCase();
+	if (previous !== undefined && previous !== probe)
+		return `address-identity violation: chain ${chainId} now derives ${probe} for the probe owner, but it was admitted deriving ${previous}; its existing wallets keep the old addresses (MC-16, MC-22)`;
+	return probeDivergence(new Map([...served, [chainId, probe]]));
 }

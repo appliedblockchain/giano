@@ -734,6 +734,29 @@ describe("verifyChain", () => {
 		).toBeNull();
 	});
 
+	it("a recovering chain is also compared with the probe it was admitted with, even alone", () => {
+		const admitted = new Map([
+			[10, "0x00000000000000000000000000000000000abcde"],
+		]);
+		expect(
+			recoveryDivergence(
+				admitted,
+				10,
+				"0x00000000000000000000000000000000000ABCDE",
+			),
+		).toBeNull();
+		// Its RPC now serves a factory deriving another address: its wallets keep the old ones.
+		expect(
+			recoveryDivergence(
+				admitted,
+				10,
+				"0x00000000000000000000000000000000000fffff",
+			),
+		).toContain(
+			"chain 10 now derives 0x00000000000000000000000000000000000fffff for the probe owner, but it was admitted deriving 0x00000000000000000000000000000000000abcde",
+		);
+	});
+
 	it("a recovering chain whose verification aborts part-way is not admitted", async () => {
 		const healthy = await verifyChain(descriptor, fakeClient({}), fakeRelease);
 		expect(recoveryVerified(healthy)).toBe(true);

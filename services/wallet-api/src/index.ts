@@ -55,10 +55,15 @@ const registry = app.chains;
 // implementation and paymaster, and the live factory cross-check. Structural misconfiguration
 // refuses start-up; mere unreachability does not (S7, MC-92): the deployment starts,
 // marks that chain unavailable, serves its other chains and retries in the background.
-/** The probe address each served chain's factory derives (MC-22); a recovering chain must match it. */
+/**
+ * The probe address each admitted chain's factory derives (MC-22); a recovering chain must match it.
+ * Only a completed verification (recoveryVerified) enters it: a probe read before a later check
+ * timed out belongs to a chain that was never admitted, and must not become the reference.
+ */
 const servedProbes = new Map<number, string>();
 {
-	const probeAddresses = servedProbes;
+	// Every probe read at boot, admitted or not: any divergence among them refuses start-up.
+	const probeAddresses = new Map<number, string>();
 	let fatal = false;
 	for (const chain of registry.all) {
 		const verification = await verifyChain(
@@ -89,6 +94,8 @@ const servedProbes = new Map<number, string>();
 				chain.chainId,
 				verification.probeAddress.toLowerCase(),
 			);
+		if (recoveryVerified(verification))
+			servedProbes.set(chain.chainId, verification.probeAddress.toLowerCase());
 	}
 	// MC-22: every served chain's factory must derive the SAME address for the same owner.
 	// Comparing addresses alone would miss a factory at the right address running different
