@@ -907,6 +907,31 @@ describe("rpc relay (JSON-RPC reads)", () => {
 		}
 	});
 
+	it("bounds eth_getLogs to RPC_RELAY_MAX_LOG_BLOCKS", async () => {
+		const logs = (filter: Record<string, unknown>) =>
+			rpc("eth_getLogs", [
+				{ address: "0x2222222222222222222222222222222222222222", ...filter },
+			]);
+		for (const filter of [
+			{ fromBlock: "0x0", toBlock: `0x${(9_999).toString(16)}` }, // exactly the limit
+			{ blockHash: `0x${"ab".repeat(32)}` },
+		]) {
+			const { body } = await logs(filter);
+			expect(body.error, JSON.stringify(filter)).toBeUndefined();
+		}
+		for (const filter of [
+			{ fromBlock: "earliest", toBlock: "latest" },
+			{ fromBlock: "0x0" },
+			{ fromBlock: "0x0", toBlock: `0x${(10_000).toString(16)}` },
+		]) {
+			const { body } = await logs(filter);
+			expect(body.error, JSON.stringify(filter)).toMatchObject({
+				code: -32602,
+			});
+			expect(body.error?.message).toContain("10000 blocks");
+		}
+	});
+
 	it("resolves the sole chain when the path names none, and refuses an unserved one", async () => {
 		expect((await rpc("eth_chainId", [], "/v1/rpc")).body.result).toBe(
 			"0x7a69",

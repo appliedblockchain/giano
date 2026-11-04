@@ -376,6 +376,8 @@ const envSchema = z
 			.int()
 			.positive()
 			.default(3000),
+		/** The widest eth_getLogs range the tenant RPC read relay forwards. The Origin check is spoofable, so this bounds what one request can cost. */
+		RPC_RELAY_MAX_LOG_BLOCKS: z.coerce.number().int().positive().default(10000),
 
 		/** When set (non-empty), GET /metrics requires this bearer token; unset = open (dev only). */
 		METRICS_BEARER_TOKEN: z
