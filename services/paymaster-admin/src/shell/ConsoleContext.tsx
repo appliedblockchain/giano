@@ -13,6 +13,7 @@ import {
 import type { Address } from "viem";
 import type { Deployment } from "../config";
 import type { TimelockOperationsState } from "../hooks/usePendingOperations";
+import type { TimelockAccess } from "../hooks/useTimelockConfig";
 import type { ConnectedWallet } from "../lib/chain";
 import type { Propose } from "../lib/proposals";
 
@@ -36,6 +37,8 @@ export type ConsoleContextValue = {
 	/** The block the last refresh read the paymaster at. */
 	block: bigint | undefined;
 	timelockOperations: TimelockOperationsState;
+	/** The timelock's delays and what the connected wallet may do on it. */
+	timelockAccess: TimelockAccess;
 	/** Threshold and owners of each configured Safe, by lowercase address. */
 	safes: Readonly<Record<string, SafeInfo>>;
 };

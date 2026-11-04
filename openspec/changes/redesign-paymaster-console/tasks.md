@@ -78,18 +78,18 @@
 
 ## 8. Timelock
 
-- [ ] 8.1 SDK: proposal-call helpers for `updateDelay`, `setFunctionDelay` and timelock role grants and revokes, with tests and a changeset (N6).
-- [ ] 8.2 Operations list:
+- [x] 8.1 SDK: proposal-call helpers for `updateDelay`, `setFunctionDelay` and timelock role grants and revokes, with tests and a changeset (N6).
+- [x] 8.2 Operations list:
   - a Pending/Done/Cancelled/All filter;
   - the log window sized to the longest delay;
   - full ids;
   - schedule and execute tx links;
   - read incrementally instead of every window on each poll (K5).
-- [ ] 8.3 Schedule, execute and cancel sent directly by a PROPOSER, EXECUTOR or CANCELLER wallet; a cancel batch for incomplete operations (N4).
-- [ ] 8.4 Proposal dialog: multi-call, salt, delay and predecessor; operation id; copy calldata; Safe schedule, execute and cancel batches (N5).
-- [ ] 8.5 Delays table with Propose change; the timelock's own PROPOSER, CANCELLER and EXECUTOR holders with Propose grant/revoke (N6).
-- [ ] 8.6 Summary: address, minimum delay, who proposes, cancels and executes (checked against the configured addresses, saying the timelock cannot list them), and what the connected wallet may do (G9).
-- [ ] 8.7 e2e: schedule from a PROPOSER wallet, execute, cancel, and a rotation batch on the e2e timelock.
+- [x] 8.3 Schedule, execute and cancel sent directly by a PROPOSER, EXECUTOR or CANCELLER wallet; a cancel batch for incomplete operations (N4).
+- [x] 8.4 Proposal dialog: multi-call, salt, delay and predecessor; operation id; copy calldata; Safe schedule, execute and cancel batches (N5).
+- [x] 8.5 Delays table with Propose change; the timelock's own PROPOSER, CANCELLER and EXECUTOR holders with Propose grant/revoke (N6).
+- [x] 8.6 Summary: address, minimum delay, who proposes, cancels and executes (checked against the configured addresses, saying the timelock cannot list them), and what the connected wallet may do (G9).
+- [x] 8.7 e2e: schedule from a PROPOSER wallet, execute, cancel, and a rotation batch on the e2e timelock. The baked devnet state has no timelock and the rest of the suite needs admin-console to keep every role, so `timelock-console.spec.ts` deploys its own 2-second GianoTimelock from the v2 release, points the console at it through `/config.json`, and takes back what it grants.
 
 ## 9. Overview
 

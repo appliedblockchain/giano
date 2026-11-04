@@ -25,7 +25,13 @@ export function useWrite(refresh: () => Promise<void>) {
 			try {
 				const result = await send();
 				notifySuccess(`${label} submitted`, result.hash);
-				await result.wait();
+				// Mined is not the same as succeeded: a reverted transaction has a receipt too, and
+				// announcing it as confirmed tells the operator something happened that did not.
+				const receipt = await result.wait();
+				if (receipt.status !== "success")
+					throw new Error(
+						`The transaction ${result.hash} was mined but reverted, so nothing changed.`,
+					);
 				notifySuccess(`${label} confirmed`);
 				await refresh();
 				return true;

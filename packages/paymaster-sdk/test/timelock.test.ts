@@ -150,6 +150,7 @@ function chain(options: ChainOptions = {}) {
 				(log) => log.blockNumber >= fromBlock && log.blockNumber <= toBlock,
 			);
 		},
+		estimateContractGas: async () => 100_000n,
 		simulateContract: async (params: Record<string, unknown>) => {
 			simulated.push(params);
 			return { request: params };
@@ -515,6 +516,43 @@ describe("proposals", () => {
 			["upgradeToAndCall", 3600n],
 		]);
 		expect(cases[0].decoded[0]?.args).toEqual([TENANT_HEX, true, 5n]);
+	});
+
+	it("proposes the timelock's own delays and roles as calls on the timelock", async () => {
+		const { client } = chain();
+		const client_ = timelock(client);
+		const cases = await Promise.all([
+			client_.proposeUpdateDelay(7200n),
+			client_.proposeSetFunctionDelay("setDefaultFee", 86_400n),
+			client_.proposeGrantTimelockRole("PROPOSER_ROLE", EXECUTOR),
+			client_.proposeRevokeTimelockRole("CANCELLER_ROLE", EXECUTOR),
+		]);
+		expect(cases.map((proposal) => proposal.calls[0].target)).toEqual([
+			TIMELOCK,
+			TIMELOCK,
+			TIMELOCK,
+			TIMELOCK,
+		]);
+		expect(cases.map((proposal) => proposal.decoded[0]?.summary)).toEqual([
+			"set the timelock's minimum delay to 2h",
+			"set the delay of setDefaultFee to 1d",
+			`grant PROPOSER_ROLE on the timelock to ${EXECUTOR}`,
+			`revoke CANCELLER_ROLE on the timelock from ${EXECUTOR}`,
+		]);
+		expect(cases[1].decoded[0]?.args).toEqual([
+			PAYMASTER,
+			paymasterSelector("setDefaultFee"),
+			86_400n,
+		]);
+	});
+
+	it("encodes cancel for an id alone, for an operation whose scheduling was not read", () => {
+		const id = `0x${"77".repeat(32)}` as Hex;
+		const data = timelock(chain().client).cancelCalldata(id);
+		expect(decodeFunctionData({ abi: gianoTimelockAbi, data })).toEqual({
+			functionName: "cancel",
+			args: [id],
+		});
 	});
 
 	it("asks for the batch delay — the longest of its calls — for several calls", async () => {
