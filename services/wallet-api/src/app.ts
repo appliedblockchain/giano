@@ -185,6 +185,7 @@ export async function buildApp({
 		fetchImpl,
 		signer,
 		paymasterReader,
+		log: app.log,
 		onDecision: (chainId) => (event) => {
 			// Slugs, not uuids, as metric labels: bounded cardinality and readable on a dashboard.
 			// Resolving the slug is a lookup we deliberately skip here — the tenant id is already on

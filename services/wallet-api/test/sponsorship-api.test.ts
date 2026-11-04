@@ -110,7 +110,7 @@ type RpcResult = {
 		data?: {
 			reason: string;
 			retryable: boolean;
-			ruleResults: Array<{ rule: string; passed: boolean }>;
+			ruleResults: Array<{ rule: string; passed: boolean; detail?: string }>;
 		};
 	};
 };
@@ -570,6 +570,13 @@ describe("availability", () => {
 		);
 		expect(body.error?.data?.reason).toBe("temporarily-unavailable");
 		expect(body.error?.data?.retryable).toBe(true);
+		// The raw error stays in the server log: the client sees only a fixed detail.
+		expect(
+			body.error?.data?.ruleResults.find(
+				(r) => r.rule === "paymaster-reachable",
+			)?.detail,
+		).toBe("paymaster read failed");
+		expect(JSON.stringify(body)).not.toContain("chain unreachable");
 	});
 });
 
