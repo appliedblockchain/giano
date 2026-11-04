@@ -10437,11 +10437,61 @@
                                   "boolean",
                                   "null"
                                 ]
+                              },
+                              "gasPriceWei": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "executors": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "address": {
+                                          "type": "string"
+                                        },
+                                        "balanceWei": {
+                                          "type": "string"
+                                        },
+                                        "busy": {
+                                          "type": "boolean"
+                                        },
+                                        "latestNonce": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "pendingNonce": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "address",
+                                        "balanceWei",
+                                        "busy",
+                                        "latestNonce",
+                                        "pendingNonce"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
                               "reachable",
-                              "entryPointSupported"
+                              "entryPointSupported",
+                              "gasPriceWei",
+                              "executors"
                             ],
                             "additionalProperties": false
                           },
