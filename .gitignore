@@ -20,6 +20,7 @@ playwright-report/
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
 crash.log
 # real values; terraform.tfvars.example is committed
 **/terraform.tfvars
