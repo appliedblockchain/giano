@@ -186,16 +186,28 @@ function selectorOf(data: Hex): Hex | null {
 }
 
 /**
- * The wallet's own entry points for running arbitrary calls.
+ * The wallet functions that can run calls or code they carry as a payload.
  *
- * A self-call to one of these is not wallet management. It runs whatever calls it wraps, and the
- * allowlist never sees them. `MultiOwnable` accepts `msg.sender == address(this)`, so without this
- * check `execute(self, 0, execute(anyTarget, …))` would pass as a sponsored self-call.
+ * A self-call to one of these is not wallet management, because the allowlist never sees what it
+ * runs. `MultiOwnable` accepts `msg.sender == address(this)`, so without this check
+ * `execute(self, 0, execute(anyTarget, …))` would pass as a sponsored self-call.
+ *
+ * - `execute`, `executeBatch` and `executeWithoutChainIdValidation` run the calls they wrap.
+ * - `upgradeToAndCall` delegatecalls its payload as the wallet, so the payload can call `execute`.
+ *   It can also switch the wallet to any implementation, which then runs any code. Upgrades are
+ *   therefore not sponsored. A future upgrade flow can sponsor upgrades to the canonical
+ *   implementation only.
  */
-export const NESTED_EXECUTE_SELECTORS: ReadonlySet<Hex> = new Set(
-	(["execute", "executeBatch", "executeWithoutChainIdValidation"] as const).map(
-		(name) =>
-			toFunctionSelector(getAbiItem({ abi: gianoSmartWalletAbi, name })),
+export const WRAPPING_SELF_CALL_SELECTORS: ReadonlySet<Hex> = new Set(
+	(
+		[
+			"execute",
+			"executeBatch",
+			"executeWithoutChainIdValidation",
+			"upgradeToAndCall",
+		] as const
+	).map((name) =>
+		toFunctionSelector(getAbiItem({ abi: gianoSmartWalletAbi, name })),
 	),
 );
 
@@ -203,18 +215,18 @@ function isSelfCall(call: InnerCall, sender: Address): boolean {
 	return call.target.toLowerCase() === sender.toLowerCase();
 }
 
-/** A self-call that re-enters the wallet's execute functions, hiding its inner calls. */
-function isNestedExecute(call: InnerCall, sender: Address): boolean {
+/** A self-call that runs a payload the allowlist cannot check. */
+function isWrappingSelfCall(call: InnerCall, sender: Address): boolean {
 	return (
 		isSelfCall(call, sender) &&
 		call.selector !== null &&
-		NESTED_EXECUTE_SELECTORS.has(call.selector)
+		WRAPPING_SELF_CALL_SELECTORS.has(call.selector)
 	);
 }
 
-/** A self-call that administers the wallet: owner changes, upgrades, and the like. */
+/** A self-call that administers the wallet: adding or removing owners, and the like. */
 function isSelfAdministration(call: InnerCall, sender: Address): boolean {
-	return isSelfCall(call, sender) && !isNestedExecute(call, sender);
+	return isSelfCall(call, sender) && !isWrappingSelfCall(call, sender);
 }
 
 export function evaluateSponsorship(
@@ -296,25 +308,26 @@ export function evaluateSponsorship(
 			"contract-not-allowed",
 			"the operation contains no calls",
 		);
-	} else if (calls.some((call) => isNestedExecute(call, candidate.sender))) {
+	} else if (calls.some((call) => isWrappingSelfCall(call, candidate.sender))) {
 		refuse(
 			"decodable-calls",
 			"contract-not-allowed",
-			"a call from the wallet to its own execute/executeBatch hides its inner calls from the allowlist",
+			"a call from the wallet to its own execute/executeBatch/upgradeToAndCall runs a payload the allowlist cannot check",
 		);
 	} else {
 		pass("decodable-calls", `${calls.length} inner call(s)`);
 	}
 
 	// 4. Wallet management, detected structurally: a call from the wallet to itself is
-	//    addOwner / removeOwner / upgradeToAndCall. Detecting it by shape rather than by a
-	//    selector list cuts both ways, which is why it is the right test — a self-administration
-	//    function added to the wallet later can neither become sponsorable by omission nor become
-	//    *unsponsorable* by omission.
+	//    addOwner / removeOwner. Detecting it by shape rather than by a selector list cuts both
+	//    ways, which is why it is the right test — a self-administration function added to the
+	//    wallet later can neither become sponsorable by omission nor become *unsponsorable* by
+	//    omission.
 	//
-	//    The one exception is a self-call to the wallet's own execute functions. That is not
-	//    self-administration: it runs arbitrary inner calls. Rule 3 refuses it, and it is excluded
-	//    here so it can never gain the wallet-management cap or skip the allowlist.
+	//    The exception is a self-call to execute, executeBatch, executeWithoutChainIdValidation or
+	//    upgradeToAndCall. That is not self-administration: it runs a payload the allowlist cannot
+	//    check (see WRAPPING_SELF_CALL_SELECTORS). Rule 3 refuses it, and it is excluded here so it
+	//    can never gain the wallet-management cap or skip the allowlist.
 	//
 	//    These transactions are sponsored. A user acquiring a second device holds no native token
 	//    and has no way to obtain one, so an unsponsored recovery path does not work for the users
@@ -390,8 +403,8 @@ export function evaluateSponsorship(
 
 	for (const call of calls ?? []) {
 		// A self-call is governed by rule 4, not by the allowlist — a tenant should not have to
-		// allow-list its users' own wallet addresses, which it cannot know in advance. A nested
-		// execute is not skipped, so it also fails here if rule 3 is ever changed.
+		// allow-list its users' own wallet addresses, which it cannot know in advance. A wrapping
+		// self-call is not skipped, so it also fails here if rule 3 is ever changed.
 		if (isSelfAdministration(call, candidate.sender)) continue;
 
 		const allowed = byContract.get(call.target.toLowerCase() as Address);
