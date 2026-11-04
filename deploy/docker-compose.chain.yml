@@ -34,8 +34,9 @@ services:
     environment:
       GIANO_CHAINS: *giano-chains
       BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS in the selected operator file}
+    # Loopback only: unauthenticated RPC with a funded key. wallet-api uses http://bundler:4337.
     ports:
-      - '4337:4337'
+      - '127.0.0.1:4337:4337'
 
   postgres:
     image: postgres:17-alpine
