@@ -24,8 +24,8 @@ import {
 /**
  * The JSON-RPC surface wallet-api speaks to, which is the ERC-4337 subset it used with Alto:
  * eth_sendUserOperation, eth_estimateUserOperationGas, eth_getUserOperationReceipt,
- * eth_getUserOperationByHash, eth_supportedEntryPoints and eth_chainId. Anything else is
- * method-not-found. One endpoint per chain, `POST /<chainId>`: a bundler client is configured with
+ * eth_getUserOperationByHash, eth_supportedEntryPoints and eth_chainId; and `giano_executors`, the
+ * executor lanes for wallet-api's chain status (B7). Anything else is method-not-found. One endpoint per chain, `POST /<chainId>`: a bundler client is configured with
  * one URL and names no chain in its calls. Errors are HTTP 200 with a JSON-RPC error object; a
  * request for a chain this process does not serve, or cannot serve yet, gets an HTTP error.
  */
@@ -93,6 +93,24 @@ export function createMethods(context: RpcContext) {
 		eth_chainId: async () => hex(BigInt(chainId)),
 
 		eth_supportedEntryPoints: async () => [entryPoint],
+
+		/**
+		 * Each executor's address, balance, lane and nonces on this chain, and the chain's gas price, so
+		 * wallet-api can show whether submission is funded. Addresses only: a key never leaves here.
+		 */
+		giano_executors: async () => {
+			const status = await submitter.executorStatus();
+			return {
+				gasPriceWei: hex(status.gasPrice),
+				executors: status.executors.map((executor) => ({
+					address: executor.address,
+					balanceWei: hex(executor.balance),
+					busy: executor.busy,
+					latestNonce: hex(BigInt(executor.latestNonce)),
+					pendingNonce: hex(BigInt(executor.pendingNonce)),
+				})),
+			};
+		},
 
 		eth_estimateUserOperationGas: async (raw: unknown[]) => {
 			if (raw.length > 2) {

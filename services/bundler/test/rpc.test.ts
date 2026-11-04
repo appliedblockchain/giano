@@ -23,6 +23,25 @@ const context = {
 			sent.push(op);
 			return `0x${"ab".repeat(32)}`;
 		},
+		executorStatus: async () => ({
+			gasPrice: 1_000_000_000n,
+			executors: [
+				{
+					address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+					balance: 10n ** 18n,
+					busy: true,
+					latestNonce: 41,
+					pendingNonce: 42,
+				},
+				{
+					address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+					balance: 0n,
+					busy: false,
+					latestNonce: 0,
+					pendingNonce: 0,
+				},
+			],
+		}),
 	},
 	lookup: { receipt: async () => null, byHash: async () => null },
 	metrics: createMetrics(),
@@ -57,6 +76,38 @@ describe("JSON-RPC", () => {
 				params: [],
 			}),
 		).toEqual({ jsonrpc: "2.0", id: "a", result: [entryPoint] });
+	});
+
+	it("reports each executor lane for chain status, by address and never by key", async () => {
+		const response = await call({
+			jsonrpc: "2.0",
+			id: 7,
+			method: "giano_executors",
+		});
+		expect(response).toEqual({
+			jsonrpc: "2.0",
+			id: 7,
+			result: {
+				gasPriceWei: "0x3b9aca00",
+				executors: [
+					{
+						address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+						balanceWei: "0xde0b6b3a7640000",
+						busy: true,
+						latestNonce: "0x29",
+						pendingNonce: "0x2a",
+					},
+					{
+						address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+						balanceWei: "0x0",
+						busy: false,
+						latestNonce: "0x0",
+						pendingNonce: "0x0",
+					},
+				],
+			},
+		});
+		expect(JSON.stringify(response)).not.toMatch(/privateKey|[0-9a-f]{64}/i);
 	});
 
 	it("refuses unsupported 7702 and parallel-paymaster fields instead of discarding them", async () => {
