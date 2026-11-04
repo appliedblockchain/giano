@@ -324,4 +324,55 @@ contract ValidationTest is PaymasterTestBase {
         vm.expectRevert(abi.encodeWithSelector(GianoPaymaster.TenantInDeficit.selector, TENANT_B, deficit));
         _validate(op, 0.001 ether);
     }
+
+    /// @dev The configured fee is timelocked; the signer set is not. A correctly signed
+    ///      authorisation must still not charge more than the configured fee.
+    function test_validate_rejectsAFeeAboveTheConfiguredFee() public {
+        uint128 inflated = DEFAULT_FEE_WEI + 1;
+        PackedUserOperation memory op = _sponsoredOp(
+            _defaultOpParams(wallet),
+            TENANT_A,
+            uint48(block.timestamp + 120),
+            0,
+            inflated
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(GianoPaymaster.FeeAboveConfigured.selector, TENANT_A, inflated, DEFAULT_FEE_WEI)
+        );
+        _validate(op, 0.001 ether);
+    }
+
+    function test_validate_acceptsAFeeBelowTheConfiguredFee() public {
+        uint128 discounted = DEFAULT_FEE_WEI - 1;
+        PackedUserOperation memory op = _sponsoredOp(
+            _defaultOpParams(wallet),
+            TENANT_A,
+            uint48(block.timestamp + 120),
+            0,
+            discounted
+        );
+
+        (bytes memory ctx, ) = _validate(op, 0.001 ether);
+        (, uint128 feeWei, , , ) = abi.decode(ctx, (bytes16, uint128, uint256, address, bytes32));
+        assertEq(feeWei, discounted);
+    }
+
+    /// @dev A tenant override replaces the default as the ceiling, in both directions.
+    function test_validate_checksTheFeeAgainstTheTenantOverride() public {
+        uint128 overrideFee = DEFAULT_FEE_WEI / 2;
+        vm.prank(feeAdmin);
+        paymaster.setTenantFee(TENANT_A, true, overrideFee);
+
+        // the default fee is now above this tenant's ceiling
+        PackedUserOperation memory op = _validOp();
+        vm.expectRevert(
+            abi.encodeWithSelector(GianoPaymaster.FeeAboveConfigured.selector, TENANT_A, DEFAULT_FEE_WEI, overrideFee)
+        );
+        _validate(op, 0.001 ether);
+
+        // the override itself is accepted
+        op = _sponsoredOp(_defaultOpParams(wallet), TENANT_A, uint48(block.timestamp + 120), 0, overrideFee);
+        _validate(op, 0.001 ether);
+    }
 }
