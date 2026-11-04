@@ -371,7 +371,9 @@ function Console({
 							<Alert.Indicator />
 							<Alert.Content>
 								<Alert.Title>Could not read the paymaster</Alert.Title>
-								<Alert.Description>{error}</Alert.Description>
+								<Alert.Description overflowWrap="anywhere">
+									{error}
+								</Alert.Description>
 							</Alert.Content>
 						</Alert.Root>
 					)}
