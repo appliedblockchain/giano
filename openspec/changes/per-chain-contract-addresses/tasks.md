@@ -67,3 +67,13 @@
 - [ ] 7.6 wallet-api admits a recovering chain only after a complete verification: no failure of any kind and a probe address (`recoveryVerified`).
 - [ ] 7.7 A keyless plan checks the class deployer's balance; the wizard explains an unreadable deployment record.
 - [ ] 7.8 One ERC-1967 implementation reader (`erc1967.ts`) for the planner, preflight, doctor and wallet-api; one changeset per feature.
+
+## 8. Review fixes (second stack review)
+
+- [ ] 8.1 Spec and D4: the expected address of a recorded canonical upgrade target is its versioned label's, and the actual address resolves override, recorded, expected, signer, so a keyless run verifies a recorded non-canonical deployment where it is. Add the post-upgrade and keyless-recorded scenarios.
+- [ ] 8.2 `integration.test.ts` passes the release it deployed (`v2`) to `releaseOf`.
+- [ ] 8.3 `gen:addresses` accepts a recorded release that is any of the releases sharing the fingerprint. Verify with a `registry.test.ts` case for a release that leaves contracts unchanged.
+- [ ] 8.4 `deploy:cli` refuses a deployment record that states another network class than the one it resolved, before any command proceeds. Verify with a CLI test.
+- [ ] 8.5 `deploy:cli core` runs `verifyCoreState` (implementation, ROLE_ADMIN, EntryPoint, fees, no deployer holding ROLE_ADMIN) before `deployCore`, including verify-only runs; its fees are the flags, else the profile's. Verify with a `verifyCoreState` test for the CLI's configuration.
+- [ ] 8.6 The deployer image and Helm Job accept the chain's profile and committed record (`CHAIN_PROFILE_JSON`, `DEPLOYMENT_RECORD_JSON`; `deployer.chainProfile`, `deployer.deploymentRecord`), so a chain at non-deterministic addresses is verified where it is.
+- [ ] 8.7 wallet-api compares a recovering chain with the probe it was admitted with, and seeds the served probes only from completed boot verifications (`recoveryVerified`).

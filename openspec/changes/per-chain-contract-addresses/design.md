@@ -102,15 +102,31 @@ Unknown keys stay refused, matching the profile schema's existing strictness. Th
 `"network": "testnet"` and move to release `v2`.
 
 ### D4. Planning computes expected and actual addresses, then classifies deviations
-The wizard and `deploy:cli` build a plan per contract: the expected address (CREATE3 of the class deployer and the
-label), the actual address (the override, or CREATE3 of the signing key's address and the label), and the code found
-there. Either address can be unresolved, shown as `(none)` or `(unknown)`:
+The wizard and `deploy:cli` build a plan per contract: the expected address, the actual address, and the code found
+there.
+
+The expected address is CREATE3 of the class deployer and the label. For an implementation the chain was upgraded to,
+which the record lists among its `upgrades` at CREATE3 of the class deployer and the target's versioned label
+(`giano.paymaster.impl@v3`), it is that address instead (`canonicalUpgrade`, `placementOf`). Such a target is where
+every chain of the class has the upgrade: it is deterministic, never a deviation, and exempt from the selected-release
+check, since it holds the release it was upgraded to.
+
+The actual address is, in order:
+1. the profile's override;
+2. the address the record lists, when it is not the expected one (or is a canonical upgrade target);
+3. the expected address, when it already holds code;
+4. CREATE3 of the signing key and the label.
+
+Either address can be unresolved, shown as `(none)` or `(unknown)`:
 - the expected address is unresolved while the class deployer is `null`. The plan then marks no deviation and carries
   the "deployer not configured" blocker;
-- a keyless plan (`--plan`, or a verify-only run) uses the expected address as the actual one, so a read-only plan
-  works whenever the class deployer is set. With neither a deployer nor a key, the actual address is unresolved, and
-  its code is reported as not checked. A deviation is any contract whose actual address differs from its expected one. If the signing key is not the
-class deployer, every contract it would deploy is a deviation. Note that CreateX's permissioned salt makes a different
+- a keyless plan (`--plan`, or a verify-only run) has no step 4: with no override and no recorded address it uses the
+  expected address, so a read-only plan works whenever the class deployer is set, and a recorded non-canonical
+  deployment is verified where it is. With neither a deployer, a record nor a key, the actual address is
+  unresolved, and its code is reported as not checked.
+
+A deviation is any contract whose actual address differs from its expected one. If the signing key is not the class
+deployer, every contract it would deploy is a deviation. Note that CreateX's permissioned salt makes a different
 signer land at different addresses anyway: the tooling has to state that, not hide it.
 
 For `mainnet`, a deviation:

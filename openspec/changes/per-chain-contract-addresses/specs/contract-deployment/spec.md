@@ -8,6 +8,11 @@ Every chain profile SHALL declare its network class: `mainnet` or `testnet`. Loc
 - **WHEN** a chain profile has no `network` field, or an unknown value
 - **THEN** the profile is rejected, and the error lists the accepted classes
 
+#### Scenario: Record of another class
+- **WHEN** a run resolves a chain's class (from a profile or `--network`) differently from the class its deployment
+  record states
+- **THEN** it refuses before reading or signing anything else, naming both classes
+
 ### Requirement: One canonical deployer per network class
 The deploy configuration SHALL name one canonical deployer address per class. The mainnet and testnet deployers SHALL
 be different addresses whenever both are set; both MAY be unset. While a class's deployer is unset, the deploy tooling SHALL refuse to sign for any chain in
@@ -37,15 +42,35 @@ mainnet deployer SHALL NOT change any local-chain address.
 
 ### Requirement: Expected addresses are deterministic per class
 For each contract, the expected address on a chain SHALL be the CREATE3 address of the chain's class deployer and the
-contract's fixed label, so every chain in a class shares one set of expected addresses. A deployment run SHALL print,
-for every contract, the expected address, the address it will use, and whether that is a deviation. While the class
-deployer is unset, the expected address SHALL be shown as unresolved and no deviation SHALL be derived from it. A
-plan without a signing key SHALL use the expected address as the address it will use.
+contract's fixed label, so every chain in a class shares one set of expected addresses. One exception applies: an
+implementation the chain was upgraded to, which its deployment record lists among its upgrade targets at the CREATE3
+address of the class deployer and that target's versioned label (`giano.paymaster.impl@v3`), SHALL have that
+address as its expected address. It is where every chain of the class has that upgrade, so it is deterministic and
+not a deviation, whatever release it holds.
+
+A deployment run SHALL print, for every contract, the expected address, the address it will use, and whether that is
+a deviation. While the class deployer is unset, the expected address SHALL be shown as unresolved and no deviation
+SHALL be derived from it. The address a run uses SHALL be resolved in this order: the profile's override, then the
+address the chain's deployment record lists, then the expected address when it already holds code, and otherwise
+the CREATE3 address of the signing key. A plan without a signing key SHALL use the expected address only when neither
+an override nor a recorded address applies.
 
 #### Scenario: Default mainnet plan
 - **WHEN** an operator plans a deployment for a mainnet profile with no overrides
 - **THEN** every planned address is the CREATE3 address of the mainnet deployer and the contract's label, and none is
   marked as a deviation
+
+#### Scenario: Plan after a canonical paymaster upgrade
+- **WHEN** a chain's paymaster was upgraded by the class deployer, and its record lists the paymaster implementation
+  at the CREATE3 address of the class deployer and the versioned label
+- **THEN** the plan expects the paymaster implementation at that address, marks it deterministic, reports no
+  deviation for it, and does not refuse it for holding a release other than the selected one
+
+#### Scenario: Keyless verification of a recorded non-canonical deployment
+- **WHEN** a run without a signing key verifies a chain whose record lists a contract at an address other than the
+  expected one (deployed by another key, or confirmed as a deviation)
+- **THEN** it verifies the contract at the recorded address, reports it as a deviation, and does not report it
+  missing at the expected address
 
 ### Requirement: Profiles can override contract addresses
 A chain profile MAY override the address of the wallet implementation, the factory, the paymaster implementation
