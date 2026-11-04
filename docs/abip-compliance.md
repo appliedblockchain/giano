@@ -216,7 +216,7 @@ not use them.
 ### Refreshing a pinned digest
 
 Every `FROM` line keeps the human-readable tag next to the digest, for example
-`dhi.io/node:22-alpine3.22@sha256:…`. To refresh:
+`dhi.io/node:24-alpine3.23@sha256:…`. To refresh:
 
 1. Run `docker buildx imagetools inspect dhi.io/<repo>:<tag>` and take the **index** digest (the top-level `Digest:`
    line), not a per-platform manifest digest.

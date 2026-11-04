@@ -308,7 +308,7 @@ services:
   # exits 0 (see its `depends_on`), so a stack that cannot sponsor fails to come up instead of coming
   # up broken.
   sponsorship-provisioner:
-    image: node:22-alpine
+    image: node:24-alpine
     depends_on:
       wallet-api:
         condition: service_healthy
@@ -326,7 +326,7 @@ services:
   # stack brought up without this step shows raw calldata in the review screen — which reads as a
   # broken feature rather than an unconfigured one.
   tx-mapping-provisioner:
-    image: node:22-alpine
+    image: node:24-alpine
     depends_on:
       wallet-api:
         condition: service_healthy

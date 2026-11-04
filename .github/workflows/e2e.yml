@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           # 24, not 22: portless (the local proxy that serves the demo's names) requires it.
-          node-version: 24
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build packages

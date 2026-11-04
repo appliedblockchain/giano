@@ -370,7 +370,7 @@ services:
   # rather than baked, and needs no dependencies beyond node's builtins.
   # ════════════════════════════════════════════════════════════════════════════════════════
   sponsorship-provisioner:
-    image: node:22-alpine
+    image: node:24-alpine
     restart: 'no'
     depends_on:
       wallet-api:

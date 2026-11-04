@@ -7,7 +7,7 @@
 # GIANO_* variables, so exactly /bin/sh, envsubst and jq are copied in from the nginx -dev image
 # (docs/abip-compliance.md, SPA tool allow-list) and the script uses nothing else.
 
-FROM dhi.io/node:22-alpine3.23-dev@sha256:d3e27128c752bc57454dbb824f8ba770ecf211cc8098a471a8fbd68185dd053f AS build
+FROM dhi.io/node:24-alpine3.23-dev@sha256:93960e52ba08d91ed90a09d26c112752fa6b1ee64e5471716923d125c61c509f AS build
 RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
