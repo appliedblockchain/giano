@@ -35,6 +35,11 @@ const TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 const OTHER = "0x4444444444444444444444444444444444444444" as Address;
 const TRANSFER = "0xa9059cbb" as Hex;
 const APPROVE = "0x095ea7b3" as Hex;
+const ADD_OWNER = encodeFunctionData({
+	abi: gianoSmartWalletAbi,
+	functionName: "addOwnerAddress",
+	args: [OTHER],
+});
 const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 
 let ctx: SponsorshipTestContext;
@@ -468,7 +473,7 @@ describe("rule refusals", () => {
 	// must not be able to break its own users' account recovery.
 	it("sponsors wallet management with nothing about the wallet allow-listed", async () => {
 		const session = await newSession(`wallet-mgmt-${Math.random()}`);
-		const selfCall = execute(session.walletAddress, "0x0f0f3f95");
+		const selfCall = execute(session.walletAddress, ADD_OWNER);
 		await setConfig(ADMIN_KEY, generousConfig);
 
 		const body = await rpc(
@@ -481,7 +486,7 @@ describe("rule refusals", () => {
 
 	it("refuses wallet management only after the tenant explicitly opts out", async () => {
 		const session = await newSession(`wallet-mgmt-off-${Math.random()}`);
-		const selfCall = execute(session.walletAddress, "0x0f0f3f95");
+		const selfCall = execute(session.walletAddress, ADD_OWNER);
 
 		await setConfig(ADMIN_KEY, {
 			...generousConfig,
@@ -498,7 +503,7 @@ describe("rule refusals", () => {
 
 	it("refuses a wallet-management operation above the tenant's lowered cap, even under a generous tenant cap", async () => {
 		const session = await newSession(`wallet-mgmt-cap-${Math.random()}`);
-		const selfCall = execute(session.walletAddress, "0x0f0f3f95");
+		const selfCall = execute(session.walletAddress, ADD_OWNER);
 
 		await setConfig(ADMIN_KEY, {
 			...generousConfig,

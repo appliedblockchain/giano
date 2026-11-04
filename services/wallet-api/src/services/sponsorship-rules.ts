@@ -59,7 +59,7 @@ export type SponsorshipDecision = {
 	 * is decided, not after.
 	 */
 	capSource?: "tenant" | "platform" | "wallet-management-tenant";
-	/** True when the operation contains a call from the wallet to itself. */
+	/** True when the operation contains a call from the wallet to itself that adds or removes an owner. */
 	isWalletManagement: boolean;
 };
 
@@ -108,6 +108,8 @@ export type EvaluationInput = {
 	walletManagementCapWei: bigint;
 	/** The wallet address the session's credential owns. */
 	sessionWalletAddress: Address;
+	/** This chain's wallet factory. An operation that deploys the account must use it. */
+	factory: Address;
 	/** True when the stored configuration failed to parse, which is not the same as it being off. */
 	configUnparseable?: boolean;
 };
@@ -186,25 +188,32 @@ function selectorOf(data: Hex): Hex | null {
 }
 
 /**
- * The wallet functions that can run calls or code they carry as a payload.
+ * The only wallet functions a self-call can use to be sponsored as wallet management: adding and
+ * removing owners.
  *
- * A self-call to one of these is not wallet management, because the allowlist never sees what it
- * runs. `MultiOwnable` accepts `msg.sender == address(this)`, so without this check
- * `execute(self, 0, execute(anyTarget, …))` would pass as a sponsored self-call.
+ * This is a list of allowed functions, not a list of refused ones. `MultiOwnable` accepts
+ * `msg.sender == address(this)`, and several wallet functions run calls or code they carry as a
+ * payload:
  *
  * - `execute`, `executeBatch` and `executeWithoutChainIdValidation` run the calls they wrap.
- * - `upgradeToAndCall` delegatecalls its payload as the wallet, so the payload can call `execute`.
- *   It can also switch the wallet to any implementation, which then runs any code. Upgrades are
- *   therefore not sponsored. A future upgrade flow can sponsor upgrades to the canonical
- *   implementation only.
+ * - `upgradeToAndCall` delegatecalls its payload as the wallet, and can switch the wallet to any
+ *   implementation.
+ * - `signedStaticCall` calls any target with any calldata.
+ *
+ * A self-call to one of these runs calls the allowlist never sees, and the tenant pays for them.
+ * A list of refused functions misses the next such function. This list refuses it by default.
+ *
+ * The cost: a self-administration function added to the wallet later is not sponsored until it is
+ * added here. That failure is safe. The user is asked to pay gas, and the tenant's balance is not
+ * at risk.
  */
-export const WRAPPING_SELF_CALL_SELECTORS: ReadonlySet<Hex> = new Set(
+export const OWNER_MANAGEMENT_SELECTORS: ReadonlySet<Hex> = new Set(
 	(
 		[
-			"execute",
-			"executeBatch",
-			"executeWithoutChainIdValidation",
-			"upgradeToAndCall",
+			"addOwnerAddress",
+			"addOwnerPublicKey",
+			"removeOwnerAtIndex",
+			"removeLastOwner",
 		] as const
 	).map((name) =>
 		toFunctionSelector(getAbiItem({ abi: gianoSmartWalletAbi, name })),
@@ -215,18 +224,18 @@ function isSelfCall(call: InnerCall, sender: Address): boolean {
 	return call.target.toLowerCase() === sender.toLowerCase();
 }
 
-/** A self-call that runs a payload the allowlist cannot check. */
-function isWrappingSelfCall(call: InnerCall, sender: Address): boolean {
+/** A self-call that adds or removes an owner: the only self-call sponsored as wallet management. */
+function isOwnerManagement(call: InnerCall, sender: Address): boolean {
 	return (
 		isSelfCall(call, sender) &&
 		call.selector !== null &&
-		WRAPPING_SELF_CALL_SELECTORS.has(call.selector)
+		OWNER_MANAGEMENT_SELECTORS.has(call.selector)
 	);
 }
 
-/** A self-call that administers the wallet: adding or removing owners, and the like. */
-function isSelfAdministration(call: InnerCall, sender: Address): boolean {
-	return isSelfCall(call, sender) && !isWrappingSelfCall(call, sender);
+/** Any other self-call. It may run a payload the allowlist cannot check, so it is refused. */
+function isOtherSelfCall(call: InnerCall, sender: Address): boolean {
+	return isSelfCall(call, sender) && !isOwnerManagement(call, sender);
 }
 
 export function evaluateSponsorship(
@@ -294,6 +303,23 @@ export function evaluateSponsorship(
 		pass("sender-binding");
 	}
 
+	// 2b. An operation that deploys the account must use this chain's wallet factory. The factory
+	//     runs during validation, and the paymaster pays for it. The canonical factory's
+	//     `createAccount` accepts any caller, so another contract can call it to deploy the right
+	//     address, then make any other calls of its own at the tenant's expense.
+	if (
+		candidate.factory !== undefined &&
+		candidate.factory.toLowerCase() !== input.factory.toLowerCase()
+	) {
+		refuse(
+			"factory",
+			"contract-not-allowed",
+			`factory ${candidate.factory} is not this chain's wallet factory ${input.factory}`,
+		);
+	} else {
+		pass("factory");
+	}
+
 	// 3. Decode, or refuse. Never guess.
 	const calls = decodeInnerCalls(candidate.callData);
 	if (calls === null) {
@@ -308,33 +334,28 @@ export function evaluateSponsorship(
 			"contract-not-allowed",
 			"the operation contains no calls",
 		);
-	} else if (calls.some((call) => isWrappingSelfCall(call, candidate.sender))) {
+	} else if (calls.some((call) => isOtherSelfCall(call, candidate.sender))) {
+		// A self-call to anything but owner management may run a payload this rule cannot decode.
 		refuse(
 			"decodable-calls",
 			"contract-not-allowed",
-			"a call from the wallet to its own execute/executeBatch/upgradeToAndCall runs a payload the allowlist cannot check",
+			"a call from the wallet to itself is sponsored only to add or remove an owner",
 		);
 	} else {
 		pass("decodable-calls", `${calls.length} inner call(s)`);
 	}
 
-	// 4. Wallet management, detected structurally: a call from the wallet to itself is
-	//    addOwner / removeOwner. Detecting it by shape rather than by a selector list cuts both
-	//    ways, which is why it is the right test — a self-administration function added to the
-	//    wallet later can neither become sponsorable by omission nor become *unsponsorable* by
-	//    omission.
-	//
-	//    The exception is a self-call to execute, executeBatch, executeWithoutChainIdValidation or
-	//    upgradeToAndCall. That is not self-administration: it runs a payload the allowlist cannot
-	//    check (see WRAPPING_SELF_CALL_SELECTORS). Rule 3 refuses it, and it is excluded here so it
-	//    can never gain the wallet-management cap or skip the allowlist.
+	// 4. Wallet management: a call from the wallet to itself that adds or removes an owner (see
+	//    OWNER_MANAGEMENT_SELECTORS for why this is a list of allowed functions). Rule 3 refuses
+	//    every other self-call, and it is excluded here so it can never gain the wallet-management
+	//    cap or skip the allowlist.
 	//
 	//    These transactions are sponsored. A user acquiring a second device holds no native token
 	//    and has no way to obtain one, so an unsponsored recovery path does not work for the users
 	//    who need it. That is why the rule is the platform's and not an allowlist entry: a tenant
 	//    that forgot to list something must not be able to break account recovery.
 	const selfCalls = (calls ?? []).filter((call) =>
-		isSelfAdministration(call, candidate.sender),
+		isOwnerManagement(call, candidate.sender),
 	);
 	const isWalletManagement = selfCalls.length > 0;
 	const hasApplicationCalls = (calls ?? []).length > selfCalls.length;
@@ -403,9 +424,9 @@ export function evaluateSponsorship(
 
 	for (const call of calls ?? []) {
 		// A self-call is governed by rule 4, not by the allowlist — a tenant should not have to
-		// allow-list its users' own wallet addresses, which it cannot know in advance. A wrapping
+		// allow-list its users' own wallet addresses, which it cannot know in advance. Any other
 		// self-call is not skipped, so it also fails here if rule 3 is ever changed.
-		if (isSelfAdministration(call, candidate.sender)) continue;
+		if (isOwnerManagement(call, candidate.sender)) continue;
 
 		const allowed = byContract.get(call.target.toLowerCase() as Address);
 		if (!allowed) {
