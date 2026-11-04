@@ -4,11 +4,12 @@ import type {
 	HealthReport,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import { Button, Heading, HStack, Stack, Text } from "@chakra-ui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowRight, LuRefreshCw } from "react-icons/lu";
 import { StatusText } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { getAdminConfig } from "../config";
+import { driftChecks } from "../lib/drift";
 import { amount, describeError } from "../lib/format";
 import {
 	CHAIN_THRESHOLDS,
@@ -18,7 +19,7 @@ import {
 	HEALTH_GROUPS,
 	signerCheck,
 } from "../lib/health";
-import type { ChainsStatus } from "../lib/platform-api";
+import type { ChainDrift, ChainsStatus } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
 import { Link, tenantPath } from "../lib/router";
 import { compareLedger, type TenantRow } from "../lib/tenants";
@@ -50,11 +51,20 @@ export function HealthTab({
 	rows: readonly TenantRow[];
 }) {
 	const { platformApi } = getAdminConfig();
-	const ledger = useLedgerCheck(rows, platformApi);
+	const { deployment } = useConsole();
+	const drift = useDrift(platformApi, deployment.chainId);
+	// Where wallet-api reports drift for this chain, its comparison replaces the console's (D10):
+	// it knows the block the watcher reached. Until it has answered, the console waits rather than
+	// starting its own comparison, one request per tenant, for nothing.
+	const ledger = useLedgerCheck(rows, platformApi && drift.state === "absent");
 	const chains = useChains(platformApi);
-	const extra: HealthCheck[] = platformApi
-		? [registryRowsCheck(rows), ...(ledger.check ? [ledger.check] : [])]
-		: [];
+	const money = (wei: bigint) =>
+		`${amount(wei, deployment.nativeCurrency)} ${deployment.nativeCurrency.symbol}`;
+	const extra: HealthCheck[] = !platformApi
+		? []
+		: drift.chain
+			? driftChecks(drift.chain, money)
+			: [registryRowsCheck(rows), ...(ledger.check ? [ledger.check] : [])];
 	const chainRows = chains.status
 		? chains.status.chains.map((chain) => ({
 				chain,
@@ -119,8 +129,8 @@ export function HealthTab({
 								size="sm"
 								variant="ghost"
 								aria-label="Compare the ledger again"
-								loading={ledger.loading}
-								onClick={() => void ledger.run()}
+								loading={drift.chain ? drift.loading : ledger.loading}
+								onClick={() => void (drift.chain ? drift.read() : ledger.run())}
 							>
 								<LuRefreshCw />
 							</Button>
@@ -205,6 +215,60 @@ export function HealthTab({
 			)}
 		</Stack>
 	);
+}
+
+/**
+ * wallet-api's drift for the selected chain (B5), read when the tab opens and with each console
+ * refresh. `absent` where wallet-api does not serve the endpoint (D11), or does not sponsor this
+ * chain, so keeps no ledger for it: the console then compares for itself.
+ */
+function useDrift(enabled: boolean, chainId: number) {
+	const { run } = usePlatform();
+	const { block } = useConsole();
+	const [state, setState] = useState<"pending" | "served" | "absent">(
+		enabled ? "pending" : "absent",
+	);
+	const [chain, setChain] = useState<ChainDrift>();
+	const [loading, setLoading] = useState(false);
+	/** A wallet-api without the endpoint will not grow one between refreshes. */
+	const notServed = useRef(false);
+
+	const read = useCallback(async () => {
+		if (!enabled || notServed.current) return;
+		setLoading(true);
+		try {
+			const result = await run((api) => api.drift());
+			if (!result) return;
+			if (result.ok) {
+				const found = result.value.chains.find(
+					(entry) => entry.chainId === chainId,
+				);
+				setChain(found);
+				setState(found ? "served" : "absent");
+			} else if (result.error.status === 404) {
+				notServed.current = true;
+				setState("absent");
+			}
+			// any other failure: keep the last answer, and fall back if there never was one
+			else setState((current) => (current === "pending" ? "absent" : current));
+		} catch {
+			setState((current) => (current === "pending" ? "absent" : current));
+		} finally {
+			setLoading(false);
+		}
+	}, [enabled, run, chainId]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: read again with every console refresh
+	useEffect(() => {
+		void read();
+	}, [read, block]);
+
+	return {
+		state,
+		chain: state === "served" ? chain : undefined,
+		loading,
+		read,
+	};
 }
 
 /**
