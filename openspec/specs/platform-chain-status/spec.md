@@ -34,3 +34,16 @@ For each chain, the prober SHALL keep its last full verification and the time an
 #### Scenario: Healthy chain
 - **WHEN** a ready chain was probed 30 seconds ago
 - **THEN** its `lastProbe.at` is 30 seconds ago
+
+### Requirement: The bundler's executors are reported per chain
+giano-bundler SHALL answer `giano_executors` on each chain's endpoint with the chain's current gas price and, for every executor key it signs with, the executor's address, its native balance read when asked, whether its lane holds a transaction, and its latest and pending nonces. It SHALL NOT return a key.
+
+`GET /v1/platform/chains` SHALL report, for each chain, the bundler's executors and gas price within the bundler's timeout, and SHALL report them as unknown, not as a failure, where the bundler does not answer the method.
+
+#### Scenario: Two executors, one empty
+- **WHEN** the bundler signs with two executor keys and one has no balance on chain 84532
+- **THEN** that chain's entry lists both executors with their balances, the empty one at 0
+
+#### Scenario: Bundler without the method
+- **WHEN** the bundler answers `giano_executors` with a JSON-RPC error
+- **THEN** that chain's bundler is reachable and its executors are unknown
