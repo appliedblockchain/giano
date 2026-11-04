@@ -10,7 +10,7 @@ export default defineConfig({
 	outDir: "dist-deployer",
 	format: ["esm"],
 	platform: "node",
-	target: "node22",
+	target: "node24",
 	clean: true,
 	dts: false,
 	outExtensions: () => ({ js: ".mjs" }),

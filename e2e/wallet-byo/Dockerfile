@@ -18,7 +18,7 @@
 # runtime has no shell, no tini and no curl; it runs as node (1000:1000), and serve.mjs handles
 # SIGTERM itself — which is all tini was for.
 
-FROM dhi.io/node:22-alpine3.23-dev@sha256:d3e27128c752bc57454dbb824f8ba770ecf211cc8098a471a8fbd68185dd053f AS build
+FROM dhi.io/node:24-alpine3.23-dev@sha256:93960e52ba08d91ed90a09d26c112752fa6b1ee64e5471716923d125c61c509f AS build
 RUN corepack enable
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
@@ -49,7 +49,7 @@ RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-kit build
 
-FROM dhi.io/node:22-alpine3.23@sha256:920a7460ab7ac19ce6a9a38fb23b244bcfed1cf78705f7fe117195c58b307f4d
+FROM dhi.io/node:24-alpine3.23@sha256:ea44fbd46a8e11a9ffb9b2bd5c6e4722fa507fb86fef0ee8d92a020ce7c850a5
 # The whole tree, so pnpm's symlinks into node_modules/.pnpm stay internally consistent. The
 # pnpm store itself lives outside /repo and is left behind here.
 COPY --from=build --chown=1000:1000 /repo /repo

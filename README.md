@@ -20,10 +20,9 @@ A dApp integrates only `giano-connector` + a wallet URL; all wallet trust lives 
 
 ## Prerequisites
 
-- **Node 22.18 or later** and **pnpm** (`corepack enable`). The repo typechecks with TypeScript 7 —
+- **Node 24** (the version in `.nvmrc`; CI and every image use the same major) and **pnpm**
+  (`corepack enable`). The repo typechecks with TypeScript 7 —
   see [TypeScript toolchain](#typescript-toolchain).
-  The E2E demo needs **Node 24**, because [portless](https://github.com/vercel-labs/portless) — which
-  serves the demo's `*.localhost` addresses — requires it.
 - **Docker** (Compose) — for the local stacks, wallet-api integration tests, and E2E.
 - **`docker login dhi.io`** — every image builds on a [Docker Hardened Image](docs/abip-compliance.md)
   (ABIP-2), and `dhi.io` refuses anonymous pulls. Log in once with a Docker Hub account, which can be free; an
