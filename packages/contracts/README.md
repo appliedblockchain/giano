@@ -177,6 +177,10 @@ submodules and no network:
 
 CI regenerates all three and fails on drift.
 
+`@wagmi/cli` formats `generated.ts` with its Prettier defaults. The repository has no Prettier
+config on purpose. A Prettier config in a parent folder (for example `~/.prettierrc`) changes the
+output and fails the drift check.
+
 ```bash
 pnpm build:ts    # tsdown only — what prepublishOnly runs; needs no solc
 pnpm build       # gen:abis + gen:addresses + tsdown (needs forge and the submodules)
