@@ -1,6 +1,12 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import type { Address, Hex } from "viem";
-import { decodeFunctionData, size, slice } from "viem";
+import {
+	decodeFunctionData,
+	getAbiItem,
+	size,
+	slice,
+	toFunctionSelector,
+} from "viem";
 import {
 	type SponsorshipConfig,
 	walletManagementEnabled,
@@ -179,6 +185,38 @@ function selectorOf(data: Hex): Hex | null {
 	return size(data) >= 4 ? (slice(data, 0, 4).toLowerCase() as Hex) : null;
 }
 
+/**
+ * The wallet's own entry points for running arbitrary calls.
+ *
+ * A self-call to one of these is not wallet management. It runs whatever calls it wraps, and the
+ * allowlist never sees them. `MultiOwnable` accepts `msg.sender == address(this)`, so without this
+ * check `execute(self, 0, execute(anyTarget, …))` would pass as a sponsored self-call.
+ */
+export const NESTED_EXECUTE_SELECTORS: ReadonlySet<Hex> = new Set(
+	(["execute", "executeBatch", "executeWithoutChainIdValidation"] as const).map(
+		(name) =>
+			toFunctionSelector(getAbiItem({ abi: gianoSmartWalletAbi, name })),
+	),
+);
+
+function isSelfCall(call: InnerCall, sender: Address): boolean {
+	return call.target.toLowerCase() === sender.toLowerCase();
+}
+
+/** A self-call that re-enters the wallet's execute functions, hiding its inner calls. */
+function isNestedExecute(call: InnerCall, sender: Address): boolean {
+	return (
+		isSelfCall(call, sender) &&
+		call.selector !== null &&
+		NESTED_EXECUTE_SELECTORS.has(call.selector)
+	);
+}
+
+/** A self-call that administers the wallet: owner changes, upgrades, and the like. */
+function isSelfAdministration(call: InnerCall, sender: Address): boolean {
+	return isSelfCall(call, sender) && !isNestedExecute(call, sender);
+}
+
 export function evaluateSponsorship(
 	input: EvaluationInput,
 ): SponsorshipDecision {
@@ -258,6 +296,12 @@ export function evaluateSponsorship(
 			"contract-not-allowed",
 			"the operation contains no calls",
 		);
+	} else if (calls.some((call) => isNestedExecute(call, candidate.sender))) {
+		refuse(
+			"decodable-calls",
+			"contract-not-allowed",
+			"a call from the wallet to its own execute/executeBatch hides its inner calls from the allowlist",
+		);
 	} else {
 		pass("decodable-calls", `${calls.length} inner call(s)`);
 	}
@@ -268,12 +312,16 @@ export function evaluateSponsorship(
 	//    function added to the wallet later can neither become sponsorable by omission nor become
 	//    *unsponsorable* by omission.
 	//
+	//    The one exception is a self-call to the wallet's own execute functions. That is not
+	//    self-administration: it runs arbitrary inner calls. Rule 3 refuses it, and it is excluded
+	//    here so it can never gain the wallet-management cap or skip the allowlist.
+	//
 	//    These transactions are sponsored. A user acquiring a second device holds no native token
 	//    and has no way to obtain one, so an unsponsored recovery path does not work for the users
 	//    who need it. That is why the rule is the platform's and not an allowlist entry: a tenant
 	//    that forgot to list something must not be able to break account recovery.
-	const selfCalls = (calls ?? []).filter(
-		(call) => call.target.toLowerCase() === candidate.sender.toLowerCase(),
+	const selfCalls = (calls ?? []).filter((call) =>
+		isSelfAdministration(call, candidate.sender),
 	);
 	const isWalletManagement = selfCalls.length > 0;
 	const hasApplicationCalls = (calls ?? []).length > selfCalls.length;
@@ -342,8 +390,9 @@ export function evaluateSponsorship(
 
 	for (const call of calls ?? []) {
 		// A self-call is governed by rule 4, not by the allowlist — a tenant should not have to
-		// allow-list its users' own wallet addresses, which it cannot know in advance.
-		if (call.target.toLowerCase() === candidate.sender.toLowerCase()) continue;
+		// allow-list its users' own wallet addresses, which it cannot know in advance. A nested
+		// execute is not skipped, so it also fails here if rule 3 is ever changed.
+		if (isSelfAdministration(call, candidate.sender)) continue;
 
 		const allowed = byContract.get(call.target.toLowerCase() as Address);
 		if (!allowed) {

@@ -17,6 +17,7 @@ import {
 	decodeInnerCalls,
 	type EvaluationInput,
 	evaluateSponsorship,
+	NESTED_EXECUTE_SELECTORS,
 } from "../src/services/sponsorship-rules.js";
 
 const WALLET = "0x1111111111111111111111111111111111111234" as Address;
@@ -379,6 +380,70 @@ describe("wallet management", () => {
 		]);
 		const decision = evaluate({ candidate: { ...candidate, callData: mixed } });
 		expect(decision.reason).toBe("contract-not-allowed");
+	});
+});
+
+// The wallet's execute functions accept a call from the wallet itself, so a self-call to them
+// runs arbitrary inner calls. Treating that as wallet management would sponsor any call while
+// skipping the allowlist.
+describe("nested execute self-calls", () => {
+	const nestedCases: Array<[string, Hex]> = [
+		[
+			"execute(self, execute(other))",
+			execute(WALLET, execute(OTHER, TRANSFER)),
+		],
+		[
+			"execute(self, executeBatch([other]))",
+			execute(WALLET, executeBatch([{ target: OTHER, data: TRANSFER }])),
+		],
+		[
+			"executeBatch([self → execute(other)])",
+			executeBatch([{ target: WALLET, data: execute(OTHER, TRANSFER) }]),
+		],
+		[
+			"execute(self, executeWithoutChainIdValidation([…]))",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "executeWithoutChainIdValidation",
+					args: [[execute(OTHER, TRANSFER)]],
+				}),
+			),
+		],
+		// Even an inner call the tenant allows is refused: nothing needs nesting, and the inner
+		// calls are not decoded, so they cannot be checked.
+		[
+			"execute(self, execute(allowed))",
+			execute(WALLET, execute(TOKEN, TRANSFER)),
+		],
+	];
+
+	it.each(nestedCases)("refuses %s", (_label, callData) => {
+		const decision = evaluate({ candidate: { ...candidate, callData } });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
+		expect(decision.isWalletManagement).toBe(false);
+		expect(
+			decision.results.find((r) => r.rule === "decodable-calls")?.passed,
+		).toBe(false);
+		expect(
+			decision.results.find((r) => r.rule === "contract-allowlist")?.passed,
+		).toBe(false);
+	});
+
+	it("refuses a nested execute mixed into an otherwise sponsorable batch", () => {
+		const mixed = executeBatch([
+			{ target: WALLET, data: "0x0f0f3f95" },
+			{ target: WALLET, data: execute(OTHER, TRANSFER) },
+		]);
+		const decision = evaluate({ candidate: { ...candidate, callData: mixed } });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
+	});
+
+	it("covers every execute entry point in the wallet ABI", () => {
+		expect(NESTED_EXECUTE_SELECTORS.size).toBe(3);
 	});
 });
 
