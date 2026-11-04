@@ -38,7 +38,12 @@ export function toChain(deployment: Deployment): Chain {
  * its quota sit behind a sign-in rather than in front of everyone who can open this page.
  */
 export type ReadAuth = {
-	token: string;
+	/**
+	 * The session token, or a way to read the current one. A getter lets a renewed session (Stay
+	 * signed in) carry on with the same client: rebuilding it would re-read everything from scratch
+	 * and unmount the page the operator was typing into.
+	 */
+	token: string | (() => string);
 	/** A 401 means the session is gone; the session layer drops it and the console signs in again. */
 	onUnauthorized: () => void;
 };
@@ -52,7 +57,13 @@ export function createReadClient(
 		transport: http(
 			deployment.rpcUrl,
 			auth && {
-				fetchOptions: { headers: { authorization: `Bearer ${auth.token}` } },
+				fetchFn: (input, init) => {
+					const headers = new Headers(init?.headers);
+					const token =
+						typeof auth.token === "function" ? auth.token() : auth.token;
+					headers.set("authorization", `Bearer ${token}`);
+					return fetch(input, { ...init, headers });
+				},
 				onFetchResponse: (response) => {
 					if (response.status === 401) auth.onUnauthorized();
 				},

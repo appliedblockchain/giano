@@ -262,8 +262,12 @@ test("the Roles tab grants, rotates and revokes a role, each change landing on c
 	await signInToPaymaster(page);
 	await tab(page, /Roles/).click();
 
+	// the tab renders once the paymaster is read, which takes longer while the whole suite runs
 	await expect(page.getByTestId("default-admin")).toContainText(
 		"held by nobody",
+		{
+			timeout: 30_000,
+		},
 	);
 	const row = page.getByTestId("role-PAUSER_ROLE");
 	await expect(row).toContainText("May halt acceptance of new sponsorships");
@@ -450,6 +454,74 @@ test.describe("access", () => {
 		await expect(page.getByText("No such page")).toBeVisible();
 		await page.getByRole("link", { name: "Go to the Overview" }).click();
 		await expect(tab(page, /Overview/)).toHaveAttribute("aria-current", "page");
+	});
+
+	test("Stay signed in replaces a session about to end, keeping what was typed", async ({
+		page,
+	}) => {
+		// The first sign-in's session is made to end in 100 seconds, inside the 2-minute warning;
+		// the second, from Stay signed in, is the server's own.
+		let shortened = false;
+		await page.route("**/api/v1/platform/auth/verify", async (route) => {
+			const response = await route.fetch();
+			if (shortened) return route.fulfill({ response });
+			shortened = true;
+			const json = await response.json();
+			json.expiresAt = new Date(Date.now() + 100_000).toISOString();
+			await route.fulfill({ response, json });
+		});
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signInToPaymaster(page);
+
+		await tab(page, /Tenants/).click();
+		await page.getByLabel("Search tenants").fill("half-typed");
+		const warning = page
+			.getByRole("status")
+			.filter({ hasText: "Your session ends in" });
+		await expect(warning).toBeVisible({ timeout: 15_000 });
+
+		await warning.getByRole("button", { name: "Stay signed in" }).click();
+		await expect(warning).toHaveCount(0, { timeout: 30_000 });
+		await expect(
+			page.getByRole("button", { name: "Platform admin session" }),
+		).toContainText(/([23]\d) min left/);
+		await expect(page.getByLabel("Search tenants")).toHaveValue("half-typed");
+	});
+
+	test("every tab fits a 390 px phone, with wide tables scrolling inside their own box", async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await installWallet(page, { known: [CHAINS.a.chainId] });
+		await openConsole(page);
+		await chooseDeployment(page, CHAINS.a.chainId);
+		await signInToPaymaster(page);
+		for (const name of [
+			/Overview/,
+			/Tenants/,
+			/Paymaster/,
+			/Roles/,
+			/Timelock/,
+			/Activity/,
+			/Health/,
+			/Admins/,
+		]) {
+			// the tab bar scrolls sideways within itself, so the link can be off screen: scroll to it
+			const link = tab(page, name);
+			await link.scrollIntoViewIfNeeded();
+			await link.click();
+			await page.waitForTimeout(1_500);
+			const overflow = await page.evaluate(
+				() =>
+					document.documentElement.scrollWidth -
+					document.documentElement.clientWidth,
+			);
+			expect(overflow, `${name} scrolls the page sideways`).toBeLessThanOrEqual(
+				0,
+			);
+		}
 	});
 
 	test("the platform relay refuses a caller with no session, and the console proxies no RPC", async ({

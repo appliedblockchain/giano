@@ -12,6 +12,7 @@ import {
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { LuPlus, LuRefreshCw, LuTrash2 } from "react-icons/lu";
+import { AddressInput, useAddressInput } from "../components/inputs";
 import { Copyable, SectionCard } from "../components/ui";
 import type {
 	PlatformAdminHistoryEntry,
@@ -22,7 +23,6 @@ import { ActionDialog, usePlatformAction } from "./LifecycleDialogs";
 import { actorLabel, issuesByField } from "./shared";
 
 const ID_PATTERN = /^[a-z0-9-]{1,64}$/;
-const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
 /**
  * Who may sign in here (specs/PLATFORM-ADMIN-SPECS.md §4.1). The list lives in wallet-api's
@@ -68,7 +68,7 @@ export function AdminsTab() {
 		<Stack gap="4">
 			<SectionCard
 				title={`Admins${admins ? ` (${admins.length})` : ""}`}
-				subtitle="The wallets that may sign in to this Platform area. Changes take effect on the next request."
+				subtitle="The wallets that may sign in to this console. An added admin can sign in at once; removing one ends their sessions at once, on their next request."
 				action={
 					<HStack>
 						<Button
@@ -143,11 +143,19 @@ export function AdminsTab() {
 												{new Date(admin.createdAt).toLocaleDateString()}
 											</Table.Cell>
 											<Table.Cell textAlign="end">
-												{/* the API refuses removing yourself or the last platform admin; so does the UI */}
-												{!isMe && admins!.length > 1 && (
+												{/* the API refuses removing yourself or the last platform admin; so does the UI, and says why */}
+												{isMe ? (
+													<Text fontSize="xs" color="fg.muted">
+														You cannot remove yourself: ask another admin.
+													</Text>
+												) : (admins?.length ?? 0) <= 1 ? (
+													<Text fontSize="xs" color="fg.muted">
+														The last admin cannot be removed.
+													</Text>
+												) : (
 													<Button
 														size="xs"
-														variant="ghost"
+														variant="outline"
 														colorPalette="red"
 														onClick={() => setRemoving(admin)}
 													>
@@ -179,7 +187,7 @@ export function AdminsTab() {
 								<Badge variant="subtle" minW="20" justifyContent="center">
 									{entry.action}
 								</Badge>
-								<Box>
+								<Box minW="0">
 									<Text fontSize="sm">
 										{entry.adminId}{" "}
 										<Text
@@ -187,6 +195,7 @@ export function AdminsTab() {
 											fontFamily="mono"
 											fontSize="xs"
 											color="fg.muted"
+											wordBreak="break-all"
 										>
 											{entry.address}
 										</Text>
@@ -228,12 +237,17 @@ function AddAdminDialog({
 }) {
 	const { act, busy, error } = usePlatformAction();
 	const [id, setId] = useState("");
-	const [address, setAddress] = useState("");
+	const wallet = useAddressInput();
 	const issues = issuesByField(error);
-	const valid = ID_PATTERN.test(id) && ADDRESS_PATTERN.test(address.trim());
+	const address = wallet.value;
+	const idProblem =
+		id !== "" && !ID_PATTERN.test(id)
+			? "Lowercase letters, digits and dashes only, at most 64."
+			: issues.id?.join(" · ");
 
 	const confirm = async () => {
-		const result = await act((api) => api.addAdmin(id, address.trim()));
+		if (!address) return;
+		const result = await act((api) => api.addAdmin(id, address));
 		if (result?.ok) {
 			onDone();
 			onClose();
@@ -249,8 +263,8 @@ function AddAdminDialog({
 			title="Add platform admin"
 			confirmLabel="Add admin"
 			busy={busy}
-			error={error}
-			disabled={!valid}
+			error={error && !error.issues ? error : undefined}
+			disabled={!ID_PATTERN.test(id) || !address}
 			onConfirm={() => void confirm()}
 		>
 			<Stack gap="3">
@@ -258,9 +272,7 @@ function AddAdminDialog({
 					The new platform admin can sign in with this wallet straight away,
 					manage tenants, and add and remove platform admins too.
 				</Text>
-				<Field.Root
-					invalid={Boolean(issues.id) || (id !== "" && !ID_PATTERN.test(id))}
-				>
+				<Field.Root invalid={idProblem !== undefined}>
 					<Field.Label>Id</Field.Label>
 					<Input
 						value={id}
@@ -268,25 +280,19 @@ function AddAdminDialog({
 						placeholder="admin-oncall"
 						autoComplete="off"
 					/>
-					<Field.HelperText>
-						Lowercase letters, digits and dashes. Shown in logs and history.
-					</Field.HelperText>
+					{idProblem ? (
+						<Field.ErrorText>{idProblem}</Field.ErrorText>
+					) : (
+						<Field.HelperText>
+							Lowercase letters, digits and dashes. Shown in logs and history.
+						</Field.HelperText>
+					)}
 				</Field.Root>
-				<Field.Root
-					invalid={
-						Boolean(issues.address) ||
-						(address !== "" && !ADDRESS_PATTERN.test(address.trim()))
-					}
-				>
-					<Field.Label>Wallet address</Field.Label>
-					<Input
-						value={address}
-						onChange={(event) => setAddress(event.target.value)}
-						placeholder="0x…"
-						fontFamily="mono"
-						autoComplete="off"
-					/>
-				</Field.Root>
+				<AddressInput
+					input={wallet}
+					label="Wallet address"
+					helper={issues.address?.join(" · ")}
+				/>
 			</Stack>
 		</ActionDialog>
 	);
@@ -323,8 +329,8 @@ function RemoveAdminDialog({
 			onConfirm={() => void confirm()}
 		>
 			<Text fontSize="sm">
-				<b>{admin.id}</b> ({admin.address}) can no longer sign in, and any
-				session they have open ends on its next request.
+				<b>{admin.id}</b> ({admin.address}) can no longer sign in, and every
+				session they have open ends at once, on its next request.
 			</Text>
 		</ActionDialog>
 	);

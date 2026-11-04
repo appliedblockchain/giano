@@ -320,6 +320,7 @@ test.describe("admin console", () => {
 		const me = page.getByTestId("admin-row-admin-console");
 		await expect(me).toContainText("you");
 		await expect(me.getByRole("button", { name: /Remove/ })).toHaveCount(0);
+		await expect(me).toContainText("You cannot remove yourself");
 
 		await page.getByRole("button", { name: /Add admin/ }).click();
 		const add = page.getByRole("dialog", { name: "Add platform admin" });
