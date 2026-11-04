@@ -1,5 +1,15 @@
 # @appliedblockchain/giano-wallet-kit
 
+## 6.0.1
+
+### Patch Changes
+
+- Updated dependencies [67e7522]
+  - @appliedblockchain/giano-wallet-core@6.0.1
+  - @appliedblockchain/giano-contracts@6.0.1
+  - @appliedblockchain/giano-wallet-transport@6.0.1
+  - @appliedblockchain/giano-tx-describe@6.0.1
+
 ## 6.0.0
 
 ### Minor Changes

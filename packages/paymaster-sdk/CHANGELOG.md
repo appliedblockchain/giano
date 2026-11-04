@@ -1,5 +1,11 @@
 # @appliedblockchain/giano-paymaster-sdk
 
+## 6.0.1
+
+### Patch Changes
+
+- @appliedblockchain/giano-contracts@6.0.1
+
 ## 6.0.0
 
 ### Patch Changes
