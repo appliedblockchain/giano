@@ -52,6 +52,11 @@ jobs:
           node scripts/verify-dhi-bases.mjs \
             services/wallet-api/Dockerfile services/wallet-web/Dockerfile services/paymaster-admin/Dockerfile \
             services/bundler/Dockerfile
+      # The same builder docker.yml writes main's layer cache with. The runner's built-in `docker`
+      # driver imports that cache but matches none of its RUN steps, so every image rebuilt cold;
+      # a docker-container builder computes the same cache keys as the one that wrote them.
+      # Compose builds through it and loads each image back into the daemon.
+      - uses: docker/setup-buildx-action@v4
       # The GitHub Actions cache backend authenticates with the runtime token, which the runner
       # hands to actions but not to `run` steps. Exported here so that compose's build (below,
       # deploy/docker-compose.e2e.ci.yml) can read the layer cache docker.yml writes on main.
