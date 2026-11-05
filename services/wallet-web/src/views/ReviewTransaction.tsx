@@ -1,9 +1,10 @@
-import type {
-	PendingRequest,
-	SponsorshipPreflight,
-	TransactionDescription,
-	UnknownReason,
-	WalletRuntime,
+import {
+	checkSelfCall,
+	type PendingRequest,
+	type SponsorshipPreflight,
+	type TransactionDescription,
+	type UnknownReason,
+	type WalletRuntime,
 } from "@appliedblockchain/giano-wallet-kit";
 import { useEffect, useState } from "react";
 import { formatUnits, type Hex } from "viem";
@@ -23,6 +24,11 @@ type TxRequest = { to?: Hex; value?: Hex | bigint; data?: Hex };
  *      screen says so in so many words and shows the raw data, because raw data is the truth
  *      of last resort, not a default.
  *   2. The sponsorship pre-flight (WK-13…WK-15) — unchanged from before.
+ *
+ * A transaction that calls one of the user's own account functions is never approvable here.
+ * Such a self-call can add or remove owners or upgrade the account, and only the management
+ * view may build one. The host already refuses it before consent; this screen blocks it as a
+ * second layer. A value-only transfer to the account carries no calldata and is not blocked.
  */
 export function ReviewTransaction({
 	request,
@@ -43,11 +49,19 @@ export function ReviewTransaction({
 	const [preflight, setPreflight] = useState<SponsorshipPreflight | null>(null);
 	const [attempt, setAttempt] = useState(0);
 
+	const account = runtime.provider.getSmartAccount();
+	// No account means the provider refuses the request anyway. Anything other than "none"
+	// (a self-call, or calls that cannot be read) is blocked.
+	const blocked =
+		account !== null &&
+		checkSelfCall(request.method, request.params, account.address) !== "none";
+
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the transaction never changes for one request; `attempt` is what a retry increments
 	useEffect(() => {
 		let cancelled = false;
 		setDescription(null);
 		setPreflight(null);
+		if (blocked) return;
 
 		// The runtime never rejects here, but a screen that could hang on a promise that did would
 		// leave the user with no button at all — so the fallback is spelled out anyway.
@@ -138,6 +152,39 @@ export function ReviewTransaction({
 		preflight?.state === "sponsored" || preflight?.state === "not-applicable";
 	const refused =
 		preflight?.state === "refused" || preflight?.state === "unavailable";
+
+	if (blocked) {
+		return (
+			<>
+				<div className="origin-banner">
+					Transaction request from
+					<b>{request.dappOrigin}</b>
+				</div>
+
+				<div className="card">
+					<h2>Request blocked</h2>
+					<div className="kv">
+						<span className="k">Network</span>
+						<span className="v" data-testid="consent-chain">
+							{request.chainName}
+						</span>
+					</div>
+					<div className="error" data-testid="self-call-blocked">
+						This application asked your wallet to change its own settings. That
+						can add or remove the passkeys that control your wallet, or replace
+						its code. An application cannot do this. Manage your wallet only
+						from the wallet’s own management screen.
+					</div>
+				</div>
+
+				<div className="actions">
+					<button type="button" className="danger" onClick={request.reject}>
+						Close
+					</button>
+				</div>
+			</>
+		);
+	}
 
 	return (
 		<>

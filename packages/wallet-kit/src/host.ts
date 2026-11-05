@@ -6,6 +6,7 @@ import {
 import type { WalletConfig } from "./config";
 import { createRequestStore, type RequestStore, toRpcError } from "./requests";
 import type { WalletRuntime, WalletRuntimes } from "./runtimes";
+import { checkSelfCall } from "./self-calls";
 
 const CONSENT_METHODS = new Set([
 	"eth_sendTransaction",
@@ -122,6 +123,27 @@ export function createHostRequestHandler({
 			await runtime.provider
 				.request({ method: "giano_restoreAccount" } as never)
 				.catch(() => undefined);
+		}
+		// A dApp must never get the account to call one of its own functions: that is how owners
+		// are added or removed and how the account is upgraded. A value-only transfer to self
+		// carries no calldata and stays allowed. The management view builds those calls and
+		// calls the provider directly, so it does not pass through here. Refused before consent,
+		// so the user is never shown an Approve button for one.
+		const account = runtime.provider.getSmartAccount();
+		if (account) {
+			const selfCall = checkSelfCall(method, params, account.address);
+			if (selfCall === "self-call") {
+				throw new TransportRpcError(
+					RPC_ERRORS.UNAUTHORIZED,
+					"an application cannot make the wallet call itself; use giano_openWalletManagement to let the user manage the wallet",
+				);
+			}
+			if (selfCall === "unreadable") {
+				throw new TransportRpcError(
+					RPC_ERRORS.UNAUTHORIZED,
+					"the user operation's callData must be an execute or executeBatch call",
+				);
+			}
 		}
 		if (needsConsent) {
 			await requests.requestConsent({
