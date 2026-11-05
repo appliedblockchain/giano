@@ -82,6 +82,9 @@ services:
       USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-}
       # per-tenant relay rate limit default (tenant policy.relayRateLimitPerMinute overrides)
       USEROP_RATE_LIMIT_PER_MINUTE: ${USEROP_RATE_LIMIT_PER_MINUTE:-60}
+      # public receipt lookup, per client IP per minute. Behind a proxy every client shares the
+      # proxy's IP, so this is one budget for all users: raise it if receipt polling gets 429s
+      USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE: ${USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE:-1200}
 
       # --- sessions / challenges / observability ---
       CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-300}

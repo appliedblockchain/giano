@@ -29,7 +29,8 @@ import {
 let ctx: TestContext;
 
 beforeAll(async () => {
-	ctx = await startTestStack();
+	// a small receipt budget keeps the per-IP limit test short
+	ctx = await startTestStack({ USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE: "5" });
 }, 120_000);
 
 afterAll(async () => {
@@ -830,13 +831,55 @@ describe("userop relay", () => {
 		expect(send.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 	});
 
-	it("serves receipts publicly (read-only)", async () => {
+	it("serves the receipt of a relayed op publicly, from the bundler", async () => {
+		const submitted = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: makeOp(6) },
+		});
+		expect(submitted.statusCode).toBe(200);
+		const { userOperationHash } = submitted.json() as {
+			userOperationHash: string;
+		};
+
 		const res = await ctx.app.inject({
 			method: "GET",
-			url: `/v1/userops/0x${"ab".repeat(32)}/receipt`,
+			url: `/v1/userops/${userOperationHash}/receipt`,
 		});
 		expect(res.statusCode).toBe(200);
-		expect(res.json()).toHaveProperty("receipt");
+		expect(res.json()).toEqual({ receipt: null });
+		expect(ctx.bundlerCalls.at(-1)).toMatchObject({
+			method: "eth_getUserOperationReceipt",
+			params: [userOperationHash],
+		});
+	});
+
+	it("answers an unknown hash with no receipt and never calls the bundler", async () => {
+		const before = ctx.bundlerCalls.length;
+		const res = await ctx.app.inject({
+			method: "GET",
+			url: `/v1/userops/0x${"ef".repeat(32)}/receipt`,
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ receipt: null });
+		expect(ctx.bundlerCalls.length).toBe(before);
+	});
+
+	it("rate-limits the public receipt lookup per client IP", async () => {
+		const lookup = (remoteAddress: string) =>
+			ctx.app.inject({
+				method: "GET",
+				url: `/v1/userops/0x${"ef".repeat(32)}/receipt`,
+				remoteAddress,
+			});
+		const max = ctx.config.USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE;
+		for (let i = 0; i < max; i++) {
+			expect((await lookup("198.51.100.7")).statusCode).toBe(200);
+		}
+		expect((await lookup("198.51.100.7")).statusCode).toBe(429);
+		// another client keeps its own budget
+		expect((await lookup("198.51.100.8")).statusCode).toBe(200);
 	});
 });
 

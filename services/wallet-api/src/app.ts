@@ -291,7 +291,12 @@ export async function buildApp({
 		},
 		metrics: app.metrics,
 	});
-	await app.register(useropRoutes, { db, registry, relay });
+	await app.register(useropRoutes, {
+		db,
+		registry,
+		relay,
+		receiptRatePerMinute: config.USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE,
+	});
 	await app.register(bundlerRelayRoutes, { config, relay });
 	await app.register(rpcRelayRoutes, { config });
 	if (platformAdminSessions) {

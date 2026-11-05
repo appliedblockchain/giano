@@ -452,6 +452,16 @@ const envSchema = z
 			.int()
 			.positive()
 			.default(600),
+		/**
+		 * The public receipt lookup (GET /v1/userops/:hash/receipt), per client IP per minute. The
+		 * route is unauthenticated and tenant-free, so the IP is the only key. The thin SDK polls it
+		 * every 2 s per pending operation and retries after a 429.
+		 */
+		USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE: z.coerce
+			.number()
+			.int()
+			.positive()
+			.default(1200),
 		/** The chain RPC read relay (POST /v1/rpc), per tenant per minute — every wallet page load reads through it. */
 		RPC_RELAY_RATE_LIMIT_PER_MINUTE: z.coerce
 			.number()
