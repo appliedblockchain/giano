@@ -128,6 +128,8 @@ jobs:
         # Native runners on both legs — no setup-qemu-action, no binfmt, no emulation. arm64
         # is the arch that actually gets deployed (ECS runs ARM64: infra/iac ecs-service.tf,
         # ecs_tasks_oneshot.tf), so it stays on every event, PRs included.
+        # Runner images are pinned (never `ubuntu-latest`) so both legs share one OS release
+        # and a label move (actions/runner-images#14748) can't change the build underneath us.
         platform:
           - arch: amd64
             runner: ubuntu-24.04
