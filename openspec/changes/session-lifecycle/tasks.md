@@ -35,9 +35,9 @@
 
 ## 5. e2e
 
-- [ ] 5.1 Sign out everywhere: sign in on two browser contexts as the same user, pick "Sign out everywhere" in one, and check that the other's next management action shows the session-ended state.
-- [ ] 5.2 Admin revocation: with the e2e tenant admin key, revoke the signed-in user by `externalUserId` through `/v1/admin/sessions/revoke`, and check that the wallet returns to sign-in on its next action. Check the history entry through the platform route.
-- [ ] 5.3 Re-run `wallet-flow`, `wallet-management`, `byo-wallet` and `tenant-isolation`, then the full suite.
+- [x] 5.1 Sign out everywhere: sign in on two browser contexts as the same user, pick "Sign out everywhere" in one, and check that the other's next management action shows the session-ended state.
+- [x] 5.2 Admin revocation: with the e2e tenant admin key, revoke the signed-in user by `externalUserId` through `/v1/admin/sessions/revoke`, and check that the wallet returns to sign-in on its next action. Check the history entry through the platform route.
+- [x] 5.3 Re-run `wallet-flow`, `wallet-management`, `byo-wallet` and `tenant-isolation`, then the full suite.
 
 ## 6. Docs and wrap-up
 
