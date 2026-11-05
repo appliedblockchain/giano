@@ -229,10 +229,6 @@ contract EndToEndTest is PaymasterTestBase {
         _assertInvariant();
     }
 
-    // -----------------------------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------------------------
-
     /// @dev The EntryPoint takes the prefund from the shared deposit at validation. A withdrawal
     ///      made while the operation executes must not take the charge that is about to settle,
     ///      or the gas would fall on the other tenants' funds.
@@ -316,6 +312,48 @@ contract EndToEndTest is PaymasterTestBase {
         vm.prank(beneficiary, beneficiary);
         ENTRY_POINT.handleOps(ops, beneficiary);
     }
+
+    /// @dev Settlement releases exactly the settled operation's reservation. In a bundle of two
+    ///      operations, the first one's settlement must free its own charge and keep the second
+    ///      one's. Releasing nothing would block withdrawals for the rest of the transaction.
+    ///      Releasing everything would let the second operation's execution withdraw its own charge.
+    function test_settlementReleasesOnlyTheSettledOperationsReservation() public {
+        _fund(TENANT_B, 1 ether);
+        ReservationProbe probe = new ReservationProbe(paymaster, TENANT_A);
+        vm.prank(withdrawAddressAdmin);
+        paymaster.setTenantWithdrawAddress(TENANT_A, address(probe));
+
+        OpParams memory p0 = _defaultOpParams(address(account));
+        OpParams memory p1 = _defaultOpParams(address(account));
+        p1.nonce = 1;
+        uint256 secondReservation = _requiredCharge(p1);
+        p1.callData = abi.encodeCall(
+            GianoSmartWallet.execute,
+            (address(probe), 0, abi.encodeCall(ReservationProbe.probe, (secondReservation)))
+        );
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](2);
+        ops[0] = _signedSponsoredOp(p0, TENANT_A, uint48(block.timestamp + 300), 0, DEFAULT_FEE_WEI);
+        ops[1] = _signedSponsoredOp(p1, TENANT_A, uint48(block.timestamp + 300), 0, DEFAULT_FEE_WEI);
+        vm.prank(beneficiary, beneficiary);
+        ENTRY_POINT.handleOps(ops, beneficiary);
+
+        // During the second operation's execution, the first operation has settled.
+        assertTrue(probe.aboveUnreservedReverted(), 'the second reservation was held');
+        assertTrue(probe.unreservedSucceeded(), 'the first reservation was released');
+
+        // After both settle, in the same transaction, nothing stays reserved.
+        uint256 remaining = paymaster.getTenant(TENANT_A).balance;
+        probe.withdraw(remaining);
+        assertEq(paymaster.getTenant(TENANT_A).balance, 0, 'the whole balance was withdrawable');
+        assertEq(paymaster.getTenant(TENANT_A).deficit, 0, 'no deficit');
+        assertEq(paymaster.getTenant(TENANT_B).balance, 1 ether);
+        _assertInvariant();
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------------------------
 
     /// @dev Mirrors `requiredCharge` in `validatePaymasterUserOp`: the EntryPoint's prefund for
     ///      the operation, plus the fee, plus the overhead bound at the operation's max fee.
@@ -410,4 +448,36 @@ contract EndToEndTest is PaymasterTestBase {
         }
         revert('no Sponsored event');
     }
+}
+
+/// @dev The tenant's withdrawal address in the release test. It is called from inside an
+///      operation's execution and records which withdrawals the paymaster allowed at that point.
+contract ReservationProbe {
+    GianoPaymaster internal immutable paymaster;
+    bytes16 internal immutable tenantId;
+
+    bool public aboveUnreservedReverted;
+    bool public unreservedSucceeded;
+
+    constructor(GianoPaymaster paymaster_, bytes16 tenantId_) {
+        paymaster = paymaster_;
+        tenantId = tenantId_;
+    }
+
+    /// @dev `reserved` is the executing operation's own reservation. Only it may still be held.
+    function probe(uint256 reserved) external {
+        uint256 unreserved = paymaster.getTenant(tenantId).balance - reserved;
+        try paymaster.withdrawTenant(tenantId, unreserved + 1, address(this)) {} catch {
+            aboveUnreservedReverted = true;
+        }
+        try paymaster.withdrawTenant(tenantId, unreserved, address(this)) {
+            unreservedSucceeded = true;
+        } catch {}
+    }
+
+    function withdraw(uint256 amount) external {
+        paymaster.withdrawTenant(tenantId, amount, address(this));
+    }
+
+    receive() external payable {}
 }

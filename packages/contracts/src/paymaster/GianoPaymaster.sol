@@ -13,6 +13,7 @@ import {UUPSUpgradeable} from '@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {EIP712Upgradeable} from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
 import {PausableUpgradeable} from '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
 import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import {Math} from '@openzeppelin/contracts/utils/math/Math.sol';
 import {SafeCast} from '@openzeppelin/contracts/utils/math/SafeCast.sol';
 import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 import {SlotDerivation} from '@openzeppelin/contracts/utils/SlotDerivation.sol';
@@ -196,8 +197,14 @@ contract GianoPaymaster is
     }
 
     /// @dev Base of the transient `tenantId => in-flight reservation (wei)` mapping. Transient, so
-    ///      every reservation clears when the transaction ends, including one whose `postOp` never
-    ///      ran because it reverted. It never touches the persistent storage layout.
+    ///      every reservation clears when the transaction ends. It never touches the persistent
+    ///      storage layout.
+    ///
+    ///      If `postOp` reverts, the EntryPoint reverts its frame, release included, and does not
+    ///      call it again. That reservation then stays held until the transaction ends. No funds
+    ///      are at risk, but later `withdrawTenant` calls and validations for the tenant in the
+    ///      same transaction see a smaller available balance.
+    ///
     ///      keccak256(abi.encode(uint256(keccak256("giano.transient.Paymaster.inFlight")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant IN_FLIGHT_TRANSIENT_LOCATION =
         0x1b310d53db5cf5675cdbf51c60538fb4a98cc81e6f94db0e5ad779e9c0210100;
@@ -208,7 +215,7 @@ contract GianoPaymaster is
 
     /// @dev The part of a tenant's balance that no validated, unsettled operation has reserved.
     function _unreserved(uint256 balance, uint256 reserved) private pure returns (uint256) {
-        return balance > reserved ? balance - reserved : 0;
+        return Math.saturatingSub(balance, reserved);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -679,8 +686,7 @@ contract GianoPaymaster is
 
         // Release this operation's reservation. Saturating, because settlement must never revert.
         TransientSlot.Uint256Slot inFlight = _inFlight(c.tenantId);
-        uint256 reserved = inFlight.tload();
-        inFlight.tstore(reserved > c.reservedWei ? reserved - c.reservedWei : 0);
+        inFlight.tstore(Math.saturatingSub(inFlight.tload(), c.reservedWei));
 
         uint256 overheadWei = _overheadWei(actualUserOpFeePerGas, c.executionGasLimit);
         uint256 owed = actualGasCost + overheadWei;
