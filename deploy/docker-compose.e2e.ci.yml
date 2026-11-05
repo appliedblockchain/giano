@@ -1,0 +1,33 @@
+# CI-only overlay for deploy/docker-compose.e2e.yml (.github/workflows/e2e.yml):
+#
+#   docker compose -f deploy/docker-compose.e2e.yml -f deploy/docker-compose.e2e.ci.yml up --build
+#
+# Seeds each image build from the layer cache docker.yml writes on main, so an e2e run rebuilds only
+# the layers a branch actually changed instead of every image from scratch. Read only: the e2e run
+# never writes, so it cannot evict main's entries from the repository's shared cache budget.
+#
+# Each scope is docker.yml's `<image>-<arch>` scope for the same Dockerfile, built from the same
+# context with no build args — keep the two in step, or the lookup quietly misses and the build
+# simply runs cold. amd64, because ubuntu-latest is. Outside GitHub Actions the gha backend has
+# no token, which is why this lives in an overlay rather than in the base file.
+services:
+  bundler:
+    build:
+      cache_from:
+        - type=gha,scope=giano-bundler-amd64
+  init:
+    build:
+      cache_from:
+        - type=gha,scope=giano-wallet-api-amd64
+  wallet-api:
+    build:
+      cache_from:
+        - type=gha,scope=giano-wallet-api-amd64
+  wallet-web:
+    build:
+      cache_from:
+        - type=gha,scope=giano-wallet-web-amd64
+  paymaster-admin:
+    build:
+      cache_from:
+        - type=gha,scope=giano-paymaster-admin-amd64
