@@ -613,6 +613,31 @@ describe("userop relay", () => {
 		});
 	});
 
+	it("finds a relayed op's receipt whatever the hex casing of the hash", async () => {
+		const submitted = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: makeOp(7) },
+		});
+		expect(submitted.statusCode).toBe(200);
+		const { userOperationHash } = submitted.json() as {
+			userOperationHash: string;
+		};
+		const upper = `0x${userOperationHash.slice(2).toUpperCase()}`;
+		expect(upper).not.toBe(userOperationHash);
+
+		const res = await ctx.app.inject({
+			method: "GET",
+			url: `/v1/userops/${upper}/receipt`,
+		});
+		expect(res.statusCode).toBe(200);
+		expect(ctx.bundlerCalls.at(-1)).toMatchObject({
+			method: "eth_getUserOperationReceipt",
+			params: [userOperationHash],
+		});
+	});
+
 	it("answers an unknown hash with no receipt and never calls the bundler", async () => {
 		const before = ctx.bundlerCalls.length;
 		const res = await ctx.app.inject({

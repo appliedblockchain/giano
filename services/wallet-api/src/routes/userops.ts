@@ -191,14 +191,15 @@ export default async function useropRoutes(
 			// records it (MC-59) — so the chain is resolved from the logged row and the SDK's
 			// receipt polling keeps working untouched (§9.3). An op this deployment never relayed
 			// is unknown: answering it would let any caller turn random hashes into bundler calls.
+			// userop_log stores the server-computed hash in lowercase, and the text comparison is
+			// case-sensitive, so any hex casing the schema accepts is folded to that form first.
+			const hash = request.params.hash.toLowerCase();
 			const row = await db.query.useropLog.findFirst({
-				where: eq(useropLog.useropHash, request.params.hash),
+				where: eq(useropLog.useropHash, hash),
 			});
 			const chain = row && registry.tryGet(row.chainId);
 			if (!chain) return { receipt: null };
-			const receipt = await chain.bundler.getUserOperationReceipt(
-				request.params.hash,
-			);
+			const receipt = await chain.bundler.getUserOperationReceipt(hash);
 			return { receipt };
 		},
 	);
