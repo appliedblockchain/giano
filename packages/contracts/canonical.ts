@@ -58,24 +58,34 @@ export const CANONICAL_CODE: Record<`0x${string}`, readonly CanonicalCode[]> = {
   '0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6': [
     { label: 'giano.wallet.impl', release: 'v1', codehash: '0xbefa2ac705d180d8d5481c700738f8de6d1f9462ec1aad6abeeb286a5397e1de' },
     { label: 'giano.wallet.impl', release: 'v2', codehash: '0x40bc91e1c8e877c8d6a8ad5a04b3db311917bef0734a2f880ecb8a2f68e28da9' },
+    { label: 'giano.wallet.impl', release: 'v3', codehash: '0xc44e62a7dd3c38711c0ea12108b70f11057fe4ebe879a55d57cbe68eb12c6f74' },
   ],
   '0x9c01925D07527A7920031196396A9c37421715A2': [
     { label: 'giano.factory', release: 'v1', codehash: '0xf167db1d27487465602e13ad9e5514cbdee0fc70018b236c01868ae9558558f8' },
     { label: 'giano.factory', release: 'v2', codehash: '0xc1727efd8340d9a5d941522b88e8e43a9b0a53526387725d49059331da30e1d4' },
+    { label: 'giano.factory', release: 'v3', codehash: '0xd27b427c7bb5e3cf5842d850674cd7131e3c339ba1a84b5140bdf87f1432057e' },
   ],
   '0x326549c3600BFA31CB44213Df0576AE79E70E4aC': [
     { label: 'giano.paymaster.impl', release: 'v1', codehash: '0xba3d012125286c88b035a63e7567be7a6d519e6bec06f65fd7e1140fe1bbba68' },
     { label: 'giano.paymaster.impl', release: 'v2', codehash: '0x272e0fcb12edd02deb170aa0446881de698ed992b05b12249329f00e56f17ade' },
+    { label: 'giano.paymaster.impl', release: 'v3', codehash: '0x0bba54ca9e40c4e986fe69102b91364741ef44a7cfc9c7cf962dbc1a416846a5' },
   ],
   '0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96': [
     { label: 'giano.paymaster.proxy', release: 'v1', codehash: '0xcb6e416014c6c966865c173b402a66ec847e562f47f89a400a33416359f232fe' },
     { label: 'giano.paymaster.proxy', release: 'v2', codehash: '0x1d07a8c854ec774527639ab90876f40d91eca6075a8f85e1f6c981eaf1c5bfe3' },
+    { label: 'giano.paymaster.proxy', release: 'v3', codehash: '0x1d07a8c854ec774527639ab90876f40d91eca6075a8f85e1f6c981eaf1c5bfe3' },
   ],
   '0x7C6aDB755f078Aabed46E4AE5865795d46BA1822': [
     { label: 'giano.paymaster.impl@v2', release: 'v2', codehash: '0x86ae79598aba161883f009f9faa467cb3990b6e6b70c2eb728e1355812cc8d35' },
   ],
   '0x8B93fBc1Ff322dDF9f70dcb6728DE5F32d6bDF1E': [
     { label: 'giano.wallet.impl@v2', release: 'v2', codehash: '0x358264f41531a8511462514082306e2c7d3ae9172c15752fdc168e01cfbe5c3b' },
+  ],
+  '0xEf17ab4A41ee76DE2fB72E224B176F8D9770B16C': [
+    { label: 'giano.paymaster.impl@v3', release: 'v3', codehash: '0xd67a9c9b632eddfe78971b689f02fbcb1fbcc1cbda063584790481adafe16e49' },
+  ],
+  '0x773B303deEAdBa4e620eD0d17A370Fd9347C8d82': [
+    { label: 'giano.wallet.impl@v3', release: 'v3', codehash: '0x8b292524ba26e1035d317292953bb1cfc64675343a5182bbf11c5b50c9269b44' },
   ],
 };
 
