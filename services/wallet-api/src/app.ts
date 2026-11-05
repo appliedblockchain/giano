@@ -246,7 +246,7 @@ export async function buildApp({
 				: undefined,
 	});
 	await app.register(wellKnownRoutes, { db });
-	await app.register(adminRoutes, { db });
+	await app.register(adminRoutes, { db, sessions });
 	await app.register(adminSponsorshipRoutes, { db, config, ledger, registry });
 	await app.register(adminTxMappingRoutes, { db });
 	await app.register(txMappingRoutes, { db });
@@ -290,7 +290,12 @@ export async function buildApp({
 			platformAdminSessions,
 			ratePerMinute: config.PLATFORM_RATE_LIMIT_PER_MINUTE,
 		});
-		await app.register(platformTenantRoutes, { db, config, registry });
+		await app.register(platformTenantRoutes, {
+			db,
+			config,
+			registry,
+			sessions,
+		});
 		await app.register(platformAdminRoutes, { admins, config });
 		await app.register(platformRpcRoutes, { config });
 	}

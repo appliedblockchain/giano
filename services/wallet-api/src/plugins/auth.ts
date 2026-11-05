@@ -14,6 +14,8 @@ declare module "fastify" {
 		session: SessionContext | null;
 		/** Tenant whose admin key authorized this request (set by requireAdmin). */
 		adminTenant: Tenant | null;
+		/** Id of the admin key that authorized this request (set by requireAdmin), for attribution. */
+		adminKeyId: string | null;
 		/** The platform admin whose session authorized this request (set by requirePlatformAdmin). */
 		platformAdmin: PlatformAdminContext | null;
 	}
@@ -61,6 +63,7 @@ export default fp(
 	) => {
 		app.decorateRequest("session", null);
 		app.decorateRequest("adminTenant", null);
+		app.decorateRequest("adminKeyId", null);
 		app.decorateRequest("platformAdmin", null);
 
 		/**
@@ -68,30 +71,36 @@ export default fp(
 		 * O(1) on a unique index, no length leak, no O(keys) scan. The timingSafeEqual over
 		 * the two equal-length hex digests is a belt-and-braces constant-time recheck.
 		 */
+		const resolveAdminKey = async (
+			request: FastifyRequest,
+		): Promise<{ tenant: Tenant; keyId: string } | null> => {
+			const token = bearerToken(request);
+			if (!token) return null;
+			const hash = sha256hex(token);
+			const row = await opts.tenants.getByAdminKeyHash(hash);
+			if (!row) return null;
+			if (!timingSafeEqual(Buffer.from(hash), Buffer.from(row.keyHash)))
+				return null;
+			return { tenant: row.tenant, keyId: row.keyId };
+		};
+
 		app.decorate(
 			"resolveAdminTenant",
-			async (request: FastifyRequest): Promise<Tenant | null> => {
-				const token = bearerToken(request);
-				if (!token) return null;
-				const hash = sha256hex(token);
-				const row = await opts.tenants.getByAdminKeyHash(hash);
-				if (!row) return null;
-				if (!timingSafeEqual(Buffer.from(hash), Buffer.from(row.keyHash)))
-					return null;
-				return row.tenant;
-			},
+			async (request: FastifyRequest): Promise<Tenant | null> =>
+				(await resolveAdminKey(request))?.tenant ?? null,
 		);
 
 		app.decorate(
 			"requireAdmin",
 			async (request: FastifyRequest, reply: FastifyReply) => {
-				const tenant = await app.resolveAdminTenant(request);
-				if (!tenant) {
+				const key = await resolveAdminKey(request);
+				if (!key) {
 					return reply
 						.code(401)
 						.send({ error: "unauthorized", message: "admin API key required" });
 				}
-				request.adminTenant = tenant;
+				request.adminTenant = key.tenant;
+				request.adminKeyId = key.keyId;
 			},
 		);
 

@@ -87,11 +87,15 @@ It SHALL answer `200` with `{"revoked": <number of sessions revoked>}`, which is
 - **THEN** the second response is 200 with `revoked: 0`
 
 ### Requirement: A platform admin can revoke a tenant's user's sessions
-`POST /v1/platform/tenants/:slug/sessions/revoke` SHALL exist exactly where the other platform admin routes are registered, and SHALL apply their checks (an `Origin` header is refused with 403, a missing or invalid platform admin session with 401). It SHALL accept the same body and give the same response as the tenant admin route, scoped to the tenant named by `:slug`. An unknown slug SHALL be answered as on the other `/v1/platform/tenants/:slug` routes. It SHALL work for a suspended tenant.
+`POST /v1/platform/tenants/:slug/sessions/revoke` SHALL exist exactly where the other platform admin routes are registered, and SHALL apply their checks (an `Origin` header is refused with 403, a missing or invalid platform admin session with 401). It SHALL accept the same body and give the same response as the tenant admin route, scoped to the tenant named by `:slug`. An unknown slug SHALL be answered as on the other `/v1/platform/tenants/:slug` routes. It SHALL work for a suspended tenant. A deleted tenant has no sessions left, so it SHALL be refused with `409 invalid-transition` and nothing SHALL be recorded.
 
 #### Scenario: Revoke for a suspended tenant
 - **WHEN** a platform admin revokes by `externalUserId` on a suspended tenant
 - **THEN** the response is 200 and the user's sessions are revoked
+
+#### Scenario: Deleted tenant
+- **WHEN** a platform admin revokes on a deleted tenant
+- **THEN** the response is 409 `invalid-transition`
 
 #### Scenario: Tenant admin key on the platform route
 - **WHEN** a tenant admin key is presented as the bearer token
