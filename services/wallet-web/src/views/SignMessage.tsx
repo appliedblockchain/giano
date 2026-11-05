@@ -1,10 +1,36 @@
-import type { PendingRequest } from "@appliedblockchain/giano-wallet-kit";
-import { hexToString, isHex } from "viem";
+import {
+	type PendingRequest,
+	toPersonalMessageBytes,
+} from "@appliedblockchain/giano-wallet-kit";
+import { bytesToHex } from "viem";
+
+/**
+ * A Unicode "Other" character (general category C): control and format characters, such as bidi
+ * overrides and zero-width characters, plus private-use and unassigned code points. Each can hide
+ * or reorder what the user reads. Tab and line breaks are allowed.
+ */
+const HIDDEN_CHARACTER = /(?![\t\n\r])\p{C}/u;
+
+/** The bytes as text, or undefined when they are not valid UTF-8 or contain a hidden character. */
+function decodeReadableText(bytes: Uint8Array): string | undefined {
+	try {
+		// ignoreBOM keeps a leading U+FEFF in the text, so HIDDEN_CHARACTER rejects it. By default
+		// the decoder would drop it, and the screen would not show a byte that is signed.
+		const text = new TextDecoder("utf-8", {
+			fatal: true,
+			ignoreBOM: true,
+		}).decode(bytes);
+		return HIDDEN_CHARACTER.test(text) ? undefined : text;
+	} catch {
+		return undefined;
+	}
+}
 
 function renderPayload(request: PendingRequest): {
 	title: string;
 	body: string;
 	domainChainId?: number;
+	rawHexWarning?: boolean;
 } {
 	const params = (request.params as unknown[]) ?? [];
 	if (
@@ -43,18 +69,22 @@ function renderPayload(request: PendingRequest): {
 	}
 	// personal_sign: [message, address]; eth_sign: [address, message]
 	const raw = request.method === "personal_sign" ? params[0] : params[1];
-	if (typeof raw === "string" && isHex(raw)) {
-		try {
-			return { title: "Sign message", body: hexToString(raw) };
-		} catch {
-			return { title: "Sign message", body: raw };
-		}
-	}
-	return { title: "Sign message", body: String(raw) };
+	if (typeof raw !== "string")
+		return { title: "Sign message", body: String(raw) };
+	// The exact bytes the wallet signs, from the same function the provider uses. Show them as
+	// text only when that text shows every byte; otherwise show them as hex.
+	const bytes = toPersonalMessageBytes(raw);
+	const text = decodeReadableText(bytes);
+	if (text !== undefined) return { title: "Sign message", body: text };
+	return {
+		title: "Sign message",
+		body: bytesToHex(bytes),
+		rawHexWarning: true,
+	};
 }
 
 export function SignMessage({ request }: { request: PendingRequest }) {
-	const { title, body, domainChainId } = renderPayload(request);
+	const { title, body, domainChainId, rawHexWarning } = renderPayload(request);
 	// MC-82: where the typed-data domain carries its own chain and it differs from the
 	// session's, the mismatch is SHOWN rather than silently accepted. A warning, not a
 	// refusal: signing a message scoped to another chain is a legitimate thing to do
@@ -78,6 +108,13 @@ export function SignMessage({ request }: { request: PendingRequest }) {
 				<div className="data-box" data-testid="sign-payload">
 					{body}
 				</div>
+				{rawHexWarning ? (
+					<div className="error" data-testid="raw-hex-warning">
+						This message cannot be shown safely as text, so it is shown as hex.
+						You are signing exactly these bytes. Only sign if you know what they
+						mean.
+					</div>
+				) : null}
 				{chainMismatch ? (
 					<div className="error" data-testid="chain-mismatch-warning">
 						This message declares chain {domainChainId}, but this session is

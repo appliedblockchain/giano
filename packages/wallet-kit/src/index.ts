@@ -19,10 +19,12 @@ export type {
 	UnknownReason,
 	UnknownTransaction,
 } from "@appliedblockchain/giano-tx-describe";
-// ── the error shapes and reason codes a client keys behaviour off (spec §9, WK-15) ──
+// ── the error shapes and reason codes a client keys behaviour off (spec §9, WK-15), and the
+// exact bytes a personal_sign / eth_sign request signs, for the consent screen ──
 export {
 	type SponsorshipRefusalReason,
 	type SponsorshipRuleResult,
+	toPersonalMessageBytes,
 	WalletManagementApiError,
 } from "@appliedblockchain/giano-wallet-core";
 export { TransportRpcError } from "@appliedblockchain/giano-wallet-transport";
