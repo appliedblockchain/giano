@@ -112,7 +112,10 @@ export function SigningCard() {
 			description="Sign a message or typed data with your passkey. Giano signs as a smart account, so the result is an ERC-1271 signature, not an ECDSA v/r/s triple."
 			sdk={[
 				["personal_sign", "EIP-191 personal message signature"],
-				["eth_sign", "raw hash signature (legacy)"],
+				[
+					"eth_sign",
+					"legacy EIP-191 message signature, the same as personal_sign with the parameters reversed",
+				],
 				[
 					"eth_signTypedData_v4",
 					"EIP-712 typed data signature — also what an EIP-2612 permit uses",

@@ -1,25 +1,7 @@
 import {
+	describePersonalMessage,
 	type PendingRequest,
-	toPersonalMessageBytes,
 } from "@appliedblockchain/giano-wallet-kit";
-import { bytesToHex } from "viem";
-
-/** Invisible or reordering characters (Unicode category C and default-ignorables), except tab and line breaks. */
-const HIDDEN_CHARACTER = /(?![\t\n\r])[\p{C}\p{Default_Ignorable_Code_Point}]/u;
-
-/** The bytes as text, or undefined when they are not valid UTF-8 or contain a hidden character. */
-function decodeReadableText(bytes: Uint8Array): string | undefined {
-	try {
-		// ignoreBOM keeps a leading BOM, so the check rejects it instead of hiding it.
-		const text = new TextDecoder("utf-8", {
-			fatal: true,
-			ignoreBOM: true,
-		}).decode(bytes);
-		return HIDDEN_CHARACTER.test(text) ? undefined : text;
-	} catch {
-		return undefined;
-	}
-}
 
 function renderPayload(request: PendingRequest): {
 	title: string;
@@ -66,15 +48,8 @@ function renderPayload(request: PendingRequest): {
 	const raw = request.method === "personal_sign" ? params[0] : params[1];
 	if (typeof raw !== "string")
 		return { title: "Sign message", body: String(raw) };
-	// The exact bytes the provider signs: shown as text only when every byte is visible.
-	const bytes = toPersonalMessageBytes(raw);
-	const text = decodeReadableText(bytes);
-	if (text !== undefined) return { title: "Sign message", body: text };
-	return {
-		title: "Sign message",
-		body: bytesToHex(bytes),
-		rawHexWarning: true,
-	};
+	const { body, rawHex } = describePersonalMessage(raw);
+	return { title: "Sign message", body, rawHexWarning: rawHex };
 }
 
 export function SignMessage({ request }: { request: PendingRequest }) {

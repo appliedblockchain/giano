@@ -1,10 +1,10 @@
-import type {
-	PendingRequest,
-	SponsorshipPreflight,
-	SponsorshipRefusalReason,
-	TransactionDescription,
+import {
+	describePersonalMessage,
+	type PendingRequest,
+	type SponsorshipPreflight,
+	type SponsorshipRefusalReason,
+	type TransactionDescription,
 } from "@appliedblockchain/giano-wallet-kit";
-import { hexToString, isHex } from "viem";
 
 /**
  * Plain-DOM views — what wallet-web renders with React, a BYO UI can render however it
@@ -42,29 +42,29 @@ const chainBadge = (chainName: string) =>
 		`Network: ${chainName}`,
 	);
 
-function describeSignPayload(method: string, params: unknown): string {
+function describeSignPayload(
+	method: string,
+	params: unknown,
+): { body: string; rawHex: boolean } {
 	const list = Array.isArray(params) ? params : [];
-	const raw =
-		method === "personal_sign"
-			? list[0]
-			: method === "eth_sign"
-				? list[1]
-				: list[1];
+	// personal_sign: [message, address]; eth_sign and eth_signTypedData_v4: [address, payload]
+	const raw = method === "personal_sign" ? list[0] : list[1];
+	if (
+		(method === "personal_sign" || method === "eth_sign") &&
+		typeof raw === "string"
+	)
+		return describePersonalMessage(raw);
 	if (method === "eth_signTypedData_v4" && typeof raw === "string") {
 		try {
-			return JSON.stringify(JSON.parse(raw), null, 2);
+			return { body: JSON.stringify(JSON.parse(raw), null, 2), rawHex: false };
 		} catch {
-			return raw;
+			return { body: raw, rawHex: false };
 		}
 	}
-	if (typeof raw === "string" && isHex(raw)) {
-		try {
-			return hexToString(raw);
-		} catch {
-			return raw;
-		}
-	}
-	return typeof raw === "string" ? raw : JSON.stringify(raw);
+	return {
+		body: typeof raw === "string" ? raw : JSON.stringify(raw),
+		rawHex: false,
+	};
 }
 
 function rawTransaction(params: unknown): string {
@@ -329,15 +329,20 @@ export function render(
 		return;
 	}
 
+	const { body, rawHex } = describeSignPayload(pending.method, pending.params);
 	root.append(
 		el("h2", {}, "Signature requested"),
 		originBadge(pending.dappOrigin),
 		chainBadge(pending.chainName),
-		el(
-			"pre",
-			{ className: "payload" },
-			describeSignPayload(pending.method, pending.params),
-		),
-		buttons("Sign it", "byo-sign"),
+		el("pre", { className: "payload" }, body),
 	);
+	if (rawHex)
+		root.append(
+			el(
+				"div",
+				{ className: "notice", dataset: { testid: "byo-raw-hex-warning" } },
+				"Shown as hex: it is not safe to show as text. You sign exactly these bytes.",
+			),
+		);
+	root.append(buttons("Sign it", "byo-sign"));
 }
