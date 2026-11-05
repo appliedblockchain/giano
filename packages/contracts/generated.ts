@@ -395,14 +395,33 @@ export const authenticatedStaticCallerAbi = [
     outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     stateMutability: 'view',
   },
-  { type: 'error', inputs: [], name: 'InvalidSignature' },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+      { name: 'signedAt', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'staticCallHash',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  { type: 'error', inputs: [], name: 'StaticCallInvalidSignature' },
   {
     type: 'error',
     inputs: [
       { name: 'expiredAt', internalType: 'uint256', type: 'uint256' },
       { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'SignatureExpired',
+    name: 'StaticCallSignatureExpired',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'signedAt', internalType: 'uint256', type: 'uint256' },
+      { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'StaticCallSignatureNotYetValid',
   },
 ] as const
 
@@ -1720,6 +1739,17 @@ export const gianoSmartWalletAbi = [
   {
     type: 'function',
     inputs: [
+      { name: 'target', internalType: 'address', type: 'address' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+      { name: 'signedAt', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'staticCallHash',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [
       { name: 'newImplementation', internalType: 'address', type: 'address' },
       { name: 'data', internalType: 'bytes', type: 'bytes' },
     ],
@@ -1787,18 +1817,26 @@ export const gianoSmartWalletAbi = [
     ],
     name: 'InvalidPaymasterSignatureLength',
   },
-  { type: 'error', inputs: [], name: 'InvalidSignature' },
   { type: 'error', inputs: [], name: 'LastOwner' },
   { type: 'error', inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }], name: 'NoOwnerAtIndex' },
   { type: 'error', inputs: [{ name: 'ownersRemaining', internalType: 'uint256', type: 'uint256' }], name: 'NotLastOwner' },
   { type: 'error', inputs: [{ name: 'selector', internalType: 'bytes4', type: 'bytes4' }], name: 'SelectorNotAllowed' },
+  { type: 'error', inputs: [], name: 'StaticCallInvalidSignature' },
   {
     type: 'error',
     inputs: [
       { name: 'expiredAt', internalType: 'uint256', type: 'uint256' },
       { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'SignatureExpired',
+    name: 'StaticCallSignatureExpired',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'signedAt', internalType: 'uint256', type: 'uint256' },
+      { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'StaticCallSignatureNotYetValid',
   },
   { type: 'error', inputs: [], name: 'Unauthorized' },
   { type: 'error', inputs: [], name: 'UnauthorizedCallContext' },

@@ -1,5 +1,9 @@
+import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import {
 	custom,
+	decodeFunctionData,
+	encodeErrorResult,
+	type Hex,
 	hashMessage,
 	parseGwei,
 	type SignableMessage,
@@ -77,6 +81,40 @@ function buildProvider(
 		...opts.overrides,
 	}).gianoProvider;
 	return { provider, sentUserOps };
+}
+
+/**
+ * Counts passkey assertions from now on, and the highest number that run at the same time.
+ * Each authenticated-read signature is one assertion.
+ */
+function countPasskeyPrompts(
+	authenticator: MockAuthenticator,
+	/** Runs inside each prompt, before the authenticator answers. */
+	duringPrompt?: () => Promise<void>,
+) {
+	const original = authenticator.get.bind(authenticator);
+	let count = 0;
+	let active = 0;
+	let maxActive = 0;
+	vi.spyOn(authenticator, "get").mockImplementation(async (options) => {
+		count += 1;
+		active += 1;
+		maxActive = Math.max(maxActive, active);
+		try {
+			await duringPrompt?.();
+			return await original(options);
+		} finally {
+			active -= 1;
+		}
+	});
+	return {
+		get count() {
+			return count;
+		},
+		get maxActive() {
+			return maxActive;
+		},
+	};
 }
 
 /** Registers a fresh passkey (create path) and connects. */
@@ -911,6 +949,76 @@ describe("reads: eth_call & signed_eth_call", () => {
 		expect(result).toBe("0xc0ffee");
 	});
 
+	it("signed_eth_call signs each read over its own target and data, and reuses it only for that read", async () => {
+		const staticCalls: {
+			target: string;
+			data: string;
+			signedAt: bigint;
+			signature: string;
+		}[] = [];
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: {
+				code: "0xabcd",
+				staticCallResult: "0xc0ffee",
+				onRequest: (method, params) => {
+					if (method !== "eth_call") return;
+					const { data } = (params as [{ data: `0x${string}` }])[0];
+					try {
+						const decoded = decodeFunctionData({
+							abi: gianoSmartWalletAbi,
+							data,
+						});
+						if (decoded.functionName === "signedStaticCall")
+							staticCalls.push(decoded.args[0] as never);
+					} catch {
+						// not a wallet call
+					}
+				},
+			},
+		});
+		await connect(provider);
+		const prompts = countPasskeyPrompts(mock.authenticator);
+		const read = (to: string, data: string) =>
+			provider.request({
+				method: "signed_eth_call",
+				params: [{ to, data }] as never,
+			});
+		const A = "0x1111111111111111111111111111111111111111";
+		const B = "0x2222222222222222222222222222222222222222";
+
+		await read(A, "0xabcd");
+		await read(A, "0xabcd"); // same read: cached signature
+		await read(A, "0xabce"); // other calldata: new signature
+		await read(B, "0xabcd"); // other target: new signature
+
+		expect(prompts.count).toBe(3);
+		expect(staticCalls.map((c) => [c.target, c.data])).toEqual([
+			[A, "0xabcd"],
+			[A, "0xabcd"],
+			[A, "0xabce"],
+			[B, "0xabcd"],
+		]);
+		expect(staticCalls[1].signature).toBe(staticCalls[0].signature);
+		expect(new Set(staticCalls.map((c) => c.signature)).size).toBe(3);
+		// the mock's latest block is at 1_800_000_000; signedAt is set 30 seconds earlier
+		expect(staticCalls[0].signedAt).toBe(1_799_999_970n);
+	});
+
+	it("signed_eth_call validates to and data before it asks for a signature", async () => {
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: { code: "0xabcd" },
+		});
+		await connect(provider);
+		const prompts = countPasskeyPrompts(mock.authenticator);
+		await expect(
+			provider.request({
+				method: "signed_eth_call",
+				params: [{ data: "0xabcd" } as never],
+			}),
+		).rejects.toThrow(/`transaction.to` is required/);
+		expect(prompts.count).toBe(0);
+	});
+
 	it("signed_eth_call requires to and data", async () => {
 		const { provider } = buildProvider(mock.authenticator, {
 			transportOptions: { code: "0xabcd" },
@@ -928,6 +1036,299 @@ describe("reads: eth_call & signed_eth_call", () => {
 				params: [{ to: WALLET_ADDRESS } as never],
 			}),
 		).rejects.toThrow(/`transaction.data` is required/);
+	});
+});
+
+describe("signed_eth_call signature cache", () => {
+	const A = "0x1111111111111111111111111111111111111111";
+	// the mock's default signature lifetime, in seconds
+	const LIFETIME = 3600;
+	// the lifetime minus the 30-second back-date and the 60-second renewal margin
+	const USABLE_MS = (LIFETIME - 30 - 60) * 1000;
+	// the mock's latest block timestamp, in ms
+	const CHAIN_NOW_MS = 1_800_000_000_000;
+
+	afterEach(() => vi.restoreAllMocks());
+
+	const walletError = (
+		errorName: "StaticCallInvalidSignature" | "StaticCallSignatureExpired",
+	): Hex =>
+		errorName === "StaticCallInvalidSignature"
+			? encodeErrorResult({ abi: gianoSmartWalletAbi, errorName })
+			: encodeErrorResult({
+					abi: gianoSmartWalletAbi,
+					errorName,
+					args: [1n, 2n],
+				});
+
+	async function setup(
+		transportOptions: MockClientOptions = {},
+		duringPrompt?: () => Promise<void>,
+	) {
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: {
+				code: "0xabcd",
+				staticCallResult: "0xc0ffee",
+				...transportOptions,
+			},
+		});
+		await connect(provider);
+		const prompts = countPasskeyPrompts(mock.authenticator, duringPrompt);
+		const read = (data: Hex = "0xabcd") =>
+			provider.request({
+				method: "signed_eth_call",
+				params: [{ to: A, data }] as never,
+			});
+		return { provider, prompts, read };
+	}
+
+	it("renews a signature on the local clock, counted from when it was signed", async () => {
+		const { prompts, read } = await setup();
+		const now = vi.spyOn(Date, "now").mockReturnValue(CHAIN_NOW_MS);
+
+		await read();
+		now.mockReturnValue(CHAIN_NOW_MS + USABLE_MS - 1);
+		await read();
+		expect(prompts.count).toBe(1);
+
+		now.mockReturnValue(CHAIN_NOW_MS + USABLE_MS);
+		await read();
+		expect(prompts.count).toBe(2);
+	});
+
+	it("reuses a signature when the local clock is far from the chain's", async () => {
+		const { prompts, read } = await setup();
+		const now = vi.spyOn(Date, "now");
+		const day = 86_400_000;
+
+		// local clock one day ahead of the chain
+		now.mockReturnValue(CHAIN_NOW_MS + day);
+		await read("0xabcd");
+		await read("0xabcd");
+		expect(prompts.count).toBe(1);
+
+		// local clock one day behind the chain
+		now.mockReturnValue(CHAIN_NOW_MS - day);
+		await read("0xabce");
+		await read("0xabce");
+		expect(prompts.count).toBe(2);
+	});
+
+	it("signs again once when the wallet rejects a cached signature", async () => {
+		const { prompts, read } = await setup({
+			// the second read finds the chain past the cached signature's limit
+			staticCallRevert: (i) =>
+				i === 1 ? walletError("StaticCallSignatureExpired") : undefined,
+		});
+
+		await read();
+		expect(await read()).toBe("0xc0ffee");
+		expect(prompts.count).toBe(2);
+
+		// the new signature replaced the rejected one
+		await read();
+		expect(prompts.count).toBe(2);
+	});
+
+	it("does not cache or retry a new signature the wallet rejects", async () => {
+		let walletCalls = 0;
+		const { prompts, read } = await setup({
+			staticCallRevert: () => {
+				walletCalls += 1;
+				return walletError("StaticCallInvalidSignature");
+			},
+		});
+
+		await expect(read()).rejects.toThrow(/StaticCallInvalidSignature/);
+		expect([prompts.count, walletCalls]).toEqual([1, 1]);
+		// a cached copy would be sent first and then retried: two wallet calls
+		await expect(read()).rejects.toThrow(/StaticCallInvalidSignature/);
+		expect([prompts.count, walletCalls]).toEqual([2, 2]);
+	});
+
+	it("removes the new signature too when the wallet rejects the retry", async () => {
+		let walletCalls = 0;
+		const { prompts, read } = await setup({
+			staticCallRevert: (i) => {
+				walletCalls += 1;
+				if (i === 1) return walletError("StaticCallSignatureExpired");
+				if (i === 2) return walletError("StaticCallInvalidSignature");
+				return undefined;
+			},
+		});
+
+		await read();
+		// the cached signature is rejected, and so is the new one
+		await expect(read()).rejects.toThrow(/StaticCallInvalidSignature/);
+		expect([prompts.count, walletCalls]).toEqual([2, 3]);
+
+		// the next read signs again instead of sending the rejected signature
+		expect(await read()).toBe("0xc0ffee");
+		expect([prompts.count, walletCalls]).toEqual([3, 4]);
+	});
+
+	it("keeps the signature when the target reverts with an error named like the wallet's", async () => {
+		let walletCalls = 0;
+		const { prompts, read } = await setup({
+			// PrivateERC20 declares its own InvalidSignature(); the wallet passes it through
+			staticCallRevert: (i) => {
+				walletCalls += 1;
+				return i === 1
+					? encodeErrorResult({
+							abi: [{ type: "error", name: "InvalidSignature", inputs: [] }],
+							errorName: "InvalidSignature",
+						})
+					: undefined;
+			},
+		});
+
+		await read();
+		await expect(read()).rejects.toThrow();
+		// no new signature and no retry
+		expect([prompts.count, walletCalls]).toEqual([1, 2]);
+		expect(await read()).toBe("0xc0ffee");
+		expect(prompts.count).toBe(1);
+	});
+
+	it("does not sign, cache or send for a session that ended during the read", async () => {
+		let walletCalls = 0;
+		let disconnect = () => Promise.resolve();
+		const { provider, prompts, read } = await setup(
+			{
+				staticCallRevert: () => {
+					walletCalls += 1;
+					return undefined;
+				},
+			},
+			// the user disconnects while the first passkey prompt is open
+			() => disconnect(),
+		);
+		disconnect = async () => {
+			disconnect = () => Promise.resolve();
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{}] as never,
+			});
+		};
+
+		// the second read waits in the signing queue behind the first
+		const results = await Promise.allSettled([read("0xabcd"), read("0xabce")]);
+
+		for (const result of results) {
+			expect(result.status).toBe("rejected");
+			expect((result as PromiseRejectedResult).reason.message).toMatch(
+				/session changed/,
+			);
+		}
+		// one prompt for the first read; the queued read never prompted; nothing was sent
+		expect([prompts.count, walletCalls]).toEqual([1, 0]);
+	});
+
+	it("does not send the fallback read when the session ends during the deployment check", async () => {
+		let targetReads = 0;
+		let onDeploymentCheck: (() => Promise<void>) | undefined;
+		const { provider, read } = await setup({
+			// deployed for the connect check, then not deployed, so the read falls back to a
+			// plain eth_call
+			code: (i) => (i < 1 ? "0xabcd" : "0x"),
+			onRequest: async (method, params) => {
+				if (method === "eth_call" && (params as [{ to: string }])[0].to === A)
+					targetReads += 1;
+				if (method !== "eth_getCode" || !onDeploymentCheck) return;
+				const hook = onDeploymentCheck;
+				onDeploymentCheck = undefined;
+				await hook();
+			},
+		});
+		// the user disconnects while the provider checks whether the account is deployed
+		onDeploymentCheck = async () => {
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{}] as never,
+			});
+		};
+
+		await expect(read()).rejects.toThrow(/session changed/);
+		expect(targetReads).toBe(0);
+	});
+
+	it("does not prompt when the session ends during the block lookup", async () => {
+		let walletCalls = 0;
+		let onBlockLookup: (() => Promise<void>) | undefined;
+		const { provider, prompts, read } = await setup({
+			onRequest: async (method) => {
+				if (method !== "eth_getBlockByNumber" || !onBlockLookup) return;
+				const hook = onBlockLookup;
+				onBlockLookup = undefined;
+				await hook();
+			},
+			staticCallRevert: () => {
+				walletCalls += 1;
+				return undefined;
+			},
+		});
+		// the user disconnects while the provider fetches the latest block for signedAt
+		onBlockLookup = async () => {
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{}] as never,
+			});
+		};
+
+		await expect(read()).rejects.toThrow(/session changed/);
+		expect([prompts.count, walletCalls]).toEqual([0, 0]);
+	});
+
+	it("uses a replacement another read already signed when a delayed rejection arrives", async () => {
+		let releaseSecondRejection = () => {};
+		const secondRejection = new Promise<Hex>((resolve) => {
+			releaseSecondRejection = () =>
+				resolve(walletError("StaticCallSignatureExpired"));
+		});
+		const { prompts, read } = await setup({
+			staticCallRevert: (i) => {
+				// 0: the first read signs and caches S
+				// 1 and 2: two identical reads send S, and the wallet rejects both
+				if (i === 1) return walletError("StaticCallSignatureExpired");
+				if (i === 2) return secondRejection;
+				// 3: the first rejected read sends its replacement S'; only now does the
+				//    second rejection arrive
+				if (i === 3) releaseSecondRejection();
+				return undefined;
+			},
+		});
+
+		await read();
+		const results = await Promise.all([read(), read()]);
+
+		expect(results).toEqual(["0xc0ffee", "0xc0ffee"]);
+		// S and S': the second read used S' instead of signing a third time
+		expect(prompts.count).toBe(2);
+	});
+
+	it("keeps the signature when the read itself reverts", async () => {
+		const { prompts, read } = await setup({
+			// an error from the target contract, not from the wallet
+			staticCallRevert: (i) => (i === 0 ? "0xdeadbeef" : undefined),
+		});
+
+		await expect(read()).rejects.toThrow();
+		expect(await read()).toBe("0xc0ffee");
+		expect(prompts.count).toBe(1);
+	});
+
+	it("signs identical concurrent reads once, and one signature at a time", async () => {
+		const { prompts, read } = await setup();
+
+		const results = await Promise.all([
+			read("0xabcd"),
+			read("0xabcd"),
+			read("0xabce"),
+		]);
+
+		expect(results).toEqual(["0xc0ffee", "0xc0ffee", "0xc0ffee"]);
+		expect(prompts.count).toBe(2);
+		expect(prompts.maxActive).toBe(1);
 	});
 });
 

@@ -63,8 +63,17 @@ export type MockClientOptions = {
 	signatureLifetime?: bigint;
 	/** Raw bytes returned by `signedStaticCall`. */
 	staticCallResult?: Hex;
-	/** Observe every JSON-RPC request the client makes. */
-	onRequest?: (method: string, params: unknown) => void;
+	/**
+	 * Revert data for a `signedStaticCall`, by 0-based call index. Return undefined to answer
+	 * with `staticCallResult` instead.
+	 */
+	staticCallRevert?: (
+		callIndex: number,
+	) => Hex | undefined | Promise<Hex | undefined>;
+	/** Timestamp (seconds) of the latest block, returned by `eth_getBlockByNumber`. */
+	blockTimestamp?: bigint;
+	/** Observe every JSON-RPC request the client makes. A returned promise delays the answer. */
+	onRequest?: (method: string, params: unknown) => void | Promise<void>;
 };
 
 /**
@@ -78,10 +87,13 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		code = "0x",
 		signatureLifetime = 3600n,
 		staticCallResult = "0x",
+		staticCallRevert,
+		blockTimestamp = 1_800_000_000n,
 		onRequest,
 	} = options;
 
 	let getCodeCalls = 0;
+	let staticCalls = 0;
 
 	const request = async ({
 		method,
@@ -90,10 +102,18 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		method: string;
 		params: unknown;
 	}): Promise<unknown> => {
-		onRequest?.(method, params);
+		await onRequest?.(method, params);
 		switch (method) {
 			case "eth_chainId":
 				return `0x${TEST_CHAIN_ID.toString(16)}`;
+			case "eth_getBlockByNumber":
+				return {
+					number: "0x1",
+					hash: `0x${"11".repeat(32)}`,
+					parentHash: `0x${"00".repeat(32)}`,
+					timestamp: `0x${blockTimestamp.toString(16)}`,
+					transactions: [],
+				};
 			case "eth_getCode": {
 				const value = typeof code === "function" ? code(getCodeCalls) : code;
 				getCodeCalls += 1;
@@ -114,12 +134,19 @@ export function createMockTransport(options: MockClientOptions = {}) {
 						functionName: "getSignatureLifetime",
 						result: signatureLifetime,
 					});
-				if (selector === WALLET_SIGNED_STATIC_CALL)
+				if (selector === WALLET_SIGNED_STATIC_CALL) {
+					const callIndex = staticCalls;
+					staticCalls += 1;
+					const revertData = await staticCallRevert?.(callIndex);
+					// the shape a node returns for a reverted eth_call
+					if (revertData)
+						throw { code: 3, message: "execution reverted", data: revertData };
 					return encodeFunctionResult({
 						abi: gianoSmartWalletAbi,
 						functionName: "signedStaticCall",
 						result: staticCallResult,
 					});
+				}
 				return "0x";
 			}
 			default:
