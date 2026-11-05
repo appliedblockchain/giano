@@ -53,6 +53,16 @@ describe("the single-slot consent queue (WK-10)", () => {
 		});
 	});
 
+	it("answers a request whose session ended with 4100, not 4001 (G5)", async () => {
+		const store = createRequestStore();
+		const consent = store.requestConsent(input({ kind: "transaction" }));
+		store.current!.sessionEnded();
+		await expect(consent).rejects.toMatchObject({
+			code: RPC_ERRORS.UNAUTHORIZED,
+		});
+		expect(store.current).toBeNull();
+	});
+
 	it("refuses a second request while one is pending, rather than queueing silently", async () => {
 		const store = createRequestStore();
 		const first = store.requestConsent(input());

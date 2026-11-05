@@ -14,7 +14,10 @@ import {
 	serializeUserOperation,
 	toBase64Url,
 } from "./serialization";
-import { type SessionEndReason, SessionEndedError } from "./session-ended-error";
+import {
+	SessionEndedError,
+	type SessionEndReason,
+} from "./session-ended-error";
 
 export type CreateWalletApiInjectionOptions = {
 	passkeyDevicePreference?: PasskeyDevicePreference;

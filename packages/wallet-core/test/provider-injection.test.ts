@@ -663,9 +663,7 @@ describe("createWalletApiInjection", () => {
 
 		it("a 401 to a call that carried no session does not end it", async () => {
 			const { injection, ended } = make(respond(401));
-			await expect(injection.getCredentialInfo()).rejects.toThrow(
-				/failed: x/,
-			);
+			await expect(injection.getCredentialInfo()).rejects.toThrow(/failed: x/);
 			expect(injection.getSessionToken()).toBe("tok");
 			expect(ended).not.toHaveBeenCalled();
 		});
