@@ -51,6 +51,7 @@
 		"prepublishOnly": "pnpm build:ts",
 		"compile": "forge build",
 		"test": "forge test",
+		"coverage": "forge coverage --ir-minimum --no-match-path test/GianoPaymaster/Gas.t.sol --no-match-coverage '(^|/)(test|script|lib|node_modules|vendor|src/testing)/'",
 		"gen:abis": "forge build src --out out-abi --cache-path cache_forge_abi && wagmi generate",
 		"gen:canonical": "tsx scripts/generate-canonical.ts",
 		"gen:addresses": "tsx scripts/generate-addresses.ts",
