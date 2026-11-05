@@ -5,7 +5,7 @@ import "./SmartWalletTestBase.sol";
 import "webauthn-sol/../test/Utils.sol";
 
 contract TestIsValidSignature is SmartWalletTestBase {
-    function testValidateSignatureWithPasskeySigner() public {
+    function testValidateSignatureWithPasskeySigner() public view {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 challenge = account.replaySafeHash(hash);
         WebAuthnInfo memory webAuthn = Utils.getWebAuthnStruct(challenge);
@@ -62,7 +62,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
 
     /// @dev Owners are identified by their bytes rather than by index, so an unregistered
     ///      public key is rejected up front by `isOwnerBytes` instead of reverting on a lookup.
-    function testValidateSignatureWithPasskeySignerFailsUnregisteredOwner() public {
+    function testValidateSignatureWithPasskeySignerFailsUnregisteredOwner() public view {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 challenge = account.replaySafeHash(hash);
         WebAuthnInfo memory webAuthn = Utils.getWebAuthnStruct(challenge);
@@ -94,7 +94,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         assertEq(ret, bytes4(0xffffffff));
     }
 
-    function testValidateSignatureWithPasskeySignerFailsWithWrongBadSignature() public {
+    function testValidateSignatureWithPasskeySignerFailsWithWrongBadSignature() public view {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 challenge = account.replaySafeHash(hash);
         WebAuthnInfo memory webAuthn = Utils.getWebAuthnStruct(challenge);
@@ -123,7 +123,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         assertEq(ret, bytes4(0xffffffff));
     }
 
-    function testValidateSignatureWithEOASigner() public {
+    function testValidateSignatureWithEOASigner() public view {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 toSign = account.replaySafeHash(hash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
@@ -133,7 +133,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         assertEq(ret, bytes4(0x1626ba7e));
     }
 
-    function testValidateSignatureWithEOASignerFailsWithWrongSigner() public {
+    function testValidateSignatureWithEOASignerFailsWithWrongSigner() public view {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xa12ce, hash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -142,7 +142,7 @@ contract TestIsValidSignature is SmartWalletTestBase {
         assertEq(ret, bytes4(0xffffffff));
     }
 
-    function testReturnsInvalidIfPasskeySigButWrongOwnerLength() public {
+    function testReturnsInvalidIfPasskeySigButWrongOwnerLength() public view {
         bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
         bytes32 challenge = account.replaySafeHash(hash);
         WebAuthnInfo memory webAuthn = Utils.getWebAuthnStruct(challenge);
@@ -195,6 +195,24 @@ contract TestIsValidSignature is SmartWalletTestBase {
         assertTrue(account.isOwnerBytes(invalidOwner));
 
         vm.expectRevert(abi.encodeWithSelector(MultiOwnable.InvalidEthereumAddressOwner.selector, invalidOwner));
+        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(invalidOwner, signature)));
+    }
+
+    /// @dev this case should not be possible either: owners are only ever 32 or 64 bytes long
+    function testRevertsIfOwnerBytesHaveAnInvalidLength() public {
+        bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
+        bytes32 toSign = account.replaySafeHash(hash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        // 33 owner bytes. `_initializeOwners` rejects this length, so force the entry straight into
+        // the `isOwner` mapping (MUTLI_OWNABLE_STORAGE_LOCATION + 3) to reach the defensive revert.
+        bytes memory invalidOwner = abi.encodePacked(abi.encode(signer), bytes1(0x01));
+        bytes32 slot_isOwner =
+            bytes32(uint256(0x0627f72af0e6f412195b0d8acbe438b28090dd545b7d2331fccf77723561f500) + 3);
+        vm.store(address(account), keccak256(abi.encodePacked(invalidOwner, slot_isOwner)), bytes32(uint256(1)));
+        assertTrue(account.isOwnerBytes(invalidOwner));
+
+        vm.expectRevert(abi.encodeWithSelector(MultiOwnable.InvalidOwnerBytesLength.selector, invalidOwner));
         account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(invalidOwner, signature)));
     }
 }

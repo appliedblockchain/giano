@@ -44,4 +44,33 @@ contract GianoSmartWallet1271InputGeneratorTest is Test {
 
         assertEq(bytes32(address(generator).code), replaySafeHash);
     }
+
+    function testRevertsIfTheFactoryCallFails() public {
+        owners.push(abi.encode(address(1)));
+        GianoSmartWallet undeployedAccount = GianoSmartWallet(payable(factory.getAddress(owners, 0)));
+        bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
+
+        // An empty owner list makes `createAccount` revert.
+        vm.expectRevert(ERC1271InputGenerator.AccountDeploymentFailed.selector);
+        new ERC1271InputGenerator(
+            undeployedAccount, hash, address(factory), abi.encodeCall(GianoSmartWalletFactory.createAccount, (new bytes[](0), 0))
+        );
+    }
+
+    function testRevertsIfTheFactoryDeploysADifferentAccount() public {
+        owners.push(abi.encode(address(1)));
+        GianoSmartWallet undeployedAccount = GianoSmartWallet(payable(factory.getAddress(owners, 0)));
+        address otherAccount = factory.getAddress(owners, 1);
+        bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
+
+        // The calldata deploys the account at nonce 1, not the one the caller asked about.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC1271InputGenerator.ReturnedAddressDoesNotMatchAccount.selector, address(undeployedAccount), otherAccount
+            )
+        );
+        new ERC1271InputGenerator(
+            undeployedAccount, hash, address(factory), abi.encodeCall(GianoSmartWalletFactory.createAccount, (owners, 1))
+        );
+    }
 }

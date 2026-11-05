@@ -255,3 +255,26 @@ jobs:
       - name: forge test
         working-directory: packages/contracts
         run: forge test -vvv
+
+  forge-coverage:
+    # A separate job so it runs in parallel with `forge`: coverage recompiles everything without
+    # the optimizer. The thresholds and why they are below 100% are in scripts/check-coverage.mjs.
+    name: Foundry coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Same pin as the `forge` job.
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Coverage of src/ meets the thresholds
+        working-directory: packages/contracts
+        run: pnpm coverage:check

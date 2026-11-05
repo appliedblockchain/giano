@@ -15,7 +15,7 @@ contract TestImplementation is SmartWalletTestBase {
         account = factory.createAccount(owners, 1);
     }
 
-    function testImplementation() public {
+    function testImplementation() public view {
         address addr = account.implementation();
         assertEq(addr, implementation);
     }

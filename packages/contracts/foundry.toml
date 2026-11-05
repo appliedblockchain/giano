@@ -22,5 +22,14 @@ optimizer_runs = 200
 via_ir = true
 auto_detect_remappings = false
 
+# Fail the build on any solc warning, so CI (`forge test`) catches them. Foundry applies this after
+# compiling; it does not reach the bytecode.
+deny = 'warnings'
+
 # Tests install CreateX at its canonical address from the vendored artifact (test/utils/CreateXFixture.sol).
 fs_permissions = [{ access = 'read', path = './vendor/createx' }]
+
+# `deny` also applies to forge-lint, and the linter's current findings are deliberate (selector and
+# bit-flag casts). Keep the linter out of the build; run `forge lint` to see its findings.
+[lint]
+lint_on_build = false

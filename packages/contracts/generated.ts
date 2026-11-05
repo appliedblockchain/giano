@@ -358,7 +358,7 @@ export const authenticatedStaticCallerAbi = [
     ],
     stateMutability: 'view',
   },
-  { type: 'function', inputs: [], name: 'getSignatureLifetime', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'getSignatureLifetime', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'pure' },
   {
     type: 'function',
     inputs: [
@@ -1618,7 +1618,7 @@ export const gianoSmartWalletAbi = [
     outputs: [],
     stateMutability: 'payable',
   },
-  { type: 'function', inputs: [], name: 'getSignatureLifetime', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'getSignatureLifetime', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'pure' },
   {
     type: 'function',
     inputs: [
