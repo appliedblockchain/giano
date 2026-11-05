@@ -41,6 +41,6 @@
 
 ## 6. Docs and wrap-up
 
-- [ ] 6.1 `specs/ARCHITECTURE.md`: describe the session model (absolute and idle expiry, cap, sign-out everywhere, admin revocation) and record the R5 decision and its XSS trade-off from design D6.
-- [ ] 6.2 BYO-wallet guidance (`specs/INTEGRATION.md` or `specs/DEVELOPER-GUIDE.md`, wherever the injection contract is documented): treat a 401 as the end of the session, and know that CORS carries no credentials.
+- [x] 6.1 `specs/ARCHITECTURE.md`: describe the session model (absolute and idle expiry, cap, sign-out everywhere, admin revocation) and record the R5 decision and its XSS trade-off from design D6.
+- [x] 6.2 BYO-wallet guidance (`specs/INTEGRATION.md` or `specs/DEVELOPER-GUIDE.md`, wherever the injection contract is documented): treat a 401 as the end of the session, and know that CORS carries no credentials.
 - [ ] 6.3 Run `openspec validate session-lifecycle --strict`. Open the PRs as a `gh stack` (PR 1 → PR 2 → PR 3) with titles ending `(G5)`, and update the G5 Notion ticket with the PR links.

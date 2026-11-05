@@ -192,12 +192,18 @@ change:
 const paymaster = createErc7677PaymasterClient({
   url: '/api/v1/paymaster',
   chainId,
-  getSessionToken: () => localStorage.getItem('giano:session-token'),
+  getSessionToken: injection.getSessionToken,
+  // a 401 means the session ended: drop it in one place, the injection
+  onUnauthorized: injection.onUnauthorized,
 });
 const bundler = createBundlerClient({ chain, transport, paymaster });
 ```
 
-Requests carry the wallet session bearer. The tenant is taken from the session, never from the
+Requests carry the wallet session bearer, as an `Authorization` header only. wallet-api's CORS
+allows no credentials, so never send these requests with `credentials: 'include'`. A `401` means
+the session ended (idle, expired, capped out or revoked) and will not come back: the client throws
+`SessionEndedError` (code 4100), and your wallet should ask the user to sign in again rather than
+retry. The tenant is taken from the session, never from the
 request — so a session cannot be used to spend another tenant's balance — and the sender must be
 that session's own wallet.
 
