@@ -140,10 +140,10 @@ describe("deployCore without a key (verify only)", () => {
 	it("records the release the code matches, its fingerprint and that it is deterministic", async () => {
 		const { publicClient } = chain(allDeployed());
 		const ctx = context(publicClient);
-		await deployCore(ctx, loadRelease("v2"), PAYMASTER);
+		await deployCore(ctx, loadRelease("v3"), PAYMASTER);
 		assert.equal(ctx.record.network, "local");
 		for (const [i, deployed] of Object.values(ctx.record.contracts).entries()) {
-			assert.equal(deployed?.release, "v2");
+			assert.equal(deployed?.release, "v3");
 			assert.match(deployed?.fingerprint ?? "", /^0x[0-9a-f]{64}$/);
 			assert.equal(deployed?.expected, ADDRESSES[i]);
 			assert.equal(deployed?.deterministic, true);
@@ -157,7 +157,7 @@ describe("deployCore with a key", () => {
 		const code = new Map<string, Hex>([[overridden, devnetCode(ADDRESSES[3])]]);
 		const { publicClient, walletClient, sent } = chain(code);
 		const ctx = context(publicClient, walletClient);
-		await deployCore(ctx, loadRelease("v2"), PAYMASTER, {
+		await deployCore(ctx, loadRelease("v3"), PAYMASTER, {
 			paymasterProxy: overridden,
 		});
 		assert.deepEqual(sent, [
@@ -206,7 +206,7 @@ describe("deployCore with a key", () => {
 		await assert.rejects(
 			deployCore(
 				context(publicClient, walletClient),
-				loadRelease("v2"),
+				loadRelease("v3"),
 				PAYMASTER,
 				{
 					walletImplementation: "0x3000000000000000000000000000000000000003",

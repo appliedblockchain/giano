@@ -1,6 +1,6 @@
 /**
  * The deployment plan and the mainnet deviation gate (openspec: contract-deployment). The chain is a
- * stub holding real v2 runtime code from the baked devnet (e2e/devnet/state.json); release
+ * stub holding real v3 runtime code from the baked devnet (e2e/devnet/state.json); release
  * fingerprints mask immutables, so that code passes as release code at any address.
  */
 import assert from "node:assert/strict";
@@ -35,7 +35,7 @@ const state = JSON.parse(
 		"utf8",
 	),
 ) as { accounts: Record<string, { code: Hex }> };
-/** v2 runtime code of each core contract, as the devnet holds it under the local deployer. */
+/** v3 runtime code of each core contract, as the devnet holds it under the local deployer. */
 const CODE = Object.fromEntries(
 	CORE_KEYS.map((key) => [
 		key,
@@ -50,7 +50,7 @@ const CODE = Object.fromEntries(
  */
 function place(key: CoreKey, address: Address): Hex {
 	const fingerprint = RELEASE_FINGERPRINTS.find(
-		(f) => f.contract === CONTRACT_OF[key] && f.release === "v2",
+		(f) => f.contract === CONTRACT_OF[key] && f.release === "v3",
 	);
 	let code = CODE[key].toLowerCase();
 	for (const { name, start, length } of fingerprint?.immutables ?? [])
@@ -148,7 +148,7 @@ describe("planCore", () => {
 			network: "mainnet",
 			signer: OTHER_KEY,
 			deployer: MAINNET,
-			release: "v2",
+			release: "v3",
 		});
 		assert.deepEqual(plan.blockers, []);
 		assert.deepEqual(plan.deviations, []);
@@ -242,7 +242,7 @@ describe("planCore", () => {
 						walletImplementation: {
 							address: wallet,
 							label: LABELS.walletImplementation,
-							release: "v2",
+							release: "v3",
 							codehash: "0x00",
 						},
 					},
@@ -343,7 +343,7 @@ describe("planCore", () => {
 						walletImplementation: {
 							address: wallet,
 							label: LABELS.walletImplementation,
-							release: "v2",
+							release: "v3",
 							codehash: "0x00",
 						},
 					},
@@ -354,7 +354,7 @@ describe("planCore", () => {
 		assert.ok(
 			plan.blockers.some((b) =>
 				b.includes(
-					`walletImplementation at ${wallet} already holds release v2, not the selected v1`,
+					`walletImplementation at ${wallet} already holds release v3, not the selected v1`,
 				),
 			),
 			plan.blockers.join("\n"),
@@ -509,7 +509,7 @@ describe("deviations already in the record", () => {
 			walletImplementation: {
 				address: wallet,
 				label: LABELS.walletImplementation,
-				release: "v2",
+				release: "v3",
 				codehash: "0x00",
 			},
 		},

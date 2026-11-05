@@ -133,7 +133,7 @@ test("existing code of another release than the selected one blocks adoption", a
 		checks.some(
 			(c) =>
 				!c.ok &&
-				/already holds release v2, not the selected v1/.test(c.message),
+				/already holds release v3, not the selected v1/.test(c.message),
 		),
 	);
 });
