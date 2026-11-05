@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
 	bigint,
 	boolean,
@@ -171,6 +172,8 @@ export const tenantHistoryActions = [
 	"seed-takeover",
 	// written by the retired adopt endpoint and the one-time TENANTS_SEED retirement
 	"adopt",
+	// a tenant admin key or a platform admin revoked a user's sessions; the tenant is unchanged
+	"user-sessions-revoke",
 ] as const;
 
 /** Append-only record of every tenant write. Never carries key material. */
@@ -183,7 +186,7 @@ export const tenantHistory = pgTable(
 			.notNull()
 			.references(() => tenants.id),
 		action: text("action", { enum: tenantHistoryActions }).notNull(),
-		/** 'platform-admin:<id>:<address>' | 'fixture' | 'system:tenants-seed-retirement' | 'seed' (retired) */
+		/** 'platform-admin:<id>:<address>' | 'tenant-admin-key:<keyId>' | 'fixture' | 'system:tenants-seed-retirement' | 'seed' (retired) */
 		actor: text("actor").notNull(),
 		platformAdminSessionId: uuid("platform_admin_session_id").references(
 			() => platformAdminSessions.id,
@@ -302,12 +305,23 @@ export const sessions = pgTable(
 			.notNull()
 			.defaultNow(),
 		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		/**
+		 * When wallet-api last accepted this session, to a resolution of a minute (G5). The idle
+		 * timeout reads it; resolve() writes it only when the stored value is a minute old.
+		 */
+		lastUsedAt: timestamp("last_used_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
 		revokedAt: timestamp("revoked_at", { withTimezone: true }),
 	},
 	(t) => [
 		index("sessions_user_id_idx").on(t.userId),
 		index("sessions_expires_at_idx").on(t.expiresAt),
 		index("sessions_credential_id_idx").on(t.credentialId),
+		// the per-user cap and revocation by user only look at sessions not yet revoked
+		index("sessions_user_live_idx")
+			.on(t.userId, t.lastUsedAt)
+			.where(sql`${t.revokedAt} IS NULL`),
 	],
 );
 

@@ -280,4 +280,24 @@ export default async function credentialRoutes(
 			return { ok: true as const };
 		},
 	);
+
+	app.post(
+		"/v1/sessions/logout-all",
+		{
+			schema: {
+				tags: ["me"],
+				summary:
+					"Sign out everywhere: revokes every live session of the calling user, this one included",
+				security: [{ session: [] }],
+				response: {
+					200: z.object({ ok: z.literal(true), revoked: z.number().int() }),
+				},
+			},
+		},
+		async (request) => {
+			const { tenantId, userId } = request.session!;
+			const revoked = await sessions.revokeAllForUser(tenantId, userId);
+			return { ok: true as const, revoked };
+		},
+	);
 }

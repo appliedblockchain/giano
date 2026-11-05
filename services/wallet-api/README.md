@@ -93,6 +93,7 @@ example). Highlights:
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
+| `SESSION_IDLE_TIMEOUT_SECONDS` / `SESSION_MAX_PER_USER` | wallet session idle timeout (3600; at least 300, at most `SESSION_TTL_SECONDS`), live sessions per user before the ones used longest ago are revoked (10) |
 | `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800), per-session and per-address limit (60) |
 | `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` / `PLATFORM_RPC_MAX_LOG_BLOCKS` | the platform chain read relay (`/v1/platform/rpc/:chainId`): forwarded reads per session per minute (1200, a budget separate from the one above), and the widest `eth_getLogs` range it forwards (10000; at least 9000, the paymaster SDK's log window) |
 | `RPC_RELAY_RATE_LIMIT_PER_MINUTE` / `RPC_RELAY_MAX_LOG_BLOCKS` | the tenant chain read relay (`/v1/rpc/:chainId`): forwarded reads per tenant per minute (3000), and the widest `eth_getLogs` range it forwards (10000) |
