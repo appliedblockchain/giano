@@ -54,7 +54,7 @@ jobs:
   # drift the first time an image is added.
   setup:
     name: Enumerate images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       images: ${{ steps.list.outputs.images }}
     steps:
@@ -130,7 +130,7 @@ jobs:
         # ecs_tasks_oneshot.tf), so it stays on every event, PRs included.
         platform:
           - arch: amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -213,7 +213,7 @@ jobs:
     name: Publish ${{ matrix.image.name }}
     needs: [setup, build]
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

@@ -30,7 +30,7 @@ jobs:
   release:
     name: Version PR or publish
     needs: [ci, determinism]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write        # push the version PR branch, and the v* tag after a publish
       packages: write

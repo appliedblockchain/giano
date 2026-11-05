@@ -17,7 +17,7 @@ jobs:
   # includes fork PRs, which get no secrets.
   dhi:
     name: Hardened-image registry access
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Require Docker Hub credentials for dhi.io
         env:
@@ -32,7 +32,7 @@ jobs:
   playwright:
     name: Two-tenant Playwright suite (Chromium + virtual authenticator)
     needs: dhi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

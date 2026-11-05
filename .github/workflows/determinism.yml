@@ -35,7 +35,7 @@ concurrency:
 jobs:
   canonical:
     name: Canonical releases, addresses and code
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -102,7 +102,7 @@ jobs:
 
   storage-layout:
     name: Paymaster storage layout is upgrade-safe
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
