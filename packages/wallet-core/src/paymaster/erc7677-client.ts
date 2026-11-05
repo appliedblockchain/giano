@@ -2,6 +2,7 @@ import type { Address, Hex } from "viem";
 import { GianoEntryPointAddress } from "../giano-entry-point";
 import { GianoError } from "../giano-error";
 import { defaultGianoLogger, type GianoLogger } from "../logger";
+import { SessionEndedError } from "../provider-injection/wallet-api/session-ended-error";
 import {
 	isSponsorshipRefusalReason,
 	REFUSAL_CODE_TO_REASON,
@@ -30,6 +31,8 @@ export type Erc7677PaymasterClientOptions = {
 	chainId: number;
 	/** Current wallet session bearer, or null when signed out. */
 	getSessionToken: () => string | null;
+	/** Ends the session when the service refuses it (401); the injection's `onUnauthorized` (G5). */
+	onUnauthorized?: () => void;
 	/** EntryPoint address; defaults to the v0.9 canonical address. */
 	entryPointAddress?: Address;
 	logger?: GianoLogger;
@@ -223,7 +226,13 @@ export function createErc7677PaymasterClient(
 			);
 		}
 
-		if (response.status === 401 || response.status === 403) {
+		if (response.status === 401) {
+			// The session is idle, expired or revoked: no retry brings it back, so it ends here
+			// rather than reading as a refusal the user could act on (G5).
+			options.onUnauthorized?.();
+			throw new SessionEndedError();
+		}
+		if (response.status === 403) {
 			throw new SponsorshipRefusedError(
 				"the wallet session was rejected by the sponsorship service",
 				{
