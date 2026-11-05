@@ -223,6 +223,7 @@ contract GianoPaymaster is
     error UnauthorisedSigner(address signer);
     error InsufficientTenantBalance(bytes16 tenantId, uint256 required, uint256 available);
     error TenantInDeficit(bytes16 tenantId, uint256 deficit);
+    error FeeAboveConfigured(bytes16 tenantId, uint128 authorisedFee, uint128 configuredFee);
     error NotWithdrawAddress(bytes16 tenantId, address caller);
     error ExceedsTreasury(uint256 requested, uint256 available);
     error ZeroAddress();
@@ -597,6 +598,12 @@ contract GianoPaymaster is
         }
 
         if (t.deficit > 0) revert TenantInDeficit(auth.tenantId, t.deficit);
+
+        // The signed fee may be lower than the configured fee but never higher. The configured fee
+        // sits behind the timelock; the signer set does not, so a signing key alone must not be able
+        // to raise what a tenant pays.
+        uint128 configuredFee = feeFor(auth.tenantId);
+        if (auth.feeWei > configuredFee) revert FeeAboveConfigured(auth.tenantId, auth.feeWei, configuredFee);
 
         uint256 executionGasLimit = userOp.unpackCallGasLimit() + userOp.unpackPostOpGasLimit();
         uint256 requiredCharge = maxCost + auth.feeWei + _overheadWei(userOp.unpackMaxFeePerGas(), executionGasLimit);

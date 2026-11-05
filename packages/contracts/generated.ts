@@ -1459,6 +1459,15 @@ export const gianoPaymasterAbi = [
     type: 'error',
     inputs: [
       { name: 'tenantId', internalType: 'bytes16', type: 'bytes16' },
+      { name: 'authorisedFee', internalType: 'uint128', type: 'uint128' },
+      { name: 'configuredFee', internalType: 'uint128', type: 'uint128' },
+    ],
+    name: 'FeeAboveConfigured',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'tenantId', internalType: 'bytes16', type: 'bytes16' },
       { name: 'required', internalType: 'uint256', type: 'uint256' },
       { name: 'available', internalType: 'uint256', type: 'uint256' },
     ],
