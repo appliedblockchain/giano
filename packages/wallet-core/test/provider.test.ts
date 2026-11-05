@@ -1224,6 +1224,34 @@ describe("signed_eth_call signature cache", () => {
 		expect([prompts.count, walletCalls]).toEqual([1, 0]);
 	});
 
+	it("does not send the fallback read when the session ends during the deployment check", async () => {
+		let targetReads = 0;
+		let onDeploymentCheck: (() => Promise<void>) | undefined;
+		const { provider, read } = await setup({
+			// deployed for the connect check, then not deployed, so the read falls back to a
+			// plain eth_call
+			code: (i) => (i < 1 ? "0xabcd" : "0x"),
+			onRequest: async (method, params) => {
+				if (method === "eth_call" && (params as [{ to: string }])[0].to === A)
+					targetReads += 1;
+				if (method !== "eth_getCode" || !onDeploymentCheck) return;
+				const hook = onDeploymentCheck;
+				onDeploymentCheck = undefined;
+				await hook();
+			},
+		});
+		// the user disconnects while the provider checks whether the account is deployed
+		onDeploymentCheck = async () => {
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{}] as never,
+			});
+		};
+
+		await expect(read()).rejects.toThrow(/session changed/);
+		expect(targetReads).toBe(0);
+	});
+
 	it("does not prompt when the session ends during the block lookup", async () => {
 		let walletCalls = 0;
 		let onBlockLookup: (() => Promise<void>) | undefined;

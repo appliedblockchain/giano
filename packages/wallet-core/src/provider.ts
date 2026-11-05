@@ -507,6 +507,8 @@ export const createGianoProvider = (
 
 			// Check if the account is deployed before attempting authenticated calls
 			const isDeployed = await isSmartAccountDeployed(readClient, account);
+			// the fallback below sends the read too, so check the session before either path
+			assertCurrent();
 			if (!isDeployed) {
 				logger.warn(
 					"Smart account not deployed yet, falling back to regular call",
