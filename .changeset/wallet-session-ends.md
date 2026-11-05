@@ -10,6 +10,7 @@ wallet-core:
 - A 401 to a request that carried the session clears the token, calls `onSessionChanged(null)` and throws the new `SessionEndedError` (`code` 4100). This applies to the wallet-api injection, the management API and the ERC-7677 paymaster client. A 401 from the paymaster service is no longer reported as a `not-your-wallet` refusal. A 403 still is.
 - `WalletApiInjection` gains `logoutAll()` (sign out everywhere; resolves `false` when wallet-api could not confirm it), `onUnauthorized()` and `onSessionEnded(listener)`. `isSessionEndedError()` finds the error inside viem's wrapped errors.
 - `createWalletManagementApi` and `createErc7677PaymasterClient` take an optional `onUnauthorized`.
+- Fix: `logout()` now actually revokes the session on wallet-api. Its bodyless request used to declare a JSON content type, which wallet-api refused with 400, so only the local token was cleared. The injection now sends that header only when a request has a body.
 
 wallet-kit:
 

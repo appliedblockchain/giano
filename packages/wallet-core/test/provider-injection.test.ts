@@ -691,6 +691,19 @@ describe("createWalletApiInjection", () => {
 			expect(ended).toHaveBeenCalledWith("logout-all");
 		});
 
+		it("sends the bodyless sign-out calls without a JSON content type, which wallet-api would refuse", async () => {
+			for (const call of ["logout", "logoutAll"] as const) {
+				const fetchImpl = respond(200);
+				const { injection } = make(fetchImpl);
+				await injection[call]();
+				const init = (fetchImpl.mock.calls[0] as unknown[])[1] as RequestInit;
+				expect(init.body).toBeUndefined();
+				expect(
+					(init.headers as Record<string, string>)["content-type"],
+				).toBeUndefined();
+			}
+		});
+
 		it("logoutAll still ends the session here when wallet-api cannot be reached", async () => {
 			const fetchImpl = vi.fn(async () => {
 				throw new TypeError("Failed to fetch");
