@@ -139,8 +139,12 @@ export function createWalletApiInjection(
 		path: string,
 		init: RequestInit & { auth?: boolean } = {},
 	): Promise<T> {
+		// Only declare JSON when there IS a body: Fastify refuses an empty body that claims to be
+		// JSON (400), which is how the bodyless logout calls used to fail without anyone noticing.
 		const headers: Record<string, string> = {
-			"content-type": "application/json",
+			...(init.body !== undefined
+				? { "content-type": "application/json" }
+				: {}),
 			...(init.headers as Record<string, string> | undefined),
 		};
 		if (init.auth) {
