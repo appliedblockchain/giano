@@ -502,9 +502,13 @@ export function createTenantService(db: Db) {
 		/** Resolves an admin key hash to its tenant (O(1) unique-index lookup). */
 		async getByAdminKeyHash(
 			keyHash: string,
-		): Promise<{ tenant: Tenant; keyHash: string } | null> {
+		): Promise<{ tenant: Tenant; keyId: string; keyHash: string } | null> {
 			const [row] = await db
-				.select({ tenant: tenants, keyHash: tenantAdminKeys.keyHash })
+				.select({
+					tenant: tenants,
+					keyId: tenantAdminKeys.id,
+					keyHash: tenantAdminKeys.keyHash,
+				})
 				.from(tenantAdminKeys)
 				.innerJoin(tenants, eq(tenantAdminKeys.tenantId, tenants.id))
 				.where(and(eq(tenantAdminKeys.keyHash, keyHash), isActive))

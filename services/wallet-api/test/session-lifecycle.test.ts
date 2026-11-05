@@ -1,6 +1,6 @@
 /**
  * Wallet session lifecycle (openspec change session-lifecycle, G5): absolute and idle expiry,
- * the per-user cap, sign out everywhere, and bearer-only CORS. Scenarios follow
+ * the per-user cap, sign out everywhere, admin revocation, and bearer-only CORS. Scenarios follow
  * specs/wallet-sessions/spec.md. Time is moved by backdating rows, never by waiting.
  */
 import { createHash, randomBytes } from "node:crypto";
@@ -9,6 +9,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createSessionService } from "../src/services/sessions.js";
 import {
+	ADMIN,
+	ADMIN_KEY,
+	PLATFORM_ENV,
+	platformSignIn,
 	startTestStack,
 	stopTestStack,
 	TENANT_A,
@@ -22,9 +26,11 @@ import {
 
 let ctx: TestContext;
 let service: ReturnType<typeof createSessionService>;
+let platformToken: string;
 
 beforeAll(async () => {
-	ctx = await startTestStack();
+	ctx = await startTestStack(PLATFORM_ENV);
+	platformToken = await platformSignIn(ctx.app);
 	service = createSessionService(ctx.db, {
 		ttlSeconds: ctx.config.SESSION_TTL_SECONDS,
 		idleTimeoutSeconds: ctx.config.SESSION_IDLE_TIMEOUT_SECONDS,
@@ -452,5 +458,255 @@ describe("CORS carries no credentials", () => {
 			TENANT_A.walletOrigin,
 		);
 		expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
+	});
+});
+
+/** A user with one live session on any tenant, written straight to the database. */
+async function seedSession(
+	tenantId: string,
+	externalUserId: string,
+	walletAddress = `0x${randomBytes(20).toString("hex")}`,
+): Promise<{ token: string; userId: string }> {
+	const token = randomBytes(32).toString("base64url");
+	const { rows } = await ctx.db.execute<{ user_id: string }>(
+		sql`WITH u AS (
+          INSERT INTO users (tenant_id, external_id) VALUES (${tenantId}, ${externalUserId}) RETURNING id
+        ), c AS (
+          INSERT INTO credentials (tenant_id, user_id, credential_id, rp_id, cose_public_key, public_key_x, public_key_y, wallet_address)
+          SELECT ${tenantId}, u.id, ${`cred-${externalUserId}`}, 'seeded', '\\x00'::bytea, '0x01', '0x02', ${walletAddress} FROM u RETURNING id, user_id
+        )
+        INSERT INTO sessions (user_id, credential_id, wallet_address, token_hash, expires_at)
+        SELECT c.user_id, c.id, ${walletAddress}, ${sha256hex(token)}, now() + interval '1 day' FROM c
+        RETURNING user_id`,
+	);
+	return { token, userId: rows[0].user_id };
+}
+
+const tenantId = async (slug: string) => {
+	const { rows } = await ctx.db.execute<{ id: string }>(
+		sql`SELECT id FROM tenants WHERE slug = ${slug}`,
+	);
+	return rows[0].id;
+};
+
+const isRevoked = async (token: string) =>
+	(await sessionRow(token)).revoked_at !== null;
+
+const latestHistory = async (id: string) => {
+	const { rows } = await ctx.db.execute<{
+		action: string;
+		actor: string;
+		platform_admin_session_id: string | null;
+		before: unknown;
+		after: unknown;
+		detail: unknown;
+	}>(
+		sql`SELECT action, actor, platform_admin_session_id, before, after, detail
+        FROM tenant_history WHERE tenant_id = ${id} ORDER BY created_at DESC, id DESC LIMIT 1`,
+	);
+	return rows[0];
+};
+
+const tenantRevoke = (payload: unknown, key = ADMIN_KEY) =>
+	ctx.app.inject({
+		method: "POST",
+		url: "/v1/admin/sessions/revoke",
+		headers: { authorization: `Bearer ${key}` },
+		payload: payload as never,
+	});
+
+const platformRevoke = (
+	slug: string,
+	payload: unknown,
+	headers: Record<string, string> = {},
+) =>
+	ctx.app.inject({
+		method: "POST",
+		url: `/v1/platform/tenants/${slug}/sessions/revoke`,
+		headers: { authorization: `Bearer ${platformToken}`, ...headers },
+		payload: payload as never,
+	});
+
+describe("a tenant admin key revokes its users' sessions", () => {
+	it("revokes every live session of a user named by externalUserId, and records it", async () => {
+		const laptop = await register("g5-stolen");
+		const phone = await service.create(laptop.userId, laptop.credentialDbId);
+
+		const res = await tenantRevoke({ externalUserId: "g5-stolen" });
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ revoked: 2 });
+		expect((await me(laptop.token)).statusCode).toBe(401);
+		expect((await me(phone.token)).statusCode).toBe(401);
+
+		const { rows } = await ctx.db.execute<{ id: string }>(
+			sql`SELECT k.id FROM tenant_admin_keys k JOIN tenants t ON t.id = k.tenant_id WHERE t.slug = ${TENANT_A.slug}`,
+		);
+		expect(await latestHistory(await tenantId(TENANT_A.slug))).toEqual({
+			action: "user-sessions-revoke",
+			actor: `tenant-admin-key:${rows[0].id}`,
+			platform_admin_session_id: null,
+			before: null,
+			after: null,
+			detail: { selector: "externalUserId", value: "g5-stolen", revoked: 2 },
+		});
+	});
+
+	it("revokes every session acting for a wallet, whoever opened it, matched case-insensitively", async () => {
+		const owner = await register("g5-by-wallet");
+		const coOwner = await seedSession(
+			await tenantId(TENANT_A.slug),
+			"g5-by-wallet-co-owner",
+			owner.walletAddress.toLowerCase(),
+		);
+		const bystander = await register("g5-by-wallet-bystander");
+		const mixedCase = `0x${owner.walletAddress.slice(2).toUpperCase()}`;
+
+		const res = await tenantRevoke({ walletAddress: mixedCase });
+		expect(res.json()).toEqual({ revoked: 2 });
+		expect(await isRevoked(owner.token)).toBe(true);
+		expect(await isRevoked(coOwner.token)).toBe(true);
+		expect((await me(bystander.token)).statusCode).toBe(200);
+	});
+
+	it("never reaches another tenant's user", async () => {
+		const other = await seedSession(
+			await tenantId(TENANT_B.slug),
+			"g5-only-in-beta",
+		);
+		const res = await tenantRevoke({ externalUserId: "g5-only-in-beta" });
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ revoked: 0 });
+		expect(await isRevoked(other.token)).toBe(false);
+	});
+
+	it("succeeds and changes nothing when repeated", async () => {
+		await register("g5-repeat");
+		expect(
+			(await tenantRevoke({ externalUserId: "g5-repeat" })).json(),
+		).toEqual({ revoked: 1 });
+		const again = await tenantRevoke({ externalUserId: "g5-repeat" });
+		expect(again.statusCode).toBe(200);
+		expect(again.json()).toEqual({ revoked: 0 });
+	});
+
+	it("refuses a body naming both selectors or neither, and a malformed address", async () => {
+		for (const payload of [
+			{},
+			{ externalUserId: "x", walletAddress: `0x${"a".repeat(40)}` },
+			{ walletAddress: "0x1234" },
+		]) {
+			expect((await tenantRevoke(payload)).statusCode).toBe(400);
+		}
+	});
+
+	it("needs a tenant admin key", async () => {
+		const { token } = await register("g5-needs-key");
+		expect(
+			(await tenantRevoke({ externalUserId: "g5-needs-key" }, token))
+				.statusCode,
+		).toBe(401);
+		expect(
+			(await tenantRevoke({ externalUserId: "g5-needs-key" }, "nope"))
+				.statusCode,
+		).toBe(401);
+	});
+});
+
+describe("a platform admin revokes a tenant's user's sessions", () => {
+	/** A platform-created tenant to suspend or tombstone without disturbing tenant A. */
+	async function freshTenant(slug: string) {
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/platform/tenants",
+			headers: { authorization: `Bearer ${platformToken}` },
+			payload: {
+				slug,
+				walletOrigin: `http://wallet-${slug}.localhost`,
+				rpName: slug,
+				openRegistration: true,
+			},
+		});
+		expect(res.statusCode, res.body).toBe(201);
+		return (res.json() as { tenant: { id: string } }).tenant.id;
+	}
+
+	it("revokes on a suspended tenant and records the platform admin and their session", async () => {
+		const id = await freshTenant("g5-suspended");
+		const user = await seedSession(id, "g5-suspended-user");
+		const suspend = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/platform/tenants/g5-suspended/suspend",
+			headers: { authorization: `Bearer ${platformToken}` },
+			payload: { reason: "test" },
+		});
+		expect(suspend.statusCode).toBe(200);
+
+		const res = await platformRevoke("g5-suspended", {
+			externalUserId: "g5-suspended-user",
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ revoked: 1 });
+		expect(await isRevoked(user.token)).toBe(true);
+
+		const entry = await latestHistory(id);
+		expect(entry).toMatchObject({
+			action: "user-sessions-revoke",
+			actor: `platform-admin:admin-test:${ADMIN.address.toLowerCase()}`,
+			before: null,
+			after: null,
+			detail: {
+				selector: "externalUserId",
+				value: "g5-suspended-user",
+				revoked: 1,
+			},
+		});
+		expect(entry.platform_admin_session_id).not.toBeNull();
+	});
+
+	it("revokes by wallet within the named tenant only", async () => {
+		const wallet = `0x${randomBytes(20).toString("hex")}`;
+		const inA = await seedSession(
+			await tenantId(TENANT_A.slug),
+			"g5-platform-wallet-a",
+			wallet,
+		);
+		const inB = await seedSession(
+			await tenantId(TENANT_B.slug),
+			"g5-platform-wallet-b",
+			wallet,
+		);
+		const res = await platformRevoke(TENANT_B.slug, { walletAddress: wallet });
+		expect(res.json()).toEqual({ revoked: 1 });
+		expect(await isRevoked(inB.token)).toBe(true);
+		expect(await isRevoked(inA.token)).toBe(false);
+	});
+
+	it("answers 404 for an unknown tenant and 409 for a deleted one", async () => {
+		expect(
+			(await platformRevoke("g5-nobody", { externalUserId: "x" })).statusCode,
+		).toBe(404);
+		await freshTenant("g5-deleted");
+		await ctx.db.execute(
+			sql`UPDATE tenants SET status = 'deleted' WHERE slug = 'g5-deleted'`,
+		);
+		const res = await platformRevoke("g5-deleted", { externalUserId: "x" });
+		expect(res.statusCode).toBe(409);
+		expect(res.json().error).toBe("invalid-transition");
+	});
+
+	it("refuses a tenant admin key, and any request carrying an Origin", async () => {
+		const asTenantKey = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/platform/tenants/${TENANT_A.slug}/sessions/revoke`,
+			headers: { authorization: `Bearer ${ADMIN_KEY}` },
+			payload: { externalUserId: "x" },
+		});
+		expect(asTenantKey.statusCode).toBe(401);
+		const fromBrowser = await platformRevoke(
+			TENANT_A.slug,
+			{ externalUserId: "x" },
+			{ origin: "https://evil.example" },
+		);
+		expect(fromBrowser.statusCode).toBe(403);
 	});
 });

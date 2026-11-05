@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNull, ne, type SQL, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { credentials, sessions, users } from "../db/schema.js";
-import type { Tx } from "./tenants.js";
+import { appendTenantHistory, type Tx } from "./tenants.js";
 
 const sha256hex = (value: string) =>
 	createHash("sha256").update(value).digest("hex");
@@ -44,6 +45,27 @@ export type SessionSelector =
 	| { userId: string }
 	| { externalUserId: string }
 	| { walletAddress: string };
+
+/**
+ * The body of an admin revocation (G5 R3): exactly one of the user's id in the tenant, or a
+ * wallet address, which reaches every session acting for that wallet whoever opened it.
+ */
+export const adminRevocationSchema = z
+	.object({
+		externalUserId: z.string().min(1).max(256).optional(),
+		walletAddress: z
+			.string()
+			.regex(/^0x[0-9a-fA-F]{40}$/, "must be a 20-byte hex address")
+			.optional(),
+	})
+	.refine(
+		(body) =>
+			(body.externalUserId === undefined) !==
+			(body.walletAddress === undefined),
+		"name exactly one of externalUserId or walletAddress",
+	);
+
+export type AdminRevocation = z.infer<typeof adminRevocationSchema>;
 
 export function createSessionService(db: Db, options: SessionServiceOptions) {
 	const { ttlSeconds, idleTimeoutSeconds, maxPerUser } = options;
@@ -226,6 +248,41 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 		},
 
 		revokeLive,
+
+		/**
+		 * An admin revocation (G5 R3): revokes the live sessions the body selects inside the tenant
+		 * and appends a `user-sessions-revoke` tenant history entry in the same transaction, even
+		 * when nothing was revoked. The tenant does not change, so before and after stay empty.
+		 */
+		async revokeAndRecord(
+			tenantId: string,
+			body: AdminRevocation,
+			by: { actor: string; platformAdminSessionId?: string },
+		): Promise<number> {
+			const [selector, value] =
+				body.externalUserId !== undefined
+					? (["externalUserId", body.externalUserId] as const)
+					: (["walletAddress", body.walletAddress as string] as const);
+			return db.transaction(async (tx) => {
+				const revoked = await this.revokeLive(
+					tenantId,
+					selector === "externalUserId"
+						? { externalUserId: value }
+						: { walletAddress: value },
+					tx,
+				);
+				await appendTenantHistory(tx, {
+					tenantId,
+					action: "user-sessions-revoke",
+					actor: by.actor,
+					platformAdminSessionId: by.platformAdminSessionId,
+					before: null,
+					after: null,
+					detail: { selector, value, revoked },
+				});
+				return revoked;
+			});
+		},
 
 		/** Sign out everywhere (G5 R2): every live session of the user, across credentials and wallets. */
 		async revokeAllForUser(tenantId: string, userId: string): Promise<number> {
