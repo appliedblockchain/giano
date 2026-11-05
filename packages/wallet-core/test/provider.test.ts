@@ -1,4 +1,11 @@
-import { custom, parseGwei, toHex } from "viem";
+import {
+	custom,
+	hashMessage,
+	parseGwei,
+	type SignableMessage,
+	stringToBytes,
+	toHex,
+} from "viem";
 import {
 	createBundlerClient,
 	entryPoint09Address,
@@ -19,6 +26,7 @@ import {
 	type GianoProvider,
 	isChainType,
 	resolveUserOpFees,
+	toPersonalMessageBytes,
 } from "../src/provider";
 import {
 	createMockBundler,
@@ -78,6 +86,20 @@ async function connect(provider: GianoProvider): Promise<string> {
 }
 
 describe("pure helpers", () => {
+	it("toPersonalMessageBytes reads whole-byte hex as raw bytes and anything else as text", () => {
+		expect(toPersonalMessageBytes(toHex("hi"))).toEqual(stringToBytes("hi"));
+		expect(toPersonalMessageBytes("0xdeadbeef")).toEqual(
+			new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+		);
+		expect(toPersonalMessageBytes("hello")).toEqual(stringToBytes("hello"));
+		// Not valid hex, or not whole bytes: signed as the text the dApp sent, never re-padded.
+		expect(toPersonalMessageBytes("0xhello")).toEqual(stringToBytes("0xhello"));
+		expect(toPersonalMessageBytes("0x123")).toEqual(stringToBytes("0x123"));
+		expect(hashMessage({ raw: toPersonalMessageBytes("hi") })).toBe(
+			hashMessage("hi"),
+		);
+	});
+
 	it("resolveUserOpFees follows request > prepared > fallback precedence", () => {
 		const fallback = { maxFeePerGas: 9n, maxPriorityFeePerGas: 8n };
 		expect(
@@ -746,6 +768,35 @@ describe("message signing", () => {
 				params: [toHex("hi"), address] as never,
 			}),
 		).toMatch(/^0x/);
+	});
+
+	it("personal_sign and eth_sign sign the payload the dApp sent, not its hex spelling", async () => {
+		const { provider } = buildProvider(mock.authenticator);
+		const address = await connect(provider);
+		// biome-ignore lint/style/noNonNullAssertion: connected above
+		const account = provider.getSmartAccount()!;
+		const signMessage = vi.spyOn(account, "signMessage");
+		const signedHash = () =>
+			hashMessage(signMessage.mock.lastCall?.[0].message as SignableMessage);
+
+		await provider.request({
+			method: "personal_sign",
+			params: ["hi", address] as never,
+		});
+		expect(signedHash()).toBe(hashMessage("hi"));
+
+		await provider.request({
+			method: "personal_sign",
+			params: [toHex("hi"), address] as never,
+		});
+		expect(signedHash()).toBe(hashMessage("hi"));
+
+		const hash = `0x${"ab".repeat(32)}` as const;
+		await provider.request({
+			method: "eth_sign",
+			params: [address, hash] as never,
+		});
+		expect(signedHash()).toBe(hashMessage({ raw: hash }));
 	});
 
 	it("personal_sign rejects when disconnected or on address mismatch", async () => {

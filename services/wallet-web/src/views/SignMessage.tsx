@@ -1,10 +1,13 @@
-import type { PendingRequest } from "@appliedblockchain/giano-wallet-kit";
-import { hexToString, isHex } from "viem";
+import {
+	describePersonalMessage,
+	type PendingRequest,
+} from "@appliedblockchain/giano-wallet-kit";
 
 function renderPayload(request: PendingRequest): {
 	title: string;
 	body: string;
 	domainChainId?: number;
+	rawHexWarning?: boolean;
 } {
 	const params = (request.params as unknown[]) ?? [];
 	if (
@@ -43,18 +46,14 @@ function renderPayload(request: PendingRequest): {
 	}
 	// personal_sign: [message, address]; eth_sign: [address, message]
 	const raw = request.method === "personal_sign" ? params[0] : params[1];
-	if (typeof raw === "string" && isHex(raw)) {
-		try {
-			return { title: "Sign message", body: hexToString(raw) };
-		} catch {
-			return { title: "Sign message", body: raw };
-		}
-	}
-	return { title: "Sign message", body: String(raw) };
+	if (typeof raw !== "string")
+		return { title: "Sign message", body: String(raw) };
+	const { body, rawHex } = describePersonalMessage(raw);
+	return { title: "Sign message", body, rawHexWarning: rawHex };
 }
 
 export function SignMessage({ request }: { request: PendingRequest }) {
-	const { title, body, domainChainId } = renderPayload(request);
+	const { title, body, domainChainId, rawHexWarning } = renderPayload(request);
 	// MC-82: where the typed-data domain carries its own chain and it differs from the
 	// session's, the mismatch is SHOWN rather than silently accepted. A warning, not a
 	// refusal: signing a message scoped to another chain is a legitimate thing to do
@@ -78,6 +77,13 @@ export function SignMessage({ request }: { request: PendingRequest }) {
 				<div className="data-box" data-testid="sign-payload">
 					{body}
 				</div>
+				{rawHexWarning ? (
+					<div className="error" data-testid="raw-hex-warning">
+						This message cannot be shown safely as text, so it is shown as hex.
+						You are signing exactly these bytes. Only sign if you know what they
+						mean.
+					</div>
+				) : null}
 				{chainMismatch ? (
 					<div className="error" data-testid="chain-mismatch-warning">
 						This message declares chain {domainChainId}, but this session is

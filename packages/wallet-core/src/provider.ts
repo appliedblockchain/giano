@@ -15,9 +15,12 @@ import {
 	type ExactPartial,
 	type Hash,
 	type Hex,
+	hexToBytes,
+	isHex,
 	type PublicClient,
 	parseGwei,
 	type RpcTransactionRequest,
+	stringToBytes,
 	type TransactionRequest,
 	type Transport,
 	toHex,
@@ -217,6 +220,19 @@ export function resolveUserOpFees(
 			prepared.maxPriorityFeePerGas ??
 			fallback.maxPriorityFeePerGas,
 	};
+}
+
+/**
+ * The exact bytes that personal_sign and eth_sign sign (EIP-191), and that the consent screen
+ * shows. A 0x-prefixed hex message with whole bytes is its raw bytes; any other message, including
+ * odd-length hex, is its UTF-8 text. Passing a hex string to signMessage as a plain string would
+ * make viem hash the hex characters themselves, so the signature would cover a different payload
+ * from the one the dApp sent and the consent screen showed.
+ */
+export function toPersonalMessageBytes(message: string): Uint8Array {
+	return isHex(message) && message.length % 2 === 0
+		? hexToBytes(message)
+		: stringToBytes(message);
 }
 
 export const createGianoProvider = (
@@ -675,9 +691,9 @@ export const createGianoProvider = (
 				throw new Error("Address mismatch");
 			}
 
-			// Convert hex string message to bytes if needed
-			const messageBytes = message.startsWith("0x") ? message : toHex(message);
-			return smartAccount.signMessage({ message: messageBytes });
+			return smartAccount.signMessage({
+				message: { raw: toPersonalMessageBytes(message) },
+			});
 		},
 		eth_sign: async ([address, message]: [Address, string]) => {
 			if (!smartAccount) {
@@ -688,8 +704,9 @@ export const createGianoProvider = (
 				throw new Error("Address mismatch");
 			}
 
-			// eth_sign expects raw message hash, not prefixed
-			return smartAccount.signMessage({ message });
+			return smartAccount.signMessage({
+				message: { raw: toPersonalMessageBytes(message) },
+			});
 		},
 		eth_signTypedData_v4: async ([address, typedData]: [Address, string]) => {
 			logger.debug("eth_signTypedData_v4", { address, typedData });
