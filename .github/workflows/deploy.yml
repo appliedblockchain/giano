@@ -52,7 +52,7 @@ jobs:
   # possibly disagreeing with the others if main moves mid-run.
   plan:
     name: Work out what to deploy
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       include: ${{ steps.plan.outputs.include }}
     steps:
@@ -146,7 +146,7 @@ jobs:
     name: Roll ${{ matrix.environment }}/${{ matrix.service }}
     needs: plan
     if: needs.plan.outputs.include != '[]'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       # false: one service failing to stabilise must not leave the rest
       # un-attempted. A partial rollout is recoverable by re-running; a rollout
