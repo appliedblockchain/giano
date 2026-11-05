@@ -17,7 +17,6 @@ import type {
 } from "viem";
 import {
 	BaseError,
-	concatHex,
 	decodeFunctionData,
 	encodeAbiParameters,
 	encodeFunctionData,
@@ -40,7 +39,7 @@ import type {
 	WebAuthnAccount,
 } from "viem/account-abstraction";
 import { getUserOperationHash, toSmartAccount } from "viem/account-abstraction";
-import { readContract } from "viem/actions";
+import { getBlock, readContract } from "viem/actions";
 import {
 	GianoEntryPointAbi,
 	GianoEntryPointAddress,
@@ -59,6 +58,23 @@ export type ToGianoSmartAccountReturnType = Prettify<
 	SmartAccount<GianoSmartAccountImplementation>
 >;
 
+export type SignStaticCallPermissionParameters = {
+	/** The contract the wallet calls. */
+	target: Address;
+	/** The calldata the wallet sends to `target`. */
+	data: Hex;
+	/**
+	 * Unix time (seconds) the permission starts. Defaults to the latest block timestamp minus
+	 * {@link STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS}. The contract rejects a `signedAt` later
+	 * than `block.timestamp`, so the local clock is not used, and the margin covers an RPC node
+	 * that runs the call one or two blocks behind the node that gave the timestamp.
+	 */
+	signedAt?: number | undefined;
+};
+
+/** Seconds subtracted from the latest block timestamp for a default `signedAt`. */
+export const STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS = 30;
+
 export type GianoSmartAccountImplementation = Assign<
 	SmartAccountImplementation<
 		typeof GianoEntryPointAbi,
@@ -68,7 +84,9 @@ export type GianoSmartAccountImplementation = Assign<
 	{
 		decodeCalls: NonNullable<SmartAccountImplementation["decodeCalls"]>;
 		sign: NonNullable<SmartAccountImplementation["sign"]>;
-		signStaticCallPermission(): Promise<{ signature: Hex; signedAt: number }>;
+		signStaticCallPermission(
+			parameters: SignStaticCallPermissionParameters,
+		): Promise<{ signature: Hex; signedAt: number }>;
 	}
 >;
 
@@ -123,15 +141,17 @@ export async function toGianoSmartAccount(
 
 	async function signStaticCallPermission(
 		this: SmartAccount<GianoSmartAccountImplementation>,
+		{
+			target,
+			data,
+			signedAt: requestedSignedAt,
+		}: SignStaticCallPermissionParameters,
 	) {
-		const item = getAbiItem({
-			abi: gianoSmartWalletAbi,
-			name: "signedStaticCall",
-		});
-		const signedAt = Math.floor(Date.now() / 1000);
-		const hash = keccak256(
-			concatHex([toFunctionSelector(item), toHex(signedAt, { size: 32 })]),
-		);
+		const signedAt =
+			requestedSignedAt ??
+			Number((await getBlock(client)).timestamp) -
+				STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS;
+		const hash = staticCallHash({ target, data, signedAt });
 		const signature = await this.sign({ hash });
 
 		return {
@@ -316,6 +336,37 @@ export async function toGianoSmartAccount(
 }
 
 export type GianoSmartAccount = Awaited<ReturnType<typeof toGianoSmartAccount>>;
+
+/**
+ * The hash an owner signs to authorise one `signedStaticCall`. It matches
+ * `AuthenticatedStaticCaller.staticCallHash`: it covers the target and the calldata, so the
+ * signature authorises exactly one read. The wallet wraps it in `replaySafeHash` before it
+ * checks the signature, and `sign` does the same.
+ */
+export function staticCallHash({
+	target,
+	data,
+	signedAt,
+}: {
+	target: Address;
+	data: Hex;
+	signedAt: number | bigint;
+}): Hash {
+	const selector = toFunctionSelector(
+		getAbiItem({ abi: gianoSmartWalletAbi, name: "signedStaticCall" }),
+	);
+	return keccak256(
+		encodeAbiParameters(
+			[
+				{ type: "bytes4" },
+				{ type: "uint256" },
+				{ type: "address" },
+				{ type: "bytes32" },
+			],
+			[selector, BigInt(signedAt), target, keccak256(data)],
+		),
+	);
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 // Utilities

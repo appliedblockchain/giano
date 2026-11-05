@@ -13,8 +13,10 @@ import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	parseDerSignature,
+	STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS,
 	sign as signHelper,
 	signTypedData as signTypedDataHelper,
+	staticCallHash,
 	toGianoSmartAccount,
 	toWebAuthnSignature,
 	wrapSignature,
@@ -324,18 +326,66 @@ describe("toGianoSmartAccount — signing (real webauthn crypto)", () => {
 		).toBe(true);
 	});
 
-	it("produces a static-call permission signature with a unix timestamp", async () => {
-		const { owner } = await createWebAuthnOwner(mock.authenticator);
+	it("signs a static-call permission over the target, calldata and signedAt", async () => {
 		const { client } = createMockClient();
+		const account = await toGianoSmartAccount({
+			client,
+			owners: [localOwner],
+			factoryAddress: FACTORY_ADDRESS,
+			address: WALLET_ADDRESS,
+		});
+		const target = "0x1111111111111111111111111111111111111111" as const;
+		const { signature, signedAt } = await account.signStaticCallPermission({
+			target,
+			data: "0xabcd",
+			signedAt: 1_800_000_000,
+		});
+		expect(signedAt).toBe(1_800_000_000);
+		// ECDSA signing is deterministic, so the permission is exactly a signature over the hash.
+		expect(signature).toBe(
+			await account.sign({
+				hash: staticCallHash({ target, data: "0xabcd", signedAt }),
+			}),
+		);
+		// a different read must need a different signature
+		const other = await account.signStaticCallPermission({
+			target,
+			data: "0xabce",
+			signedAt: 1_800_000_000,
+		});
+		expect(other.signature).not.toBe(signature);
+	});
+
+	it("defaults signedAt to just before the latest block timestamp, not the local clock", async () => {
+		const { owner } = await createWebAuthnOwner(mock.authenticator);
+		const { client } = createMockClient({ blockTimestamp: 1_700_000_123n });
 		const account = await toGianoSmartAccount({
 			client,
 			owners: [owner],
 			factoryAddress: FACTORY_ADDRESS,
 			address: WALLET_ADDRESS,
 		});
-		const { signature, signedAt } = await account.signStaticCallPermission();
-		expect(signedAt).toBeGreaterThan(1_600_000_000); // a real unix timestamp (seconds)
+		const { signature, signedAt } = await account.signStaticCallPermission({
+			target: "0x1111111111111111111111111111111111111111",
+			data: "0xabcd",
+		});
+		expect(signedAt).toBe(
+			1_700_000_123 - STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS,
+		);
 		expect(signature.startsWith("0x")).toBe(true);
+	});
+
+	it("hashes a static call the same way as AuthenticatedStaticCaller.staticCallHash", () => {
+		// Same vector as testStaticCallHashMatchesTheSdkVector in the contracts package.
+		expect(
+			staticCallHash({
+				target: "0x1111111111111111111111111111111111111111",
+				data: "0xabcd",
+				signedAt: 1_800_000_000,
+			}),
+		).toBe(
+			"0x3d2dbb74c0df8af655710f6b6dc62ea5d3e26f53e8b52a74ebda5bb44d988e4c",
+		);
 	});
 
 	it("refuses to sign with an address-only owner", async () => {

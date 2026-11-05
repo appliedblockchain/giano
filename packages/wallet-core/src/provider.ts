@@ -235,6 +235,12 @@ export function toPersonalMessageBytes(message: string): Uint8Array {
 		: stringToBytes(message);
 }
 
+/**
+ * Seconds before the contract's limit at which the provider renews an authenticated-read
+ * signature. It absorbs a local clock that runs behind the chain.
+ */
+const STATIC_SIGNATURE_RENEW_MARGIN_SECONDS = 60n;
+
 export const createGianoProvider = (
 	options: CreateGianoProviderParams,
 ): {
@@ -265,8 +271,12 @@ export const createGianoProvider = (
 	// would silently submit user operations to the PREVIOUS chain's bundler.
 	let bundler: BundlerClient | undefined;
 	let factoryAddress: Address | undefined;
-	let staticSignature: Hex | null = null;
-	let staticSignatureSignedAt = 0;
+	// Authenticated-read signatures, one per (account, target, calldata). Each signature covers
+	// its own target and calldata, so a cached one can only repeat a read the user approved.
+	const staticSignatures = new Map<
+		string,
+		{ signature: Hex; signedAt: number }
+	>();
 	let staticSignatureLifetime = 0n;
 	const eventListeners: Partial<EventListeners> = {};
 
@@ -442,6 +452,17 @@ export const createGianoProvider = (
 				return client!.request({ method: "eth_call", params });
 			}
 
+			const [transaction] = params;
+
+			if (!transaction.to) {
+				throw new GianoError("signed_eth_call: `transaction.to` is required");
+			}
+			if (!transaction.data) {
+				throw new GianoError("signed_eth_call: `transaction.data` is required");
+			}
+			const target = transaction.to;
+			const data = transaction.data;
+
 			// if the lifetime of the static signature is not known, fetch and cache it
 			if (staticSignatureLifetime === 0n) {
 				staticSignatureLifetime = await client!.readContract({
@@ -450,27 +471,28 @@ export const createGianoProvider = (
 					functionName: "getSignatureLifetime",
 				});
 			}
-			const staticSignatureAge = BigInt(
-				Date.now() - staticSignatureSignedAt * 1000,
-			);
-			// no cached signature or it's expired? request a new on
-			if (
-				!staticSignature ||
-				staticSignatureAge > staticSignatureLifetime * 1000n
-			) {
-				const { signature, signedAt } =
-					await smartAccount.signStaticCallPermission();
-				staticSignature = signature;
-				staticSignatureSignedAt = signedAt;
-			}
+			// `signedAt` is chain time and the age below is local time. Renew a little early so a
+			// local clock behind the chain does not present an expired signature.
+			const usableLifetimeMs =
+				(staticSignatureLifetime - STATIC_SIGNATURE_RENEW_MARGIN_SECONDS) *
+				1000n;
+			const isUsable = (signedAt: number) =>
+				BigInt(Date.now() - signedAt * 1000) < usableLifetimeMs;
 
-			const [transaction] = params;
-
-			if (!transaction.to) {
-				throw new GianoError("signed_eth_call: `transaction.to` is required");
-			}
-			if (!transaction.data) {
-				throw new GianoError("signed_eth_call: `transaction.data` is required");
+			const key = [smartAccount.address, target, data]
+				.map((part) => part.toLowerCase())
+				.join(":");
+			let permission = staticSignatures.get(key);
+			// no signature for this read or it's expired? request a new one
+			if (!permission || !isUsable(permission.signedAt)) {
+				for (const [cachedKey, cached] of staticSignatures) {
+					if (!isUsable(cached.signedAt)) staticSignatures.delete(cachedKey);
+				}
+				permission = await smartAccount.signStaticCallPermission({
+					target,
+					data,
+				});
+				staticSignatures.set(key, permission);
 			}
 
 			// encode the intended call and forward it to the Giano account contract
@@ -480,10 +502,10 @@ export const createGianoProvider = (
 				functionName: "signedStaticCall",
 				args: [
 					{
-						target: transaction.to,
-						data: transaction.data,
-						signedAt: BigInt(staticSignatureSignedAt),
-						signature: staticSignature,
+						target,
+						data,
+						signedAt: BigInt(permission.signedAt),
+						signature: permission.signature,
 					},
 				],
 			});
@@ -501,6 +523,7 @@ export const createGianoProvider = (
 			// ignoring permissions, revoking all
 			// we only support one connected account per provider instance
 			smartAccount = null;
+			staticSignatures.clear();
 			emit("accountsChanged", []);
 			emit("disconnect", {
 				code: 4900,
@@ -541,8 +564,7 @@ export const createGianoProvider = (
 			// The cached authenticated-read signature was produced against a specific account on a
 			// specific chain, with a lifetime read from that account. Carrying it across a chain
 			// change would present a signature from one chain to a contract on another.
-			staticSignature = null;
-			staticSignatureSignedAt = 0;
+			staticSignatures.clear();
 			staticSignatureLifetime = 0n;
 			chain = newChain;
 			transport = newTransport;

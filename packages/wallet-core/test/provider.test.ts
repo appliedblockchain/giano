@@ -1,5 +1,7 @@
+import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import {
 	custom,
+	decodeFunctionData,
 	hashMessage,
 	parseGwei,
 	type SignableMessage,
@@ -909,6 +911,85 @@ describe("reads: eth_call & signed_eth_call", () => {
 			] as never,
 		});
 		expect(result).toBe("0xc0ffee");
+	});
+
+	it("signed_eth_call signs each read over its own target and data, and reuses it only for that read", async () => {
+		const staticCalls: {
+			target: string;
+			data: string;
+			signedAt: bigint;
+			signature: string;
+		}[] = [];
+		let signings = 0;
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: {
+				code: "0xabcd",
+				staticCallResult: "0xc0ffee",
+				onRequest: (method, params) => {
+					// one latest-block read per new permission (the default signedAt)
+					if (method === "eth_getBlockByNumber") signings += 1;
+					if (method !== "eth_call") return;
+					const { data } = (params as [{ data: `0x${string}` }])[0];
+					try {
+						const decoded = decodeFunctionData({
+							abi: gianoSmartWalletAbi,
+							data,
+						});
+						if (decoded.functionName === "signedStaticCall")
+							staticCalls.push(decoded.args[0] as never);
+					} catch {
+						// not a wallet call
+					}
+				},
+			},
+		});
+		await connect(provider);
+		const signingsAfterConnect = signings;
+		const read = (to: string, data: string) =>
+			provider.request({
+				method: "signed_eth_call",
+				params: [{ to, data }] as never,
+			});
+		const A = "0x1111111111111111111111111111111111111111";
+		const B = "0x2222222222222222222222222222222222222222";
+
+		await read(A, "0xabcd");
+		await read(A, "0xabcd"); // same read: cached signature
+		await read(A, "0xabce"); // other calldata: new signature
+		await read(B, "0xabcd"); // other target: new signature
+
+		expect(signings - signingsAfterConnect).toBe(3);
+		expect(staticCalls.map((c) => [c.target, c.data])).toEqual([
+			[A, "0xabcd"],
+			[A, "0xabcd"],
+			[A, "0xabce"],
+			[B, "0xabcd"],
+		]);
+		expect(staticCalls[1].signature).toBe(staticCalls[0].signature);
+		expect(new Set(staticCalls.map((c) => c.signature)).size).toBe(3);
+		// the mock's latest block is at 1_800_000_000; signedAt is set 30 seconds earlier
+		expect(staticCalls[0].signedAt).toBe(1_799_999_970n);
+	});
+
+	it("signed_eth_call validates to and data before it asks for a signature", async () => {
+		let signings = 0;
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: {
+				code: "0xabcd",
+				onRequest: (method) => {
+					if (method === "eth_getBlockByNumber") signings += 1;
+				},
+			},
+		});
+		await connect(provider);
+		const before = signings;
+		await expect(
+			provider.request({
+				method: "signed_eth_call",
+				params: [{ data: "0xabcd" } as never],
+			}),
+		).rejects.toThrow(/`transaction.to` is required/);
+		expect(signings).toBe(before);
 	});
 
 	it("signed_eth_call requires to and data", async () => {

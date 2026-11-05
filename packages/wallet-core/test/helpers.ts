@@ -63,6 +63,8 @@ export type MockClientOptions = {
 	signatureLifetime?: bigint;
 	/** Raw bytes returned by `signedStaticCall`. */
 	staticCallResult?: Hex;
+	/** Timestamp (seconds) of the latest block, returned by `eth_getBlockByNumber`. */
+	blockTimestamp?: bigint;
 	/** Observe every JSON-RPC request the client makes. */
 	onRequest?: (method: string, params: unknown) => void;
 };
@@ -78,6 +80,7 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		code = "0x",
 		signatureLifetime = 3600n,
 		staticCallResult = "0x",
+		blockTimestamp = 1_800_000_000n,
 		onRequest,
 	} = options;
 
@@ -94,6 +97,14 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		switch (method) {
 			case "eth_chainId":
 				return `0x${TEST_CHAIN_ID.toString(16)}`;
+			case "eth_getBlockByNumber":
+				return {
+					number: "0x1",
+					hash: `0x${"11".repeat(32)}`,
+					parentHash: `0x${"00".repeat(32)}`,
+					timestamp: `0x${blockTimestamp.toString(16)}`,
+					transactions: [],
+				};
 			case "eth_getCode": {
 				const value = typeof code === "function" ? code(getCodeCalls) : code;
 				getCodeCalls += 1;
