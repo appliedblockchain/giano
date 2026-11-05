@@ -19,6 +19,11 @@ export type PendingRequest = {
 	runtime: WalletRuntime;
 	approve: () => void;
 	reject: () => void;
+	/**
+	 * Answers the dApp that the wallet session ended (EIP-1193 4100), not that the user refused
+	 * (4001): wallet-api refused the session while the request was on screen (G5).
+	 */
+	sessionEnded: () => void;
 };
 
 type Listener = (pending: PendingRequest | null) => void;
@@ -47,7 +52,7 @@ export function createRequestStore() {
 		},
 		/** Resolves with the user's decision; the caller performs the actual request. */
 		requestConsent(
-			input: Omit<PendingRequest, "approve" | "reject">,
+			input: Omit<PendingRequest, "approve" | "reject" | "sessionEnded">,
 		): Promise<void> {
 			if (current) {
 				return Promise.reject(
@@ -73,6 +78,16 @@ export function createRequestStore() {
 							new TransportRpcError(
 								RPC_ERRORS.USER_REJECTED,
 								"User rejected the request",
+							),
+						);
+					},
+					sessionEnded: () => {
+						current = null;
+						notify();
+						reject(
+							new TransportRpcError(
+								RPC_ERRORS.UNAUTHORIZED,
+								"Wallet session ended — sign in again",
 							),
 						);
 					},

@@ -1,9 +1,9 @@
 import {
 	encodeRemoveOwnerAtIndex,
-	SessionEndedError,
 	ownerFingerprint,
 	publicKeyOwnerBytes,
 	type RegistryCredential,
+	SessionEndedError,
 	type WalletManagementApi,
 } from "@appliedblockchain/giano-wallet-core";
 import { getAddress, type Hex, pad } from "viem";
