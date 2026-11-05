@@ -406,14 +406,14 @@ export const authenticatedStaticCallerAbi = [
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'pure',
   },
-  { type: 'error', inputs: [], name: 'InvalidSignature' },
+  { type: 'error', inputs: [], name: 'StaticCallInvalidSignature' },
   {
     type: 'error',
     inputs: [
       { name: 'expiredAt', internalType: 'uint256', type: 'uint256' },
       { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'SignatureExpired',
+    name: 'StaticCallSignatureExpired',
   },
   {
     type: 'error',
@@ -421,7 +421,7 @@ export const authenticatedStaticCallerAbi = [
       { name: 'signedAt', internalType: 'uint256', type: 'uint256' },
       { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'SignatureNotYetValid',
+    name: 'StaticCallSignatureNotYetValid',
   },
 ] as const
 
@@ -1817,18 +1817,18 @@ export const gianoSmartWalletAbi = [
     ],
     name: 'InvalidPaymasterSignatureLength',
   },
-  { type: 'error', inputs: [], name: 'InvalidSignature' },
   { type: 'error', inputs: [], name: 'LastOwner' },
   { type: 'error', inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }], name: 'NoOwnerAtIndex' },
   { type: 'error', inputs: [{ name: 'ownersRemaining', internalType: 'uint256', type: 'uint256' }], name: 'NotLastOwner' },
   { type: 'error', inputs: [{ name: 'selector', internalType: 'bytes4', type: 'bytes4' }], name: 'SelectorNotAllowed' },
+  { type: 'error', inputs: [], name: 'StaticCallInvalidSignature' },
   {
     type: 'error',
     inputs: [
       { name: 'expiredAt', internalType: 'uint256', type: 'uint256' },
       { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'SignatureExpired',
+    name: 'StaticCallSignatureExpired',
   },
   {
     type: 'error',
@@ -1836,7 +1836,7 @@ export const gianoSmartWalletAbi = [
       { name: 'signedAt', internalType: 'uint256', type: 'uint256' },
       { name: 'currentTimestamp', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'SignatureNotYetValid',
+    name: 'StaticCallSignatureNotYetValid',
   },
   { type: 'error', inputs: [], name: 'Unauthorized' },
   { type: 'error', inputs: [], name: 'UnauthorizedCallContext' },

@@ -87,7 +87,11 @@ function buildProvider(
  * Counts passkey assertions from now on, and the highest number that run at the same time.
  * Each authenticated-read signature is one assertion.
  */
-function countPasskeyPrompts(authenticator: MockAuthenticator) {
+function countPasskeyPrompts(
+	authenticator: MockAuthenticator,
+	/** Runs inside each prompt, before the authenticator answers. */
+	duringPrompt?: () => Promise<void>,
+) {
 	const original = authenticator.get.bind(authenticator);
 	let count = 0;
 	let active = 0;
@@ -97,6 +101,7 @@ function countPasskeyPrompts(authenticator: MockAuthenticator) {
 		active += 1;
 		maxActive = Math.max(maxActive, active);
 		try {
+			await duringPrompt?.();
 			return await original(options);
 		} finally {
 			active -= 1;
@@ -1046,9 +1051,9 @@ describe("signed_eth_call signature cache", () => {
 	afterEach(() => vi.restoreAllMocks());
 
 	const walletError = (
-		errorName: "InvalidSignature" | "SignatureExpired",
+		errorName: "StaticCallInvalidSignature" | "StaticCallSignatureExpired",
 	): Hex =>
-		errorName === "InvalidSignature"
+		errorName === "StaticCallInvalidSignature"
 			? encodeErrorResult({ abi: gianoSmartWalletAbi, errorName })
 			: encodeErrorResult({
 					abi: gianoSmartWalletAbi,
@@ -1056,7 +1061,10 @@ describe("signed_eth_call signature cache", () => {
 					args: [1n, 2n],
 				});
 
-	async function setup(transportOptions: MockClientOptions = {}) {
+	async function setup(
+		transportOptions: MockClientOptions = {},
+		duringPrompt?: () => Promise<void>,
+	) {
 		const { provider } = buildProvider(mock.authenticator, {
 			transportOptions: {
 				code: "0xabcd",
@@ -1065,13 +1073,13 @@ describe("signed_eth_call signature cache", () => {
 			},
 		});
 		await connect(provider);
-		const prompts = countPasskeyPrompts(mock.authenticator);
+		const prompts = countPasskeyPrompts(mock.authenticator, duringPrompt);
 		const read = (data: Hex = "0xabcd") =>
 			provider.request({
 				method: "signed_eth_call",
 				params: [{ to: A, data }] as never,
 			});
-		return { prompts, read };
+		return { provider, prompts, read };
 	}
 
 	it("renews a signature on the local clock, counted from when it was signed", async () => {
@@ -1110,7 +1118,7 @@ describe("signed_eth_call signature cache", () => {
 		const { prompts, read } = await setup({
 			// the second read finds the chain past the cached signature's limit
 			staticCallRevert: (i) =>
-				i === 1 ? walletError("SignatureExpired") : undefined,
+				i === 1 ? walletError("StaticCallSignatureExpired") : undefined,
 		});
 
 		await read();
@@ -1127,15 +1135,93 @@ describe("signed_eth_call signature cache", () => {
 		const { prompts, read } = await setup({
 			staticCallRevert: () => {
 				walletCalls += 1;
-				return walletError("InvalidSignature");
+				return walletError("StaticCallInvalidSignature");
 			},
 		});
 
-		await expect(read()).rejects.toThrow(/InvalidSignature/);
+		await expect(read()).rejects.toThrow(/StaticCallInvalidSignature/);
 		expect([prompts.count, walletCalls]).toEqual([1, 1]);
 		// a cached copy would be sent first and then retried: two wallet calls
-		await expect(read()).rejects.toThrow(/InvalidSignature/);
+		await expect(read()).rejects.toThrow(/StaticCallInvalidSignature/);
 		expect([prompts.count, walletCalls]).toEqual([2, 2]);
+	});
+
+	it("removes the new signature too when the wallet rejects the retry", async () => {
+		let walletCalls = 0;
+		const { prompts, read } = await setup({
+			staticCallRevert: (i) => {
+				walletCalls += 1;
+				if (i === 1) return walletError("StaticCallSignatureExpired");
+				if (i === 2) return walletError("StaticCallInvalidSignature");
+				return undefined;
+			},
+		});
+
+		await read();
+		// the cached signature is rejected, and so is the new one
+		await expect(read()).rejects.toThrow(/StaticCallInvalidSignature/);
+		expect([prompts.count, walletCalls]).toEqual([2, 3]);
+
+		// the next read signs again instead of sending the rejected signature
+		expect(await read()).toBe("0xc0ffee");
+		expect([prompts.count, walletCalls]).toEqual([3, 4]);
+	});
+
+	it("keeps the signature when the target reverts with an error named like the wallet's", async () => {
+		let walletCalls = 0;
+		const { prompts, read } = await setup({
+			// PrivateERC20 declares its own InvalidSignature(); the wallet passes it through
+			staticCallRevert: (i) => {
+				walletCalls += 1;
+				return i === 1
+					? encodeErrorResult({
+							abi: [{ type: "error", name: "InvalidSignature", inputs: [] }],
+							errorName: "InvalidSignature",
+						})
+					: undefined;
+			},
+		});
+
+		await read();
+		await expect(read()).rejects.toThrow();
+		// no new signature and no retry
+		expect([prompts.count, walletCalls]).toEqual([1, 2]);
+		expect(await read()).toBe("0xc0ffee");
+		expect(prompts.count).toBe(1);
+	});
+
+	it("does not sign, cache or send for a session that ended during the read", async () => {
+		let walletCalls = 0;
+		let disconnect = () => Promise.resolve();
+		const { provider, prompts, read } = await setup(
+			{
+				staticCallRevert: () => {
+					walletCalls += 1;
+					return undefined;
+				},
+			},
+			// the user disconnects while the first passkey prompt is open
+			() => disconnect(),
+		);
+		disconnect = async () => {
+			disconnect = () => Promise.resolve();
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{}] as never,
+			});
+		};
+
+		// the second read waits in the signing queue behind the first
+		const results = await Promise.allSettled([read("0xabcd"), read("0xabce")]);
+
+		for (const result of results) {
+			expect(result.status).toBe("rejected");
+			expect((result as PromiseRejectedResult).reason.message).toMatch(
+				/session changed/,
+			);
+		}
+		// one prompt for the first read; the queued read never prompted; nothing was sent
+		expect([prompts.count, walletCalls]).toEqual([1, 0]);
 	});
 
 	it("keeps the signature when the read itself reverts", async () => {

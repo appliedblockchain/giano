@@ -250,9 +250,9 @@ const STATIC_SIGNATURE_RENEW_MARGIN_SECONDS = 60;
 
 /** The `signedStaticCall` errors that mean the wallet rejected the signature itself. */
 const STATIC_SIGNATURE_ERRORS = new Set([
-	"InvalidSignature",
-	"SignatureExpired",
-	"SignatureNotYetValid",
+	"StaticCallInvalidSignature",
+	"StaticCallSignatureExpired",
+	"StaticCallSignatureNotYetValid",
 ]);
 
 /** True when the wallet rejected an authenticated-read signature, not the read itself. */
@@ -489,13 +489,29 @@ export const createGianoProvider = (
 				return client!.request({ method: "eth_call", params });
 			}
 
+			// The session this read belongs to. A disconnect, a chain switch or a new account
+			// ends it, and the read must not sign, cache or send anything after that.
+			const account = smartAccount;
+			const readClient = client!;
+			const generation = staticSignatureGeneration;
+			const isCurrent = () =>
+				generation === staticSignatureGeneration &&
+				smartAccount === account &&
+				client === readClient;
+			const assertCurrent = () => {
+				if (!isCurrent())
+					throw new GianoError(
+						"signed_eth_call: the session changed during the read; send it again",
+					);
+			};
+
 			// Check if the account is deployed before attempting authenticated calls
-			const isDeployed = await isSmartAccountDeployed(client!, smartAccount);
+			const isDeployed = await isSmartAccountDeployed(readClient, account);
 			if (!isDeployed) {
 				logger.warn(
 					"Smart account not deployed yet, falling back to regular call",
 				);
-				return client!.request({ method: "eth_call", params });
+				return readClient.request({ method: "eth_call", params });
 			}
 
 			const [transaction] = params;
@@ -510,24 +526,28 @@ export const createGianoProvider = (
 			const data = transaction.data;
 
 			// if the lifetime of the static signature is not known, fetch and cache it
-			if (staticSignatureLifetime === 0n) {
-				staticSignatureLifetime = await client!.readContract({
-					address: await smartAccount.getAddress(),
-					abi: smartAccount.abi,
+			let lifetime = staticSignatureLifetime;
+			if (lifetime === 0n) {
+				lifetime = await readClient.readContract({
+					address: await account.getAddress(),
+					abi: account.abi,
 					functionName: "getSignatureLifetime",
 				});
+				assertCurrent();
+				staticSignatureLifetime = lifetime;
 			}
-			const account = smartAccount;
-			const lifetimeSeconds = Number(staticSignatureLifetime);
+			const lifetimeSeconds = Number(lifetime);
 			const key = [account.address, target, data]
 				.map((part) => part.toLowerCase())
 				.join(":");
 
 			const signPermission = (): Promise<StaticPermission> => {
+				assertCurrent();
 				const pending = pendingStaticSignatures.get(key);
 				if (pending) return pending;
-				const generation = staticSignatureGeneration;
 				const sign = async (): Promise<StaticPermission> => {
+					// a read queued behind another signing must not prompt for an ended session
+					assertCurrent();
 					const startedAtMs = Date.now();
 					const { signature, signedAt } =
 						await account.signStaticCallPermission({ target, data });
@@ -546,8 +566,7 @@ export const createGianoProvider = (
 				staticSigningQueue = signing.catch(() => undefined);
 				const tracked: Promise<StaticPermission> = signing
 					.then((permission) => {
-						if (generation === staticSignatureGeneration)
-							staticSignatures.set(key, permission);
+						if (isCurrent()) staticSignatures.set(key, permission);
 						return permission;
 					})
 					.finally(() => {
@@ -558,8 +577,9 @@ export const createGianoProvider = (
 				return tracked;
 			};
 
-			const readWith = (permission: StaticPermission) =>
-				client!.readContract({
+			const readWith = (permission: StaticPermission) => {
+				assertCurrent();
+				return readClient.readContract({
 					abi: account.abi,
 					address: account.address,
 					functionName: "signedStaticCall",
@@ -572,6 +592,19 @@ export const createGianoProvider = (
 						},
 					],
 				});
+			};
+
+			// The wallet rejected the signature: for example, the chain's time passed its limit,
+			// or the signing owner was removed. Never send it again.
+			const removeIfRejected = (
+				error: unknown,
+				permission: StaticPermission,
+			): boolean => {
+				if (!isStaticSignatureRejection(error)) return false;
+				if (staticSignatures.get(key) === permission)
+					staticSignatures.delete(key);
+				return true;
+			};
 
 			const now = Date.now();
 			const cached = staticSignatures.get(key);
@@ -586,14 +619,16 @@ export const createGianoProvider = (
 			try {
 				return await readWith(permission);
 			} catch (error) {
-				if (!isStaticSignatureRejection(error)) throw error;
-				// The wallet rejected the signature: for example, the chain's time passed its
-				// limit, or the signing owner was removed. Never send it again.
-				if (staticSignatures.get(key) === permission)
-					staticSignatures.delete(key);
-				// A new signature failed: signing again would fail the same way.
-				if (!reused) throw error;
-				return await readWith(await signPermission());
+				// A new signature that failed would fail the same way if signed again.
+				if (!removeIfRejected(error, permission) || !reused) throw error;
+			}
+			// The cached signature was rejected: sign once more and repeat the read.
+			const replacement = await signPermission();
+			try {
+				return await readWith(replacement);
+			} catch (error) {
+				removeIfRejected(error, replacement);
+				throw error;
 			}
 		},
 		wallet_addEthereumChain: async () => {

@@ -10,9 +10,11 @@ struct StaticCall {
 }
 
 abstract contract AuthenticatedStaticCaller is ERC1271 {
-    error SignatureExpired(uint256 expiredAt, uint256 currentTimestamp);
-    error SignatureNotYetValid(uint256 signedAt, uint256 currentTimestamp);
-    error InvalidSignature();
+    // The names are specific to this check. `signedStaticCall` returns a target's revert data
+    // unchanged, so a client can only tell these errors from a target's by their selectors.
+    error StaticCallSignatureExpired(uint256 expiredAt, uint256 currentTimestamp);
+    error StaticCallSignatureNotYetValid(uint256 signedAt, uint256 currentTimestamp);
+    error StaticCallInvalidSignature();
 
     //TODO: Make this configurable?
     uint256 constant signatureLifetime = 30 minutes;
@@ -33,14 +35,14 @@ abstract contract AuthenticatedStaticCaller is ERC1271 {
     function signedStaticCall(StaticCall calldata call) external view returns (bytes memory) {
         // A future `signedAt` would let a signature outlive `signatureLifetime`.
         if (call.signedAt > block.timestamp) {
-            revert SignatureNotYetValid(call.signedAt, block.timestamp);
+            revert StaticCallSignatureNotYetValid(call.signedAt, block.timestamp);
         }
         if (call.signedAt + signatureLifetime < block.timestamp) {
-            revert SignatureExpired(call.signedAt + signatureLifetime, block.timestamp);
+            revert StaticCallSignatureExpired(call.signedAt + signatureLifetime, block.timestamp);
         }
         bytes32 hash = staticCallHash(call.target, call.data, call.signedAt);
         if (!_isValidSignature(replaySafeHash(hash), call.signature)) {
-            revert InvalidSignature();
+            revert StaticCallInvalidSignature();
         }
         (bool success, bytes memory result) = call.target.staticcall(call.data);
         if (!success) {

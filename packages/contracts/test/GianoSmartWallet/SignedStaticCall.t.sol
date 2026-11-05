@@ -73,11 +73,22 @@ contract TestSignedStaticCall is SmartWalletTestBase {
         assertEq(abi.decode(result, (uint256)), 42);
     }
 
+    /// @dev The SDK tells the wallet's errors from a target's by selector, so a target's revert
+    ///      must reach the caller unchanged.
+    function testPassesATargetRevertThroughUnchanged() public {
+        GatedView foreign = new GatedView(address(0xdead));
+        bytes memory data = abi.encodeCall(GatedView.secret, (21));
+        bytes memory signature = _signStaticCall(address(foreign), data, block.timestamp);
+
+        vm.expectRevert(abi.encodeWithSelector(GatedView.Unauthorized.selector, address(account)));
+        _call(address(foreign), data, block.timestamp, signature);
+    }
+
     function testRejectsTheSignatureForOtherCalldata() public {
         bytes memory signedData = abi.encodeCall(GatedView.secret, (21));
         bytes memory signature = _signStaticCall(address(gated), signedData, block.timestamp);
 
-        vm.expectRevert(AuthenticatedStaticCaller.InvalidSignature.selector);
+        vm.expectRevert(AuthenticatedStaticCaller.StaticCallInvalidSignature.selector);
         _call(address(gated), abi.encodeCall(GatedView.secret, (22)), block.timestamp, signature);
     }
 
@@ -85,7 +96,7 @@ contract TestSignedStaticCall is SmartWalletTestBase {
         bytes memory data = abi.encodeCall(GatedView.secret, (21));
         bytes memory signature = _signStaticCall(address(gated), data, block.timestamp);
 
-        vm.expectRevert(AuthenticatedStaticCaller.InvalidSignature.selector);
+        vm.expectRevert(AuthenticatedStaticCaller.StaticCallInvalidSignature.selector);
         _call(address(otherGated), data, block.timestamp, signature);
     }
 
@@ -93,7 +104,7 @@ contract TestSignedStaticCall is SmartWalletTestBase {
         bytes memory data = abi.encodeCall(GatedView.secret, (21));
         bytes memory signature = _signStaticCall(address(gated), data, block.timestamp);
 
-        vm.expectRevert(AuthenticatedStaticCaller.InvalidSignature.selector);
+        vm.expectRevert(AuthenticatedStaticCaller.StaticCallInvalidSignature.selector);
         _call(address(gated), data, block.timestamp - 1, signature);
     }
 
@@ -107,7 +118,7 @@ contract TestSignedStaticCall is SmartWalletTestBase {
         bytes memory signature =
             abi.encode(GianoSmartWallet.SignatureWrapper(abi.encode(signer), abi.encodePacked(r, s, v)));
 
-        vm.expectRevert(AuthenticatedStaticCaller.InvalidSignature.selector);
+        vm.expectRevert(AuthenticatedStaticCaller.StaticCallInvalidSignature.selector);
         _call(address(gated), abi.encodeCall(GatedView.secret, (21)), block.timestamp, signature);
     }
 
@@ -117,7 +128,9 @@ contract TestSignedStaticCall is SmartWalletTestBase {
         bytes memory signature = _signStaticCall(address(gated), data, signedAt);
 
         vm.expectRevert(
-            abi.encodeWithSelector(AuthenticatedStaticCaller.SignatureNotYetValid.selector, signedAt, block.timestamp)
+            abi.encodeWithSelector(
+                AuthenticatedStaticCaller.StaticCallSignatureNotYetValid.selector, signedAt, block.timestamp
+            )
         );
         _call(address(gated), data, signedAt, signature);
     }
@@ -139,7 +152,9 @@ contract TestSignedStaticCall is SmartWalletTestBase {
 
         vm.warp(expiredAt + 1);
         vm.expectRevert(
-            abi.encodeWithSelector(AuthenticatedStaticCaller.SignatureExpired.selector, expiredAt, expiredAt + 1)
+            abi.encodeWithSelector(
+                AuthenticatedStaticCaller.StaticCallSignatureExpired.selector, expiredAt, expiredAt + 1
+            )
         );
         _call(address(gated), data, signedAt, signature);
     }
@@ -153,7 +168,7 @@ contract TestSignedStaticCall is SmartWalletTestBase {
             GianoSmartWallet.SignatureWrapper(abi.encode(vm.addr(strangerKey)), abi.encodePacked(r, s, v))
         );
 
-        vm.expectRevert(AuthenticatedStaticCaller.InvalidSignature.selector);
+        vm.expectRevert(AuthenticatedStaticCaller.StaticCallInvalidSignature.selector);
         _call(address(gated), data, block.timestamp, signature);
     }
 }
