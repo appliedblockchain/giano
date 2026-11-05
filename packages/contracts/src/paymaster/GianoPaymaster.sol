@@ -13,8 +13,11 @@ import {UUPSUpgradeable} from '@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {EIP712Upgradeable} from '@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol';
 import {PausableUpgradeable} from '@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol';
 import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import {Math} from '@openzeppelin/contracts/utils/math/Math.sol';
 import {SafeCast} from '@openzeppelin/contracts/utils/math/SafeCast.sol';
 import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
+import {SlotDerivation} from '@openzeppelin/contracts/utils/SlotDerivation.sol';
+import {TransientSlot} from '@openzeppelin/contracts/utils/TransientSlot.sol';
 
 /// @title Giano validating paymaster
 ///
@@ -33,6 +36,12 @@ import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet
 ///         deliberately generous upper bound so the ledger always falls at least as fast as the
 ///         deposit. The residue is unattributed slack, which is safe; equality would not be.
 ///
+///         The EntryPoint takes each operation's prefund from the shared deposit at validation,
+///         but the tenant is charged only at settlement. In between, the charge is held as an
+///         in-flight reservation in transient storage. Validation counts it against the balance,
+///         and `withdrawTenant` cannot take it, so neither a second operation in the same bundle
+///         nor a withdrawal during execution can spend money that is already committed.
+///
 ///         There is no owner and no superuser. Every privileged action is gated by its own role,
 ///         and every role's admin is `ROLE_ADMIN`, which in a real deployment is held by a
 ///         timelock. `DEFAULT_ADMIN_ROLE` is never granted.
@@ -49,6 +58,9 @@ contract GianoPaymaster is
     using UserOperationLib for PackedUserOperation;
     using EnumerableSet for EnumerableSet.AddressSet;
     using EnumerableSet for EnumerableSet.Bytes32Set;
+    using SlotDerivation for bytes32;
+    using TransientSlot for bytes32;
+    using TransientSlot for TransientSlot.Uint256Slot;
 
     // ---------------------------------------------------------------------------------------
     // Roles
@@ -141,6 +153,8 @@ contract GianoPaymaster is
         uint256 executionGasLimit;
         address sender;
         bytes32 userOpHash;
+        // The charge reserved at validation, released at settlement.
+        uint256 reservedWei;
     }
 
     /// @dev The `Sponsored` event's fields, gathered in memory — see `_emitSponsored`.
@@ -180,6 +194,28 @@ contract GianoPaymaster is
         assembly {
             $.slot := PAYMASTER_STORAGE_LOCATION
         }
+    }
+
+    /// @dev Base of the transient `tenantId => in-flight reservation (wei)` mapping. Transient, so
+    ///      every reservation clears when the transaction ends. It never touches the persistent
+    ///      storage layout.
+    ///
+    ///      If `postOp` reverts, the EntryPoint reverts its frame, release included, and does not
+    ///      call it again. That reservation then stays held until the transaction ends. No funds
+    ///      are at risk, but later `withdrawTenant` calls and validations for the tenant in the
+    ///      same transaction see a smaller available balance.
+    ///
+    ///      keccak256(abi.encode(uint256(keccak256("giano.transient.Paymaster.inFlight")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant IN_FLIGHT_TRANSIENT_LOCATION =
+        0x1b310d53db5cf5675cdbf51c60538fb4a98cc81e6f94db0e5ad779e9c0210100;
+
+    function _inFlight(bytes16 tenantId) private pure returns (TransientSlot.Uint256Slot) {
+        return IN_FLIGHT_TRANSIENT_LOCATION.deriveMapping(bytes32(tenantId)).asUint256();
+    }
+
+    /// @dev The part of a tenant's balance that no validated, unsettled operation has reserved.
+    function _unreserved(uint256 balance, uint256 reserved) private pure returns (uint256) {
+        return Math.saturatingSub(balance, reserved);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -465,12 +501,16 @@ contract GianoPaymaster is
     /// @notice Withdraws a tenant's unspent balance. Callable only by that tenant's registered
     ///         withdrawal address — no role defined by this contract can reach it (R-33, R-48) —
     ///         and deliberately available while paused, because a pause must not trap funds (R-53).
+    ///         Inside a bundle, the charges reserved for the tenant's validated but unsettled
+    ///         operations are not withdrawable: the EntryPoint has already taken their prefund
+    ///         from the shared deposit.
     function withdrawTenant(bytes16 tenantId, uint256 amount, address to) external {
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         Tenant storage t = _requireTenant(tenantId);
         if (_msgSender() != t.withdrawAddress) revert NotWithdrawAddress(tenantId, _msgSender());
-        if (amount > t.balance) revert InsufficientTenantBalance(tenantId, amount, t.balance);
+        uint256 available = _unreserved(t.balance, _inFlight(tenantId).tload());
+        if (amount > available) revert InsufficientTenantBalance(tenantId, amount, available);
 
         // Ledger first, deposit second: the invariant holds at every observable point.
         t.balance = SafeCast.toUint128(uint256(t.balance) - amount);
@@ -607,10 +647,17 @@ contract GianoPaymaster is
 
         uint256 executionGasLimit = userOp.unpackCallGasLimit() + userOp.unpackPostOpGasLimit();
         uint256 requiredCharge = maxCost + auth.feeWei + _overheadWei(userOp.unpackMaxFeePerGas(), executionGasLimit);
-        if (requiredCharge > t.balance) revert InsufficientTenantBalance(auth.tenantId, requiredCharge, t.balance);
+
+        // Earlier operations of this tenant in the same bundle are validated but not yet settled.
+        // Their reservations come off the balance first, and this charge is reserved until settled.
+        TransientSlot.Uint256Slot inFlight = _inFlight(auth.tenantId);
+        uint256 reserved = inFlight.tload();
+        uint256 available = _unreserved(t.balance, reserved);
+        if (requiredCharge > available) revert InsufficientTenantBalance(auth.tenantId, requiredCharge, available);
+        inFlight.tstore(reserved + requiredCharge);
 
         return (
-            abi.encode(auth.tenantId, auth.feeWei, executionGasLimit, userOp.sender, userOpHash),
+            abi.encode(auth.tenantId, auth.feeWei, executionGasLimit, userOp.sender, userOpHash, requiredCharge),
             _packValidationData(false, auth.validUntil, auth.validAfter)
         );
     }
@@ -636,6 +683,10 @@ contract GianoPaymaster is
     function _settle(SettlementContext memory c, bool success, uint256 actualGasCost, uint256 actualUserOpFeePerGas) internal {
         PaymasterStorage storage $ = _s();
         Tenant storage t = $.tenants[c.tenantId];
+
+        // Release this operation's reservation. Saturating, because settlement must never revert.
+        TransientSlot.Uint256Slot inFlight = _inFlight(c.tenantId);
+        inFlight.tstore(Math.saturatingSub(inFlight.tload(), c.reservedWei));
 
         uint256 overheadWei = _overheadWei(actualUserOpFeePerGas, c.executionGasLimit);
         uint256 owed = actualGasCost + overheadWei;

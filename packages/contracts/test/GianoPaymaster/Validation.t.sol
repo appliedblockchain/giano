@@ -301,7 +301,7 @@ contract ValidationTest is PaymasterTestBase {
     function test_validate_refusesATenantCarryingADeficit() public {
         // drive TENANT_B into deficit by settling more than it holds
         _fund(TENANT_B, 0.001 ether);
-        bytes memory ctx = abi.encode(TENANT_B, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'));
+        bytes memory ctx = abi.encode(TENANT_B, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'), uint256(0));
         vm.prank(address(ENTRY_POINT));
         paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, ctx, 0.01 ether, 1 gwei);
         assertGt(paymaster.getTenant(TENANT_B).deficit, 0);
@@ -314,7 +314,7 @@ contract ValidationTest is PaymasterTestBase {
 
     function test_validate_blocksWhileTheDeficitStands() public {
         _fund(TENANT_B, 0.001 ether);
-        bytes memory ctx = abi.encode(TENANT_B, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'));
+        bytes memory ctx = abi.encode(TENANT_B, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'), uint256(0));
         vm.prank(address(ENTRY_POINT));
         paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, ctx, 0.01 ether, 1 gwei);
 

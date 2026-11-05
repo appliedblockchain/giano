@@ -174,13 +174,13 @@ sequenceDiagram
 | Contract / function allowlist | Rules engine, before signing | — (implied: no signature, no sponsorship) |
 | Wallet management | Rules engine, structurally: a self-call is sponsored under the platform cap unless the tenant opted out | — (the contract does not distinguish it; the cap it enforces is the one pinned in the authorisation) |
 | Max cost per transaction | Rules engine | Validation rejects if `maxCost + fee + overhead` exceeds it |
-| Sufficient balance | Ledger, `balance − reserved` | Validation rejects if the ledger balance alone cannot cover the op |
+| Sufficient balance | Ledger, `balance − reserved` | Validation rejects if the balance, minus the charges reserved by earlier ops in the same transaction, cannot cover the op (§3.5) |
 | Tenant segregation | Reservation is per tenant | Debit is per tenant; a tenant can only ever be charged against its own balance |
 | Single use | Reservation keyed on `(sender, nonce)` | EntryPoint nonce, plus the signature binding chain, paymaster, sender and nonce |
 
 The asymmetry is deliberate and is D5's point: the chain cannot be the primary gate because it sees
-one op at a time, and the ledger cannot be the only gate because a compromised backend would then
-be unbounded.
+only the ops of the current transaction, and the ledger cannot be the only gate because a
+compromised backend would then be unbounded.
 
 ---
 
@@ -311,7 +311,7 @@ that reaches tenant funds is `upgradeToAndCall`, which is R-33's stated exceptio
 |---|---|---|
 | `depositFor(bytes16 tenantId) payable` | anyone | The only funding path. Reverts for an unregistered tenant, so funds can never arrive un-attributed (R-30). Credits `balance`, applies any outstanding `deficit` first, forwards the value to `EntryPoint.depositTo(address(this))` |
 | `receive()` | anyone | **Reverts.** A bare transfer carries no tenant, and silently pooling it would break attribution |
-| `withdrawTenant(bytes16 tenantId, uint256 amount, address to)` | the tenant's registered `withdrawAddress` only | Debits `balance`, calls `EntryPoint.withdrawTo`. Available while paused (R-53) |
+| `withdrawTenant(bytes16 tenantId, uint256 amount, address to)` | the tenant's registered `withdrawAddress` only | Debits `balance`, calls `EntryPoint.withdrawTo`. Cannot take the charges reserved for the tenant's validated but unsettled ops (§3.5). Available while paused (R-53) |
 | `withdrawFees(address to, uint256 amount)` | `FEE_COLLECTOR_ROLE` | Debits `treasury`, capped at it (R-42) |
 | `addStake / unlockStake / withdrawStake` | `STAKE_ADMIN_ROLE` | Straight through to the EntryPoint |
 
@@ -348,8 +348,8 @@ gives replay separation across chains and paymaster addresses for free, because 
 handles the cached-separator and chain-fork cases already, and because tenants can verify a charge
 from readable data.
 
-`validatePaymasterUserOp` performs, in order, reverting or returning failure without a state write
-wherever it can:
+`validatePaymasterUserOp` performs, in order, reverting or returning failure before any state write.
+Its only write is the transient reservation in step 6:
 
 1. caller is the configured EntryPoint;
 2. not paused (`whenNotPaused`);
@@ -357,14 +357,34 @@ wherever it can:
 4. tenant registered and enabled;
 5. `signers.contains(signer)` and `SignatureChecker.isValidSignatureNow(signer, digest, sig)` —
    an unlisted or revoked key fails on the cheap set lookup before any cryptography runs;
-6. `requiredCharge = maxCost + feeWei + overheadBound(userOp)` (§3.6) is covered by `balance`, and
-   the tenant carries no `deficit`;
-7. returns `context = abi.encode(tenantId, feeWei, executionGasLimit, sender)` and
-   `validationData = packValidationData(false, validUntil, validAfter)`.
+6. the tenant carries no `deficit`, and `requiredCharge = maxCost + feeWei + overheadBound(userOp)`
+   (§3.6) is covered by `balance` minus the tenant's in-flight reservation. `requiredCharge` is then
+   added to that reservation;
+7. returns `context = abi.encode(tenantId, feeWei, executionGasLimit, sender, userOpHash,
+   requiredCharge)` and `validationData = packValidationData(false, validUntil, validAfter)`.
 
 A failed signature check returns `SIG_VALIDATION_FAILED` (so the bundler treats it as an invalid op
 rather than a paymaster fault); everything else reverts with a custom error, because those are
 conditions the service should never have signed into existence and silent failure would hide a bug.
+
+**In-flight reservation.** The EntryPoint takes each op's prefund from the shared deposit at
+validation, but the tenant is charged only at settlement. Between the two, the contract holds
+`requiredCharge` as a per-tenant reservation in transient storage (EIP-1153). Settlement releases
+exactly the amount in `context`. Two things depend on it:
+
+- a second op of the same tenant in the same bundle is checked against what the first op left
+  unreserved, not against the whole balance;
+- `withdrawTenant`, called during an op's execution, cannot take a reserved charge.
+
+Without it, either case lets a tenant spend money that is already committed, and the gas then falls
+on the other tenants' share of the deposit. Transient storage clears when the transaction ends, so
+nothing persists and the storage layout does not change.
+
+Two consequences for bundlers. Validation writes transient storage (`TSTORE`), which a strict
+ERC-7562 bundler may need to allow. And a bundler that simulates each op alone cannot see the
+reservations made by earlier ops in the same bundle, so a bundle of one tenant's ops can pass
+simulation and then revert on chain with `AA33`. Giano's bundler sends one op per `handleOps`, so it
+is not affected.
 
 **Single use** (R-07) needs no on-chain replay store: the signature binds `sender` and `nonce`, and
 the EntryPoint already refuses a reused nonce. Expiry comes from `validUntil` (§13.1 sets it to
@@ -397,7 +417,9 @@ figure cannot (O2). The price is an overcharge of up to `penaltyBps` of the gas 
 §8.4's slack alert is what keeps that honest, and calibration on the target chain is a prerequisite
 for the first tenant funding.
 
-Debit order when `charge > balance` — possible only in the concurrency case D5 describes:
+Debit order when `charge > balance`. The in-flight reservation (§3.5) is designed to prevent this:
+the charge cannot exceed `requiredCharge`, and nothing can spend the reserved amount before
+settlement. The contract keeps this path as a safeguard:
 
 1. gas and overhead are taken first, up to the balance;
 2. the fee is taken from whatever remains, and only that part is credited to `treasury`;
@@ -410,7 +432,10 @@ growing while the alert is being handled.
 
 The fee is charged for `PostOpMode.opSucceeded` and `opReverted` alike (R-40). `postOpReverted` is
 not delivered to us by the EntryPoint at all; the deposit is still debited, so it appears as slack
-and is caught by reconciliation rather than by the ledger.
+and is caught by reconciliation rather than by the ledger. The reverted `postOp` also never released
+its reservation, so the reservation stays held until the transaction ends. No funds are at risk, but
+later withdrawals and validations for that tenant in the same transaction see a smaller available
+balance.
 
 ### 3.7 Events and errors
 
@@ -443,9 +468,9 @@ fails CI rather than surfacing as a `postOp` that ran out of gas:
 
 | Step | Measured | Budget asserted |
 |---|---|---|
-| `validatePaymasterUserOp` | ~38.8k | < 60k |
-| `postOp`, cold treasury slot | ~49.5k | < 80k |
-| `postOp`, warm treasury slot | ~9.7k | < 80k |
+| `validatePaymasterUserOp` | ~37.3k | < 60k |
+| `postOp`, cold treasury slot | ~49.9k | < 80k |
+| `postOp`, warm treasury slot | ~10.2k | < 80k |
 
 > **Corrected during implementation.** This section originally budgeted 15–20k for validation and
 > 25–35k for settlement. Validation is about twice the original figure: the EIP-712 digest covers
@@ -884,10 +909,15 @@ does not have, and it is the strongest argument for leaving the charge with the 
 ### 7.1 Why it is off-chain
 
 D5 explains the requirement; the mechanism is that the ledger must refuse the *third* signature
-before it exists, which is a decision no on-chain check can make — the chain sees one op at a time
-and validates it against a balance nothing has yet debited. On-chain reservations were rejected: a
-storage write during validation on every op, paid by every tenant, to duplicate a check the signer
-must do anyway.
+before it exists, which is a decision no on-chain check can make — the chain sees only the ops of
+the current transaction and validates them against a balance nothing has yet debited.
+
+Persistent on-chain reservations were rejected: a storage write during validation on every op, paid
+by every tenant, to duplicate a check the signer must do anyway. The contract does keep a
+*transient* reservation (§3.5), and that is a different decision. It costs about 100 gas per write,
+it clears when the transaction ends, and it closes a gap the off-chain ledger cannot see: a
+withdrawal or a second op inside the same transaction, between validation and settlement. It does
+not replace this ledger, which remains the gate across transactions.
 
 ### 7.2 Data model
 

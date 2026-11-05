@@ -40,7 +40,7 @@ contract GasTest is PaymasterTestBase {
     }
 
     function test_gas_settlement() public {
-        bytes memory ctx = abi.encode(TENANT_A, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'));
+        bytes memory ctx = abi.encode(TENANT_A, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'), uint256(0));
 
         vm.prank(address(ENTRY_POINT));
         uint256 before = gasleft();
@@ -54,7 +54,7 @@ contract GasTest is PaymasterTestBase {
     /// @dev The steady-state cost, once the treasury slot is warm — this is what most operations
     ///      actually pay, and what `postOpGasAllowance` should be calibrated against.
     function test_gas_settlementWarm() public {
-        bytes memory ctx = abi.encode(TENANT_A, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'));
+        bytes memory ctx = abi.encode(TENANT_A, DEFAULT_FEE_WEI, uint256(300_000), wallet, keccak256('h'), uint256(0));
         vm.prank(address(ENTRY_POINT));
         paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, ctx, 0.001 ether, 1 gwei);
 
