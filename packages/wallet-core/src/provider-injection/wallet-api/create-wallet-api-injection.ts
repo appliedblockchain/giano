@@ -14,6 +14,7 @@ import {
 	serializeUserOperation,
 	toBase64Url,
 } from "./serialization";
+import { type SessionEndReason, SessionEndedError } from "./session-ended-error";
 
 export type CreateWalletApiInjectionOptions = {
 	passkeyDevicePreference?: PasskeyDevicePreference;
@@ -52,6 +53,20 @@ export type WalletApiInjection = GianoProviderInjection & {
 	/** The external user id currently in force (may have been adopted at sign-in). */
 	getExternalUserId(): string;
 	logout(): Promise<void>;
+	/**
+	 * Signs out of every device (G5 R2): asks wallet-api to revoke every session of this user,
+	 * then ends the session here whatever the answer. Resolves `false` when wallet-api could not
+	 * confirm it, so the UI can say that other devices may still be signed in.
+	 */
+	logoutAll(): Promise<boolean>;
+	/**
+	 * Ends the session because wallet-api refused it (401). The other clients that send the
+	 * session on their own (management API, paymaster client, bundler transport) call this, so a
+	 * refused session ends in one place whichever request found out.
+	 */
+	onUnauthorized(): void;
+	/** Subscribes to the session ending, for any reason. Returns the unsubscribe function. */
+	onSessionEnded(listener: (reason: SessionEndReason) => void): () => void;
 	/**
 	 * Signs in with a DISCOVERABLE passkey — no allowCredentials, so the authenticator
 	 * offers whatever resident credentials it holds for this RP. This is how a device that
@@ -102,6 +117,14 @@ export function createWalletApiInjection(
 		onSessionChanged?.(token);
 	};
 
+	const endedListeners = new Set<(reason: SessionEndReason) => void>();
+	/** The one way a session ends here: the token goes from memory and storage, then listeners hear why. */
+	const endSession = (reason: SessionEndReason) => {
+		if (sessionToken === null) return;
+		setSession(null);
+		for (const listener of endedListeners) listener(reason);
+	};
+
 	const adoptExternalUserId = (id: string | undefined) => {
 		if (id && id !== externalUserId) {
 			externalUserId = id;
@@ -125,6 +148,12 @@ export function createWalletApiInjection(
 			headers.authorization = `Bearer ${sessionToken}`;
 		}
 		const response = await fetchImpl(`${base}${path}`, { ...init, headers });
+		if (response.status === 401 && init.auth) {
+			// wallet-api refused the session: it is idle, expired, capped out or revoked, and no
+			// retry brings it back. Drop it so the next request asks for a sign-in (G5).
+			endSession("unauthorized");
+			throw new SessionEndedError();
+		}
 		if (!response.ok) {
 			let message = `${response.status}`;
 			try {
@@ -198,7 +227,27 @@ export function createWalletApiInjection(
 					() => undefined,
 				);
 			}
-			setSession(null);
+			endSession("logout");
+		},
+
+		logoutAll: async () => {
+			if (!sessionToken) return false;
+			const confirmed = await api<{ ok: true }>("/v1/sessions/logout-all", {
+				method: "POST",
+				auth: true,
+			}).then(
+				() => true,
+				() => false,
+			);
+			endSession("logout-all");
+			return confirmed;
+		},
+
+		onUnauthorized: () => endSession("unauthorized"),
+
+		onSessionEnded: (listener) => {
+			endedListeners.add(listener);
+			return () => endedListeners.delete(listener);
 		},
 
 		getNameForCredential: () => credentialName,

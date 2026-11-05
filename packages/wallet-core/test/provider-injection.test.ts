@@ -15,6 +15,8 @@ import {
 	isBufferSource,
 	isGianoProviderInjection,
 	isNonEmptyBufferSource,
+	isSessionEndedError,
+	SessionEndedError,
 } from "../src/provider-injection";
 import { withValidation } from "../src/provider-injection/_with-validation";
 import { assertBaseCredentialInfo } from "../src/provider-injection/types/credential-info/base-credential-info";
@@ -608,5 +610,97 @@ describe("createWalletApiInjection", () => {
 		expect(withSession.getSessionToken()).toBe("tok");
 		await withSession.logout();
 		expect(withSession.getSessionToken()).toBeNull();
+	});
+
+	describe("the session ends when wallet-api refuses it (G5)", () => {
+		const respond = (status: number) =>
+			vi.fn(
+				async () =>
+					({
+						ok: status < 400,
+						status,
+						json: async () => ({ error: "x", message: "x" }),
+					}) as Response,
+			);
+		const make = (fetchImpl: ReturnType<typeof respond>) => {
+			const onSessionChanged = vi.fn();
+			const injection = createWalletApiInjection({
+				apiUrl: "https://wallet.test/api",
+				externalUserId: "u",
+				sessionToken: "tok",
+				onSessionChanged,
+				fetch: fetchImpl as never,
+			});
+			const ended = vi.fn();
+			injection.onSessionEnded(ended);
+			return { injection, onSessionChanged, ended };
+		};
+
+		it("a 401 to an authenticated call clears the token, tells the host and throws SessionEndedError", async () => {
+			const { injection, onSessionChanged, ended } = make(respond(401));
+			const error = await injection
+				.getPublicKeyByCredentialId(new ArrayBuffer(2))
+				.catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(SessionEndedError);
+			expect(isSessionEndedError(new Error("wrapped", { cause: error }))).toBe(
+				true,
+			);
+			expect(injection.getSessionToken()).toBeNull();
+			expect(onSessionChanged).toHaveBeenCalledWith(null);
+			expect(ended).toHaveBeenCalledWith("unauthorized");
+		});
+
+		it("keeps the session on other errors", async () => {
+			for (const status of [429, 503]) {
+				const { injection, ended } = make(respond(status));
+				await expect(
+					injection.getPublicKeyByCredentialId(new ArrayBuffer(2)),
+				).rejects.not.toBeInstanceOf(SessionEndedError);
+				expect(injection.getSessionToken()).toBe("tok");
+				expect(ended).not.toHaveBeenCalled();
+			}
+		});
+
+		it("a 401 to a call that carried no session does not end it", async () => {
+			const { injection, ended } = make(respond(401));
+			await expect(injection.getCredentialInfo()).rejects.toThrow(
+				/failed: x/,
+			);
+			expect(injection.getSessionToken()).toBe("tok");
+			expect(ended).not.toHaveBeenCalled();
+		});
+
+		it("onUnauthorized ends the session once, for the other clients", () => {
+			const { injection, ended } = make(respond(200));
+			injection.onUnauthorized();
+			injection.onUnauthorized();
+			expect(injection.getSessionToken()).toBeNull();
+			expect(ended).toHaveBeenCalledTimes(1);
+		});
+
+		it("logoutAll signs out everywhere and ends the session here", async () => {
+			const fetchImpl = respond(200);
+			const { injection, ended } = make(fetchImpl);
+			expect(await injection.logoutAll()).toBe(true);
+			expect(fetchImpl).toHaveBeenCalledWith(
+				"https://wallet.test/api/v1/sessions/logout-all",
+				expect.objectContaining({
+					method: "POST",
+					headers: expect.objectContaining({ authorization: "Bearer tok" }),
+				}),
+			);
+			expect(injection.getSessionToken()).toBeNull();
+			expect(ended).toHaveBeenCalledWith("logout-all");
+		});
+
+		it("logoutAll still ends the session here when wallet-api cannot be reached", async () => {
+			const fetchImpl = vi.fn(async () => {
+				throw new TypeError("Failed to fetch");
+			});
+			const { injection, ended } = make(fetchImpl as never);
+			expect(await injection.logoutAll()).toBe(false);
+			expect(injection.getSessionToken()).toBeNull();
+			expect(ended).toHaveBeenCalledWith("logout-all");
+		});
 	});
 });

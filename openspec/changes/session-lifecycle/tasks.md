@@ -20,11 +20,11 @@
 
 ## 3. Client: wallet-core and wallet-kit (PR 3)
 
-- [ ] 3.1 wallet-core: add `SessionEndedError` (a `GianoError` with code 4100) and export it. In `create-wallet-api-injection.ts`, add `endSession()`, end the session on a 401 to an authenticated `api()` call, and expose `onUnauthorized()` and `logoutAll()` (D7). The interface and any test doubles of the injection gain both.
-- [ ] 3.2 wallet-core: `management/api.ts` and `paymaster/erc7677-client.ts` take an optional `onUnauthorized`, call it on a 401 to a request that carried the token, and throw `SessionEndedError`. A 401 without a token, and other statuses, keep today's behavior.
-- [ ] 3.3 wallet-kit: `sessionHttp` calls `onUnauthorized` on a 401 when it attached a token. Wire `onUnauthorized` into the management API and paymaster client. The management controller resets to signed-out on any session change to none, with a `sessionEnded` flag, and gains `logoutAll()`, which reports whether the server call succeeded.
-- [ ] 3.4 Unit tests for every scenario in `specs/wallet-session-client/spec.md` that the libraries cover: a 401 on each of the four clients ends the session and clears storage; 429 and 503 keep it; a 401 without a token does not end it; `logoutAll` clears the session locally when the call fails; the provider surfaces 4100 to a dApp.
-- [ ] 3.5 Add a changeset for `@appliedblockchain/giano-wallet-core` and `@appliedblockchain/giano-wallet-kit` (minor: new API; note the new 401 behavior). Run their tests, typecheck and lint.
+- [x] 3.1 wallet-core: add `SessionEndedError` (a `GianoError` with code 4100) and export it. In `create-wallet-api-injection.ts`, add `endSession()`, end the session on a 401 to an authenticated `api()` call, and expose `onUnauthorized()` and `logoutAll()` (D7). The interface and any test doubles of the injection gain both.
+- [x] 3.2 wallet-core: `management/api.ts` and `paymaster/erc7677-client.ts` take an optional `onUnauthorized`, call it on a 401 to a request that carried the token, and throw `SessionEndedError`. A 401 without a token, and other statuses, keep today's behavior.
+- [x] 3.3 wallet-kit: `sessionHttp` calls `onUnauthorized` on a 401 when it attached a token. Wire `onUnauthorized` into the management API and paymaster client. The management controller resets to signed-out on any session change to none, with a `sessionEnded` flag, and gains `logoutAll()`, which reports whether the server call succeeded.
+- [x] 3.4 Unit tests for every scenario in `specs/wallet-session-client/spec.md` that the libraries cover: a 401 on each of the four clients ends the session and clears storage; 429 and 503 keep it; a 401 without a token does not end it; `logoutAll` clears the session locally when the call fails; the provider surfaces 4100 to a dApp.
+- [x] 3.5 Add a changeset for `@appliedblockchain/giano-wallet-core` and `@appliedblockchain/giano-wallet-kit` (minor: new API; note the new 401 behavior). Run their tests, typecheck and lint.
 
 ## 4. wallet-web (PR 3)
 

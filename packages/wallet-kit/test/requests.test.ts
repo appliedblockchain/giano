@@ -1,3 +1,4 @@
+import { SessionEndedError } from "@appliedblockchain/giano-wallet-core";
 import {
 	RPC_ERRORS,
 	TransportRpcError,
@@ -68,6 +69,25 @@ describe("the single-slot consent queue (WK-10)", () => {
 });
 
 describe("toRpcError", () => {
+	it("maps a refused session to 4100 Unauthorized, never 4001 (G5)", () => {
+		// as viem wraps what a paymaster hook threw
+		const wrapped = new Error("prepare failed", {
+			cause: new Error("hook failed", { cause: new SessionEndedError() }),
+		});
+		expect(toRpcError(wrapped).code).toBe(RPC_ERRORS.UNAUTHORIZED);
+		// as viem reports the bundler relay's 401
+		const http401 = Object.assign(new Error("HTTP request failed"), {
+			status: 401,
+		});
+		expect(toRpcError(new Error("send failed", { cause: http401 })).code).toBe(
+			RPC_ERRORS.UNAUTHORIZED,
+		);
+		const http503 = Object.assign(new Error("HTTP request failed"), {
+			status: 503,
+		});
+		expect(toRpcError(http503).code).toBe(RPC_ERRORS.INTERNAL);
+	});
+
 	it("passes a TransportRpcError through", () => {
 		const error = new TransportRpcError(RPC_ERRORS.UNSUPPORTED_METHOD, "nope");
 		expect(toRpcError(error)).toBe(error);

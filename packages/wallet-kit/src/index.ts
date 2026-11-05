@@ -61,6 +61,7 @@ export {
 	type ManagementChainStatus,
 	type ManagementController,
 	type ManagementFlow,
+	type ManagementNotice,
 	type ManagementState,
 	type OwnerRow,
 	type SponsorshipRefusal,

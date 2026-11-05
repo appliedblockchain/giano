@@ -4,6 +4,7 @@ import {
 	createGianoProvider,
 	createWalletApiInjection,
 	type GianoProvider,
+	isSessionEndedError,
 	type PasskeyDevicePreference,
 	type SponsorshipCheck,
 	type SponsorshipRefusalReason,
@@ -57,7 +58,12 @@ export type SponsorshipPreflight =
 			message: string;
 			ruleResults: SponsorshipRuleResult[];
 	  }
-	| { state: "unavailable"; message: string };
+	| { state: "unavailable"; message: string }
+	/**
+	 * wallet-api refused the session (G5): it is idle, expired or revoked, and it has already been
+	 * dropped. Nothing can be sponsored or sent until the user signs in again.
+	 */
+	| { state: "session-ended" };
 
 export type TransactionRequest = {
 	to?: `0x${string}`;
@@ -166,22 +172,33 @@ function paymasterHooks(
  * origin never needs a route to the bundler itself. The header is read per request, not at
  * construction: the runtime is built before the user signs in and the token changes over the
  * session's life. A bundler dialled directly ignores the header.
+ *
+ * A 401 to a request that carried the session ends it through `onUnauthorized` (G5). The response
+ * itself goes back to viem unchanged: viem turns it into an HTTP 401 error, which it does not
+ * retry, and the host maps that to EIP-1193 4100.
  */
 export function sessionHttp(
 	url: string,
 	getSessionToken: () => string | null,
+	onUnauthorized?: () => void,
 ): HttpTransport {
 	return http(url, {
-		onFetchRequest: (_request, init) => {
+		fetchFn: async (input, init) => {
 			const token = getSessionToken();
-			if (!token) return undefined;
-			return {
-				...init,
-				headers: {
-					...(init.headers as Record<string, string> | undefined),
-					authorization: `Bearer ${token}`,
-				},
-			};
+			const response = await globalThis.fetch(
+				input,
+				token
+					? {
+							...init,
+							headers: {
+								...(init?.headers as Record<string, string> | undefined),
+								authorization: `Bearer ${token}`,
+							},
+						}
+					: init,
+			);
+			if (response.status === 401 && token) onUnauthorized?.();
+			return response;
 		},
 	});
 }
@@ -206,10 +223,15 @@ export function bundlerOptions(
 		| ReturnType<typeof createErc7677PaymasterClient>
 		| undefined,
 	getSessionToken: () => string | null,
+	onUnauthorized?: () => void,
 ): BundlerOptions {
 	return {
 		chain,
-		transport: sessionHttp(chainConfig.bundlerUrl, getSessionToken),
+		transport: sessionHttp(
+			chainConfig.bundlerUrl,
+			getSessionToken,
+			onUnauthorized,
+		),
 		userOperation: { estimateFeesPerGas: async () => estimateFeesPerGas() },
 		...paymasterHooks(chainConfig, sponsorshipClient),
 	};
@@ -326,7 +348,9 @@ function buildRuntime(
 			? createErc7677PaymasterClient({
 					url: chainConfig.paymasterServiceUrl,
 					chainId: chainConfig.chainId,
-					getSessionToken: () => localStorage.getItem(SESSION_KEY),
+					// the injection holds the session (WK-03): one source of truth, and one place it ends
+					getSessionToken: injection.getSessionToken,
+					onUnauthorized: injection.onUnauthorized,
 				})
 			: undefined;
 
@@ -338,6 +362,7 @@ function buildRuntime(
 			estimateFeesPerGas,
 			sponsorshipClient,
 			injection.getSessionToken,
+			injection.onUnauthorized,
 		),
 	);
 
@@ -397,6 +422,7 @@ function buildRuntime(
 				}),
 			);
 		} catch (error) {
+			if (isSessionEndedError(error)) return { state: "session-ended" };
 			return {
 				state: "unavailable",
 				message:

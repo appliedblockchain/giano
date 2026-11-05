@@ -157,6 +157,15 @@ export async function applyOwnerChange(
 				});
 				continue;
 			}
+			if (preflight.state === "session-ended") {
+				// The session is gone: no chain can be changed until the user signs in again (G5).
+				update(chainId, {
+					state: "failed",
+					detail: "your session ended — sign in again",
+				});
+				log(`${label}: session ended`, { chainId });
+				continue;
+			}
 			if (preflight.state === "unavailable") {
 				update(chainId, {
 					state: "failed",
