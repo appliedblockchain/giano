@@ -94,11 +94,11 @@ contract GianoSmartWalletFactoryTest is Test {
         assertEq(address(a).balance, 1e18);
     }
 
-    function test_implementation_returnsExpectedAddress() public {
+    function test_implementation_returnsExpectedAddress() public view {
         assertEq(factory.implementation(), address(account));
     }
 
-    function test_initCodeHash() public {
+    function test_initCodeHash() public view {
         bytes32 execptedHash = LibClone.initCodeHashERC1967(address(account));
         bytes32 factoryHash = factory.initCodeHash();
         assertEq(factoryHash, execptedHash);

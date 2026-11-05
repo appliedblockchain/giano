@@ -20,7 +20,7 @@ contract ERC1271Test is Test {
         account = factory.createAccount(owners, 0);
     }
 
-    function test_returnsExpectedDomainHashWhenProxy() public {
+    function test_returnsExpectedDomainHashWhenProxy() public view {
         (
             ,
             string memory name,

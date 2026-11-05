@@ -13,13 +13,13 @@ contract TestCanSkipChainIdValidation is SmartWalletTestBase {
     ];
     bytes4[] otherSelectors = [GianoSmartWallet.execute.selector, GianoSmartWallet.executeBatch.selector];
 
-    function test_approvedSelectorsReturnTrue() public {
+    function test_approvedSelectorsReturnTrue() public view {
         for (uint256 i; i < approvedSelectors.length; i++) {
             assertTrue(account.canSkipChainIdValidation(approvedSelectors[i]));
         }
     }
 
-    function test_otherSelectorsReturnFalse() public {
+    function test_otherSelectorsReturnFalse() public view {
         for (uint256 i; i < otherSelectors.length; i++) {
             assertFalse(account.canSkipChainIdValidation(otherSelectors[i]));
         }

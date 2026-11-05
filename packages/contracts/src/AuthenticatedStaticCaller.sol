@@ -19,7 +19,7 @@ abstract contract AuthenticatedStaticCaller is ERC1271 {
     //TODO: Make this configurable?
     uint256 constant signatureLifetime = 30 minutes;
 
-    function getSignatureLifetime() external view returns (uint256) {
+    function getSignatureLifetime() external pure returns (uint256) {
         return signatureLifetime;
     }
 
