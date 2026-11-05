@@ -4,18 +4,13 @@ import {
 } from "@appliedblockchain/giano-wallet-kit";
 import { bytesToHex } from "viem";
 
-/**
- * A Unicode "Other" character (general category C): control and format characters, such as bidi
- * overrides and zero-width characters, plus private-use and unassigned code points. Each can hide
- * or reorder what the user reads. Tab and line breaks are allowed.
- */
-const HIDDEN_CHARACTER = /(?![\t\n\r])\p{C}/u;
+/** Invisible or reordering characters (Unicode category C and default-ignorables), except tab and line breaks. */
+const HIDDEN_CHARACTER = /(?![\t\n\r])[\p{C}\p{Default_Ignorable_Code_Point}]/u;
 
 /** The bytes as text, or undefined when they are not valid UTF-8 or contain a hidden character. */
 function decodeReadableText(bytes: Uint8Array): string | undefined {
 	try {
-		// ignoreBOM keeps a leading U+FEFF in the text, so HIDDEN_CHARACTER rejects it. By default
-		// the decoder would drop it, and the screen would not show a byte that is signed.
+		// ignoreBOM keeps a leading BOM, so the check rejects it instead of hiding it.
 		const text = new TextDecoder("utf-8", {
 			fatal: true,
 			ignoreBOM: true,
@@ -71,8 +66,7 @@ function renderPayload(request: PendingRequest): {
 	const raw = request.method === "personal_sign" ? params[0] : params[1];
 	if (typeof raw !== "string")
 		return { title: "Sign message", body: String(raw) };
-	// The exact bytes the wallet signs, from the same function the provider uses. Show them as
-	// text only when that text shows every byte; otherwise show them as hex.
+	// The exact bytes the provider signs: shown as text only when every byte is visible.
 	const bytes = toPersonalMessageBytes(raw);
 	const text = decodeReadableText(bytes);
 	if (text !== undefined) return { title: "Sign message", body: text };
