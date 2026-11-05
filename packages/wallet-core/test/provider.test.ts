@@ -2,6 +2,8 @@ import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import {
 	custom,
 	decodeFunctionData,
+	encodeErrorResult,
+	type Hex,
 	hashMessage,
 	parseGwei,
 	type SignableMessage,
@@ -79,6 +81,35 @@ function buildProvider(
 		...opts.overrides,
 	}).gianoProvider;
 	return { provider, sentUserOps };
+}
+
+/**
+ * Counts passkey assertions from now on, and the highest number that run at the same time.
+ * Each authenticated-read signature is one assertion.
+ */
+function countPasskeyPrompts(authenticator: MockAuthenticator) {
+	const original = authenticator.get.bind(authenticator);
+	let count = 0;
+	let active = 0;
+	let maxActive = 0;
+	vi.spyOn(authenticator, "get").mockImplementation(async (options) => {
+		count += 1;
+		active += 1;
+		maxActive = Math.max(maxActive, active);
+		try {
+			return await original(options);
+		} finally {
+			active -= 1;
+		}
+	});
+	return {
+		get count() {
+			return count;
+		},
+		get maxActive() {
+			return maxActive;
+		},
+	};
 }
 
 /** Registers a fresh passkey (create path) and connects. */
@@ -920,14 +951,11 @@ describe("reads: eth_call & signed_eth_call", () => {
 			signedAt: bigint;
 			signature: string;
 		}[] = [];
-		let signings = 0;
 		const { provider } = buildProvider(mock.authenticator, {
 			transportOptions: {
 				code: "0xabcd",
 				staticCallResult: "0xc0ffee",
 				onRequest: (method, params) => {
-					// one latest-block read per new permission (the default signedAt)
-					if (method === "eth_getBlockByNumber") signings += 1;
 					if (method !== "eth_call") return;
 					const { data } = (params as [{ data: `0x${string}` }])[0];
 					try {
@@ -944,7 +972,7 @@ describe("reads: eth_call & signed_eth_call", () => {
 			},
 		});
 		await connect(provider);
-		const signingsAfterConnect = signings;
+		const prompts = countPasskeyPrompts(mock.authenticator);
 		const read = (to: string, data: string) =>
 			provider.request({
 				method: "signed_eth_call",
@@ -958,7 +986,7 @@ describe("reads: eth_call & signed_eth_call", () => {
 		await read(A, "0xabce"); // other calldata: new signature
 		await read(B, "0xabcd"); // other target: new signature
 
-		expect(signings - signingsAfterConnect).toBe(3);
+		expect(prompts.count).toBe(3);
 		expect(staticCalls.map((c) => [c.target, c.data])).toEqual([
 			[A, "0xabcd"],
 			[A, "0xabcd"],
@@ -972,24 +1000,18 @@ describe("reads: eth_call & signed_eth_call", () => {
 	});
 
 	it("signed_eth_call validates to and data before it asks for a signature", async () => {
-		let signings = 0;
 		const { provider } = buildProvider(mock.authenticator, {
-			transportOptions: {
-				code: "0xabcd",
-				onRequest: (method) => {
-					if (method === "eth_getBlockByNumber") signings += 1;
-				},
-			},
+			transportOptions: { code: "0xabcd" },
 		});
 		await connect(provider);
-		const before = signings;
+		const prompts = countPasskeyPrompts(mock.authenticator);
 		await expect(
 			provider.request({
 				method: "signed_eth_call",
 				params: [{ data: "0xabcd" } as never],
 			}),
 		).rejects.toThrow(/`transaction.to` is required/);
-		expect(signings).toBe(before);
+		expect(prompts.count).toBe(0);
 	});
 
 	it("signed_eth_call requires to and data", async () => {
@@ -1009,6 +1031,136 @@ describe("reads: eth_call & signed_eth_call", () => {
 				params: [{ to: WALLET_ADDRESS } as never],
 			}),
 		).rejects.toThrow(/`transaction.data` is required/);
+	});
+});
+
+describe("signed_eth_call signature cache", () => {
+	const A = "0x1111111111111111111111111111111111111111";
+	// the mock's default signature lifetime, in seconds
+	const LIFETIME = 3600;
+	// the lifetime minus the 30-second back-date and the 60-second renewal margin
+	const USABLE_MS = (LIFETIME - 30 - 60) * 1000;
+	// the mock's latest block timestamp, in ms
+	const CHAIN_NOW_MS = 1_800_000_000_000;
+
+	afterEach(() => vi.restoreAllMocks());
+
+	const walletError = (
+		errorName: "InvalidSignature" | "SignatureExpired",
+	): Hex =>
+		errorName === "InvalidSignature"
+			? encodeErrorResult({ abi: gianoSmartWalletAbi, errorName })
+			: encodeErrorResult({
+					abi: gianoSmartWalletAbi,
+					errorName,
+					args: [1n, 2n],
+				});
+
+	async function setup(transportOptions: MockClientOptions = {}) {
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: {
+				code: "0xabcd",
+				staticCallResult: "0xc0ffee",
+				...transportOptions,
+			},
+		});
+		await connect(provider);
+		const prompts = countPasskeyPrompts(mock.authenticator);
+		const read = (data: Hex = "0xabcd") =>
+			provider.request({
+				method: "signed_eth_call",
+				params: [{ to: A, data }] as never,
+			});
+		return { prompts, read };
+	}
+
+	it("renews a signature on the local clock, counted from when it was signed", async () => {
+		const { prompts, read } = await setup();
+		const now = vi.spyOn(Date, "now").mockReturnValue(CHAIN_NOW_MS);
+
+		await read();
+		now.mockReturnValue(CHAIN_NOW_MS + USABLE_MS - 1);
+		await read();
+		expect(prompts.count).toBe(1);
+
+		now.mockReturnValue(CHAIN_NOW_MS + USABLE_MS);
+		await read();
+		expect(prompts.count).toBe(2);
+	});
+
+	it("reuses a signature when the local clock is far from the chain's", async () => {
+		const { prompts, read } = await setup();
+		const now = vi.spyOn(Date, "now");
+		const day = 86_400_000;
+
+		// local clock one day ahead of the chain
+		now.mockReturnValue(CHAIN_NOW_MS + day);
+		await read("0xabcd");
+		await read("0xabcd");
+		expect(prompts.count).toBe(1);
+
+		// local clock one day behind the chain
+		now.mockReturnValue(CHAIN_NOW_MS - day);
+		await read("0xabce");
+		await read("0xabce");
+		expect(prompts.count).toBe(2);
+	});
+
+	it("signs again once when the wallet rejects a cached signature", async () => {
+		const { prompts, read } = await setup({
+			// the second read finds the chain past the cached signature's limit
+			staticCallRevert: (i) =>
+				i === 1 ? walletError("SignatureExpired") : undefined,
+		});
+
+		await read();
+		expect(await read()).toBe("0xc0ffee");
+		expect(prompts.count).toBe(2);
+
+		// the new signature replaced the rejected one
+		await read();
+		expect(prompts.count).toBe(2);
+	});
+
+	it("does not cache or retry a new signature the wallet rejects", async () => {
+		let walletCalls = 0;
+		const { prompts, read } = await setup({
+			staticCallRevert: () => {
+				walletCalls += 1;
+				return walletError("InvalidSignature");
+			},
+		});
+
+		await expect(read()).rejects.toThrow(/InvalidSignature/);
+		expect([prompts.count, walletCalls]).toEqual([1, 1]);
+		// a cached copy would be sent first and then retried: two wallet calls
+		await expect(read()).rejects.toThrow(/InvalidSignature/);
+		expect([prompts.count, walletCalls]).toEqual([2, 2]);
+	});
+
+	it("keeps the signature when the read itself reverts", async () => {
+		const { prompts, read } = await setup({
+			// an error from the target contract, not from the wallet
+			staticCallRevert: (i) => (i === 0 ? "0xdeadbeef" : undefined),
+		});
+
+		await expect(read()).rejects.toThrow();
+		expect(await read()).toBe("0xc0ffee");
+		expect(prompts.count).toBe(1);
+	});
+
+	it("signs identical concurrent reads once, and one signature at a time", async () => {
+		const { prompts, read } = await setup();
+
+		const results = await Promise.all([
+			read("0xabcd"),
+			read("0xabcd"),
+			read("0xabce"),
+		]);
+
+		expect(results).toEqual(["0xc0ffee", "0xc0ffee", "0xc0ffee"]);
+		expect(prompts.count).toBe(2);
+		expect(prompts.maxActive).toBe(1);
 	});
 });
 

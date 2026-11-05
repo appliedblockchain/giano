@@ -24,8 +24,10 @@ abstract contract AuthenticatedStaticCaller is ERC1271 {
     /// @notice The hash an owner signs to authorise one `signedStaticCall`.
     /// @dev The hash covers the target and the calldata, so a signature authorises exactly one read.
     ///      `replaySafeHash` then binds it to this wallet and this chain.
-    function staticCallHash(address target, bytes calldata data, uint256 signedAt) public view returns (bytes32) {
-        return keccak256(abi.encode(this.signedStaticCall.selector, signedAt, target, keccak256(data)));
+    function staticCallHash(address target, bytes calldata data, uint256 signedAt) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(AuthenticatedStaticCaller.signedStaticCall.selector, signedAt, target, keccak256(data))
+        );
     }
 
     function signedStaticCall(StaticCall calldata call) external view returns (bytes memory) {

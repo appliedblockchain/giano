@@ -404,7 +404,7 @@ export const authenticatedStaticCallerAbi = [
     ],
     name: 'staticCallHash',
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
+    stateMutability: 'pure',
   },
   { type: 'error', inputs: [], name: 'InvalidSignature' },
   {
@@ -1745,7 +1745,7 @@ export const gianoSmartWalletAbi = [
     ],
     name: 'staticCallHash',
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
+    stateMutability: 'pure',
   },
   {
     type: 'function',

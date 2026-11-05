@@ -337,6 +337,10 @@ export async function toGianoSmartAccount(
 
 export type GianoSmartAccount = Awaited<ReturnType<typeof toGianoSmartAccount>>;
 
+const SIGNED_STATIC_CALL_SELECTOR = toFunctionSelector(
+	getAbiItem({ abi: gianoSmartWalletAbi, name: "signedStaticCall" }),
+);
+
 /**
  * The hash an owner signs to authorise one `signedStaticCall`. It matches
  * `AuthenticatedStaticCaller.staticCallHash`: it covers the target and the calldata, so the
@@ -352,9 +356,6 @@ export function staticCallHash({
 	data: Hex;
 	signedAt: number | bigint;
 }): Hash {
-	const selector = toFunctionSelector(
-		getAbiItem({ abi: gianoSmartWalletAbi, name: "signedStaticCall" }),
-	);
 	return keccak256(
 		encodeAbiParameters(
 			[
@@ -363,7 +364,7 @@ export function staticCallHash({
 				{ type: "address" },
 				{ type: "bytes32" },
 			],
-			[selector, BigInt(signedAt), target, keccak256(data)],
+			[SIGNED_STATIC_CALL_SELECTOR, BigInt(signedAt), target, keccak256(data)],
 		),
 	);
 }

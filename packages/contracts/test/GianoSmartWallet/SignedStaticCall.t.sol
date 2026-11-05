@@ -153,7 +153,7 @@ contract TestSignedStaticCall is SmartWalletTestBase {
             GianoSmartWallet.SignatureWrapper(abi.encode(vm.addr(strangerKey)), abi.encodePacked(r, s, v))
         );
 
-        vm.expectRevert();
+        vm.expectRevert(AuthenticatedStaticCaller.InvalidSignature.selector);
         _call(address(gated), data, block.timestamp, signature);
     }
 }

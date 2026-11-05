@@ -63,6 +63,11 @@ export type MockClientOptions = {
 	signatureLifetime?: bigint;
 	/** Raw bytes returned by `signedStaticCall`. */
 	staticCallResult?: Hex;
+	/**
+	 * Revert data for a `signedStaticCall`, by 0-based call index. Return undefined to answer
+	 * with `staticCallResult` instead.
+	 */
+	staticCallRevert?: (callIndex: number) => Hex | undefined;
 	/** Timestamp (seconds) of the latest block, returned by `eth_getBlockByNumber`. */
 	blockTimestamp?: bigint;
 	/** Observe every JSON-RPC request the client makes. */
@@ -80,11 +85,13 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		code = "0x",
 		signatureLifetime = 3600n,
 		staticCallResult = "0x",
+		staticCallRevert,
 		blockTimestamp = 1_800_000_000n,
 		onRequest,
 	} = options;
 
 	let getCodeCalls = 0;
+	let staticCalls = 0;
 
 	const request = async ({
 		method,
@@ -125,12 +132,18 @@ export function createMockTransport(options: MockClientOptions = {}) {
 						functionName: "getSignatureLifetime",
 						result: signatureLifetime,
 					});
-				if (selector === WALLET_SIGNED_STATIC_CALL)
+				if (selector === WALLET_SIGNED_STATIC_CALL) {
+					const revertData = staticCallRevert?.(staticCalls);
+					staticCalls += 1;
+					// the shape a node returns for a reverted eth_call
+					if (revertData)
+						throw { code: 3, message: "execution reverted", data: revertData };
 					return encodeFunctionResult({
 						abi: gianoSmartWalletAbi,
 						functionName: "signedStaticCall",
 						result: staticCallResult,
 					});
+				}
 				return "0x";
 			}
 			default:
