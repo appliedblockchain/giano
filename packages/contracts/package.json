@@ -51,7 +51,7 @@
 		"prepublishOnly": "pnpm build:ts",
 		"compile": "forge build",
 		"test": "forge test",
-		"gen:abis": "forge build src --out out-abi && wagmi generate",
+		"gen:abis": "forge build src --out out-abi --cache-path cache_forge_abi && wagmi generate",
 		"gen:canonical": "tsx scripts/generate-canonical.ts",
 		"gen:addresses": "tsx scripts/generate-addresses.ts",
 		"release:cut": "tsx scripts/release.ts cut",

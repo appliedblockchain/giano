@@ -1,4 +1,5 @@
 cache_forge/
+cache_forge_abi/
 out/
 out-abi/
 # Local chains are recreated from scratch; every other chain's record is committed.
