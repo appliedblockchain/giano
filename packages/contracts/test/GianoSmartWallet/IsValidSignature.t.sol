@@ -197,4 +197,22 @@ contract TestIsValidSignature is SmartWalletTestBase {
         vm.expectRevert(abi.encodeWithSelector(MultiOwnable.InvalidEthereumAddressOwner.selector, invalidOwner));
         account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(invalidOwner, signature)));
     }
+
+    /// @dev this case should not be possible either: owners are only ever 32 or 64 bytes long
+    function testRevertsIfOwnerBytesHaveAnInvalidLength() public {
+        bytes32 hash = 0x15fa6f8c855db1dccbb8a42eef3a7b83f11d29758e84aed37312527165d5eec5;
+        bytes32 toSign = account.replaySafeHash(hash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, toSign);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        // 33 owner bytes. `_initializeOwners` rejects this length, so force the entry straight into
+        // the `isOwner` mapping (MUTLI_OWNABLE_STORAGE_LOCATION + 3) to reach the defensive revert.
+        bytes memory invalidOwner = abi.encodePacked(abi.encode(signer), bytes1(0x01));
+        bytes32 slot_isOwner =
+            bytes32(uint256(0x0627f72af0e6f412195b0d8acbe438b28090dd545b7d2331fccf77723561f500) + 3);
+        vm.store(address(account), keccak256(abi.encodePacked(invalidOwner, slot_isOwner)), bytes32(uint256(1)));
+        assertTrue(account.isOwnerBytes(invalidOwner));
+
+        vm.expectRevert(abi.encodeWithSelector(MultiOwnable.InvalidOwnerBytesLength.selector, invalidOwner));
+        account.isValidSignature(hash, abi.encode(GianoSmartWallet.SignatureWrapper(invalidOwner, signature)));
+    }
 }
