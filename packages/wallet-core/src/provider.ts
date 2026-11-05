@@ -549,8 +549,17 @@ export const createGianoProvider = (
 					// a read queued behind another signing must not prompt for an ended session
 					assertCurrent();
 					const startedAtMs = Date.now();
+					// The provider sets signedAt itself, so it can check the session again between
+					// the block lookup and the passkey prompt.
+					const { timestamp } = await readClient.getBlock();
+					assertCurrent();
 					const { signature, signedAt } =
-						await account.signStaticCallPermission({ target, data });
+						await account.signStaticCallPermission({
+							target,
+							data,
+							signedAt:
+								Number(timestamp) - STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS,
+						});
 					// signedAt is back-dated, so the contract's limit is that much earlier.
 					const usableSeconds =
 						lifetimeSeconds -
@@ -622,8 +631,15 @@ export const createGianoProvider = (
 				// A new signature that failed would fail the same way if signed again.
 				if (!removeIfRejected(error, permission) || !reused) throw error;
 			}
-			// The cached signature was rejected: sign once more and repeat the read.
-			const replacement = await signPermission();
+			// The cached signature was rejected: sign once more and repeat the read. Another read
+			// that used the same signature may have replaced it already; use that one instead.
+			const latest = staticSignatures.get(key);
+			const replacement =
+				latest !== undefined &&
+				latest !== permission &&
+				Date.now() < latest.renewAtMs
+					? latest
+					: await signPermission();
 			try {
 				return await readWith(replacement);
 			} catch (error) {

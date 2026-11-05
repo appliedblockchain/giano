@@ -1224,6 +1224,60 @@ describe("signed_eth_call signature cache", () => {
 		expect([prompts.count, walletCalls]).toEqual([1, 0]);
 	});
 
+	it("does not prompt when the session ends during the block lookup", async () => {
+		let walletCalls = 0;
+		let onBlockLookup: (() => Promise<void>) | undefined;
+		const { provider, prompts, read } = await setup({
+			onRequest: async (method) => {
+				if (method !== "eth_getBlockByNumber" || !onBlockLookup) return;
+				const hook = onBlockLookup;
+				onBlockLookup = undefined;
+				await hook();
+			},
+			staticCallRevert: () => {
+				walletCalls += 1;
+				return undefined;
+			},
+		});
+		// the user disconnects while the provider fetches the latest block for signedAt
+		onBlockLookup = async () => {
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{}] as never,
+			});
+		};
+
+		await expect(read()).rejects.toThrow(/session changed/);
+		expect([prompts.count, walletCalls]).toEqual([0, 0]);
+	});
+
+	it("uses a replacement another read already signed when a delayed rejection arrives", async () => {
+		let releaseSecondRejection = () => {};
+		const secondRejection = new Promise<Hex>((resolve) => {
+			releaseSecondRejection = () =>
+				resolve(walletError("StaticCallSignatureExpired"));
+		});
+		const { prompts, read } = await setup({
+			staticCallRevert: (i) => {
+				// 0: the first read signs and caches S
+				// 1 and 2: two identical reads send S, and the wallet rejects both
+				if (i === 1) return walletError("StaticCallSignatureExpired");
+				if (i === 2) return secondRejection;
+				// 3: the first rejected read sends its replacement S'; only now does the
+				//    second rejection arrive
+				if (i === 3) releaseSecondRejection();
+				return undefined;
+			},
+		});
+
+		await read();
+		const results = await Promise.all([read(), read()]);
+
+		expect(results).toEqual(["0xc0ffee", "0xc0ffee"]);
+		// S and S': the second read used S' instead of signing a third time
+		expect(prompts.count).toBe(2);
+	});
+
 	it("keeps the signature when the read itself reverts", async () => {
 		const { prompts, read } = await setup({
 			// an error from the target contract, not from the wallet

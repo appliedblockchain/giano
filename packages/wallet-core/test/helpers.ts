@@ -67,11 +67,13 @@ export type MockClientOptions = {
 	 * Revert data for a `signedStaticCall`, by 0-based call index. Return undefined to answer
 	 * with `staticCallResult` instead.
 	 */
-	staticCallRevert?: (callIndex: number) => Hex | undefined;
+	staticCallRevert?: (
+		callIndex: number,
+	) => Hex | undefined | Promise<Hex | undefined>;
 	/** Timestamp (seconds) of the latest block, returned by `eth_getBlockByNumber`. */
 	blockTimestamp?: bigint;
-	/** Observe every JSON-RPC request the client makes. */
-	onRequest?: (method: string, params: unknown) => void;
+	/** Observe every JSON-RPC request the client makes. A returned promise delays the answer. */
+	onRequest?: (method: string, params: unknown) => void | Promise<void>;
 };
 
 /**
@@ -100,7 +102,7 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		method: string;
 		params: unknown;
 	}): Promise<unknown> => {
-		onRequest?.(method, params);
+		await onRequest?.(method, params);
 		switch (method) {
 			case "eth_chainId":
 				return `0x${TEST_CHAIN_ID.toString(16)}`;
@@ -133,8 +135,9 @@ export function createMockTransport(options: MockClientOptions = {}) {
 						result: signatureLifetime,
 					});
 				if (selector === WALLET_SIGNED_STATIC_CALL) {
-					const revertData = staticCallRevert?.(staticCalls);
+					const callIndex = staticCalls;
 					staticCalls += 1;
+					const revertData = await staticCallRevert?.(callIndex);
 					// the shape a node returns for a reverted eth_call
 					if (revertData)
 						throw { code: 3, message: "execution reverted", data: revertData };
