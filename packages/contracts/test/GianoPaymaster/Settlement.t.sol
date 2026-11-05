@@ -18,7 +18,7 @@ contract SettlementTest is PaymasterTestBase {
     }
 
     function _context(bytes16 tenantId, uint128 feeWei) internal view returns (bytes memory) {
-        return abi.encode(tenantId, feeWei, EXECUTION_GAS_LIMIT, wallet, OP_HASH);
+        return abi.encode(tenantId, feeWei, EXECUTION_GAS_LIMIT, wallet, OP_HASH, uint256(0));
     }
 
     function _postOp(bytes memory ctx, IPaymaster.PostOpMode mode, uint256 gasCost, uint256 feePerGas) internal {
@@ -88,7 +88,7 @@ contract SettlementTest is PaymasterTestBase {
         vm.prank(address(ENTRY_POINT));
         paymaster.postOp(
             IPaymaster.PostOpMode.opSucceeded,
-            abi.encode(TENANT_A, uint128(0), uint256(1_000_000), wallet, OP_HASH),
+            abi.encode(TENANT_A, uint128(0), uint256(1_000_000), wallet, OP_HASH, uint256(0)),
             0,
             feePerGas
         );

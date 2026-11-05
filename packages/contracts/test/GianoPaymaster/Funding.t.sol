@@ -153,7 +153,7 @@ contract FundingTest is PaymasterTestBase {
         vm.prank(address(ENTRY_POINT));
         paymaster.postOp(
             IPaymaster.PostOpMode.opSucceeded,
-            abi.encode(TENANT_A, amount, uint256(0), address(0), bytes32(0)),
+            abi.encode(TENANT_A, amount, uint256(0), address(0), bytes32(0), uint256(0)),
             0,
             0
         );

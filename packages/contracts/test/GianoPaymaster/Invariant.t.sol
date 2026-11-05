@@ -76,7 +76,7 @@ contract PaymasterHandler is Test {
         vm.prank(address(entryPoint));
         paymaster.postOp(
             ok ? IPaymaster.PostOpMode.opSucceeded : IPaymaster.PostOpMode.opReverted,
-            abi.encode(id, uint128(feeWei), gasLimit, address(this), bytes32(0)),
+            abi.encode(id, uint128(feeWei), gasLimit, address(this), bytes32(0), uint256(0)),
             gasCost,
             feePerGas
         );
