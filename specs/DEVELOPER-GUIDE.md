@@ -564,6 +564,11 @@ uses (`@appliedblockchain/giano-wallet-core` for the provider + wallet-api injec
 - the consent gate: `eth_requestAccounts` + every signing/tx method behind an explicit user
   approval screen that displays the pinned dApp origin, with the silent `giano_restoreAccount`
   session restore on fresh popups;
+- the session lifecycle (G5): every client that sends the session passes the injection's
+  `onUnauthorized`, so a `401` drops the token in one place; a `SessionEndedError` sends the user
+  back to sign-in and answers a waiting dApp request with 4100, never 4001; offer sign-out
+  everywhere (`injection.logoutAll()`); and never send credentialed requests, because wallet-api's
+  CORS allows none;
 - the serving contract: same-origin `/api` (and `/.well-known/webauthn`) proxy to wallet-api that
   **forwards `Origin` untouched and preserves the browser's `Host`** (tenant resolution depends on
   both), `frame-ancestors 'none'`, popup-only, TLS.
