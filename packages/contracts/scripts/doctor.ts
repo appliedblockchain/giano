@@ -58,11 +58,12 @@ import {
 } from "../addresses";
 import {
 	DEPLOYERS,
+	isMainnetChain,
 	isProductionChain,
 	type NetworkClass,
 } from "../deploy/config";
 import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
-import { loadProfile, type ProfileFile } from "../deploy/profiles";
+import { type ChainProfile, loadProfile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
 import { IMPLEMENTATION_SLOT, implementationFromSlot } from "../erc1967";
@@ -90,8 +91,6 @@ import {
 const RIP7212_PRECOMPILE = "0x0000000000000000000000000000000000000100";
 /** daimo p256-verifier — the in-contract FCL fallback webauthn-sol uses when RIP-7212 is absent. */
 const P256_VERIFIER = "0xc2b78104907F722DABAc4C69f826a522B2754De4";
-/** Chains that hold real money: a timelock is mandatory here (G9 R4), as on any --profile mainnet. */
-const MAINNET_CHAIN_IDS = [1, 8453];
 /**
  * Below this, sponsored operations start failing in ways that look like client bugs.
  *
@@ -658,11 +657,11 @@ async function checkTimelock(
 	paymasterAddress: `0x${string}`,
 	flags: Record<string, string>,
 	chainId: number,
+	profile: ChainProfile | undefined,
 ): Promise<void> {
 	section("Paymaster timelock (G9)");
 	const required =
-		MAINNET_CHAIN_IDS.includes(chainId) ||
-		selectedProfile(flags)?.profile.network === "mainnet" ||
+		isMainnetChain(chainId, profile?.network) ||
 		(flags["require-timelock"] ?? process.env.GIANO_REQUIRE_TIMELOCK) ===
 			"true";
 	const timelockFlag = flags.timelock ?? process.env.PAYMASTER_TIMELOCK;
@@ -849,15 +848,24 @@ async function reportReleaseCode(
 	return Boolean(match);
 }
 
-/** The chain profile named by --profile or GIANO_PROFILE: a deploy/chains name or a file. */
+/**
+ * The chain profile named by --profile or GIANO_PROFILE: a deploy/chains name or a file. doctorChain
+ * loads it once, before any check, so an invalid profile fails the run up front.
+ */
 function selectedProfile(
 	flags: Record<string, string>,
-): ProfileFile | undefined {
+	chainId: number,
+): ChainProfile | undefined {
 	const value = flags.profile ?? process.env.GIANO_PROFILE;
 	if (!value) return undefined;
-	return /[/\\]|\.json$/.test(value)
+	const { profile } = /[/\\]|\.json$/.test(value)
 		? loadProfile({ config: value })
 		: loadProfile({ chain: value });
+	if (profile.chainId !== chainId)
+		throw new Error(
+			`--profile is chain ${profile.chainId}, but this run checks chain ${chainId}`,
+		);
+	return profile;
 }
 
 /**
@@ -865,13 +873,11 @@ function selectedProfile(
  * every configured class; with one, a mainnet address that is neither deterministic nor a
  * deviation the record lists fails the run.
  */
-function reportPlacement(chainId: number, flags: Record<string, string>): void {
+function reportPlacement(
+	chainId: number,
+	profile: ChainProfile | undefined,
+): void {
 	section("Address placement");
-	const profile = selectedProfile(flags)?.profile;
-	if (profile && profile.chainId !== chainId)
-		throw new Error(
-			`--profile is chain ${profile.chainId}, but this run checks chain ${chainId}`,
-		);
 	const classes: NetworkClass[] = profile
 		? [profile.network]
 		: ["mainnet", "testnet", "local"];
@@ -980,6 +986,7 @@ async function connect(
 
 async function doctorChain(flags: Record<string, string>) {
 	const { provider, chainId } = await connect(flags);
+	const profile = selectedProfile(flags, chainId);
 	const deployment = resolveDeployment(chainId, flags);
 
 	section("Contracts");
@@ -1115,7 +1122,7 @@ async function doctorChain(flags: Record<string, string>) {
 		const pmHasCode = await hasCode(provider, addr);
 		report(pmHasCode ? "ok" : "fail", "test paymaster deployed", addr);
 		// R-29: the fixed list, or a chain whose --profile declares mainnet.
-		if (isProductionChain(chainId, selectedProfile(flags)?.profile.network)) {
+		if (isProductionChain(chainId, profile?.network)) {
 			report(
 				"fail",
 				"test paymaster on a production chain",
@@ -1148,9 +1155,15 @@ async function doctorChain(flags: Record<string, string>) {
 		flags,
 		chainId,
 	);
-	reportPlacement(chainId, flags);
+	reportPlacement(chainId, profile);
 	if (sponsorshipPaymaster)
-		await checkTimelock(provider, sponsorshipPaymaster, flags, chainId);
+		await checkTimelock(
+			provider,
+			sponsorshipPaymaster,
+			flags,
+			chainId,
+			profile,
+		);
 
 	const executor =
 		flags.executor ??

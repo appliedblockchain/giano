@@ -92,6 +92,20 @@ export const LOCAL_CHAIN_IDS = [31337, 31338] as const;
 /** Production chains never carry the test fixtures (R-29). */
 export const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111] as const;
 
+/** Chains that hold real money: the paymaster timelock is mandatory there (G9 R4). */
+export const MAINNET_CHAIN_IDS = [1, 8453] as const;
+
+/** G9 R4: a chain on the fixed mainnet list, or any chain declared `mainnet` (by its profile or record). */
+export function isMainnetChain(
+	chainId: number,
+	network?: NetworkClass,
+): boolean {
+	return (
+		network === "mainnet" ||
+		(MAINNET_CHAIN_IDS as readonly number[]).includes(chainId)
+	);
+}
+
 /**
  * R-29: a chain on the fixed list, or any chain declared `mainnet` (by its profile or its record), so
  * that adopting a mainnet protects it without a code change.
