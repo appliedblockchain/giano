@@ -156,7 +156,7 @@ confirmation beyond the usual deployment confirmation.
 ### Requirement: The deployment record states how each address was obtained
 Each deployment record SHALL hold:
 - the chain id and network class;
-- the signing deployer;
+- the signing deployer, or null until a signing run deploys something;
 - per contract: its label, address, expected address, release, the raw code hash, the release fingerprint the code
   matched, and the deploying transaction when deployed in that run;
 - whether each address is deterministic;
@@ -191,8 +191,8 @@ unreported on any chain in R-29's fixed production list or any chain whose profi
 On a deployment, and on a plan that previews one, existing code at a non-overridden address (deterministic or
 recorded) SHALL be the selected release's, unless it is a recorded canonical upgrade target. A verify-only run
 (`deploy:cli core` without a key, as the Helm Job runs it) SHALL accept any release's code there, because a chain keeps
-the release it was adopted at (the factory's implementation is immutable). `deploy:cli core` SHALL take the release from `--release`, else the chain profile's
-`release`, else the latest.
+the release it was adopted at (the factory's implementation is immutable). `deploy:cli core` SHALL take the release
+from `--release`, else the chain profile's `release`, else the latest.
 
 #### Scenario: Verify-only run on a chain adopted at an older release
 - **WHEN** the verify-only Helm Job runs on a chain whose contracts hold release v2 after v3 is cut

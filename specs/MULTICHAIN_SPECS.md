@@ -383,7 +383,8 @@ type ChainVerificationFailure =
       contract: 'factory' | 'implementation' | 'paymaster' | 'paymaster-implementation';
       address: Address; codehash: Hex }
   | { kind: 'implementation-entrypoint-mismatch'; implementation: Address; expected: Address; found: Address }
-  | { kind: 'paymaster-missing'; address: Address };
+  | { kind: 'paymaster-missing'; address: Address }
+  | { kind: 'paymaster-entrypoint-mismatch'; paymaster: Address; expected: Address; found: Address };
 ```
 
 **Fatal at start-up:** every failure kind except `unreachable`. These are misconfigurations — the
@@ -454,12 +455,15 @@ chain's own addresses.
    address with a constant: the factory is wherever the chain's configuration (`GIANO_CHAINS`) or
    the per-chain registry (`getGianoDeployment(chainId)`) says.
 3. `factory.implementation()` equals the chain's resolved implementation (`GIANO_CHAINS`
-   `walletApi.implementation`, else the registry) → `implementationAddress`; otherwise
+   `walletApi.implementation`, else the registry's when the factory is the registry's too; a
+   configured factory without an implementation is checked against what it reports) →
+   `implementationAddress`; otherwise
    `implementation-mismatch`. The implementation's code must be a release's too (`code-not-release`,
    `contract: 'implementation'`), and its `entryPoint()` the chain's EntryPoint.
 4. With sponsorship, the paymaster proxy is release proxy code and its ERC-1967 implementation slot
    holds paymaster release code (`code-not-release`, `contract: 'paymaster'` /
-   `'paymaster-implementation'`).
+   `'paymaster-implementation'`), and the proxy's `entryPoint()`, which `initialize` stores and the
+   fingerprints cannot see, is the chain's EntryPoint (`paymaster-entrypoint-mismatch`).
 5. Once, at boot, a **live cross-check**: `factory.getAddress([probeOwner], 0)` on every served chain
    returns the same address (MC-22, `probeDivergence`). The probe owner is a fixed, well-known
    64-byte value that is never a real credential. This, not an address constant, is the identity
