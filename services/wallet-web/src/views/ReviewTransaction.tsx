@@ -1,13 +1,13 @@
-import {
-	checkSelfCall,
-	type PendingRequest,
-	type SponsorshipPreflight,
-	type TransactionDescription,
-	type UnknownReason,
-	type WalletRuntime,
+import type {
+	PendingRequest,
+	SponsorshipPreflight,
+	TransactionDescription,
+	UnknownReason,
+	WalletRuntime,
 } from "@appliedblockchain/giano-wallet-kit";
 import { useEffect, useState } from "react";
 import { formatUnits, type Hex } from "viem";
+import { isSelfCallBlocked, SelfCallBlocked } from "./SelfCallBlocked";
 import { refusalCopy } from "./sponsorship-copy";
 
 type TxRequest = { to?: Hex; value?: Hex | bigint; data?: Hex };
@@ -49,12 +49,7 @@ export function ReviewTransaction({
 	const [preflight, setPreflight] = useState<SponsorshipPreflight | null>(null);
 	const [attempt, setAttempt] = useState(0);
 
-	const account = runtime.provider.getSmartAccount();
-	// No account means the provider refuses the request anyway. Anything other than "none"
-	// (a self-call, or calls that cannot be read) is blocked.
-	const blocked =
-		account !== null &&
-		checkSelfCall(request.method, request.params, account.address) !== "none";
+	const blocked = isSelfCallBlocked(request);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the transaction never changes for one request; `attempt` is what a retry increments
 	useEffect(() => {
@@ -155,34 +150,10 @@ export function ReviewTransaction({
 
 	if (blocked) {
 		return (
-			<>
-				<div className="origin-banner">
-					Transaction request from
-					<b>{request.dappOrigin}</b>
-				</div>
-
-				<div className="card">
-					<h2>Request blocked</h2>
-					<div className="kv">
-						<span className="k">Network</span>
-						<span className="v" data-testid="consent-chain">
-							{request.chainName}
-						</span>
-					</div>
-					<div className="error" data-testid="self-call-blocked">
-						This application asked your wallet to change its own settings. That
-						can add or remove the passkeys that control your wallet, or replace
-						its code. An application cannot do this. Manage your wallet only
-						from the wallet’s own management screen.
-					</div>
-				</div>
-
-				<div className="actions">
-					<button type="button" className="danger" onClick={request.reject}>
-						Close
-					</button>
-				</div>
-			</>
+			<SelfCallBlocked
+				request={request}
+				bannerLabel="Transaction request from"
+			/>
 		);
 	}
 

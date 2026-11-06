@@ -6,7 +6,7 @@ import {
 import type { WalletConfig } from "./config";
 import { createRequestStore, type RequestStore, toRpcError } from "./requests";
 import type { WalletRuntime, WalletRuntimes } from "./runtimes";
-import { checkSelfCall } from "./self-calls";
+import { checkSelfCall, OPERATION_METHODS } from "./self-calls";
 
 const CONSENT_METHODS = new Set([
 	"eth_sendTransaction",
@@ -117,34 +117,19 @@ export function createHostRequestHandler({
 		// account was lost when the previous popup closed. Silently rebuild it from the
 		// persisted session before asking for consent — no extra passkey prompt; the
 		// single ceremony still happens when the operation is actually signed. If it
-		// can't be restored, the provider will surface "Giano not connected" and the
-		// dApp must reconnect via eth_requestAccounts.
+		// can't be restored, the request fails with a disconnect error (from the self-call
+		// check below for an operation, from the provider otherwise) and the dApp must
+		// reconnect via eth_requestAccounts.
 		if (ACCOUNT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
 			await runtime.provider
 				.request({ method: "giano_restoreAccount" } as never)
 				.catch(() => undefined);
 		}
 		// A dApp must never get the account to call one of its own functions: that is how owners
-		// are added or removed and how the account is upgraded. A value-only transfer to self
-		// carries no calldata and stays allowed. The management view builds those calls and
-		// calls the provider directly, so it does not pass through here. Refused before consent,
-		// so the user is never shown an Approve button for one.
-		const account = runtime.provider.getSmartAccount();
-		if (account) {
-			const selfCall = checkSelfCall(method, params, account.address);
-			if (selfCall === "self-call") {
-				throw new TransportRpcError(
-					RPC_ERRORS.UNAUTHORIZED,
-					"an application cannot make the wallet call itself; use giano_openWalletManagement to let the user manage the wallet",
-				);
-			}
-			if (selfCall === "unreadable") {
-				throw new TransportRpcError(
-					RPC_ERRORS.UNAUTHORIZED,
-					"the user operation's callData must be an execute or executeBatch call",
-				);
-			}
-		}
+		// are added or removed and how the account is upgraded. Refused before consent, so the
+		// user is never shown an Approve button for one, and checked again after consent, because
+		// the account can change while the user decides.
+		assertNoSelfCall(runtime, method, params);
 		if (needsConsent) {
 			await requests.requestConsent({
 				kind:
@@ -163,12 +148,51 @@ export function createHostRequestHandler({
 				runtime,
 			});
 		}
+		if (needsConsent) assertNoSelfCall(runtime, method, params);
 		try {
 			return await runtime.provider.request({ method, params } as never);
 		} catch (error) {
 			throw toRpcError(error);
 		}
 	};
+}
+
+/**
+ * Refuses an operation request that would make the account call itself, or that cannot be
+ * checked. A value-only transfer to self carries no calldata and stays allowed. The management
+ * view builds its self-calls and calls the provider directly, so it does not pass through here.
+ *
+ * Synchronous on purpose: the caller runs the provider request right after it, with no await
+ * in between, so the request runs against the account that was checked.
+ */
+function assertNoSelfCall(
+	runtime: WalletRuntime,
+	method: string,
+	params: unknown,
+): void {
+	if (!OPERATION_METHODS.has(method)) return;
+	const account = runtime.provider.getSmartAccount();
+	// Without an account there is nothing to check against, so the request is refused here.
+	// The provider would refuse it too; this is the error toRpcError gives for that case.
+	if (!account) {
+		throw new TransportRpcError(
+			RPC_ERRORS.DISCONNECTED,
+			"Wallet session expired — reconnect",
+		);
+	}
+	const selfCall = checkSelfCall(method, params, account.address);
+	if (selfCall === "self-call") {
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"an application cannot make the wallet call itself; use giano_openWalletManagement to let the user manage the wallet",
+		);
+	}
+	if (selfCall === "unreadable") {
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"the request cannot be checked: params must be an array, `to` and `data` must be hex strings, and a user operation's callData must be an execute or executeBatch call",
+		);
+	}
 }
 
 /**

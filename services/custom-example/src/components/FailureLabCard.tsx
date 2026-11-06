@@ -167,13 +167,18 @@ export function FailureLabCard() {
 		),
 	);
 
+	/**
+	 * Data that is not hex. It goes to another address, not the user's own account: the wallet
+	 * refuses any request that makes the account call itself, and that refusal would hide the
+	 * invalid-hex failure this control is here to show.
+	 */
 	const invalidHex = wrap("hex", () =>
 		run(
 			{
 				section: "failure-lab",
 				label: 'Send with data "hello" (invalid hex)',
 				method: "eth_sendTransaction",
-				params: [{ to: account, data: "hello" }],
+				params: [{ to: UNLISTED, data: "hello" }],
 				chainId: selected.chainId,
 				account,
 				expected: true,
@@ -182,7 +187,7 @@ export function FailureLabCard() {
 			(api) =>
 				api.provider.request<string>({
 					method: "eth_sendTransaction",
-					params: [{ to: account, value: "0x0", data: "hello" }],
+					params: [{ to: UNLISTED, value: "0x0", data: "hello" }],
 				}),
 		),
 	);

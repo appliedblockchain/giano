@@ -17,6 +17,9 @@ export type SelfCallCheck = "none" | "self-call" | "unreadable";
 /** One call of an operation: where it goes, and whether it carries calldata. */
 type OperationCall = { to: unknown; carriesCalldata: boolean };
 
+/** Thrown inside the reader when a value has a shape the check cannot trust. */
+class Unreadable extends Error {}
+
 /**
  * Whether a dApp request would make the user's account call one of its own functions.
  *
@@ -27,9 +30,14 @@ type OperationCall = { to: unknown; carriesCalldata: boolean };
  * A self-call with no calldata reaches only the wallet's empty receive(), so a plain value
  * transfer to self stays allowed.
  *
- * Returns "unreadable" when a user operation's callData is not an execute or executeBatch call.
- * Its calls cannot be checked, and executeWithoutChainIdValidation is a self-call by
- * definition, so the host refuses it rather than guessing.
+ * Returns "unreadable" when the request cannot be checked, and the caller refuses it:
+ * - `params` is not an array. The provider unpacks any iterable, so a `Set` would carry a
+ *   transaction this check never sees.
+ * - A `to` or `data` is not a primitive string (or absent). A `String` object compares as
+ *   "not the account" here but viem still encodes it as the account.
+ * - A user operation's callData is not an execute or executeBatch call.
+ *   executeWithoutChainIdValidation is a self-call by definition. callData "0x" executes
+ *   nothing (a deploy-only user operation) and is allowed.
  */
 export function checkSelfCall(
 	method: string,
@@ -37,8 +45,13 @@ export function checkSelfCall(
 	account: string,
 ): SelfCallCheck {
 	if (!OPERATION_METHODS.has(method)) return "none";
-	const calls = operationCalls(method, params);
-	if (calls === null) return "unreadable";
+	let calls: OperationCall[];
+	try {
+		calls = operationCalls(method, params);
+	} catch (error) {
+		if (error instanceof Unreadable) return "unreadable";
+		throw error;
+	}
 	const self = account.toLowerCase();
 	return calls.some(
 		(call) =>
@@ -50,44 +63,45 @@ export function checkSelfCall(
 		: "none";
 }
 
-/** The calls of an operation request, or null when they cannot be read. */
-function operationCalls(
-	method: string,
-	params: unknown,
-): OperationCall[] | null {
-	const args = Array.isArray(params) ? params : [];
-	const first = args[0] as Record<string, unknown> | undefined;
+/** The calls of an operation request. Throws Unreadable when they cannot be read. */
+function operationCalls(method: string, params: unknown): OperationCall[] {
+	if (!Array.isArray(params)) throw new Unreadable();
 
 	if (method === "eth_sendTransaction") {
 		// A missing `to` is refused by the provider; there is no target to compare.
-		return [{ to: first?.to, carriesCalldata: hasData(first?.data) }];
+		const transaction = record(params[0]);
+		return [
+			{
+				to: address(transaction.to),
+				carriesCalldata: hasData(transaction.data),
+			},
+		];
 	}
 
 	if (method === "eth_prepareUserOperation") {
 		// The provider passes `{ calls, ...options }` to viem, so options can override the calls
 		// or supply raw callData. Every source of calls is checked.
-		const options = (args[1] ?? {}) as Record<string, unknown>;
-		const calls = [...viemCalls(args[0]), ...viemCalls(options.calls)];
+		const options = record(params[1]);
+		const calls = [...viemCalls(params[0]), ...viemCalls(options.calls)];
 		if (options.callData !== undefined) {
-			const decoded = decodeAccountCallData(options.callData);
-			if (decoded === null) return null;
-			calls.push(...decoded);
+			calls.push(...decodeAccountCallData(options.callData));
 		}
 		return calls;
 	}
 
 	// eth_signUserOperation, eth_sendSignedUserOperation: the operation's callData is what the
 	// account executes.
-	return decodeAccountCallData(first?.callData);
+	return decodeAccountCallData(record(params[0]).callData);
 }
 
 /** viem calls: `{ to, data }`, or `{ to, abi, functionName, args }` that viem encodes. */
 function viemCalls(calls: unknown): OperationCall[] {
-	if (!Array.isArray(calls)) return [];
+	if (calls === undefined || calls === null) return [];
+	if (!Array.isArray(calls)) throw new Unreadable();
 	return calls.map((value) => {
-		const call = (value ?? {}) as Record<string, unknown>;
+		const call = record(value);
 		return {
-			to: call.to,
+			to: address(call.to),
 			carriesCalldata:
 				hasData(call.data) ||
 				call.abi !== undefined ||
@@ -96,31 +110,56 @@ function viemCalls(calls: unknown): OperationCall[] {
 	});
 }
 
-/** Decodes the account's own execute / executeBatch callData into its calls. */
-function decodeAccountCallData(callData: unknown): OperationCall[] | null {
-	if (typeof callData !== "string") return null;
+/**
+ * Decodes the account's own execute / executeBatch callData into its calls. "0x" executes
+ * nothing (a deploy-only user operation), so it has no calls.
+ */
+function decodeAccountCallData(callData: unknown): OperationCall[] {
+	if (typeof callData !== "string") throw new Unreadable();
+	if (callData === "0x") return [];
+	const decoded = decodeWalletCall(callData as Hex);
+	if (decoded.functionName === "execute") {
+		const [to, , data] = decoded.args;
+		return [{ to, carriesCalldata: hasData(data) }];
+	}
+	if (decoded.functionName === "executeBatch") {
+		return decoded.args[0].map((call) => ({
+			to: call.target,
+			carriesCalldata: hasData(call.data),
+		}));
+	}
+	throw new Unreadable();
+}
+
+/** The wallet function a callData calls. Throws Unreadable when it is not one. */
+function decodeWalletCall(data: Hex) {
 	try {
-		const decoded = decodeFunctionData({
-			abi: gianoSmartWalletAbi,
-			data: callData as Hex,
-		});
-		if (decoded.functionName === "execute") {
-			const [to, , data] = decoded.args;
-			return [{ to, carriesCalldata: hasData(data) }];
-		}
-		if (decoded.functionName === "executeBatch") {
-			return decoded.args[0].map((call) => ({
-				to: call.target,
-				carriesCalldata: hasData(call.data),
-			}));
-		}
-		return null;
+		return decodeFunctionData({ abi: gianoSmartWalletAbi, data });
 	} catch {
-		return null;
+		throw new Unreadable();
 	}
 }
 
-/** Anything other than absent or empty data counts as calldata. */
+/** A plain object's fields; absent counts as empty, anything else is unreadable. */
+function record(value: unknown): Record<string, unknown> {
+	if (value === undefined || value === null) return {};
+	if (typeof value !== "object" || Array.isArray(value)) throw new Unreadable();
+	return value as Record<string, unknown>;
+}
+
+/** A call target: absent, or a primitive string. */
+function address(value: unknown): unknown {
+	if (value === undefined || value === null || typeof value === "string") {
+		return value;
+	}
+	throw new Unreadable();
+}
+
+/** Absent or empty data carries no calldata; a primitive string carries some; anything else is unreadable. */
 function hasData(data: unknown): boolean {
-	return !(data === undefined || data === null || data === "" || data === "0x");
+	if (data === undefined || data === null || data === "" || data === "0x") {
+		return false;
+	}
+	if (typeof data === "string") return true;
+	throw new Unreadable();
 }

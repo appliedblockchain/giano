@@ -2,6 +2,7 @@ import {
 	describePersonalMessage,
 	type PendingRequest,
 } from "@appliedblockchain/giano-wallet-kit";
+import { isSelfCallBlocked, SelfCallBlocked } from "./SelfCallBlocked";
 
 function renderPayload(request: PendingRequest): {
 	title: string;
@@ -53,6 +54,13 @@ function renderPayload(request: PendingRequest): {
 }
 
 export function SignMessage({ request }: { request: PendingRequest }) {
+	// A user operation that makes the account call itself is never signable here. The host
+	// refuses it before consent; this blocks it as a second layer.
+	if (isSelfCallBlocked(request)) {
+		return (
+			<SelfCallBlocked request={request} bannerLabel="Signature request from" />
+		);
+	}
 	const { title, body, domainChainId, rawHexWarning } = renderPayload(request);
 	// MC-82: where the typed-data domain carries its own chain and it differs from the
 	// session's, the mismatch is SHOWN rather than silently accepted. A warning, not a
