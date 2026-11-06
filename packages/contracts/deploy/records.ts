@@ -49,8 +49,12 @@ export type DeploymentRecord = {
 	chainId: number;
 	/** The chain's network class, which selects the canonical deployer and the expected addresses. */
 	network?: NetworkClass;
-	/** The address that signed the deployments: the class's canonical deployer unless a deviation says otherwise. */
-	deployer: Address;
+	/**
+	 * The address that signed the deployments: the class's canonical deployer unless a deviation says
+	 * otherwise. Null until a signing run deploys something: a run without a key, or one that finds
+	 * every contract in place, does not know who signed.
+	 */
+	deployer: Address | null;
 	contracts: Partial<Record<LabelKey, DeployedContract>>;
 	/** Upgrade targets deployed under versioned labels (`giano.paymaster.impl@v2`), oldest first. */
 	upgrades: (DeployedContract & { of: LabelKey })[];
@@ -73,7 +77,8 @@ export function recordPath(chainId: number, dir = DEPLOYMENTS_DIR): string {
 
 /**
  * The chain's record, or an empty one. With `deployer`, refuses a record another signer wrote: a run
- * by a different key must not silently extend another key's deployment.
+ * by a different key must not silently extend another key's deployment. A record no signer has
+ * written yet (`deployer: null`) is anyone's.
  */
 export function readRecord(
 	chainId: number,
@@ -84,12 +89,19 @@ export function readRecord(
 	if (!fs.existsSync(file))
 		return {
 			chainId,
-			deployer: deployer ?? "0x0000000000000000000000000000000000000000",
+			deployer: deployer ?? null,
 			contracts: {},
 			upgrades: [],
 		};
 	const record = JSON.parse(fs.readFileSync(file, "utf8")) as DeploymentRecord;
-	if (deployer && record.deployer.toLowerCase() !== deployer.toLowerCase()) {
+	// Records written before `deployer` was nullable used the zero address for "no signer yet".
+	if (record.deployer && /^0x0{40}$/i.test(record.deployer))
+		record.deployer = null;
+	if (
+		deployer &&
+		record.deployer &&
+		record.deployer.toLowerCase() !== deployer.toLowerCase()
+	) {
 		throw new Error(
 			`${file} was written for deployer ${record.deployer}, not ${deployer}; move it aside before deploying with a new deployer`,
 		);
