@@ -11,12 +11,12 @@
 
 ## 2. wallet-api: admin revocation and history (PR 2)
 
-- [ ] 2.1 `services/tenants.ts` `getByAdminKeyHash` also returns the key id. `plugins/auth.ts` decorates `request.adminKeyId` and `requireAdmin` sets it.
-- [ ] 2.2 A shared helper that runs `revokeLive` and appends the `user-sessions-revoke` history entry in one transaction: actor, null before and after, detail `{ selector, value, revoked }`, and the platform admin session when there is one.
-- [ ] 2.3 `routes/admin.ts`: `POST /v1/admin/sessions/revoke` behind `requireAdmin`. The body takes exactly one of `externalUserId` or `walletAddress` (a 20-byte hex address), else 400. It answers `{ revoked }`.
-- [ ] 2.4 `routes/platform-tenants.ts`: `POST /v1/platform/tenants/:slug/sessions/revoke` with the module's platform route options and slug resolution. It works for suspended tenants and answers like the other routes for an unknown or deleted slug.
-- [ ] 2.5 Tests for every scenario of the two revocation requirements in `specs/wallet-sessions/spec.md` and the new scenarios in `specs/tenant-administration/spec.md`: stolen phone, by wallet in mixed case, another tenant's user (`revoked: 0` and their sessions still work), repeated, both or neither selector, a suspended tenant, a tenant key on the platform route, `Origin` refused, and the history entry's shape for both actors.
-- [ ] 2.6 Regenerate OpenAPI. Run the wallet-api suite, its typecheck and lint.
+- [x] 2.1 `services/tenants.ts` `getByAdminKeyHash` also returns the key id. `plugins/auth.ts` decorates `request.adminKeyId` and `requireAdmin` sets it.
+- [x] 2.2 A shared helper that runs `revokeLive` and appends the `user-sessions-revoke` history entry in one transaction: actor, null before and after, detail `{ selector, value, revoked }`, and the platform admin session when there is one.
+- [x] 2.3 `routes/admin.ts`: `POST /v1/admin/sessions/revoke` behind `requireAdmin`. The body takes exactly one of `externalUserId` or `walletAddress` (a 20-byte hex address), else 400. It answers `{ revoked }`.
+- [x] 2.4 `routes/platform-tenants.ts`: `POST /v1/platform/tenants/:slug/sessions/revoke` with the module's platform route options and slug resolution. It works for suspended tenants, answers 404 like the other routes for an unknown slug, and refuses a deleted tenant with 409 `invalid-transition`.
+- [x] 2.5 Tests for every scenario of the two revocation requirements in `specs/wallet-sessions/spec.md` and the new scenarios in `specs/tenant-administration/spec.md`: stolen phone, by wallet in mixed case, another tenant's user (`revoked: 0` and their sessions still work), repeated, both or neither selector, a suspended tenant, a tenant key on the platform route, `Origin` refused, and the history entry's shape for both actors.
+- [x] 2.6 Regenerate OpenAPI. Run the wallet-api suite, its typecheck and lint.
 
 ## 3. Client: wallet-core and wallet-kit (PR 3)
 
