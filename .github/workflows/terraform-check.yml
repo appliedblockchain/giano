@@ -34,8 +34,8 @@ jobs:
       run:
         working-directory: infra/iac
     steps:
-      - uses: actions/checkout@v7
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           # >= 1.11 for write-only arguments (§12.1). Pinned, not floating: a
           # core upgrade should be a reviewed diff like any other.
