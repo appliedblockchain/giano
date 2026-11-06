@@ -99,7 +99,7 @@ For every in-scope key, DevOps:
   already be in place with a release's code, and a missing one fails: adopting a chain needs the
   class's canonical deployer, which the development team operates. The `giano-contracts-deployer`
   image and the Helm pre-install Job run that way, and never ask for the key.
-  The chart's `values.yaml` says never to put the key in `secrets.existingSecret`.
+  The Helm Job loads no Secret, and the chart's `values.yaml` says never to give it the key.
 - The developer-facing docs mark `DEPLOYER_PRIVATE_KEY=…` commands as local/testnet operator commands,
   or as canonical-deployer runs that take the key from 1Password: `packages/contracts/README.md`,
   `specs/INFRASTRUCTURE.md` §13.1, `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md` and
