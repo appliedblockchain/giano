@@ -34,6 +34,8 @@
 		"generated.ts",
 		"addresses.ts",
 		"canonical.ts",
+		"release-code.ts",
+		"release-fingerprints.ts",
 		"chains.ts",
 		"address-overrides.json",
 		"remappings.txt",
