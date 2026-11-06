@@ -29,7 +29,5 @@ spec:
               value: {{ required "deployer.roleAdmin is required (the paymaster ROLE_ADMIN)" .Values.deployer.roleAdmin | quote }}
             - name: DEPLOY_TESTING
               value: {{ .Values.deployer.deployTesting | quote }}
-          envFrom:
-            - secretRef:
-                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+          # No Secret: without DEPLOYER_PRIVATE_KEY the Job only verifies (see deployer in values.yaml).
 {{- end }}

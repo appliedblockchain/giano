@@ -25,7 +25,10 @@ spec:
           env:
             - name: GIANO_ENVIRONMENT
               value: {{ .Values.config.environment | quote }}
-          envFrom:
-            - secretRef:
-                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+            # the init step reads only the DSN from wallet-api's Secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "giano.walletApiSecret" . }}
+                  key: DATABASE_URL
 {{- end }}

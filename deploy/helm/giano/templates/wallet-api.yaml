@@ -71,9 +71,10 @@ spec:
               value: {{ .Values.config.openRegistration | quote }}
             - name: CORS_ORIGINS
               value: {{ join "," .Values.config.corsOrigins | quote }}
+          # wallet-api's own Secret only; the bundler executor keys live in bundler.existingSecret
           envFrom:
             - secretRef:
-                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+                name: {{ include "giano.walletApiSecret" . }}
           readinessProbe:
             httpGet: { path: /readyz, port: 8080 }
             initialDelaySeconds: 5

@@ -68,7 +68,7 @@ For every in-scope key, DevOps:
 - `deploy:cli core` / `testing` without `DEPLOYER_PRIVATE_KEY` only verify. Every contract must
   already be in place with a release's code, and a missing one fails with "adoption is a DevOps
   operation". The `giano-contracts-deployer` image and the Helm pre-install Job run that way. The
-  chart's `values.yaml` says never to put the key in `secrets.existingSecret`.
+  Helm Job loads no Secret, and the chart's `values.yaml` says never to give it the key.
 - The developer-facing docs mark `DEPLOYER_PRIVATE_KEY=…` commands as local/testnet operator commands,
   or as DevOps-only: `packages/contracts/README.md`, `specs/INFRASTRUCTURE.md` §13.1,
   `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md` and `specs/CHAIN-ADOPTION.md`. On local chains,

@@ -35,9 +35,12 @@ spec:
               {{- with .Values.config.entryPointAddress }}{{- $_ := set $chain "entryPoint" . }}{{- end }}
               value: {{ toJson (list $chain) | quote }}
               {{- end }}
-          envFrom:
-            - secretRef:
-                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+            # the executor keys only, from the bundler's own Secret
+            - name: BUNDLER_EXECUTOR_PRIVATE_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "giano.bundlerSecret" . }}
+                  key: BUNDLER_EXECUTOR_PRIVATE_KEYS
 ---
 apiVersion: v1
 kind: Service
