@@ -1,9 +1,8 @@
 import {
-	CANONICAL_FACTORY,
-	CANONICAL_IMPLEMENTATION,
 	ENTRYPOINT_V09_ADDRESS,
 	entryPointRuntimeCode,
 	gianoAddresses,
+	type ReleaseContractName,
 } from "@appliedblockchain/giano-contracts";
 import Fastify from "fastify";
 import { keccak256, type PublicClient } from "viem";
@@ -13,7 +12,13 @@ import connectorPackage from "../../../packages/connector/package.json" with {
 };
 import { loadConfig } from "../src/config.js";
 import chainPlugin from "../src/plugins/chain.js";
-import { isFatalFailure, verifyChain } from "../src/services/chain-verify.js";
+import {
+	isFatalFailure,
+	probeDivergence,
+	recoveryDivergence,
+	recoveryVerified,
+	verifyChain,
+} from "../src/services/chain-verify.js";
 import type { ChainRegistry, ChainServices } from "../src/services/chains.js";
 import {
 	startTestStack,
@@ -25,6 +30,11 @@ import {
 	createAuthenticator,
 	makeRegistrationResponse,
 } from "./webauthn-fixtures.js";
+
+/** Any address will do: nothing compares a contract's address with a constant. */
+const FACTORY = "0x9c01925D07527A7920031196396A9c37421715A2" as const;
+const IMPLEMENTATION = "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6" as const;
+const PAYMASTER_IMPLEMENTATION = "0x326549c3600BFA31CB44213Df0576AE79E70E4aC";
 
 const BASE_ENV = {
 	NODE_ENV: "test",
@@ -59,13 +69,28 @@ describe("config: the chain list", () => {
 		expect(config.CHAINS[0].name).not.toMatch(/^\d+$/); // never a bare number (MC-81)
 	});
 
+	it("IMPLEMENTATION_ADDRESS gives a single-chain shorthand outside the registry its implementation", () => {
+		const config = loadConfig({
+			...BASE_ENV,
+			CHAIN_ID: "31337",
+			RPC_URL: "http://a:8545",
+			BUNDLER_URL: "http://a:4337",
+			ENTRYPOINT_ADDRESS: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
+			FACTORY_ADDRESS: "0x2222222222222222222222222222222222222222",
+			IMPLEMENTATION_ADDRESS: "0x3333333333333333333333333333333333333333",
+		});
+		expect(config.CHAINS[0].implementation).toBe(
+			"0x3333333333333333333333333333333333333333",
+		);
+	});
+
 	it("accepts GIANO_CHAINS, resolving registry defaults per chain (MC-46)", () => {
 		// The registry holds a chain once its deployment record is committed; stand one in for Base
 		// the way gen:addresses would write it.
 		gianoAddresses[8453] = {
 			entryPoint: ENTRYPOINT_V09_ADDRESS,
-			factory: CANONICAL_FACTORY,
-			implementation: CANONICAL_IMPLEMENTATION,
+			factory: FACTORY,
+			implementation: IMPLEMENTATION,
 		};
 		try {
 			const config = loadConfig({
@@ -84,7 +109,7 @@ describe("config: the chain list", () => {
 						entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 						walletApi: {
 							bundlerUrl: "http://b:4337",
-							factory: CANONICAL_FACTORY,
+							factory: FACTORY,
 						},
 					},
 				]),
@@ -92,8 +117,96 @@ describe("config: the chain list", () => {
 			expect(config.CHAINS.map((chain) => chain.chainId)).toEqual([
 				8453, 31338,
 			]);
-			// Base's addresses default from the contracts registry — which is canonical-only now
-			expect(config.CHAINS[0].factory).toBe(CANONICAL_FACTORY);
+			// Base's addresses default from the contracts registry
+			expect(config.CHAINS[0].factory).toBe(FACTORY);
+			expect(config.CHAINS[0].implementation).toBe(IMPLEMENTATION);
+			// a chain the registry does not list has no implementation unless walletApi names one
+			expect(config.CHAINS[1].implementation).toBeUndefined();
+		} finally {
+			delete gianoAddresses[8453];
+		}
+	});
+
+	it("a custom factory without an implementation is not paired with the registry's implementation", () => {
+		gianoAddresses[8453] = {
+			entryPoint: ENTRYPOINT_V09_ADDRESS,
+			factory: FACTORY,
+			implementation: IMPLEMENTATION,
+		};
+		try {
+			const custom = "0x2222222222222222222222222222222222222222";
+			const config = loadConfig({
+				...BASE_ENV,
+				GIANO_CHAINS: JSON.stringify([
+					{
+						chainId: 8453,
+						name: "Base",
+						rpcUrl: "http://a:8545",
+						walletApi: { bundlerUrl: "http://a:4337", factory: custom },
+					},
+				]),
+			});
+			// verifyChain compares the factory's own clone target, not the registry's implementation
+			expect(config.CHAINS[0].factory).toBe(custom);
+			expect(config.CHAINS[0].implementation).toBeUndefined();
+			// the single-chain shorthand: FACTORY_ADDRESS without IMPLEMENTATION_ADDRESS
+			const single = loadConfig({
+				...BASE_ENV,
+				CHAIN_ID: "8453",
+				RPC_URL: "http://a:8545",
+				BUNDLER_URL: "http://a:4337",
+				FACTORY_ADDRESS: custom,
+			});
+			expect(single.CHAINS[0].implementation).toBeUndefined();
+		} finally {
+			delete gianoAddresses[8453];
+		}
+	});
+
+	it("walletApi.implementation overrides the registry's wallet implementation (per-chain addresses)", () => {
+		gianoAddresses[8453] = {
+			entryPoint: ENTRYPOINT_V09_ADDRESS,
+			factory: FACTORY,
+			implementation: IMPLEMENTATION,
+		};
+		try {
+			const config = loadConfig({
+				...BASE_ENV,
+				GIANO_CHAINS: JSON.stringify([
+					{
+						chainId: 8453,
+						name: "Base",
+						rpcUrl: "http://a:8545",
+						walletApi: {
+							bundlerUrl: "http://a:4337",
+							factory: "0x3333333333333333333333333333333333333333",
+							implementation: "0x4444444444444444444444444444444444444444",
+						},
+					},
+				]),
+			});
+			expect(config.CHAINS[0].factory).toBe(
+				"0x3333333333333333333333333333333333333333",
+			);
+			expect(config.CHAINS[0].implementation).toBe(
+				"0x4444444444444444444444444444444444444444",
+			);
+			expect(() =>
+				loadConfig({
+					...BASE_ENV,
+					GIANO_CHAINS: JSON.stringify([
+						{
+							chainId: 8453,
+							name: "Base",
+							rpcUrl: "http://a:8545",
+							walletApi: {
+								bundlerUrl: "http://a:4337",
+								implementation: "not an address",
+							},
+						},
+					]),
+				}),
+			).toThrow();
 		} finally {
 			delete gianoAddresses[8453];
 		}
@@ -123,7 +236,7 @@ describe("config: the chain list", () => {
 			name: "A",
 			rpcUrl: "http://a:8545",
 			entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
-			walletApi: { factory: CANONICAL_FACTORY },
+			walletApi: { factory: FACTORY },
 			...extra,
 		});
 
@@ -137,7 +250,7 @@ describe("config: the chain list", () => {
 						chainId: 31338,
 						name: "B",
 						walletApi: {
-							factory: CANONICAL_FACTORY,
+							factory: FACTORY,
 							bundlerUrl: "https://external.example/rpc",
 						},
 					}),
@@ -193,7 +306,7 @@ describe("config: the chain list", () => {
 				loadConfig({
 					...env,
 					GIANO_CHAINS: JSON.stringify([
-						chain({ walletApi: { factory: CANONICAL_FACTORY, factroy: "0x" } }),
+						chain({ walletApi: { factory: FACTORY, factroy: "0x" } }),
 					]),
 				}),
 			).toThrow(/factroy/);
@@ -208,7 +321,7 @@ describe("config: the chain list", () => {
 							...chain(),
 							walletApi: undefined,
 							bundlerUrl: "http://a:4337",
-							factory: CANONICAL_FACTORY,
+							factory: FACTORY,
 						},
 					]),
 				}),
@@ -252,7 +365,7 @@ describe("config: the chain list", () => {
 			name: "A",
 			rpcUrl: "http://a:8545",
 			entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
-			walletApi: { bundlerUrl: "http://a:4337", factory: CANONICAL_FACTORY },
+			walletApi: { bundlerUrl: "http://a:4337", factory: FACTORY },
 		};
 		expect(() =>
 			loadConfig({ ...BASE_ENV, GIANO_CHAINS: JSON.stringify([entry, entry]) }),
@@ -271,7 +384,7 @@ describe("config: the chain list", () => {
 						entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 						walletApi: {
 							bundlerUrl: "http://a:4337",
-							factory: CANONICAL_FACTORY,
+							factory: FACTORY,
 						},
 					},
 				]),
@@ -410,6 +523,10 @@ type FakeClientBehaviour = {
 	/** What the implementation's entryPoint() returns. */
 	boundEntryPoint?: string;
 	probeAddress?: string;
+	/** What the paymaster proxy's ERC-1967 implementation slot holds. */
+	paymasterImplementation?: string;
+	/** What entryPoint() returns at these (lower-case) addresses, e.g. the paymaster proxy's. */
+	entryPointAt?: Record<string, string>;
 };
 
 function fakeClient(behaviour: FakeClientBehaviour): PublicClient {
@@ -423,14 +540,29 @@ function fakeClient(behaviour: FakeClientBehaviour): PublicClient {
 			if (code !== undefined) return code;
 			// The EntryPoint runs its real runtime; every other address the stand-in release code.
 			return address.toLowerCase() === ENTRYPOINT_V09_ADDRESS.toLowerCase()
-				? entryPointRuntimeCode(31337)
+				? entryPointRuntimeCode(
+						typeof behaviour.chainId === "number" ? behaviour.chainId : 31337,
+					)
 				: "0xabcd";
 		},
-		async readContract({ functionName }: { functionName: string }) {
+		async getStorageAt() {
+			return `0x${(behaviour.paymasterImplementation ?? PAYMASTER_IMPLEMENTATION).slice(2).padStart(64, "0")}`;
+		},
+		async readContract({
+			address,
+			functionName,
+		}: {
+			address: string;
+			functionName: string;
+		}) {
 			if (functionName === "implementation")
-				return behaviour.implementation ?? CANONICAL_IMPLEMENTATION;
+				return behaviour.implementation ?? IMPLEMENTATION;
 			if (functionName === "entryPoint")
-				return behaviour.boundEntryPoint ?? ENTRYPOINT_V09_ADDRESS;
+				return (
+					behaviour.entryPointAt?.[address.toLowerCase()] ??
+					behaviour.boundEntryPoint ??
+					ENTRYPOINT_V09_ADDRESS
+				);
 			if (functionName === "getAddress")
 				return (
 					behaviour.probeAddress ?? "0x00000000000000000000000000000000000abcde"
@@ -446,23 +578,21 @@ const descriptor = {
 	rpcUrl: "http://a",
 	bundlerUrl: "http://a-b",
 	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as const,
-	factory: CANONICAL_FACTORY,
+	factory: FACTORY,
+	implementation: IMPLEMENTATION,
 	policy: { allowedTargets: [], allowedPaymasters: [] },
 };
 
-/** The fake client's default code (`0xabcd`) stands in for a release's code at every address. */
-const isFakeCanonical = (_address: string, codehash: string) =>
-	codehash === keccak256("0xabcd");
+/** The fake client's default code (`0xabcd`) stands in for every release contract's code. */
+const fakeRelease = (_contract: ReleaseContractName, code: string) =>
+	code === "0xabcd" ? { release: "v2" } : undefined;
 
 describe("verifyChain", () => {
-	it("passes a healthy canonical chain", async () => {
-		const result = await verifyChain(
-			descriptor,
-			fakeClient({}),
-			isFakeCanonical,
-		);
+	it("passes a healthy chain", async () => {
+		const result = await verifyChain(descriptor, fakeClient({}), fakeRelease);
 		expect(result.failures).toEqual([]);
-		expect(result.factoryAddressCanonical).toBe(true);
+		expect(result.factoryRelease).toBe("v2");
+		expect(result.implementationAddress).toBe(IMPLEMENTATION);
 		expect(result.probeAddress).toBeTruthy();
 	});
 
@@ -470,7 +600,7 @@ describe("verifyChain", () => {
 		const result = await verifyChain(
 			descriptor,
 			fakeClient({ chainId: 31338 }),
-			isFakeCanonical,
+			fakeRelease,
 		);
 		expect(result.failures).toEqual([
 			{ kind: "chain-id-mismatch", declared: 31337, reported: 31338 },
@@ -482,66 +612,242 @@ describe("verifyChain", () => {
 		const result = await verifyChain(
 			descriptor,
 			fakeClient({ chainId: new Error("connect ECONNREFUSED") }),
-			isFakeCanonical,
+			fakeRelease,
 		);
 		expect(result.reachable).toBe(false);
 		expect(result.failures).toHaveLength(1);
 		expect(isFatalFailure(result.failures[0])).toBe(false);
 	});
 
-	it("a non-canonical factory address is FATAL — the admission gate (MC-19, MC-20)", async () => {
-		const divergent = {
+	it("admits release code at any factory address — no address is compared with a constant", async () => {
+		const elsewhere = {
 			...descriptor,
 			factory: "0x3451C87749FE28Af2995f644aBc8d5B1c61A6191" as `0x${string}`,
 		};
-		const result = await verifyChain(
-			divergent,
-			fakeClient({}),
-			isFakeCanonical,
-		);
-		expect(
-			result.failures.some(
-				(failure) => failure.kind === "factory-not-canonical",
-			),
-		).toBe(true);
-		expect(result.failures.filter(isFatalFailure).length).toBeGreaterThan(0);
+		const result = await verifyChain(elsewhere, fakeClient({}), fakeRelease);
+		expect(result.failures).toEqual([]);
 	});
 
-	it("a canonical factory running DIFFERENT code fails the implementation cross-check (MC-22)", async () => {
+	it("a factory cloning another implementation than the chain's is FATAL, showing both", async () => {
 		const result = await verifyChain(
 			descriptor,
 			fakeClient({
 				implementation: "0x9999999999999999999999999999999999999999",
 			}),
-			isFakeCanonical,
+			fakeRelease,
 		);
-		expect(
-			result.failures.some(
-				(failure) => failure.kind === "implementation-mismatch",
-			),
-		).toBe(true);
+		expect(result.failures).toEqual([
+			{
+				kind: "implementation-mismatch",
+				expected: IMPLEMENTATION,
+				found: "0x9999999999999999999999999999999999999999",
+			},
+		]);
+		expect(result.failures.every(isFatalFailure)).toBe(true);
 	});
 
-	it("the canonical factory address running code no release puts there is FATAL (CREATE3 addresses do not commit to code)", async () => {
+	it("without a registered implementation, the factory's own is still checked for release code", async () => {
+		const { implementation: _none, ...unregistered } = descriptor;
+		const result = await verifyChain(
+			unregistered,
+			fakeClient({ code: { [IMPLEMENTATION.toLowerCase()]: "0xdead" } }),
+			fakeRelease,
+		);
+		expect(result.failures).toEqual([
+			{
+				kind: "code-not-release",
+				contract: "implementation",
+				address: IMPLEMENTATION,
+				codehash: keccak256("0xdead"),
+			},
+		]);
+		expect(result.implementationUnchecked).toBe(true);
+	});
+
+	it("checks release code at the address it was read from (a UUPS __self must be that address)", async () => {
+		const seen: string[] = [];
+		await verifyChain(descriptor, fakeClient({}), (contract, code, address) => {
+			seen.push(`${contract}@${address.toLowerCase()}`);
+			return fakeRelease(contract, code);
+		});
+		expect(seen).toContain(`GianoSmartWallet@${IMPLEMENTATION.toLowerCase()}`);
+	});
+
+	it("a factory running code no release has is FATAL (an address does not prove code)", async () => {
 		const result = await verifyChain(
 			descriptor,
-			fakeClient({ code: { [CANONICAL_FACTORY.toLowerCase()]: "0xdead" } }),
-			isFakeCanonical,
+			fakeClient({ code: { [FACTORY.toLowerCase()]: "0xdead" } }),
+			fakeRelease,
 		);
 		expect(result.failures).toContainEqual({
-			kind: "code-not-canonical",
+			kind: "code-not-release",
 			contract: "factory",
-			address: CANONICAL_FACTORY,
+			address: FACTORY,
 			codehash: keccak256("0xdead"),
 		});
 		expect(result.failures.every(isFatalFailure)).toBe(true);
+	});
+
+	it("a paymaster proxy pointing at code no paymaster release has is FATAL", async () => {
+		const result = await verifyChain(
+			{
+				...descriptor,
+				sponsorshipPaymaster: "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+			},
+			fakeClient({
+				code: { [PAYMASTER_IMPLEMENTATION.toLowerCase()]: "0xdead" },
+			}),
+			fakeRelease,
+		);
+		expect(result.failures).toEqual([
+			{
+				kind: "code-not-release",
+				contract: "paymaster-implementation",
+				address: PAYMASTER_IMPLEMENTATION,
+				codehash: keccak256("0xdead"),
+			},
+		]);
+	});
+
+	it("a paymaster initialised with another EntryPoint is FATAL", async () => {
+		const paymaster = "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96";
+		const v07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+		const result = await verifyChain(
+			{ ...descriptor, sponsorshipPaymaster: paymaster },
+			fakeClient({ entryPointAt: { [paymaster.toLowerCase()]: v07 } }),
+			fakeRelease,
+		);
+		expect(result.failures).toEqual([
+			{
+				kind: "paymaster-entrypoint-mismatch",
+				paymaster,
+				expected: descriptor.entryPoint,
+				found: v07,
+			},
+		]);
+		expect(result.failures.every(isFatalFailure)).toBe(true);
+	});
+
+	it("two chains with different paymaster addresses are both admitted", async () => {
+		const probes = new Map<number, string>();
+		for (const [chainId, paymaster] of [
+			[8453, "0x1111111111111111111111111111111111111111"],
+			[10, "0x2222222222222222222222222222222222222222"],
+		] as const) {
+			const result = await verifyChain(
+				{ ...descriptor, chainId, sponsorshipPaymaster: paymaster },
+				fakeClient({ chainId }),
+				fakeRelease,
+			);
+			expect(result.failures).toEqual([]);
+			expect(result.paymasterPresent).toBe(true);
+			probes.set(chainId, result.probeAddress as string);
+		}
+		expect(probeDivergence(probes)).toBeNull();
+	});
+
+	it("served chains whose factories derive different probe addresses refuse start-up, naming both (MC-22)", async () => {
+		const probes = new Map<number, string>();
+		for (const [chainId, probeAddress] of [
+			[8453, "0x00000000000000000000000000000000000abcde"],
+			[10, "0x00000000000000000000000000000000000fffff"],
+		] as const) {
+			const result = await verifyChain(
+				{ ...descriptor, chainId },
+				fakeClient({ chainId, probeAddress }),
+				fakeRelease,
+			);
+			probes.set(chainId, result.probeAddress as string);
+		}
+		const refusal = probeDivergence(probes);
+		expect(refusal).toMatch(/address-identity violation/);
+		expect(refusal).toContain(
+			"chain 8453 → 0x00000000000000000000000000000000000abcde",
+		);
+		expect(refusal).toContain(
+			"chain 10 → 0x00000000000000000000000000000000000fffff",
+		);
+	});
+
+	it("a chain recovering after boot must derive the served chains' probe address (MC-22)", () => {
+		const served = new Map([
+			[8453, "0x00000000000000000000000000000000000abcde"],
+		]);
+		expect(
+			recoveryDivergence(
+				served,
+				10,
+				"0x00000000000000000000000000000000000ABCDE",
+			),
+		).toBeNull();
+		const refusal = recoveryDivergence(
+			served,
+			10,
+			"0x00000000000000000000000000000000000fffff",
+		);
+		expect(refusal).toContain(
+			"chain 8453 → 0x00000000000000000000000000000000000abcde",
+		);
+		expect(refusal).toContain(
+			"chain 10 → 0x00000000000000000000000000000000000fffff",
+		);
+		// The first chain admitted sets the reference for the rest.
+		expect(
+			recoveryDivergence(
+				new Map(),
+				10,
+				"0x00000000000000000000000000000000000fffff",
+			),
+		).toBeNull();
+	});
+
+	it("a recovering chain is also compared with the probe it was admitted with, even alone", () => {
+		const admitted = new Map([
+			[10, "0x00000000000000000000000000000000000abcde"],
+		]);
+		expect(
+			recoveryDivergence(
+				admitted,
+				10,
+				"0x00000000000000000000000000000000000ABCDE",
+			),
+		).toBeNull();
+		// Its RPC now serves a factory deriving another address: its wallets keep the old ones.
+		expect(
+			recoveryDivergence(
+				admitted,
+				10,
+				"0x00000000000000000000000000000000000fffff",
+			),
+		).toContain(
+			"chain 10 now derives 0x00000000000000000000000000000000000fffff for the probe owner, but it was admitted deriving 0x00000000000000000000000000000000000abcde",
+		);
+	});
+
+	it("a recovering chain whose verification aborts part-way is not admitted", async () => {
+		const healthy = await verifyChain(descriptor, fakeClient({}), fakeRelease);
+		expect(recoveryVerified(healthy)).toBe(true);
+
+		// Reachable, but the probe read times out after the structural reads began.
+		const timingOut = fakeClient({});
+		const readContract = timingOut.readContract.bind(timingOut);
+		timingOut.readContract = (async (args: { functionName: string }) => {
+			if (args.functionName === "getAddress")
+				throw new Error("request timed out");
+			return readContract(args as never);
+		}) as typeof timingOut.readContract;
+		const aborted = await verifyChain(descriptor, timingOut, fakeRelease);
+		expect(aborted.reachable).toBe(true);
+		expect(aborted.failures.filter(isFatalFailure)).toEqual([]);
+		expect(aborted.probeAddress).toBeUndefined();
+		expect(recoveryVerified(aborted)).toBe(false);
 	});
 
 	it("a missing EntryPoint is FATAL (MC-141)", async () => {
 		const result = await verifyChain(
 			descriptor,
 			fakeClient({ code: { [descriptor.entryPoint.toLowerCase()]: "0x" } }),
-			isFakeCanonical,
+			fakeRelease,
 		);
 		expect(
 			result.failures.some((failure) => failure.kind === "entrypoint-missing"),
@@ -553,7 +859,7 @@ describe("verifyChain", () => {
 		const result = await verifyChain(
 			{ ...descriptor, entryPoint: v07 },
 			fakeClient({ code: { [v07.toLowerCase()]: "0x6001" } }),
-			isFakeCanonical,
+			fakeRelease,
 		);
 		expect(result.failures).toContainEqual({
 			kind: "entrypoint-not-canonical",
@@ -569,7 +875,7 @@ describe("verifyChain", () => {
 			fakeClient({
 				code: { [descriptor.entryPoint.toLowerCase()]: "0x6001" },
 			}),
-			isFakeCanonical,
+			fakeRelease,
 		);
 		expect(result.failures).toEqual([
 			{
@@ -585,12 +891,12 @@ describe("verifyChain", () => {
 		const result = await verifyChain(
 			descriptor,
 			fakeClient({ boundEntryPoint: v07 }),
-			isFakeCanonical,
+			fakeRelease,
 		);
 		expect(result.failures).toEqual([
 			{
 				kind: "implementation-entrypoint-mismatch",
-				implementation: CANONICAL_IMPLEMENTATION,
+				implementation: IMPLEMENTATION,
 				expected: descriptor.entryPoint,
 				found: v07,
 			},

@@ -7,6 +7,9 @@ import { runMigrations } from "./migrate.js";
 import {
 	describeFailure,
 	isFatalFailure,
+	probeDivergence,
+	recoveryDivergence,
+	recoveryVerified,
 	verifyChain,
 } from "./services/chain-verify.js";
 import {
@@ -48,11 +51,18 @@ const registry = app.chains;
 // ── Chain verification at boot (§3.5, §4.2) ──────────────────────────────────────
 //
 // Every configured chain is verified against the chain ITSELF, before serving traffic:
-// endpoint identity, EntryPoint, canonical factory and implementation, paymaster where
-// sponsorship is enabled, and the live factory cross-check. Structural misconfiguration
+// endpoint identity, EntryPoint, release code and immutables at the chain's own factory, wallet
+// implementation and paymaster, and the live factory cross-check. Structural misconfiguration
 // refuses start-up; mere unreachability does not (S7, MC-92): the deployment starts,
 // marks that chain unavailable, serves its other chains and retries in the background.
+/**
+ * The probe address each admitted chain's factory derives (MC-22); a recovering chain must match it.
+ * Only a completed verification (recoveryVerified) enters it: a probe read before a later check
+ * timed out belongs to a chain that was never admitted, and must not become the reference.
+ */
+const servedProbes = new Map<number, string>();
 {
+	// Every probe read at boot, admitted or not: any divergence among them refuses start-up.
 	const probeAddresses = new Map<number, string>();
 	let fatal = false;
 	for (const chain of registry.all) {
@@ -69,6 +79,11 @@ const registry = app.chains;
 				app.log.warn({ chainId: chain.chainId, failure }, line);
 			}
 		}
+		if (verification.implementationUnchecked)
+			app.log.warn(
+				{ chainId: chain.chainId },
+				`chain ${chain.chainId}: no wallet implementation configured (walletApi.implementation, IMPLEMENTATION_ADDRESS) or registered — the factory's implementation was checked for release code and EntryPoint, but not compared with the chain's own`,
+			);
 		if (
 			verification.failures.some((failure) => failure.kind === "unreachable")
 		) {
@@ -79,15 +94,18 @@ const registry = app.chains;
 				chain.chainId,
 				verification.probeAddress.toLowerCase(),
 			);
+		if (recoveryVerified(verification))
+			servedProbes.set(chain.chainId, verification.probeAddress.toLowerCase());
 	}
 	// MC-22: every served chain's factory must derive the SAME address for the same owner.
 	// Comparing addresses alone would miss a factory at the right address running different
 	// code; this catches it.
-	if (new Set(probeAddresses.values()).size > 1) {
+	const divergence = probeDivergence(probeAddresses);
+	if (divergence) {
 		fatal = true;
 		app.log.fatal(
 			{ probeAddresses: Object.fromEntries(probeAddresses) },
-			"address-identity violation: the served chains derive DIFFERENT account addresses for the same owner (MC-16, MC-22)",
+			divergence,
 		);
 	}
 	if (fatal) {
@@ -144,19 +162,47 @@ const prober = setInterval(() => {
 			void verifyChain(chain.descriptor, chain.publicClient)
 				.then((verification) => {
 					const fatalFailures = verification.failures.filter(isFatalFailure);
-					if (verification.reachable && fatalFailures.length === 0) {
+					// MC-22 holds for every admission: a chain unreachable at boot never met the
+					// boot-time probe comparison, so it meets it here.
+					const divergence =
+						verification.probeAddress &&
+						recoveryDivergence(
+							servedProbes,
+							chain.chainId,
+							verification.probeAddress,
+						);
+					if (divergence) {
+						app.log.error(
+							{
+								chainId: chain.chainId,
+								probeAddress: verification.probeAddress,
+								servedProbes: Object.fromEntries(servedProbes),
+							},
+							`ALERT: ${divergence} — chain ${chain.chainId} stays unavailable`,
+						);
+					} else if (recoveryVerified(verification)) {
+						servedProbes.set(
+							chain.chainId,
+							verification.probeAddress.toLowerCase(),
+						);
 						app.log.info(
 							{ chainId: chain.chainId },
 							"chain is reachable and verified — serving it again",
 						);
 						chain.status = "ready";
-					} else if (verification.reachable) {
+					} else if (fatalFailures.length > 0) {
 						for (const failure of fatalFailures) {
 							app.log.error(
 								{ chainId: chain.chainId, failure },
 								`ALERT: ${describeFailure(chain.chainId, failure)}`,
 							);
 						}
+					} else if (verification.reachable) {
+						// Reachable, but the verification did not complete: not admitted until one does.
+						app.log.warn(
+							{ chainId: chain.chainId, failures: verification.failures },
+							"chain answered but its verification did not complete — it stays unavailable",
+						);
 					}
 					app.metrics.chainAvailable.set(
 						{ chain: String(chain.chainId) },

@@ -30,6 +30,12 @@ export type ResolvedChain = {
 	bundlerUrl: string;
 	entryPoint: `0x${string}`;
 	factory: `0x${string}`;
+	/**
+	 * The wallet implementation `factory` must clone: GIANO_CHAINS `walletApi.implementation`, else
+	 * the contracts registry. Unset only for a chain neither names (a local devnet); the factory's
+	 * implementation is then still checked for release code and its EntryPoint.
+	 */
+	implementation?: `0x${string}`;
 	sponsorshipPaymaster?: `0x${string}`;
 	/**
 	 * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
@@ -201,6 +207,11 @@ const envSchema = z
 		/** Single-chain shorthand only; defaulted from the contracts address registry for CHAIN_ID. */
 		ENTRYPOINT_ADDRESS: addressSchema.optional(),
 		FACTORY_ADDRESS: addressSchema.optional(),
+		/**
+		 * The wallet implementation FACTORY_ADDRESS must clone. Needed for a chain outside the
+		 * registry (a local chain); otherwise the registry's.
+		 */
+		IMPLEMENTATION_ADDRESS: addressSchema.optional(),
 
 		CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
 		SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
@@ -430,6 +441,7 @@ const envSchema = z
 			for (const [key, present] of [
 				["ENTRYPOINT_ADDRESS", env.ENTRYPOINT_ADDRESS !== undefined],
 				["FACTORY_ADDRESS", env.FACTORY_ADDRESS !== undefined],
+				["IMPLEMENTATION_ADDRESS", env.IMPLEMENTATION_ADDRESS !== undefined],
 				[
 					"SPONSORSHIP_PAYMASTER_ADDRESS",
 					env.SPONSORSHIP_PAYMASTER_ADDRESS !== undefined,
@@ -635,6 +647,12 @@ const envSchema = z
 						entryPoint: (descriptor.entryPoint ??
 							registry!.entryPoint) as `0x${string}`,
 						factory: (walletApi.factory ?? registry!.factory) as `0x${string}`,
+						// The registry's implementation pairs with the registry's factory only. A custom
+						// factory without an explicit implementation is checked against the one it reports.
+						implementation: (walletApi.implementation ??
+							(walletApi.factory ? undefined : registry?.implementation)) as
+							| `0x${string}`
+							| undefined,
 						sponsorshipPaymaster: (descriptor.sponsorshipPaymaster ??
 							registry?.sponsorshipPaymaster) as `0x${string}` | undefined,
 						policy: resolvePolicy(walletApi.policy),
@@ -650,6 +668,12 @@ const envSchema = z
 							gianoAddresses[env.CHAIN_ID!]!.entryPoint) as `0x${string}`,
 						factory: (env.FACTORY_ADDRESS ??
 							gianoAddresses[env.CHAIN_ID!]!.factory) as `0x${string}`,
+						implementation: (env.IMPLEMENTATION_ADDRESS ??
+							(env.FACTORY_ADDRESS
+								? undefined
+								: gianoAddresses[env.CHAIN_ID!]?.implementation)) as
+							| `0x${string}`
+							| undefined,
 						sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
 							gianoAddresses[env.CHAIN_ID!]?.sponsorshipPaymaster) as
 							| `0x${string}`
