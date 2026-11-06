@@ -28,6 +28,12 @@ const ACCOUNT_METHODS = new Set([
  * learn the address without connecting.
  */
 const INTERNAL_METHODS = new Set(["giano_restoreAccount"]);
+/** Provider events relayed to the dApp. */
+const RELAYED_EVENTS = [
+	"accountsChanged",
+	"chainChanged",
+	"disconnect",
+] as const;
 
 export type WalletHost = {
 	/** Attach transport listeners and announce readiness to the opener. */
@@ -55,20 +61,42 @@ export function createHostRequestHandler({
 	runtimes,
 	requests,
 	grants,
-	onChainFirstUsed,
+	sendEvent,
 }: {
 	runtimes: WalletRuntimes;
 	requests: RequestStore;
 	grants: ConnectionGrants;
-	onChainFirstUsed?: (runtime: WalletRuntime) => void;
+	/** Delivers a provider event to the dApp. */
+	sendEvent?: (event: string, data: unknown) => void;
 }) {
+	// The origin this popup serves. The transport pins one origin per session, so the last
+	// request's origin is the origin every relayed event goes to.
+	let sessionOrigin: string | null = null;
+
+	// WK-34: accountsChanged carries the address, so it reaches the dApp only while the origin
+	// holds a grant. The check runs when the event fires, not when the relay is wired: the
+	// management view can sign in (and emit the address) for an origin that never connected.
+	// A first connect emits before its grant is recorded, so that event is dropped too; the
+	// dApp learns the accounts from the eth_requestAccounts result.
+	const relay = (event: string, data: unknown) => {
+		if (
+			event === "accountsChanged" &&
+			!(sessionOrigin !== null && grants.has(sessionOrigin))
+		) {
+			return;
+		}
+		sendEvent?.(event, data);
+	};
+
 	// Event relay is wired per runtime, once, when a session first touches that chain.
 	const wiredChains = new Set<number>();
 	const runtimeForSession = (chainId: number): WalletRuntime => {
 		const runtime = runtimes.runtimeFor(chainId);
 		if (!wiredChains.has(chainId)) {
 			wiredChains.add(chainId);
-			onChainFirstUsed?.(runtime);
+			for (const event of RELAYED_EVENTS) {
+				runtime.provider.on(event, (data: unknown) => relay(event, data));
+			}
 		}
 		return runtime;
 	};
@@ -78,6 +106,8 @@ export function createHostRequestHandler({
 		params: unknown,
 		context: RequestContext,
 	): Promise<unknown> => {
+		sessionOrigin = context.dappOrigin;
+
 		// MC-14/WK-11: chain switching is refused explicitly with EIP-1193 4200 — never silently
 		// ignored, never answered by the read path, never appearing to succeed. A dApp that
 		// wants another chain constructs a provider for it (D1).
@@ -112,7 +142,15 @@ export function createHostRequestHandler({
 			);
 		}
 		if (method === "wallet_revokePermissions") {
-			grants.revoke(context.dappOrigin);
+			try {
+				grants.revoke(context.dappOrigin);
+			} catch {
+				// Never report a revoke the storage did not keep (WK-34).
+				throw new TransportRpcError(
+					RPC_ERRORS.INTERNAL,
+					"The wallet could not save the revocation; try again",
+				);
+			}
 		}
 
 		const runtime = runtimeForSession(context.chainId);
@@ -202,6 +240,7 @@ export function createHostRequestHandler({
  * - giano_openWalletManagement → a 'manage' request (resolves when the view closes)
  * - account methods from an origin with no grant → 4100; eth_accounts → [] (WK-34)
  * - giano_restoreAccount → refused; the host alone calls it (WK-34)
+ * - accountsChanged → relayed only to an origin with a grant (WK-34)
  * - everything else (read paths) forwards straight to the provider
  * All signing and credential work happens HERE, on the wallet origin — the dApp only
  * ever sees postMessage RPC. The host is headless: it never renders consent, it awaits
@@ -223,18 +262,7 @@ export function createWalletHost({
 		runtimes,
 		requests,
 		grants: createConnectionGrants(),
-		onChainFirstUsed: (runtime) => {
-			// relay provider events (accountsChanged, chainChanged, disconnect) to the dApp
-			for (const event of [
-				"accountsChanged",
-				"chainChanged",
-				"disconnect",
-			] as const) {
-				runtime.provider.on(event, (data: unknown) =>
-					transport.sendEvent(event, data),
-				);
-			}
-		},
+		sendEvent: (event, data) => transport.sendEvent(event, data),
 	});
 
 	transport = new TransportHost({

@@ -58,6 +58,40 @@ describe("connection grants (WK-34)", () => {
 		expect(grants.has("https://app.test")).toBe(true);
 	});
 
+	it("throws on revoke when storage refuses the write, and stops granting in this popup", () => {
+		const storage = memoryStorage({
+			"giano:connection-grants": JSON.stringify(["https://app.test"]),
+		});
+		const grants = createConnectionGrants({
+			getItem: storage.getItem,
+			setItem: () => {
+				throw new Error("QuotaExceededError");
+			},
+		});
+		expect(() => grants.revoke("https://app.test")).toThrow(
+			"QuotaExceededError",
+		);
+		expect(grants.has("https://app.test")).toBe(false);
+	});
+
+	it("writes a revoke to storage even after a failed grant write switched to memory", () => {
+		const storage = memoryStorage({
+			"giano:connection-grants": JSON.stringify(["https://app.test"]),
+		});
+		let refuse = true;
+		const grants = createConnectionGrants({
+			getItem: storage.getItem,
+			setItem: (key, value) => {
+				if (refuse) throw new Error("QuotaExceededError");
+				storage.setItem(key, value);
+			},
+		});
+		grants.grant("https://other.test"); // fails: this popup now uses memory
+		refuse = false;
+		grants.revoke("https://app.test");
+		expect(createConnectionGrants(storage).has("https://app.test")).toBe(false);
+	});
+
 	it("works with no storage at all", () => {
 		const grants = createConnectionGrants(null);
 		grants.grant("https://app.test");

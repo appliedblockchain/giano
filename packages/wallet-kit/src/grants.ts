@@ -11,6 +11,10 @@ const GRANTS_KEY = "giano:connection-grants";
 export type ConnectionGrants = {
 	has: (dappOrigin: string) => boolean;
 	grant: (dappOrigin: string) => void;
+	/**
+	 * Removes the origin's grant. Throws when the storage refuses the write: the saved grant
+	 * would otherwise let the next popup accept the origin again.
+	 */
 	revoke: (dappOrigin: string) => void;
 };
 
@@ -36,10 +40,9 @@ export function createConnectionGrants(
 	let backing: GrantStorage | undefined = storage ?? undefined;
 	let memory = new Set<string>();
 
-	const read = (): Set<string> => {
-		if (!backing) return new Set(memory);
+	const parse = (source: GrantStorage): Set<string> => {
 		try {
-			const parsed: unknown = JSON.parse(backing.getItem(GRANTS_KEY) ?? "[]");
+			const parsed: unknown = JSON.parse(source.getItem(GRANTS_KEY) ?? "[]");
 			return new Set(
 				Array.isArray(parsed)
 					? parsed.filter((entry): entry is string => typeof entry === "string")
@@ -50,6 +53,8 @@ export function createConnectionGrants(
 			return new Set();
 		}
 	};
+
+	const read = (): Set<string> => (backing ? parse(backing) : new Set(memory));
 
 	const write = (origins: Set<string>) => {
 		memory = origins;
@@ -72,7 +77,19 @@ export function createConnectionGrants(
 		revoke: (dappOrigin) => {
 			const origins = read();
 			origins.delete(dappOrigin);
-			write(origins);
+			memory = origins;
+			if (!storage) return;
+			// A revoke must reach the storage, even after an earlier failed write switched this
+			// popup to memory: a saved grant would let the next popup accept the origin again.
+			const saved = parse(storage);
+			saved.delete(dappOrigin);
+			try {
+				storage.setItem(GRANTS_KEY, JSON.stringify([...saved]));
+			} catch (error) {
+				// This popup stops serving the origin; the caller must report the failure.
+				backing = undefined;
+				throw error;
+			}
 		},
 	};
 }

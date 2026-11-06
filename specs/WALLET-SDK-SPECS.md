@@ -262,10 +262,14 @@ view, which is what returns nothing to the calling application (WM-40).
 **Connection grants (WK-34).** The host keeps the dApp origins the user connected in the wallet
 origin's `localStorage` (`giano:connection-grants`). A grant is recorded when the user approves a
 `connect` request and the provider returns an account; `wallet_revokePermissions` from that origin
-removes it. An origin with no grant gets `[]` from `eth_accounts` and EIP-1193 `4100` from every
+removes it; if the storage refuses that write, the host answers `-32603`, and the popup stops
+serving the origin. An origin with no grant gets `[]` from `eth_accounts` and EIP-1193 `4100` from every
 account method: the signing and transaction methods, `eth_prepareUserOperation` and
 `eth_sendSignedUserOperation`. The host checks the grant before it restores the account (WK-12), so
-a refused origin never receives an `accountsChanged` event. `giano_restoreAccount` is the host's own
+a refused origin never receives an `accountsChanged` event. The event relay also checks the grant
+each time `accountsChanged` fires, because the management view can sign in for an origin with no
+grant. A first connect emits before its grant exists, so the dApp reads the accounts from the
+`eth_requestAccounts` result. `giano_restoreAccount` is the host's own
 call and is refused (`4200`) when an application sends it. The provider passes only read-only chain
 methods to its node; it refuses any other method it does not implement with `4200`.
 
