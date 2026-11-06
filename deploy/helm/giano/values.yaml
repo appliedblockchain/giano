@@ -46,8 +46,7 @@ config:
 # --- secrets ---
 # Each workload reads only its own existing k8s Secret (walletApi.existingSecret,
 # bundler.existingSecret), so a compromised pod exposes only its own keys. The contracts deployer
-# Job gets no Secret. Never inline production keys in values. The shared secrets.existingSecret
-# is retired: setting it fails the render.
+# Job gets no Secret. Never inline production keys in values.
 
 postgres:
   # external by default — set the DSN in walletApi.existingSecret's DATABASE_URL

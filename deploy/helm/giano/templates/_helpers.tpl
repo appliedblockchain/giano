@@ -20,12 +20,9 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 
 {{- /*
 Secrets: each workload reads only its own k8s Secret (see values.yaml), so a compromised pod
-exposes only its own keys. The shared secrets.existingSecret is retired and fails the render.
+exposes only its own keys.
 */}}
 {{- define "giano.walletApiSecret" -}}
-{{- with .Values.secrets }}{{- if .existingSecret }}
-{{- fail "secrets.existingSecret is retired: each workload has its own Secret. Set walletApi.existingSecret (DATABASE_URL) and, with the bundler, bundler.existingSecret (BUNDLER_EXECUTOR_PRIVATE_KEYS only)" }}
-{{- end }}{{- end }}
 {{- required "walletApi.existingSecret is required (a k8s Secret with DATABASE_URL)" .Values.walletApi.existingSecret -}}
 {{- end -}}
 
