@@ -11,14 +11,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The stack builds wallet-api, wallet-web and paymaster-admin from their Dockerfiles, which build
-  # on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous pulls. Without the credential
-  # the run FAILS here, up front and by name — the suite is never skipped and reported green. That
-  # includes fork PRs, which get no secrets.
-  dhi:
-    name: Hardened-image registry access
+  playwright:
+    name: Two-tenant Playwright suite (Chromium + virtual authenticator)
     runs-on: ubuntu-latest
     steps:
+      # The stack builds wallet-api, wallet-web, paymaster-admin and the bundler from their
+      # Dockerfiles, which build on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous
+      # pulls. Without the credential the run FAILS here, as its first step and by name — the suite
+      # is never skipped and reported green. That includes fork PRs, which get no secrets. A step
+      # rather than a job of its own: a separate job costs a second runner allocation on every run
+      # and gains nothing, because this step fails just as early.
       - name: Require Docker Hub credentials for dhi.io
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -28,12 +30,6 @@ jobs:
             echo '::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must both be set: the e2e stack builds on dhi.io bases and dhi.io refuses anonymous pulls'
             exit 1
           fi
-
-  playwright:
-    name: Two-tenant Playwright suite (Chromium + virtual authenticator)
-    needs: dhi
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -41,18 +37,6 @@ jobs:
           # 24, not 22: portless (the local proxy that serves the demo's names) requires it.
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Build packages
-        run: |
-          pnpm --filter @appliedblockchain/giano-contracts build:ts
-          pnpm --filter @appliedblockchain/giano-wallet-core build
-          pnpm --filter @appliedblockchain/giano-wallet-transport build
-          pnpm --filter @appliedblockchain/giano-tx-describe build
-          pnpm --filter @appliedblockchain/giano-wallet-kit build
-          pnpm --filter @appliedblockchain/giano-connector build
-      # `--wait` blocks on the sponsorship provisioner, which installs each demo tenant's rules
-      # through the real admin API and then verifies its own work. A stack that cannot sponsor must
-      # fail to come up rather than come up broken and take the failure out on a Playwright test.
       - uses: docker/login-action@v4
         with:
           registry: dhi.io
@@ -66,19 +50,64 @@ jobs:
       - name: Verify the DHI base signatures
         run: |
           node scripts/verify-dhi-bases.mjs \
-            services/wallet-api/Dockerfile services/wallet-web/Dockerfile services/paymaster-admin/Dockerfile
-      - name: Start stack
-        run: docker compose -f deploy/docker-compose.e2e.yml up --build -d --wait --wait-timeout 300
-      # The demo's origins are names on port 80 (http://app.localhost, http://wallet.localhost,
-      # ...), so the suite needs portless's proxy holding that port. Locally that is done without
-      # root, by the `portless-port80` compose service (see deploy/docker-compose.e2e.yml) — but
-      # here sudo is free and a throwaway runner has nothing to protect, so CI takes the simpler
-      # route and runs the proxy on port 80 directly. That is also why the compose step above
-      # does not pass `--profile portless`: the relay would only fight this proxy for the port.
+            services/wallet-api/Dockerfile services/wallet-web/Dockerfile services/paymaster-admin/Dockerfile \
+            services/bundler/Dockerfile
+      # The same builder docker.yml writes main's layer cache with. The runner's built-in `docker`
+      # driver imports that cache but matches none of its RUN steps, so every image rebuilt cold;
+      # a docker-container builder computes the same cache keys as the one that wrote them.
+      # Compose builds through it and loads each image back into the daemon.
+      - uses: docker/setup-buildx-action@v4
+      # Started in the background so that it builds while the host installs dependencies, builds the
+      # packages and installs Chromium — none of which the stack needs. `Wait for the stack` below
+      # joins it and fails the job on its exit code, with its full output.
       #
-      # An absolute interpreter path rather than `sudo node`, because sudo's secure_path does not
-      # include the toolcache node that setup-node put on PATH. Routes are registered first and
-      # unprivileged; the proxy picks them up from its routes file as it starts.
+      # Spawned from an action rather than a `run` step: the GitHub Actions cache backend that
+      # deploy/docker-compose.e2e.ci.yml reads main's layer cache through authenticates with the
+      # runtime token, which the runner hands to actions only. Spawning compose here gives the token
+      # to that one process tree. Exporting it to GITHUB_ENV instead would hand it to every later
+      # step — pnpm install, the package builds, Playwright — and on a push to main that token can
+      # write main's cache scopes, the ones docker.yml builds the published images from.
+      #
+      # `--wait` blocks on the sponsorship provisioner, which installs each demo tenant's rules
+      # through the real admin API and then verifies its own work. A stack that cannot sponsor must
+      # fail to come up rather than come up broken and take the failure out on a Playwright test.
+      - name: Start stack (background)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { spawn } = require('node:child_process');
+            const fs = require('node:fs');
+            const out = fs.openSync(`${process.env.RUNNER_TEMP}/stack.log`, 'w');
+            spawn('bash', ['-c',
+              'docker compose -f deploy/docker-compose.e2e.yml -f deploy/docker-compose.e2e.ci.yml ' +
+              'up --build -d --wait --wait-timeout 300; echo $? > "$RUNNER_TEMP/stack.exit"'],
+              { detached: true, stdio: ['ignore', out, out], env: process.env }).unref();
+      - run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: |
+          pnpm --filter @appliedblockchain/giano-contracts build:ts
+          pnpm --filter @appliedblockchain/giano-wallet-core build
+          pnpm --filter @appliedblockchain/giano-wallet-transport build
+          pnpm --filter @appliedblockchain/giano-tx-describe build
+          pnpm --filter @appliedblockchain/giano-wallet-kit build
+          pnpm --filter @appliedblockchain/giano-connector build
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Wait for the stack
+        run: |
+          # the compose step's own budget is 300s of --wait on top of the build
+          for _ in $(seq 1 600); do
+            [ -s "$RUNNER_TEMP/stack.exit" ] && break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/stack.log"
+          if [ ! -s "$RUNNER_TEMP/stack.exit" ]; then
+            echo '::error::docker compose up did not finish within 10 minutes'
+            exit 1
+          fi
+          code=$(cat "$RUNNER_TEMP/stack.exit")
+          [ "$code" = 0 ] || { echo "::error::docker compose up exited $code"; exit "$code"; }
       - name: Start portless proxy
         working-directory: e2e
         run: |
@@ -115,9 +144,6 @@ jobs:
           wait_for 'sponsorship ready' bash -c "curl -fsS http://api.localhost/readyz | grep -q '\"sponsorship\":\"ok\"'"
           curl -fsS http://wallet.localhost/config.json
           curl -fsS http://api.localhost/readyz
-      - name: Install Playwright browsers
-        working-directory: e2e
-        run: pnpm exec playwright install --with-deps chromium
       - name: Run E2E
         working-directory: e2e
         run: pnpm test
@@ -148,6 +174,8 @@ jobs:
       - name: Stack logs on failure
         if: failure()
         run: |
+          # The compose build output; `Wait for the stack` prints it only when every step before it passed.
+          cat "$RUNNER_TEMP/stack.log" || true
           docker compose -f deploy/docker-compose.e2e.yml logs wallet-api --tail 200
           docker compose -f deploy/docker-compose.e2e.yml logs sponsorship-provisioner --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs tx-mapping-provisioner --tail 100
