@@ -6,6 +6,7 @@ import {
 import type { WalletConfig } from "./config";
 import { createRequestStore, type RequestStore, toRpcError } from "./requests";
 import type { WalletRuntime, WalletRuntimes } from "./runtimes";
+import { checkSelfCall, OPERATION_METHODS } from "./self-calls";
 
 const CONSENT_METHODS = new Set([
 	"eth_sendTransaction",
@@ -116,13 +117,20 @@ export function createHostRequestHandler({
 		// account was lost when the previous popup closed. Silently rebuild it from the
 		// persisted session before asking for consent — no extra passkey prompt; the
 		// single ceremony still happens when the operation is actually signed. If it
-		// can't be restored, the provider will surface "Giano not connected" and the
-		// dApp must reconnect via eth_requestAccounts.
+		// can't be restored, the request fails with a disconnect error (from the self-call
+		// check below for an operation, from the provider otherwise) and the dApp must
+		// reconnect via eth_requestAccounts.
 		if (ACCOUNT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
 			await runtime.provider
 				.request({ method: "giano_restoreAccount" } as never)
 				.catch(() => undefined);
 		}
+		// A dApp must never get the account to call one of its own functions: that is how owners
+		// are added or removed and how the account is upgraded. Refused before consent, so the
+		// user is never shown an Approve button for one, and checked again after consent, because
+		// the account can change while the user decides.
+		const checked = assertNoSelfCall(runtime, method, params);
+		if (checked) pinSender(method, params, checked);
 		if (needsConsent) {
 			await requests.requestConsent({
 				kind:
@@ -141,12 +149,92 @@ export function createHostRequestHandler({
 				runtime,
 			});
 		}
+		let forwarded = params;
+		if (needsConsent) {
+			const account = assertNoSelfCall(runtime, method, params);
+			if (account) forwarded = pinSender(method, params, account);
+		}
 		try {
-			return await runtime.provider.request({ method, params } as never);
+			return await runtime.provider.request({
+				method,
+				params: forwarded,
+			} as never);
 		} catch (error) {
 			throw toRpcError(error);
 		}
 	};
+}
+
+/**
+ * Refuses an operation request that would make the account call itself, or that cannot be
+ * checked. A value-only transfer to self carries no calldata and stays allowed. The management
+ * view builds its self-calls and calls the provider directly, so it does not pass through here.
+ *
+ * Returns the address of the account it checked against, for an operation method.
+ *
+ * Synchronous on purpose: the caller runs the provider request right after it, with no await
+ * in between, so the request starts against the account that was checked.
+ */
+function assertNoSelfCall(
+	runtime: WalletRuntime,
+	method: string,
+	params: unknown,
+): string | undefined {
+	if (!OPERATION_METHODS.has(method)) return undefined;
+	const account = runtime.provider.getSmartAccount();
+	// Without an account there is nothing to check against, so the request is refused here.
+	// The provider would refuse it too; this is the error toRpcError gives for that case.
+	if (!account) {
+		throw new TransportRpcError(
+			RPC_ERRORS.DISCONNECTED,
+			"Wallet session expired — reconnect",
+		);
+	}
+	const selfCall = checkSelfCall(method, params, account.address);
+	if (selfCall === "self-call") {
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"an application cannot make the wallet call itself; use giano_openWalletManagement to let the user manage the wallet",
+		);
+	}
+	if (selfCall === "unreadable") {
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"the request cannot be checked: params must be an array, the transaction or user operation must be an object, `to` and `data` must be hex strings, and a user operation's callData must be an execute or executeBatch call",
+		);
+	}
+	return account.address;
+}
+
+/**
+ * Binds a user operation to be signed to the account it was checked against. The provider
+ * awaits before it signs, and it signs with whatever account it holds by then. It also refuses
+ * a `sender` that is not that account. So with `sender` set to the checked account, a change of
+ * account inside the provider makes it refuse the request instead of signing an unchecked one.
+ *
+ * A `sender` that is not the checked account is refused here, before consent. A missing one is
+ * filled in. Other methods are returned unchanged: eth_sendSignedUserOperation already requires
+ * `sender`, and the others build the operation from the account itself.
+ */
+function pinSender(method: string, params: unknown, account: string): unknown {
+	if (method !== "eth_signUserOperation") return params;
+	// assertNoSelfCall has already required an array whose first entry is an object.
+	const [operation, ...rest] = params as [
+		Record<string, unknown>,
+		...unknown[],
+	];
+	const { sender } = operation;
+	if (
+		sender !== undefined &&
+		(typeof sender !== "string" ||
+			sender.toLowerCase() !== account.toLowerCase())
+	) {
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"the user operation's sender is not the connected account",
+		);
+	}
+	return [{ ...operation, sender: account }, ...rest];
 }
 
 /**

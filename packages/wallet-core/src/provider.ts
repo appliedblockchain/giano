@@ -885,7 +885,10 @@ export const createGianoProvider = (
 		},
 		eth_signUserOperation: async ([userOp]: [any]) => {
 			logger.debug("eth_signUserOperation", { userOp });
-			if (!smartAccount) {
+			// Check and sign with one account instance. A restore or login can replace
+			// `smartAccount` during the await below, and the new account would sign as itself.
+			const account = smartAccount;
+			if (!account) {
 				throw new Error("Giano not connected");
 			}
 
@@ -896,7 +899,7 @@ export const createGianoProvider = (
 			if (chainId !== undefined && Number(chainId) !== chain?.id) {
 				throw new Error("Chain mismatch");
 			}
-			const sender = await smartAccount.getAddress();
+			const sender = await account.getAddress();
 			if (
 				operation.sender !== undefined &&
 				String(operation.sender).toLowerCase() !== sender.toLowerCase()
@@ -904,7 +907,7 @@ export const createGianoProvider = (
 				throw new Error("Address mismatch");
 			}
 
-			return smartAccount.signUserOperation(operation);
+			return account.signUserOperation(operation);
 		},
 		eth_sendSignedUserOperation: async ([signedUserOp]: [
 			UserOperation<GianoEntryPointVersion>,
