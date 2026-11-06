@@ -32,8 +32,9 @@ This change is phase 1: everything console-only.
 Routes:
 - `/` (Overview);
 - `/tenants` and `/tenants/<slug-or-id>`;
-- `/paymaster`, `/roles`, `/timelock`, `/activity`, `/health`, `/admins`;
-- `/sign-in`.
+- `/paymaster`, `/roles`, `/timelock`, `/activity`, `/health`, `/admins`.
+
+There is no sign-in route. Without a session, the sign-in page is shown in place of whatever path was opened, and signing in renders that path. So a reload, a shared link and a deep link all land where they point.
 
 The router is about 60 lines over `history.pushState` and `popstate`, with a `<Link>` that renders a real `<a href>`, so the browser's own open-in-new-tab and copy-link work.
 

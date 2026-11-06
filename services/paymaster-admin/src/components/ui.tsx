@@ -37,12 +37,22 @@ export const toaster: CreateToasterReturn = createToaster({
 	pauseOnPageIdle: true,
 });
 
+/**
+ * Toasts never take a click. Bottom-right they overlap a centred dialog's footer, where its buttons
+ * are, and a toast under the pointer pauses: an operator reaching for *Done* would find it covered
+ * for as long as they kept reaching. So clicks pass through to whatever is underneath, which also
+ * means hovering never pauses one; only a close button, where there is one, is clickable.
+ */
 export function Toaster() {
 	return (
 		<Portal>
 			<ChakraToaster toaster={toaster} insetInline={{ mdDown: "4" }}>
 				{(toast) => (
-					<Toast.Root width={{ md: "md" }}>
+					<Toast.Root
+						width={{ md: "md" }}
+						pointerEvents="none"
+						css={{ "& [data-ghost]": { pointerEvents: "none" } }}
+					>
 						{toast.type === "loading" ? (
 							<Spinner size="sm" color="brand.solid" />
 						) : (
@@ -54,7 +64,7 @@ export function Toaster() {
 								<Toast.Description>{toast.description}</Toast.Description>
 							)}
 						</Stack>
-						{toast.closable && <Toast.CloseTrigger />}
+						{toast.closable && <Toast.CloseTrigger pointerEvents="auto" />}
 					</Toast.Root>
 				)}
 			</ChakraToaster>

@@ -191,13 +191,21 @@ export function usePaymaster(
 	}, [refresh]);
 
 	// Polling, because the chain has no push channel a browser can subscribe to over plain HTTP.
+	// Not while the page is hidden: a console left open in a background tab would otherwise spend the
+	// relay's rate limit and the provider's quota on reads nobody sees. It catches up on return.
 	useEffect(() => {
 		if (!client || deployment.refreshSeconds <= 0) return;
-		const timer = setInterval(
-			() => void refresh(),
-			deployment.refreshSeconds * 1000,
-		);
-		return () => clearInterval(timer);
+		const timer = setInterval(() => {
+			if (!document.hidden) void refresh();
+		}, deployment.refreshSeconds * 1000);
+		const resume = () => {
+			if (!document.hidden) void refresh();
+		};
+		document.addEventListener("visibilitychange", resume);
+		return () => {
+			clearInterval(timer);
+			document.removeEventListener("visibilitychange", resume);
+		};
 	}, [client, deployment.refreshSeconds, refresh]);
 
 	const health = useMemo(
