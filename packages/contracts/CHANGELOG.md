@@ -1,5 +1,23 @@
 # @appliedblockchain/giano-contracts
 
+## 7.0.0
+
+### Major Changes
+
+- 08bd62d: Bind the `signedStaticCall` signature to the call it authorises. Before, the owner signed only the function selector and `signedAt`. Anyone who saw one signature could make any read as the wallet for 30 minutes, for example a view that answers only `msg.sender == wallet`.
+
+  `AuthenticatedStaticCaller` now hashes the selector, `signedAt`, the target and `keccak256(data)`. The new `staticCallHash(target, data, signedAt)` pure function returns this hash. `signedStaticCall` also rejects a `signedAt` later than `block.timestamp`, with the new `StaticCallSignatureNotYetValid` error. Before, a future `signedAt` made a signature last longer than the 30-minute lifetime. The other two errors are renamed: `SignatureExpired` is now `StaticCallSignatureExpired`, and `InvalidSignature` is now `StaticCallInvalidSignature`. `signedStaticCall` returns a target's revert data unchanged, so the new names let a client tell the wallet's errors from a target's. Deploy this as a new wallet implementation; the storage layout does not change. Contract release `v3` contains this change, and the two e2e devnet states are rebuilt from `v3`.
+
+  In `giano-wallet-core`, `signStaticCallPermission` now takes `{ target, data, signedAt? }`. `signedAt` defaults to 30 seconds before the latest block timestamp. The contract rejects a future `signedAt`, so the SDK does not use the local clock, and the margin covers an RPC node that is a block or two behind. The new `staticCallHash` export returns the same hash as the contract. `signed_eth_call` keeps one signature per (account, target, calldata) instead of one signature for every read, and checks `to` and `data` before it asks for a signature. It renews a signature on the local clock, counted from when it was signed, so a local clock that differs from the chain's does not affect it. If the wallet rejects a cached signature, the provider removes it and signs again once. If the wallet also rejects the new signature, the provider removes that one too. Identical concurrent reads share one signature, and the provider asks for one passkey signature at a time. A read whose session ends (disconnect, chain switch or new account) before it finishes does not sign, cache or send anything, and fails with an error that asks the dApp to send it again.
+
+  The signed message changes. This SDK works only with wallets that run the new implementation, and older SDKs fail against it.
+
+### Patch Changes
+
+- 7938cef: `GianoPaymaster.validatePaymasterUserOp` now rejects a sponsorship authorisation whose `feeWei` is above `feeFor(tenantId)`, with the new `FeeAboveConfigured` error. The timelocked fee setting is now the maximum fee. Before, the contract charged any fee the signing key put in the authorisation. A lower fee is still accepted. Deploy this as a new paymaster implementation; the storage layout does not change.
+- 43a6ddc: `GianoPaymaster` now reserves each sponsored operation's maximum charge from validation until settlement, in transient storage. `withdrawTenant` cannot take a reserved amount. Validation checks each operation against the balance minus the earlier reservations in the same bundle. Before, a tenant's withdrawal address could withdraw the whole balance while a sponsored operation was executing. The gas then came out of the other tenants' share of the deposit. Deploy this as a new paymaster implementation; the storage layout and the ABI do not change.
+- 75a6c17: `getSignatureLifetime()` in `AuthenticatedStaticCaller` is now `pure` instead of `view`. It returns a constant and reads no state. The ABI in `generated.ts` now says `stateMutability: 'pure'`. Calls to it work as before. The wallet and factory bytecode differs from contract release `v3`, so a later release must include this change before it is deployed. Contract addresses do not change.
+
 ## 6.0.1
 
 ## 6.0.0

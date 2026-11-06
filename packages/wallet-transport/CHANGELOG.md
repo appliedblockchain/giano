@@ -1,5 +1,7 @@
 # @appliedblockchain/giano-wallet-transport
 
+## 7.0.0
+
 ## 6.0.1
 
 ## 6.0.0
