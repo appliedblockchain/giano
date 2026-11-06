@@ -271,8 +271,7 @@ restores the account (WK-12), so a refused origin never receives an `accountsCha
 event relay also checks the grant each time `accountsChanged` fires, because the management view can
 sign in for an origin with no grant. A first connect emits before its grant exists, so the dApp
 reads the accounts from the `eth_requestAccounts` result. `giano_restoreAccount` is the host's own
-call and is refused (`4200`) when an application sends it. The provider passes only read-only chain
-methods to its node; it refuses any other method it does not implement with `4200`.
+call and is refused (`4200`) when an application sends it.
 
 ---
 

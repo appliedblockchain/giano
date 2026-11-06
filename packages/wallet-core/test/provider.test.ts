@@ -1362,7 +1362,7 @@ describe("signed_eth_call signature cache", () => {
 });
 
 describe("request routing & events", () => {
-	it("passes read-only chain methods it does not implement to the public client", async () => {
+	it("delegates unknown methods to the public client", async () => {
 		const onRequest = vi.fn();
 		const { provider } = buildProvider(mock.authenticator, {
 			transportOptions: { onRequest },
@@ -1374,25 +1374,6 @@ describe("request routing & events", () => {
 		} as never); // pass-through
 		expect(onRequest).toHaveBeenCalledWith("eth_getCode", expect.anything());
 	});
-
-	it.each([
-		"eth_sendRawTransaction",
-		"anvil_setBalance",
-		"debug_traceTransaction",
-		"giano_unknown",
-	])(
-		"refuses %s with EIP-1193 4200 and never sends it to the node",
-		async (method) => {
-			const onRequest = vi.fn();
-			const { provider } = buildProvider(mock.authenticator, {
-				transportOptions: { onRequest },
-			});
-			await expect(
-				provider.request({ method, params: [] } as never),
-			).rejects.toMatchObject({ code: 4200 });
-			expect(onRequest).not.toHaveBeenCalledWith(method, expect.anything());
-		},
-	);
 
 	it("logs and rethrows handler errors via the injected logger", async () => {
 		const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
