@@ -63,7 +63,7 @@ Swagger UI at `/docs` outside production).
 | `POST /v1/bundler/:chainId` | session; per-tenant rate limits | JSON-RPC bundler facade for wallet origins: `eth_sendUserOperation` through the same pipeline as `/v1/userops`, `eth_estimateUserOperationGas` bound to the session wallet, receipts forwarded, `eth_chainId`/`eth_supportedEntryPoints` answered locally — so no bundler is ever browser-reachable |
 | `POST /v1/rpc/:chainId` | `Origin` → tenant; per-tenant rate limit | JSON-RPC read relay to the chain node (allowlisted `eth_*` reads only) — so a wallet origin needs no node URL and a keyed provider URL never reaches a browser |
 | `GET /v1/userops/:hash` | session (tenant-scoped) | relay log/status incl. policy audit |
-| `GET /v1/userops/:hash/receipt` | public (deliberately tenant-free) | read-only receipt proxy (thin-SDK receipt waiting) |
+| `GET /v1/userops/:hash/receipt` | public (deliberately tenant-free), rate-limited per client IP | read-only receipt proxy (thin-SDK receipt waiting); `null` for an op this deployment did not relay |
 | `GET /.well-known/webauthn` | `Host` → tenant | that tenant's Related Origin Requests document |
 | `GET/POST/DELETE /v1/admin/ror-origins` | tenant admin key | manage the key's tenant's ROR origins |
 | `POST /v1/platform/auth/challenge`, `/verify`, `/logout` | none / platform admin session; any `Origin` refused | platform admin sign-in with a wallet (EIP-4361): a server-issued message, exchanged once for a `gps_` session |
@@ -96,6 +96,7 @@ example). Highlights:
 | `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800), per-session and per-address limit (60) |
 | `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` / `PLATFORM_RPC_MAX_LOG_BLOCKS` | the platform chain read relay (`/v1/platform/rpc/:chainId`): forwarded reads per session per minute (1200, a budget separate from the one above), and the widest `eth_getLogs` range it forwards (10000; at least 9000, the paymaster SDK's log window) |
 | `RPC_RELAY_RATE_LIMIT_PER_MINUTE` / `RPC_RELAY_MAX_LOG_BLOCKS` | the tenant chain read relay (`/v1/rpc/:chainId`): forwarded reads per tenant per minute (3000), and the widest `eth_getLogs` range it forwards (10000) |
+| `USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE` | the public receipt lookup (`GET /v1/userops/:hash/receipt`): requests per client IP per minute (1200). Not overridable per tenant, because the route has no tenant |
 | `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` | delete refuses a ledger further than this behind the chain head (50); must exceed `PAYMASTER_WATCHER_CONFIRMATIONS` |
 
 CORS is per-tenant (`corsOrigins`) and fail-closed; there is no global CORS allowlist.
