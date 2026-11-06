@@ -1,0 +1,12 @@
+# Keep host dependencies and build outputs out of Linux image builds.
+#
+# Every Dockerfile installs and builds inside the image, so none of these belong in a build context.
+# They matter most in the e2e job (.github/workflows/e2e.yml), which builds the stack from a
+# checkout the host has just installed and built: without this file each `COPY <package-dir>` would
+# carry that host state, never match the layer cache docker.yml writes from a clean checkout on
+# main, and rebuild every image from that layer down.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+.DS_Store
