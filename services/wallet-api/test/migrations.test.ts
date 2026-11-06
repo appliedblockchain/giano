@@ -255,9 +255,9 @@ describe("migration 0007_tenant_lifecycle", () => {
 			[user.id, credential.id],
 		);
 
-		expect(await runMigrations(container.getConnectionUri())).toEqual([
-			"0011_session_lifecycle.sql",
-		]);
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0011")),
+		).toEqual(["0011_session_lifecycle.sql"]);
 
 		expect(
 			(
@@ -298,6 +298,26 @@ describe("migration 0007_tenant_lifecycle", () => {
 			client.query(
 				`INSERT INTO tenant_history (tenant_id, action, actor) VALUES ($1, 'session-purge', 'x')`,
 				[tenant.id],
+			),
+		).rejects.toThrow(/check constraint/);
+	});
+
+	it("0012 admits the pending-addition challenge kind and still refuses unknown kinds", async () => {
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0012")),
+		).toEqual(["0012_pending_addition_challenge_kind.sql"]);
+		const { rows } = await client.query(
+			`SELECT id FROM tenants WHERE slug = 'acme'`,
+		);
+		const tenantId = rows[0].id;
+		await client.query(
+			`INSERT INTO challenges (challenge, kind, tenant_id, expires_at) VALUES ('claim', 'pending-addition', $1, now())`,
+			[tenantId],
+		);
+		await expect(
+			client.query(
+				`INSERT INTO challenges (challenge, kind, tenant_id, expires_at) VALUES ('other', 'other', $1, now())`,
+				[tenantId],
 			),
 		).rejects.toThrow(/check constraint/);
 	});

@@ -457,6 +457,63 @@ describe("pending-addition lifecycle (WM-18…WM-23)", () => {
 			"pending-already-filled",
 		);
 	});
+
+	it("refuses a claim challenge at full registration: a claim code never yields a credential or a session", async () => {
+		const { session } = await register(
+			"claim-redeem-victim",
+			createAuthenticator(),
+		);
+		const slot = await openSlot(session.token);
+		const claimed = await claim(slot.claimCode);
+		expect(claimed.statusCode).toBe(200);
+		const { challenge } = claimed.json() as { challenge: string };
+
+		const redeemed = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: ORIGIN },
+			payload: {
+				externalUserId: "claim-redeem-victim",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: ORIGIN,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		expect(redeemed.statusCode).toBe(400);
+		expect((redeemed.json() as { error: string }).error).toBe("bad-challenge");
+		expect((await listCredentials(session.token)).length).toBe(1);
+	});
+
+	it("refuses a registration challenge at fill and leaves the slot open for its own claim", async () => {
+		const deviceB = createAuthenticator();
+		const { session } = await register(
+			"fill-redeem-user",
+			createAuthenticator(),
+		);
+		const slot = await openSlot(session.token);
+		// bound to the same user, but minted by /v1/webauthn/options, not by the claim step
+		const { challenge } = await getOptions("fill-redeem-user", "registration");
+
+		const refused = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim/fill",
+			headers: { origin: ORIGIN },
+			payload: {
+				claimCode: slot.claimCode,
+				response: makeRegistrationResponse(deviceB, {
+					challenge,
+					origin: ORIGIN,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		expect(refused.statusCode).toBe(400);
+		expect((refused.json() as { error: string }).error).toBe("bad-challenge");
+
+		expect((await fill(slot.claimCode, deviceB)).statusCode).toBe(200);
+	});
 });
 
 describe("removal (WM-29…WM-31)", () => {

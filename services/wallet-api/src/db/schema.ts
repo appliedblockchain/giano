@@ -267,7 +267,9 @@ export const challenges = pgTable(
 		id: uuid("id").primaryKey().defaultRandom(),
 		// stays globally unique: 32 random bytes — tenant binding is enforced on consume()
 		challenge: text("challenge").notNull().unique(),
-		kind: text("kind", { enum: ["registration", "authentication"] }).notNull(),
+		kind: text("kind", {
+			enum: ["registration", "authentication", "pending-addition"],
+		}).notNull(),
 		tenantId: uuid("tenant_id")
 			.notNull()
 			.references(() => tenants.id),
