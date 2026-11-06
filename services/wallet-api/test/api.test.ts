@@ -95,6 +95,17 @@ const register = async (
 	};
 };
 
+/** Marks every passkey of a tenant user as removed, as the registry does once the chain confirms it. */
+const removeCredentials = async (
+	externalUserId: string,
+	tenant: Tenant = TENANT_A,
+) => {
+	await ctx.db.execute(sql`
+		UPDATE credentials SET removed_at = now()
+		 WHERE user_id = (SELECT u.id FROM users u JOIN tenants t ON t.id = u.tenant_id
+		                   WHERE t.slug = ${tenant.slug} AND u.external_id = ${externalUserId})`);
+};
+
 describe("health", () => {
 	it("healthz and readyz are green", async () => {
 		expect(
@@ -316,8 +327,11 @@ describe("registration ceremony", () => {
 	});
 
 	it("rejects a challenge bound to a different user (challenge-user-mismatch)", async () => {
-		// 'user-1' exists, so a registration challenge for them is user-bound
-		const options = await getOptions("user-1", "registration");
+		// 'mismatch-user' exists with no active passkey, so a registration challenge for them is user-bound
+		await register("mismatch-user", createAuthenticator());
+		await removeCredentials("mismatch-user");
+		const options = await getOptions("mismatch-user", "registration");
+		expect(options.userExists).toBe(true);
 		const res = await ctx.app.inject({
 			method: "POST",
 			url: "/v1/webauthn/registration/verify",
@@ -394,6 +408,81 @@ describe("registration ceremony", () => {
 		expect((await getOptions("race-user")).credentialIds).toEqual([
 			(created.json() as { credentialId: string }).credentialId,
 		]);
+	});
+
+	it("refuses registration options for a user who already holds an active passkey", async () => {
+		const victim = await register("victim-bound", createAuthenticator());
+		// Tenant A has open registration: this call carries no credential of any kind.
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/options",
+			headers: { origin: TEST_ORIGIN },
+			payload: { externalUserId: "victim-bound", kind: "registration" },
+		});
+		expect(res.statusCode).toBe(409);
+		expect((res.json() as { error: string }).error).toBe("already-registered");
+		// 'auto' still resolves to sign-in for that user.
+		const auto = await getOptions("victim-bound");
+		expect(auto.kind).toBe("authentication");
+		expect(auto.credentialIds).toEqual([victim.credentialId]);
+	});
+
+	it("refuses to add a passkey to a user who holds an active one, and lets a user with none register", async () => {
+		await register("re-register-user", createAuthenticator());
+		await removeCredentials("re-register-user");
+		// Both challenges are bound to the user, issued while they had no active passkey.
+		const first = await getOptions("re-register-user", "registration");
+		const second = await getOptions("re-register-user", "registration");
+		const verify = (challenge: string) =>
+			ctx.app.inject({
+				method: "POST",
+				url: "/v1/webauthn/registration/verify",
+				headers: { origin: TEST_ORIGIN },
+				payload: {
+					externalUserId: "re-register-user",
+					response: makeRegistrationResponse(createAuthenticator(), {
+						challenge,
+						origin: TEST_ORIGIN,
+						rpId: TEST_RP_ID,
+					}),
+				},
+			});
+		const created = await verify(first.challenge);
+		expect(created.statusCode).toBe(200);
+		const res = await verify(second.challenge);
+		expect(res.statusCode).toBe(409);
+		expect((res.json() as { error: string }).error).toBe("already-registered");
+		expect((await getOptions("re-register-user")).credentialIds).toEqual([
+			(created.json() as { credentialId: string }).credentialId,
+		]);
+	});
+
+	it("registers only one of two concurrent registrations for the same user", async () => {
+		await register("concurrent-user", createAuthenticator());
+		await removeCredentials("concurrent-user");
+		const challenges = await Promise.all([
+			getOptions("concurrent-user", "registration"),
+			getOptions("concurrent-user", "registration"),
+		]);
+		const results = await Promise.all(
+			challenges.map(({ challenge }) =>
+				ctx.app.inject({
+					method: "POST",
+					url: "/v1/webauthn/registration/verify",
+					headers: { origin: TEST_ORIGIN },
+					payload: {
+						externalUserId: "concurrent-user",
+						response: makeRegistrationResponse(createAuthenticator(), {
+							challenge,
+							origin: TEST_ORIGIN,
+							rpId: TEST_RP_ID,
+						}),
+					},
+				}),
+			),
+		);
+		expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+		expect((await getOptions("concurrent-user")).credentialIds).toHaveLength(1);
 	});
 
 	it("requires the tenant's own admin key for options when open_registration is false", async () => {

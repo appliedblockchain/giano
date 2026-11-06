@@ -1,10 +1,15 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { pendingAdditions, walletManagementLog } from "../src/db/schema.js";
+import {
+	pendingAdditions,
+	users,
+	walletManagementLog,
+} from "../src/db/schema.js";
 import {
 	generateClaimCode,
 	normaliseClaimCode,
 } from "../src/routes/wallet-management.js";
+import { createChallengeService } from "../src/services/challenges.js";
 import {
 	ownerKeyOf,
 	startTestStack,
@@ -493,8 +498,18 @@ describe("pending-addition lifecycle (WM-18…WM-23)", () => {
 			createAuthenticator(),
 		);
 		const slot = await openSlot(session.token);
-		// bound to the same user, but minted by /v1/webauthn/options, not by the claim step
-		const { challenge } = await getOptions("fill-redeem-user", "registration");
+		// A registration challenge bound to the same user, not minted by the claim step. /options
+		// refuses to issue one to a user who holds a passkey, so it is issued directly here.
+		const user = await ctx.db.query.users.findFirst({
+			where: eq(users.externalId, "fill-redeem-user"),
+		});
+		if (!user) throw new Error("fill-redeem-user was not registered");
+		const challenge = await createChallengeService(ctx.db, 300).issue(
+			"registration",
+			user.id,
+			user.tenantId,
+			"fill-redeem-user",
+		);
 
 		const refused = await ctx.app.inject({
 			method: "POST",
