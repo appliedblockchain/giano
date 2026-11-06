@@ -56,7 +56,7 @@ test("view: one credential on-chain, current session marked (WM-01, WM-10)", asy
 	await expect(popup.getByTestId("manage-owner-current")).toBeVisible();
 	// WM-03: a stable fingerprint derived from the owner bytes is shown.
 	await expect(popup.getByTestId("manage-owner-fingerprint")).toHaveText(
-		/^[0-9A-Z]{3}-[0-9A-Z]{3}$/,
+		/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/,
 	);
 });
 
@@ -92,7 +92,7 @@ test("add a passkey in the current session: two owners on-chain, address unchang
 	await popup.getByTestId("manage-add-passkey").click();
 	// WM-17: the consent screen shows a fingerprint before the authorising signature.
 	await expect(popup.getByTestId("manage-consent-fingerprint")).toHaveText(
-		/^[0-9A-Z]{3}-[0-9A-Z]{3}$/,
+		/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/,
 		{ timeout: 30_000 },
 	);
 	await popup.getByTestId("manage-add-approve").click();
@@ -199,7 +199,7 @@ test("bring-your-own UI: view, add and remove reachable through the tenant’s o
 	await popup.getByTestId("byo-manage-add").click();
 	// the BYO reference adds a passkey on this device; assert the flow reaches its progress view
 	await expect(popup.getByTestId("byo-manage-fingerprint")).toHaveText(
-		/^[0-9A-Z]{3}-[0-9A-Z]{3}$/,
+		/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/,
 		{ timeout: 30_000 },
 	);
 	await popup.getByTestId("byo-manage-add-approve").click();
