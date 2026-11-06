@@ -238,9 +238,9 @@ describe("migration 0007_tenant_lifecycle", () => {
 			);
 		}
 
-		expect(await runMigrations(container.getConnectionUri())).toEqual([
-			"0010_pending_addition_challenge_kind.sql",
-		]);
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0010")),
+		).toEqual(["0010_pending_addition_challenge_kind.sql"]);
 		expect(
 			(
 				await client.query(
@@ -265,5 +265,24 @@ describe("migration 0007_tenant_lifecycle", () => {
 				[tenantId],
 			),
 		).rejects.toThrow(/check constraint/);
+	});
+
+	it("0011 adds external_id and consumes every outstanding registration challenge", async () => {
+		// 'new-user-registration' (user_id NULL) and 'bound-authentication' are still outstanding after 0010
+		expect(await runMigrations(container.getConnectionUri())).toEqual([
+			"0011_challenge_external_id.sql",
+		]);
+		expect(
+			(
+				await client.query(
+					`SELECT challenge, consumed_at IS NOT NULL AS consumed, external_id FROM challenges
+            WHERE challenge IN ('new-user-registration', 'bound-authentication')
+            ORDER BY challenge`,
+				)
+			).rows,
+		).toEqual([
+			{ challenge: "bound-authentication", consumed: false, external_id: null },
+			{ challenge: "new-user-registration", consumed: true, external_id: null },
+		]);
 	});
 });
