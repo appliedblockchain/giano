@@ -1,9 +1,10 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import { decodeFunctionData, encodeAbiParameters, pad } from "viem";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	addressOwnerBytes,
 	classifyOwnerBytes,
+	createWalletManagementApi,
 	encodeAddOwnerAddress,
 	encodeAddOwnerPublicKey,
 	encodeRemoveOwnerAtIndex,
@@ -11,7 +12,9 @@ import {
 	ownerFingerprint,
 	ownerSetsDiverge,
 	publicKeyOwnerBytes,
+	WalletManagementApiError,
 } from "../src/management";
+import { SessionEndedError } from "../src/provider-injection";
 
 const X = pad("0x11", { size: 32 });
 const Y = pad("0x22", { size: 32 });
@@ -90,5 +93,47 @@ describe("divergence (WM-06)", () => {
 		expect(ownerSetsDiverge(set([one]), set([one, two]))).toBe(true);
 		// an undeployed chain has no set to diverge — deployment is lazy and per chain
 		expect(ownerSetsDiverge(set([one]), set([], false))).toBe(false);
+	});
+});
+
+describe("management API: a refused session (G5)", () => {
+	const apiWith = (status: number, token: string | null = "tok") => {
+		const onUnauthorized = vi.fn();
+		const api = createWalletManagementApi({
+			apiUrl: "https://wallet.test/api",
+			getSessionToken: () => token,
+			onUnauthorized,
+			fetch: (async () =>
+				new Response(JSON.stringify({ error: "x", message: "x" }), {
+					status,
+				})) as typeof fetch,
+		});
+		return { api, onUnauthorized };
+	};
+
+	it("a 401 to an authenticated call ends the session and throws SessionEndedError", async () => {
+		const { api, onUnauthorized } = apiWith(401);
+		await expect(api.listCredentials()).rejects.toBeInstanceOf(
+			SessionEndedError,
+		);
+		expect(onUnauthorized).toHaveBeenCalledOnce();
+	});
+
+	it("other statuses keep the session", async () => {
+		for (const status of [429, 503]) {
+			const { api, onUnauthorized } = apiWith(status);
+			await expect(api.listCredentials()).rejects.toBeInstanceOf(
+				WalletManagementApiError,
+			);
+			expect(onUnauthorized).not.toHaveBeenCalled();
+		}
+	});
+
+	it("a 401 to a call that carried no session does not end it", async () => {
+		const { api, onUnauthorized } = apiWith(401);
+		await expect(api.claimPendingAddition("code")).rejects.toBeInstanceOf(
+			WalletManagementApiError,
+		);
+		expect(onUnauthorized).not.toHaveBeenCalled();
 	});
 });

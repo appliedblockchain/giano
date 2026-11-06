@@ -1,5 +1,6 @@
 import type {
 	ManagementController,
+	ManagementNotice,
 	OwnerRow,
 } from "@appliedblockchain/giano-wallet-kit";
 import { useManagement } from "@appliedblockchain/giano-wallet-kit/react";
@@ -64,6 +65,11 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 				<PasskeyDeviceGuidance />
 				<div className="card">
 					<h2>Manage your wallet</h2>
+					{state.notice ? (
+						<p className="note" data-testid="manage-notice">
+							{NOTICES[state.notice]}
+						</p>
+					) : null}
 					<p>
 						Sign in to see and control the passkeys and accounts that can act on
 						your wallet.
@@ -274,6 +280,15 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 				</div>
 			)}
 
+			<div className="card">
+				<h2>Signed-in devices</h2>
+				<p className="note">
+					Lost a device, or signed in somewhere you no longer trust? Sign out
+					everywhere ends the session on every device signed in to this wallet,
+					this one included. Each one needs its passkey to sign in again.
+				</p>
+			</div>
+
 			<div className="actions">
 				{onClose ? (
 					<button type="button" onClick={onClose} data-testid="manage-close">
@@ -289,10 +304,27 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 						Log out (revoke session)
 					</button>
 				)}
+				<button
+					type="button"
+					className="danger"
+					onClick={() => void actions.logoutAll()}
+					disabled={state.busy}
+					data-testid="manage-logout-all"
+				>
+					Sign out everywhere
+				</button>
 			</div>
 		</>
 	);
 }
+
+/** Why the user is looking at sign-in (G5), in words. */
+const NOTICES: Record<ManagementNotice, string> = {
+	"session-ended": "Your session ended. Sign in again.",
+	"signed-out-everywhere": "You're signed out on every device.",
+	"signed-out-everywhere-unconfirmed":
+		"You're signed out on this device, but the wallet service couldn't confirm the others. They may still be signed in. Sign in and try again once you're back online.",
+};
 
 function OwnerRowView({
 	row,

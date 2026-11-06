@@ -5,6 +5,7 @@ import {
 	encodeAddOwnerAddress,
 	encodeAddOwnerPublicKey,
 	encodeRemoveOwnerAtIndex,
+	isSessionEndedError,
 	type OwnerSet,
 	ownerFingerprint,
 	ownerSetsDiverge,
@@ -87,7 +88,18 @@ export type ManagementState = {
 	deployed: boolean;
 	busy: boolean;
 	error: string | null;
+	/**
+	 * Why the user is signed out, when there is something to say (G5): wallet-api ended the
+	 * session, or the user signed out of every device (confirmed, or not, by wallet-api).
+	 * Cleared on the next sign-in.
+	 */
+	notice: ManagementNotice | null;
 };
+
+export type ManagementNotice =
+	| "session-ended"
+	| "signed-out-everywhere"
+	| "signed-out-everywhere-unconfirmed";
 
 export type AddressInputError =
 	| "invalid-address"
@@ -214,6 +226,8 @@ export type ManagementController = {
 	signIn: () => Promise<void>; // create-or-use a passkey on this device
 	signInWithExistingPasskey: () => Promise<void>; // discoverable: a device handed a credential via handoff
 	logout: () => Promise<void>;
+	/** Signs out of every device holding a session for this user (G5 R2). */
+	logoutAll: () => Promise<void>;
 
 	// ── the set ──
 	rename: (credentialId: string, name: string | null) => Promise<void>;
@@ -274,6 +288,7 @@ export function createManagementController({
 		createWalletManagementApi({
 			apiUrl: config.walletApiUrl,
 			getSessionToken: () => runtime.injection.getSessionToken(),
+			onUnauthorized: () => runtime.injection.onUnauthorized(),
 		});
 	const deposit =
 		internals?.depositPasskey ?? depositPasskeyIntoPendingAddition;
@@ -286,6 +301,7 @@ export function createManagementController({
 	let loading = false;
 	let busy = false;
 	let error: string | null = null;
+	let notice: ManagementNotice | null = null;
 	let flow: ManagementFlow | null = null;
 	/** True once the active flow changed the wallet — dismissing it reloads the set. */
 	let flowDirty = false;
@@ -422,6 +438,7 @@ export function createManagementController({
 			deployed: readable.some((row) => row.set.deployed),
 			busy,
 			error,
+			notice,
 		};
 	}
 
@@ -440,6 +457,30 @@ export function createManagementController({
 		loadedOnce = false;
 	}
 
+	/**
+	 * wallet-api refused the session (G5): whatever was on screen goes, an open flow included, and
+	 * the user lands on sign-in with a reason instead of an error. Watched only while someone
+	 * listens to this controller, so a destroyed controller holds no subscription.
+	 */
+	let unwatchSession: (() => void) | null = null;
+	function watchSession() {
+		if (unwatchSession) return;
+		unwatchSession = runtime.injection.onSessionEnded((reason) => {
+			if (reason !== "unauthorized") return;
+			log("session ended by wallet-api");
+			flowGeneration++;
+			stopPolling();
+			activeSlot = null;
+			flow = null;
+			flowDirty = false;
+			pendingEndedSession = false;
+			resetToSignedOut();
+			error = null;
+			notice = "session-ended";
+			notify();
+		});
+	}
+
 	async function load(): Promise<void> {
 		if (!runtime.injection.getSessionToken()) {
 			resetToSignedOut();
@@ -452,6 +493,7 @@ export function createManagementController({
 		try {
 			me = (await api.me()) as Me;
 			signedOut = false;
+			notice = null;
 			credentials = await api.listCredentials();
 			chainSets = await Promise.all(
 				runtimes.servedChainIds.map(async (chainId): Promise<ChainOwnerSet> => {
@@ -526,8 +568,11 @@ export function createManagementController({
 		try {
 			await action();
 		} catch (err) {
-			error = (err as Error).message;
-			log("action failed", error);
+			// a refused session already moved the user to sign-in with its own notice
+			if (!isSessionEndedError(err)) {
+				error = (err as Error).message;
+				log("action failed", error);
+			}
 		} finally {
 			busy = false;
 			notify();
@@ -1079,6 +1124,7 @@ export function createManagementController({
 			return flow;
 		},
 		subscribe(listener) {
+			watchSession();
 			listeners.add(listener);
 			listener(state);
 			return () => listeners.delete(listener);
@@ -1106,6 +1152,16 @@ export function createManagementController({
 			withBusy(async () => {
 				await runtime.injection.logout();
 				resetToSignedOut();
+				notice = null;
+			}),
+
+		logoutAll: () =>
+			withBusy(async () => {
+				const confirmed = await runtime.injection.logoutAll();
+				resetToSignedOut();
+				notice = confirmed
+					? "signed-out-everywhere"
+					: "signed-out-everywhere-unconfirmed";
 			}),
 
 		rename: (credentialId, name) =>
@@ -1125,6 +1181,8 @@ export function createManagementController({
 		destroy() {
 			stopPolling();
 			listeners.clear();
+			unwatchSession?.();
+			unwatchSession = null;
 		},
 	};
 }

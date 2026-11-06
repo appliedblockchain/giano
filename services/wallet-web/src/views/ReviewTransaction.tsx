@@ -115,6 +115,8 @@ export function ReviewTransaction({
 						message: result.message,
 						to: tx.to,
 					});
+				} else if (result.state === "session-ended") {
+					console.warn("[giano] the wallet session ended during review");
 				} else if (result.state === "sponsored") {
 					console.info(
 						"[giano] sponsorship available — this transaction’s fees are covered by the application",
@@ -138,6 +140,9 @@ export function ReviewTransaction({
 		preflight?.state === "sponsored" || preflight?.state === "not-applicable";
 	const refused =
 		preflight?.state === "refused" || preflight?.state === "unavailable";
+	// G5: wallet-api refused the session. Nothing here can succeed, and closing answers the
+	// dApp 4100 (session ended), not 4001 (user rejected).
+	const sessionEnded = preflight?.state === "session-ended";
 
 	return (
 		<>
@@ -199,10 +204,25 @@ export function ReviewTransaction({
 				/>
 			) : null}
 
+			{sessionEnded ? (
+				<div className="card" data-testid="session-ended">
+					<p className="note">
+						Your session ended. Close this window, then connect again from{" "}
+						<b>{request.dappOrigin}</b> to sign in with your passkey.
+					</p>
+				</div>
+			) : null}
+
 			<div className="actions">
-				<button type="button" className="danger" onClick={request.reject}>
-					{refused ? "Close" : "Reject"}
-				</button>
+				{sessionEnded ? (
+					<button type="button" onClick={request.sessionEnded}>
+						Close
+					</button>
+				) : (
+					<button type="button" className="danger" onClick={request.reject}>
+						{refused ? "Close" : "Reject"}
+					</button>
+				)}
 				{/*
           No approve button until BOTH the description has settled and the pre-flight says this
           transaction can actually be paid for. Offering one earlier would mean asking for a

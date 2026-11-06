@@ -179,4 +179,44 @@ describe("the bundler transport carries the wallet-api session", () => {
 			"http://relay.test/v1/bundler/31337",
 		);
 	});
+
+	it("ends the session on a 401 to a request that carried it, and only then (G5)", async () => {
+		const respond = (status: number) =>
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async () =>
+						new Response(JSON.stringify({ error: "unauthorized" }), {
+							status,
+							headers: { "content-type": "application/json" },
+						}),
+				),
+			);
+		const onUnauthorized = vi.fn();
+		let token: string | null = "session-token";
+		const transport = sessionHttp(
+			"http://relay.test/v1/bundler/31337",
+			() => token,
+			onUnauthorized,
+		)({ retryCount: 0 });
+
+		respond(503);
+		await expect(
+			transport.request({ method: "eth_chainId" }),
+		).rejects.toThrow();
+		expect(onUnauthorized).not.toHaveBeenCalled();
+
+		respond(401);
+		const refused = await transport
+			.request({ method: "eth_chainId" })
+			.catch((error: unknown) => error);
+		expect((refused as { status?: number }).status).toBe(401);
+		expect(onUnauthorized).toHaveBeenCalledOnce();
+
+		token = null;
+		await expect(
+			transport.request({ method: "eth_chainId" }),
+		).rejects.toThrow();
+		expect(onUnauthorized).toHaveBeenCalledOnce();
+	});
 });
