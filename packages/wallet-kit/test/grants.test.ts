@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createConnectionGrants } from "../src/grants";
 
 const KEY = "giano:connection-grant:https://app.test";
@@ -104,6 +104,38 @@ describe("connection grants (WK-34)", () => {
 		grants.grant("https://app.test"); // kept in memory only
 		grants.revoke("https://app.test");
 		expect(grants.has("https://app.test")).toBe(false);
+	});
+
+	describe("the default storage", () => {
+		const original = Object.getOwnPropertyDescriptor(
+			globalThis,
+			"localStorage",
+		);
+		afterEach(() => {
+			if (original) Object.defineProperty(globalThis, "localStorage", original);
+			else Reflect.deleteProperty(globalThis, "localStorage");
+			globalThis.localStorage?.clear();
+		});
+
+		it("uses the wallet origin's localStorage", () => {
+			createConnectionGrants().grant("https://app.test");
+			expect(globalThis.localStorage.getItem(KEY)).not.toBeNull();
+		});
+
+		it("fails a revoke when the localStorage getter throws, and grants nothing", () => {
+			globalThis.localStorage.setItem(KEY, "x"); // granted before site data was blocked
+			Object.defineProperty(globalThis, "localStorage", {
+				configurable: true,
+				get: () => {
+					throw new Error("SecurityError");
+				},
+			});
+			const grants = createConnectionGrants();
+			expect(grants.has("https://app.test")).toBe(false);
+			expect(() => grants.revoke("https://app.test")).toThrow("SecurityError");
+			grants.grant("https://other.test"); // kept in memory for this popup
+			expect(grants.has("https://other.test")).toBe(true);
+		});
 	});
 
 	it("works with no storage at all", () => {

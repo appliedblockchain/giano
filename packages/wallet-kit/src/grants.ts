@@ -27,13 +27,19 @@ export type ConnectionGrants = {
 
 type GrantStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-function defaultStorage(): GrantStorage | undefined {
-	try {
-		return typeof localStorage === "undefined" ? undefined : localStorage;
-	} catch {
-		// Storage access can throw (blocked site data, sandboxed frame).
-		return undefined;
-	}
+/**
+ * The wallet origin's `localStorage`, or `null` where the environment has none. The `in` check
+ * does not run the property getter. The wrapper reads the property on every call, because the
+ * getter throws when site data is blocked. Each method must see that error: a revoke must fail
+ * instead of reporting success while a saved grant stays on disk.
+ */
+function defaultStorage(): GrantStorage | null {
+	if (!("localStorage" in globalThis)) return null;
+	return {
+		getItem: (key) => globalThis.localStorage.getItem(key),
+		setItem: (key, value) => globalThis.localStorage.setItem(key, value),
+		removeItem: (key) => globalThis.localStorage.removeItem(key),
+	};
 }
 
 /**
@@ -42,7 +48,7 @@ function defaultStorage(): GrantStorage | undefined {
  * is asked to connect again, which is the safe direction to fail in. Pass `null` for no storage.
  */
 export function createConnectionGrants(
-	storage: GrantStorage | null = defaultStorage() ?? null,
+	storage: GrantStorage | null = defaultStorage(),
 ): ConnectionGrants {
 	// This popup's answer for an origin whose storage write failed. It takes precedence over the
 	// storage, which still holds the old state for that origin.
