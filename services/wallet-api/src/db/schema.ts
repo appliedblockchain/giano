@@ -271,6 +271,8 @@ export const challenges = pgTable(
 			.notNull()
 			.references(() => tenants.id),
 		userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+		// the external user id the challenge was requested for; set even before that user exists
+		externalId: text("external_id"),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),

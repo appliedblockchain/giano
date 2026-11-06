@@ -337,6 +337,65 @@ describe("registration ceremony", () => {
 		);
 	});
 
+	it("rejects a challenge issued for a new id when the body names an existing user", async () => {
+		const victim = await register("victim-unbound", createAuthenticator());
+		// 'attacker-fresh-id' does not exist, so this challenge has no bound user
+		const options = await getOptions("attacker-fresh-id", "registration");
+		expect(options.userExists).toBe(false);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TEST_ORIGIN },
+			payload: {
+				externalUserId: "victim-unbound",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TEST_ORIGIN,
+					rpId: TEST_RP_ID,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe(
+			"challenge-user-mismatch",
+		);
+		// The victim still has only their own credential, and no user was created for the fresh id.
+		expect((await getOptions("victim-unbound")).credentialIds).toEqual([
+			victim.credentialId,
+		]);
+		expect((await getOptions("attacker-fresh-id")).userExists).toBe(false);
+	});
+
+	it("refuses a challenge issued for a new id once that user has registered", async () => {
+		// Two challenges issued while 'race-user' did not exist: both are unbound.
+		const first = await getOptions("race-user", "registration");
+		const second = await getOptions("race-user", "registration");
+		const verify = (challenge: string) =>
+			ctx.app.inject({
+				method: "POST",
+				url: "/v1/webauthn/registration/verify",
+				headers: { origin: TEST_ORIGIN },
+				payload: {
+					externalUserId: "race-user",
+					response: makeRegistrationResponse(createAuthenticator(), {
+						challenge,
+						origin: TEST_ORIGIN,
+						rpId: TEST_RP_ID,
+					}),
+				},
+			});
+		const created = await verify(first.challenge);
+		expect(created.statusCode).toBe(200);
+		const res = await verify(second.challenge);
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe(
+			"challenge-user-mismatch",
+		);
+		expect((await getOptions("race-user")).credentialIds).toEqual([
+			(created.json() as { credentialId: string }).credentialId,
+		]);
+	});
+
 	it("requires the tenant's own admin key for options when open_registration is false", async () => {
 		// tenant B runs with closed registration on the shared stack — no second app needed
 		const anonymous = await ctx.app.inject({

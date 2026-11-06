@@ -210,6 +210,7 @@ export default async function webauthnRoutes(
 				resolvedKind,
 				user?.id ?? null,
 				tenant.id,
+				externalUserId,
 			);
 			return {
 				kind: resolvedKind,
@@ -277,6 +278,16 @@ export default async function webauthnRoutes(
 					"challenge is unknown, expired or already used",
 				);
 			}
+			// The challenge is bound to the external user id it was requested for, even when that
+			// user did not exist yet. Without this, a challenge issued for a new id could register a
+			// credential onto any existing user named in the body.
+			if (consumed.externalId !== externalUserId) {
+				throw new ApiError(
+					400,
+					"challenge-user-mismatch",
+					"challenge was issued for a different user",
+				);
+			}
 			if (consumed.userId) {
 				const boundUser = await db.query.users.findFirst({
 					where: eq(users.id, consumed.userId),
@@ -340,16 +351,32 @@ export default async function webauthnRoutes(
 			);
 
 			const result = await db.transaction(async (tx) => {
-				// C1: get-or-create is scoped by (tenant_id, external_id) — two tenants using
-				// the same external id are two distinct users with two distinct wallets.
-				const [user] = await tx
-					.insert(users)
-					.values({ tenantId: tenant.id, externalId: externalUserId })
-					.onConflictDoUpdate({
-						target: [users.tenantId, users.externalId],
-						set: { externalId: externalUserId },
-					})
-					.returning();
+				// C1: users are scoped by (tenant_id, external_id) — two tenants using the same
+				// external id are two distinct users with two distinct wallets.
+				// A challenge bound to a user registers onto that user. A challenge issued while the
+				// user did not exist only creates it: if the user appeared since (a concurrent
+				// registration), refuse rather than attach this credential to a user the challenge
+				// was never bound to.
+				const user = consumed.userId
+					? await tx.query.users.findFirst({
+							where: eq(users.id, consumed.userId),
+						})
+					: (
+							await tx
+								.insert(users)
+								.values({ tenantId: tenant.id, externalId: externalUserId })
+								.onConflictDoNothing({
+									target: [users.tenantId, users.externalId],
+								})
+								.returning()
+						)[0];
+				if (!user) {
+					throw new ApiError(
+						400,
+						"challenge-user-mismatch",
+						"challenge no longer matches this user — request new options",
+					);
+				}
 				const [credential] = await tx
 					.insert(credentials)
 					.values({
