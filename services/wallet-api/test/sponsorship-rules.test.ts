@@ -17,14 +17,21 @@ import {
 	decodeInnerCalls,
 	type EvaluationInput,
 	evaluateSponsorship,
+	OWNER_MANAGEMENT_SELECTORS,
 } from "../src/services/sponsorship-rules.js";
 
 const WALLET = "0x1111111111111111111111111111111111111234" as Address;
 const TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 const OTHER = "0x4444444444444444444444444444444444444444" as Address;
+const FACTORY = "0x5555555555555555555555555555555555abcdef" as Address;
 
 const TRANSFER = "0xa9059cbb" as Hex; // transfer(address,uint256)
 const APPROVE = "0x095ea7b3" as Hex; // approve(address,uint256)
+const ADD_OWNER = encodeFunctionData({
+	abi: gianoSmartWalletAbi,
+	functionName: "addOwnerAddress",
+	args: [OTHER],
+});
 
 function execute(target: Address, data: Hex = "0x"): Hex {
 	return encodeFunctionData({
@@ -88,6 +95,7 @@ function evaluate(overrides: Partial<EvaluationInput> = {}) {
 		overhead,
 		walletManagementCapWei: WM_CAP_WEI,
 		sessionWalletAddress: WALLET,
+		factory: FACTORY,
 		...overrides,
 	});
 }
@@ -262,7 +270,7 @@ describe("allowlists", () => {
 });
 
 describe("wallet management", () => {
-	const selfCall = execute(WALLET, "0x0f0f3f95"); // addOwnerAddress-shaped
+	const selfCall = execute(WALLET, ADD_OWNER);
 
 	// The requirement this file exists to pin down: a user acquiring a second device holds no
 	// native token and no way to obtain one, so recovery has to be sponsored — and it must not
@@ -337,15 +345,45 @@ describe("wallet management", () => {
 		expect(decision.capSource).toBe("platform");
 	});
 
-	// Detected by shape, not by a selector list. That cuts both ways, which is why it is the right
-	// test: a self-administration function added later can neither become sponsorable by omission
-	// nor become *un*sponsorable by omission.
-	it("detects wallet management structurally, whatever the selector", () => {
-		const decision = evaluate({
-			candidate: { ...candidate, callData: execute(WALLET, "0xffffffff") },
-		});
-		expect(decision.isWalletManagement).toBe(true);
-		expect(decision.allowed).toBe(true);
+	it.each([
+		["addOwnerAddress", ADD_OWNER],
+		[
+			"addOwnerPublicKey",
+			encodeFunctionData({
+				abi: gianoSmartWalletAbi,
+				functionName: "addOwnerPublicKey",
+				args: [`0x${"11".repeat(32)}`, `0x${"22".repeat(32)}`],
+			}),
+		],
+		[
+			"removeOwnerAtIndex",
+			encodeFunctionData({
+				abi: gianoSmartWalletAbi,
+				functionName: "removeOwnerAtIndex",
+				args: [1n, "0x"],
+			}),
+		],
+		[
+			"removeLastOwner",
+			encodeFunctionData({
+				abi: gianoSmartWalletAbi,
+				functionName: "removeLastOwner",
+				args: [0n, "0x"],
+			}),
+		],
+	] as Array<[string, Hex]>)(
+		"sponsors %s as wallet management",
+		(_name, data) => {
+			const decision = evaluate({
+				candidate: { ...candidate, callData: execute(WALLET, data) },
+			});
+			expect(decision.isWalletManagement).toBe(true);
+			expect(decision.allowed).toBe(true);
+		},
+	);
+
+	it("allows exactly the four owner-management functions", () => {
+		expect(OWNER_MANAGEMENT_SELECTORS.size).toBe(4);
 	});
 
 	it("does not require a tenant to allow-list its own users wallet addresses", () => {
@@ -360,7 +398,7 @@ describe("wallet management", () => {
 	// One charge, and the chain cannot split it, so the tighter of the two caps governs.
 	it("applies the tighter cap to a batch that mixes a self-call with an application call", () => {
 		const mixed = executeBatch([
-			{ target: WALLET, data: "0x0f0f3f95" },
+			{ target: WALLET, data: ADD_OWNER },
 			{ target: TOKEN, data: TRANSFER },
 		]);
 		const decision = evaluate({
@@ -374,11 +412,149 @@ describe("wallet management", () => {
 
 	it("still checks the allowlist for the application half of a mixed batch", () => {
 		const mixed = executeBatch([
-			{ target: WALLET, data: "0x0f0f3f95" },
+			{ target: WALLET, data: ADD_OWNER },
 			{ target: OTHER, data: TRANSFER },
 		]);
 		const decision = evaluate({ candidate: { ...candidate, callData: mixed } });
 		expect(decision.reason).toBe("contract-not-allowed");
+	});
+});
+
+function upgradeToAndCall(implementation: Address, data: Hex = "0x"): Hex {
+	return encodeFunctionData({
+		abi: gianoSmartWalletAbi,
+		functionName: "upgradeToAndCall",
+		args: [implementation, data],
+	});
+}
+
+// Only owner management is sponsored as a self-call. Several other wallet functions run calls or
+// code they carry as a payload, which the allowlist never sees. Treating those as wallet
+// management would sponsor any call while skipping the allowlist.
+describe("other self-calls", () => {
+	const otherSelfCalls: Array<[string, Hex]> = [
+		[
+			"execute(self, execute(other))",
+			execute(WALLET, execute(OTHER, TRANSFER)),
+		],
+		[
+			"execute(self, executeBatch([other]))",
+			execute(WALLET, executeBatch([{ target: OTHER, data: TRANSFER }])),
+		],
+		[
+			"executeBatch([self → execute(other)])",
+			executeBatch([{ target: WALLET, data: execute(OTHER, TRANSFER) }]),
+		],
+		[
+			"execute(self, executeWithoutChainIdValidation([…]))",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "executeWithoutChainIdValidation",
+					args: [[execute(OTHER, TRANSFER)]],
+				}),
+			),
+		],
+		// Even an inner call the tenant allows is refused: nothing needs nesting, and the inner
+		// calls are not decoded, so they cannot be checked.
+		[
+			"execute(self, execute(allowed))",
+			execute(WALLET, execute(TOKEN, TRANSFER)),
+		],
+		// The payload is delegatecalled as the wallet, so its inner execute passes the owner check.
+		[
+			"execute(self, upgradeToAndCall(impl, execute(other)))",
+			execute(WALLET, upgradeToAndCall(OTHER, execute(OTHER, TRANSFER))),
+		],
+		// Even with no payload: the new implementation can run any code, now or later.
+		[
+			"execute(self, upgradeToAndCall(impl, 0x))",
+			execute(WALLET, upgradeToAndCall(OTHER)),
+		],
+		// Static, so no state changes, but the target can still use the gas the tenant pays for.
+		[
+			"execute(self, signedStaticCall(other))",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "signedStaticCall",
+					args: [
+						{ target: OTHER, data: TRANSFER, signedAt: 0n, signature: "0x" },
+					],
+				}),
+			),
+		],
+		// Any function the list does not name is refused by default, including the fallback.
+		["execute(self, unknown selector)", execute(WALLET, "0xffffffff")],
+		["execute(self, no calldata)", execute(WALLET, "0x")],
+	];
+
+	it.each(otherSelfCalls)("refuses %s", (_label, callData) => {
+		const decision = evaluate({ candidate: { ...candidate, callData } });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
+		expect(decision.isWalletManagement).toBe(false);
+		expect(
+			decision.results.find((r) => r.rule === "decodable-calls")?.passed,
+		).toBe(false);
+		expect(
+			decision.results.find((r) => r.rule === "contract-allowlist")?.passed,
+		).toBe(false);
+	});
+
+	it("refuses a nested execute mixed into an otherwise sponsorable batch", () => {
+		const mixed = executeBatch([
+			{ target: WALLET, data: ADD_OWNER },
+			{ target: WALLET, data: execute(OTHER, TRANSFER) },
+		]);
+		const decision = evaluate({ candidate: { ...candidate, callData: mixed } });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
+	});
+});
+
+// The factory runs during validation and the paymaster pays for it. The canonical factory accepts
+// any caller, so another contract could deploy the right address through it and also make calls
+// of its own.
+describe("account deployment", () => {
+	it("sponsors a deployment through this chain's factory", () => {
+		const decision = evaluate({
+			candidate: { ...candidate, factory: FACTORY, factoryData: "0x1234" },
+		});
+		expect(decision.allowed).toBe(true);
+		expect(decision.results.find((r) => r.rule === "factory")?.passed).toBe(
+			true,
+		);
+	});
+
+	it("matches the factory address case-insensitively", () => {
+		const decision = evaluate({
+			candidate: {
+				...candidate,
+				factory: FACTORY.toUpperCase().replace("0X", "0x") as Address,
+			},
+		});
+		expect(decision.allowed).toBe(true);
+	});
+
+	it("refuses a deployment through any other factory", () => {
+		const decision = evaluate({
+			candidate: { ...candidate, factory: OTHER, factoryData: "0x1234" },
+		});
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
+		expect(decision.results.find((r) => r.rule === "factory")?.passed).toBe(
+			false,
+		);
+	});
+
+	it("passes when the operation deploys nothing", () => {
+		const decision = evaluate();
+		expect(decision.results.find((r) => r.rule === "factory")?.passed).toBe(
+			true,
+		);
 	});
 });
 
@@ -457,6 +633,7 @@ describe("audit trail", () => {
 		expect(rules).toEqual([
 			"sponsorship-enabled",
 			"sender-binding",
+			"factory",
 			"decodable-calls",
 			"wallet-management",
 			"contract-allowlist",
