@@ -165,6 +165,7 @@ export default async function webauthnRoutes(
 					}),
 					401: errorResponseSchema,
 					403: errorResponseSchema,
+					409: errorResponseSchema,
 				},
 			},
 		},
@@ -200,6 +201,16 @@ export default async function webauthnRoutes(
 							),
 						)
 				: [];
+			// A user who already holds an active passkey adds a device through a pending addition,
+			// which an existing owner approves. Refuse here, before the client creates a passkey
+			// that registration/verify would refuse anyway.
+			if (kind === "registration" && creds.length > 0) {
+				throw new ApiError(
+					409,
+					"already-registered",
+					"this user already has a passkey — sign in with it, or add a device through a pending addition",
+				);
+			}
 			const resolvedKind =
 				kind === "auto"
 					? creds.length > 0
@@ -242,6 +253,7 @@ export default async function webauthnRoutes(
 						session: sessionResponseSchema,
 					}),
 					403: errorResponseSchema,
+					409: errorResponseSchema,
 				},
 			},
 		},
@@ -357,10 +369,16 @@ export default async function webauthnRoutes(
 				// user did not exist only creates it: if the user appeared since (a concurrent
 				// registration), refuse rather than attach this credential to a user the challenge
 				// was never bound to.
+				// The bound user's row is locked, so two registrations for the same user run one
+				// after the other and the second sees the first one's credential.
 				const user = consumed.userId
-					? await tx.query.users.findFirst({
-							where: eq(users.id, consumed.userId),
-						})
+					? (
+							await tx
+								.select()
+								.from(users)
+								.where(eq(users.id, consumed.userId))
+								.for("update")
+						)[0]
 					: (
 							await tx
 								.insert(users)
@@ -376,6 +394,29 @@ export default async function webauthnRoutes(
 						"challenge-user-mismatch",
 						"challenge no longer matches this user — request new options",
 					);
+				}
+				// Registration needs only the tenant Origin when open_registration is true, so it
+				// must never add a passkey to a user who already holds an active one: that would give
+				// the caller a session as that user. A device is added through a pending addition,
+				// which an existing owner approves. A user whose passkeys were all removed may register.
+				if (consumed.userId) {
+					const active = await tx
+						.select({ id: credentials.id })
+						.from(credentials)
+						.where(
+							and(
+								eq(credentials.userId, user.id),
+								isNull(credentials.removedAt),
+							),
+						)
+						.limit(1);
+					if (active.length > 0) {
+						throw new ApiError(
+							409,
+							"already-registered",
+							"this user already has a passkey — sign in with it, or add a device through a pending addition",
+						);
+					}
 				}
 				const [credential] = await tx
 					.insert(credentials)
