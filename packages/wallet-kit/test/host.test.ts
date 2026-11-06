@@ -54,13 +54,20 @@ function fakeRuntime(
 ) {
 	let accountAddress: Address | null = account ? ACCOUNT : null;
 	const calls: { method: string; params?: unknown }[] = [];
+	const listeners = new Map<string, ((data: unknown) => void)[]>();
+	/** Fires a provider event, as the real provider does on connect or sign-in. */
+	const emit = (event: string, data: unknown) => {
+		for (const listener of listeners.get(event) ?? []) listener(data);
+	};
 	const runtime = {
 		chainId,
 		chainName: `Chain ${chainId}`,
 		provider: {
 			getSmartAccount: () =>
 				accountAddress ? { address: accountAddress } : null,
-			on: vi.fn(),
+			on: vi.fn((event: string, listener: (data: unknown) => void) => {
+				listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+			}),
 			request: vi.fn(
 				async ({ method, params }: { method: string; params?: unknown }) => {
 					calls.push({ method, params });
@@ -70,7 +77,11 @@ function fakeRuntime(
 						return undefined;
 					}
 					if (method === "eth_chainId") return `0x${chainId.toString(16)}`;
-					if (method === "eth_requestAccounts") return connectResult;
+					if (method === "eth_requestAccounts") {
+						if (Array.isArray(connectResult) && connectResult.length > 0)
+							emit("accountsChanged", connectResult);
+						return connectResult;
+					}
 					return `result:${method}`;
 				},
 			),
@@ -80,7 +91,7 @@ function fakeRuntime(
 	const setAccount = (address: Address | null) => {
 		accountAddress = address;
 	};
-	return { runtime, calls, setAccount };
+	return { runtime, calls, setAccount, emit };
 }
 
 const DAPP = "https://app.test";
@@ -93,7 +104,10 @@ function harness(
 	} = {},
 ) {
 	const { connected = true, ...runtimeOptions } = options;
-	const { runtime, calls, setAccount } = fakeRuntime(chainId, runtimeOptions);
+	const { runtime, calls, setAccount, emit } = fakeRuntime(
+		chainId,
+		runtimeOptions,
+	);
 	const runtimes: WalletRuntimes = {
 		servedChainIds: [chainId],
 		runtimeFor: (id) => {
@@ -105,9 +119,25 @@ function harness(
 	const requests = createRequestStore();
 	const grants = createConnectionGrants(null);
 	if (connected) grants.grant(DAPP);
-	const handler = createHostRequestHandler({ runtimes, requests, grants });
+	const sendEvent = vi.fn();
+	const handler = createHostRequestHandler({
+		runtimes,
+		requests,
+		grants,
+		sendEvent,
+	});
 	const context = { dappOrigin: DAPP, chainId };
-	return { handler, requests, calls, context, runtime, setAccount, grants };
+	return {
+		handler,
+		requests,
+		calls,
+		context,
+		runtime,
+		setAccount,
+		grants,
+		emit,
+		sendEvent,
+	};
 }
 
 describe("the host request handler (WK-08…WK-12)", () => {
@@ -586,7 +616,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 		it.each(ACCOUNT_METHODS)(
 			"refuses %s with 4100 for an origin with no grant: no restore, no consent, no provider call",
 			async (method) => {
-				const onChainFirstUsed = vi.fn();
+				const sendEvent = vi.fn();
 				const { runtime, calls } = fakeRuntime(31337, { account: false });
 				const requests = createRequestStore();
 				const handler = createHostRequestHandler({
@@ -597,7 +627,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 					},
 					requests,
 					grants: createConnectionGrants(null),
-					onChainFirstUsed,
+					sendEvent,
 				});
 				await expect(
 					handler(method, [{}], { dappOrigin: DAPP, chainId: 31337 }),
@@ -605,7 +635,8 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				expect(calls).toEqual([]);
 				expect(requests.current).toBeNull();
 				// The event relay is not even wired, so no accountsChanged can reach the origin.
-				expect(onChainFirstUsed).not.toHaveBeenCalled();
+				expect(runtime.provider.on).not.toHaveBeenCalled();
+				expect(sendEvent).not.toHaveBeenCalled();
 			},
 		);
 
@@ -663,6 +694,76 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			await expect(
 				handler("eth_prepareUserOperation", DAPP_CALL, context),
 			).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+		});
+
+		it("answers -32603 and keeps refusing the origin when the storage refuses the revoke", async () => {
+			const saved = new Map([
+				["giano:connection-grants", JSON.stringify([DAPP])],
+			]);
+			const storage = {
+				getItem: (key: string) => saved.get(key) ?? null,
+				setItem: () => {
+					throw new Error("QuotaExceededError");
+				},
+			};
+			const { runtime } = fakeRuntime(31337);
+			const handler = createHostRequestHandler({
+				runtimes: {
+					servedChainIds: [31337],
+					runtimeFor: () => runtime,
+					descriptorFor: () => ({}) as never,
+				},
+				requests: createRequestStore(),
+				grants: createConnectionGrants(storage),
+			});
+			const context = { dappOrigin: DAPP, chainId: 31337 };
+			await expect(
+				handler("wallet_revokePermissions", [{ eth_accounts: {} }], context),
+			).rejects.toMatchObject({ code: RPC_ERRORS.INTERNAL });
+			await expect(
+				handler("eth_prepareUserOperation", DAPP_CALL, context),
+			).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+		});
+
+		it("does not relay accountsChanged to an origin with no grant that signs in from the management view", async () => {
+			const { handler, requests, context, emit, sendEvent } = harness(31337, {
+				connected: false,
+			});
+			const call = handler("giano_openWalletManagement", [], context);
+			await vi.waitFor(() => expect(requests.current).not.toBeNull());
+			// Sign in from the management view: the provider emits the address.
+			emit("accountsChanged", ["0xabc"]);
+			emit("chainChanged", "0x7a69");
+			requests.current!.approve();
+			await expect(call).resolves.toBeNull();
+			expect(sendEvent).not.toHaveBeenCalledWith(
+				"accountsChanged",
+				expect.anything(),
+			);
+			expect(sendEvent).toHaveBeenCalledWith("chainChanged", "0x7a69");
+		});
+
+		it("relays accountsChanged once the origin holds a grant, and stops after a revoke", async () => {
+			const { handler, requests, context, emit, sendEvent } = harness(31337, {
+				connected: false,
+			});
+			const call = handler("eth_requestAccounts", [], context);
+			requests.current!.approve();
+			await expect(call).resolves.toEqual(["0xabc"]);
+			// The connect emitted before the grant existed, so that event was dropped.
+			expect(sendEvent).not.toHaveBeenCalled();
+
+			emit("accountsChanged", ["0xdef"]);
+			expect(sendEvent).toHaveBeenCalledWith("accountsChanged", ["0xdef"]);
+
+			sendEvent.mockClear();
+			await handler(
+				"wallet_revokePermissions",
+				[{ eth_accounts: {} }],
+				context,
+			);
+			emit("accountsChanged", ["0xdef"]);
+			expect(sendEvent).not.toHaveBeenCalled();
 		});
 
 		it("maps the provider's 4200 refusal of an unsupported method to the transport's 4200", async () => {

@@ -299,8 +299,10 @@ connected. It MUST record a connection grant for an origin when the user approve
 it outlives the ephemeral popup. For an origin with no grant, the host MUST answer `eth_accounts`
 with `[]` and MUST refuse every method that uses the account with EIP-1193 `4100`, before any
 silent restore, consent request or provider call. The host MUST refuse `giano_restoreAccount` from
-an application, and MUST remove the origin's grant on `wallet_revokePermissions`. The provider MUST
-NOT pass a method it does not implement to its node unless the method is a read-only chain method.
+an application, and MUST remove the origin's grant on `wallet_revokePermissions`; if the storage
+refuses that removal, the host MUST answer with an error, not report success. The host MUST relay
+`accountsChanged` only to an origin that holds a grant when the event fires. The provider MUST NOT
+pass a method it does not implement to its node unless the method is a read-only chain method.
 
 ### 4.4 Sponsorship pre-flight
 
