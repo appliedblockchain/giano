@@ -194,6 +194,20 @@ variable "datadog_source" {
   type        = string
 }
 
+# Pinned by version and digest: a mutable tag (`latest`, `stable`) can pull different code on
+# each task launch. Bump both parts together, to a release at least 7 days old (ABIP-6).
+variable "datadog_agent_image" {
+  description = "[OPTIONAL] the Datadog Agent sidecar image, pinned as <repo>:<version>@sha256:<digest>"
+  type        = string
+  default     = "public.ecr.aws/datadog/agent:7.85.0@sha256:2c296582b259c8e5f924fceb613b7da56892b4f7de6b415dc1c6028970a7840a"
+}
+
+variable "log_router_image" {
+  description = "[OPTIONAL] the FireLens log router sidecar image, pinned as <repo>:<version>@sha256:<digest>"
+  type        = string
+  default     = "public.ecr.aws/aws-observability/aws-for-fluent-bit:2.34.3.20261028@sha256:b1c72ff69d4159e3c8912d8a333d90f6c7b7c84efac2ec23ea37b0db19b40bb1"
+}
+
 variable "additional_tags" {
   description = "[OPTIONAL] additional tags to be attached to the resources"
   type        = map(any)

@@ -4004,7 +4004,7 @@ task definition's `container_definitions`, so no service can be created without 
 locals {
   datadog_agent_container = merge(local.container_defaults, {
     name      = "datadog-agent"
-    image     = "public.ecr.aws/datadog/agent:latest"
+    image     = var.datadog_agent_image # <repo>:<version>@sha256:<digest>, never a mutable tag
     cpu       = 0
     memory    = 256
 
@@ -4037,7 +4037,7 @@ locals {
 
   firelens_container = merge(local.container_defaults, {
     name              = "log_router"
-    image             = "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable"
+    image             = var.log_router_image # <repo>:<version>@sha256:<digest>, never a mutable tag
     essential         = true
     memoryReservation = 100
 
