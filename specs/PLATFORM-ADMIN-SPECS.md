@@ -162,7 +162,7 @@ since been retired (§9).
 | Expired sponsorship reservations are marked `expired` | ⚠️ only by the watcher | `ledger.expireStale()` is called from the watcher's poll only (`src/services/paymaster-watcher.ts`); with no watcher, an expired reservation stays `reserved` |
 | Expired tenant challenges are swept | ❌ | `challenges.prune()` exists (`src/services/challenges.ts:48`) and nothing calls it |
 | Sessions carry a tenant | ❌ | `sessions` has no `tenant_id`; a session's tenant is its user's (`src/db/schema.ts`, `sessions`) |
-| Fastify sees the client's IP | ❌ | `trustProxy` is not set, so behind the ALB or the console's nginx `request.ip` is the proxy's address |
+| Fastify sees the client's IP | ⚠️ only with `TRUST_PROXY` | `trustProxy` comes from `TRUST_PROXY` (`src/config.ts`). Where it is unset, behind the ALB or the console's nginx `request.ip` is the proxy's address. The platform limits below stay keyed per session and address, so they never depend on it |
 
 ---
 

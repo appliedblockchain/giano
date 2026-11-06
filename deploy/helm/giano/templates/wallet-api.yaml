@@ -71,6 +71,10 @@ spec:
               value: {{ .Values.config.openRegistration | quote }}
             - name: CORS_ORIGINS
               value: {{ join "," .Values.config.corsOrigins | quote }}
+            {{- with .Values.walletApi.trustProxy }}
+            - name: TRUST_PROXY
+              value: {{ . | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}

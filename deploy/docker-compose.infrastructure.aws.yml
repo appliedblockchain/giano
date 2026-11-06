@@ -268,6 +268,11 @@ services:
       # maps it to the platform sign-in domain, paymaster.<apex>; changing that is a release.
       GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:-dev}
 
+      # [tfvar] vpc_cidr for the workspace (dev 10.40.0.0/16, stg 10.41, prd 10.42). The ALB and
+      # the wallet UI's nginx connect from inside it, so wallet-api trusts their X-Forwarded-For
+      # and the per-IP ceremony rate limit sees the real client, not the proxy.
+      TRUST_PROXY: ${TRUST_PROXY:-10.40.0.0/16}
+
       # ── Chain (§13) ─────────────────────────────────────────────────────────────────────
       # [ASM] giano-<env>-chains. Each entry's rpcUrl carries its provider key, hence a secret.
       # entryPoint and walletApi.factory are best left out for registry chains (84532, 11155111
