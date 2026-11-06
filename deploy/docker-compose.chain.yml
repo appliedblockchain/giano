@@ -107,6 +107,8 @@ services:
       GIANO_CHAINS: *giano-chains
       BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Required on a testnet: wallet-api refuses to start with GET /metrics open.
+      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:?set METRICS_BEARER_TOKEN in the selected operator file}
       # ── Sponsorship — the production GianoPaymaster, not the permissive test one ───────────
       # The demo sponsors the way a real deployment does: wallet-api signs an ERC-7677 sponsorship
       # against the tenant's funded balance on the paymaster. The permissive test paymaster is
