@@ -93,7 +93,11 @@ export async function buildApp({
 	app.setSerializerCompiler(serializerCompiler);
 
 	const challenges = createChallengeService(db, config.CHALLENGE_TTL_SECONDS);
-	const sessions = createSessionService(db, config.SESSION_TTL_SECONDS);
+	const sessions = createSessionService(db, {
+		ttlSeconds: config.SESSION_TTL_SECONDS,
+		idleTimeoutSeconds: config.SESSION_IDLE_TIMEOUT_SECONDS,
+		maxPerUser: config.SESSION_MAX_PER_USER,
+	});
 	const tenants = createTenantService(db);
 	// The platform tier exists only where the environment runs a console to sign in from: one with
 	// no sign-in domain registers no platform admin route at all (src/environments.ts, H-b).
@@ -118,8 +122,10 @@ export async function buildApp({
 	// CORS is per-tenant and fail-closed: only origins listed in some tenant's
 	// cors_origins (or a tenant wallet origin itself) receive ACAO headers. Server-side
 	// authorization never relies on CORS — requireTenant/requireSession do the guarding.
+	// No `credentials: true`: wallet sessions are bearer headers, which a browser never attaches on
+	// its own, so no caller needs credentialed CORS (G5 R6). Requested headers are still reflected,
+	// so `authorization` passes preflight.
 	await app.register(cors, {
-		credentials: true,
 		origin: (origin, cb) => {
 			if (!origin) return cb(null, false); // non-browser callers need no CORS
 			tenants

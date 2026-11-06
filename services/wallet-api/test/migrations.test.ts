@@ -200,9 +200,9 @@ describe("migration 0007_tenant_lifecycle", () => {
 		await client.query(
 			`UPDATE tenants SET managed_by = 'operator', version = 2 WHERE slug = 'acme'`,
 		);
-		expect(await runMigrations(container.getConnectionUri())).toEqual([
-			"0009_drop_tenant_managed_by.sql",
-		]);
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0009")),
+		).toEqual(["0009_drop_tenant_managed_by.sql"]);
 		const { rows } = await client.query(
 			`SELECT column_name FROM information_schema.columns WHERE table_name = 'tenants' AND column_name = 'managed_by'`,
 		);
@@ -213,5 +213,68 @@ describe("migration 0007_tenant_lifecycle", () => {
 		expect(
 			(await client.query(`SELECT created_by FROM tenant_admin_keys`)).rows,
 		).toEqual([{ created_by: "seed" }]);
+	});
+
+	it("0011 dates every existing session's last use to its issue, and accepts the session revocation history action", async () => {
+		const {
+			rows: [tenant],
+		} = await client.query(`SELECT id FROM tenants WHERE slug = 'acme'`);
+		const {
+			rows: [user],
+		} = await client.query(
+			`INSERT INTO users (tenant_id, external_id) VALUES ($1, 'user-1') RETURNING id`,
+			[tenant.id],
+		);
+		const {
+			rows: [credential],
+		} = await client.query(
+			`INSERT INTO credentials (tenant_id, user_id, credential_id, rp_id, cose_public_key, public_key_x, public_key_y, wallet_address)
+       VALUES ($1, $2, 'cred-1', 'wallet.acme.app', '\\x00', '0x01', '0x02', '0x${"c".repeat(40)}') RETURNING id`,
+			[tenant.id, user.id],
+		);
+		await client.query(
+			`INSERT INTO sessions (user_id, credential_id, wallet_address, token_hash, created_at, expires_at)
+       VALUES ($1, $2, '0x${"c".repeat(40)}', 'hash-1', now() - interval '3 hours', now() + interval '21 hours')`,
+			[user.id, credential.id],
+		);
+
+		expect(await runMigrations(container.getConnectionUri())).toEqual([
+			"0011_session_lifecycle.sql",
+		]);
+
+		expect(
+			(
+				await client.query(
+					`SELECT last_used_at = created_at AS backfilled FROM sessions WHERE token_hash = 'hash-1'`,
+				)
+			).rows,
+		).toEqual([{ backfilled: true }]);
+		const {
+			rows: [fresh],
+		} = await client.query(
+			`INSERT INTO sessions (user_id, credential_id, wallet_address, token_hash, expires_at)
+       VALUES ($1, $2, '0x${"c".repeat(40)}', 'hash-2', now() + interval '1 day') RETURNING last_used_at IS NOT NULL AS stamped`,
+			[user.id, credential.id],
+		);
+		expect(fresh).toEqual({ stamped: true });
+		expect(
+			(
+				await client.query(
+					`SELECT indexdef FROM pg_indexes WHERE indexname = 'sessions_user_live_idx'`,
+				)
+			).rows[0].indexdef,
+		).toMatch(/\(user_id, last_used_at\) WHERE \(revoked_at IS NULL\)/);
+
+		await client.query(
+			`INSERT INTO tenant_history (tenant_id, action, actor, detail)
+       VALUES ($1, 'user-sessions-revoke', 'tenant-admin-key:k1', '{"selector":"externalUserId","value":"user-1","revoked":1}')`,
+			[tenant.id],
+		);
+		await expect(
+			client.query(
+				`INSERT INTO tenant_history (tenant_id, action, actor) VALUES ($1, 'session-purge', 'x')`,
+				[tenant.id],
+			),
+		).rejects.toThrow(/check constraint/);
 	});
 });
