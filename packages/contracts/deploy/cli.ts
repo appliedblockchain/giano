@@ -28,8 +28,9 @@
  * and asks for it. On a non-local chain `--role-admin` must not be a deployer key. Without a key,
  * `core` and `testing` only verify: every contract must already be in place with a release's code,
  * and nothing is sent. An existing paymaster proxy must already be configured as `core` would
- * deploy it (implementation, ROLE_ADMIN, EntryPoint, fees, no deployer holding ROLE_ADMIN); the fees
- * are the paymaster flags, else the profile's. A deployment record that states another network
+ * deploy it (implementation, ROLE_ADMIN, EntryPoint, no deployer holding ROLE_ADMIN); fees that
+ * differ from the paymaster flags, else the profile's, are only reported. The release is --release,
+ * else the profile's, else the latest; a verify-only run accepts existing code of any release. A deployment record that states another network
  * class than the one resolved here is refused: a chain's class never changes. The canonical deployer keys are development-team keys kept in 1Password
  * (docs/key-ceremony.md): load one into this shell's environment only, never into a file or a
  * client's configuration.
@@ -251,21 +252,28 @@ async function roleAdminClient(
 	});
 }
 
-/** The recorded paymaster proxy, else the class's deterministic one. */
-function paymasterProxy(
+/**
+ * The paymaster proxy `core` checked: planCore's resolution (override, then record, then the class's
+ * deterministic address), so `upgrade`, `timelock` and `handoff` act on the same proxy.
+ */
+async function paymasterProxy(
+	client: PublicClient,
 	record: DeploymentRecord | undefined,
-	network: NetworkClass,
-	overrides: Partial<Record<OverrideKey, string>> = {},
-): Address {
-	if (overrides.paymasterProxy) return getAddress(overrides.paymasterProxy);
-	if (record?.contracts.paymasterProxy?.address)
-		return record.contracts.paymasterProxy.address;
-	const deployer = classDeployer(network);
-	if (!deployer)
+	target: Network,
+): Promise<Address> {
+	const plan = await planCore(client, {
+		network: target.network,
+		signer: null,
+		overrides: target.overrides,
+		record,
+		verifyOnly: true,
+	});
+	const proxy = plan.contracts.find((c) => c.key === "paymasterProxy")?.actual;
+	if (!proxy)
 		throw new Error(
-			`no paymaster proxy is recorded for this chain and the ${network} canonical deployer is not configured; pass the chain's record (--record-dir)`,
+			`no paymaster proxy is recorded for this chain and the ${target.network} canonical deployer is not configured; pass the chain's record (--record-dir)`,
 		);
-	return create3Address(deployer, LABELS.paymasterProxy);
+	return proxy;
 }
 
 type Network = {
@@ -486,6 +494,7 @@ async function planOrRefuse(
 		overrides: ctx.target.overrides,
 		record: ctx.record,
 		release: selected.version,
+		verifyOnly: !ctx.walletClient,
 	});
 	for (const line of formatPlan(plan)) log(line);
 	if (plan.blockers.length)
@@ -530,9 +539,12 @@ function signer(ctx: DeployContext): WalletClient<Transport, Chain, Account> {
 	return ctx.walletClient;
 }
 
-/** --release (default: the latest). `dev` — the working tree, unreleased — only on a local chain. */
-function release(local: boolean): Release {
-	const version = values.release ?? latestRelease();
+/**
+ * --release, else the chain profile's release, else the latest. `dev` — the working tree,
+ * unreleased — only on a local chain.
+ */
+function release(local: boolean, target?: Network): Release {
+	const version = values.release ?? target?.profile?.release ?? latestRelease();
 	if (version === DEV_RELEASE) localOnly(local, "--release dev");
 	const loaded = loadRelease(version);
 	log(`release ${loaded.version}`);
@@ -590,13 +602,20 @@ async function main(): Promise<void> {
 				ctx.walletClient?.account.address ?? null,
 				ctx.local,
 			);
-			const selected = release(ctx.local);
+			const selected = release(ctx.local, ctx.target);
 			const config = paymasterConfig(ctx.target);
 			const { plan, fixed } = await planOrRefuse(ctx, selected);
 			// An existing proxy must already be configured as this run would deploy it (implementation,
-			// ROLE_ADMIN, EntryPoint, fees, no deployer holding ROLE_ADMIN) before anything is recorded:
-			// the same check the guided wizard runs, here also for the verify-only Helm Job.
-			await verifyCoreState(ctx.publicClient, admin, config, plan);
+			// ROLE_ADMIN, EntryPoint, no deployer holding ROLE_ADMIN) before anything is recorded: the
+			// same check the guided wizard runs, here also for the verify-only Helm Job. Fees that were
+			// tuned since are reported, not refused.
+			for (const warning of await verifyCoreState(
+				ctx.publicClient,
+				admin,
+				config,
+				plan,
+			))
+				log(`  ⚠ ${warning}`);
 			await deployCore(ctx, selected, { ...config, roleAdmin: admin }, fixed);
 			save(ctx);
 			return;
@@ -626,6 +645,7 @@ async function main(): Promise<void> {
 				which === "paymaster"
 					? "paymasterImplementation"
 					: "walletImplementation";
+			// An upgrade moves past the profile's release: the latest unless --release says otherwise.
 			const selected = release(ctx.local);
 			upgradeSignerGuard(ctx, selected, of);
 			const target = await deployUpgradeTarget(ctx, selected, of);
@@ -636,10 +656,10 @@ async function main(): Promise<void> {
 				);
 				return;
 			}
-			const proxy = paymasterProxy(
+			const proxy = await paymasterProxy(
+				ctx.publicClient,
 				ctx.record,
-				ctx.network,
-				ctx.target.overrides,
+				ctx.target,
 			);
 			const calldata = paymasterUpgradeCalldata(target.address);
 			if (values.timelock) {
@@ -724,7 +744,7 @@ async function main(): Promise<void> {
 			const target = resolveNetwork(chainId, local);
 			const record = chainRecord(chainId, target);
 			const params = {
-				paymaster: paymasterProxy(record, target.network, target.overrides),
+				paymaster: await paymasterProxy(publicClient, record, target),
 				proposers: (values.proposer ?? []).map((p) => getAddress(p)),
 				executors: (values.executor ?? []).map((e) => getAddress(e)),
 				delays: timelockDelays(),
@@ -763,7 +783,7 @@ async function main(): Promise<void> {
 				await connect();
 			const target = resolveNetwork(chainId, local);
 			const record = chainRecord(chainId, target);
-			const proxy = paymasterProxy(record, target.network, target.overrides);
+			const proxy = await paymasterProxy(publicClient, record, target);
 			const timelock = address("timelock");
 			// A typo here would hand the paymaster to an address nobody controls, irreversibly.
 			try {

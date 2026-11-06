@@ -406,6 +406,34 @@ describe("planCore", () => {
 		);
 	});
 
+	it("a verify-only run accepts existing code of any release", async () => {
+		// The verify-only Helm Job selects the latest release unless told otherwise; a chain adopted at
+		// an older one keeps it (the factory's implementation is immutable). A deployment, or a keyless
+		// plan previewing one, still requires the selected release.
+		const held = /already holds release/;
+		const input = {
+			network: "mainnet" as const,
+			deployer: MAINNET,
+			release: "v1",
+		};
+		const verify = await planCore(deployedBy(MAINNET), {
+			...input,
+			signer: null,
+			verifyOnly: true,
+		});
+		assert.deepEqual(
+			verify.blockers.filter((b) => held.test(b)),
+			[],
+		);
+		for (const signer of [null, MAINNET]) {
+			const deploy = await planCore(deployedBy(MAINNET), { ...input, signer });
+			assert.ok(
+				deploy.blockers.some((b) => held.test(b)),
+				deploy.blockers.join("\n"),
+			);
+		}
+	});
+
 	it("still plans, but blocks signing, while the class deployer is not configured", async () => {
 		const plan = await planCore(chain({}), {
 			network: "mainnet",

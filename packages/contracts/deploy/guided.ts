@@ -321,7 +321,13 @@ async function main() {
 			overrides: profile.addresses,
 			record,
 		});
-		await verifyCoreState(client, admin, profileCoreConfig(profile), after);
+		for (const warning of await verifyCoreState(
+			client,
+			admin,
+			profileCoreConfig(profile),
+			after,
+		))
+			console.warn(`⚠ ${warning}`);
 		writeRecord(record);
 		const addressEnv = new URL(
 			`../../../deploy/contracts/${chain.id}.addresses.env`,

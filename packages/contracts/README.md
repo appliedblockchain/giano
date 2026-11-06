@@ -144,7 +144,11 @@ pnpm deploy:cli p256 --rpc <url>                                   # P-256 verif
 ```
 
 The CLI takes a chain's class and overrides from `--chain <profile>`, else from the committed profile
-with the chain's id, else from `--network mainnet|testnet` (no overrides).
+with the chain's id, else from `--network mainnet|testnet` (no overrides). `core` deploys `--release`,
+else the profile's `release`, else the latest; without a key it only verifies and accepts any
+release's code, since a chain keeps the release it was adopted at. An existing paymaster must have the
+planned implementation, ROLE_ADMIN and EntryPoint; fees that differ from the flags or profile are
+reported, not refused, because the fee and parameter admins tune them.
 
 `core` deploys the wallet implementation, the factory, the paymaster implementation and the
 paymaster proxy. The proxy is a stock `ERC1967Proxy` with an empty payload that CreateX initialises

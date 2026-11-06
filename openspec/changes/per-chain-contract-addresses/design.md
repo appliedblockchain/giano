@@ -96,8 +96,9 @@ An overridden contract is verified before it is adopted, not only for release co
 - an overridden paymaster proxy SHALL point at the planned paymaster implementation. When only the proxy is
   overridden, the planned implementation is the deterministic one, and a proxy that points elsewhere is refused with
   a hint to override `paymasterImplementation` as well;
-- an overridden paymaster proxy SHALL have the profile's EntryPoint and fee parameters, and the planned `ROLE_ADMIN`
-  SHALL hold `ROLE_ADMIN` on it (the same `verifyCoreState` check an existing deterministic proxy gets).
+- an overridden paymaster proxy SHALL have the profile's EntryPoint, and the planned `ROLE_ADMIN` SHALL hold
+  `ROLE_ADMIN` on it (the same `verifyCoreState` check an existing deterministic proxy gets). Fee parameters that
+  differ are a warning, since the fee and parameter admins tune them after deployment.
 Unknown keys stay refused, matching the profile schema's existing strictness. The existing profiles gain
 `"network": "testnet"` and move to release `v2`.
 

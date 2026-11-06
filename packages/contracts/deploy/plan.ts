@@ -117,6 +117,11 @@ export type PlanInput = {
 	 * recorded) must be this release's; only an explicit override may hold any release.
 	 */
 	release?: string;
+	/**
+	 * A run that will deploy nothing (`deploy:cli core` without a key, e.g. the Helm Job): existing
+	 * code may be any release's. A keyless `--plan` previews a deployment and keeps the check.
+	 */
+	verifyOnly?: boolean;
 	/** For tests: the class deployer instead of deploy/config.ts. */
 	deployer?: Address | null;
 };
@@ -276,7 +281,11 @@ export async function planCore(
 			blockers.push(
 				`${where} is occupied by code ${code.codehash} that matches no release's ${contract}. Stop and investigate; never overwrite the deployment record.`,
 			);
+		// A deployment mixes releases: it would deploy the missing contracts at the selected one next
+		// to code of another. A verify-only run (the Helm Job) deploys nothing and accepts any release,
+		// as deployCore does: a chain keeps the release it was adopted at.
 		if (
+			!input.verifyOnly &&
 			source !== "override" &&
 			!upgrade &&
 			!devCode &&

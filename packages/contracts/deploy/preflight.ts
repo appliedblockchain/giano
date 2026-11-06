@@ -75,20 +75,23 @@ export function profileCoreConfig(profile: ChainProfile): CoreConfig {
 
 /**
  * An existing paymaster proxy, overridden or not, must be configured as this plan says: pointing at
- * the planned implementation, with `admin` holding ROLE_ADMIN, the EntryPoint and fees of `config`,
- * and (on a non-local chain) no deployer holding ROLE_ADMIN. Shared by the guided wizard and
- * `deploy:cli core`, which both run it before deployCore records anything.
+ * the planned implementation, with `admin` holding ROLE_ADMIN, the EntryPoint of `config`, and (on
+ * a non-local chain) no deployer holding ROLE_ADMIN. Those throw. The fees are operational
+ * parameters that FEE_ADMIN_ROLE / PARAM_ADMIN_ROLE change on purpose (setDefaultFee,
+ * setPostOpGasAllowance, setPenaltyBps), so a fee that differs from `config` is returned as a
+ * warning instead of refusing the run. Shared by the guided wizard and `deploy:cli core`, which both
+ * run it before deployCore records anything.
  */
 export async function verifyCoreState(
 	client: PublicClient,
 	admin: Address,
 	config: CoreConfig,
 	plan: Plan,
-): Promise<void> {
+): Promise<string[]> {
 	const proxy = planned(plan, "paymasterProxy");
-	if (!proxy?.actual) return;
+	if (!proxy?.actual) return [];
 	const code = await client.getCode({ address: proxy.actual });
-	if (!code || code === "0x") return;
+	if (!code || code === "0x") return [];
 	const implementation = planned(plan, "paymasterImplementation")?.actual;
 	const slot = await client.getStorageAt({
 		address: proxy.actual,
@@ -118,16 +121,20 @@ export async function verifyCoreState(
 		client.readContract({ ...read, functionName: "postOpGasAllowance" }),
 		client.readContract({ ...read, functionName: "penaltyBps" }),
 	]);
-	if (
-		!allowed ||
-		getAddress(entryPoint) !== getAddress(config.entryPoint) ||
-		fee !== config.defaultFeeWei ||
-		allowance !== config.postOpGasAllowance ||
-		penalty !== config.penaltyBps
-	)
+	if (!allowed || getAddress(entryPoint) !== getAddress(config.entryPoint))
 		throw new GateError(
-			"Existing paymaster admin, EntryPoint or fee parameters differ from this plan. Review its configuration before continuing.",
+			"Existing paymaster admin or EntryPoint differs from this plan. Review its configuration before continuing.",
 		);
+	const warnings: string[] = [];
+	for (const [name, live, planned] of [
+		["defaultFeeWei", fee, config.defaultFeeWei],
+		["postOpGasAllowance", allowance, config.postOpGasAllowance],
+		["penaltyBps", penalty, config.penaltyBps],
+	] as const)
+		if (BigInt(live) !== BigInt(planned))
+			warnings.push(
+				`paymaster ${name} is ${live} on chain, not ${planned}; fees are tuned by the fee and parameter admins, so this run leaves it as is`,
+			);
 	if (plan.network !== "local") {
 		const deployers = [
 			plan.signer,
@@ -147,6 +154,7 @@ export async function verifyCoreState(
 					`Deployer ${deployer} holds ROLE_ADMIN on the paymaster at ${proxy.actual}. A deployer must hold no role.`,
 				);
 	}
+	return warnings;
 }
 
 export type Check = { ok: boolean; message: string };
@@ -242,17 +250,18 @@ export async function inspectDeployment(
 		"Existing paymaster configuration matches the plan (when present)",
 		async () => {
 			try {
-				await verifyCoreState(
+				const warnings = await verifyCoreState(
 					client,
 					admin,
 					profileCoreConfig(profile),
 					plan as Plan,
 				);
+				if (warnings.length) return `⚠ ${warnings.join("; ")}`;
 			} catch (error) {
 				throw error instanceof GateError
 					? error
 					: new GateError(
-							"Configuration could not be verified. Review the proxy implementation slot, ROLE_ADMIN, EntryPoint and fee parameters.",
+							"Configuration could not be verified. Review the proxy implementation slot, ROLE_ADMIN and EntryPoint.",
 						);
 			}
 		},

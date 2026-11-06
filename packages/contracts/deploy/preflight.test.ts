@@ -243,16 +243,29 @@ test("an existing paymaster is checked against the run's configuration, and no d
 				})[functionName],
 		});
 	const ok = chain([admin]);
-	await verifyCoreState(ok, admin, config, await planFor(ok));
-	// `deploy:cli core` passes its own flags: a fee that differs from the chain's is refused.
+	assert.deepEqual(
+		await verifyCoreState(ok, admin, config, await planFor(ok)),
+		[],
+	);
+	// Fees are tuned by the fee and parameter admins after deployment: a fee that differs from the
+	// run's configuration is a warning, not a refusal (the verify-only Helm Job must still pass).
+	const warnings = await verifyCoreState(
+		ok,
+		admin,
+		{ ...config, penaltyBps: config.penaltyBps + 1 },
+		await planFor(ok),
+	);
+	assert.equal(warnings.length, 1);
+	assert.match(warnings[0], /penaltyBps is \d+ on chain/);
+	// The EntryPoint is not tunable: a different one is refused.
 	await assert.rejects(
 		verifyCoreState(
 			ok,
 			admin,
-			{ ...config, penaltyBps: config.penaltyBps + 1 },
+			{ ...config, entryPoint: CANONICAL_DEPLOYER },
 			await planFor(ok),
 		),
-		/EntryPoint or fee parameters differ/,
+		/admin or EntryPoint differs/,
 	);
 	const held = chain([admin, CANONICAL_DEPLOYER]);
 	await assert.rejects(
