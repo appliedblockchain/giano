@@ -200,9 +200,9 @@ describe("migration 0007_tenant_lifecycle", () => {
 		await client.query(
 			`UPDATE tenants SET managed_by = 'operator', version = 2 WHERE slug = 'acme'`,
 		);
-		expect(await runMigrations(container.getConnectionUri())).toEqual([
-			"0009_drop_tenant_managed_by.sql",
-		]);
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0009")),
+		).toEqual(["0009_drop_tenant_managed_by.sql"]);
 		const { rows } = await client.query(
 			`SELECT column_name FROM information_schema.columns WHERE table_name = 'tenants' AND column_name = 'managed_by'`,
 		);
@@ -213,5 +213,25 @@ describe("migration 0007_tenant_lifecycle", () => {
 		expect(
 			(await client.query(`SELECT created_by FROM tenant_admin_keys`)).rows,
 		).toEqual([{ created_by: "seed" }]);
+	});
+
+	it("0010 admits the pending-addition challenge kind and still refuses unknown kinds", async () => {
+		expect(await runMigrations(container.getConnectionUri())).toEqual([
+			"0010_pending_addition_challenge_kind.sql",
+		]);
+		const { rows } = await client.query(
+			`SELECT id FROM tenants WHERE slug = 'acme'`,
+		);
+		const tenantId = rows[0].id;
+		await client.query(
+			`INSERT INTO challenges (challenge, kind, tenant_id, expires_at) VALUES ('claim', 'pending-addition', $1, now())`,
+			[tenantId],
+		);
+		await expect(
+			client.query(
+				`INSERT INTO challenges (challenge, kind, tenant_id, expires_at) VALUES ('other', 'other', $1, now())`,
+				[tenantId],
+			),
+		).rejects.toThrow(/check constraint/);
 	});
 });
