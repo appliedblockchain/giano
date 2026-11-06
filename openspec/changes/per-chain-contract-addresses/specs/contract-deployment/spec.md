@@ -80,7 +80,9 @@ and the paymaster proxy. The timelock is not overridable: its address is `timelo
 SHALL be verified at the override address, not deployed: it must already hold release code that passes the
 registry's verification. Contracts that depend on it SHALL use the override address. An overridden factory SHALL
 clone the planned wallet implementation. An overridden paymaster proxy SHALL point at the planned paymaster
-implementation, have the profile's EntryPoint and fee parameters, and grant `ROLE_ADMIN` to the planned role admin.
+implementation, have the profile's EntryPoint, and grant `ROLE_ADMIN` to the planned role admin. Its fee parameters
+are reported when they differ from the profile's, not refused: the fee and parameter admins tune them after
+deployment.
 
 #### Scenario: Overridden paymaster
 - **WHEN** a profile overrides the paymaster proxy address and that address holds release paymaster code
@@ -184,3 +186,22 @@ unreported on any chain in R-29's fixed production list or any chain whose profi
 - **WHEN** an operator runs `deploy:cli testing` against a chain whose profile declares `mainnet`, and the chain is not
   in the fixed list
 - **THEN** it refuses, naming R-29
+
+### Requirement: A verify-only run accepts any release
+On a deployment, and on a plan that previews one, existing code at a non-overridden address (deterministic or
+recorded) SHALL be the selected release's, unless it is a recorded canonical upgrade target. A verify-only run
+(`deploy:cli core` without a key, as the Helm Job runs it) SHALL accept any release's code there, because a chain keeps
+the release it was adopted at (the factory's implementation is immutable). `deploy:cli core` SHALL take the release from `--release`, else the chain profile's
+`release`, else the latest.
+
+#### Scenario: Verify-only run on a chain adopted at an older release
+- **WHEN** the verify-only Helm Job runs on a chain whose contracts hold release v2 after v3 is cut
+- **THEN** the plan has no release blocker and the run records the chain's v2 contracts
+
+#### Scenario: Deployment against another release
+- **WHEN** a run with a key, or a keyless `--plan`, selects v3 on a chain whose wallet implementation holds v2
+- **THEN** the plan is refused with "already holds release v2, not the selected v3"
+
+#### Scenario: Tuned paymaster fees
+- **WHEN** `deploy:cli core` runs on a chain whose paymaster's `penaltyBps` was changed with `setPenaltyBps`
+- **THEN** the run warns that the fee differs from its configuration and continues

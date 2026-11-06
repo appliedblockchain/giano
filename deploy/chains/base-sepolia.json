@@ -1,9 +1,10 @@
 {
 	"chainId": 84532,
+	"network": "testnet",
 	"name": "Base Sepolia",
 	"rpcUrl": "https://sepolia.base.org",
 	"rpcUrlEnv": "BASE_SEPOLIA_RPC_URL",
-	"release": "v1",
+	"release": "v2",
 	"roleAdmin": null,
 	"minDeployerBalanceEth": "0.05",
 	"paymaster": {

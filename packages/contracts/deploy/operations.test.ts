@@ -33,6 +33,7 @@ test("all operator plans use the selected persisted profile, load dotenv without
 			profile,
 			JSON.stringify({
 				chainId: 54321,
+				network: "testnet",
 				name: "Custom test chain",
 				rpcUrl: "https://example.test",
 				rpcUrlEnv: "CUSTOM_TEST_RPC_URL",
