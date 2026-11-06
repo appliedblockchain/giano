@@ -79,7 +79,7 @@ export function ClaimFlow({
 				</p>
 				<div
 					className="data-box"
-					style={{ fontSize: 26, textAlign: "center", letterSpacing: 3 }}
+					style={{ fontSize: 20, textAlign: "center", letterSpacing: 2 }}
 					data-testid="manage-claim-fingerprint"
 				>
 					{flow.fingerprint}

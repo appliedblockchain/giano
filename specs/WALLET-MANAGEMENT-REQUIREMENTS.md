@@ -296,7 +296,10 @@ wallet, and a phishing target with a much better payoff than a transaction. Also
 the transport, which means trusting the operator, which is the thing being avoided.
 
 *Consequence:* both devices must be present and awake at the same time, and the user has to compare
-six characters. That is the cost of the change being the user's.
+sixteen characters. That is the cost of the change being the user's. The fingerprint cannot be
+shorter: the operator holds the genuine key before the authorising device does, and the slot's
+expiry is enforced by the operator itself, so it can search offline for a key with the same
+fingerprint. A 30-bit fingerprint falls to that search in minutes; an 80-bit one does not.
 
 ### D9 — Removal refuses to strand the wallet
 
@@ -528,7 +531,8 @@ confer any other authority. Submitting a credential into a slot MUST leave it in
 
 **WM-20** — Both devices MUST display a fingerprint derived from the new credential's public key,
 and the authorising device's consent screen MUST show the fingerprint of the key it is about to sign
-for.
+for. The fingerprint MUST carry at least 80 bits of a cryptographic hash of the public key, so that
+a party which relays the key cannot search offline for a different key with the same fingerprint.
 
 **WM-21** — The user MUST confirm that the two fingerprints match before the authorising signature
 is requested. A pending addition MUST NOT be signed for on the strength of the backend's assertion

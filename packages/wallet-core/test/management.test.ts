@@ -1,5 +1,5 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
-import { decodeFunctionData, encodeAbiParameters, pad } from "viem";
+import { decodeFunctionData, encodeAbiParameters, keccak256, pad } from "viem";
 import { describe, expect, it } from "vitest";
 import {
 	addressOwnerBytes,
@@ -38,10 +38,19 @@ describe("owner bytes", () => {
 describe("fingerprint (WM-03, WM-20)", () => {
 	it("is stable, short, and derived from the owner bytes alone", () => {
 		const fingerprint = ownerFingerprint(publicKeyOwnerBytes(X, Y));
-		expect(fingerprint).toMatch(/^[0-9A-Z]{3}-[0-9A-Z]{3}$/);
+		expect(fingerprint).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/);
 		expect(ownerFingerprint(publicKeyOwnerBytes(X, Y))).toBe(fingerprint);
 		// never contains the confusable characters
 		expect(fingerprint).not.toMatch(/[ILOU]/);
+	});
+
+	it("encodes the first 80 bits of keccak256 of the owner bytes, so a matching key cannot be ground offline", () => {
+		const ownerBytes = publicKeyOwnerBytes(X, Y);
+		const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+		let decoded = 0n;
+		for (const char of ownerFingerprint(ownerBytes).replaceAll("-", ""))
+			decoded = (decoded << 5n) | BigInt(alphabet.indexOf(char));
+		expect(decoded).toBe(BigInt(keccak256(ownerBytes)) >> 176n);
 	});
 
 	it("differs between two keys — a substituted key cannot share the displayed fingerprint", () => {
