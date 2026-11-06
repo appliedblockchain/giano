@@ -95,7 +95,7 @@ flowchart TB
         API ==>|"policied relay of the signed UserOp,<br/>to the bundler at POST /chainId"| BUN
     end
 
-    subgraph CHAINS["SERVED CHAINS · the same canonical addresses on every one"]
+    subgraph CHAINS["SERVED CHAINS · the same deterministic addresses on every chain of a network class"]
         direction LR
         CA["<b>Chain A</b><br/>EntryPoint v0.9 · GianoSmartWalletFactory · GianoPaymaster proxy<br/>P-256 via the RIP-7212 precompile, else the in-contract FCL verifier"]
         CB["<b>Chain B … Chain N</b><br/>the same three contracts at the same addresses<br/>its own RPC, its own bundler lanes and executor funding, its own paymaster deposit"]
@@ -143,7 +143,7 @@ Removing the bundler in favour of direct `EntryPoint` submission has been analys
 | `giano-connector` | The thin dApp SDK. An EIP-1193 provider plus wagmi and RainbowKit adapters; answers reads locally and sends everything requiring authority to the popup. Declares the chain and refuses a session granted on another. Contains no WebAuthn, credential or bundler code. |
 | `giano-wallet-transport` | The popup protocol: a versioned, zod-validated JSON-RPC-over-`postMessage` envelope, origin-pinned on both ends, with chain negotiation in the handshake and a first-class refusal. |
 | `giano-wallet-core` | The wallet-origin engine: the passkey smart account, per-chain provider, ERC-7677 paymaster client, and the injection seam through which it reaches `wallet-api`. |
-| `giano-contracts` | Solidity sources, generated ABIs, the chain-descriptor type, and the address registry — including the canonical `CANONICAL_FACTORY` and `CANONICAL_IMPLEMENTATION` (CREATE3 addresses) and the codehash each release puts at them. |
+| `giano-contracts` | Solidity sources, generated ABIs, the chain-descriptor type, and the per-chain address registry (`getGianoDeployment(chainId)`; CREATE3 addresses, one deterministic set per network class) — and the release fingerprints (`releaseOf`) that verify the code at any address. |
 | `giano-paymaster-sdk` | Reads the paymaster's entire state and administers it on-chain; the caller supplies the signer, and every write is simulated first. Ships the `giano-paymaster` CLI. |
 
 **Services** — what a deployment runs.
@@ -267,8 +267,8 @@ shape rather than a separate build.
 | Data | Entirely in the client's infrastructure, in a jurisdiction of their choosing | The operator's |
 
 Adding a chain is a deployment action, never an admin API call, and it is gated by the
-[chain-adoption checklist](./CHAIN-ADOPTION.md) — the canonical EntryPoint, the canonical factory
-and implementation, a funded executor, a staked and funded paymaster. Steps skipped there fail
+[chain-adoption checklist](./CHAIN-ADOPTION.md) — the canonical EntryPoint, the factory
+and implementation at the class's deterministic addresses running release code, a funded executor, a staked and funded paymaster. Steps skipped there fail
 silently: contracts that work perfectly, at addresses the user's passkey does not control.
 
 ---

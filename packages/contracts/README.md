@@ -169,7 +169,9 @@ matches no release of that contract. Per-chain extras the CLI does not deploy (e
 EntryPoint) go in `address-overrides.json`.
 
 The `giano-contracts-deployer` image (`Dockerfile.deployer`) runs `core` (and `testing` with
-`DEPLOY_TESTING=true`) from environment variables, with `NETWORK` naming the chain's class; see
+`DEPLOY_TESTING=true`) from environment variables, with `NETWORK` naming the chain's class, and
+optionally `CHAIN_PROFILE_JSON` and `DEPLOYMENT_RECORD_JSON` (the chain's profile and committed record)
+so a chain at non-deterministic addresses is verified where it is; see
 `scripts/deployer-entrypoint.mjs`. Without `DEPLOYER_PRIVATE_KEY` it only verifies, which is how the
 Helm pre-install Job runs in a client's cluster. Never give it a canonical deployer key there.
 

@@ -102,8 +102,9 @@ state is regenerated.
 The **proxy** address is what tenants fund and what the admin console and `USEROP_ALLOWED_PAYMASTERS`
 point at. The implementation address changes on every upgrade; the proxy must not.
 
-The factory, implementation and paymaster proxy sit at the canonical addresses in
-`packages/contracts/canonical.ts`, on both devnet chains and on every other chain. The baked paymaster
+The factory, implementation and paymaster proxy sit at the local class's deterministic addresses
+(CREATE3 of the fixed local deployer `0x…dEaD`), the same on both devnet chains. Public chains use their
+own class's deployer, so their addresses differ (`getGianoDeployment(chainId)`). The baked paymaster
 is upgraded through UUPS and keeps its proxy address; its current implementation is recorded in
 `e2e/devnet/addresses.json`. To run unreleased paymaster code on the devnet, use
 `devnet:upgrade:paymaster:all`: it deploys the working tree's build (`--release dev`, local chains only)
