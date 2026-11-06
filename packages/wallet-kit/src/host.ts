@@ -4,6 +4,7 @@ import {
 	TransportRpcError,
 } from "@appliedblockchain/giano-wallet-transport";
 import type { WalletConfig } from "./config";
+import { type ConnectionGrants, createConnectionGrants } from "./grants";
 import { createRequestStore, type RequestStore, toRpcError } from "./requests";
 import type { WalletRuntime, WalletRuntimes } from "./runtimes";
 
@@ -15,11 +16,18 @@ const CONSENT_METHODS = new Set([
 	"eth_signUserOperation",
 	"signed_eth_call",
 ]);
+/** Methods that use the account, and so need the origin's connection grant (WK-34). */
 const ACCOUNT_METHODS = new Set([
 	...CONSENT_METHODS,
 	"eth_prepareUserOperation",
 	"eth_sendSignedUserOperation",
 ]);
+/**
+ * Provider methods the host calls for itself and never accepts from an application (WK-34):
+ * `giano_restoreAccount` rebuilds the account with no prompt, so a dApp that could call it would
+ * learn the address without connecting.
+ */
+const INTERNAL_METHODS = new Set(["giano_restoreAccount"]);
 
 export type WalletHost = {
 	/** Attach transport listeners and announce readiness to the opener. */
@@ -46,10 +54,12 @@ type RequestContext = { dappOrigin: string; chainId: number };
 export function createHostRequestHandler({
 	runtimes,
 	requests,
+	grants,
 	onChainFirstUsed,
 }: {
 	runtimes: WalletRuntimes;
 	requests: RequestStore;
+	grants: ConnectionGrants;
 	onChainFirstUsed?: (runtime: WalletRuntime) => void;
 }) {
 	// Event relay is wired per runtime, once, when a session first touches that chain.
@@ -79,6 +89,30 @@ export function createHostRequestHandler({
 				RPC_ERRORS.UNSUPPORTED_METHOD,
 				"Giano binds one chain per session; connect a provider constructed for the target chain",
 			);
+		}
+
+		if (INTERNAL_METHODS.has(method)) {
+			throw new TransportRpcError(
+				RPC_ERRORS.UNSUPPORTED_METHOD,
+				`${method} is not available to applications`,
+			);
+		}
+
+		// WK-34: the account is visible and usable only to an origin the user connected. These
+		// checks run BEFORE the runtime is touched: a silent restore emits accountsChanged, and the
+		// event relay would hand the address to the very origin being refused.
+		const connected = grants.has(context.dappOrigin);
+		if (!connected && method === "eth_accounts") {
+			return [];
+		}
+		if (!connected && ACCOUNT_METHODS.has(method)) {
+			throw new TransportRpcError(
+				RPC_ERRORS.UNAUTHORIZED,
+				"This application is not connected to the wallet; request eth_requestAccounts first",
+			);
+		}
+		if (method === "wallet_revokePermissions") {
+			grants.revoke(context.dappOrigin);
 		}
 
 		const runtime = runtimeForSession(context.chainId);
@@ -112,12 +146,12 @@ export function createHostRequestHandler({
 
 		const needsConsent =
 			method === "eth_requestAccounts" || CONSENT_METHODS.has(method);
-		// WK-12: a signing/tx request can land on a freshly (re)opened popup whose in-memory
-		// account was lost when the previous popup closed. Silently rebuild it from the
-		// persisted session before asking for consent — no extra passkey prompt; the
-		// single ceremony still happens when the operation is actually signed. If it
-		// can't be restored, the provider will surface "Giano not connected" and the
-		// dApp must reconnect via eth_requestAccounts.
+		// WK-12: a signing/tx request from a connected origin can land on a freshly (re)opened
+		// popup whose in-memory account was lost when the previous popup closed. Silently
+		// rebuild it from the persisted session before asking for consent — no extra passkey
+		// prompt; the single ceremony still happens when the operation is actually signed. If
+		// it can't be restored, the provider will surface "Giano not connected" and the dApp
+		// must reconnect via eth_requestAccounts.
 		if (ACCOUNT_METHODS.has(method) && !runtime.provider.getSmartAccount()) {
 			await runtime.provider
 				.request({ method: "giano_restoreAccount" } as never)
@@ -141,20 +175,33 @@ export function createHostRequestHandler({
 				runtime,
 			});
 		}
+		let result: unknown;
 		try {
-			return await runtime.provider.request({ method, params } as never);
+			result = await runtime.provider.request({ method, params } as never);
 		} catch (error) {
 			throw toRpcError(error);
 		}
+		// The grant is recorded only once the user approved AND the account was established: a
+		// cancelled passkey ceremony after the approval connects nothing.
+		if (
+			method === "eth_requestAccounts" &&
+			Array.isArray(result) &&
+			result.length > 0
+		) {
+			grants.grant(context.dappOrigin);
+		}
+		return result;
 	};
 }
 
 /**
  * Wires the popup transport to the Giano provider with a consent gate (WK-08):
- * - eth_requestAccounts → a 'connect' request
+ * - eth_requestAccounts → a 'connect' request; approval records the origin's connection grant
  * - eth_sendTransaction → a 'transaction' request
  * - personal_sign / eth_sign / eth_signTypedData_v4 → a 'sign' request
  * - giano_openWalletManagement → a 'manage' request (resolves when the view closes)
+ * - account methods from an origin with no grant → 4100; eth_accounts → [] (WK-34)
+ * - giano_restoreAccount → refused; the host alone calls it (WK-34)
  * - everything else (read paths) forwards straight to the provider
  * All signing and credential work happens HERE, on the wallet origin — the dApp only
  * ever sees postMessage RPC. The host is headless: it never renders consent, it awaits
@@ -175,6 +222,7 @@ export function createWalletHost({
 	const onRequest = createHostRequestHandler({
 		runtimes,
 		requests,
+		grants: createConnectionGrants(),
 		onChainFirstUsed: (runtime) => {
 			// relay provider events (accountsChanged, chainChanged, disconnect) to the dApp
 			for (const event of [

@@ -26,6 +26,7 @@ import {
 	type TransactionRequest,
 	type Transport,
 	toHex,
+	UnsupportedProviderMethodError,
 } from "viem";
 import type {
 	BundlerClient,
@@ -92,6 +93,48 @@ type PrepareUserOperationOptions = Partial<
 		"account" | "calls" | "callData"
 	>
 >;
+
+/**
+ * The chain JSON-RPC methods the provider passes to its node: reads only.
+ *
+ * Every other method the provider does not implement itself is refused with EIP-1193 4200. Before,
+ * any unknown method went to the node unfiltered, so a dApp talking to the wallet popup could reach
+ * write and node-control methods (`eth_sendRawTransaction`, `debug_*`, `anvil_*`, …) on the
+ * wallet's RPC endpoint.
+ */
+export const READ_ONLY_RPC_METHODS: ReadonlySet<string> = new Set([
+	"eth_blobBaseFee",
+	"eth_blockNumber",
+	"eth_estimateGas",
+	"eth_feeHistory",
+	"eth_gasPrice",
+	"eth_getBalance",
+	"eth_getBlockByHash",
+	"eth_getBlockByNumber",
+	"eth_getBlockReceipts",
+	"eth_getBlockTransactionCountByHash",
+	"eth_getBlockTransactionCountByNumber",
+	"eth_getCode",
+	"eth_getLogs",
+	"eth_getProof",
+	"eth_getStorageAt",
+	"eth_getTransactionByBlockHashAndIndex",
+	"eth_getTransactionByBlockNumberAndIndex",
+	"eth_getTransactionByHash",
+	"eth_getTransactionCount",
+	"eth_getTransactionReceipt",
+	"eth_getUncleByBlockHashAndIndex",
+	"eth_getUncleByBlockNumberAndIndex",
+	"eth_getUncleCountByBlockHash",
+	"eth_getUncleCountByBlockNumber",
+	"eth_maxPriorityFeePerGas",
+	"eth_protocolVersion",
+	"eth_syncing",
+	"net_listening",
+	"net_peerCount",
+	"net_version",
+	"web3_clientVersion",
+]);
 
 export const isChainType = (x: unknown): x is ChainType => {
 	return typeof x === "number" && Object.values(ChainType).includes(x);
@@ -981,6 +1024,12 @@ export const createGianoProvider = (
 			const { method, params } = args;
 
 			if (!(method in methods)) {
+				if (!READ_ONLY_RPC_METHODS.has(method)) {
+					throw new UnsupportedProviderMethodError(
+						new Error(`${method} is not supported by the Giano provider`),
+						{ method },
+					);
+				}
 				return client!.request({ ...args } as any);
 			}
 			try {

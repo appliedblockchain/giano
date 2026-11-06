@@ -89,6 +89,10 @@ export function toRpcError(error: unknown): TransportRpcError {
 	if (error instanceof TransportRpcError) return error;
 	const name = (error as { name?: string })?.name;
 	const message = error instanceof Error ? error.message : "request failed";
+	// The provider refuses a method outside its read-only allowlist with EIP-1193 4200.
+	if ((error as { code?: unknown })?.code === RPC_ERRORS.UNSUPPORTED_METHOD) {
+		return new TransportRpcError(RPC_ERRORS.UNSUPPORTED_METHOD, message);
+	}
 	if (name === "NotAllowedError" || name === "AbortError") {
 		return new TransportRpcError(
 			RPC_ERRORS.USER_REJECTED,
