@@ -13,7 +13,7 @@ concurrency:
 jobs:
   playwright:
     name: Two-tenant Playwright suite (Chromium + virtual authenticator)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       # The stack builds wallet-api, wallet-web, paymaster-admin and the bundler from their
       # Dockerfiles, which build on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous
