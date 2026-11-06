@@ -288,9 +288,19 @@ request while one is pending is refused rather than queued silently, matching cu
 MUST refuse `wallet_switchEthereumChain` / `wallet_addEthereumChain` with the existing typed error
 (MC-14).
 
-**WK-12** — On a signing or transaction request landing on a runtime whose in-memory account was
-lost (the ephemeral-popup case), the kit MUST attempt a silent account restore before requesting
-consent, with no extra passkey prompt — as the stock host does today.
+**WK-12** — On a signing or transaction request from a connected origin (WK-34) landing on a
+runtime whose in-memory account was lost (the ephemeral-popup case), the kit MUST attempt a silent
+account restore before requesting consent, with no extra passkey prompt — as the stock host does
+today.
+
+**WK-34** — The host MUST make the account visible and usable only to a dApp origin the user
+connected. It MUST record a connection grant for an origin when the user approves
+`eth_requestAccounts` and an account is established, and keep it in the wallet origin's storage so
+it outlives the ephemeral popup. For an origin with no grant, the host MUST answer `eth_accounts`
+with `[]` and MUST refuse every method that uses the account with EIP-1193 `4100`, before any
+silent restore, consent request or provider call. The host MUST refuse `giano_restoreAccount` from
+an application, and MUST remove the origin's grant on `wallet_revokePermissions`. The provider MUST
+NOT pass a method it does not implement to its node unless the method is a read-only chain method.
 
 ### 4.4 Sponsorship pre-flight
 

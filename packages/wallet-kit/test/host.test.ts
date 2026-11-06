@@ -2,6 +2,7 @@ import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import { RPC_ERRORS } from "@appliedblockchain/giano-wallet-transport";
 import { type Address, encodeFunctionData, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
+import { createConnectionGrants } from "../src/grants";
 import { createHostRequestHandler } from "../src/host";
 import { createRequestStore } from "../src/requests";
 import type { WalletRuntime, WalletRuntimes } from "../src/runtimes";
@@ -34,11 +35,22 @@ const dappUserOp = () => ({
 	callData: execute(DAPP_CONTRACT),
 });
 
-type FakeOptions = { account?: boolean; restore?: boolean };
+type FakeOptions = {
+	account?: boolean;
+	restore?: boolean;
+	connectResult?: unknown;
+};
+
+/** A user operation's calls that only call a dApp contract, as eth_prepareUserOperation takes them. */
+const DAPP_CALL = [[{ to: DAPP_CONTRACT, data: "0x" }]];
 
 function fakeRuntime(
 	chainId: number,
-	{ account = true, restore = true }: FakeOptions = {},
+	{
+		account = true,
+		restore = true,
+		connectResult = ["0xabc"],
+	}: FakeOptions = {},
 ) {
 	let accountAddress: Address | null = account ? ACCOUNT : null;
 	const calls: { method: string; params?: unknown }[] = [];
@@ -58,6 +70,7 @@ function fakeRuntime(
 						return undefined;
 					}
 					if (method === "eth_chainId") return `0x${chainId.toString(16)}`;
+					if (method === "eth_requestAccounts") return connectResult;
 					return `result:${method}`;
 				},
 			),
@@ -70,8 +83,17 @@ function fakeRuntime(
 	return { runtime, calls, setAccount };
 }
 
-function harness(chainId = 31337, options: FakeOptions = {}) {
-	const { runtime, calls, setAccount } = fakeRuntime(chainId, options);
+const DAPP = "https://app.test";
+
+function harness(
+	chainId = 31337,
+	options: FakeOptions & {
+		/** Whether the dApp origin already holds a connection grant (WK-34). */
+		connected?: boolean;
+	} = {},
+) {
+	const { connected = true, ...runtimeOptions } = options;
+	const { runtime, calls, setAccount } = fakeRuntime(chainId, runtimeOptions);
 	const runtimes: WalletRuntimes = {
 		servedChainIds: [chainId],
 		runtimeFor: (id) => {
@@ -81,9 +103,11 @@ function harness(chainId = 31337, options: FakeOptions = {}) {
 		descriptorFor: () => ({ chainId, name: `Chain ${chainId}` }) as never,
 	};
 	const requests = createRequestStore();
-	const handler = createHostRequestHandler({ runtimes, requests });
-	const context = { dappOrigin: "https://app.test", chainId };
-	return { handler, requests, calls, context, runtime, setAccount };
+	const grants = createConnectionGrants(null);
+	if (connected) grants.grant(DAPP);
+	const handler = createHostRequestHandler({ runtimes, requests, grants });
+	const context = { dappOrigin: DAPP, chainId };
+	return { handler, requests, calls, context, runtime, setAccount, grants };
 }
 
 describe("the host request handler (WK-08…WK-12)", () => {
@@ -116,7 +140,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			dappOrigin: "https://app.test",
 		});
 		requests.current!.approve();
-		await expect(call).resolves.toBe("result:eth_requestAccounts");
+		await expect(call).resolves.toEqual(["0xabc"]);
 	});
 
 	it("answers 4001 on rejection without touching the provider (WK-09)", async () => {
@@ -518,6 +542,141 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			expect(requests.current).toMatchObject({ kind, method });
 			requests.current!.approve();
 			await expect(call).resolves.toBe(`result:${method}`);
+		});
+	});
+
+	describe("connection grants (WK-34)", () => {
+		const ACCOUNT_METHODS = [
+			"eth_sendTransaction",
+			"personal_sign",
+			"eth_sign",
+			"eth_signTypedData_v4",
+			"eth_signUserOperation",
+			"signed_eth_call",
+			"eth_prepareUserOperation",
+			"eth_sendSignedUserOperation",
+		];
+
+		it("refuses giano_restoreAccount from an application, connected or not", async () => {
+			for (const connected of [true, false]) {
+				const { handler, calls, context } = harness(31337, {
+					account: false,
+					connected,
+				});
+				await expect(
+					handler("giano_restoreAccount", [], context),
+				).rejects.toMatchObject({ code: RPC_ERRORS.UNSUPPORTED_METHOD });
+				expect(calls).toEqual([]);
+			}
+		});
+
+		it("answers eth_accounts with [] to an origin with no grant, without touching the provider", async () => {
+			const { handler, calls, context } = harness(31337, { connected: false });
+			await expect(handler("eth_accounts", [], context)).resolves.toEqual([]);
+			expect(calls).toEqual([]);
+		});
+
+		it("forwards eth_accounts to the provider for a connected origin", async () => {
+			const { handler, context } = harness();
+			await expect(handler("eth_accounts", [], context)).resolves.toBe(
+				"result:eth_accounts",
+			);
+		});
+
+		it.each(ACCOUNT_METHODS)(
+			"refuses %s with 4100 for an origin with no grant: no restore, no consent, no provider call",
+			async (method) => {
+				const onChainFirstUsed = vi.fn();
+				const { runtime, calls } = fakeRuntime(31337, { account: false });
+				const requests = createRequestStore();
+				const handler = createHostRequestHandler({
+					runtimes: {
+						servedChainIds: [31337],
+						runtimeFor: () => runtime,
+						descriptorFor: () => ({}) as never,
+					},
+					requests,
+					grants: createConnectionGrants(null),
+					onChainFirstUsed,
+				});
+				await expect(
+					handler(method, [{}], { dappOrigin: DAPP, chainId: 31337 }),
+				).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+				expect(calls).toEqual([]);
+				expect(requests.current).toBeNull();
+				// The event relay is not even wired, so no accountsChanged can reach the origin.
+				expect(onChainFirstUsed).not.toHaveBeenCalled();
+			},
+		);
+
+		it("records the grant when the user approves eth_requestAccounts, for that origin only", async () => {
+			const { handler, requests, grants, context } = harness(31337, {
+				connected: false,
+			});
+			const call = handler("eth_requestAccounts", [], context);
+			requests.current!.approve();
+			await expect(call).resolves.toEqual(["0xabc"]);
+			expect(grants.has(DAPP)).toBe(true);
+
+			await expect(
+				handler("eth_prepareUserOperation", DAPP_CALL, context),
+			).resolves.toBe("result:eth_prepareUserOperation");
+			await expect(
+				handler("eth_prepareUserOperation", DAPP_CALL, {
+					...context,
+					dappOrigin: "https://other.test",
+				}),
+			).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+		});
+
+		it("records no grant when the user rejects the connect", async () => {
+			const { handler, requests, grants, context } = harness(31337, {
+				connected: false,
+			});
+			const call = handler("eth_requestAccounts", [], context);
+			requests.current!.reject();
+			await expect(call).rejects.toMatchObject({
+				code: RPC_ERRORS.USER_REJECTED,
+			});
+			expect(grants.has(DAPP)).toBe(false);
+		});
+
+		it("records no grant when the approved connect establishes no account", async () => {
+			const { handler, requests, grants, context } = harness(31337, {
+				connected: false,
+				connectResult: [],
+			});
+			const call = handler("eth_requestAccounts", [], context);
+			requests.current!.approve();
+			await expect(call).resolves.toEqual([]);
+			expect(grants.has(DAPP)).toBe(false);
+		});
+
+		it("drops the grant on wallet_revokePermissions", async () => {
+			const { handler, grants, context } = harness();
+			await handler(
+				"wallet_revokePermissions",
+				[{ eth_accounts: {} }],
+				context,
+			);
+			expect(grants.has(DAPP)).toBe(false);
+			await expect(
+				handler("eth_prepareUserOperation", DAPP_CALL, context),
+			).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+		});
+
+		it("maps the provider's 4200 refusal of an unsupported method to the transport's 4200", async () => {
+			const { handler, runtime, context } = harness();
+			// toRpcError asks the runtime whether a failed URL is wallet-api's.
+			Object.assign(runtime, { injection: { isWalletApiUrl: () => false } });
+			vi.mocked(runtime.provider.request).mockRejectedValueOnce(
+				Object.assign(new Error("anvil_setBalance is not supported"), {
+					code: 4200,
+				}),
+			);
+			await expect(
+				handler("anvil_setBalance", [], context),
+			).rejects.toMatchObject({ code: RPC_ERRORS.UNSUPPORTED_METHOD });
 		});
 	});
 
