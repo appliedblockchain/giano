@@ -6,7 +6,7 @@
 locals {
   datadog_agent_container = merge(local.container_defaults, {
     name   = "datadog-agent"
-    image  = "public.ecr.aws/datadog/agent:latest"
+    image  = var.datadog_agent_image
     cpu    = 0
     memory = 256
 
@@ -38,7 +38,7 @@ locals {
 
   firelens_container = merge(local.container_defaults, {
     name              = "log_router"
-    image             = "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable"
+    image             = var.log_router_image
     essential         = true
     memoryReservation = 100
 
