@@ -697,13 +697,14 @@ describe("the host request handler (WK-08…WK-12)", () => {
 		});
 
 		it("answers -32603 and keeps refusing the origin when the storage refuses the revoke", async () => {
-			const saved = new Map([
-				["giano:connection-grants", JSON.stringify([DAPP])],
-			]);
+			const saved = new Map([[`giano:connection-grant:${DAPP}`, "x"]]);
 			const storage = {
 				getItem: (key: string) => saved.get(key) ?? null,
-				setItem: () => {
-					throw new Error("QuotaExceededError");
+				setItem: (key: string, value: string) => {
+					saved.set(key, value);
+				},
+				removeItem: () => {
+					throw new Error("SecurityError");
 				},
 			};
 			const { runtime } = fakeRuntime(31337);

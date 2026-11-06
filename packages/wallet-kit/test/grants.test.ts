@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { createConnectionGrants } from "../src/grants";
 
+const KEY = "giano:connection-grant:https://app.test";
+
 function memoryStorage(initial: Record<string, string> = {}) {
 	const data = new Map(Object.entries(initial));
 	return {
+		data,
 		getItem: (key: string) => data.get(key) ?? null,
 		setItem: (key: string, value: string) => {
 			data.set(key, value);
 		},
+		removeItem: (key: string) => {
+			data.delete(key);
+		},
 	};
 }
+
+const refuse = () => {
+	throw new Error("QuotaExceededError");
+};
 
 describe("connection grants (WK-34)", () => {
 	it("grants nothing until an origin is granted, and only that origin", () => {
@@ -37,59 +47,63 @@ describe("connection grants (WK-34)", () => {
 		expect(reopened.has("https://other.test")).toBe(true);
 	});
 
-	it.each([
-		["not JSON", "{"],
-		["not an array", '{"https://app.test":true}'],
-	])("treats an unreadable entry (%s) as no grant", (_label, raw) => {
-		const grants = createConnectionGrants(
-			memoryStorage({ "giano:connection-grants": raw }),
-		);
+	it("touches only the origin's own key: no read before a write, so popups cannot overwrite each other", () => {
+		const storage = memoryStorage();
+		const calls: string[] = [];
+		const spy = {
+			getItem: (key: string) => {
+				calls.push(`get ${key}`);
+				return storage.getItem(key);
+			},
+			setItem: (key: string, value: string) => {
+				calls.push(`set ${key}`);
+				storage.setItem(key, value);
+			},
+			removeItem: (key: string) => {
+				calls.push(`remove ${key}`);
+				storage.removeItem(key);
+			},
+		};
+		createConnectionGrants(spy).grant("https://app.test");
+		createConnectionGrants(spy).revoke("https://app.test");
+		expect(calls).toEqual([`set ${KEY}`, `remove ${KEY}`]);
+	});
+
+	it("treats unreadable storage as no grant", () => {
+		const grants = createConnectionGrants({
+			...memoryStorage({ [KEY]: "x" }),
+			getItem: () => {
+				throw new Error("SecurityError");
+			},
+		});
 		expect(grants.has("https://app.test")).toBe(false);
 	});
 
 	it("keeps the grant in memory when storage refuses the write", () => {
 		const grants = createConnectionGrants({
-			getItem: () => null,
-			setItem: () => {
-				throw new Error("QuotaExceededError");
-			},
+			...memoryStorage(),
+			setItem: refuse,
 		});
 		grants.grant("https://app.test");
 		expect(grants.has("https://app.test")).toBe(true);
 	});
 
 	it("throws on revoke when storage refuses the write, and stops granting in this popup", () => {
-		const storage = memoryStorage({
-			"giano:connection-grants": JSON.stringify(["https://app.test"]),
-		});
-		const grants = createConnectionGrants({
-			getItem: storage.getItem,
-			setItem: () => {
-				throw new Error("QuotaExceededError");
-			},
-		});
+		const storage = memoryStorage({ [KEY]: "x" });
+		const grants = createConnectionGrants({ ...storage, removeItem: refuse });
 		expect(() => grants.revoke("https://app.test")).toThrow(
 			"QuotaExceededError",
 		);
 		expect(grants.has("https://app.test")).toBe(false);
+		expect(storage.data.has(KEY)).toBe(true);
 	});
 
-	it("writes a revoke to storage even after a failed grant write switched to memory", () => {
-		const storage = memoryStorage({
-			"giano:connection-grants": JSON.stringify(["https://app.test"]),
-		});
-		let refuse = true;
-		const grants = createConnectionGrants({
-			getItem: storage.getItem,
-			setItem: (key, value) => {
-				if (refuse) throw new Error("QuotaExceededError");
-				storage.setItem(key, value);
-			},
-		});
-		grants.grant("https://other.test"); // fails: this popup now uses memory
-		refuse = false;
+	it("drops a grant kept in memory when the revoke reaches storage", () => {
+		const storage = memoryStorage();
+		const grants = createConnectionGrants({ ...storage, setItem: refuse });
+		grants.grant("https://app.test"); // kept in memory only
 		grants.revoke("https://app.test");
-		expect(createConnectionGrants(storage).has("https://app.test")).toBe(false);
+		expect(grants.has("https://app.test")).toBe(false);
 	});
 
 	it("works with no storage at all", () => {
