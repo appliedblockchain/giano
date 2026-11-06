@@ -1,5 +1,6 @@
 import {
 	ENTRY_POINT_ADDRESS,
+	gianoPaymasterAbi,
 	gianoSmartWalletAbi,
 	gianoSmartWalletFactoryAbi,
 	isCanonicalEntryPointCode,
@@ -60,7 +61,17 @@ export type ChainVerificationFailure =
 			expected: `0x${string}`;
 			found: `0x${string}`;
 	  }
-	| { kind: "paymaster-missing"; address: `0x${string}` };
+	| { kind: "paymaster-missing"; address: `0x${string}` }
+	| {
+			/**
+			 * The paymaster was initialised with a different EntryPoint than the chain is configured
+			 * with. `initialize` stores it, so the fingerprint says nothing about it.
+			 */
+			kind: "paymaster-entrypoint-mismatch";
+			paymaster: `0x${string}`;
+			expected: `0x${string}`;
+			found: `0x${string}`;
+	  };
 
 /** The contracts verifyChain checks the code of, and the release contract each must be. */
 export const VERIFIED_CONTRACTS = {
@@ -278,13 +289,33 @@ export async function verifyChain(
 				// An empty slot delegates to nothing: reported as no release code at the zero address.
 				const implementation =
 					(await proxyImplementation(client, paymaster)) ?? zeroAddress;
-				releaseAt(
-					"paymaster-implementation",
-					implementation,
-					implementation === zeroAddress
-						? undefined
-						: await client.getCode({ address: implementation }),
-				);
+				if (
+					releaseAt(
+						"paymaster-implementation",
+						implementation,
+						implementation === zeroAddress
+							? undefined
+							: await client.getCode({ address: implementation }),
+					)
+				) {
+					// `initialize` stores the EntryPoint: a proxy initialised with another one passes the
+					// fingerprints, and every UserOperation it sponsors is rejected on chain.
+					const paymasterEntryPoint = (await client.readContract({
+						address: paymaster,
+						abi: gianoPaymasterAbi,
+						functionName: "entryPoint",
+					})) as `0x${string}`;
+					if (
+						paymasterEntryPoint.toLowerCase() !==
+						descriptor.entryPoint.toLowerCase()
+					)
+						result.failures.push({
+							kind: "paymaster-entrypoint-mismatch",
+							paymaster,
+							expected: descriptor.entryPoint,
+							found: paymasterEntryPoint,
+						});
+				}
 			}
 		}
 	} catch (error) {
@@ -323,6 +354,8 @@ export function describeFailure(
 			return `chain ${chainId}: implementation ${failure.implementation} is bound to EntryPoint ${failure.found}, not ${failure.expected} — the chain still runs an earlier release; upgrade it before serving`;
 		case "paymaster-missing":
 			return `chain ${chainId}: sponsorship is configured but there is no paymaster at ${failure.address}`;
+		case "paymaster-entrypoint-mismatch":
+			return `chain ${chainId}: paymaster ${failure.paymaster} was initialised with EntryPoint ${failure.found}, not ${failure.expected} — every operation it sponsors would be rejected; fix the chain's sponsorshipPaymaster or entryPoint`;
 	}
 }
 

@@ -127,6 +127,42 @@ describe("config: the chain list", () => {
 		}
 	});
 
+	it("a custom factory without an implementation is not paired with the registry's implementation", () => {
+		gianoAddresses[8453] = {
+			entryPoint: ENTRYPOINT_V09_ADDRESS,
+			factory: FACTORY,
+			implementation: IMPLEMENTATION,
+		};
+		try {
+			const custom = "0x2222222222222222222222222222222222222222";
+			const config = loadConfig({
+				...BASE_ENV,
+				GIANO_CHAINS: JSON.stringify([
+					{
+						chainId: 8453,
+						name: "Base",
+						rpcUrl: "http://a:8545",
+						walletApi: { bundlerUrl: "http://a:4337", factory: custom },
+					},
+				]),
+			});
+			// verifyChain compares the factory's own clone target, not the registry's implementation
+			expect(config.CHAINS[0].factory).toBe(custom);
+			expect(config.CHAINS[0].implementation).toBeUndefined();
+			// the single-chain shorthand: FACTORY_ADDRESS without IMPLEMENTATION_ADDRESS
+			const single = loadConfig({
+				...BASE_ENV,
+				CHAIN_ID: "8453",
+				RPC_URL: "http://a:8545",
+				BUNDLER_URL: "http://a:4337",
+				FACTORY_ADDRESS: custom,
+			});
+			expect(single.CHAINS[0].implementation).toBeUndefined();
+		} finally {
+			delete gianoAddresses[8453];
+		}
+	});
+
 	it("walletApi.implementation overrides the registry's wallet implementation (per-chain addresses)", () => {
 		gianoAddresses[8453] = {
 			entryPoint: ENTRYPOINT_V09_ADDRESS,
@@ -489,6 +525,8 @@ type FakeClientBehaviour = {
 	probeAddress?: string;
 	/** What the paymaster proxy's ERC-1967 implementation slot holds. */
 	paymasterImplementation?: string;
+	/** What entryPoint() returns at these (lower-case) addresses, e.g. the paymaster proxy's. */
+	entryPointAt?: Record<string, string>;
 };
 
 function fakeClient(behaviour: FakeClientBehaviour): PublicClient {
@@ -510,11 +548,21 @@ function fakeClient(behaviour: FakeClientBehaviour): PublicClient {
 		async getStorageAt() {
 			return `0x${(behaviour.paymasterImplementation ?? PAYMASTER_IMPLEMENTATION).slice(2).padStart(64, "0")}`;
 		},
-		async readContract({ functionName }: { functionName: string }) {
+		async readContract({
+			address,
+			functionName,
+		}: {
+			address: string;
+			functionName: string;
+		}) {
 			if (functionName === "implementation")
 				return behaviour.implementation ?? IMPLEMENTATION;
 			if (functionName === "entryPoint")
-				return behaviour.boundEntryPoint ?? ENTRYPOINT_V09_ADDRESS;
+				return (
+					behaviour.entryPointAt?.[address.toLowerCase()] ??
+					behaviour.boundEntryPoint ??
+					ENTRYPOINT_V09_ADDRESS
+				);
 			if (functionName === "getAddress")
 				return (
 					behaviour.probeAddress ?? "0x00000000000000000000000000000000000abcde"
@@ -659,6 +707,25 @@ describe("verifyChain", () => {
 				codehash: keccak256("0xdead"),
 			},
 		]);
+	});
+
+	it("a paymaster initialised with another EntryPoint is FATAL", async () => {
+		const paymaster = "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96";
+		const v07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
+		const result = await verifyChain(
+			{ ...descriptor, sponsorshipPaymaster: paymaster },
+			fakeClient({ entryPointAt: { [paymaster.toLowerCase()]: v07 } }),
+			fakeRelease,
+		);
+		expect(result.failures).toEqual([
+			{
+				kind: "paymaster-entrypoint-mismatch",
+				paymaster,
+				expected: descriptor.entryPoint,
+				found: v07,
+			},
+		]);
+		expect(result.failures.every(isFatalFailure)).toBe(true);
 	});
 
 	it("two chains with different paymaster addresses are both admitted", async () => {

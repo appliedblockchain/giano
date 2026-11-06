@@ -91,7 +91,7 @@ example). Highlights:
 | `GIANO_CHAINS` + `BUNDLER_BASE_URL` | the chains served: the backend chain document (`packages/contracts/chains.ts`) giano-bundler reads too; each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless its `walletApi.bundlerUrl` names another bundler |
 | `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | single-chain shorthand, mutually exclusive with `GIANO_CHAINS`; `BUNDLER_URL` is the exact endpoint |
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
-| `IMPLEMENTATION_ADDRESS` | the wallet implementation `FACTORY_ADDRESS` must clone; default from the registry. Without either, the comparison is skipped with a warning (`walletApi.implementation` in `GIANO_CHAINS`) |
+| `IMPLEMENTATION_ADDRESS` | the wallet implementation `FACTORY_ADDRESS` must clone; default from the registry only when the factory also comes from the registry. Without either, the comparison is skipped with a warning (`walletApi.implementation` in `GIANO_CHAINS`) |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
 | `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800), per-session and per-address limit (60) |

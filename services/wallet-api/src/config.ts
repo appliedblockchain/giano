@@ -647,8 +647,12 @@ const envSchema = z
 						entryPoint: (descriptor.entryPoint ??
 							registry!.entryPoint) as `0x${string}`,
 						factory: (walletApi.factory ?? registry!.factory) as `0x${string}`,
+						// The registry's implementation pairs with the registry's factory only. A custom
+						// factory without an explicit implementation is checked against the one it reports.
 						implementation: (walletApi.implementation ??
-							registry?.implementation) as `0x${string}` | undefined,
+							(walletApi.factory ? undefined : registry?.implementation)) as
+							| `0x${string}`
+							| undefined,
 						sponsorshipPaymaster: (descriptor.sponsorshipPaymaster ??
 							registry?.sponsorshipPaymaster) as `0x${string}` | undefined,
 						policy: resolvePolicy(walletApi.policy),
@@ -665,7 +669,9 @@ const envSchema = z
 						factory: (env.FACTORY_ADDRESS ??
 							gianoAddresses[env.CHAIN_ID!]!.factory) as `0x${string}`,
 						implementation: (env.IMPLEMENTATION_ADDRESS ??
-							gianoAddresses[env.CHAIN_ID!]?.implementation) as
+							(env.FACTORY_ADDRESS
+								? undefined
+								: gianoAddresses[env.CHAIN_ID!]?.implementation)) as
 							| `0x${string}`
 							| undefined,
 						sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
