@@ -79,6 +79,7 @@ export function TenantDrawer(props: Props) {
 	const [detail, setDetail] = useState<TenantDetail>();
 	const [loadError, setLoadError] = useState<string>();
 	const [history, setHistory] = useState<HistoryEntry[]>([]);
+	const [historyError, setHistoryError] = useState<string>();
 	const [next, setNext] = useState<string | null>(null);
 	const [open, setOpen] = useState<Open>();
 
@@ -94,7 +95,8 @@ export function TenantDrawer(props: Props) {
 		if (page.ok) {
 			setHistory(page.value.entries);
 			setNext(page.value.next);
-		}
+			setHistoryError(undefined);
+		} else setHistoryError(page.error.message);
 	}, [run, slug]);
 
 	useEffect(() => {
@@ -109,10 +111,12 @@ export function TenantDrawer(props: Props) {
 	const older = async () => {
 		if (!next) return;
 		const page = await run((api) => api.history(slug, next));
-		if (page?.ok) {
+		if (!page) return;
+		if (page.ok) {
 			setHistory((entries) => [...entries, ...page.value.entries]);
 			setNext(page.value.next);
-		}
+			setHistoryError(undefined);
+		} else setHistoryError(page.error.message);
 	};
 
 	const tenant = detail?.tenant;
@@ -327,6 +331,15 @@ export function TenantDrawer(props: Props) {
 										<Text fontWeight="semibold" mb="2">
 											History
 										</Text>
+										{historyError && (
+											<Alert.Root status="error" size="sm" mb="2">
+												<Alert.Indicator />
+												<Alert.Content>
+													<Alert.Title>Could not read the history</Alert.Title>
+													<Alert.Description>{historyError}</Alert.Description>
+												</Alert.Content>
+											</Alert.Root>
+										)}
 										<Stack gap="2" data-testid="tenant-history">
 											{history.map((entry) => (
 												<HStack key={entry.id} gap="3" align="flex-start">
