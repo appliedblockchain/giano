@@ -38,6 +38,10 @@ module "svc-wallet-api" {
     SPONSORSHIP_SIGNER_KIND   = "local"
     PAYMASTER_WATCHER_ENABLED = "true"
     LOG_LEVEL                 = "info"
+    # The ALB and the wallet UI's nginx both connect from inside the VPC, so trusting the VPC
+    # CIDR makes request.ip the real client on both paths, which the per-IP ceremony rate limit
+    # needs. A hop count cannot work: the API host is one hop away, the wallet's /api path two.
+    TRUST_PROXY = var.vpc_cidr[terraform.workspace]
     # No CHAIN_ID / RPC_URL / BUNDLER_URL / SPONSORSHIP_PAYMASTER_ADDRESS: GIANO_CHAINS
     # carries them per chain, and the two shapes are mutually exclusive (§14.2). Each chain
     # submits to the bundler at <BUNDLER_BASE_URL>/<chainId>.

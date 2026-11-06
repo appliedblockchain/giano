@@ -7,7 +7,7 @@ import type { PlatformSessionService } from "../services/platform-sessions.js";
 
 /**
  * Sign-in is limited per address, so one platform admin's retries never lock another out, and never per
- * IP: with no trustProxy every request arrives from the proxy's address. A deployment-wide ceiling
+ * IP: unless TRUST_PROXY names the proxies, every request arrives from the proxy's address. A deployment-wide ceiling
  * of ten times that, across every address listed or not, bounds the ECDSA work an attacker spraying
  * unlisted addresses can cause while staying far above what real platform admins need.
  */

@@ -57,6 +57,11 @@ walletApi:
   replicas: 2
   image: giano-wallet-api
   runMigrationsJob: true # run a pre-install/upgrade Job instead of RUN_MIGRATIONS on the pod
+  # TRUST_PROXY: the peers allowed to set X-Forwarded-For (IPs, CIDRs, loopback, linklocal,
+  # uniquelocal). The ingress controller and the wallet-web nginx must fall inside it, or
+  # request.ip is the proxy and the per-IP ceremony rate limit applies to the whole tenant.
+  # Narrow it to the cluster's pod CIDR where you know it. Never "true".
+  trustProxy: uniquelocal
   resources: {}
 
 walletWeb:
