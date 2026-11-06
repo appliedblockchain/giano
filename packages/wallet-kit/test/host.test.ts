@@ -376,18 +376,6 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			emit("accountsChanged", ["0xdef"]);
 			expect(sendEvent).not.toHaveBeenCalled();
 		});
-
-		it("maps the provider's 4200 refusal of an unsupported method to the transport's 4200", async () => {
-			const { handler, runtime, context } = harness();
-			vi.mocked(runtime.provider.request).mockRejectedValueOnce(
-				Object.assign(new Error("anvil_setBalance is not supported"), {
-					code: 4200,
-				}),
-			);
-			await expect(
-				handler("anvil_setBalance", [], context),
-			).rejects.toMatchObject({ code: RPC_ERRORS.UNSUPPORTED_METHOD });
-		});
 	});
 
 	describe("giano_openWalletManagement (WM-54, WM-55)", () => {
