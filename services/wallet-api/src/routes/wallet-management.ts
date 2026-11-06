@@ -498,8 +498,10 @@ export default async function walletManagementRoutes(
 			slot = await withExpiry(slot);
 			if (slot.status !== "open") refuseDead(slot);
 
+			// Its own kind, so /v1/webauthn/registration/verify can never redeem it: that endpoint
+			// attaches an active credential and grants a session, which a claim must never do.
 			const challenge = await challenges.issue(
-				"registration",
+				"pending-addition",
 				slot.userId,
 				tenant.id,
 			);
@@ -584,9 +586,9 @@ export default async function walletManagementRoutes(
 					"clientDataJSON could not be decoded",
 				);
 			}
-			const consumed = await challenges.consume(challenge, "registration");
+			const consumed = await challenges.consume(challenge, "pending-addition");
 			// The challenge was issued by the claim step, bound to the slot's tenant and user —
-			// enforcing those bindings is what stops a challenge minted elsewhere filling a slot.
+			// its kind and those bindings are what stop a challenge minted elsewhere filling a slot.
 			if (
 				!consumed ||
 				consumed.tenantId !== tenant.id ||

@@ -200,9 +200,9 @@ describe("migration 0007_tenant_lifecycle", () => {
 		await client.query(
 			`UPDATE tenants SET managed_by = 'operator', version = 2 WHERE slug = 'acme'`,
 		);
-		expect(await runMigrations(container.getConnectionUri())).toEqual([
-			"0009_drop_tenant_managed_by.sql",
-		]);
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0009")),
+		).toEqual(["0009_drop_tenant_managed_by.sql"]);
 		const { rows } = await client.query(
 			`SELECT column_name FROM information_schema.columns WHERE table_name = 'tenants' AND column_name = 'managed_by'`,
 		);
@@ -213,5 +213,57 @@ describe("migration 0007_tenant_lifecycle", () => {
 		expect(
 			(await client.query(`SELECT created_by FROM tenant_admin_keys`)).rows,
 		).toEqual([{ created_by: "seed" }]);
+	});
+
+	it("0010 admits the pending-addition challenge kind and still refuses unknown kinds", async () => {
+		const { rows } = await client.query(
+			`SELECT id FROM tenants WHERE slug = 'acme'`,
+		);
+		const tenantId = rows[0].id;
+		const {
+			rows: [user],
+		} = await client.query(
+			`INSERT INTO users (tenant_id, external_id) VALUES ($1, 'existing-user') RETURNING id`,
+			[tenantId],
+		);
+		// outstanding at upgrade: a user-bound registration challenge may be a pre-upgrade claim challenge
+		for (const [challenge, kind, userId] of [
+			["bound-registration", "registration", user.id],
+			["new-user-registration", "registration", null],
+			["bound-authentication", "authentication", user.id],
+		]) {
+			await client.query(
+				`INSERT INTO challenges (challenge, kind, tenant_id, user_id, expires_at) VALUES ($1, $2, $3, $4, now() + interval '5 minutes')`,
+				[challenge, kind, tenantId, userId],
+			);
+		}
+
+		expect(await runMigrations(container.getConnectionUri())).toEqual([
+			"0010_pending_addition_challenge_kind.sql",
+		]);
+		expect(
+			(
+				await client.query(
+					`SELECT challenge, consumed_at IS NOT NULL AS consumed FROM challenges
+            WHERE challenge IN ('bound-registration', 'new-user-registration', 'bound-authentication')
+            ORDER BY challenge`,
+				)
+			).rows,
+		).toEqual([
+			{ challenge: "bound-authentication", consumed: false },
+			{ challenge: "bound-registration", consumed: true },
+			{ challenge: "new-user-registration", consumed: false },
+		]);
+
+		await client.query(
+			`INSERT INTO challenges (challenge, kind, tenant_id, expires_at) VALUES ('claim', 'pending-addition', $1, now())`,
+			[tenantId],
+		);
+		await expect(
+			client.query(
+				`INSERT INTO challenges (challenge, kind, tenant_id, expires_at) VALUES ('other', 'other', $1, now())`,
+				[tenantId],
+			),
+		).rejects.toThrow(/check constraint/);
 	});
 });
