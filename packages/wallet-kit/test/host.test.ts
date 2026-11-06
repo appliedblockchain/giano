@@ -329,6 +329,11 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				[{ to: ACCOUNT, data: new String(ADD_OWNER) }],
 			],
 			["a transaction that is not an object", "eth_sendTransaction", [ACCOUNT]],
+			["no transaction", "eth_sendTransaction", []],
+			["a null transaction", "eth_sendTransaction", [null]],
+			["a null call", "eth_prepareUserOperation", [[null]]],
+			["a null user operation", "eth_signUserOperation", [null]],
+			["no user operation", "eth_sendSignedUserOperation", []],
 			[
 				"calls as a Set",
 				"eth_prepareUserOperation",
@@ -398,9 +403,10 @@ describe("the host request handler (WK-08…WK-12)", () => {
 		it("checks again after consent, against the account the request will run with", async () => {
 			const OTHER: Address = "0x4444444444444444444444444444444444444444";
 			const { handler, requests, calls, context, setAccount } = harness();
+			// No sender, so the host fills in the checked account and the request reaches consent.
 			const call = handler(
 				"eth_signUserOperation",
-				[{ sender: OTHER, callData: execute(OTHER, ADD_OWNER) }],
+				[{ callData: execute(OTHER, ADD_OWNER) }],
 				context,
 			);
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
@@ -414,6 +420,47 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				"eth_signUserOperation",
 			);
 		});
+
+		it("signs a user operation only as the account it checked", async () => {
+			const { handler, requests, calls, context } = harness();
+			const operation = { callData: execute(DAPP_CONTRACT), nonce: "0x1" };
+			const call = handler("eth_signUserOperation", [operation], context);
+			await vi.waitFor(() => expect(requests.current).not.toBeNull());
+			// The consent screen shows what the dApp sent.
+			expect(requests.current?.params).toEqual([operation]);
+			requests.current!.approve();
+			await expect(call).resolves.toBe("result:eth_signUserOperation");
+			// The provider gets the sender, so it refuses if its account changes before it signs.
+			const forwarded = calls.find(
+				(entry) => entry.method === "eth_signUserOperation",
+			);
+			expect(forwarded?.params).toEqual([{ ...operation, sender: ACCOUNT }]);
+		});
+
+		it.each([
+			["another account", "0x4444444444444444444444444444444444444444"],
+			["null", null],
+			["a String object", new String(ACCOUNT)],
+		])(
+			"refuses a user operation to sign whose sender is %s, before consent",
+			async (_name, sender) => {
+				const { handler, requests, calls, context } = harness();
+				await expect(
+					handler(
+						"eth_signUserOperation",
+						[{ sender, callData: execute(DAPP_CONTRACT) }],
+						context,
+					),
+				).rejects.toMatchObject({
+					code: RPC_ERRORS.UNAUTHORIZED,
+					message: expect.stringContaining("sender"),
+				});
+				expect(requests.current).toBeNull();
+				expect(calls.map((entry) => entry.method)).not.toContain(
+					"eth_signUserOperation",
+				);
+			},
+		);
 
 		it("refuses after consent when the account is gone", async () => {
 			const { handler, requests, calls, context, setAccount } = harness();

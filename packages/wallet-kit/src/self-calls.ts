@@ -33,6 +33,7 @@ class Unreadable extends Error {}
  * Returns "unreadable" when the request cannot be checked, and the caller refuses it:
  * - `params` is not an array. The provider unpacks any iterable, so a `Set` would carry a
  *   transaction this check never sees.
+ * - The transaction, a call or the user operation is missing, null or not an object.
  * - A `to` or `data` is not a primitive string (or absent). A `String` object compares as
  *   "not the account" here but viem still encodes it as the account.
  * - A user operation's callData is not an execute or executeBatch call.
@@ -69,7 +70,7 @@ function operationCalls(method: string, params: unknown): OperationCall[] {
 
 	if (method === "eth_sendTransaction") {
 		// A missing `to` is refused by the provider; there is no target to compare.
-		const transaction = record(params[0]);
+		const transaction = object(params[0]);
 		return [
 			{
 				to: address(transaction.to),
@@ -81,7 +82,7 @@ function operationCalls(method: string, params: unknown): OperationCall[] {
 	if (method === "eth_prepareUserOperation") {
 		// The provider passes `{ calls, ...options }` to viem, so options can override the calls
 		// or supply raw callData. Every source of calls is checked.
-		const options = record(params[1]);
+		const options = optionalObject(params[1]);
 		const calls = [...viemCalls(params[0]), ...viemCalls(options.calls)];
 		if (options.callData !== undefined) {
 			calls.push(...decodeAccountCallData(options.callData));
@@ -91,7 +92,7 @@ function operationCalls(method: string, params: unknown): OperationCall[] {
 
 	// eth_signUserOperation, eth_sendSignedUserOperation: the operation's callData is what the
 	// account executes.
-	return decodeAccountCallData(record(params[0]).callData);
+	return decodeAccountCallData(object(params[0]).callData);
 }
 
 /** viem calls: `{ to, data }`, or `{ to, abi, functionName, args }` that viem encodes. */
@@ -99,7 +100,7 @@ function viemCalls(calls: unknown): OperationCall[] {
 	if (calls === undefined || calls === null) return [];
 	if (!Array.isArray(calls)) throw new Unreadable();
 	return calls.map((value) => {
-		const call = record(value);
+		const call = object(value);
 		return {
 			to: address(call.to),
 			carriesCalldata:
@@ -140,11 +141,20 @@ function decodeWalletCall(data: Hex) {
 	}
 }
 
-/** A plain object's fields; absent counts as empty, anything else is unreadable. */
-function record(value: unknown): Record<string, unknown> {
-	if (value === undefined || value === null) return {};
-	if (typeof value !== "object" || Array.isArray(value)) throw new Unreadable();
+/**
+ * A plain object's fields. A transaction, a call or a user operation must be one: a missing or
+ * null entry is unreadable, because the consent screen and the provider cannot use it either.
+ */
+function object(value: unknown): Record<string, unknown> {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Unreadable();
+	}
 	return value as Record<string, unknown>;
+}
+
+/** Optional fields, such as the options of eth_prepareUserOperation: absent counts as empty. */
+function optionalObject(value: unknown): Record<string, unknown> {
+	return value === undefined || value === null ? {} : object(value);
 }
 
 /** A call target: absent, or a primitive string. */

@@ -129,7 +129,8 @@ export function createHostRequestHandler({
 		// are added or removed and how the account is upgraded. Refused before consent, so the
 		// user is never shown an Approve button for one, and checked again after consent, because
 		// the account can change while the user decides.
-		assertNoSelfCall(runtime, method, params);
+		const checked = assertNoSelfCall(runtime, method, params);
+		if (checked) pinSender(method, params, checked);
 		if (needsConsent) {
 			await requests.requestConsent({
 				kind:
@@ -148,9 +149,16 @@ export function createHostRequestHandler({
 				runtime,
 			});
 		}
-		if (needsConsent) assertNoSelfCall(runtime, method, params);
+		let forwarded = params;
+		if (needsConsent) {
+			const account = assertNoSelfCall(runtime, method, params);
+			if (account) forwarded = pinSender(method, params, account);
+		}
 		try {
-			return await runtime.provider.request({ method, params } as never);
+			return await runtime.provider.request({
+				method,
+				params: forwarded,
+			} as never);
 		} catch (error) {
 			throw toRpcError(error);
 		}
@@ -162,15 +170,17 @@ export function createHostRequestHandler({
  * checked. A value-only transfer to self carries no calldata and stays allowed. The management
  * view builds its self-calls and calls the provider directly, so it does not pass through here.
  *
+ * Returns the address of the account it checked against, for an operation method.
+ *
  * Synchronous on purpose: the caller runs the provider request right after it, with no await
- * in between, so the request runs against the account that was checked.
+ * in between, so the request starts against the account that was checked.
  */
 function assertNoSelfCall(
 	runtime: WalletRuntime,
 	method: string,
 	params: unknown,
-): void {
-	if (!OPERATION_METHODS.has(method)) return;
+): string | undefined {
+	if (!OPERATION_METHODS.has(method)) return undefined;
 	const account = runtime.provider.getSmartAccount();
 	// Without an account there is nothing to check against, so the request is refused here.
 	// The provider would refuse it too; this is the error toRpcError gives for that case.
@@ -190,9 +200,41 @@ function assertNoSelfCall(
 	if (selfCall === "unreadable") {
 		throw new TransportRpcError(
 			RPC_ERRORS.UNAUTHORIZED,
-			"the request cannot be checked: params must be an array, `to` and `data` must be hex strings, and a user operation's callData must be an execute or executeBatch call",
+			"the request cannot be checked: params must be an array, the transaction or user operation must be an object, `to` and `data` must be hex strings, and a user operation's callData must be an execute or executeBatch call",
 		);
 	}
+	return account.address;
+}
+
+/**
+ * Binds a user operation to be signed to the account it was checked against. The provider
+ * awaits before it signs, and it signs with whatever account it holds by then. It also refuses
+ * a `sender` that is not that account. So with `sender` set to the checked account, a change of
+ * account inside the provider makes it refuse the request instead of signing an unchecked one.
+ *
+ * A `sender` that is not the checked account is refused here, before consent. A missing one is
+ * filled in. Other methods are returned unchanged: eth_sendSignedUserOperation already requires
+ * `sender`, and the others build the operation from the account itself.
+ */
+function pinSender(method: string, params: unknown, account: string): unknown {
+	if (method !== "eth_signUserOperation") return params;
+	// assertNoSelfCall has already required an array whose first entry is an object.
+	const [operation, ...rest] = params as [
+		Record<string, unknown>,
+		...unknown[],
+	];
+	const { sender } = operation;
+	if (
+		sender !== undefined &&
+		(typeof sender !== "string" ||
+			sender.toLowerCase() !== account.toLowerCase())
+	) {
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"the user operation's sender is not the connected account",
+		);
+	}
+	return [{ ...operation, sender: account }, ...rest];
 }
 
 /**
