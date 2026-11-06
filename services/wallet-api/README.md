@@ -100,6 +100,7 @@ example). Highlights:
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` | tuning |
 | `METRICS_BEARER_TOKEN` | bearer token for `GET /metrics`, at least 16 characters; required when `GIANO_DEPLOYMENT_CLASS` is `testnet` or `production` |
 | `SESSION_IDLE_TIMEOUT_SECONDS` / `SESSION_MAX_PER_USER` | wallet session idle timeout (3600; at least 300, at most `SESSION_TTL_SECONDS`), live sessions per user before the ones used longest ago are revoked (10) |
+| `TRUST_PROXY` | the proxies allowed to set `X-Forwarded-For`: comma-separated IPs, CIDRs and `loopback` / `linklocal` / `uniquelocal`. Unset trusts none, so behind a proxy `request.ip` is the proxy and the per-IP ceremony rate limit covers the whole tenant. AWS sets the VPC CIDR. Never `true` |
 | `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800, at most 30 days), per-session and per-address limit (60) |
 | `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` / `PLATFORM_RPC_MAX_LOG_BLOCKS` | the platform chain read relay (`/v1/platform/rpc/:chainId`): forwarded reads per session per minute (1200, a budget separate from the one above), and the widest `eth_getLogs` range it forwards (10000; at least 9000, the paymaster SDK's log window) |
 | `RPC_RELAY_RATE_LIMIT_PER_MINUTE` / `RPC_RELAY_MAX_LOG_BLOCKS` | the tenant chain read relay (`/v1/rpc/:chainId`): forwarded reads per tenant per minute (3000), and the widest `eth_getLogs` range it forwards (10000) |
