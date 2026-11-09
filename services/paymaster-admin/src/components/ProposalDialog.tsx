@@ -77,6 +77,7 @@ export function ProposalDialog({
 		setSalt(randomSalt());
 		setDelay("");
 		setPredecessor("");
+		setDroppedPredecessor(undefined);
 		setAdding(false);
 		setRequired(undefined);
 	}, [request]);
@@ -85,6 +86,23 @@ export function ProposalDialog({
 	// being typed, only once the typing pauses rather than four reads a keystroke.
 	const settledSalt = useDebounced(salt, 400);
 	const settledDelay = useDebounced(delay, 400);
+	// Until the typing settles, the draft is for the previous salt or delay: nothing may be scheduled
+	// or saved from it while the fields show something else.
+	const typing = salt !== settledSalt || delay !== settledDelay;
+	const ready = typing ? undefined : draft;
+
+	// A predecessor that is no longer pending (executed or cancelled) would leave the operation
+	// unable to execute, found out only after the delay: it is cleared, and the field says why.
+	const [droppedPredecessor, setDroppedPredecessor] = useState<string>();
+	useEffect(() => {
+		if (
+			predecessor &&
+			!timelockOperations.pending.some((pending) => pending.id === predecessor)
+		) {
+			setDroppedPredecessor(predecessor);
+			setPredecessor("");
+		}
+	}, [predecessor, timelockOperations.pending]);
 
 	const saltProblem =
 		salt && !SALT.test(salt)
@@ -158,12 +176,12 @@ export function ProposalDialog({
 	);
 
 	const save = (step: "schedule" | "execute" | "cancel") => {
-		if (!draft || !timelock) return;
+		if (!ready || !timelock) return;
 		try {
 			const name = downloadSafeBatch(
-				timelock.safeBatch(draft, step),
+				timelock.safeBatch(ready, step),
 				step,
-				draft.id,
+				ready.id,
 			);
 			notifySuccess(`Saved the Safe ${step} batch`, name);
 		} catch (cause) {
@@ -322,9 +340,10 @@ export function ProposalDialog({
 											<NativeSelect.Root size="sm">
 												<NativeSelect.Field
 													value={predecessor}
-													onChange={(event) =>
-														setPredecessor(event.currentTarget.value)
-													}
+													onChange={(event) => {
+														setPredecessor(event.currentTarget.value);
+														setDroppedPredecessor(undefined);
+													}}
 													fontFamily="mono"
 												>
 													<option value="">None</option>
@@ -336,8 +355,12 @@ export function ProposalDialog({
 												</NativeSelect.Field>
 												<NativeSelect.Indicator />
 											</NativeSelect.Root>
-											<Field.HelperText>
-												A pending operation that must execute first.
+											<Field.HelperText
+												color={droppedPredecessor ? "orange.fg" : undefined}
+											>
+												{droppedPredecessor
+													? `${droppedPredecessor.slice(0, 10)}… is no longer pending, so it was cleared: an operation waiting on it could never execute.`
+													: "A pending operation that must execute first."}
 											</Field.HelperText>
 										</Field.Root>
 									</Stack>
@@ -352,7 +375,7 @@ export function ProposalDialog({
 										</Alert.Content>
 									</Alert.Root>
 								)}
-								{timelock && !draft && !error && requests.length > 0 && (
+								{timelock && !ready && !error && requests.length > 0 && (
 									<HStack gap="3">
 										<Spinner size="sm" color="timelock.solid" />
 										<Text fontSize="sm" color="fg.muted">
@@ -361,39 +384,39 @@ export function ProposalDialog({
 									</HStack>
 								)}
 
-								{draft && (
+								{ready && (
 									<Section title="The operation">
 										<Stack gap="2" data-testid="proposal-result">
 											<Row label="Operation id">
-												<Copyable value={draft.id} label="Operation id" />
+												<Copyable value={ready.id} label="Operation id" />
 											</Row>
 											<Row label="Delay">
-												<Text fontSize="sm">{formatDuration(draft.delay)}</Text>
+												<Text fontSize="sm">{formatDuration(ready.delay)}</Text>
 											</Row>
 											<Row label="Ready">
 												<Text fontSize="sm">
 													{new Date(
-														draft.readyAtIfScheduledNow * 1000,
+														ready.readyAtIfScheduledNow * 1000,
 													).toLocaleString()}{" "}
-													({relativeTime(draft.readyAtIfScheduledNow)}) if
+													({relativeTime(ready.readyAtIfScheduledNow)}) if
 													scheduled now
 												</Text>
 											</Row>
 											<Row label="Schedule">
 												<Calldata
-													value={draft.schedule}
+													value={ready.schedule}
 													label="Schedule calldata"
 												/>
 											</Row>
 											<Row label="Execute">
 												<Calldata
-													value={draft.execute}
+													value={ready.execute}
 													label="Execute calldata"
 												/>
 											</Row>
 											<Row label="Cancel">
 												<Calldata
-													value={draft.cancel}
+													value={ready.cancel}
 													label="Cancel calldata"
 												/>
 											</Row>
@@ -409,7 +432,7 @@ export function ProposalDialog({
 							<Button
 								variant="outline"
 								size="sm"
-								disabled={!draft}
+								disabled={!ready}
 								onClick={() => save("cancel")}
 							>
 								<LuDownload /> Safe batch (cancel)
@@ -417,7 +440,7 @@ export function ProposalDialog({
 							<Button
 								variant="outline"
 								size="sm"
-								disabled={!draft}
+								disabled={!ready}
 								onClick={() => save("execute")}
 							>
 								<LuDownload /> Safe batch (execute)
@@ -425,7 +448,7 @@ export function ProposalDialog({
 							<Button
 								colorPalette="timelock"
 								size="sm"
-								disabled={!draft}
+								disabled={!ready}
 								onClick={() => save("schedule")}
 							>
 								<LuDownload /> Safe batch (schedule)
@@ -440,7 +463,7 @@ export function ProposalDialog({
 										},
 									}}
 									label="Schedule"
-									send={draft ? () => timelock.schedule(draft) : undefined}
+									send={ready ? () => timelock.schedule(ready) : undefined}
 									onDone={onClose}
 								/>
 							)}
