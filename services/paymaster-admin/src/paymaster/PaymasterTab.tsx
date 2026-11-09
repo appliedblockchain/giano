@@ -39,6 +39,7 @@ import {
 import { SectionCard } from "../components/ui";
 import { AddressLabel, Amount } from "../components/values";
 import { useImplementation } from "../hooks/useImplementation";
+import { describeError } from "../lib/format";
 import { queuedKeys } from "../lib/queued";
 import { MAX_UINT32, parsePenaltyBps } from "../lib/validate";
 import { useConsole } from "../shell/ConsoleContext";
