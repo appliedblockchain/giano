@@ -17,6 +17,9 @@ import { createSystem, defaultConfig, defineConfig } from "@chakra-ui/react";
 const config = defineConfig({
 	globalCss: {
 		"html, body, #root": { minHeight: "100vh" },
+		// The header is sticky and toasts sit bottom-right: whatever is scrolled to, by keyboard focus
+		// or a link, lands clear of both rather than under them.
+		html: { scrollPaddingTop: "8rem", scrollPaddingBottom: "6rem" },
 		body: {
 			background: "canvas",
 			color: "fg",

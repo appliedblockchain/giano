@@ -10,7 +10,8 @@ import {
 	Text,
 	Textarea,
 } from "@chakra-ui/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { ConfirmDialog } from "../components/actions";
 import { Copyable } from "../components/ui";
 import { useWrite } from "../hooks/useWrite";
 import type {
@@ -21,6 +22,7 @@ import type {
 	PlatformTenant,
 } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
+import type { OtherDeployment } from "../tenants/OtherDeployments";
 import { ApiErrorAlert, type OnChainState, OnChainStep } from "./shared";
 
 /**
@@ -40,6 +42,8 @@ type ChainBase = Base & {
 	canAdminister: boolean;
 	onChain: OnChainState;
 	refreshChain: () => Promise<void>;
+	/** The tenant on every other configured deployment, for the chains a follow-up cannot reach from here. */
+	others: readonly OtherDeployment[];
 };
 
 /** A dialog that runs one platform admin call and shows its refusal in place. */
@@ -146,11 +150,21 @@ export function SuspendDialog({
 	canAdminister,
 	onChain,
 	refreshChain,
+	others,
 }: ChainBase) {
-	const { act, busy, error } = usePlatformAction();
+	const { act, busy, error, reset } = usePlatformAction();
 	const write = useWrite(refreshChain);
 	const [reason, setReason] = useState("");
 	const [suspended, setSuspended] = useState(false);
+	// The page stays mounted, so suspend → resume → Suspend reopens this dialog: it starts afresh,
+	// not on the last suspension's result with nothing to send.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `open` is the trigger; `reset` only clears the last error
+	useEffect(() => {
+		if (!open) return;
+		setSuspended(false);
+		setReason("");
+		reset();
+	}, [open]);
 
 	const confirm = async () => {
 		if ((await act((api) => api.suspend(tenant.slug, reason.trim())))?.ok) {
@@ -198,6 +212,7 @@ export function SuspendDialog({
 								disable on-chain.
 							</Text>
 						)}
+						<ElsewhereNote others={others} enabled verb="disable" />
 					</Stack>
 				)
 			}
@@ -229,10 +244,18 @@ export function ResumeDialog({
 	canAdminister,
 	onChain,
 	refreshChain,
+	others,
 }: ChainBase) {
-	const { act, busy, error } = usePlatformAction();
+	const { act, busy, error, reset } = usePlatformAction();
 	const write = useWrite(refreshChain);
 	const [resumed, setResumed] = useState(false);
+	// As in SuspendDialog: each opening starts afresh.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `open` is the trigger; `reset` only clears the last error
+	useEffect(() => {
+		if (!open) return;
+		setResumed(false);
+		reset();
+	}, [open]);
 
 	const confirm = async () => {
 		if ((await act((api) => api.resume(tenant.slug)))?.ok) {
@@ -272,12 +295,43 @@ export function ResumeDialog({
 								}
 							/>
 						)}
+						<ElsewhereNote others={others} enabled={false} verb="enable" />
 					</Stack>
 				)
 			}
 		>
 			<Text>The tenant resolves again from the next request.</Text>
 		</ActionDialog>
+	);
+}
+
+/**
+ * The other deployments where the follow-up still applies (openspec K11, PLATFORM-ADMIN-SPECS
+ * §11.3). A write there needs the wallet on that chain and the console on that paymaster, so the
+ * console names them rather than offering a write it cannot make from here.
+ */
+function ElsewhereNote({
+	others,
+	enabled,
+	verb,
+}: {
+	others: readonly OtherDeployment[];
+	enabled: boolean;
+	verb: string;
+}) {
+	const names = others
+		.filter(
+			({ reading }) =>
+				reading.kind === "registered" && reading.tenant.enabled === enabled,
+		)
+		.map(({ deployment }) => deployment.name);
+	if (names.length === 0) return null;
+	return (
+		<Text fontSize="sm" color="orange.fg" data-testid="elsewhere-note">
+			It is also {enabled ? "enabled" : "disabled"} on {names.join(", ")}.
+			Switch the console to {names.length === 1 ? "that deployment" : "each"} to{" "}
+			{verb} it there.
+		</Text>
 	);
 }
 
@@ -349,6 +403,7 @@ export function IssueKeyDialog({ open, onClose, onDone, tenant }: Base) {
 	const { act, busy, error } = usePlatformAction();
 	const [label, setLabel] = useState("");
 	const [issued, setIssued] = useState<IssuedAdminKey>();
+	const guard = useKeyGuard(issued && [issued]);
 	const confirm = async () => {
 		const result = await act((api) => api.issueKey(tenant.slug, label.trim()));
 		if (result?.ok) {
@@ -356,31 +411,49 @@ export function IssueKeyDialog({ open, onClose, onDone, tenant }: Base) {
 			onDone();
 		}
 	};
+	// A reopened dialog starts empty: the key it showed is never shown again.
+	const close = () =>
+		guard.close(() => {
+			setIssued(undefined);
+			setLabel("");
+			onClose();
+		});
 	return (
-		<ActionDialog
-			open={open}
-			onClose={onClose}
-			title={`Issue an admin key for ${tenant.slug}`}
-			confirmLabel="Issue key"
-			disabled={!label.trim()}
-			busy={busy}
-			error={error}
-			onConfirm={() => void confirm()}
-			after={issued && <ShownOnce keys={[issued]} />}
-		>
-			<Field.Root required>
-				<Field.Label>Label</Field.Label>
-				<Input
-					value={label}
-					onChange={(event) => setLabel(event.target.value)}
-					placeholder="acme-backend"
-					autoFocus
-				/>
-				<Field.HelperText>
-					What the key is for. The key itself is generated by the server.
-				</Field.HelperText>
-			</Field.Root>
-		</ActionDialog>
+		<>
+			{guard.dialog}
+			<ActionDialog
+				open={open}
+				onClose={close}
+				title={`Issue an admin key for ${tenant.slug}`}
+				confirmLabel="Issue key"
+				disabled={!label.trim()}
+				busy={busy}
+				error={error}
+				onConfirm={() => void confirm()}
+				after={
+					issued && (
+						<ShownOnce
+							keys={[issued]}
+							copied={guard.copied}
+							onCopied={guard.onCopied}
+						/>
+					)
+				}
+			>
+				<Field.Root required>
+					<Field.Label>Label</Field.Label>
+					<Input
+						value={label}
+						onChange={(event) => setLabel(event.target.value)}
+						placeholder="acme-backend"
+						autoFocus
+					/>
+					<Field.HelperText>
+						What the key is for. The key itself is generated by the server.
+					</Field.HelperText>
+				</Field.Root>
+			</ActionDialog>
+		</>
 	);
 }
 
@@ -418,8 +491,19 @@ export function RevokeKeyDialog({
 	);
 }
 
-/** Generated admin keys, shown the one time the API returns them. */
-export function ShownOnce({ keys }: { keys: IssuedAdminKey[] }) {
+/**
+ * Generated admin keys, shown the one time the API returns them (openspec K11). Each copy is
+ * reported, so the dialog can ask before it closes over a key nobody kept.
+ */
+export function ShownOnce({
+	keys,
+	copied,
+	onCopied,
+}: {
+	keys: IssuedAdminKey[];
+	copied: ReadonlySet<string>;
+	onCopied: (keyId: string) => void;
+}) {
 	return (
 		<Stack gap="3">
 			<Alert.Root status="warning" size="sm">
@@ -436,10 +520,50 @@ export function ShownOnce({ keys }: { keys: IssuedAdminKey[] }) {
 				<Stack key={key.id} gap="1">
 					<Text fontSize="xs" color="fg.muted">
 						{key.label}
+						{copied.has(key.id) && " · copied"}
 					</Text>
-					<Copyable value={key.key} label={`Admin key ${key.label}`} />
+					<Copyable
+						value={key.key}
+						label={`Admin key ${key.label}`}
+						onCopied={() => onCopied(key.id)}
+					/>
 				</Stack>
 			))}
 		</Stack>
 	);
+}
+
+/**
+ * Guards closing a dialog that shows keys once: closing before every key was copied asks first.
+ * `close(done)` closes at once when nothing is at risk; `dialog` is the confirmation to render.
+ */
+export function useKeyGuard(keys: IssuedAdminKey[] | undefined) {
+	const [copied, setCopied] = useState<ReadonlySet<string>>(new Set());
+	const [pendingClose, setPendingClose] = useState<() => void>();
+	const uncopied = keys?.filter((key) => !copied.has(key.id)).length ?? 0;
+	const finish = (done: () => void) => {
+		setCopied(new Set());
+		setPendingClose(undefined);
+		done();
+	};
+	return {
+		copied,
+		onCopied: (keyId: string) =>
+			setCopied((previous) => new Set(previous).add(keyId)),
+		close: (done: () => void) =>
+			uncopied > 0 ? setPendingClose(() => done) : finish(done),
+		dialog: (
+			<ConfirmDialog
+				open={pendingClose !== undefined}
+				confirmation={{
+					title: "Close without copying every key?",
+					effect: `${uncopied} key${uncopied === 1 ? " has" : "s have"} not been copied. A key cannot be shown again: the tenant would need a new one issued.`,
+					confirmLabel: "Close anyway",
+				}}
+				destructive
+				onConfirm={() => pendingClose && finish(pendingClose)}
+				onCancel={() => setPendingClose(undefined)}
+			/>
+		),
+	};
 }

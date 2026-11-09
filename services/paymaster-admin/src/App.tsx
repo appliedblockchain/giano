@@ -40,17 +40,16 @@ import {
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import type { ProposalRequest, Propose } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
+import { joinTenants, type TenantRow } from "./lib/tenants";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
 import { RolesPanel } from "./panels/RolesPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
-import { TenantsPanel } from "./panels/TenantsPanel";
 import { TimelockPanel } from "./panels/TimelockPanel";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
-import { TenantsTab } from "./platform/TenantsTab";
 import {
 	type ConsoleContextValue,
 	ConsoleProvider,
@@ -59,6 +58,8 @@ import {
 import { Header } from "./shell/Header";
 import { SessionWarning } from "./shell/SessionWarning";
 import { TabBar } from "./shell/TabBar";
+import { TenantsRoute } from "./tenants/TenantsRoute";
+import { type Registry, useRegistry } from "./tenants/useRegistry";
 
 export function App() {
 	const { deployments } = getAdminConfig();
@@ -142,6 +143,13 @@ function Console({
 	const [proposal, setProposal] = useState<ProposalRequest>();
 	const propose = timelock ? setProposal : undefined;
 	const timelockOperations = usePendingOperations(timelock, lastUpdated);
+	// Read for the whole console, not only the Tenants tab: the tab bar counts the same tenants the
+	// list shows.
+	const registry = useRegistry(lastUpdated);
+	const tenantRows = useMemo(
+		() => joinTenants(registry.tenants, overview?.tenants),
+		[registry.tenants, overview?.tenants],
+	);
 	const safes = useSafes(deployment, client?.publicClient);
 
 	const selectDeployment = useCallback(
@@ -225,6 +233,7 @@ function Console({
 		timelock,
 		propose,
 		refresh,
+		block,
 		timelockOperations,
 		safes,
 	};
@@ -344,7 +353,13 @@ function Console({
 							<TabBar
 								route={route}
 								platformApi={platformApi}
-								tenants={overview?.tenants.length}
+								tenants={
+									!overview || (platformApi && !registry.tenants)
+										? undefined
+										: tenantRows.filter(
+												(row) => row.registry?.status !== "deleted",
+											).length
+								}
 								pendingOperations={
 									// Only from a read that succeeded: "(0)" after a failed one reads as nothing queued.
 									timelock && timelockOperations.read
@@ -364,6 +379,8 @@ function Console({
 								rosterOnChain={rosterOnChain}
 								loading={loading}
 								timelockOperations={timelockOperations}
+								tenantRows={tenantRows}
+								registry={registry}
 							/>
 						</>
 					)}
@@ -399,6 +416,8 @@ function RouteView({
 	rosterOnChain,
 	loading,
 	timelockOperations,
+	tenantRows,
+	registry,
 }: {
 	route: Route;
 	platformProps: PlatformAreaProps;
@@ -410,6 +429,8 @@ function RouteView({
 	rosterOnChain: boolean;
 	loading: boolean;
 	timelockOperations: TimelockOperationsState;
+	tenantRows: readonly TenantRow[];
+	registry: Registry;
 }) {
 	const { platformApi } = getAdminConfig();
 	const { client, overview, myRoles, wallet, deployment } = platformProps;
@@ -426,31 +447,19 @@ function RouteView({
 	) : null;
 
 	// The registry is wallet-api's, not the chain's: an RPC failure must not hide it, Create tenant or a
-	// tenant's page. It joins the roster when there is one, and says so when there is not.
-	if (route.tab === "tenants")
+	// tenant's page. They say the on-chain side is unknown until the paymaster is read. Without the
+	// platform API the tab is the roster alone, so it waits for the read like the others.
+	if (route.tab === "tenants" && (platformApi || (overview && client)))
 		return (
-			<Stack gap="6">
-				{platformApi && (
-					<TenantsTab
-						{...platformProps}
-						selected={route.tenant}
-						lastUpdated={lastUpdated}
-					/>
-				)}
-				{overview && client ? (
-					<TenantsPanel
-						client={client}
-						tenants={overview.tenants}
-						myRoles={myRoles}
-						connected={wallet !== undefined}
-						rosterOnChain={rosterOnChain}
-						refresh={refresh}
-						propose={propose}
-					/>
-				) : (
-					reading
-				)}
-			</Stack>
+			<TenantsRoute
+				param={route.tenant}
+				client={client}
+				rows={tenantRows}
+				registry={registry}
+				rosterOnChain={rosterOnChain}
+				lastUpdated={lastUpdated}
+				platformProps={platformProps}
+			/>
 		);
 
 	if (!overview || !client) return reading;

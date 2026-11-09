@@ -70,4 +70,11 @@ describe("resolveAction", () => {
 			).kind,
 		).toBe("blocked");
 	});
+
+	it("lets anyone with a wallet send an open write", () => {
+		expect(resolveAction({ anyone: true }, none)).toEqual({ kind: "send" });
+		expect(
+			resolveAction({ anyone: true }, { ...none, connected: false }).kind,
+		).toBe("blocked");
+	});
 });

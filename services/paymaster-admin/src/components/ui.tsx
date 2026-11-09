@@ -256,13 +256,23 @@ async function copyText(value: string): Promise<void> {
  * exactly the middle that distinguishes two addresses from the same deployer. Truncation saves
  * space at the cost of the one job this text has.
  */
-export function Copyable({ value, label }: { value: string; label?: string }) {
+export function Copyable({
+	value,
+	label,
+	onCopied,
+}: {
+	value: string;
+	label?: string;
+	/** Called once the value is on the clipboard, e.g. to note that a shown-once key was kept. */
+	onCopied?: () => void;
+}) {
 	const [copied, setCopied] = useState(false);
 
 	const copy = async () => {
 		try {
 			await copyText(value);
 			setCopied(true);
+			onCopied?.();
 			setTimeout(() => setCopied(false), 1200);
 		} catch (error) {
 			notifyError("Could not copy to the clipboard", error);

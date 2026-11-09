@@ -44,7 +44,7 @@ Where the platform API is not configured, the list SHALL be the roster alone, by
 
 ### Requirement: The tenant page shows one tenant in full
 Selecting a tenant SHALL open its page at `/tenants/<slug>`. The page SHALL show:
-- every registry field, with its lifecycle state, owner and version;
+- every registry field, with its lifecycle state and version;
 - the sponsorship policy as structured fields, not raw JSON;
 - its admin keys by label, hash prefix, creator and creation time, never key material;
 - user and credential counts, and the last user operation time;
@@ -123,7 +123,7 @@ The tenant page SHALL offer only the actions that the tenant's state allows:
 | suspended | resume, revoke key, delete |
 | deleted | none |
 
-Suspend SHALL require a reason. After a successful suspend, the console SHALL offer `setTenantEnabled(id, false)` on every configured chain where the tenant is *registered · enabled*, and explain that it closes the window in which earlier authorisations stay valid. Resume SHALL offer the reverse on every chain where the tenant is *registered · disabled*.
+Suspend SHALL require a reason. After a successful suspend, the console SHALL offer `setTenantEnabled(id, false)` on the selected chain where the tenant is *registered · enabled*, and explain that it closes the window in which earlier authorisations stay valid. It SHALL name every other configured chain where the tenant is still *registered · enabled*, since a write there needs the console switched to that deployment. Resume SHALL do the reverse for chains where the tenant is *registered · disabled*.
 
 Delete SHALL require typing the slug and SHALL say that the slug, wallet origin and RP ID can never be used again. A `409` SHALL show the reason it names, and for funds the per-chain balance, deficit and block it returned.
 

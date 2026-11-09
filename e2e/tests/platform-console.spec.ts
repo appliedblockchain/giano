@@ -60,12 +60,18 @@ test.describe("admin console", () => {
 		await create.getByRole("button", { name: "Create tenant" }).click();
 		await expect(create.getByText("These are shown once")).toBeVisible();
 		await expect(create.getByText(/^gak_/)).toBeVisible();
+		// closing over a key nobody copied asks first
 		await create.getByRole("button", { name: "Done" }).click();
+		await page
+			.getByRole("alertdialog", { name: "Close without copying every key?" })
+			.getByRole("button", { name: "Close anyway" })
+			.click();
 
 		const row = page.getByTestId(`tenant-row-${slug}`);
 		await expect(row).toContainText("not registered");
 
 		await row.click();
+		await expect(page).toHaveURL(new RegExp(`/tenants/${slug}$`));
 		await page
 			.getByTestId("tenant-actions")
 			.getByRole("button", { name: /Suspend/ })
@@ -75,7 +81,7 @@ test.describe("admin console", () => {
 		await suspend.getByRole("button", { name: "Suspend" }).click();
 		await expect(suspend.getByText(/is suspended/)).toBeVisible();
 		await suspend.getByRole("button", { name: "Done" }).click();
-		await expect(row).toContainText("suspended");
+		await expect(page.getByTestId("tenant-header")).toContainText("suspended");
 
 		await page
 			.getByTestId("tenant-actions")
@@ -90,7 +96,7 @@ test.describe("admin console", () => {
 			.fill(slug);
 		await remove.getByRole("button", { name: "Delete permanently" }).click();
 		await expect(page.getByTestId("tenant-history")).toContainText("delete");
-		await page.keyboard.press("Escape");
+		await page.getByRole("link", { name: "Tenants", exact: true }).click();
 
 		// gone from the default list, still there with deleted tenants shown
 		await expect(row).toHaveCount(0);
@@ -104,6 +110,10 @@ test.describe("admin console", () => {
 		page,
 	}) => {
 		const slug = `onchain-${Date.now()}`;
+		// copying a shown-once key is what lets its dialog close without asking
+		await page
+			.context()
+			.grantPermissions(["clipboard-read", "clipboard-write"]);
 		await page.getByRole("button", { name: /Create tenant/ }).click();
 		const create = page.getByRole("dialog");
 		await create.getByRole("textbox", { name: "Slug" }).fill(slug);
@@ -122,6 +132,8 @@ test.describe("admin console", () => {
 		await expect(create.getByText(/Registered on e2e devnet A/)).toBeVisible({
 			timeout: 30_000,
 		});
+		await create.getByText(/^gak_/).click();
+		await expect(create.getByText(/· copied/)).toBeVisible();
 		await create.getByRole("button", { name: "Done" }).click();
 
 		const row = page.getByTestId(`tenant-row-${slug}`);
@@ -131,6 +143,7 @@ test.describe("admin console", () => {
 
 		// suspend, and take the offered on-chain disable
 		await row.click();
+		const header = page.getByTestId("tenant-header");
 		const actions = page.getByTestId("tenant-actions");
 		await actions.getByRole("button", { name: /Suspend/ }).click();
 		const suspend = page.getByRole("dialog", { name: `Suspend ${slug}` });
@@ -141,13 +154,11 @@ test.describe("admin console", () => {
 			page.getByText(new RegExp(`Disable ${slug} confirmed`)),
 		).toBeVisible({ timeout: 30_000 });
 		await suspend.getByRole("button", { name: "Done" }).click();
-		await page.keyboard.press("Escape");
-		await expect(row).toContainText("registered · disabled", {
+		await expect(header).toContainText("registered · disabled", {
 			timeout: 30_000,
 		});
 
 		// resume, and re-enable
-		await row.click();
 		await actions.getByRole("button", { name: /Resume/ }).click();
 		const resume = page.getByRole("dialog", { name: `Resume ${slug}` });
 		await resume.getByRole("button", { name: "Resume" }).click();
@@ -163,6 +174,11 @@ test.describe("admin console", () => {
 		await edit
 			.getByRole("textbox", { name: "Display name" })
 			.fill("Renamed in the console");
+		// longer than the console's 5 s poll: a refresh while the dialog is open must not wipe the edit
+		await page.waitForTimeout(6_000);
+		await expect(
+			edit.getByRole("textbox", { name: "Display name" }),
+		).toHaveValue("Renamed in the console");
 		await edit.getByRole("button", { name: "Save" }).click();
 		await expect(
 			page.getByText("Renamed in the console").first(),
@@ -175,7 +191,8 @@ test.describe("admin console", () => {
 		});
 		await issue.getByRole("textbox", { name: "Label" }).fill("second");
 		await issue.getByRole("button", { name: "Issue key" }).click();
-		await expect(issue.getByText(/^gak_/)).toBeVisible();
+		await issue.getByText(/^gak_/).click();
+		await expect(issue.getByText(/· copied/)).toBeVisible();
 		await issue.getByRole("button", { name: "Done" }).click();
 		const revokeButtons = page.getByRole("button", { name: "Revoke" });
 		await expect(revokeButtons).toHaveCount(2);
@@ -188,6 +205,67 @@ test.describe("admin console", () => {
 		await expect(page.getByTestId("tenant-history")).toContainText(
 			"admin-key-revoke",
 		);
+	});
+
+	test("a tenant is registered, funded and given a fee override from its page", async ({
+		page,
+	}) => {
+		const slug = `page-${Date.now()}`;
+		await page.getByRole("button", { name: /Create tenant/ }).click();
+		const create = page.getByRole("dialog");
+		await create.getByRole("textbox", { name: "Slug" }).fill(slug);
+		await create
+			.getByRole("textbox", { name: "Wallet origin" })
+			.fill(`http://wallet-${slug}.localhost`);
+		await create
+			.getByRole("textbox", { name: "Display name" })
+			.fill("Tenant page E2E");
+		await create.getByRole("button", { name: "Create tenant" }).click();
+		await expect(create.getByText("These are shown once")).toBeVisible();
+		await create.getByRole("button", { name: "Done" }).click();
+		await page.getByRole("button", { name: "Close anyway" }).click();
+
+		// the list says what is next, and the row opens the tenant's page
+		const row = page.getByTestId(`tenant-row-${slug}`);
+		await expect(row).toContainText("Register on chain");
+		await row.getByRole("link", { name: slug }).click();
+		const header = page.getByTestId("tenant-header");
+		await expect(header).toContainText("not registered");
+
+		// register from the page
+		await page
+			.getByRole("textbox", { name: "Withdrawal address" })
+			.fill("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+		await page
+			.getByRole("button", { name: "Register on e2e devnet A" })
+			.click();
+		await expect(
+			page.getByText("Register on e2e devnet A confirmed"),
+		).toBeVisible({ timeout: 30_000 });
+		await expect(header).toContainText("registered · enabled", {
+			timeout: 30_000,
+		});
+
+		// the other deployment is read through its own relay, and the ledger is compared
+		await expect(
+			page.getByTestId(`other-deployment-${CHAINS.b.chainId}`),
+		).toContainText("not registered");
+		await expect(page.getByTestId("ledger-agreement")).toBeVisible();
+
+		// fund it, then set a fee override: admin-console holds FEE_ADMIN_ROLE and there is no timelock, so Send
+		await page.getByRole("textbox", { name: "Fund" }).fill("0.01");
+		await page.getByRole("button", { name: "Fund", exact: true }).click();
+		await expect(page.getByText("Fund confirmed")).toBeVisible({
+			timeout: 30_000,
+		});
+		await page.getByRole("textbox", { name: "Fee override" }).fill("0.0002");
+		await page.getByRole("button", { name: "Set fee override" }).click();
+		await expect(page.getByText("Set fee override confirmed")).toBeVisible({
+			timeout: 30_000,
+		});
+		await expect(page.getByText("override", { exact: true })).toBeVisible({
+			timeout: 30_000,
+		});
 	});
 
 	test("admins are added and removed from the console, but never yourself", async ({
