@@ -1,7 +1,4 @@
-import type {
-	GianoTimelockClient,
-	HealthReport,
-} from "@appliedblockchain/giano-paymaster-sdk";
+import type { HealthReport } from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Alert,
 	Box,
@@ -24,10 +21,8 @@ import {
 	rememberDeployment,
 } from "./config";
 import { usePaymaster } from "./hooks/usePaymaster";
-import {
-	type TimelockOperationsState,
-	usePendingOperations,
-} from "./hooks/usePendingOperations";
+import { usePendingOperations } from "./hooks/usePendingOperations";
+import { useTimelockAccess } from "./hooks/useTimelockConfig";
 import {
 	ChainNotAddedError,
 	type ConnectedWallet,
@@ -38,13 +33,12 @@ import {
 	networkDetails,
 } from "./lib/chain";
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
-import type { ProposalRequest, Propose } from "./lib/proposals";
+import type { ProposalRequest } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
 import { joinTenants, type TenantRow } from "./lib/tenants";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
 import { OverviewPanel } from "./panels/OverviewPanel";
-import { TimelockPanel } from "./panels/TimelockPanel";
 import { PaymasterTab } from "./paymaster/PaymasterTab";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
@@ -60,6 +54,7 @@ import { SessionWarning } from "./shell/SessionWarning";
 import { TabBar } from "./shell/TabBar";
 import { TenantsRoute } from "./tenants/TenantsRoute";
 import { type Registry, useRegistry } from "./tenants/useRegistry";
+import { TimelockTab } from "./timelock/TimelockTab";
 
 export function App() {
 	const { deployments } = getAdminConfig();
@@ -142,7 +137,12 @@ function Console({
 	);
 	const [proposal, setProposal] = useState<ProposalRequest>();
 	const propose = timelock ? setProposal : undefined;
-	const timelockOperations = usePendingOperations(timelock, lastUpdated);
+	const timelockAccess = useTimelockAccess(timelock, wallet);
+	const timelockOperations = usePendingOperations(
+		timelock,
+		lastUpdated,
+		timelockAccess.error ? null : timelockAccess.longestDelay,
+	);
 	// Read for the whole console, not only the Tenants tab: the tab bar counts the same tenants the
 	// list shows.
 	const registry = useRegistry(lastUpdated);
@@ -235,6 +235,7 @@ function Console({
 		refresh,
 		block,
 		timelockOperations,
+		timelockAccess,
 		safes,
 	};
 	const platformProps = {
@@ -372,13 +373,9 @@ function Console({
 								route={route}
 								platformProps={platformProps}
 								health={health}
-								propose={propose}
-								timelock={timelock}
-								refresh={refresh}
 								lastUpdated={lastUpdated}
 								rosterOnChain={rosterOnChain}
 								loading={loading}
-								timelockOperations={timelockOperations}
 								tenantRows={tenantRows}
 								registry={registry}
 							/>
@@ -386,8 +383,8 @@ function Console({
 					)}
 
 					<ProposalDialog
-						timelock={timelock}
 						request={proposal}
+						tenants={overview?.tenants ?? []}
 						onClose={() => setProposal(undefined)}
 					/>
 					<SessionWarning
@@ -409,31 +406,23 @@ function RouteView({
 	route,
 	platformProps,
 	health,
-	propose,
-	timelock,
-	refresh,
 	lastUpdated,
 	rosterOnChain,
 	loading,
-	timelockOperations,
 	tenantRows,
 	registry,
 }: {
 	route: Route;
 	platformProps: PlatformAreaProps;
 	health: HealthReport | undefined;
-	propose: Propose | undefined;
-	timelock: GianoTimelockClient | undefined;
-	refresh: () => Promise<void>;
 	lastUpdated: Date | undefined;
 	rosterOnChain: boolean;
 	loading: boolean;
-	timelockOperations: TimelockOperationsState;
 	tenantRows: readonly TenantRow[];
 	registry: Registry;
 }) {
 	const { platformApi } = getAdminConfig();
-	const { client, overview, wallet } = platformProps;
+	const { client, overview } = platformProps;
 
 	if (route.tab === "not-found" || (route.tab === "admins" && !platformApi))
 		return <NotFound />;
@@ -472,17 +461,7 @@ function RouteView({
 		case "roles":
 			return <RolesTab client={client} roles={overview.roles} />;
 		case "timelock":
-			return (
-				<TimelockPanel
-					timelock={timelock}
-					tenants={overview.tenants}
-					connected={wallet !== undefined}
-					propose={propose}
-					refresh={refresh}
-					lastUpdated={lastUpdated}
-					timelockOperations={timelockOperations}
-				/>
-			);
+			return <TimelockTab tenants={overview.tenants} />;
 		case "activity":
 			return <HistoryPanel client={client} />;
 		case "health":

@@ -64,7 +64,9 @@ export function isBlockRangeError(error: unknown): boolean {
 		) ||
 		/query returned more than|response size exceeded|log response size/.test(
 			message,
-		)
+		) ||
+		// wallet-api's platform read relay: "… fromBlock and toBlock spanning at most 10000 blocks"
+		/spanning at most \d+ blocks/.test(message)
 	);
 }
 

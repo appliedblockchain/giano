@@ -32,10 +32,7 @@ import {
 import { ExecuteButton } from "../components/timelock";
 import { SectionCard } from "../components/ui";
 import { AddressLabel } from "../components/values";
-import {
-	type TimelockAccess,
-	useTimelockConfig,
-} from "../hooks/useTimelockConfig";
+import type { TimelockAccess } from "../hooks/useTimelockConfig";
 import { describeError } from "../lib/format";
 import { queuedKeys } from "../lib/queued";
 import { useConsole } from "../shell/ConsoleContext";
@@ -56,7 +53,7 @@ export function RolesTab({
 	client: GianoPaymasterClient;
 	roles: readonly RoleHolders[];
 }) {
-	const access = useTimelockConfig();
+	const access = useConsole().timelockAccess;
 	const named = roles.filter(
 		(entry): entry is RoleHolders & { name: PaymasterRoleName } =>
 			entry.name !== "DEFAULT_ADMIN_ROLE",
@@ -537,16 +534,37 @@ function ChangeCard({
 															throw new Error(
 																`The grant to ${successor} (${granted.hash}) reverted, so ${rotateFrom} keeps the role; nothing was revoked.`,
 															);
-														try {
-															return await client.revokeRole(role, rotateFrom);
-														} catch (cause) {
-															// Half done: both hold the role now. Said as such, and the table refreshed to
-															// show it, rather than a bare "Could not rotate".
+														// Half done (the revoke refused, or mined and reverted): both hold the role now.
+														// Said as such, with the grant's hash, and the table refreshed to show it, rather
+														// than "Could not rotate" or "nothing changed".
+														const halfDone = async (cause: unknown) => {
 															await refresh();
-															throw new Error(
+															return new Error(
 																`${successor} was granted ${role} (${granted.hash}), but revoking it from ${rotateFrom} failed, so both hold it now. Revoke ${rotateFrom} from its row. ${describeError(cause)}`,
 															);
+														};
+														let revoked: Awaited<
+															ReturnType<typeof client.revokeRole>
+														>;
+														try {
+															revoked = await client.revokeRole(
+																role,
+																rotateFrom,
+															);
+														} catch (cause) {
+															throw await halfDone(cause);
 														}
+														return {
+															...revoked,
+															wait: async () => {
+																const mined = await revoked.wait();
+																if (mined.status !== "success")
+																	throw await halfDone(
+																		`the revoke ${revoked.hash} was mined but reverted.`,
+																	);
+																return mined;
+															},
+														};
 													}
 												: undefined
 										}
