@@ -43,6 +43,7 @@ const client = createPublicClient({
 // A fixed test key. It signs nothing outside this script.
 const owner = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const address = getAddress(`0x${"ab".repeat(20)}`);
+const factoryAddress = getAddress(`0x${"fa".repeat(20)}`);
 const calls = [
 	{ to: getAddress(`0x${"01".repeat(20)}`), value: 1n, data: "0x1234" },
 	{ to: getAddress(`0x${"02".repeat(20)}`), value: 0n, data: "0x" },
@@ -57,6 +58,7 @@ for (const [format, core] of [
 		client,
 		owners: [owner],
 		address,
+		factoryAddress,
 	});
 	assert.equal(await account.getAddress(), address, format);
 

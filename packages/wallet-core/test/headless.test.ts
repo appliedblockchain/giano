@@ -17,8 +17,12 @@ type Manifest = {
 	name: string;
 	dependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
+	peerDependenciesMeta?: Record<string, { optional?: boolean }>;
 	optionalDependencies?: Record<string, string>;
 };
+
+/** One dependency edge. `optional`: a consumer may run without it installed. */
+type Edge = { name: string; from: string; optional: boolean };
 
 const readManifest = (dir: string): Manifest =>
 	JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as Manifest;
@@ -39,34 +43,49 @@ function findPackageDir(name: string, fromDir: string): string | undefined {
 	}
 }
 
-/** Every package a consumer of wallet-core installs: its peers, then all runtime dependencies. */
+/** The runtime edges of a package: dependencies, optional dependencies and peers. */
+function edgesOf(dir: string): Edge[] {
+	const manifest = readManifest(dir);
+	const optionalPeers = manifest.peerDependenciesMeta ?? {};
+	return [
+		...Object.keys(manifest.dependencies ?? {}).map((name) => ({
+			name,
+			from: dir,
+			optional: false,
+		})),
+		...Object.keys(manifest.optionalDependencies ?? {}).map((name) => ({
+			name,
+			from: dir,
+			optional: true,
+		})),
+		...Object.keys(manifest.peerDependencies ?? {}).map((name) => ({
+			name,
+			from: dir,
+			optional: optionalPeers[name]?.optional === true,
+		})),
+	];
+}
+
+/**
+ * Every package a consumer of wallet-core may install, at every level of the tree. A missing
+ * optional dependency or optional peer is skipped; an installed one is still checked.
+ */
 function installedClosure(): Set<string> {
-	const root = readManifest(packageDir);
 	const names = new Set<string>();
 	const visitedDirs = new Set<string>();
-	const queue: Array<{ name: string; from: string }> = Object.keys({
-		...root.dependencies,
-		...root.peerDependencies,
-		...root.optionalDependencies,
-	}).map((name) => ({ name, from: packageDir }));
+	const queue = edgesOf(packageDir);
 
 	for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-		const { name, from } = next;
-		names.add(name);
+		const { name, from, optional } = next;
 		const dir = findPackageDir(name, from);
 		if (dir === undefined) {
-			// An optional dependency for another platform is not installed here.
-			if (name in (readManifest(from).optionalDependencies ?? {})) continue;
+			if (optional) continue;
 			throw new Error(`${name} is not installed (needed by ${from})`);
 		}
+		names.add(name);
 		if (visitedDirs.has(dir)) continue;
 		visitedDirs.add(dir);
-		const manifest = readManifest(dir);
-		for (const dep of Object.keys({
-			...manifest.dependencies,
-			...manifest.optionalDependencies,
-		}))
-			queue.push({ name: dep, from: dir });
+		queue.push(...edgesOf(dir));
 	}
 	return names;
 }
@@ -98,7 +117,8 @@ describe("headless entrypoint", () => {
 				const imported = new Set(
 					[
 						...source.matchAll(
-							/(?:\bfrom|\bimport\(|\brequire\()\s*"([^".][^"]*)"/g,
+							// `from "x"`, `import "x"` (side effect only), `import("x")`, `require("x")`.
+							/(?:\bfrom|\bimport\s*\(?|\brequire\()\s*["']([^"'.][^"']*)["']/g,
 						),
 					]
 						.map((match) => match[1])

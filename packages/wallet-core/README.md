@@ -37,7 +37,7 @@ ESM or CommonJS, with no DOM, no React and no RainbowKit. Its runtime dependenci
 A backend uses the account and management exports to:
 
 - bind a Giano smart account to a known address (`toGianoSmartAccount` with `address`, which
-  skips the factory lookup),
+  skips the on-chain address lookup),
 - encode and decode the account's calls (`encodeCalls`, `decodeCalls`),
 - build and sign UserOperations with a local-key owner (`signUserOperation`),
 - call `isValidSignature` through the account's `abi`,
@@ -54,6 +54,8 @@ const account = await toGianoSmartAccount({
 	client,
 	owners: [privateKeyToAccount(ownerKey)],
 	address: accountAddress,
+	// The GianoFactory address in the chain configuration. Required even with `address`.
+	factoryAddress,
 });
 const calls = await account.decodeCalls(userOperation.callData);
 ```
