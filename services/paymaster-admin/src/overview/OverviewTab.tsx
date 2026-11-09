@@ -367,17 +367,20 @@ function ConfigurationCard({
 function QueuedCard() {
 	const { timelock, timelockOperations } = useConsole();
 	if (!timelock) return null;
-	const { pending } = timelockOperations;
+	const { pending, read, settled } = timelockOperations;
 	return (
 		<SectionCard
-			title={`Queued changes (${pending.length})`}
+			// No count until a read succeeds: "(0)" after a failed one reads as nothing queued.
+			title={read ? `Queued changes (${pending.length})` : "Queued changes"}
 			subtitle="Waiting out the timelock's delay, or ready to execute."
 		>
 			{pending.length === 0 ? (
 				<Text fontSize="sm" color="fg.muted">
-					{timelockOperations.settled
+					{read
 						? "Nothing is queued."
-						: "Reading the timelock…"}
+						: settled
+							? `The timelock could not be read${timelockOperations.error ? `: ${timelockOperations.error}` : "."}`
+							: "Reading the timelock…"}
 				</Text>
 			) : (
 				<Stack gap="0">
