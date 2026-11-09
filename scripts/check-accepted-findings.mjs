@@ -216,10 +216,14 @@ function entryErrors(entry, index) {
 const isExpired = (entry, today) =>
 	typeof entry.expires === "string" && entry.expires < today;
 
+// An entry takes effect on its assessment date, not before.
+const isFuture = (entry, today) =>
+	typeof entry.accepted === "string" && entry.accepted > today;
+
 const expiredMessage = (entry) =>
 	`expired on ${entry.expires} (owner: ${entry.owner}). The owner renews it with a new accepted date, reason and expiry, or removes it`;
 
-/** Every register problem: entry fields, dates, duplicates and expiry. */
+/** Every register problem: entry fields, dates, duplicates, expiry and future acceptance. */
 export function validateRegister(register, today) {
 	if (!isObject(register) || !Array.isArray(register.entries))
 		return [
@@ -250,11 +254,17 @@ export function validateRegister(register, today) {
 				rule: "expired",
 				message: expiredMessage(entry),
 			});
+		if (isFuture(entry, today))
+			errs.push({
+				entry: entry.id,
+				rule: "accepted-in-future",
+				message: `accepted ${entry.accepted} is after today (${today}). Use the date of the assessment`,
+			});
 	});
 	return errs;
 }
 
-/** Entries a report may use: well formed, not expired, and with a unique ID. */
+/** Entries a report may use: well formed, accepted by today, not expired, and with a unique ID. */
 export function usableEntries(register, today) {
 	if (!isObject(register) || !Array.isArray(register.entries)) return [];
 	const counts = new Map();
@@ -265,7 +275,8 @@ export function usableEntries(register, today) {
 			isObject(e) &&
 			entryErrors(e, i).length === 0 &&
 			counts.get(e.id) === 1 &&
-			!isExpired(e, today),
+			!isExpired(e, today) &&
+			!isFuture(e, today),
 	);
 }
 
@@ -332,17 +343,24 @@ function scanTomlLine(raw) {
 	for (let i = 0; i < raw.length; i++) {
 		const c = raw[i];
 		if (quote) {
-			if (quote === '"' && c === "\\") {
+			if (quote[0] === '"' && c === "\\") {
 				code += "  ";
 				i++;
-			} else if (c === quote) {
+			} else if (raw.startsWith(quote, i)) {
+				// A triple-quoted string ends at the next three quotes. '''' leaves it open.
+				code += quote;
+				i += quote.length - 1;
 				quote = null;
-				code += c;
 			} else code += " ";
 			continue;
 		}
 		if (c === "#") break;
-		if (c === '"' || c === "'") quote = c;
+		if (c === '"' || c === "'") {
+			quote = raw.startsWith(c.repeat(3), i) ? c.repeat(3) : c;
+			code += quote;
+			i += quote.length - 1;
+			continue;
+		}
 		code += c;
 	}
 	return { code, open: quote !== null };
@@ -601,6 +619,26 @@ const SLITHER_GATE = ["High"];
 const PNPM_GATE = ["high", "critical"];
 const TRIVY_GATE = ["HIGH", "CRITICAL"];
 
+// Every severity each tool reports. Any other value, or none, makes the report invalid, so a
+// malformed finding never counts as below the gate.
+const SLITHER_IMPACTS = [
+	"High",
+	"Medium",
+	"Low",
+	"Informational",
+	"Optimization",
+];
+const PNPM_SEVERITIES = ["info", "low", "moderate", "high", "critical"];
+const TRIVY_SEVERITIES = ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+function requireSeverity(value, allowed, what) {
+	if (!allowed.includes(value))
+		throw new ReportError(
+			`${what} has severity ${JSON.stringify(value) ?? "undefined"}, not one of ${allowed.join(", ")}`,
+		);
+	return value;
+}
+
 function requireArray(value, what) {
 	if (!Array.isArray(value)) throw new ReportError(`${what} is not an array`);
 	return value;
@@ -621,7 +659,13 @@ export const PARSERS = {
 			"results.detectors",
 		).map((d) => ({
 			key: { check: d.check, id: d.id },
-			gating: SLITHER_GATE.includes(d.impact),
+			gating: SLITHER_GATE.includes(
+				requireSeverity(
+					d.impact,
+					SLITHER_IMPACTS,
+					`Slither finding ${d.check}`,
+				),
+			),
 			label: `${d.check} (${d.impact}) at ${d.first_markdown_element ?? "unknown location"}`,
 		}));
 	},
@@ -662,7 +706,13 @@ export const PARSERS = {
 			throw new ReportError("pnpm audit output has no advisories and metadata");
 		return Object.values(report.advisories).map((a) => ({
 			key: { workspace, ghsa: a.github_advisory_id ?? `npm-advisory-${a.id}` },
-			gating: PNPM_GATE.includes(a.severity),
+			gating: PNPM_GATE.includes(
+				requireSeverity(
+					a.severity,
+					PNPM_SEVERITIES,
+					`pnpm advisory ${a.github_advisory_id ?? a.id}`,
+				),
+			),
 			label: `${a.module_name} ${a.github_advisory_id ?? a.id} (${a.severity}) in workspace ${workspace}`,
 		}));
 	},
@@ -672,7 +722,14 @@ export const PARSERS = {
 		return requireArray(report.Results ?? [], "Results").flatMap((r) =>
 			requireArray(r.Vulnerabilities ?? [], "Vulnerabilities").map((v) => ({
 				key: { image, package: v.PkgName, vulnerability: v.VulnerabilityID },
-				gating: TRIVY_GATE.includes(v.Severity) && Boolean(v.FixedVersion),
+				gating:
+					TRIVY_GATE.includes(
+						requireSeverity(
+							v.Severity,
+							TRIVY_SEVERITIES,
+							`Trivy finding ${v.VulnerabilityID}`,
+						),
+					) && Boolean(v.FixedVersion),
 				label: `${v.PkgName} ${v.InstalledVersion} ${v.VulnerabilityID} (${v.Severity}${v.FixedVersion ? `, fixed in ${v.FixedVersion}` : ", no fix"}) in ${image} ${r.Target}`,
 			})),
 		);

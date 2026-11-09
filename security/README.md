@@ -68,7 +68,7 @@ The weekly security scan lists entries that expire within 14 days.
 ## What the register check rejects
 
 - A missing or empty field, an unknown field, a duplicate ID, a bad date or an expiry beyond 180 days.
-- An expired entry.
+- An expired entry, and an entry whose `accepted` date is after today.
 - A `slither-disable`, `aderyn-ignore` or `aderyn-fp` comment under `packages/contracts/src`. A source comment changes
   the contract metadata hash, and so the bytecode and the CREATE2 addresses.
 - A detector setting in `packages/contracts/slither.config.json` or `packages/contracts/aderyn.toml`. These files set
