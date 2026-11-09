@@ -56,7 +56,7 @@ Entry shape:
   "location": "packages/contracts/src/GianoSmartWallet.sol#L299-L306",
   "accepted": "2026-11-09",
   "expires": "2027-05-08",
-  "owner": "Giovanni Pinto",
+  "owner": "Sarah Thompson",
   "reason": "…",
   "followUp": "…"
 }
