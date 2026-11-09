@@ -462,8 +462,12 @@ export function checkAderynConfig(text, file = ADERYN_CONFIG) {
 const ALLOWLIST_NAME = /^allowlists?$/;
 
 /**
- * Every allowlist in .gitleaks.toml is a table whose description names a gitleaks register entry
- * for this file (`allowlistIds`); no rule is disabled.
+ * .gitleaks.toml keeps every default rule and hides findings only through register entries:
+ * - it extends the default rules (`[extend]` with `useDefault = true`), with no other base config;
+ * - it has no custom rules, which could replace or weaken a default rule;
+ * - every allowlist is a table whose description names a gitleaks register entry for this file
+ *   (`allowlistIds`);
+ * - no rule is disabled.
  */
 export function checkGitleaksConfig(
 	text,
@@ -476,25 +480,37 @@ export function checkGitleaksConfig(
 			file,
 			line,
 			rule: "unsupported-config",
-			message: `${what} is not supported here. The register check reads a plain subset of TOML: write each allowlist as an [allowlist], [[allowlists]] or [[rules.allowlists]] table`,
+			message: `${what} is not supported here. The register check reads a plain subset of TOML: write each allowlist as an [allowlist] or [[allowlists]] table`,
+		});
+	const notAllowed = (line, what) =>
+		errs.push({
+			file,
+			line,
+			rule: "config-suppression",
+			message: `${what} is not allowed. This file may contain only a top-level title, [extend] with useDefault = true, and allowlist tables, so every default rule stays on`,
 		});
 	const blocks = [];
 	let current = null;
+	// "top" before any table, then "extend", "allowlist" or "other".
+	let section = "top";
+	let usesDefault = false;
 	for (const l of tomlLines(text)) {
 		if (l.kind === "unsupported") {
 			unsupported(l.line, l.why);
 			continue;
 		}
 		if (l.kind === "header") {
-			const at = l.path.findIndex((s) => ALLOWLIST_NAME.test(s));
+			const name = l.path.join(".");
 			current = null;
-			if (at === -1) continue;
-			if (at !== l.path.length - 1) {
-				unsupported(l.line, `Table [${l.path.join(".")}]`);
-				continue;
-			}
-			current = { header: l.path.join("."), line: l.line, description: null };
-			blocks.push(current);
+			section = "other";
+			if (name === "extend") section = "extend";
+			else if (l.path.length === 1 && ALLOWLIST_NAME.test(name)) {
+				section = "allowlist";
+				current = { header: name, line: l.line, description: null };
+				blocks.push(current);
+			} else if (l.path.some((s) => ALLOWLIST_NAME.test(s)))
+				unsupported(l.line, `Table [${name}]`);
+			else notAllowed(l.line, `Table [${name}]`);
 			continue;
 		}
 		if (l.code.includes("{")) {
@@ -515,10 +531,28 @@ export function checkGitleaksConfig(
 			unsupported(l.line, `Key '${l.path.join(".")}'`);
 			continue;
 		}
+		const key = l.path.join(".");
+		if (section === "top" && key !== "title") {
+			notAllowed(l.line, `Top-level key '${key}'`);
+			continue;
+		}
+		if (section === "extend") {
+			if (key === "useDefault" && l.code === "true") usesDefault = true;
+			else notAllowed(l.line, `'${key} = ${l.value}' in [extend]`);
+			continue;
+		}
 		const description = l.value.match(/^(["'])(.*)\1$/);
 		if (current && l.path.length === 1 && l.path[0] === "description")
 			current.description = description ? description[2] : "";
 	}
+	if (!usesDefault)
+		errs.push({
+			file,
+			line: 1,
+			rule: "missing-default-rules",
+			message:
+				"has no [extend] table with useDefault = true. Without it, gitleaks does not run its default rules",
+		});
 	for (const block of blocks) {
 		const named = (block.description ?? "").match(/AF-\d{3}/g) ?? [];
 		if (!named.some((id) => allowlistIds.has(id)))

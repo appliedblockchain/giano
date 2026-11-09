@@ -34,6 +34,7 @@ const entry = (overrides = {}) => ({
 });
 const register = (...entries) => ({ entries });
 const rules = (errs) => errs.map((e) => e.rule);
+const DEFAULT_RULES = "[extend]\nuseDefault = true\n\n";
 
 describe("check-accepted-findings: register", () => {
 	it("passes a valid entry, with expiry exactly 180 days after acceptance", () => {
@@ -243,7 +244,7 @@ describe("check-accepted-findings: suppressions", () => {
 	});
 
 	it("fails a gitleaks allowlist that names an entry that does not exist", () => {
-		const toml = '[[allowlists]]\ndescription = "AF-009: Anvil keys"\n';
+		const toml = `${DEFAULT_RULES}[[allowlists]]\ndescription = "AF-009: Anvil keys"\n`;
 		assert.match(
 			checkGitleaksConfig(toml, new Set(["AF-008"]))[0].message,
 			/\(AF-009 is not one\)/,
@@ -251,8 +252,7 @@ describe("check-accepted-findings: suppressions", () => {
 	});
 
 	it("passes a gitleaks allowlist that names an entry, and rejects disabledRules", () => {
-		const ok =
-			'[[allowlists]]\ndescription = "AF-008: public Anvil development keys"\n';
+		const ok = `${DEFAULT_RULES}[[allowlists]]\ndescription = "AF-008: public Anvil development keys"\n`;
 		assert.deepEqual(checkGitleaksConfig(ok, new Set(["AF-008"])), []);
 		const disabled =
 			'[extend]\nuseDefault = true\ndisabledRules = ["generic-api-key"]\n';
@@ -314,6 +314,41 @@ describe("check-accepted-findings: suppressions", () => {
 			assert.equal(checkAderynConfig(toml)[0]?.rule, rule, toml);
 	});
 
+	it("requires .gitleaks.toml to keep the default rules and rejects custom rules", () => {
+		const ids = new Set(["AF-008"]);
+		const allowlist = '[[allowlists]]\ndescription = "AF-008"\n';
+		for (const [toml, expected] of [
+			[allowlist, ["missing-default-rules"]],
+			["", ["missing-default-rules"]],
+			[
+				`[extend]\nuseDefault = false\n${allowlist}`,
+				["config-suppression", "missing-default-rules"],
+			],
+			[
+				`[extend]\npath = "weak.toml"\n${allowlist}`,
+				["config-suppression", "missing-default-rules"],
+			],
+			[
+				`[extend]\nurl = "https://example.com/weak.toml"\n${allowlist}`,
+				["config-suppression", "missing-default-rules"],
+			],
+			[
+				`${DEFAULT_RULES}[[rules]]\nid = "generic-api-key"\nregex = '''zzz'''\n`,
+				["config-suppression"],
+			],
+			[
+				`${DEFAULT_RULES}[[rules]]\nid = "custom"\n[[rules.allowlists]]\npaths = ["x"]\n`,
+				["config-suppression", "unsupported-config"],
+			],
+			[`useDefault = true\n${DEFAULT_RULES}`, ["config-suppression"]],
+		])
+			assert.deepEqual(
+				rules(checkGitleaksConfig(toml, ids)).sort(),
+				expected.sort(),
+				toml,
+			);
+	});
+
 	it("rejects every other TOML form in .gitleaks.toml that could hide a finding", () => {
 		const ids = new Set(["AF-008"]);
 		for (const [toml, rule] of [
@@ -339,7 +374,7 @@ describe("check-accepted-findings: suppressions", () => {
 		])
 			assert.ok(rules(checkGitleaksConfig(toml, ids)).includes(rule), toml);
 		const ok =
-			"[extend]\nuseDefault = true\n\n[ rules . allowlists ]\ndescription = \"AF-008\" # c\nregexes = ['''0x[a-f]{64}''']\n";
+			"title = \"Giano\"\n[extend]\nuseDefault = true\n\n[ allowlist ]\ndescription = \"AF-008\" # c\nregexes = ['''0x[a-f]{64}''']\n";
 		assert.deepEqual(checkGitleaksConfig(ok, ids), []);
 	});
 });
@@ -370,7 +405,10 @@ describe("check-accepted-findings: repository check", () => {
 			"contract B {\n// slither-disable-next-line x\n}\n",
 		);
 		write("packages/contracts/slither.db.json", "[]");
-		write(".gitleaks.toml", '[[allowlists]]\ndescription = "no entry"\n');
+		write(
+			".gitleaks.toml",
+			`${DEFAULT_RULES}[[allowlists]]\ndescription = "no entry"\n`,
+		);
 		const errs = checkRepository(root, "2027-05-09");
 		assert.deepEqual(rules(errs).sort(), [
 			"expired",
@@ -404,7 +442,7 @@ describe("check-accepted-findings: repository check", () => {
 			mkdirSync(join(dir, "security"));
 			writeFileSync(
 				join(dir, ".gitleaks.toml"),
-				'[[allowlists]]\ndescription = "AF-008: public Anvil keys"\n',
+				`${DEFAULT_RULES}[[allowlists]]\ndescription = "AF-008: public Anvil keys"\n`,
 			);
 			const check = (...entries) => {
 				writeFileSync(

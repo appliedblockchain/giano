@@ -76,8 +76,10 @@ The weekly security scan lists entries that expire within 14 days.
   the top-level keys `version`, `root`, `src`, `include` and `exclude`, each on one line.
 - A gitleaks allowlist whose `description` does not name a valid, unexpired `gitleaks` entry with
   `{ "allowlist": ".gitleaks.toml" }`, and any `disabledRules`.
+- A `.gitleaks.toml` that does not keep every default rule. It must have `[extend]` with `useDefault = true`, and may
+  contain only that, allowlist tables and a top-level `title`. Another base config (`path` or `url`) and custom
+  `[[rules]]` are rejected, because they can replace or weaken a default rule.
 - TOML that the check cannot read: a quoted table name or key, or a multi-line string. In `.gitleaks.toml`, also an
-  inline table or a dotted `allowlist` key. Write each allowlist as an `[allowlist]`, `[[allowlists]]` or
-  `[[rules.allowlists]]` table.
+  inline table or a dotted `allowlist` key. Write each allowlist as an `[allowlist]` or `[[allowlists]]` table.
 - A file a tool reads by itself to hide findings: `packages/contracts/slither.db.json`,
   `packages/contracts/export.sarif.sarifexplorer` and `.gitleaksignore`.
