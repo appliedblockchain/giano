@@ -34,6 +34,23 @@ const toArrayBuffer = (hex: Hex): ArrayBuffer => {
 	) as ArrayBuffer;
 };
 
+/** Returns `hex` with byte `index` changed from `expected` to `value`; fails if the fixture moved. */
+const withByte = (
+	hex: Hex,
+	index: number,
+	expected: number,
+	value: number,
+): Hex => {
+	const bytes = hexToBytes(hex);
+	if (bytes[index] !== expected) {
+		throw new Error(
+			`fixture byte ${index} is 0x${bytes[index].toString(16)}, expected 0x${expected.toString(16)}`,
+		);
+	}
+	bytes[index] = value;
+	return bytesToHex(bytes);
+};
+
 describe("parseP256PublicKey", () => {
 	it("reads the SPKI key from a WebAuthn registration (getPublicKey())", async () => {
 		const authenticator = new MockAuthenticator();
@@ -123,10 +140,27 @@ describe("parseP256PublicKey", () => {
 				P384_SPKI,
 				/not an uncompressed P-256/,
 			],
+			// The SPKI header: 30 59 | 30 13 | 06 07 <id-ecPublicKey> (bytes 4–12)
+			// | 06 08 <prime256v1: 2a 86 48 ce 3d 03 01 07> (bytes 13–22) | 03 42 00 (bytes 23–25),
+			// then the point's 0x04 tag at byte 26. Each case keeps the 91-byte length.
 			[
-				"an SPKI key with a changed curve OID",
-				// byte 25 is the last byte of the prime256v1 OID (…03 01 07)
-				`${SPKI.slice(0, 2 + 2 * 25)}08${SPKI.slice(2 + 2 * 26)}` as Hex,
+				"an SPKI key with another curve OID of the same length",
+				withByte(SPKI, 22, 0x07, 0x08),
+				/not an uncompressed P-256/,
+			],
+			[
+				"an SPKI key with another algorithm OID",
+				withByte(SPKI, 12, 0x01, 0x02),
+				/not an uncompressed P-256/,
+			],
+			[
+				"an SPKI key whose BIT STRING has unused bits",
+				withByte(SPKI, 25, 0x00, 0x01),
+				/not an uncompressed P-256/,
+			],
+			[
+				"an SPKI key whose point is not tagged 0x04",
+				withByte(SPKI, 26, 0x04, 0x02),
 				/not an uncompressed P-256/,
 			],
 			["an empty key", "0x" as Hex, /got 0 bytes/],
