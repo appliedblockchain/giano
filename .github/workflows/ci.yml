@@ -421,6 +421,83 @@ jobs:
           path: ${{ runner.temp }}/reports/
           if-no-files-found: warn
 
+  secret-scan:
+    # G25 (openspec: ci-security-gates, design D8): gitleaks on every commit a pull request adds.
+    # Fails on any secret that is not accepted in security/accepted-findings.json, directly or
+    # through an allowlist in .gitleaks.toml that names an entry. Needs no repository secret, so it
+    # runs on fork PRs as well. In the release run (workflow_call) every commit on main arrived
+    # through a pull request that ran this scan, so the job checks the register only.
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-26.04
+    env:
+      # gitleaks 8.30.1, released 2026-03-21. The sha256 of gitleaks_8.30.1_linux_x64.tar.gz, as
+      # published in the release's checksums file.
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so the pull request's base and head commits are both present.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Install gitleaks (release binary, sha256 checked)
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          mkdir gitleaks
+          tar -xzf gitleaks.tar.gz -C gitleaks gitleaks
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
+      - name: Scan the commits of this pull request
+        # --ignore-gitleaks-allow: a gitleaks:allow comment would hide a secret without a register
+        # entry. --diff-merges=remerge: by default git log shows no diff for a merge commit, so a
+        # secret added while resolving a merge would not be scanned; remerge shows only what the
+        # merge changed beyond git's own merge. --text --no-textconv: a .gitattributes line such as
+        # `file -diff` or `file binary` would otherwise hide the file's content from the diff.
+        # --redact keeps the secret out of the log and the
+        # report. --exit-code 0: the register check decides.
+        # A commit range gitleaks cannot read scans 0 commits and passes, so the step fails unless
+        # gitleaks scanned every commit in the range.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          expected=$(git rev-list --count "$BASE_SHA..$HEAD_SHA")
+          if ! gitleaks git . --config .gitleaks.toml \
+              --log-opts="--text --no-textconv --diff-merges=remerge $BASE_SHA..$HEAD_SHA" \
+              --redact --ignore-gitleaks-allow --no-banner --no-color \
+              --report-format json --report-path "$RUNNER_TEMP/reports/gitleaks.json" \
+              --exit-code 0 2> "$RUNNER_TEMP/gitleaks.log"; then
+            cat "$RUNNER_TEMP/gitleaks.log"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/gitleaks.log"
+          scanned=$(grep -oE '[0-9]+ commits scanned' "$RUNNER_TEMP/gitleaks.log" | cut -d' ' -f1)
+          if [ "$scanned" != "$expected" ]; then
+            echo "::error::gitleaks scanned ${scanned:-no} commits, but the pull request range has $expected"
+            exit 1
+          fi
+      - name: Secrets are fixed or accepted
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-accepted-findings.mjs --tool gitleaks --report "$RUNNER_TEMP/reports/gitleaks.json"
+      - name: Outside a pull request, check the register only
+        if: github.event_name != 'pull_request'
+        run: node scripts/check-accepted-findings.mjs
+      - name: Upload the report
+        # The report is redacted: it names the rule, file, line and commit, never the secret.
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: secret-scan-report
+          path: ${{ runner.temp }}/reports/
+          if-no-files-found: warn
+
   ci-passed:
     # The one required check for this workflow (openspec: ci-security-gates, design D12). GitHub
     # can only require checks by name, so this job needs every other job here and fails unless each
@@ -441,6 +518,7 @@ jobs:
       - forge-coverage
       - solidity-analysis
       - dependency-audit
+      - secret-scan
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

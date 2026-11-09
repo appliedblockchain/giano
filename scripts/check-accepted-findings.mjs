@@ -500,13 +500,17 @@ function tomlLines(text) {
 }
 
 const ALLOWLIST_NAME = /^allowlists?$/;
+// An allowlist matches its regexes against the secret only. Every other key (paths, commits,
+// stopwords, regexTarget, condition) could widen it with no change to the register entry that
+// assessed it.
+const ALLOWLIST_KEYS = ["description", "regexes"];
 
 /**
  * .gitleaks.toml keeps every default rule and hides findings only through register entries:
  * - it extends the default rules (`[extend]` with `useDefault = true`), with no other base config;
  * - it has no custom rules, which could replace or weaken a default rule;
  * - every allowlist is a table whose description names a gitleaks register entry for this file
- *   (`allowlistIds`);
+ *   (`allowlistIds`), and that holds only a description and regexes;
  * - no rule is disabled.
  */
 export function checkGitleaksConfig(
@@ -579,6 +583,15 @@ export function checkGitleaksConfig(
 		if (section === "extend") {
 			if (key === "useDefault" && l.code === "true") usesDefault = true;
 			else notAllowed(l.line, `'${key} = ${l.value}' in [extend]`);
+			continue;
+		}
+		if (section === "allowlist" && !ALLOWLIST_KEYS.includes(key)) {
+			errs.push({
+				file,
+				line: l.line,
+				rule: "config-suppression",
+				message: `'${key}' in an allowlist is not allowed. An allowlist may hold only ${ALLOWLIST_KEYS.join(" and ")}, so it matches the secret only and cannot grow without a change to its register entry`,
+			});
 			continue;
 		}
 		const description = l.value.match(/^(["'])(.*)\1$/);

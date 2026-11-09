@@ -186,8 +186,16 @@ Aderyn.
   mode.
 - On `workflow_call` (the release run): every commit on `main` arrived through a PR that ran the scan, so the job
   checks the register only and passes. It still reports the same check name.
-- `.gitleaks.toml` extends the default rules and adds no rule of its own. Its one allowlist covers the public Anvil
-  development keys that the devnet and tests use. The allowlist description starts with its register entry ID.
+- `.gitleaks.toml` extends the default rules and adds no rule of its own. One allowlist covers the public Anvil
+  development keys that the devnet and tests use (AF-008). A second covers Ethereum addresses (AF-009), which
+  `generic-api-key` flags under key names such as `defaultToken`. Each allowlist description starts with its register
+  entry ID. An
+  allowlist holds only `description` and `regexes`, so it matches the secret only and cannot grow without a change to
+  its entry.
+- The commit range uses `--diff-merges=remerge`. By default `git log` shows no diff for a merge commit, so a secret
+  added while resolving a merge would not be scanned. It also uses `--text --no-textconv`, so a `.gitattributes` line
+  that marks a file as binary cannot hide its content. The job fails unless gitleaks scanned every commit in the range,
+  because a range gitleaks cannot read scans 0 commits and passes.
 
 Scanning the full history is out of scope. Credentials already in history are G30.
 
@@ -318,4 +326,4 @@ Task group 4 (R4) runs before the first production release.
 
 ## Open Questions
 
-- The exact gitleaks and Trivy versions and their sha256 values. D11 fixes the rule that chooses them.
+- The exact Trivy version and its sha256 values. D11 fixes the rule that chooses it. gitleaks is 8.30.1 (PR 2).

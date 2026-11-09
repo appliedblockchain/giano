@@ -418,7 +418,7 @@ describe("check-accepted-findings: suppressions", () => {
 			[],
 		);
 		for (const toml of [
-			`${DEFAULT_RULES}${block("AF-008: Anvil keys")}[[allowlists]]\ndescription = "AF-008: all"\npaths = ['''.*''']\n`,
+			`${DEFAULT_RULES}${block("AF-008: Anvil keys")}[[allowlists]]\ndescription = "AF-008: all"\nregexes = ['''.*''']\n`,
 			`${DEFAULT_RULES}${block("unrelated; NOT AF-008")}`,
 			`${DEFAULT_RULES}${block("AF-008 and AF-009")}`,
 			`${DEFAULT_RULES}${block("AF-0081 other")}`,
@@ -464,6 +464,24 @@ describe("check-accepted-findings: suppressions", () => {
 			]),
 			[],
 		);
+	});
+
+	it("lets an allowlist hold only a description and regexes", () => {
+		const ids = new Set(["AF-008"]);
+		const head = `${DEFAULT_RULES}[[allowlists]]\ndescription = "AF-008: Anvil keys"\nregexes = ['(?i)^(0x)?ac09$']\n`;
+		assert.deepEqual(checkGitleaksConfig(head, ids), []);
+		for (const extra of [
+			"paths = ['''.*''']",
+			'commits = ["abc123"]',
+			'stopwords = ["token"]',
+			'regexTarget = "line"',
+			'condition = "AND"',
+			'regexes.x = "y"',
+		]) {
+			const errs = checkGitleaksConfig(`${head}${extra}\n`, ids);
+			assert.deepEqual(rules(errs), ["config-suppression"], extra);
+			assert.equal(errs[0].line, 7, extra);
+		}
 	});
 
 	it("requires .gitleaks.toml to keep the default rules and rejects custom rules", () => {

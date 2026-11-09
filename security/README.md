@@ -92,6 +92,8 @@ gitleaks:
   `[[rules]]` are rejected, because they can replace or weaken a default rule. `disabledRules` is rejected anywhere.
 - An allowlist whose `description` does not start with the ID of a valid, unexpired `gitleaks` entry with
   `{ "allowlist": ".gitleaks.toml" }`, names another ID too, or uses an entry that already accepts another allowlist.
+- An allowlist key other than `description` and `regexes`. Keys such as `paths`, `commits`, `stopwords`,
+  `regexTarget` or `condition` could widen the allowlist with no change to its register entry.
 - TOML that the check cannot read: a quoted table name or key, a multi-line string, an inline table or a dotted
   `allowlist` key. Write each allowlist as an `[allowlist]` or `[[allowlists]]` table.
 

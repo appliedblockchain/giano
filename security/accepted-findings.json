@@ -78,6 +78,30 @@
 			"owner": "Rui Sereno",
 			"reason": "By design. Aderyn flags every return in inline assembly. This one ends the constructor of a helper that is meant to run only inside an eth_call. The constructor returns the account's replay-safe hash, even before the account is deployed. No deploy script or release deploys the contract; only the Foundry tests create it. No code in this repo calls it today, because the wallet SDK computes the replay-safe hash off-chain.",
 			"followUp": "G22 (independent contract review). The helper fails when the hash starts with byte 0xEF (EIP-3541), about 1 in 256 hashes. Decide in G22 whether to fix or remove the contract."
+		},
+		{
+			"id": "AF-008",
+			"tool": "gitleaks",
+			"match": { "allowlist": ".gitleaks.toml" },
+			"severity": "informational",
+			"location": ".gitleaks.toml (allowlist AF-008). The keys are used in the devnet compose files, e2e/devnet, tests, and the dev defaults of the bundler and the paymaster CLIs.",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "Public by design. These are the ten private keys Anvil derives from the public test mnemonic (test test test test test test test test test test test junk), and Foundry prints them every time Anvil starts. They fund accounts only on local devnets and in tests, and the code marks them as never legitimate outside a devnet. Each regex matches the whole secret, with or without 0x, so any other key still fails the scan.",
+			"followUp": "Renew while the devnet and the tests use the Anvil keys."
+		},
+		{
+			"id": "AF-009",
+			"tool": "gitleaks",
+			"match": { "allowlist": ".gitleaks.toml" },
+			"severity": "informational",
+			"location": ".gitleaks.toml (allowlist AF-009). Today: devnet token addresses under defaultToken in deploy/docker-compose.infrastructure.yml, services/custom-example/.env.development, e2e/tests/demo/demo-erc20.spec.ts and the spa-parity fixtures.",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "False positive. gitleaks rule generic-api-key flags a value assigned to a key whose name contains token or key. These values are Ethereum addresses (0x and exactly 40 hex characters), which are public by design. A private key has 64 hex characters, so it does not match and still fails the scan. A real secret with the exact shape of an address is unlikely.",
+			"followUp": "Renew while configs hold contract addresses under such key names."
 		}
 	]
 }
