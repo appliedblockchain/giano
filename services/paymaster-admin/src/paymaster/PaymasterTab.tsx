@@ -415,7 +415,7 @@ function StakeCard({
 	client: GianoPaymasterClient;
 	stake: PaymasterOverview["stake"];
 }) {
-	const now = useNow(15_000) / 1000;
+	const now = useChainNow(client);
 	// With stake already locked, 0 is a value: the EntryPoint takes addStake with no value, which
 	// locks an unlocking stake again or raises only the delay, without sending more funds.
 	const amount = useAmountInput(undefined, undefined, {
@@ -561,6 +561,60 @@ function StakeCard({
 	);
 }
 
+/**
+ * The chain's clock: the latest block's timestamp, read with every console refresh and carried
+ * forward by the browser's clock between reads. The EntryPoint judges `withdrawTime` by
+ * `block.timestamp`, and a devnet's chain time can be far from the browser's.
+ */
+function useChainNow(client: GianoPaymasterClient): number {
+	const { block } = useConsole();
+	const wall = useNow(15_000) / 1000;
+	const [offset, setOffset] = useState(0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: re-read with every console refresh
+	useEffect(() => {
+		let cancelled = false;
+		client.publicClient.getBlock().then(
+			(latest) => {
+				if (!cancelled) setOffset(Number(latest.timestamp) - Date.now() / 1000);
+			},
+			() => undefined, // the browser's clock stands in until a read succeeds
+		);
+		return () => {
+			cancelled = true;
+		};
+	}, [client, block]);
+	return wall + offset;
+}
+
+/** Whether an address has code: an implementation without any would brick the proxy. */
+function useHasCode(
+	client: GianoPaymasterClient,
+	address: Address | undefined,
+): boolean | undefined {
+	const [found, setFound] = useState<{ address: Address; code: boolean }>();
+	useEffect(() => {
+		if (!address) return;
+		let cancelled = false;
+		client.publicClient.getCode({ address }).then(
+			(code) => {
+				if (!cancelled) setFound({ address, code: !!code && code !== "0x" });
+			},
+			() => undefined,
+		);
+		return () => {
+			cancelled = true;
+		};
+	}, [client, address]);
+	return found && found.address === address ? found.code : undefined;
+}
+
+/** What an upgrade's call is, in a sentence: its size and selector, or nothing. */
+function describeCall(calldata: `0x${string}`): string {
+	if (calldata === "0x") return "";
+	const bytes = (calldata.length - 2) / 2;
+	return `, after running a call of ${bytes} byte${bytes === 1 ? "" : "s"}${bytes >= 4 ? ` (selector ${calldata.slice(0, 10)})` : ""}`;
+}
+
 function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 	const { block } = useConsole();
 	const [implementation, setImplementation] = useState<Address>();
@@ -569,13 +623,20 @@ function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 	const data = useCalldataInput();
 	const address = next.value;
 	const calldata = data.value ?? "0x";
+	const hasCode = useHasCode(client, address);
+	const noCode = address !== undefined && hasCode === false;
+	// Right after an upgrade an older read can land last: only the latest read's answer is kept.
+	const generation = useRef(0);
 
 	const read = useCallback(async () => {
+		const current = ++generation.current;
 		try {
-			setImplementation(await client.getImplementation());
+			const found = await client.getImplementation();
+			if (generation.current !== current) return;
+			setImplementation(found);
 			setError(undefined);
 		} catch (cause) {
-			setError(describeError(cause));
+			if (generation.current === current) setError(describeError(cause));
 		}
 	}, [client]);
 
@@ -610,7 +671,15 @@ function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 					</Stack>
 				</Fact>
 			</Facts>
-			<AddressInput input={next} label="New implementation" />
+			<AddressInput
+				input={next}
+				label="New implementation"
+				helper={
+					noCode
+						? "No contract is deployed at this address on this chain."
+						: undefined
+				}
+			/>
 			<CalldataInput
 				input={data}
 				label="Call after upgrading (optional)"
@@ -620,7 +689,9 @@ function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 				target={{ operation: "upgradeToAndCall" }}
 				label="Upgrade"
 				destructive
-				disabled={data.error !== undefined}
+				// Checked for Propose too: a wrong address would otherwise surface only when the operation
+				// executes, after the timelock's delay.
+				disabled={data.error !== undefined || noCode || hasCode === undefined}
 				send={
 					address ? () => client.upgradeToAndCall(address, calldata) : undefined
 				}
@@ -637,7 +708,7 @@ function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 					address
 						? {
 								title: "Upgrade the paymaster",
-								effect: `The proxy delegates to ${address} from this transaction on${calldata !== "0x" ? ", after running the call you gave" : ""}. Check it is the audited release.`,
+								effect: `The proxy delegates to ${address} from this transaction on${describeCall(calldata)}. Check it is the audited release.`,
 								confirmLabel: "Upgrade",
 							}
 						: undefined
