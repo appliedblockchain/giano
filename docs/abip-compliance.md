@@ -141,6 +141,7 @@ automatically: checking release dates would need network access to each project'
 | Slither | 0.11.6 | 2026-07-28 | hash-locked pip requirements; every dependency also at least 7 days old (`uv pip compile --exclude-newer`) | `packages/contracts/requirements-ci.in` and `requirements-ci.txt` |
 | Aderyn | 0.6.8 | 2026-01-22 | sha256 of `aderyn-x86_64-unknown-linux-gnu.tar.xz` | `ci.yml`, job `solidity-analysis` (`ADERYN_VERSION`, `ADERYN_SHA256`) |
 | gitleaks | 8.30.1 | 2026-03-21 | sha256 of `gitleaks_8.30.1_linux_x64.tar.gz` | `ci.yml`, job `secret-scan` (`GITLEAKS_VERSION`, `GITLEAKS_SHA256`) |
+| CodeQL (`github/codeql-action`) | 4.39.1 | 2026-10-21 | none: an exact action tag, and the action downloads its own CodeQL bundle. Pinning actions to commit SHAs is outside G25. | `codeql.yml` (`init@v4.39.1`, `analyze@v4.39.1`) |
 
 ## ABIP-8: Key Generation Ceremony (adopted)
 
