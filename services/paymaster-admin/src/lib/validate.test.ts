@@ -21,6 +21,18 @@ describe("parseAddress", () => {
 		});
 	});
 
+	it("accepts an all-uppercase address, which carries no checksum (EIP-55)", () => {
+		expect(parseAddress(`0x${CHECKSUMMED.slice(2).toUpperCase()}`)).toEqual({
+			value: CHECKSUMMED,
+		});
+	});
+
+	it("says a 0X prefix needs a lowercase x, not that the checksum is wrong", () => {
+		expect(parseAddress(`0X${CHECKSUMMED.slice(2)}`).error).toBe(
+			"An address starts with 0x, with a lowercase x.",
+		);
+	});
+
 	it("counts the hex characters of an address that is too short", () => {
 		expect(parseAddress(CHECKSUMMED.slice(0, 41)).error).toBe(
 			"This address has 39 hex characters instead of 40.",

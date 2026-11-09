@@ -16,13 +16,15 @@ const EMPTY = {} as const;
 
 /**
  * `0x` and 40 hex characters. Mixed case is a checksum and must match: a mistyped character in a
- * checksummed address is exactly what the checksum exists to catch, and a lowercase one is accepted
- * because it carries none.
+ * checksummed address is exactly what the checksum exists to catch. All lowercase or all uppercase
+ * is accepted because it carries none (EIP-55).
  */
 export function parseAddress(text: string): Parsed<Address> {
 	const trimmed = text.trim();
 	if (!trimmed) return EMPTY;
-	if (!/^0x/i.test(trimmed)) return { error: "An address starts with 0x." };
+	if (trimmed.startsWith("0X"))
+		return { error: "An address starts with 0x, with a lowercase x." };
+	if (!trimmed.startsWith("0x")) return { error: "An address starts with 0x." };
 	const hex = trimmed.slice(2);
 	if (/[^0-9a-fA-F]/.test(hex))
 		return { error: "An address has only hex characters (0–9, a–f) after 0x." };
@@ -30,7 +32,8 @@ export function parseAddress(text: string): Parsed<Address> {
 		return {
 			error: `This address has ${hex.length} hex character${hex.length === 1 ? "" : "s"} instead of 40.`,
 		};
-	if (!isAddress(trimmed, { strict: true }))
+	const uncased = hex === hex.toLowerCase() || hex === hex.toUpperCase();
+	if (!uncased && !isAddress(trimmed, { strict: true }))
 		return {
 			error: "The checksum does not match: one character is probably mistyped.",
 		};
