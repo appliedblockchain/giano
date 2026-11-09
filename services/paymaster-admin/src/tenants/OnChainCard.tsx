@@ -321,6 +321,16 @@ function Registered({
 									}
 								: undefined
 						}
+						// It decides where the tenant's balance can ever be withdrawn to, so it asks first.
+						confirm={
+							address
+								? {
+										title: "Change the withdrawal address",
+										effect: `From now on only ${address} can withdraw this tenant's balance on this chain. The current address loses that ability.`,
+										confirmLabel: "Change",
+									}
+								: undefined
+						}
 						onDone={withdrawTo.clear}
 					/>
 				</Stack>
