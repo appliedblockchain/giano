@@ -23,7 +23,14 @@ function apply(mode: ColorMode): void {
 	root.style.colorScheme = mode;
 }
 
+/**
+ * The toggle's choice for the life of the page. With storage blocked it is the only record, and
+ * without it an OS theme change would undo the operator's pick.
+ */
+let chosen: ColorMode | undefined;
+
 function remembered(): ColorMode | undefined {
+	if (chosen) return chosen;
 	try {
 		const value = localStorage.getItem(STORAGE_KEY);
 		return value === "light" || value === "dark" ? value : undefined;
@@ -55,10 +62,11 @@ export function useColorMode(): {
 		const next = current() === "dark" ? "light" : "dark";
 		apply(next);
 		setColorMode(next);
+		chosen = next;
 		try {
 			localStorage.setItem(STORAGE_KEY, next);
 		} catch {
-			// Not remembering is fine; the page is already in the chosen mode.
+			// Not remembering past this page is fine: `chosen` keeps it until a reload.
 		}
 	}, []);
 

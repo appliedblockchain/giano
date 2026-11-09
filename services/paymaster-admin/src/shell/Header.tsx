@@ -57,7 +57,7 @@ export function Header(props: HeaderProps) {
 		<Box
 			as="header"
 			borderBottomWidth="1px"
-			bg="surface"
+			bg="bg.subtle"
 			position="sticky"
 			top="0"
 			zIndex="docked"
