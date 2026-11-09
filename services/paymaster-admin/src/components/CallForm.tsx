@@ -57,7 +57,10 @@ export function CallForm({
 	actionLabel: string;
 }) {
 	const [kind, setKind] = useState<Kind>("setDefaultFee");
-	const [tenant, setTenant] = useState<string>(tenants[0]?.id ?? "");
+	// The first tenant until one is chosen, following the list: tenants read after the form opened
+	// are offered too, rather than leaving it on none.
+	const [chosenTenant, setTenant] = useState<string>("");
+	const tenant = chosenTenant || tenants[0]?.id || "";
 	const [role, setRole] = useState<PaymasterRoleName>("FEE_ADMIN_ROLE");
 	// 0 is a fee: free sponsorship, for every tenant or for one.
 	const fee = useAmountInput(undefined, undefined, { allowZero: true });

@@ -127,9 +127,14 @@ export function usePendingOperations(
 				const merged = merge(known.current.operations, page.operations);
 				// What the new blocks did not mention may still have moved on: waiting becomes ready
 				// with time alone, and the contract, not the logs, says so.
+				// Those the new blocks mentioned were read with their state just now.
+				const fresh = new Set(page.operations.map((operation) => operation.id));
 				const refreshed = await Promise.all(
 					merged.map(async (operation) => {
-						if (operation.state !== "waiting" && operation.state !== "ready")
+						if (
+							fresh.has(operation.id) ||
+							(operation.state !== "waiting" && operation.state !== "ready")
+						)
 							return operation;
 						const state = await timelock.getOperationState(operation.id);
 						return state === operation.state
