@@ -123,9 +123,9 @@ Every page SHALL be usable at 390 px wide with no horizontal scroll of the page:
 - **THEN** the page does not scroll sideways, and the tenant table scrolls within its box
 
 ### Requirement: One refresh for everything on screen
-Every chain and platform API read on screen SHALL be refreshed together: by the refresh control, and every `refreshSeconds` while the browser tab is visible. Polling SHALL stop while the browser tab is hidden, and SHALL refresh once when it becomes visible again. A refresh SHALL NOT discard older pages an operator has already loaded.
+Every chain and platform API read on screen SHALL be refreshed together: by the refresh control, and every `refreshSeconds` while the browser tab is visible. A read that costs one request per tenant SHALL instead run on demand (the Health tab's ledger comparison, D22). Polling SHALL stop while the browser tab is hidden, and SHALL refresh once when it becomes visible again. A refresh SHALL NOT discard older pages an operator has already loaded, and SHALL read every block since the last one, however long the gap.
 
-A `refreshSeconds` that is not a non-negative number SHALL be refused at config load.
+A `refreshSeconds` other than 0 or a whole number of seconds from 1 to 86400 SHALL be refused at config load.
 
 #### Scenario: Hidden tab
 - **WHEN** the console's browser tab is in the background for ten minutes
