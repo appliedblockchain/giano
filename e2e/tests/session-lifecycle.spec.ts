@@ -81,6 +81,16 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 	);
 	await expect(popup.getByTestId("manage-sign-in")).toBeVisible();
 
+	// The refused rename changed nothing: signed back in, the passkey keeps its old name.
+	await popup.getByTestId("manage-sign-in").click();
+	await expect(popup.getByTestId("settings-address")).toHaveText(address);
+	await expect(popup.getByTestId("manage-owner-name").first()).toBeVisible();
+	await expect(
+		popup
+			.getByTestId("manage-owner-name")
+			.filter({ hasText: "after revocation" }),
+	).toHaveCount(0);
+
 	// The revocation is in the tenant's history, attributed to the admin key.
 	const token = await platformSignIn();
 	const history = await apiCall(
