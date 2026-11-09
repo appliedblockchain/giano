@@ -38,6 +38,7 @@ import {
 	settlementTotals,
 } from "../lib/activity";
 import { describeError } from "../lib/format";
+import { readForwardPages } from "../lib/forward";
 import { Link, tenantPath } from "../lib/router";
 import type { TenantRow } from "../lib/tenants";
 import { useConsole } from "../shell/ConsoleContext";
@@ -151,7 +152,7 @@ export function ActivityTab({
 						error={settlements.error}
 						retry={() => void settlements.refresh()}
 						retrying={settlements.loading}
-						stale={settlements.windows.length > 0}
+						stale={settlements.range !== undefined}
 					/>
 				)}
 
@@ -311,18 +312,27 @@ export function ActivityTab({
 					</Table.ScrollArea>
 				)}
 
+				{settlements.olderError && (
+					<InlineError
+						title="Could not read the older window"
+						error={settlements.olderError}
+						retry={() => void settlements.lookFurther()}
+						retrying={settlements.olderLoading}
+					/>
+				)}
 				{settlements.older ? (
 					<Button
 						size="sm"
 						variant="outline"
 						alignSelf="flex-start"
-						loading={settlements.loading}
+						loading={settlements.olderLoading}
 						onClick={() => void settlements.lookFurther()}
 					>
 						<LuChevronsDown /> Look further back
 					</Button>
 				) : (
-					settlements.settled && (
+					// Only once a window has been read: after a failed first read it would be false.
+					settlements.range && (
 						<Text fontSize="xs" color="fg.muted">
 							That reaches the first block: this is every settlement.
 						</Text>
@@ -351,18 +361,29 @@ function Total({ label, children }: { label: string; children: ReactNode }) {
 	);
 }
 
-/** Settlements a window at a time, newest first, refreshed from the newest block read onward. */
+/**
+ * Settlements a window at a time, newest first, refreshed from the newest block read onward.
+ *
+ * A refresh reads every block since the last one, forward a window at a time (readForwardPages), so
+ * a long gap is read whole. Windows with no settlement are not kept: the range read is tracked apart.
+ * "Look further back" has its own loading and error, so a poll neither hides nor clears them, and
+ * one older window is read at a time.
+ */
 function useSettlements(
 	client: GianoPaymasterClient,
 	lastUpdated: Date | undefined,
 ) {
 	const [windows, setWindows] = useState<readonly Window[]>([]);
+	const [range, setRange] = useState<BlockRange>();
 	const [older, setOlder] = useState<BlockRange>();
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>();
 	const [settled, setSettled] = useState(false);
+	const [olderLoading, setOlderLoading] = useState(false);
+	const [olderError, setOlderError] = useState<string>();
 	const newest = useRef<bigint | undefined>(undefined);
 	const running = useRef(false);
+	const readingOlder = useRef(false);
 
 	const refresh = useCallback(async () => {
 		if (running.current) return;
@@ -370,22 +391,46 @@ function useSettlements(
 		setLoading(true);
 		try {
 			const from = newest.current;
-			const page = await client.getSponsorships(
-				from === undefined ? {} : { range: { fromBlock: from + 1n } },
-			);
-			const window = {
-				fromBlock: page.fromBlock,
-				toBlock: page.toBlock,
-				records: page.records,
-			};
 			if (from === undefined) {
-				setWindows([window]);
+				const page = await client.getSponsorships({});
+				setWindows(
+					page.records.length > 0
+						? [
+								{
+									fromBlock: page.fromBlock,
+									toBlock: page.toBlock,
+									records: page.records,
+								},
+							]
+						: [],
+				);
+				setRange({ fromBlock: page.fromBlock, toBlock: page.toBlock });
 				setOlder(page.older);
-			} else if (page.toBlock > from) {
-				setWindows((current) => [window, ...current]);
-			}
-			if (from === undefined || page.toBlock > from)
 				newest.current = page.toBlock;
+			} else {
+				const head = await client.publicClient.getBlockNumber();
+				if (head > from) {
+					const page = await readForwardPages(
+						async (window) => {
+							const read = await client.getSponsorships({ range: window });
+							return { ...read, items: read.records };
+						},
+						from + 1n,
+						head,
+					);
+					if (page.items.length > 0)
+						setWindows((current) => [
+							{
+								fromBlock: page.fromBlock,
+								toBlock: page.toBlock,
+								records: page.items,
+							},
+							...current,
+						]);
+					setRange((current) => current && { ...current, toBlock: head });
+					newest.current = head;
+				}
+			}
 			setError(undefined);
 		} catch (cause) {
 			setError(describeError(cause));
@@ -402,24 +447,34 @@ function useSettlements(
 	}, [refresh, lastUpdated]);
 
 	const lookFurther = useCallback(async () => {
-		if (!older) return;
-		setLoading(true);
+		if (!older || readingOlder.current) return;
+		readingOlder.current = true;
+		setOlderLoading(true);
 		try {
 			const page = await client.getSponsorships({ range: older });
-			setWindows((current) => [
-				...current,
-				{
-					fromBlock: page.fromBlock,
-					toBlock: page.toBlock,
-					records: page.records,
-				},
-			]);
+			if (page.records.length > 0)
+				setWindows((current) =>
+					current.some((window) => window.fromBlock === page.fromBlock)
+						? current
+						: [
+								...current,
+								{
+									fromBlock: page.fromBlock,
+									toBlock: page.toBlock,
+									records: page.records,
+								},
+							],
+				);
+			setRange(
+				(current) => current && { ...current, fromBlock: page.fromBlock },
+			);
 			setOlder(page.older);
-			setError(undefined);
+			setOlderError(undefined);
 		} catch (cause) {
-			setError(describeError(cause));
+			setOlderError(describeError(cause));
 		} finally {
-			setLoading(false);
+			readingOlder.current = false;
+			setOlderLoading(false);
 		}
 	}, [client, older]);
 
@@ -428,14 +483,6 @@ function useSettlements(
 		() => windows.flatMap((window) => [...window.records].reverse()),
 		[windows],
 	);
-	const range =
-		windows.length > 0
-			? {
-					fromBlock: windows[windows.length - 1].fromBlock,
-					toBlock: windows[0].toBlock,
-				}
-			: undefined;
-
 	return {
 		windows,
 		records,
@@ -444,18 +491,21 @@ function useSettlements(
 		loading,
 		error,
 		settled,
+		olderLoading,
+		olderError,
 		refresh,
 		lookFurther,
 	};
 }
 
-/** Each shown block's timestamp, read once and kept for the session. */
+/** Each shown block's timestamp, read once and kept for the session, by chain, paymaster and block. */
 const blockTimeCache = new Map<string, Promise<number>>();
 
 function useBlockTimes(
 	client: GianoPaymasterClient,
 	records: readonly SponsorshipRecord[],
 ) {
+	const { deployment } = useConsole();
 	const [times, setTimes] = useState<ReadonlyMap<bigint, number>>(new Map());
 	// The newest hundred blocks shown: older rows show their block number until scrolled to by a
 	// narrower filter, rather than one page asking the node for every block it ever settled in.
@@ -464,45 +514,52 @@ function useBlockTimes(
 			[...new Set(records.map((record) => record.blockNumber))].slice(0, 100),
 		[records],
 	);
-	// Each block is asked for once: a read that fails is not retried in a loop, which is what keying
-	// the effect on `times` did — every result made a new Map, and a block that failed was still
-	// missing, so it was asked for again. A failed block shows its number without a time.
-	const asked = useRef(new Set<string>());
+	// A block is asked for once and marked done only when its read settles: a read in flight is
+	// not cancelled by a poll or a filter that changes the rows, and one that failed is not retried in
+	// a loop. Its result is kept whenever it lands, unless the page is gone. Keyed by chain too: two
+	// deployments can share a paymaster address (the e2e and local stacks do).
+	const done = useRef(new Set<string>());
+	const inFlight = useRef(new Set<string>());
+	const mounted = useRef(true);
 	useEffect(() => {
-		let cancelled = false;
+		// Set on mount as well as cleared on unmount: StrictMode unmounts and mounts once in dev.
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
+	useEffect(() => {
+		const keyOf = (block: bigint) =>
+			`${deployment.chainId}:${client.address}:${block}`;
 		const missing = blocks.filter((block) => {
-			const key = `${client.address}:${block}`;
-			if (asked.current.has(key)) return false;
-			asked.current.add(key);
+			const key = keyOf(block);
+			if (done.current.has(key) || inFlight.current.has(key)) return false;
+			inFlight.current.add(key);
 			return true;
 		});
-		if (missing.length === 0) return;
-		void Promise.all(
-			missing.map(async (block) => {
-				const key = `${client.address}:${block}`;
-				let pending = blockTimeCache.get(key);
-				if (!pending) {
-					pending = client.publicClient
-						.getBlock({ blockNumber: block })
-						.then((header) => Number(header.timestamp));
-					pending.catch(() => blockTimeCache.delete(key));
-					blockTimeCache.set(key, pending);
-				}
-				return [block, await pending.catch(() => undefined)] as const;
-			}),
-		).then((entries) => {
-			if (cancelled) return;
-			const found = entries.filter(([, time]) => time !== undefined);
-			if (found.length === 0) return;
-			setTimes((current) => {
-				const next = new Map(current);
-				for (const [block, time] of found) next.set(block, time as number);
-				return next;
-			});
-		});
-		return () => {
-			cancelled = true;
-		};
-	}, [client, blocks]);
+		for (const block of missing) {
+			const key = keyOf(block);
+			let pending = blockTimeCache.get(key);
+			if (!pending) {
+				pending = client.publicClient
+					.getBlock({ blockNumber: block })
+					.then((header) => Number(header.timestamp));
+				pending.catch(() => blockTimeCache.delete(key));
+				blockTimeCache.set(key, pending);
+			}
+			void pending
+				.then(
+					(time) => {
+						if (mounted.current)
+							setTimes((current) => new Map(current).set(block, time));
+					},
+					() => undefined, // a failed block shows its number without a time
+				)
+				.finally(() => {
+					inFlight.current.delete(key);
+					done.current.add(key);
+				});
+		}
+	}, [client, blocks, deployment.chainId]);
 	return times;
 }
