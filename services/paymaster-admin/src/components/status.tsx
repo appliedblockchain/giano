@@ -58,9 +58,15 @@ export function QueuedMarker({
 }) {
 	const { timelockOperations } = useConsole();
 	const wanted = typeof keys === "string" ? [keys] : keys;
-	const changes = timelockOperations.changes.filter((change) =>
-		wanted.includes(change.key),
-	);
+	// One per operation and key: a rotation's grant and revoke are two changes to the same role in one
+	// operation, and would otherwise be two markers with the same React key.
+	const seen = new Set<string>();
+	const changes = timelockOperations.changes.filter((change) => {
+		const id = `${change.operationId}:${change.key}`;
+		if (!wanted.includes(change.key) || seen.has(id)) return false;
+		seen.add(id);
+		return true;
+	});
 	if (changes.length === 0) return null;
 
 	return (

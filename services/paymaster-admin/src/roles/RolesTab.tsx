@@ -138,10 +138,19 @@ function RoleRow({
 		? roleDelay(access, entry.name)
 		: undefined;
 	const timelock = deployment.timelockAddress;
-	const ready = timelockOperations.changes.filter(
-		(change) =>
-			change.key === queuedKeys.role(entry.name) && change.state === "ready",
-	);
+	// One operation can hold several changes to a role (a rotation grants and revokes): one Execute
+	// per operation, not per change.
+	const ready = [
+		...new Set(
+			timelockOperations.changes
+				.filter(
+					(change) =>
+						change.key === queuedKeys.role(entry.name) &&
+						change.state === "ready",
+				)
+				.map((change) => change.operationId),
+		),
+	];
 
 	return (
 		<Table.Row data-testid={`role-${entry.name}`}>
@@ -167,10 +176,10 @@ function RoleRow({
 						)}
 					</HStack>
 					<QueuedMarker keys={queuedKeys.role(entry.name)} />
-					{ready.map((change) => (
+					{ready.map((operationId) => (
 						<ExecuteButton
-							key={change.operationId}
-							operationId={change.operationId}
+							key={operationId}
+							operationId={operationId}
 							mayExecute={access.mayExecute}
 						/>
 					))}
