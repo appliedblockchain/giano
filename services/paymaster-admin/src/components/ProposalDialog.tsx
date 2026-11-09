@@ -61,7 +61,8 @@ export function ProposalDialog({
 	tenants: readonly TenantView[];
 	onClose: () => void;
 }) {
-	const { timelock, timelockAccess, timelockOperations } = useConsole();
+	const { timelock, timelockAccess, timelockOperations, deployment } =
+		useConsole();
 	const [requests, setRequests] = useState<ProposalRequest[]>([]);
 	const [salt, setSalt] = useState("");
 	const [delay, setDelay] = useState("");
@@ -134,6 +135,14 @@ export function ProposalDialog({
 		})
 			.then((built) => {
 				if (cancelled) return;
+				// The schedule batch takes the RPC's chain id and the execute and cancel batches the
+				// deployment's: a mismatch would make them disagree, so nothing is built from it.
+				if (built.chainId !== deployment.chainId) {
+					setError(
+						`The RPC answers for chain ${built.chainId}, but this deployment is chain ${deployment.chainId}. Check the deployment's rpcUrl.`,
+					);
+					return;
+				}
 				setDraft(built);
 				setRequired(built.requiredDelay);
 				console.info(
@@ -149,6 +158,7 @@ export function ProposalDialog({
 		};
 	}, [
 		timelock,
+		deployment.chainId,
 		requests,
 		settledSalt,
 		settledDelay,

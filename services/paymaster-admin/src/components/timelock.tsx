@@ -17,7 +17,7 @@ export function ExecuteButton({
 	mayExecute: boolean | undefined;
 	size?: "xs" | "sm";
 }) {
-	const { timelock, timelockOperations } = useConsole();
+	const { timelock, timelockOperations, timelockAccess } = useConsole();
 	const operation = timelockOperations.operations.find(
 		(entry) => entry.id === operationId,
 	);
@@ -49,6 +49,9 @@ export function ExecuteButton({
 			label="Execute"
 			size={size}
 			send={() => timelock.executeOperation(operation)}
+			// An executed operation can change the delays or the timelock's roles: read them again,
+			// rather than show the old ones until the page reloads.
+			onDone={() => void timelockAccess.reload()}
 			confirm={{
 				title: "Execute the timelock operation",
 				effect: `${summary[0]?.toUpperCase()}${summary.slice(1)}. It takes effect in this transaction and cannot be cancelled after.`,

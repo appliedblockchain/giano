@@ -422,6 +422,13 @@ function OperationRow({ operation }: { operation: TimelockOperation }) {
 
 	const saveBatch = (step: "execute" | "cancel") => {
 		try {
+			// The batch names the deployment's chain; the timelock was read from the RPC's. A Safe
+			// would refuse a batch for another chain, or worse, accept it there.
+			const rpcChain = timelockAccess.config?.chainId;
+			if (rpcChain !== undefined && rpcChain !== deployment.chainId)
+				throw new Error(
+					`The RPC answers for chain ${rpcChain}, but this deployment is chain ${deployment.chainId}.`,
+				);
 			const batch = operation.complete
 				? safeTransactionBatch(timelock.toProposal(operation), {
 						chainId: deployment.chainId,
