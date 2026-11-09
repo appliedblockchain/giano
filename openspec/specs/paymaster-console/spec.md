@@ -181,6 +181,7 @@ Each of the following SHALL ask for confirmation in a dialog that names its effe
 - revoke a role;
 - remove a signer;
 - disable a tenant;
+- change a tenant's withdrawal address, naming the new address;
 - withdraw from the treasury;
 - unlock stake;
 - withdraw stake;

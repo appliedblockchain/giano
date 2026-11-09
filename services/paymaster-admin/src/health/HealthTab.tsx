@@ -249,7 +249,7 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 							`${amount(wei, deployment.nativeCurrency)} ${deployment.nativeCurrency.symbol}`;
 						differing.push({
 							slug,
-							text: `${slug}: ledger ${money(comparison.ledgerBalance)}, chain ${money(row.onChain.balance)}${comparison.lag !== undefined ? `, ${comparison.lag} blocks behind` : ", never synced"}`,
+							text: `${slug}: ledger ${money(comparison.ledgerBalance)}, chain ${money(row.onChain.balance)}${lagText(comparison.lag)}`,
 						});
 					} else if (comparison.kind === "no-ledger" && !empty)
 						differing.push({
@@ -294,7 +294,7 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 								].join("; "),
 								remedy:
 									differing.length > 0
-										? "A ledger a few blocks behind catches up on its own. One synced past the block read and still different is drift: check wallet-api's paymaster watcher."
+										? "A ledger a few blocks behind catches up on its own, and one ahead of the console's read agrees on the next refresh. One synced to the block read and still different is drift: check wallet-api's paymaster watcher."
 										: "Compare again; if it keeps failing, check wallet-api.",
 								links: [...differing.map((entry) => entry.slug), ...unread]
 									.slice(0, 5)
@@ -319,4 +319,11 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 	}, [count]);
 
 	return { check, loading, run: runCheck };
+}
+
+/** How far the ledger is from the block the console read, as compareLedger's signed lag. */
+function lagText(lag: bigint | undefined): string {
+	if (lag === undefined) return ", never synced";
+	if (lag < 0n) return `, ${-lag} blocks ahead of the console's read`;
+	return `, ${lag} blocks behind`;
 }
