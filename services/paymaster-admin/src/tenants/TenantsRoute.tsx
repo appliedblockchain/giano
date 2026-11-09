@@ -67,6 +67,11 @@ export function TenantsRoute({
 				<TenantPage
 					key={row.id}
 					row={row}
+					// A tenant missing from a registry not read in full may be one of its deleted tenants.
+					registryComplete={
+						!platformApi ||
+						(registry.tenants !== undefined && !registry.deletedError)
+					}
 					client={client}
 					platformProps={platformProps}
 					lastUpdated={lastUpdated}

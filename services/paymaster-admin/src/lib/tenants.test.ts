@@ -204,6 +204,11 @@ describe("onChainBlocks", () => {
 			"register",
 		]);
 		expect(Object.keys(onChainBlocks("suspended"))).toEqual(["enable"]);
+		expect(Object.keys(onChainBlocks("unknown")).sort()).toEqual([
+			"enable",
+			"fund",
+			"register",
+		]);
 		expect(onChainBlocks("active")).toEqual({});
 		expect(onChainBlocks(undefined)).toEqual({});
 	});

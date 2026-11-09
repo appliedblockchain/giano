@@ -76,12 +76,15 @@ type Open =
  */
 export function TenantPage({
 	row,
+	registryComplete,
 	client,
 	platformProps,
 	lastUpdated,
 	onRegistryChanged,
 }: {
 	row: TenantRow;
+	/** Whether a tenant missing from the registry is known not to be in it (deleted ones included). */
+	registryComplete: boolean;
 	/** Undefined while the paymaster has not been read; the registry half still shows. */
 	client: GianoPaymasterClient | undefined;
 	platformProps: PlatformAreaProps;
@@ -218,7 +221,9 @@ export function TenantPage({
 				slug={slug}
 				onChain={row.onChain}
 				state={row.state}
-				status={row.registry?.status}
+				status={
+					row.registry?.status ?? (registryComplete ? undefined : "unknown")
+				}
 				ledger={record.detail?.ledger}
 			/>
 

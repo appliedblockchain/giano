@@ -57,8 +57,8 @@ export function OnChainCard({
 	slug: string | undefined;
 	onChain: TenantView | undefined;
 	state: OnChainState;
-	/** The registry status, which rules some writes out; undefined for a tenant with no registry row. */
-	status: TenantStatus | undefined;
+	/** The registry status, which rules some writes out (see onChainBlocks). */
+	status: TenantStatus | "unknown" | undefined;
 	/** wallet-api's ledger rows, with the platform API. */
 	ledger: TenantDetail["ledger"] | undefined;
 }) {

@@ -78,14 +78,23 @@ export function nextStep(row: TenantRow): NextStep | undefined {
  * tenant is offered none of Register (permanent: the roster only grows), Fund or Enable; a suspended
  * one may not be enabled, which would undo the suspension on this chain. Disable is never ruled
  * out: it is how a tenant is wound down.
+ *
+ * `status` is undefined for a tenant the registry does not have (or with no registry at all), and
+ * `"unknown"` while the registry could not say: before its first read, or when the deleted tenants
+ * could not be read. Then the tenant may be deleted, so the same three wait.
  */
-export function onChainBlocks(status: TenantStatus | undefined): {
+export function onChainBlocks(status: TenantStatus | "unknown" | undefined): {
 	register?: string;
 	fund?: string;
 	enable?: string;
 } {
 	if (status === "deleted") {
 		const reason = "The tenant is deleted in the registry.";
+		return { register: reason, fund: reason, enable: reason };
+	}
+	if (status === "unknown") {
+		const reason =
+			"The registry has not been read in full, so the tenant may be deleted. It is read again with the next refresh.";
 		return { register: reason, fund: reason, enable: reason };
 	}
 	if (status === "suspended")
