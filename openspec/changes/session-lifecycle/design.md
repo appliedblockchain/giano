@@ -23,7 +23,7 @@ See proposal.md for the motivation. Wallet sessions today (all on `main`):
 ## Decisions
 
 ### D1. Idle check in SQL, touch throttled by a guarded UPDATE
-`resolve()` adds `last_used_at > now() - make_interval(secs => $idle)` to its `WHERE`. A session idle too long fails the same predicate as an expired one and gets the same 401. After a hit, a separate statement refreshes the timestamp:
+`resolve()` adds `last_used_at > now() - make_interval(secs => $idle)` to its `WHERE`. A session idle too long fails the same predicate as an expired one and gets the same 401. `resolve()` writes nothing: it says whether a refresh is due, and `requireSession` calls `touch()` only after the cross-tenant and suspended-tenant checks pass, so a request wallet-api refuses never keeps a session from going idle. `touch()` is:
 `UPDATE sessions SET last_used_at = now() WHERE id = $1 AND last_used_at < now() - interval '60 seconds'`.
 It writes only when the stored value is more than a minute old, so a busy session costs one write a minute. Concurrent requests race harmlessly: the guard makes the second update a no-op.
 The new column is `last_used_at timestamptz NOT NULL DEFAULT now()`. The migration sets it to `created_at` for existing rows, so sessions issued before the deploy go idle an hour after issue. That is the safe direction.
@@ -82,7 +82,7 @@ wallet-kit's management controller already has `resetToSignedOut()`. It subscrib
 - [The `FOR UPDATE` on `users` serialises a user's concurrent sign-ins] → Sign-ins are human-paced and the lock lasts one short transaction.
 - [Clients built before this change keep a dead token after a 401 and show a generic error] → Unchanged from today's behavior after expiry. The fix ships in the wallet-core and wallet-kit release, and the BYO-wallet docs say to treat a 401 as the end of the session.
 - [Expired and revoked rows still accumulate] → Retention is G34. The partial index keeps the hot paths independent of the dead rows.
-- [Migration number clash with the A1 stack's `0010_usage_indexes`] → This change uses `0011`. If it merges before the A1 stack, it renumbers to `0010` at rebase. The migration test checks the list.
+- [Migration number clash with the A1 stack's `0010_usage_indexes`] → This change uses `0011` and keeps it, whichever merges first. The runner applies every unapplied file in filename order, so a `0010` that arrives later is still applied, and the two are independent (an index on another table). The migration test checks the list.
 
 ## Migration Plan
 

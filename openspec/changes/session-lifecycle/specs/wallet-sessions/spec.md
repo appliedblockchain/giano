@@ -33,6 +33,10 @@ A request with an expired, idle, revoked or unknown session SHALL be answered `4
 - **WHEN** a session is not used for longer than the idle timeout and is then presented
 - **THEN** the response is 401 `invalid or expired session`, and the session never resolves again
 
+#### Scenario: A refused request is not a use
+- **WHEN** a session is presented on another tenant's origin, or while its tenant is suspended, and the request is refused
+- **THEN** its last use is not updated, so the refusal does not keep it from going idle
+
 #### Scenario: Activity does not extend the absolute expiry
 - **WHEN** a session is used every 10 minutes until 24 hours after issue, with `SESSION_TTL_SECONDS` 86400
 - **THEN** the first request after 24 hours is refused with 401
