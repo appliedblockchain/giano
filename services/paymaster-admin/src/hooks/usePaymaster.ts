@@ -54,7 +54,12 @@ export function usePaymaster(
 ): PaymasterState {
 	const blocked = auth === "required";
 	const token = auth === "required" ? undefined : auth?.token;
-	// The client is keyed on the token; the callback is read when a 401 arrives, whatever its identity.
+	const signedIn = token !== undefined;
+	// The client is keyed on whether there is a session, not on which: a renewed session's token is
+	// read per request, so Stay signed in swaps it without a new client, a re-read, or a remount. The
+	// callback is likewise read when a 401 arrives, whatever its identity.
+	const currentToken = useRef(token);
+	currentToken.current = token;
 	const onUnauthorized = useRef<() => void>(undefined);
 	onUnauthorized.current =
 		auth === "required" ? undefined : auth?.onUnauthorized;
@@ -64,11 +69,19 @@ export function usePaymaster(
 				? undefined
 				: createReadClient(
 						deployment,
-						token
-							? { token, onUnauthorized: () => onUnauthorized.current?.() }
+						signedIn
+							? {
+									token: () => {
+										const current = currentToken.current;
+										return typeof current === "function"
+											? current()
+											: (current ?? "");
+									},
+									onUnauthorized: () => onUnauthorized.current?.(),
+								}
 							: undefined,
 					),
-		[deployment, blocked, token],
+		[deployment, blocked, signedIn],
 	);
 
 	const [client, setClient] = useState<GianoPaymasterClient>();
@@ -191,13 +204,21 @@ export function usePaymaster(
 	}, [refresh]);
 
 	// Polling, because the chain has no push channel a browser can subscribe to over plain HTTP.
+	// Not while the page is hidden: a console left open in a background tab would otherwise spend the
+	// relay's rate limit and the provider's quota on reads nobody sees. It catches up on return.
 	useEffect(() => {
 		if (!client || deployment.refreshSeconds <= 0) return;
-		const timer = setInterval(
-			() => void refresh(),
-			deployment.refreshSeconds * 1000,
-		);
-		return () => clearInterval(timer);
+		const timer = setInterval(() => {
+			if (!document.hidden) void refresh();
+		}, deployment.refreshSeconds * 1000);
+		const resume = () => {
+			if (!document.hidden) void refresh();
+		};
+		document.addEventListener("visibilitychange", resume);
+		return () => {
+			clearInterval(timer);
+			document.removeEventListener("visibilitychange", resume);
+		};
 	}, [client, deployment.refreshSeconds, refresh]);
 
 	const health = useMemo(

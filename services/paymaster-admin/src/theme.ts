@@ -109,9 +109,11 @@ function palette(name: "brand" | "accent" | "timelock") {
 			value: { _light: "white", _dark: `{colors.${name}.950}` },
 		},
 		fg: scale(700, 300),
-		muted: scale(100, 900),
+		// D5 gives the timelock's muted fill as the 200 shade (#e9d5ff).
+		muted: scale(name === "timelock" ? 200 : 100, 900),
 		subtle: scale(50, 950),
-		emphasized: scale(700, 300),
+		// Chakra's direction: a background (text selection is `emphasized/80`), so light in light mode.
+		emphasized: scale(300, 700),
 		focusRing: scale(600, 400),
 	};
 }

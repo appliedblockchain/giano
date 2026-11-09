@@ -1,10 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 import { CHAINS } from "../origins.mjs";
-import { chooseDeployment, installWallet, openConsole } from "./console-wallet";
+import {
+	chooseDeployment,
+	installWallet,
+	openConsole,
+	tab,
+} from "./console-wallet";
 
 /**
- * The console's Platform area against the real stack (specs/PLATFORM-ADMIN-SPECS.md §14.2 step 3):
+ * The console's tenant registry and platform admins against the real stack (specs/PLATFORM-ADMIN-SPECS.md §14.2 step 3):
  * a platform admin signs in with the console's wallet, sees the tenant registry joined to the devnet
  * paymaster's roster, and takes a tenant through create → suspend → delete without leaving the page.
  *
@@ -22,9 +27,9 @@ test.describe("admin console", () => {
 		await expect(
 			page.getByRole("button", { name: /^Connected/ }),
 		).toBeVisible();
-		await page.getByRole("button", { name: "Platform", exact: true }).click();
 		await page.getByRole("button", { name: /Sign in with wallet/ }).click();
 		await expect(page.getByText("admin-console")).toBeVisible();
+		await tab(page, /Tenants/).click();
 	});
 
 	test("the registry shows the fixture tenants joined to the paymaster roster", async ({
@@ -192,7 +197,7 @@ test.describe("admin console", () => {
 		const id = `admin-run-${Date.now()}`;
 		const address = `0x${Date.now().toString(16).padStart(40, "0")}`;
 
-		await page.getByRole("tab", { name: /Admins/ }).click();
+		await tab(page, /Admins/).click();
 		for (const bootstrapped of ["admin-e2e", "admin-console", "giovanni"]) {
 			await expect(page.getByTestId(`admin-row-${bootstrapped}`)).toBeVisible();
 		}
@@ -230,7 +235,6 @@ test.describe("admin console", () => {
 		);
 		expect(stored).not.toContain("gps_");
 		await page.reload();
-		await page.getByRole("button", { name: "Platform", exact: true }).click();
 		await expect(
 			page.getByRole("button", { name: /Sign in with wallet/ }),
 		).toBeVisible();
