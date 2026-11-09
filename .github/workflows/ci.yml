@@ -382,7 +382,7 @@ jobs:
     # The one required check for this workflow (openspec: ci-security-gates, design D12). GitHub
     # can only require checks by name, so this job needs every other job here and fails unless each
     # one succeeded: a failed, cancelled or skipped job fails it too. A new job joins the gate by
-    # being added to `needs`; the first step fails if one is missing.
+    # being added to `needs`; scripts/check-ci-gate.mjs fails if one is missing.
     name: CI passed
     if: always()
     needs:
@@ -400,37 +400,20 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          sparse-checkout: .github/workflows/ci.yml
-          sparse-checkout-cone-mode: false
-      - name: Every other job in ci.yml is in needs
-        # Every line indented two spaces under `jobs:` is a job key, in any form (quoted, upper case,
-        # with a comment). A jobs section in another layout lists no job and so fails the check.
-        # continue-on-error would let a failed job or step count as success, so it is not allowed.
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          if grep -nE -e '^[[:space:]-]*["'"'"']?continue-on-error["'"'"']?[[:space:]]*:' \
-            -e '[{,][[:space:]]*["'"'"']?continue-on-error["'"'"']?[[:space:]]*:' .github/workflows/ci.yml; then
-            echo "continue-on-error is not allowed in ci.yml: it lets a failure count as success."
-            exit 1
-          fi
-          # A double-quoted key with an escape ("continue\x2Don-error") reads differently to grep.
-          if grep -nE -e '^[[:space:]-]*"[^"]*\\[^"]*"[[:space:]]*:' \
-            -e '[{,][[:space:]]*"[^"]*\\[^"]*"[[:space:]]*:' .github/workflows/ci.yml; then
-            echo "Escaped keys are not allowed in ci.yml: write every key without escapes."
-            exit 1
-          fi
-          jobs=$(awk '/^jobs:/ { in_jobs = 1; next }
-            in_jobs && /^[^ #]/ { in_jobs = 0 }
-            in_jobs && /^  [^ #]/ { sub(/^  /, ""); sub(/[[:space:]]*:.*/, ""); gsub(/["'"'"']/, ""); print }' \
-            .github/workflows/ci.yml | grep -vx ci-passed | sort)
-          needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
-          if [ "$jobs" != "$needed" ]; then
-            echo "ci-passed needs must list every other job in ci.yml. Missing or extra:"
-            diff <(echo "$jobs") <(echo "$needed") || true
-            exit 1
-          fi
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Root devDependencies only: the check needs the yaml parser, not the workspace packages.
+      - run: pnpm install --frozen-lockfile --filter @appliedblockchain/giano
+      - name: CI gate check unit tests
+        run: node --test scripts/check-ci-gate.test.mjs
+      - name: Every other job in ci.yml is in needs, and none can fail silently
+        # Parses ci.yml with a full YAML parser, so every key form reads as GitHub reads it. Fails
+        # when a job is missing from needs, when this job loses `if: always()`, or when any job or
+        # step has continue-on-error, which lets a failure count as success.
+        run: node scripts/check-ci-gate.mjs
       - name: Every needed job succeeded
         env:
           NEEDS: ${{ toJSON(needs) }}
