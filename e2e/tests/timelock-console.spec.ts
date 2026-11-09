@@ -91,13 +91,6 @@ const ROLE_ABI = [
 		inputs: [{ type: "bytes32" }, { type: "address" }],
 		outputs: [],
 	},
-	{
-		type: "function",
-		name: "defaultFeeWei",
-		stateMutability: "view",
-		inputs: [],
-		outputs: [{ type: "uint256" }],
-	},
 ] as const;
 
 /** A role's id, as the paymaster defines it: read from its public constant rather than recomputed. */
@@ -189,11 +182,27 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+	// Every step runs, whatever an earlier one did: a failed PAUSER_ROLE revoke must not leave the
+	// timelock holding ROLE_ADMIN for the specs after this one.
+	const failures: unknown[] = [];
+	const attempt = async (step: () => Promise<unknown>) => {
+		try {
+			await step();
+		} catch (cause) {
+			failures.push(cause);
+		}
+	};
 	for (const account of [OLD_HOLDER, NEW_HOLDER])
-		if (await holds("PAUSER_ROLE", account))
-			await send("revokeRole", "PAUSER_ROLE", account);
-	if (timelock && (await holds("ROLE_ADMIN", timelock)))
-		await send("revokeRole", "ROLE_ADMIN", timelock);
+		await attempt(async () => {
+			if (await holds("PAUSER_ROLE", account))
+				await send("revokeRole", "PAUSER_ROLE", account);
+		});
+	await attempt(async () => {
+		if (timelock && (await holds("ROLE_ADMIN", timelock)))
+			await send("revokeRole", "ROLE_ADMIN", timelock);
+	});
+	if (failures.length > 0)
+		throw new AggregateError(failures, "cleaning up after the timelock spec");
 });
 
 /** Opens the console on chain A with this file's timelock configured, signed in as admin-console. */
@@ -290,11 +299,6 @@ test("a scheduled change is cancelled by the canceller and never executes", asyn
 	page,
 }) => {
 	await openWithTimelock(page);
-	const before = await reader.readContract({
-		address: paymaster,
-		abi: ROLE_ABI,
-		functionName: "defaultFeeWei",
-	});
 
 	await page
 		.getByLabel("Change", { exact: true })
@@ -323,12 +327,12 @@ test("a scheduled change is cancelled by the canceller and never executes", asyn
 	await expect(page.getByTestId(`operation-${id}`)).toContainText("cancelled", {
 		timeout: 30_000,
 	});
+	// Past its delay it stays cancelled and offers no Execute: the cancelled state is what proves it.
+	// (This timelock holds no FEE_ADMIN_ROLE, so the fee itself could not have changed either way.)
 	await waitOutTheDelay(page);
-	expect(
-		await reader.readContract({
-			address: paymaster,
-			abi: ROLE_ABI,
-			functionName: "defaultFeeWei",
-		}),
-	).toBe(before);
+	const cancelled = page.getByTestId(`operation-${id}`);
+	await expect(cancelled).toContainText("cancelled");
+	await expect(
+		cancelled.getByRole("button", { name: "Execute", exact: true }),
+	).toHaveCount(0);
 });
