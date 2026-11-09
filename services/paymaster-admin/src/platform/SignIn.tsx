@@ -44,6 +44,23 @@ const FAILURE_TEXT: Record<
 	},
 };
 
+/**
+ * What to show for a failed sign-in, or nothing when the admin refused in the wallet: that is a
+ * change of mind, not an error. Shared with Stay signed in, which signs the same way.
+ */
+export function signInFailureText(
+	reason: SignInFailure,
+	message?: string,
+): { title: string; description: string } | undefined {
+	if (reason === "rejected") return undefined;
+	if (reason === "failed")
+		return {
+			title: "Sign-in failed",
+			description: message ?? "The platform API refused the request.",
+		};
+	return FAILURE_TEXT[reason];
+}
+
 export function SignIn({
 	deployment,
 	wallet,
@@ -64,16 +81,8 @@ export function SignIn({
 		setBusy(true);
 		try {
 			const result = await signIn(signer, deployment.chainId);
-			if (result.ok || result.reason === "rejected") return;
-			setFailure(
-				result.reason === "failed"
-					? {
-							title: "Sign-in failed",
-							description:
-								result.message ?? "The platform API refused the request.",
-						}
-					: FAILURE_TEXT[result.reason],
-			);
+			if (!result.ok)
+				setFailure(signInFailureText(result.reason, result.message));
 		} finally {
 			setBusy(false);
 		}

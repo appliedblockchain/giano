@@ -3,6 +3,7 @@ import { useState } from "react";
 import { LuClock } from "react-icons/lu";
 import type { ConnectedWallet } from "../lib/chain";
 import { usePlatform } from "../lib/platform-session";
+import { signInFailureText } from "../platform/SignIn";
 import { useNow } from "./Header";
 
 const WARN_MS = 2 * 60_000;
@@ -25,15 +26,24 @@ export function SessionWarning({
 	const { session, signIn, signOut } = usePlatform();
 	const now = useNow(5_000);
 	const [busy, setBusy] = useState(false);
+	const [failure, setFailure] = useState<{
+		title: string;
+		description: string;
+	}>();
 	if (!session) return null;
 	const left = session.expiresAt.getTime() - now;
 	if (left > WARN_MS) return null;
 
 	const stay = async () => {
 		setBusy(true);
+		setFailure(undefined);
 		try {
 			const signer = wallet ?? (await connect());
-			if (signer) await signIn(signer, chainId);
+			if (!signer) return;
+			const result = await signIn(signer, chainId);
+			// The old session carries on until it ends, so the card stays and says why it did not renew.
+			if (!result.ok)
+				setFailure(signInFailureText(result.reason, result.message));
 		} finally {
 			setBusy(false);
 		}
@@ -64,6 +74,14 @@ export function SessionWarning({
 				<Text fontSize="sm" color="fg.muted">
 					Sign again to keep working. Anything you are typing stays where it is.
 				</Text>
+				{failure && (
+					<Box role="alert" fontSize="sm">
+						<Text fontWeight="semibold" color="red.fg">
+							{failure.title}
+						</Text>
+						<Text color="fg.muted">{failure.description}</Text>
+					</Box>
+				)}
 				<HStack gap="2">
 					<Button
 						size="sm"
