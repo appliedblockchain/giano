@@ -80,6 +80,18 @@ describe("check-accepted-findings: register", () => {
 		assert.match(errs[0].message, /Sarah Thompson/);
 	});
 
+	it("rejects an entry accepted after today, so it cannot take effect early", () => {
+		const future = entry({ accepted: "2099-01-01", expires: "2099-06-30" });
+		const errs = validateRegister(register(future), TODAY);
+		assert.deepEqual(rules(errs), ["accepted-in-future"]);
+		assert.match(errs[0].message, /2099-01-01/);
+		assert.deepEqual(
+			validateRegister(register(future), "2099-01-01"),
+			[],
+			"passes from its accepted date",
+		);
+	});
+
 	it("still passes on the expiry date itself", () => {
 		assert.deepEqual(validateRegister(register(entry()), "2027-05-08"), []);
 	});
@@ -320,6 +332,10 @@ describe("check-accepted-findings: suppressions", () => {
 			['[allowlist.extra]\npaths = ["x"]\n', "unsupported-config"],
 			['extend.disabledRules = ["generic-api-key"]\n', "config-suppression"],
 			["[allowlist]\ndescription = '''\nAF-008'''\n", "unsupported-config"],
+			[
+				"[allowlist]\npaths = ''''\ndescription = \"AF-008\"\n''''\n",
+				"unsupported-config",
+			],
 		])
 			assert.ok(rules(checkGitleaksConfig(toml, ids)).includes(rule), toml);
 		const ok =
@@ -569,6 +585,15 @@ for (const [tool, c] of Object.entries(CASES)) {
 			);
 		});
 
+		it("fails a finding whose only matching entry is accepted after today", () => {
+			const result = run(
+				c.report,
+				register({ ...c.entry, accepted: "2026-11-10" }),
+			);
+			assert.equal(result.failures.length, 1);
+			assert.match(result.failures[0].message, /not valid/);
+		});
+
 		it("fails a finding whose only matching entry is not valid", () => {
 			const result = run(c.report, register({ ...c.entry, owner: "" }));
 			assert.match(result.failures[0].message, /not valid/);
@@ -594,6 +619,41 @@ describe("check-accepted-findings: report details", () => {
 			TODAY,
 		);
 		assert.deepEqual(result, { accepted: [], failures: [], belowGate: 1 });
+	});
+
+	it("fails a report with a missing or unknown severity, and keeps Trivy UNKNOWN below the gate", () => {
+		const bad = [
+			["slither", slitherReport([{ ...slitherHigh, impact: undefined }])],
+			["slither", slitherReport([{ ...slitherHigh, impact: "high" }])],
+			["pnpm-audit", auditReport(advisory(undefined)), { workspace: "." }],
+			["pnpm-audit", auditReport(advisory("HIGH")), { workspace: "." }],
+			[
+				"trivy",
+				trivyReport([trivyVuln({ Severity: undefined })]),
+				{ image: "giano-wallet-api" },
+			],
+			[
+				"trivy",
+				trivyReport([trivyVuln({ Severity: "high" })]),
+				{ image: "giano-wallet-api" },
+			],
+		];
+		for (const [tool, text, options] of bad)
+			assert.throws(
+				() => evaluateReport(tool, text, register(), TODAY, options),
+				/severity/,
+				`${tool} ${text}`,
+			);
+		assert.deepEqual(
+			evaluateReport(
+				"trivy",
+				trivyReport([trivyVuln({ Severity: "UNKNOWN" })]),
+				register(),
+				TODAY,
+				{ image: "giano-wallet-api" },
+			),
+			{ accepted: [], failures: [], belowGate: 1 },
+		);
 	});
 
 	it("passes a Slither report with no detectors", () => {
