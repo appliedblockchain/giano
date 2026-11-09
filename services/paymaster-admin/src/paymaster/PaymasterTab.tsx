@@ -588,12 +588,19 @@ function useChainNow(client: GianoPaymasterClient): number {
 	return wall + offset;
 }
 
-/** Whether an address has code: an implementation without any would brick the proxy. */
+/**
+ * Whether an address has code: an implementation without any would brick the proxy. `error` when
+ * the check itself failed, so the form can say why it waits rather than stay disabled in silence.
+ */
 function useHasCode(
 	client: GianoPaymasterClient,
 	address: Address | undefined,
-): boolean | undefined {
-	const [found, setFound] = useState<{ address: Address; code: boolean }>();
+): { hasCode: boolean | undefined; error: string | undefined } {
+	const [found, setFound] = useState<{
+		address: Address;
+		code?: boolean;
+		error?: string;
+	}>();
 	useEffect(() => {
 		if (!address) return;
 		let cancelled = false;
@@ -601,13 +608,16 @@ function useHasCode(
 			(code) => {
 				if (!cancelled) setFound({ address, code: !!code && code !== "0x" });
 			},
-			() => undefined,
+			(cause) => {
+				if (!cancelled) setFound({ address, error: describeError(cause) });
+			},
 		);
 		return () => {
 			cancelled = true;
 		};
 	}, [client, address]);
-	return found && found.address === address ? found.code : undefined;
+	const current = found && found.address === address ? found : undefined;
+	return { hasCode: current?.code, error: current?.error };
 }
 
 /** What an upgrade's call is, in a sentence: its size and selector, or nothing. */
@@ -625,7 +635,7 @@ function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 	const data = useCalldataInput();
 	const address = next.value;
 	const calldata = data.value ?? "0x";
-	const hasCode = useHasCode(client, address);
+	const { hasCode, error: codeError } = useHasCode(client, address);
 	const noCode = address !== undefined && hasCode === false;
 	// Right after an upgrade an older read can land last: only the latest read's answer is kept.
 	const generation = useRef(0);
@@ -679,7 +689,9 @@ function UpgradeCard({ client }: { client: GianoPaymasterClient }) {
 				helper={
 					noCode
 						? "No contract is deployed at this address on this chain."
-						: undefined
+						: codeError
+							? `Could not check this address for a contract (${codeError}), so Upgrade waits. Retype it to check again.`
+							: undefined
 				}
 			/>
 			<CalldataInput
