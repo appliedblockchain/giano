@@ -1,0 +1,313 @@
+name: Security scan
+
+# G25 (openspec: ci-security-gates, weekly-scan requirement). A PR is checked against the
+# advisories of its day. This scan re-checks the published state every week, so a new advisory
+# is reported even when no PR runs:
+#   - the dependency audit of both pnpm workspaces;
+#   - the `latest` image on GHCR of each image that docker.yml publishes, on both arches;
+#   - register entries that expire within 14 days, with their owners;
+#   - dismissed CodeQL alerts without a register entry.
+# The report job keeps one open issue labelled `security-scan` up to date, and closes it after a
+# clean run. Each job has only the permissions it needs.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC, an hour after the weekly CodeQL run.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-scan
+  cancel-in-progress: false
+
+jobs:
+  register:
+    name: Register and expiring entries
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Fails on an expired or invalid entry, as on every PR.
+      - name: Register check
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/results"
+          node scripts/check-accepted-findings.mjs 2>&1 | tee "$RUNNER_TEMP/results/register.txt"
+      - name: Entries that expire within 14 days
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/results"
+          node scripts/check-accepted-findings.mjs --expiring-within 14 2>&1 \
+            | tee "$RUNNER_TEMP/results/expiring.txt"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: security-scan-register
+          path: ${{ runner.temp }}/results/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  dependency-audit:
+    name: Dependency audit (pnpm audit)
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # The same commands as job "Dependency audit (pnpm audit)" in ci.yml; the reasons for each
+      # option are there.
+      - name: Audit both workspaces
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/reports" "$RUNNER_TEMP/results"
+          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-root.json" || true
+          (cd services/custom-example && pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-custom-example.json") || true
+          status=0
+          for ws in . services/custom-example; do
+            report=audit-root.json
+            [ "$ws" = . ] || report=audit-custom-example.json
+            echo "== workspace $ws" >> "$RUNNER_TEMP/results/audit.txt"
+            node scripts/check-accepted-findings.mjs --tool pnpm-audit --workspace "$ws" \
+              --report "$RUNNER_TEMP/reports/$report" >> "$RUNNER_TEMP/results/audit.txt" 2>&1 || status=1
+          done
+          cat "$RUNNER_TEMP/results/audit.txt"
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: security-scan-audit
+          path: ${{ runner.temp }}/results/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  setup:
+    name: Enumerate images
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+    steps:
+      - uses: actions/checkout@v7
+      # The image list lives in docker.yml (job `setup`, the JSON between the JSON markers), as
+      # scripts/check-dockerfiles.mjs also reads it. jq parses it, and the count must match the
+      # "dockerfile" lines, so a list this step cannot read fails instead of scanning less.
+      - id: list
+        run: |
+          set -o pipefail
+          sed -n "/<<'JSON'\$/,/^ *JSON\$/{//!p;}" .github/workflows/docker.yml > images.json
+          jq -e 'type == "array" and length > 0 and all(.[]; (.name | type) == "string")' images.json > /dev/null
+          listed=$(grep -cE '"dockerfile":[[:space:]]*"' .github/workflows/docker.yml)
+          if [ "$(jq length images.json)" -ne "$listed" ]; then
+            echo "::error::read $(jq length images.json) images from docker.yml, but it lists $listed Dockerfiles"
+            exit 1
+          fi
+          echo "images=$(jq -c 'map(.name)' images.json)" >> "$GITHUB_OUTPUT"
+
+  images:
+    name: Scan ${{ matrix.image }}:latest
+    needs: setup
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Pull the published images from GHCR.
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.setup.outputs.images) }}
+    env:
+      # The same Trivy as docker.yml (version, release date and sha256 there). This job runs on
+      # amd64 only and scans both arches from the registry.
+      SCAN_TRIVY_VERSION: 0.76.1
+      SCAN_TRIVY_SHA256_AMD64: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Install Trivy
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${SCAN_TRIVY_VERSION}/trivy_${SCAN_TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "$SCAN_TRIVY_SHA256_AMD64  trivy.tar.gz" | sha256sum -c -
+          mkdir trivy trivy-run
+          tar -xzf trivy.tar.gz -C trivy trivy
+          echo "$RUNNER_TEMP/trivy" >> "$GITHUB_PATH"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The same Trivy options as the scan in docker.yml, with the registry image as input.
+      - name: Scan both arches
+        working-directory: ${{ runner.temp }}/trivy-run
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          if env | grep -q '^TRIVY_'; then
+            echo "::error::a TRIVY_ environment variable is set; it would change the scan"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/results"
+          out="$RUNNER_TEMP/results/image-$IMAGE.txt"
+          status=0
+          for arch in amd64 arm64; do
+            report="$RUNNER_TEMP/results/trivy-$IMAGE-$arch.json"
+            echo "== $IMAGE:latest (linux/$arch)" >> "$out"
+            if ! trivy image "ghcr.io/appliedblockchain/$IMAGE:latest" \
+                --image-src remote --platform "linux/$arch" \
+                --config "" --ignorefile "" \
+                --scanners vuln --pkg-types os,library \
+                --db-repository mirror.gcr.io/aquasec/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2 \
+                --java-db-repository mirror.gcr.io/aquasec/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1 \
+                --cache-dir "$RUNNER_TEMP/trivy-cache" --skip-version-check --no-progress \
+                --format json --output "$report"; then
+              echo "FAIL  Trivy could not scan $IMAGE:latest (linux/$arch). See the job log." >> "$out"
+              status=1
+              continue
+            fi
+            jq -r '"digest: " + (.Metadata.RepoDigests[0] // "unknown")' "$report" >> "$out" || true
+            node "$GITHUB_WORKSPACE/scripts/check-accepted-findings.mjs" --tool trivy --image "$IMAGE" \
+              --report "$report" >> "$out" 2>&1 || status=1
+          done
+          cat "$out"
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: security-scan-image-${{ matrix.image }}
+          path: ${{ runner.temp }}/results/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  codeql-dismissed:
+    name: Dismissed CodeQL alerts
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # List the code scanning alerts.
+      security-events: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # A dismissal happens in the GitHub UI, outside review, so each one needs a register entry
+      # (tool `codeql`, matched by rule ID and alert number). gh fails on an API error, and the
+      # check fails on input that is not a list of dismissed alerts.
+      - name: Every dismissed alert has a register entry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/results"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/code-scanning/alerts?state=dismissed&tool_name=CodeQL&per_page=100" \
+            --jq '.[]' | jq -s . > "$RUNNER_TEMP/codeql-dismissed.json"
+          node scripts/check-accepted-findings.mjs --tool codeql \
+            --report "$RUNNER_TEMP/codeql-dismissed.json" 2>&1 | tee "$RUNNER_TEMP/results/codeql.txt"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: security-scan-codeql
+          path: ${{ runner.temp }}/results/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  report:
+    name: Report in the tracking issue
+    needs: [register, dependency-audit, setup, images, codeql-dismissed]
+    # Runs after a failure too: a failure is what the issue reports.
+    if: always()
+    runs-on: ubuntu-26.04
+    permissions:
+      # Open, edit and close the tracking issue, and create its label.
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: results
+          pattern: security-scan-*
+          merge-multiple: true
+      # Anything other than success in every job, or any entry close to expiry, keeps the issue
+      # open. A job that ended without output is reported as such, never as clean.
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NEEDS: ${{ toJSON(needs) }}
+          IMAGES: ${{ needs.setup.outputs.images }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          section() {
+            echo "### $1"
+            echo
+            if [ -s "results/$2" ]; then
+              echo '```'
+              head -c 4000 "results/$2"
+              [ "$(wc -c < "results/$2")" -le 4000 ] || printf '\n[truncated: the full output is in the run]'
+              echo
+              echo '```'
+            else
+              echo "No output: the job did not finish. See the run."
+            fi
+            echo
+          }
+          open=0
+          table=""
+          for job in register dependency-audit setup images codeql-dismissed; do
+            result=$(jq -r --arg j "$job" '.[$j].result' <<< "$NEEDS")
+            [ "$result" = success ] || open=1
+            table+="| $job | $result |"$'\n'
+          done
+          expiring=$(grep -c '^expiring ' results/expiring.txt 2> /dev/null || true)
+          [ "${expiring:-0}" -eq 0 ] || open=1
+          {
+            echo "The weekly security scan found open items or entries close to expiry."
+            echo "Run: $RUN_URL"
+            echo
+            echo "Fix each finding, or record it in \`security/accepted-findings.json\` (see \`security/README.md\`)."
+            echo
+            echo "| Job | Result |"
+            echo "|-----|--------|"
+            printf '%s' "$table"
+            echo
+            section "Entries that expire within 14 days" expiring.txt
+            section "Register check" register.txt
+            section "Dependency audit" audit.txt
+            for image in $(jq -r '.[]?' <<< "${IMAGES:-[]}"); do
+              section "Image $image" "image-$image.txt"
+            done
+            section "Dismissed CodeQL alerts" codeql.txt
+          } > body.md
+          issue=$(gh issue list --label security-scan --state open --json number --jq '.[0].number // empty')
+          if [ "$open" -eq 1 ]; then
+            gh label create security-scan --color B60205 \
+              --description "Open items from the weekly security scan (security-scan.yml)" --force
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --body-file body.md
+              echo "Updated issue #$issue."
+            else
+              gh issue create --title "Weekly security scan: open findings" \
+                --label security-scan --body-file body.md
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" \
+              --comment "Clean run: nothing open, and no entry expires within 14 days. $RUN_URL"
+          else
+            echo "Clean run, and no tracking issue is open."
+          fi

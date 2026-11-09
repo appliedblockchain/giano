@@ -9,6 +9,9 @@
 //       Report mode. Reads one tool report and fails on every finding at or above the tool's gate
 //       that no valid, unexpired register entry accepts. Fails when the report is missing, empty
 //       or not a valid report, so a tool that could not run never passes.
+//   node scripts/check-accepted-findings.mjs --expiring-within <days>
+//       Lists the usable entries that expire within <days> days, with their owners. Always exits
+//       0 when the register can be read: the weekly scan reports the list.
 //
 // The security tools run without suppressions; this script is the one place that decides. No
 // dependencies and no network access, so it runs on fork PRs too. See security/README.md.
@@ -123,13 +126,15 @@ export const MATCH_SHAPES = {
 	codeql: [{ rule: "string", alert: "line" }],
 };
 export const TOOLS = Object.keys(MATCH_SHAPES);
-// Tools that have a report mode. CodeQL alerts are read through the API by the weekly scan.
+// Tools that have a report mode. The CodeQL report is the list of dismissed alerts, which the
+// weekly scan reads through the code scanning API.
 export const REPORT_TOOLS = [
 	"slither",
 	"aderyn",
 	"pnpm-audit",
 	"trivy",
 	"gitleaks",
+	"codeql",
 ];
 
 const DAY_MS = 86_400_000;
@@ -319,6 +324,20 @@ export function usableEntries(register, today) {
 			!isExpired(e, today) &&
 			!isFuture(e, today),
 	);
+}
+
+/**
+ * Usable entries that expire within `days` days of today, soonest first. The weekly scan lists
+ * them, so an expiry does not surprise the owner (design D13). Expired entries fail the register
+ * check instead.
+ */
+export function expiringEntries(register, today, days) {
+	const last = new Date(parseDate(today) + days * DAY_MS)
+		.toISOString()
+		.slice(0, 10);
+	return usableEntries(register, today)
+		.filter((e) => e.expires <= last)
+		.sort((a, b) => a.expires.localeCompare(b.expires));
 }
 
 /** In-source suppression comments, given [{ file, text }] for each Solidity file. */
@@ -893,6 +912,8 @@ const SLITHER_IMPACTS = [
 ];
 const PNPM_SEVERITIES = ["info", "low", "moderate", "high", "critical"];
 const TRIVY_SEVERITIES = ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+// CodeQL's security severity. A quality alert has none; its entry then accepts it at any level.
+const CODEQL_SEVERITIES = ["low", "medium", "high", "critical"];
 
 function requireSeverity(value, allowed, what) {
 	if (!allowed.includes(value))
@@ -1036,7 +1057,23 @@ export const PARSERS = {
 	trivy(report, { image }) {
 		if (!isObject(report) || typeof report.SchemaVersion !== "number")
 			throw new ReportError("Trivy report has no SchemaVersion");
-		return optionalArray(report.Results, "Results").flatMap((r) =>
+		// Trivy scans OS packages only when it detects the OS. Without one, or on an OS that is end
+		// of life and gets no more fixes, the report would be valid but pass every OS finding.
+		const os = report.Metadata?.OS;
+		if (!isObject(os) || typeof os.Family !== "string" || os.Family === "")
+			throw new ReportError(
+				`Trivy detected no operating system in ${image}, so it scanned no OS package`,
+			);
+		if (os.EOSL !== undefined && os.EOSL !== false)
+			throw new ReportError(
+				`${image} is on ${os.Family} ${os.Name}, which Trivy reports as end of life: it gets no more fixes. Move the image to a supported base`,
+			);
+		const results = requireArray(report.Results, "Results");
+		if (!results.some((r) => r.Class === "os-pkgs"))
+			throw new ReportError(
+				`Trivy report for ${image} has no OS package result`,
+			);
+		return results.flatMap((r) =>
 			optionalArray(r.Vulnerabilities, "Vulnerabilities").map((v) => ({
 				key: { image, package: v.PkgName, vulnerability: v.VulnerabilityID },
 				gating:
@@ -1051,6 +1088,29 @@ export const PARSERS = {
 				label: `${v.PkgName} ${v.InstalledVersion} ${v.VulnerabilityID} (${v.Severity}${v.FixedVersion ? `, fixed in ${v.FixedVersion}` : ", no fix"}) in ${image} ${r.Target}`,
 			})),
 		);
+	},
+	codeql(report) {
+		// The dismissed CodeQL alerts from the code scanning API. Each needs an entry, at any
+		// severity: a dismissal happens in the GitHub UI, outside the repository and its review.
+		return requireArray(report, "CodeQL alert list").map((a) => {
+			if (!Number.isInteger(a.number) || typeof a.rule?.id !== "string")
+				throw new ReportError(
+					"CodeQL alert has no number or rule ID: the input is not the alert list",
+				);
+			if (a.state !== "dismissed")
+				throw new ReportError(
+					`CodeQL alert #${a.number} is ${a.state}, not dismissed: the input is not the list of dismissed alerts`,
+				);
+			const level = a.rule.security_severity_level;
+			const severity = CODEQL_SEVERITIES.includes(level) ? level : undefined;
+			const where = a.most_recent_instance?.location;
+			return {
+				key: { rule: a.rule.id, alert: a.number },
+				gating: true,
+				severity,
+				label: `${a.rule.id} alert #${a.number}${severity ? ` (${severity})` : ""} at ${where?.path ?? "unknown file"}:${where?.start_line ?? "?"}, dismissed as ${a.dismissed_reason ?? "no reason"}`,
+			};
+		});
 	},
 	gitleaks(report) {
 		// gitleaks reports no severity: every finding gates. The label never includes the secret,
@@ -1155,12 +1215,36 @@ export function parseArgs(argv) {
 			"--report": "report",
 			"--workspace": "workspace",
 			"--image": "image",
+			"--expiring-within": "expiringWithin",
 		}[flag];
 		if (!name || argv[i + 1] === undefined || argv[i + 1].startsWith("--"))
 			throw new ReportError(`unexpected argument '${flag}'`);
 		args[name] = argv[++i];
 	}
 	return args;
+}
+
+function expiringMode(args, root, today) {
+	if (Object.keys(args).length !== 1)
+		throw new ReportError("--expiring-within takes no other argument");
+	if (!/^\d{1,3}$/.test(args.expiringWithin))
+		throw new ReportError("--expiring-within needs a number of days");
+	let register;
+	try {
+		register = readJsonFile(resolve(root, REGISTER_PATH));
+	} catch (e) {
+		throw new ReportError(`cannot read ${REGISTER_PATH}: ${e.message}`);
+	}
+	const days = Number(args.expiringWithin);
+	const soon = expiringEntries(register, today, days);
+	for (const e of soon)
+		console.log(
+			`expiring  ${e.id}  ${e.expires}  owner: ${e.owner}  (${e.tool}: ${JSON.stringify(e.match)})`,
+		);
+	console.log(
+		`${soon.length} usable entr${soon.length === 1 ? "y expires" : "ies expire"} within ${days} days of ${today}.`,
+	);
+	return 0;
 }
 
 function reportMode(args, root, today) {
@@ -1213,7 +1297,12 @@ export function main(
 	{ root = ROOT, today = todayUtc() } = {},
 ) {
 	try {
-		if (argv.length) return reportMode(parseArgs(argv), root, today);
+		if (argv.length) {
+			const args = parseArgs(argv);
+			return args.expiringWithin === undefined
+				? reportMode(args, root, today)
+				: expiringMode(args, root, today);
+		}
 	} catch (e) {
 		if (!(e instanceof ReportError)) throw e;
 		console.error(`FAIL  ${e.message}`);

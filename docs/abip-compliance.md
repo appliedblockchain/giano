@@ -142,6 +142,7 @@ automatically: checking release dates would need network access to each project'
 | Aderyn | 0.6.8 | 2026-01-22 | sha256 of `aderyn-x86_64-unknown-linux-gnu.tar.xz` | `ci.yml`, job `solidity-analysis` (`ADERYN_VERSION`, `ADERYN_SHA256`) |
 | gitleaks | 8.30.1 | 2026-03-21 | sha256 of `gitleaks_8.30.1_linux_x64.tar.gz` | `ci.yml`, job `secret-scan` (`GITLEAKS_VERSION`, `GITLEAKS_SHA256`) |
 | CodeQL (`github/codeql-action`) | 4.39.1 | 2026-10-21 | the commit SHA of the release (`9b3254085494b55a0f7c4c2b3d2d52cc712ce370`), as #246 pins every action; the action downloads its own CodeQL bundle | `codeql.yml` (`init` and `analyze`) |
+| Trivy | 0.76.1 | 2026-10-21 | sha256 of `trivy_0.76.1_Linux-64bit.tar.gz` and `trivy_0.76.1_Linux-ARM64.tar.gz`. Both match the release's checksums file and GitHub's asset digests. | `docker.yml`, job `build`, and `security-scan.yml`, job `images` (`SCAN_TRIVY_VERSION`, `SCAN_TRIVY_SHA256_AMD64`, `SCAN_TRIVY_SHA256_ARM64`) |
 
 ## ABIP-8: Key Generation Ceremony (adopted)
 
@@ -209,6 +210,15 @@ cosign verify dhi.io/<repo>:<tag>@sha256:<index digest> \
 DHI signs the multi-arch index and attaches the signature as an OCI 1.1 referrer, which is why `--experimental-oci11`
 is needed. Its signatures are not in the public Rekor log, which is why the transparency-log check is skipped and the
 signature is verified by key.
+
+**Vulnerability scan (G25).** Each `build` job in `docker.yml` first builds its image to a tar and scans it with Trivy,
+before anything is pushed. The job fails on a HIGH or CRITICAL vulnerability that has a fixed version and no entry in
+[`security/accepted-findings.json`](../security/accepted-findings.json). It also fails when Trivy detects no OS in the
+image, or an OS that is end of life. On a PR the job stops after the scan. On `main`, tags and manual runs, the existing
+push step follows. It reuses the scanned layers, and a last step fails the job if the pushed layers differ from the
+scanned ones. The `merge` job, which tags, copies to ECR and signs, needs every `build` job, so a failed scan leaves
+nothing tagged or signed. `security-scan.yml` scans the `latest` tag of every image again each week. A fix comes from a
+DHI digest refresh (below) where one exists; otherwise the finding needs a register entry (`security/README.md`).
 
 ### Exceptions
 
