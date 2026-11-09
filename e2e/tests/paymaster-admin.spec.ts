@@ -235,14 +235,20 @@ test("the Paymaster tab fills Max from the treasury, and unlocking stake asks be
 	).toBeVisible();
 	await expect(page.getByText("you hold it").first()).toBeVisible();
 
-	// Max is the accrued treasury, exactly
+	// Max is the accrued treasury, exactly. Run alone on a fresh devnet nothing has been sponsored
+	// yet, so the treasury is 0 and there is nothing to withdraw: Max is then disabled.
 	const amount = page.getByRole("textbox", { name: "Amount" });
-	await page.getByRole("button", { name: "Max" }).click();
-	await expect
-		.poll(
-			async () => (await amount.inputValue()) === formatEther(await treasury()),
-		)
-		.toBe(true);
+	const max = page.getByRole("button", { name: "Max" });
+	if ((await treasury()) === 0n) await expect(max).toBeDisabled();
+	else {
+		await max.click();
+		await expect
+			.poll(
+				async () =>
+					(await amount.inputValue()) === formatEther(await treasury()),
+			)
+			.toBe(true);
+	}
 
 	// unlocking stops every bundler accepting the paymaster: it asks first, and Cancel sends nothing
 	const sentBefore = (await walletCalls(page)).filter(
