@@ -1,4 +1,4 @@
-import { keccak256, parseEther } from "viem";
+import { keccak256, parseEther, zeroAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { assessHealth, type HealthTimelock } from "../src/health";
 import { DEFAULT_ADMIN_ROLE, PAYMASTER_ROLES } from "../src/roles";
@@ -431,5 +431,14 @@ describe("assessHealth and the implementation (B2)", () => {
 		expect(check(report, "implementation")?.detail).toBe(
 			`no code at ${IMPLEMENTATION}`,
 		);
+	});
+
+	it("fails a paymaster whose implementation slot is empty, saying it is not a proxy", () => {
+		const report = assessHealth(overview(), {
+			implementation: { address: zeroAddress, code: undefined },
+		});
+
+		expect(check(report, "implementation")?.level).toBe("fail");
+		expect(check(report, "implementation")?.detail).toMatch(/not a UUPS proxy/);
 	});
 });

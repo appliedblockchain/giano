@@ -14,6 +14,7 @@ import {
 	getAddress,
 	type Hex,
 	keccak256,
+	zeroAddress,
 } from "viem";
 import type {
 	HealthCheck,
@@ -401,7 +402,9 @@ function implementationCheck({
 				label: "implementation matches no release",
 				detail: present
 					? `${address}, codehash ${keccak256(code)}`
-					: `no code at ${address}`,
+					: address === zeroAddress
+						? "no ERC-1967 implementation: the paymaster is not a UUPS proxy"
+						: `no code at ${address}`,
 				remedy:
 					"The paymaster runs code that is no release, so nobody reviewed it as one. Find out who upgraded it, and upgrade to a release (UPGRADER_ROLE, through the timelock).",
 			};
