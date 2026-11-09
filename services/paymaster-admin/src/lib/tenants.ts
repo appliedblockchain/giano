@@ -77,10 +77,16 @@ export function nextStep(row: TenantRow): NextStep | undefined {
  * Something an operator should look at: a deficit, a registry and a paymaster that disagree about
  * whether the tenant may be sponsored, an active tenant not yet registered, or an on-chain tenant
  * with no registry row.
+ *
+ * `registryKnown` is whether there is a registry and it has been read. Without one, every row lacks
+ * a registry row, which says nothing about the tenant, so that rule does not apply.
  */
-export function needsAttention(row: TenantRow): boolean {
+export function needsAttention(
+	row: TenantRow,
+	registryKnown: boolean,
+): boolean {
 	if (row.onChain && row.onChain.deficit > 0n) return true;
-	if (!row.registry) return row.state !== "unknown";
+	if (!row.registry) return registryKnown && row.state !== "unknown";
 	const status = row.registry.status;
 	if (status === "active")
 		return row.state === "disabled" || row.state === "not-registered";
@@ -95,7 +101,14 @@ export function filterTenants(
 		query,
 		filter,
 		includeDeleted,
-	}: { query: string; filter: TenantFilter; includeDeleted: boolean },
+		registryKnown,
+	}: {
+		query: string;
+		filter: TenantFilter;
+		includeDeleted: boolean;
+		/** As for {@link needsAttention}. */
+		registryKnown: boolean;
+	},
 ): TenantRow[] {
 	const needle = query.trim().toLowerCase();
 	return rows.filter((row) => {
@@ -103,7 +116,8 @@ export function filterTenants(
 		if (status === "deleted" && !includeDeleted) return false;
 		if (filter === "active" && status !== "active") return false;
 		if (filter === "suspended" && status !== "suspended") return false;
-		if (filter === "attention" && !needsAttention(row)) return false;
+		if (filter === "attention" && !needsAttention(row, registryKnown))
+			return false;
 		if (!needle) return true;
 		return [
 			row.id,

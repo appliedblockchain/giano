@@ -112,16 +112,25 @@ describe("nextStep and needsAttention", () => {
 	});
 
 	it("flags a deficit, a missing registration, a roster-only id and a suspended tenant still enabled", () => {
-		expect(needsAttention(byo)).toBe(true);
-		expect(needsAttention(stock)).toBe(true);
-		expect(needsAttention(orphan)).toBe(true);
+		expect(needsAttention(byo, true)).toBe(true);
+		expect(needsAttention(stock, true)).toBe(true);
+		expect(needsAttention(orphan, true)).toBe(true);
 		const [suspendedEnabled] = joinTenants(
 			[registry(STOCK, "stock", { status: "suspended" })],
 			[onChain(STOCK)],
 		);
-		expect(needsAttention(suspendedEnabled)).toBe(true);
+		expect(needsAttention(suspendedEnabled, true)).toBe(true);
 		const [healthy] = joinTenants([registry(STOCK, "stock")], [onChain(STOCK)]);
-		expect(needsAttention(healthy)).toBe(false);
+		expect(needsAttention(healthy, true)).toBe(false);
+	});
+
+	it("does not flag a missing registry row while there is no registry to have one", () => {
+		const [healthy, inDeficit] = joinTenants(undefined, [
+			onChain(ORPHAN),
+			onChain(STOCK, { deficit: 5n }),
+		]);
+		expect(needsAttention(healthy, false)).toBe(false);
+		expect(needsAttention(inDeficit, false)).toBe(true);
 	});
 });
 
@@ -144,16 +153,26 @@ describe("filterTenants", () => {
 					query: "",
 					filter: "all",
 					includeDeleted: false,
+					registryKnown: true,
 				}),
 			),
 		).toEqual(["stock", "byo"]);
 		expect(
-			filterTenants(rows, { query: "", filter: "all", includeDeleted: true }),
+			filterTenants(rows, {
+				query: "",
+				filter: "all",
+				includeDeleted: true,
+				registryKnown: true,
+			}),
 		).toHaveLength(3);
 	});
 
 	it("searches slug, name, origin and id, and filters by state", () => {
-		const all = { filter: "all", includeDeleted: false } as const;
+		const all = {
+			filter: "all",
+			includeDeleted: false,
+			registryKnown: true,
+		} as const;
 		expect(slugs(filterTenants(rows, { ...all, query: "bring" }))).toEqual([
 			"byo",
 		]);
@@ -169,6 +188,7 @@ describe("filterTenants", () => {
 					query: "",
 					filter: "suspended",
 					includeDeleted: false,
+					registryKnown: true,
 				}),
 			),
 		).toEqual(["byo"]);

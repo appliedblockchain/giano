@@ -74,9 +74,12 @@ export function TenantsList({
 	const [filter, setFilter] = useState<TenantFilter>("all");
 	const [includeDeleted, setIncludeDeleted] = useState(false);
 
+	// Until the registry has been read, a roster entry's missing registry row says nothing: no badge,
+	// no footer count, and not a reason to need attention.
+	const registryKnown = platformApi && registry.tenants !== undefined;
 	const shown = useMemo(
-		() => filterTenants(rows, { query, filter, includeDeleted }),
-		[rows, query, filter, includeDeleted],
+		() => filterTenants(rows, { query, filter, includeDeleted, registryKnown }),
+		[rows, query, filter, includeDeleted, registryKnown],
 	);
 	const totals = useMemo(() => tenantTotals(rows), [rows]);
 	const deletedCount = rows.filter(
@@ -232,7 +235,12 @@ export function TenantsList({
 							</Table.Header>
 							<Table.Body>
 								{shown.map((row) => (
-									<Row key={row.id} row={row} platformApi={platformApi} />
+									<Row
+										key={row.id}
+										row={row}
+										platformApi={platformApi}
+										registryKnown={registryKnown}
+									/>
 								))}
 								{shown.length === 0 && (
 									<Table.Row>
@@ -259,7 +267,7 @@ export function TenantsList({
 						</>
 					)}
 					.
-					{platformApi &&
+					{registryKnown &&
 						(totals.unregistered > 0
 							? ` ${totals.unregistered} on-chain tenant${totals.unregistered === 1 ? " has" : "s have"} no registry row.`
 							: " Every on-chain tenant has a registry row.")}
@@ -269,7 +277,15 @@ export function TenantsList({
 	);
 }
 
-function Row({ row, platformApi }: { row: TenantRow; platformApi: boolean }) {
+function Row({
+	row,
+	platformApi,
+	registryKnown,
+}: {
+	row: TenantRow;
+	platformApi: boolean;
+	registryKnown: boolean;
+}) {
 	const { registry, onChain } = row;
 	const step = nextStep(row);
 	const path = rowPath(row);
@@ -294,7 +310,7 @@ function Row({ row, platformApi }: { row: TenantRow; platformApi: boolean }) {
 						{registry.rpName} · {registry.walletOrigin}
 					</Text>
 				) : (
-					platformApi && (
+					registryKnown && (
 						<Badge
 							size="sm"
 							colorPalette="orange"
