@@ -47,7 +47,8 @@ export function TenantHistory({
 }: {
 	/** Absent for a tenant the registry does not know. */
 	registry?: RegistryHistory;
-	client: GianoPaymasterClient;
+	/** Undefined while the paymaster has not been read; the registry half still shows. */
+	client: GianoPaymasterClient | undefined;
 	tenantId: string;
 	slug: string | undefined;
 }) {
@@ -76,7 +77,13 @@ export function TenantHistory({
 							On {deployment.name}
 						</Heading>
 					)}
-					<ChainEvents client={client} tenantId={tenantId} slug={slug} />
+					{client ? (
+						<ChainEvents client={client} tenantId={tenantId} slug={slug} />
+					) : (
+						<Text fontSize="sm" color="fg.muted">
+							The paymaster has not been read yet.
+						</Text>
+					)}
 				</Stack>
 			</Stack>
 		</SectionCard>
