@@ -12,6 +12,7 @@ import {
 	startTestStack,
 	stopTestStack,
 	TENANT_A,
+	TENANT_B,
 	type TestContext,
 } from "./setup.js";
 import {
@@ -197,6 +198,43 @@ describe("absolute and idle expiry", () => {
 		);
 	});
 
+	it("a request refused for a foreign origin or a suspended tenant does not refresh the session", async () => {
+		const { token } = await register("g5-refused-touch");
+		await backdate(token, "last_used_at", "61 seconds");
+		const stale = (await sessionRow(token)).last_used_at;
+
+		// another tenant's origin: refused, and the last use stays where it was
+		const foreign = await ctx.app.inject({
+			method: "GET",
+			url: "/v1/me",
+			headers: {
+				authorization: `Bearer ${token}`,
+				origin: TENANT_B.walletOrigin,
+			},
+		});
+		expect(foreign.statusCode).toBe(401);
+		expect((await sessionRow(token)).last_used_at).toBe(stale);
+
+		// its own tenant suspended: refused too, and still not refreshed
+		await ctx.db.execute(
+			sql`UPDATE tenants SET status = 'suspended' WHERE slug = ${TENANT_A.slug}`,
+		);
+		try {
+			expect((await me(token)).statusCode).toBe(401);
+		} finally {
+			await ctx.db.execute(
+				sql`UPDATE tenants SET status = 'active' WHERE slug = ${TENANT_A.slug}`,
+			);
+		}
+		expect((await sessionRow(token)).last_used_at).toBe(stale);
+
+		// accepted again once the tenant is back: that use is recorded
+		expect((await me(token)).statusCode).toBe(200);
+		expect(
+			new Date((await sessionRow(token)).last_used_at).getTime(),
+		).toBeGreaterThan(new Date(stale).getTime());
+	});
+
 	it("answers every dead session with the same 401 body", async () => {
 		const revoked = await register("g5-401-revoked");
 		await ctx.app.inject({
@@ -323,9 +361,13 @@ describe("live sessions per user are capped", () => {
 				service.create(user.userId, user.credentialDbId),
 			),
 		);
+		expect(issued).toHaveLength(6);
 		expect(await liveCount(user.userId)).toBe(ctx.config.SESSION_MAX_PER_USER);
-		// the newest sign-in is never the one trimmed
-		expect((await me(issued[issued.length - 1].token)).statusCode).toBe(200);
+		// the newest sign-in is never the one trimmed: which of the concurrent ones locked last is not
+		// knowable, so one more after them all is the session that must survive
+		const newest = await service.create(user.userId, user.credentialDbId);
+		expect((await me(newest.token)).statusCode).toBe(200);
+		expect(await liveCount(user.userId)).toBe(ctx.config.SESSION_MAX_PER_USER);
 	});
 });
 

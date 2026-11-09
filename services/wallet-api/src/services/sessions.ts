@@ -23,6 +23,13 @@ export type SessionContext = {
 	walletAddress: string;
 };
 
+/**
+ * A resolved session, and whether its last use is due to be written. The write is left to the
+ * caller, after every check on the request has passed: a request wallet-api refuses must not keep
+ * a session from going idle (design D1).
+ */
+export type ResolvedSession = SessionContext & { touchDue: boolean };
+
 export type SessionServiceOptions = {
 	/** Absolute lifetime: activity never extends it. */
 	ttlSeconds: number;
@@ -55,11 +62,53 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 			),
 		);
 
+	/** The last use is over a minute old: one condition for deciding a write is due, and for making it. */
+	const touchDue = () =>
+		sql`${sessions.lastUsedAt} < now() - make_interval(secs => ${TOUCH_RESOLUTION_SECONDS})`;
+
 	const usersOfTenant = (executor: Db | Tx, tenantId: string, extra?: SQL) =>
 		executor
 			.select({ id: users.id })
 			.from(users)
 			.where(and(eq(users.tenantId, tenantId), extra));
+
+	/**
+	 * Revokes the live sessions one selector reaches inside one tenant, and returns how many
+	 * (design D4). A selector naming nothing in the tenant revokes nothing, so a tenant can
+	 * never reach another tenant's sessions. A wallet is matched case-insensitively and
+	 * reaches every session acting for it, whichever user and credential opened it. Pass a
+	 * transaction to write an audit entry atomically with the revocation. A plain function, so
+	 * it can be passed around without its object.
+	 */
+	const revokeLive = async (
+		tenantId: string,
+		selector: SessionSelector,
+		executor: Db | Tx = db,
+	): Promise<number> => {
+		// Every branch narrows the tenant's users the same way, so the boundary has one shape.
+		const scope =
+			"walletAddress" in selector
+				? and(
+						sql`lower(${sessions.walletAddress}) = ${selector.walletAddress.toLowerCase()}`,
+						inArray(sessions.userId, usersOfTenant(executor, tenantId)),
+					)
+				: inArray(
+						sessions.userId,
+						usersOfTenant(
+							executor,
+							tenantId,
+							"userId" in selector
+								? eq(users.id, selector.userId)
+								: eq(users.externalId, selector.externalUserId),
+						),
+					);
+		const revoked = await executor
+			.update(sessions)
+			.set({ revokedAt: sql`now()` })
+			.where(and(scope, live()))
+			.returning({ id: sessions.id });
+		return revoked.length;
+	};
 
 	return {
 		/**
@@ -132,11 +181,12 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 
 		/**
 		 * Resolves a bearer token to its session context; null if unknown, revoked, past its
-		 * absolute expiry or idle for longer than the idle timeout. A hit refreshes the last use,
-		 * but writes only when the stored value is over a minute old (design D1): a busy session
-		 * costs one write a minute, and the guard makes a concurrent second write a no-op.
+		 * absolute expiry or idle for longer than the idle timeout. It writes nothing: whether the
+		 * last use is due to be refreshed comes back as `touchDue`, and the caller calls `touch()`
+		 * once the request has passed every check (a request refused for a foreign origin or a
+		 * suspended tenant must not keep the session alive).
 		 */
-		async resolve(token: string): Promise<SessionContext | null> {
+		async resolve(token: string): Promise<ResolvedSession | null> {
 			const rows = await db
 				.select({
 					sessionId: sessions.id,
@@ -147,27 +197,25 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 					// The session's OWN wallet binding (WM-33) — not the credential's column, which
 					// exists for registry display; the two are equal today but scoped differently.
 					walletAddress: sessions.walletAddress,
-					stale: sql<boolean>`${sessions.lastUsedAt} < now() - make_interval(secs => ${TOUCH_RESOLUTION_SECONDS})`,
+					touchDue: sql<boolean>`${touchDue()}`,
 				})
 				.from(sessions)
 				.innerJoin(users, eq(users.id, sessions.userId))
 				.where(and(eq(sessions.tokenHash, sha256hex(token)), live()))
 				.limit(1);
-			const row = rows[0];
-			if (!row) return null;
-			const { stale, ...session } = row;
-			if (stale) {
-				await db
-					.update(sessions)
-					.set({ lastUsedAt: sql`now()` })
-					.where(
-						and(
-							eq(sessions.id, session.sessionId),
-							sql`${sessions.lastUsedAt} < now() - make_interval(secs => ${TOUCH_RESOLUTION_SECONDS})`,
-						),
-					);
-			}
-			return session;
+			return rows[0] ?? null;
+		},
+
+		/**
+		 * Records a use of the session, but writes only when the stored value is over a minute old
+		 * (design D1): a busy session costs one write a minute, and the guard makes a concurrent
+		 * second write a no-op.
+		 */
+		async touch(sessionId: string): Promise<void> {
+			await db
+				.update(sessions)
+				.set({ lastUsedAt: sql`now()` })
+				.where(and(eq(sessions.id, sessionId), touchDue()));
 		},
 
 		async revoke(sessionId: string): Promise<void> {
@@ -177,48 +225,11 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 				.where(eq(sessions.id, sessionId));
 		},
 
-		/**
-		 * Revokes the live sessions one selector reaches inside one tenant, and returns how many
-		 * (design D4). A selector naming nothing in the tenant revokes nothing, so a tenant can
-		 * never reach another tenant's sessions. A wallet is matched case-insensitively and
-		 * reaches every session acting for it, whichever user and credential opened it. Pass a
-		 * transaction to write an audit entry atomically with the revocation.
-		 */
-		async revokeLive(
-			tenantId: string,
-			selector: SessionSelector,
-			executor: Db | Tx = db,
-		): Promise<number> {
-			const scope =
-				"userId" in selector
-					? and(
-							eq(sessions.userId, selector.userId),
-							inArray(sessions.userId, usersOfTenant(executor, tenantId)),
-						)
-					: "externalUserId" in selector
-						? inArray(
-								sessions.userId,
-								usersOfTenant(
-									executor,
-									tenantId,
-									eq(users.externalId, selector.externalUserId),
-								),
-							)
-						: and(
-								sql`lower(${sessions.walletAddress}) = ${selector.walletAddress.toLowerCase()}`,
-								inArray(sessions.userId, usersOfTenant(executor, tenantId)),
-							);
-			const revoked = await executor
-				.update(sessions)
-				.set({ revokedAt: sql`now()` })
-				.where(and(scope, live()))
-				.returning({ id: sessions.id });
-			return revoked.length;
-		},
+		revokeLive,
 
 		/** Sign out everywhere (G5 R2): every live session of the user, across credentials and wallets. */
 		async revokeAllForUser(tenantId: string, userId: string): Promise<number> {
-			return this.revokeLive(tenantId, { userId });
+			return revokeLive(tenantId, { userId });
 		},
 
 		/**
@@ -229,12 +240,7 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 			await db
 				.update(sessions)
 				.set({ revokedAt: sql`now()` })
-				.where(
-					and(
-						eq(sessions.credentialId, credentialDbId),
-						isNull(sessions.revokedAt),
-					),
-				);
+				.where(and(eq(sessions.credentialId, credentialDbId), live()));
 		},
 	};
 }
