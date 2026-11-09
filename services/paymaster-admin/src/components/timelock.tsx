@@ -1,4 +1,4 @@
-import type { Hex } from "viem";
+import { formatEther, type Hex } from "viem";
 import { useConsole } from "../shell/ConsoleContext";
 import { ActionButton } from "./actions";
 
@@ -13,7 +13,8 @@ export function ExecuteButton({
 	size = "xs",
 }: {
 	operationId: Hex;
-	mayExecute: boolean;
+	/** Undefined while the timelock's executors have not been read. */
+	mayExecute: boolean | undefined;
 	size?: "xs" | "sm";
 }) {
 	const { timelock, timelockOperations } = useConsole();
@@ -21,17 +22,23 @@ export function ExecuteButton({
 		(entry) => entry.id === operationId,
 	);
 	if (!timelock || !operation || operation.state !== "ready") return null;
+	// Every call as the dialog names it: undecoded ones by their selector, and any ETH they send.
 	const summary = operation.calls
-		.map((call) => call.decoded?.summary ?? `a call to ${call.target}`)
+		.map(
+			(call) =>
+				`${call.decoded?.summary ?? `a call to ${call.target} (selector ${call.data.slice(0, 10)})`}${call.value > 0n ? `, sending ${formatEther(call.value)} ETH` : ""}`,
+		)
 		.join("; ");
 	return (
 		<ActionButton
 			target={{
 				gate: operation.complete
 					? {
-							allowed: mayExecute,
+							allowed: mayExecute === true,
 							reason:
-								"Needs the timelock's EXECUTOR_ROLE; its executors are not open.",
+								mayExecute === undefined
+									? "The timelock's executors have not been read yet."
+									: "Needs the timelock's EXECUTOR_ROLE; its executors are not open.",
 						}
 					: {
 							allowed: false,

@@ -72,7 +72,7 @@ export function RolesTab({
 			/>
 			{access.error && (
 				<InlineError
-					title="Could not read the timelock's delays"
+					title="Could not read the timelock's delays or executors"
 					error={access.error}
 					retry={() => void access.reload()}
 				/>
