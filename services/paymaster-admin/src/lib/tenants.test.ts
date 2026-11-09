@@ -6,6 +6,7 @@ import {
 	filterTenants,
 	historyChanges,
 	joinTenants,
+	mergeFirstPage,
 	needsAttention,
 	nextStep,
 	tenantTotals,
@@ -171,6 +172,28 @@ describe("filterTenants", () => {
 				}),
 			),
 		).toEqual(["byo"]);
+	});
+});
+
+describe("mergeFirstPage", () => {
+	const e = (id: string) => ({ id });
+	const ids = (entries: { id: string }[]) => entries.map((entry) => entry.id);
+
+	it("keeps older pages the operator loaded, and puts what is new on top", () => {
+		const loaded = [e("5"), e("4"), e("3"), e("2"), e("1")];
+		const merged = mergeFirstPage(loaded, [e("6"), e("5"), e("4")]);
+		expect(ids(merged.entries)).toEqual(["6", "5", "4", "3", "2", "1"]);
+		expect(merged.keepCursor).toBe(true);
+	});
+
+	it("takes the page whole when nothing is loaded, or when it does not reach what is", () => {
+		expect(mergeFirstPage([], [e("2"), e("1")])).toEqual({
+			entries: [e("2"), e("1")],
+			keepCursor: false,
+		});
+		const gap = mergeFirstPage([e("2"), e("1")], [e("9"), e("8")]);
+		expect(ids(gap.entries)).toEqual(["9", "8"]);
+		expect(gap.keepCursor).toBe(false);
 	});
 });
 

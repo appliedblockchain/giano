@@ -13,7 +13,13 @@ import {
 	Text,
 	Wrap,
 } from "@chakra-ui/react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import {
 	LuArrowLeft,
 	LuKeyRound,
@@ -25,10 +31,11 @@ import {
 import { InlineError } from "../components/status";
 import { Copyable, SectionCard } from "../components/ui";
 import { getAdminConfig } from "../config";
+import { describeError } from "../lib/format";
 import type { HistoryEntry, TenantDetail } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
 import { Link, TAB_PATHS } from "../lib/router";
-import type { TenantRow } from "../lib/tenants";
+import { mergeFirstPage, type TenantRow } from "../lib/tenants";
 import { EditTenantDialog } from "../platform/EditTenantDialog";
 import {
 	DeleteDialog,
@@ -297,7 +304,13 @@ export function TenantPage({
 	);
 }
 
-/** The registry record and its history, read by slug. Nothing is read for a tenant with no slug. */
+/**
+ * The registry record and its history, read by slug. Nothing is read for a tenant with no slug.
+ *
+ * The record is re-read with every console refresh, as the ledger moves with the chain. The history
+ * is too, but a poll only adds what is new on top: older pages the operator loaded stay. The page is
+ * keyed by tenant, so another tenant starts from nothing.
+ */
 function useTenantRecord(
 	slug: string | undefined,
 	lastUpdated: Date | undefined,
@@ -309,23 +322,36 @@ function useTenantRecord(
 	const [historyError, setHistoryError] = useState<string>();
 	const [next, setNext] = useState<string | null>(null);
 	const [loadingOlder, setLoadingOlder] = useState(false);
+	// A slow poll can land after a newer one: only the latest read's answer is kept.
+	const generation = useRef(0);
+	const loaded = useRef<HistoryEntry[]>([]);
+	loaded.current = history;
 
 	const reload = useCallback(async () => {
 		if (!slug) return;
-		const [read, page] = await Promise.all([
-			run((api) => api.detail(slug)),
-			run((api) => api.history(slug)),
-		]);
-		if (!read || !page) return;
-		if (read.ok) {
-			setDetail(read.value);
-			setError(undefined);
-		} else setError(read.error.message);
-		if (page.ok) {
-			setHistory(page.value.entries);
-			setNext(page.value.next);
-			setHistoryError(undefined);
-		} else setHistoryError(page.error.message);
+		const current = ++generation.current;
+		try {
+			const [read, page] = await Promise.all([
+				run((api) => api.detail(slug)),
+				run((api) => api.history(slug)),
+			]);
+			if (generation.current !== current || !read || !page) return;
+			if (read.ok) {
+				setDetail(read.value);
+				setError(undefined);
+			} else setError(read.error.message);
+			if (page.ok) {
+				const merged = mergeFirstPage(loaded.current, page.value.entries);
+				setHistory(merged.entries);
+				if (!merged.keepCursor) setNext(page.value.next);
+				setHistoryError(undefined);
+			} else setHistoryError(page.error.message);
+		} catch (cause) {
+			// A network error or a non-JSON 502: said on the page, rather than a spinner that never ends.
+			if (generation.current !== current) return;
+			setError(describeError(cause));
+			setHistoryError(describeError(cause));
+		}
 	}, [run, slug]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: the ledger moves with the chain
@@ -335,15 +361,24 @@ function useTenantRecord(
 
 	const older = async () => {
 		if (!slug || !next) return;
+		const current = generation.current;
 		setLoadingOlder(true);
 		try {
 			const page = await run((api) => api.history(slug, next));
-			if (!page) return;
+			if (generation.current !== current || !page) return;
 			if (page.ok) {
-				setHistory((entries) => [...entries, ...page.value.entries]);
+				setHistory((entries) => {
+					const known = new Set(entries.map((entry) => entry.id));
+					return [
+						...entries,
+						...page.value.entries.filter((entry) => !known.has(entry.id)),
+					];
+				});
 				setNext(page.value.next);
 				setHistoryError(undefined);
 			} else setHistoryError(page.error.message);
+		} catch (cause) {
+			if (generation.current === current) setHistoryError(describeError(cause));
 		} finally {
 			setLoadingOlder(false);
 		}

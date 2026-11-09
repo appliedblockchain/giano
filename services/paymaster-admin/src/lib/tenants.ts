@@ -144,6 +144,26 @@ export function tenantTotals(rows: readonly TenantRow[]): TenantTotals {
 	return totals;
 }
 
+/**
+ * A poll's first page of a tenant's history, folded into what the operator has loaded. When the
+ * page overlaps the loaded entries, its new entries go on top and everything older stays, with the
+ * cursor that loads past them (`keepCursor`). When it does not (more changed since than one page
+ * holds), there is a gap the loaded entries cannot bridge, so the page replaces them and its own
+ * cursor applies.
+ */
+export function mergeFirstPage<T extends { id: string }>(
+	loaded: readonly T[],
+	page: readonly T[],
+): { entries: T[]; keepCursor: boolean } {
+	if (loaded.length === 0) return { entries: [...page], keepCursor: false };
+	if (page.length === 0) return { entries: [...loaded], keepCursor: true };
+	const known = new Set(loaded.map((entry) => entry.id));
+	if (!page.some((entry) => known.has(entry.id)))
+		return { entries: [...page], keepCursor: false };
+	const fresh = page.filter((entry) => !known.has(entry.id));
+	return { entries: [...fresh, ...loaded], keepCursor: true };
+}
+
 /** Fields of a tenant snapshot that change on every write and say nothing about what changed. */
 const BOOKKEEPING = new Set(["version", "updatedAt", "statusChangedAt"]);
 
