@@ -10,7 +10,7 @@ import {
 	Text,
 	Textarea,
 } from "@chakra-ui/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { ConfirmDialog } from "../components/actions";
 import { Copyable } from "../components/ui";
 import { useWrite } from "../hooks/useWrite";
@@ -152,10 +152,19 @@ export function SuspendDialog({
 	refreshChain,
 	others,
 }: ChainBase) {
-	const { act, busy, error } = usePlatformAction();
+	const { act, busy, error, reset } = usePlatformAction();
 	const write = useWrite(refreshChain);
 	const [reason, setReason] = useState("");
 	const [suspended, setSuspended] = useState(false);
+	// The page stays mounted, so suspend → resume → Suspend reopens this dialog: it starts afresh,
+	// not on the last suspension's result with nothing to send.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `open` is the trigger; `reset` only clears the last error
+	useEffect(() => {
+		if (!open) return;
+		setSuspended(false);
+		setReason("");
+		reset();
+	}, [open]);
 
 	const confirm = async () => {
 		if ((await act((api) => api.suspend(tenant.slug, reason.trim())))?.ok) {
@@ -237,9 +246,16 @@ export function ResumeDialog({
 	refreshChain,
 	others,
 }: ChainBase) {
-	const { act, busy, error } = usePlatformAction();
+	const { act, busy, error, reset } = usePlatformAction();
 	const write = useWrite(refreshChain);
 	const [resumed, setResumed] = useState(false);
+	// As in SuspendDialog: each opening starts afresh.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `open` is the trigger; `reset` only clears the last error
+	useEffect(() => {
+		if (!open) return;
+		setResumed(false);
+		reset();
+	}, [open]);
 
 	const confirm = async () => {
 		if ((await act((api) => api.resume(tenant.slug)))?.ok) {
