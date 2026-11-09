@@ -381,27 +381,26 @@ function RouteView({
 		return <NotFound />;
 	if (route.tab === "admins") return <AdminsTab />;
 
-	if (!overview || !client)
-		return loading ? (
-			<Stack align="center" py="16" gap="3">
-				<Spinner size="lg" color="brand.solid" />
-				<Text color="fg.muted">Reading the paymaster…</Text>
-			</Stack>
-		) : null;
+	const reading = loading ? (
+		<Stack align="center" py="16" gap="3">
+			<Spinner size="lg" color="brand.solid" />
+			<Text color="fg.muted">Reading the paymaster…</Text>
+		</Stack>
+	) : null;
 
-	switch (route.tab) {
-		case "overview":
-			return <OverviewPanel overview={overview} />;
-		case "tenants":
-			return (
-				<Stack gap="6">
-					{platformApi && (
-						<TenantsTab
-							{...platformProps}
-							selected={route.tenant}
-							lastUpdated={lastUpdated}
-						/>
-					)}
+	// The registry is wallet-api's, not the chain's: an RPC failure must not hide it, Create tenant or a
+	// tenant's page. It joins the roster when there is one, and says so when there is not.
+	if (route.tab === "tenants")
+		return (
+			<Stack gap="6">
+				{platformApi && (
+					<TenantsTab
+						{...platformProps}
+						selected={route.tenant}
+						lastUpdated={lastUpdated}
+					/>
+				)}
+				{overview && client ? (
 					<TenantsPanel
 						client={client}
 						tenants={overview.tenants}
@@ -411,8 +410,17 @@ function RouteView({
 						refresh={refresh}
 						propose={propose}
 					/>
-				</Stack>
-			);
+				) : (
+					reading
+				)}
+			</Stack>
+		);
+
+	if (!overview || !client) return reading;
+
+	switch (route.tab) {
+		case "overview":
+			return <OverviewPanel overview={overview} />;
 		case "paymaster":
 			return (
 				<SettingsPanel
