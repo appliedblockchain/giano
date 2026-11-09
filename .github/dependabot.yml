@@ -1,8 +1,34 @@
+# G25 (openspec: ci-security-gates, design D6). Version update PRs for both pnpm workspaces and for
+# the GitHub Actions in .github/workflows.
+# - cooldown: no version update PR proposes a release younger than 7 days, the ABIP-6 window
+#   (docs/abip-compliance.md). Security update PRs ignore the cooldown; one that proposes a younger
+#   version fails the frozen install in CI and waits.
+# - versioning-strategy: increase keeps every pin exact (ABIP-7).
+# - Each PR holds the manifest change and the lockfile change it causes, and nothing else.
+# Slither (pip) and the release binaries in ci.yml are not covered. They are updated by hand under
+# "Tools installed outside npm" in docs/abip-compliance.md.
 version: 2
 updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /services/custom-example
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+
   # Workflows pin every third-party action to a full commit SHA, with the release as a trailing
-  # comment. Dependabot keeps both up to date. The cooldown matches the 7-day minimum release age
-  # that ABIP-6 sets for this project's dependencies.
+  # comment. Dependabot keeps both up to date.
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -80,6 +80,16 @@ following:
 - a `pnpm install` without `--frozen-lockfile` in a workflow or a Dockerfile;
 - with `--registry`, which CI passes: an excluded version older than the window, or one that does not exist.
 
+The dependency audit runs in CI too (`ci.yml`, job "Dependency audit (pnpm audit)"), on every pull request and in the
+CI run `release.yml` calls. It runs `pnpm audit` on both workspaces and fails on a high or critical advisory that is not
+in the accepted-findings register, [`security/accepted-findings.json`](../security/accepted-findings.json). It also
+fails when the audit cannot run. The register is the only place an advisory left open is accepted: each entry gives the
+reason, one owner and an expiry date, and moderate and low advisories left open are recorded there too
+([`security/README.md`](../security/README.md)). The `dependency-security` capability in OpenSpec sets the rule.
+
+Dependabot ([`.github/dependabot.yml`](../.github/dependabot.yml)) opens version update PRs for both workspaces with a
+7-day `cooldown`, so it proposes no version younger than the window. Its PRs keep every pin exact (ABIP-7).
+
 ## ABIP-7: Pin Exact Dependency Versions (adopted)
 
 Every manifest in the repository is in scope: the root, `packages/*`, `services/*` (including the separate

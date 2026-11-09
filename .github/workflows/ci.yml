@@ -378,6 +378,49 @@ jobs:
           path: ${{ runner.temp }}/reports/
           if-no-files-found: warn
 
+  dependency-audit:
+    # G25 (openspec: ci-security-gates, design D5) and the dependency-security capability: both
+    # pnpm workspaces against the current advisory database. Fails on a high or critical advisory
+    # that is not in security/accepted-findings.json for that workspace. pnpm audit reads the
+    # lockfile only, so the job installs nothing and runs on fork PRs as well.
+    name: Dependency audit (pnpm audit)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # pnpm audit exits non-zero whenever it lists an advisory, so its exit code is ignored and the
+      # register check decides. The check fails on a missing, empty or error report, so an audit
+      # that could not run fails the job. No --audit-level: it drops advisories from the list but
+      # not from the counts, and the check rejects such a report. --registry on the command line
+      # overrides every config file, so no file can send the audit to another server.
+      # --ignore-pnpmfile: a .pnpmfile.cjs runs code inside pnpm, and its updateConfig hook can hide
+      # advisories or change the output.
+      - name: Audit the root workspace
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-root.json" || true
+      - name: Audit services/custom-example
+        if: ${{ !cancelled() }}
+        working-directory: services/custom-example
+        run: |
+          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-custom-example.json" || true
+      - name: Root workspace advisories are fixed or accepted
+        if: ${{ !cancelled() }}
+        run: node scripts/check-accepted-findings.mjs --tool pnpm-audit --workspace . --report "$RUNNER_TEMP/reports/audit-root.json"
+      - name: services/custom-example advisories are fixed or accepted
+        if: ${{ !cancelled() }}
+        run: node scripts/check-accepted-findings.mjs --tool pnpm-audit --workspace services/custom-example --report "$RUNNER_TEMP/reports/audit-custom-example.json"
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-audit-reports
+          path: ${{ runner.temp }}/reports/
+          if-no-files-found: warn
+
   ci-passed:
     # The one required check for this workflow (openspec: ci-security-gates, design D12). GitHub
     # can only require checks by name, so this job needs every other job here and fails unless each
@@ -397,6 +440,7 @@ jobs:
       - forge
       - forge-coverage
       - solidity-analysis
+      - dependency-audit
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
