@@ -105,9 +105,10 @@ export function onChainBlocks(status: TenantStatus | "unknown" | undefined): {
 }
 
 /**
- * Something an operator should look at: a deficit, a registry and a paymaster that disagree about
- * whether the tenant may be sponsored, an active tenant not yet registered, or an on-chain tenant
- * with no registry row.
+ * Something an operator should look at: a deficit, an active tenant registered and enabled with no
+ * balance, a registry and a paymaster that disagree about whether the tenant may be sponsored, an
+ * active tenant not yet registered, or an on-chain tenant with no registry row. The same conditions
+ * the Overview lists, so the Tenants tab's filter and the Overview agree.
  *
  * `registryKnown` is whether there is a registry and it has been read. Without one, every row lacks
  * a registry row, which says nothing about the tenant, so that rule does not apply.
@@ -117,6 +118,13 @@ export function needsAttention(
 	registryKnown: boolean,
 ): boolean {
 	if (row.onChain && row.onChain.deficit > 0n) return true;
+	// Registered, enabled and empty, as the Overview lists it: nothing it does can be sponsored.
+	if (
+		row.onChain?.enabled &&
+		row.onChain.balance === 0n &&
+		(row.registry ? row.registry.status === "active" : !registryKnown)
+	)
+		return true;
 	if (!row.registry) return registryKnown && row.state !== "unknown";
 	const status = row.registry.status;
 	if (status === "active")

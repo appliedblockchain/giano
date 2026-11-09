@@ -125,6 +125,14 @@ describe("nextStep and needsAttention", () => {
 		expect(needsAttention(healthy, true)).toBe(false);
 	});
 
+	it("flags an active tenant registered and enabled with no balance, as the Overview does", () => {
+		const [empty] = joinTenants(
+			[registry(STOCK, "stock")],
+			[onChain(STOCK, { balance: 0n })],
+		);
+		expect(needsAttention(empty, true)).toBe(true);
+	});
+
 	it("does not flag a missing registry row while there is no registry to have one", () => {
 		const [healthy, inDeficit] = joinTenants(undefined, [
 			onChain(ORPHAN),

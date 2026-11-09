@@ -36,9 +36,9 @@ import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import type { ProposalRequest } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
 import { joinTenants, type TenantRow } from "./lib/tenants";
+import { OverviewTab } from "./overview/OverviewTab";
 import { HealthPanel } from "./panels/HealthPanel";
 import { HistoryPanel } from "./panels/HistoryPanel";
-import { OverviewPanel } from "./panels/OverviewPanel";
 import { PaymasterTab } from "./paymaster/PaymasterTab";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
@@ -455,7 +455,16 @@ function RouteView({
 
 	switch (route.tab) {
 		case "overview":
-			return <OverviewPanel overview={overview} />;
+			return (
+				<OverviewTab
+					client={client}
+					overview={overview}
+					rows={tenantRows}
+					registry={registry}
+					rosterOnChain={rosterOnChain}
+					health={health}
+				/>
+			);
 		case "paymaster":
 			return <PaymasterTab client={client} overview={overview} />;
 		case "roles":
