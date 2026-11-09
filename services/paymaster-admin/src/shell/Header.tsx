@@ -17,6 +17,7 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import {
+	LuClock,
 	LuLogOut,
 	LuMoon,
 	LuRefreshCw,
@@ -24,12 +25,14 @@ import {
 	LuUnplug,
 	LuWallet,
 } from "react-icons/lu";
+import { StatusText } from "../components/status";
 import { Copyable } from "../components/ui";
 import { type Deployment, deploymentKey, getAdminConfig } from "../config";
 import type { ConnectedWallet } from "../lib/chain";
 import { useColorMode } from "../lib/color-mode";
 import { usePlatform } from "../lib/platform-session";
 import { Link, TAB_PATHS } from "../lib/router";
+import { useConsole } from "./ConsoleContext";
 
 type HeaderProps = {
 	deployment: Deployment;
@@ -37,6 +40,7 @@ type HeaderProps = {
 	overview: PaymasterOverview | undefined;
 	health: HealthReport | undefined;
 	lastUpdated: Date | undefined;
+	block: bigint | undefined;
 	loading: boolean;
 	refresh: () => Promise<void>;
 	wallet: ConnectedWallet | undefined;
@@ -155,9 +159,12 @@ function StatusLine({
 	overview,
 	health,
 	lastUpdated,
+	block,
 	loading,
 	refresh,
 }: HeaderProps & { overview: PaymasterOverview }) {
+	const { timelock, timelockOperations } = useConsole();
+	const queued = timelockOperations.pending.length;
 	const problems = health?.checks.filter((check) => check.level !== "ok") ?? [];
 	const failures = problems.filter((check) => check.level === "fail").length;
 	const warnings = problems.length - failures;
@@ -190,9 +197,27 @@ function StatusLine({
 			{overview.config.paused && (
 				<StatusText tone="red">paused, sponsoring nothing</StatusText>
 			)}
+			{timelock && timelockOperations.settled && (
+				<Link
+					to={TAB_PATHS.timelock}
+					display="inline-flex"
+					alignItems="center"
+					gap="1.5"
+					color={queued > 0 ? "timelock.fg" : "fg.muted"}
+					_hover={{ color: "fg" }}
+				>
+					<LuClock aria-hidden="true" />
+					{!timelockOperations.read
+						? "timelock not read"
+						: `${queued} queued change${queued === 1 ? "" : "s"}`}
+				</Link>
+			)}
 			<HStack gap="1" ms="auto">
 				{lastUpdated && (
-					<Text fontSize="xs">updated {lastUpdated.toLocaleTimeString()}</Text>
+					<Text fontSize="xs">
+						updated {lastUpdated.toLocaleTimeString()}
+						{block !== undefined && ` · block ${block}`}
+					</Text>
 				)}
 				<Button
 					size="xs"
@@ -204,22 +229,6 @@ function StatusLine({
 					<LuRefreshCw />
 				</Button>
 			</HStack>
-		</HStack>
-	);
-}
-
-/** A coloured dot and the words for it: never colour alone. */
-function StatusText({
-	tone,
-	children,
-}: {
-	tone: "green" | "orange" | "red";
-	children: string;
-}) {
-	return (
-		<HStack gap="1.5">
-			<Box boxSize="2" rounded="full" bg={`${tone}.solid`} aria-hidden="true" />
-			<Text as="span">{children}</Text>
 		</HStack>
 	);
 }

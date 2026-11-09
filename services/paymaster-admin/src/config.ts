@@ -67,7 +67,29 @@ export type Deployment = {
 	 * `wallet-api`.
 	 */
 	refreshSeconds: number;
+	/**
+	 * What amounts on this chain are denominated in, as the chain descriptor spells it. Absent means
+	 * ETH with 18 decimals, as it does for every other Giano service reading the same descriptor.
+	 */
+	nativeCurrency: NativeCurrency;
+	/**
+	 * A block explorer for this chain, e.g. `https://sepolia.basescan.org`. Set, every transaction
+	 * hash and address links to it; unset — a devnet has none — they are shown in full and copyable.
+	 */
+	explorerUrl?: string;
+	/**
+	 * Names for addresses the chain cannot name itself, keyed by lowercase address (openspec D9).
+	 *
+	 * A timelock cannot list who holds its roles, so the Safe that proposes is invisible unless it is
+	 * written down here. Every configured address is also a candidate the console checks role
+	 * membership against, and one with `kind: "safe"` has its threshold read from the Safe.
+	 */
+	addresses: Readonly<Record<string, KnownAddress>>;
 };
+
+export type NativeCurrency = { symbol: string; decimals: number };
+
+export type KnownAddress = { label: string; kind?: "safe" };
 
 export type AdminConfig = {
 	deployments: readonly Deployment[];
@@ -93,7 +115,10 @@ type RawDeployment = {
 	walletRpcUrl?: string;
 	sponsorshipPaymaster?: string;
 	timelockAddress?: string;
-	refreshSeconds?: number | string;
+	refreshSeconds?: number | string | null;
+	nativeCurrency?: { symbol?: string; decimals?: number };
+	explorerUrl?: string;
+	addresses?: Record<string, { label?: string; kind?: string }>;
 };
 
 type RawAdminConfig = RawDeployment & {
@@ -106,6 +131,10 @@ type RawAdminConfig = RawDeployment & {
 let config: AdminConfig | undefined;
 
 const DEFAULT_REFRESH_SECONDS = 15;
+
+const ETH: NativeCurrency = { symbol: "ETH", decimals: 18 };
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 function toDeployment(
 	raw: RawDeployment,
@@ -121,20 +150,12 @@ function toDeployment(
 		throw new Error(
 			`deployment ${index + 1} (${raw.name ?? fallbackName}) has no rpcUrl`,
 		);
-	if (raw.timelockAddress && !/^0x[0-9a-fA-F]{40}$/.test(raw.timelockAddress))
+	const where = `deployment ${index + 1} (${raw.name ?? fallbackName})`;
+	if (raw.timelockAddress && !ADDRESS.test(raw.timelockAddress))
 		throw new Error(
-			`deployment ${index + 1} (${raw.name ?? fallbackName}) has a timelockAddress that is not an address: ${raw.timelockAddress}`,
+			`${where} has a timelockAddress that is not an address: ${raw.timelockAddress}`,
 		);
-	// Checked rather than passed through: `Number("15s")` is NaN, and `setInterval` reads NaN as 0
-	// — a console that polls the RPC as fast as the browser will let it.
-	const refreshSeconds =
-		raw.refreshSeconds === undefined || raw.refreshSeconds === ""
-			? DEFAULT_REFRESH_SECONDS
-			: Number(raw.refreshSeconds);
-	if (!Number.isFinite(refreshSeconds) || refreshSeconds < 0)
-		throw new Error(
-			`deployment ${index + 1} (${raw.name ?? fallbackName}) has a refreshSeconds that is not a number of seconds: ${raw.refreshSeconds}`,
-		);
+	const refreshSeconds = toRefreshSeconds(raw.refreshSeconds, where);
 
 	return {
 		name: raw.name || fallbackName || `chain ${chainId}`,
@@ -148,7 +169,111 @@ function toDeployment(
 			? (raw.timelockAddress as `0x${string}`)
 			: undefined,
 		refreshSeconds,
+		nativeCurrency: toNativeCurrency(raw.nativeCurrency, where),
+		explorerUrl: toExplorerUrl(raw.explorerUrl, where),
+		addresses: toAddresses(raw.addresses, where),
 	};
+}
+
+function toNativeCurrency(
+	raw: RawDeployment["nativeCurrency"],
+	where: string,
+): NativeCurrency {
+	if (!raw) return ETH;
+	const { symbol, decimals } = raw;
+	if (
+		!symbol ||
+		typeof decimals !== "number" ||
+		!Number.isInteger(decimals) ||
+		decimals < 0 ||
+		decimals > 36
+	)
+		throw new Error(
+			`${where} has a nativeCurrency that needs a symbol and whole-number decimals: ${JSON.stringify(raw)}`,
+		);
+	return { symbol, decimals };
+}
+
+/** A day: anything longer is not polling, and past ~24.8 days `setInterval` overflows and fires at once. */
+const MAX_REFRESH_SECONDS = 86_400;
+
+/**
+ * 0 (no polling) or a whole number of seconds from 1 to a day; absent or empty means the default.
+ * Checked rather than passed through: `Number("15s")` is NaN and `setInterval` reads NaN as 0, `0.001`
+ * polls every millisecond, and `Number(" ")` and `Number(null)` are 0, which would turn polling off
+ * without a word.
+ */
+export function toRefreshSeconds(
+	raw: number | string | null | undefined,
+	where: string,
+): number {
+	if (raw === undefined || raw === "") return DEFAULT_REFRESH_SECONDS;
+	const seconds =
+		typeof raw === "number" || (typeof raw === "string" && raw.trim() === raw)
+			? Number(raw)
+			: Number.NaN;
+	if (
+		!Number.isInteger(seconds) ||
+		seconds < 0 ||
+		seconds > MAX_REFRESH_SECONDS
+	)
+		throw new Error(
+			`${where} has a refreshSeconds that is not 0 or a whole number of seconds from 1 to ${MAX_REFRESH_SECONDS}: ${JSON.stringify(raw)}`,
+		);
+	return seconds;
+}
+
+/**
+ * HTTPS, or plain HTTP to a local explorer. A link an operator follows to check a transaction is
+ * one an attacker on the path would most like to rewrite.
+ */
+export function toExplorerUrl(
+	raw: string | undefined,
+	where: string,
+): string | undefined {
+	if (!raw) return undefined;
+	let url: URL;
+	try {
+		url = new URL(raw);
+	} catch {
+		throw new Error(`${where} has an explorerUrl that is not a URL: ${raw}`);
+	}
+	const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+	if (url.protocol !== "https:" && !(url.protocol === "http:" && local))
+		throw new Error(
+			`${where} has an explorerUrl that is not https (or http on localhost): ${raw}`,
+		);
+	// Links are built by appending `/tx/<hash>` or `/address/<address>`, which a query or a fragment
+	// would swallow.
+	if (url.search || url.hash || raw.includes("?") || raw.includes("#"))
+		throw new Error(
+			`${where} has an explorerUrl with a query or a fragment, which links cannot be appended to: ${raw}`,
+		);
+	return raw.replace(/\/+$/, "");
+}
+
+export function toAddresses(
+	raw: RawDeployment["addresses"],
+	where: string,
+): Record<string, KnownAddress> {
+	const addresses: Record<string, KnownAddress> = {};
+	for (const [address, entry] of Object.entries(raw ?? {})) {
+		if (!ADDRESS.test(address))
+			throw new Error(
+				`${where} names an address that is not an address: ${address}`,
+			);
+		if (!entry?.label)
+			throw new Error(`${where} names ${address} without a label`);
+		if (entry.kind !== undefined && entry.kind !== "safe")
+			throw new Error(
+				`${where} gives ${address} the kind "${entry.kind}"; the only kind is "safe"`,
+			);
+		addresses[address.toLowerCase()] = {
+			label: entry.label,
+			...(entry.kind ? { kind: entry.kind } : {}),
+		};
+	}
+	return addresses;
 }
 
 export async function loadAdminConfig(): Promise<AdminConfig> {

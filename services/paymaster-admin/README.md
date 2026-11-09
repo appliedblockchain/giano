@@ -117,6 +117,9 @@ console at an arbitrary chain by typing into it.
 | `sponsorshipPaymaster` | the proxy. See the caveat below — set it |
 | `timelockAddress` | optional: the paymaster's GianoTimelock. Enables the Timelock tab's reads and the proposal flow |
 | `refreshSeconds` | poll interval; `0` disables polling |
+| `nativeCurrency` | optional, from the chain descriptor: `{ "symbol": "POL", "decimals": 18 }`. Amounts are shown and typed in it. Absent means ETH |
+| `explorerUrl` | optional: e.g. `https://sepolia.basescan.org`. Transaction hashes and addresses link to `<explorerUrl>/tx/<hash>` and `/address/<address>`. Must be `https:`, or `http:` on localhost. Unset, they are shown in full and copyable |
+| `addresses` | optional: names for addresses the chain cannot name, `{ "0x…": { "label": "Safe", "kind": "safe" } }`. Shown wherever the address appears; a `safe` also shows its threshold, *Safe · 3 of 5*. A timelock cannot list its role holders, so this is how the console knows which Safe proposes |
 
 `name`, `chainId`, `rpcUrl` and `sponsorshipPaymaster` are the shared fields of the backend chain
 document (`packages/contracts/chains.ts`) that wallet-api and giano-bundler read as `GIANO_CHAINS`.
@@ -124,7 +127,8 @@ So a deployment running them can hand `GIANO_DEPLOYMENTS` that same value and ha
 chain list instead of three.
 
 In that document the console's own settings sit in its section: `paymasterAdmin.walletRpcUrl`,
-`paymasterAdmin.timelockAddress` and `paymasterAdmin.refreshSeconds`. A standalone list may spell
+`paymasterAdmin.timelockAddress`, `paymasterAdmin.explorerUrl`, `paymasterAdmin.addresses` and
+`paymasterAdmin.refreshSeconds`. A standalone list may spell
 them flat, as in the table above.
 
 The container keeps the keys above and drops everything else rather than publishing it in a file
@@ -146,7 +150,8 @@ deployment now on screen. Reconnecting is one click.
 `public/config.json` is the dev copy. The container renders `docker/config.json.template` from
 either `GIANO_DEPLOYMENTS` (a JSON array — the general form) or the single-deployment shorthand
 `GIANO_CHAIN_ID` / `GIANO_RPC_URL` / `GIANO_PAYMASTER_ADDRESS` / `GIANO_TIMELOCK_ADDRESS` /
-`GIANO_ENVIRONMENT_LABEL` / `GIANO_REFRESH_SECONDS`.
+`GIANO_EXPLORER_URL` / `GIANO_ENVIRONMENT_LABEL` / `GIANO_REFRESH_SECONDS`. `addresses` needs
+`GIANO_DEPLOYMENTS`.
 
 `GIANO_WALLET_API_UPSTREAM` (e.g. `http://wallet-api:8080`) turns on the Platform area and gates
 every read: the container proxies `/api/*` to wallet-api on its own origin, drops the browser's

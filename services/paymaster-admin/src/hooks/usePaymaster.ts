@@ -39,6 +39,8 @@ export type PaymasterState = {
 	/** Set when the last refresh failed. The previous overview stays on screen underneath it. */
 	error: string | undefined;
 	lastUpdated: Date | undefined;
+	/** The chain's head when the last refresh started: the overview is as of this block or later. */
+	block: bigint | undefined;
 	refresh: () => Promise<void>;
 };
 
@@ -90,6 +92,7 @@ export function usePaymaster(
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string>();
 	const [lastUpdated, setLastUpdated] = useState<Date>();
+	const [block, setBlock] = useState<bigint>();
 	const [rosterOnChain, setRosterOnChain] = useState(true);
 
 	// Resolving the address may need a round-trip (the registry lookup), so the client is built once
@@ -146,6 +149,7 @@ export function usePaymaster(
 		setMyRoles([]);
 		setError(undefined);
 		setLastUpdated(undefined);
+		setBlock(undefined);
 		// Signed out, there is nothing coming to wait for.
 		setLoading(!blocked);
 	}, [client, deployment.chainId, blocked]);
@@ -170,10 +174,16 @@ export function usePaymaster(
 			// `withSlugs: false` deliberately: a slug exists only in a registration event, so asking for
 			// one would cost a log read on every poll. The console identifies a tenant by the id the
 			// contract itself uses, which every view call already carries.
+			// The head first, so the overview is as of that block or later, as `block` promises; and on its
+			// own, so a failed eth_blockNumber costs the block, not a good overview.
+			const head = await client.publicClient
+				.getBlockNumber()
+				.catch(() => undefined);
 			const next = await client.getOverview({ withSlugs: false });
 			if (generation.current !== current) return;
 
 			setOverview(next);
+			setBlock(head);
 			setError(undefined);
 			setLastUpdated(new Date());
 
@@ -235,6 +245,7 @@ export function usePaymaster(
 		loading,
 		error,
 		lastUpdated,
+		block,
 		refresh,
 	};
 }

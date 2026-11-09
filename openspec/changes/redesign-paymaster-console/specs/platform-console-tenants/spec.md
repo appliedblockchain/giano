@@ -13,16 +13,22 @@ The Tenants tab SHALL show one list. It SHALL contain the registry tenants from 
 - the on-chain state: *registered · enabled*, *registered · disabled* or *not registered*;
 - balance and deficit;
 - the fee in effect (*default* or the override);
-- any queued timelock change.
+- the number of users;
+- any queued timelock change;
+- the next on-chain step, when there is one: *Register on chain* for a tenant not registered, *Fund* for one in deficit.
 
 Tenants on the roster that match no registry row SHALL be listed in the same list, by id, marked as having no registry row.
 
 The list SHALL offer:
-- search by slug, id or origin;
-- a filter by state;
+- search by slug, name, id or origin;
+- a filter by state: all, active, suspended, needs attention;
 - a control to include deleted tenants.
 
+Under the list it SHALL state the totals on the selected chain: what is held, for how many tenants, and the total deficit. It SHALL also state whether any on-chain tenant lacks a registry row.
+
 Each row SHALL be reachable by keyboard and SHALL open that tenant's page. Refreshing SHALL re-read both sources. A failure to read either source SHALL be stated, and the rows from the other source kept.
+
+Where the platform API is not configured, the list SHALL be the roster alone, by id, and the tenant page SHALL show the on-chain half only.
 
 #### Scenario: Fixture tenants on the e2e stack
 - **WHEN** a platform admin opens the Tenants tab on the two-tenant e2e stack
@@ -42,8 +48,10 @@ Selecting a tenant SHALL open its page at `/tenants/<slug>`. The page SHALL show
 - the sponsorship policy as structured fields, not raw JSON;
 - its admin keys by label, hash prefix, creator and creation time, never key material;
 - user and credential counts, and the last user operation time;
-- its on-chain state on the selected chain: registration, enabled, balance, deficit, fee, withdrawal address;
-- its ledger position on each other configured chain;
+- its on-chain state on the selected chain: registration, enabled, balance, deficit, fee, withdrawal address, and the block it was read at;
+- whether wallet-api's ledger agrees with that on-chain state; when it does not, both figures and the ledger's lag in blocks;
+- for each other configured chain: registration and enabled state, read through `/v1/platform/rpc/<chainId>`, and the ledger's balance;
+- that sponsorship rules, transaction mappings and passkey origins belong to the tenant, are set with its admin keys through the admin API, and are not edited here;
 - its recent sponsorships on the selected chain, with transaction links;
 - its history, newest first, each entry with the before and after values it changed, and a control that loads older entries.
 
@@ -56,6 +64,14 @@ Branding SHALL be labelled as stored but not yet used by any UI.
 #### Scenario: Edit shown as a diff
 - **WHEN** a tenant's display name was changed
 - **THEN** its history entry shows the old and the new display name
+
+#### Scenario: Ledger disagrees with the chain
+- **WHEN** wallet-api's ledger balance for the tenant differs from the paymaster's on the selected chain
+- **THEN** the on-chain card shows both balances and how many blocks the ledger is behind
+
+#### Scenario: Other deployments
+- **WHEN** a tenant is registered on Ethereum Sepolia and not on the e2e devnet, and both are configured
+- **THEN** the tenant page lists Ethereum Sepolia as *registered · enabled* with its balance, and the devnet as *not registered*
 
 ### Requirement: Platform admins create tenants and receive their keys once
 *Create tenant* SHALL offer these fields:
