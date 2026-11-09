@@ -15,6 +15,7 @@ import { usePlatform } from "../lib/platform-session";
 import { Link, tenantPath } from "../lib/router";
 import { compareLedger, type TenantRow } from "../lib/tenants";
 import { useConsole } from "../shell/ConsoleContext";
+import type { Registry } from "../tenants/useRegistry";
 
 const LEVEL: Record<
 	HealthLevel,
@@ -37,15 +38,35 @@ const LEVEL: Record<
 export function HealthTab({
 	health,
 	rows,
+	registry,
 }: {
 	health: HealthReport;
 	rows: readonly TenantRow[];
+	registry: Registry;
 }) {
 	const { platformApi } = getAdminConfig();
 	const ledger = useLedgerCheck(rows, platformApi);
+	// "Every on-chain tenant has a registry row" is only a finding once the registry has been read
+	// in full, deleted tenants included: before that, every tenant would look unknown to wallet-api.
+	const registryRead = registry.tenants !== undefined && !registry.deletedError;
 	const extra: HealthCheck[] = platformApi
-		? [registryRowsCheck(rows), ...(ledger.check ? [ledger.check] : [])]
+		? [
+				registryRead
+					? registryRowsCheck(rows)
+					: {
+							id: "registry-rows",
+							level: "warn",
+							label: "The tenant registry has not been read in full",
+							detail:
+								registry.error ??
+								registry.deletedError ??
+								"Reading wallet-api's registry, so whether every on-chain tenant has a row is not known yet.",
+						},
+				...(ledger.check ? [ledger.check] : []),
+			]
 		: [];
+	// The ledger comparison runs on its own: until it has, "every check passes" is not yet true.
+	const comparing = platformApi && !ledger.check;
 	const groups = groupChecks([...health.checks, ...extra]);
 	const all = [...health.checks, ...extra];
 	const worst: HealthLevel = all.some((check) => check.level === "fail")
@@ -71,9 +92,13 @@ export function HealthTab({
 				fontSize="sm"
 				data-testid="health-summary"
 			>
-				<StatusText tone={LEVEL[worst].tone}>
+				<StatusText
+					tone={comparing && worst === "ok" ? "gray" : LEVEL[worst].tone}
+				>
 					{worst === "ok"
-						? "Every check passes"
+						? comparing
+							? "Every check so far passes; still comparing the ledger"
+							: "Every check passes"
 						: [
 								counts.fail && `${counts.fail} failing`,
 								counts.warn &&
@@ -214,9 +239,17 @@ function registryRowsCheck(
 function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 	const { run } = usePlatform();
 	const { deployment, block } = useConsole();
+	const cacheKey = `${deployment.chainId}:${deployment.name}`;
+	// One request per tenant against a 60-a-minute session limit: a result from the last minute is
+	// shown again rather than read again each time the tab opens. "Compare again" always reads.
 	const [check, setCheck] = useState<
 		(HealthCheck & { links?: { to: string; label: string }[] }) | undefined
-	>();
+	>(() => {
+		const recent = recentLedger.get(cacheKey);
+		return recent && Date.now() - recent.at < LEDGER_REUSE_MS
+			? recent.check
+			: undefined;
+	});
 	const [loading, setLoading] = useState(false);
 	const candidates = rows.filter((row) => row.registry && row.onChain);
 	const count = candidates.length;
@@ -247,9 +280,14 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 					if (comparison.kind === "differs") {
 						const money = (wei: bigint) =>
 							`${amount(wei, deployment.nativeCurrency)} ${deployment.nativeCurrency.symbol}`;
+						// The figure that differs: the balance, or the deficit when the balances agree.
+						const deficitOnly =
+							comparison.ledgerBalance === row.onChain.balance;
 						differing.push({
 							slug,
-							text: `${slug}: ledger ${money(comparison.ledgerBalance)}, chain ${money(row.onChain.balance)}${lagText(comparison.lag)}`,
+							text: deficitOnly
+								? `${slug}: ledger deficit ${money(comparison.ledgerDeficit)}, chain deficit ${money(row.onChain.deficit)}${lagText(comparison.lag)}`
+								: `${slug}: ledger ${money(comparison.ledgerBalance)}, chain ${money(row.onChain.balance)}${lagText(comparison.lag)}`,
 						});
 					} else if (comparison.kind === "no-ledger" && !empty)
 						differing.push({
@@ -260,47 +298,56 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 			};
 			await Promise.all(Array.from({ length: 5 }, worker));
 			const compared = count - unread.length;
-			setCheck(
-				compared === 0
+			const found: LedgerResult =
+				count === 0
 					? {
 							id: "ledger",
-							level: "warn",
-							label: "Could not compare wallet-api's ledger with the chain",
-							detail: `None of the ${count} tenants' records could be read from wallet-api, so nothing was compared.`,
-							remedy:
-								"Check wallet-api is reachable and your session is valid, then compare again.",
+							level: "ok",
+							label: "No ledger to compare",
+							detail:
+								"No tenant on this chain has a registry row, so there is nothing to compare.",
 						}
-					: differing.length === 0 && unread.length === 0
+					: compared === 0
 						? {
 								id: "ledger",
-								level: "ok",
-								label: "wallet-api's ledger matches the chain",
-								detail: `For all ${count} tenants with a registry row, at block ${block ?? "?"}.`,
-							}
-						: {
-								id: "ledger",
 								level: "warn",
-								label:
-									differing.length > 0
-										? "wallet-api's ledger differs from the chain"
-										: "wallet-api's ledger could not be compared for every tenant",
-								detail: [
-									...differing.map((entry) => entry.text),
-									...(unread.length > 0
-										? [
-												`${unread.length} of ${count} tenants could not be read from wallet-api, so were not compared: ${unread.slice(0, 5).join(", ")}${unread.length > 5 ? "…" : ""}`,
-											]
-										: []),
-								].join("; "),
+								label: "Could not compare wallet-api's ledger with the chain",
+								detail: `None of the ${count} tenants' records could be read from wallet-api, so nothing was compared.`,
 								remedy:
-									differing.length > 0
-										? "A ledger a few blocks behind catches up on its own, and one ahead of the console's read agrees on the next refresh. One synced to the block read and still different is drift: check wallet-api's paymaster watcher."
-										: "Compare again; if it keeps failing, check wallet-api.",
-								links: [...differing.map((entry) => entry.slug), ...unread]
-									.slice(0, 5)
-									.map((slug) => ({ to: tenantPath(slug), label: slug })),
-							},
-			);
+									"Check wallet-api is reachable and your session is valid, then compare again.",
+							}
+						: differing.length === 0 && unread.length === 0
+							? {
+									id: "ledger",
+									level: "ok",
+									label: "wallet-api's ledger matches the chain",
+									detail: `For all ${count} tenants with a registry row, at block ${block ?? "?"}.`,
+								}
+							: {
+									id: "ledger",
+									level: "warn",
+									label:
+										differing.length > 0
+											? "wallet-api's ledger differs from the chain"
+											: "wallet-api's ledger could not be compared for every tenant",
+									detail: [
+										...differing.map((entry) => entry.text),
+										...(unread.length > 0
+											? [
+													`${unread.length} of ${count} tenants could not be read from wallet-api, so were not compared: ${unread.slice(0, 5).join(", ")}${unread.length > 5 ? "…" : ""}`,
+												]
+											: []),
+									].join("; "),
+									remedy:
+										differing.length > 0
+											? "A ledger a few blocks behind catches up on its own, and one ahead of the console's read agrees on the next refresh. One synced to the block read and still different is drift: check wallet-api's paymaster watcher."
+											: "Compare again; if it keeps failing, check wallet-api.",
+									links: [...differing.map((entry) => entry.slug), ...unread]
+										.slice(0, 5)
+										.map((slug) => ({ to: tenantPath(slug), label: slug })),
+								};
+			recentLedger.set(cacheKey, { at: Date.now(), check: found });
+			setCheck(found);
 		} catch (cause) {
 			setCheck({
 				id: "ledger",
@@ -311,7 +358,7 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 		} finally {
 			setLoading(false);
 		}
-	}, [enabled, run, deployment, block, count]);
+	}, [enabled, run, deployment, block, count, cacheKey]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: once when the tab opens with tenants to compare; again only when asked
 	useEffect(() => {
@@ -320,6 +367,12 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 
 	return { check, loading, run: runCheck };
 }
+
+type LedgerResult = HealthCheck & { links?: { to: string; label: string }[] };
+
+/** How long a ledger comparison is shown again rather than read again. */
+const LEDGER_REUSE_MS = 60_000;
+const recentLedger = new Map<string, { at: number; check: LedgerResult }>();
 
 /** How far the ledger is from the block the console read, as compareLedger's signed lag. */
 function lagText(lag: bigint | undefined): string {

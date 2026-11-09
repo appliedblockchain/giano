@@ -480,7 +480,9 @@ function RouteView({
 				/>
 			);
 		case "health":
-			return health ? <HealthTab health={health} rows={tenantRows} /> : null;
+			return health ? (
+				<HealthTab health={health} rows={tenantRows} registry={registry} />
+			) : null;
 	}
 }
 

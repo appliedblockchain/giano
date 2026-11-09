@@ -50,7 +50,8 @@ export function checkLink(id: string): { to: string; label: string } {
 	if (
 		id === "tenant-deficits" ||
 		id === "tenants-funded" ||
-		id === "registry-rows"
+		id === "registry-rows" ||
+		id === "ledger"
 	)
 		return { to: TAB_PATHS.tenants, label: "Tenants" };
 	if (id === "no-superuser" || id.startsWith("role-"))
