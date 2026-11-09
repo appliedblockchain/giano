@@ -207,7 +207,7 @@ function StatusLine({
 					_hover={{ color: "fg" }}
 				>
 					<LuClock aria-hidden="true" />
-					{timelockOperations.error && queued === 0
+					{!timelockOperations.read
 						? "timelock not read"
 						: `${queued} queued change${queued === 1 ? "" : "s"}`}
 				</Link>

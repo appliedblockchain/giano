@@ -346,7 +346,8 @@ function Console({
 								platformApi={platformApi}
 								tenants={overview?.tenants.length}
 								pendingOperations={
-									timelock && timelockOperations.settled
+									// Only from a read that succeeded: "(0)" after a failed one reads as nothing queued.
+									timelock && timelockOperations.read
 										? timelockOperations.pending.length
 										: undefined
 								}

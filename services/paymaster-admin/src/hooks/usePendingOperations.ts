@@ -23,6 +23,11 @@ export type TimelockOperationsState = {
 	error: string | undefined;
 	/** True once a read has finished, either way. */
 	settled: boolean;
+	/**
+	 * True once a read has succeeded. Until then `pending` is empty because nothing was read, not
+	 * because nothing is queued, so no count may be shown from it.
+	 */
+	read: boolean;
 	reload: () => Promise<void>;
 	lookFurther: () => void;
 };
@@ -48,6 +53,7 @@ export function usePendingOperations(
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>();
 	const [settled, setSettled] = useState(false);
+	const [read, setRead] = useState(false);
 
 	// A different timelock is a different list: nothing read from the last one carries over.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `timelock` is a trigger: a new one resets what was read
@@ -58,6 +64,7 @@ export function usePendingOperations(
 		setHasOlder(false);
 		setError(undefined);
 		setSettled(false);
+		setRead(false);
 	}, [timelock]);
 
 	const reload = useCallback(async () => {
@@ -69,6 +76,7 @@ export function usePendingOperations(
 			setRange({ fromBlock: page.fromBlock, toBlock: page.toBlock });
 			setHasOlder(page.older !== undefined);
 			setError(undefined);
+			setRead(true);
 		} catch (cause) {
 			setError(describeError(cause));
 			console.error("[paymaster-admin] Could not read the timelock", cause);
@@ -104,6 +112,7 @@ export function usePendingOperations(
 		loading,
 		error,
 		settled,
+		read,
 		reload,
 		lookFurther,
 	};
