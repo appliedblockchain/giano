@@ -10,6 +10,8 @@
  * fold the first two together and silently change one into the other on save.
  */
 
+import { linesToList } from "./format";
+
 export const CAP_FIELDS = [
 	"maxCallGas",
 	"maxVerificationGas",
@@ -108,10 +110,7 @@ function capsTo(caps: Caps): Record<string, string> {
 function listTo(list: ListForm): string[] | undefined {
 	if (list.mode === "default") return undefined;
 	if (list.mode === "any") return [];
-	return list.text
-		.split(/[\n,]/)
-		.map((line) => line.trim())
-		.filter(Boolean);
+	return linesToList(list.text);
 }
 
 /**

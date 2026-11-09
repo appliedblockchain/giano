@@ -46,7 +46,7 @@ import {
 } from "../components/ui";
 import { AddressLabel, TxLink } from "../components/values";
 import { describeError } from "../lib/format";
-import { downloadSafeBatch, relativeTime } from "../lib/proposals";
+import { callSummary, downloadSafeBatch, relativeTime } from "../lib/proposals";
 import { queuedKeys } from "../lib/queued";
 import { useHash } from "../lib/router";
 import { MAX_UINT32 } from "../lib/validate";
@@ -482,8 +482,7 @@ function OperationRow({ operation }: { operation: TimelockOperation }) {
 								fontSize="sm"
 								fontWeight="medium"
 							>
-								{call.decoded?.summary ??
-									`call ${call.target} with ${call.data.slice(0, 10)}…`}
+								{callSummary(call)}
 							</Text>
 						))}
 					</Stack>
@@ -612,13 +611,7 @@ function OperationRow({ operation }: { operation: TimelockOperation }) {
 }
 
 function summary(operation: TimelockOperation): string {
-	const text = operation.calls
-		.map(
-			(call) =>
-				call.decoded?.summary ??
-				`call ${call.target} with ${call.data.slice(0, 10)}…`,
-		)
-		.join("; ");
+	const text = operation.calls.map(callSummary).join("; ");
 	return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 

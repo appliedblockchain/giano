@@ -7,6 +7,7 @@ import {
 	TIMELOCK_ROLES,
 	type TimelockCall,
 	type TimelockedFunctionName,
+	type TimelockOperationCall,
 	type TimelockProposalDraft,
 	type TimelockRoleName,
 	toTenantId,
@@ -62,6 +63,17 @@ export type ProposalRequest =
 			role: TimelockRoleName;
 			account: Address;
 	  };
+
+/**
+ * One call of a timelock operation in a phrase: what it decodes to, or, for a call this console
+ * cannot decode, its target and selector. Every place that lists an operation's calls uses it.
+ */
+export function callSummary(call: TimelockOperationCall): string {
+	return (
+		call.decoded?.summary ??
+		`a call to ${call.target} (selector ${call.data.slice(0, 10)})`
+	);
+}
 
 /** Opens the proposal flow. Undefined where the deployment has no timelock configured. */
 export type Propose = (request: ProposalRequest) => void;

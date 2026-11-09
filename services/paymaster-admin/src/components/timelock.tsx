@@ -1,4 +1,5 @@
 import { formatEther, type Hex } from "viem";
+import { callSummary } from "../lib/proposals";
 import { useConsole } from "../shell/ConsoleContext";
 import { ActionButton } from "./actions";
 
@@ -26,7 +27,7 @@ export function ExecuteButton({
 	const summary = operation.calls
 		.map(
 			(call) =>
-				`${call.decoded?.summary ?? `a call to ${call.target} (selector ${call.data.slice(0, 10)})`}${call.value > 0n ? `, sending ${formatEther(call.value)} ETH` : ""}`,
+				`${callSummary(call)}${call.value > 0n ? `, sending ${formatEther(call.value)} ETH` : ""}`,
 		)
 		.join("; ");
 	return (

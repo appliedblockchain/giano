@@ -1,5 +1,6 @@
 import type { TenantView } from "@appliedblockchain/giano-paymaster-sdk";
 import type { TenantStatus, TenantSummary } from "./platform-api";
+import { tenantPath } from "./router";
 
 /** Where a tenant stands on one chain's paymaster, matched on tenant id. */
 export type OnChainState =
@@ -19,6 +20,14 @@ export type TenantRow = {
 	onChain: TenantView | undefined;
 	state: OnChainState;
 };
+
+/** A tenant by the name an operator knows it by: its slug where the registry has one, else its id. */
+export const tenantName = (row: TenantRow): string =>
+	row.registry?.slug ?? row.id;
+
+/** Where a tenant's page is: by slug where the registry has one, else by id. */
+export const tenantRowPath = (row: TenantRow): string =>
+	tenantPath(tenantName(row));
 
 export type NextStep = "register" | "fund";
 
