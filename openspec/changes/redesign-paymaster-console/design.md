@@ -60,7 +60,7 @@ A drawer can't hold the on-chain card, other deployments, activity, keys and his
 ### D4. Hand-rolled colour mode
 Dark mode is the `.dark` class on `<html>`, which Chakra v3's `_dark` conditions already target. A 30-line hook:
 - reads `localStorage`, falling back to `prefers-color-scheme`;
-- sets the class before first paint, from an inline script in `index.html`.
+- sets the class before first paint, from `public/color-mode.js`, loaded synchronously in `<head>`. Not an inline script, because the console's CSP is `script-src 'self'`.
 
 custom-example uses `next-themes` for this. It is not worth a dependency for the console.
 
