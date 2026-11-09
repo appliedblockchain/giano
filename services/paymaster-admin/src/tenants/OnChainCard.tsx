@@ -25,9 +25,13 @@ import {
 import { QueuedMarker } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { AddressLabel, Amount } from "../components/values";
-import type { TenantDetail } from "../lib/platform-api";
+import type { TenantDetail, TenantStatus } from "../lib/platform-api";
 import { queuedKeys } from "../lib/queued";
-import { compareLedger, type OnChainState } from "../lib/tenants";
+import {
+	compareLedger,
+	type OnChainState,
+	onChainBlocks,
+} from "../lib/tenants";
 import { OnChainBadge } from "../platform/shared";
 import { useConsole } from "../shell/ConsoleContext";
 
@@ -42,6 +46,7 @@ export function OnChainCard({
 	slug,
 	onChain,
 	state,
+	status,
 	ledger,
 }: {
 	/** Undefined while the paymaster has not been read, when `state` is "unknown" too. */
@@ -52,10 +57,13 @@ export function OnChainCard({
 	slug: string | undefined;
 	onChain: TenantView | undefined;
 	state: OnChainState;
+	/** The registry status, which rules some writes out; undefined for a tenant with no registry row. */
+	status: TenantStatus | undefined;
 	/** wallet-api's ledger rows, with the platform API. */
 	ledger: TenantDetail["ledger"] | undefined;
 }) {
 	const { deployment, block } = useConsole();
+	const blocks = onChainBlocks(status);
 	return (
 		<SectionCard
 			title={`On ${deployment.name}`}
@@ -65,22 +73,44 @@ export function OnChainCard({
 			{state === "unknown" || !client ? (
 				<Text color="fg.muted">The paymaster has not been read yet.</Text>
 			) : onChain ? (
-				<Registered client={client} tenant={onChain} ledger={ledger} />
+				<Registered
+					client={client}
+					tenant={onChain}
+					ledger={ledger}
+					blocks={blocks}
+				/>
 			) : (
-				<Register client={client} tenantId={tenantId} slug={slug} />
+				<Register
+					client={client}
+					tenantId={tenantId}
+					slug={slug}
+					blocked={blocks.register}
+				/>
 			)}
 		</SectionCard>
 	);
+}
+
+/** Why the registry rules a write out, beside its control. */
+function RegistryBlock({ reason }: { reason: string | undefined }) {
+	return reason ? (
+		<Text fontSize="xs" color="fg.muted">
+			{reason}
+		</Text>
+	) : null;
 }
 
 function Register({
 	client,
 	tenantId,
 	slug,
+	blocked,
 }: {
 	client: GianoPaymasterClient;
 	tenantId: string;
 	slug: string | undefined;
+	/** Set when the registry rules registration out. */
+	blocked: string | undefined;
 }) {
 	const { deployment } = useConsole();
 	const withdrawTo = useAddressInput();
@@ -104,8 +134,10 @@ function Register({
 						? () => client.registerTenant(tenantId, address, slug)
 						: undefined
 				}
+				disabled={blocked !== undefined}
 				onDone={withdrawTo.clear}
 			/>
+			<RegistryBlock reason={blocked} />
 		</Stack>
 	);
 }
@@ -114,10 +146,12 @@ function Registered({
 	client,
 	tenant,
 	ledger,
+	blocks,
 }: {
 	client: GianoPaymasterClient;
 	tenant: TenantView;
 	ledger: TenantDetail["ledger"] | undefined;
+	blocks: ReturnType<typeof onChainBlocks>;
 }) {
 	const { deployment } = useConsole();
 	const fund = useAmountInput();
@@ -188,8 +222,10 @@ function Registered({
 						send={
 							amount ? () => client.depositFor(tenant.id, amount) : undefined
 						}
+						disabled={blocks.fund !== undefined}
 						onDone={fund.clear}
 					/>
+					<RegistryBlock reason={blocks.fund} />
 				</Stack>
 
 				<Stack gap="2">
@@ -206,6 +242,7 @@ function Registered({
 						label={tenant.enabled ? "Disable" : "Enable"}
 						destructive={tenant.enabled}
 						send={() => client.setTenantEnabled(tenant.id, !tenant.enabled)}
+						disabled={!tenant.enabled && blocks.enable !== undefined}
 						confirm={
 							tenant.enabled
 								? {
@@ -217,6 +254,7 @@ function Registered({
 								: undefined
 						}
 					/>
+					{!tenant.enabled && <RegistryBlock reason={blocks.enable} />}
 				</Stack>
 
 				<Stack gap="2">

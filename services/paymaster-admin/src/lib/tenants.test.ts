@@ -9,6 +9,7 @@ import {
 	mergeFirstPage,
 	needsAttention,
 	nextStep,
+	onChainBlocks,
 	tenantTotals,
 } from "./tenants";
 
@@ -192,6 +193,19 @@ describe("filterTenants", () => {
 				}),
 			),
 		).toEqual(["byo"]);
+	});
+});
+
+describe("onChainBlocks", () => {
+	it("offers a deleted tenant no Register, Fund or Enable, and a suspended one no Enable", () => {
+		expect(Object.keys(onChainBlocks("deleted")).sort()).toEqual([
+			"enable",
+			"fund",
+			"register",
+		]);
+		expect(Object.keys(onChainBlocks("suspended"))).toEqual(["enable"]);
+		expect(onChainBlocks("active")).toEqual({});
+		expect(onChainBlocks(undefined)).toEqual({});
 	});
 });
 

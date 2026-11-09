@@ -218,6 +218,7 @@ export function TenantPage({
 				slug={slug}
 				onChain={row.onChain}
 				state={row.state}
+				status={row.registry?.status}
 				ledger={record.detail?.ledger}
 			/>
 

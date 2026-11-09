@@ -74,6 +74,28 @@ export function nextStep(row: TenantRow): NextStep | undefined {
 }
 
 /**
+ * The on-chain writes the registry status rules out, each with the reason shown beside it. A deleted
+ * tenant is offered none of Register (permanent: the roster only grows), Fund or Enable; a suspended
+ * one may not be enabled, which would undo the suspension on this chain. Disable is never ruled
+ * out: it is how a tenant is wound down.
+ */
+export function onChainBlocks(status: TenantStatus | undefined): {
+	register?: string;
+	fund?: string;
+	enable?: string;
+} {
+	if (status === "deleted") {
+		const reason = "The tenant is deleted in the registry.";
+		return { register: reason, fund: reason, enable: reason };
+	}
+	if (status === "suspended")
+		return {
+			enable: "The tenant is suspended in the registry: resume it first.",
+		};
+	return {};
+}
+
+/**
  * Something an operator should look at: a deficit, a registry and a paymaster that disagree about
  * whether the tenant may be sponsored, an active tenant not yet registered, or an on-chain tenant
  * with no registry row.
