@@ -264,7 +264,7 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 					? (["externalUserId", body.externalUserId] as const)
 					: (["walletAddress", body.walletAddress as string] as const);
 			return db.transaction(async (tx) => {
-				const revoked = await this.revokeLive(
+				const revoked = await revokeLive(
 					tenantId,
 					selector === "externalUserId"
 						? { externalUserId: value }
