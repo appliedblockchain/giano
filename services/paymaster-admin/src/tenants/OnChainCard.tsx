@@ -302,7 +302,7 @@ function Registered({
 					<AddressInput
 						input={withdrawTo}
 						label="New withdrawal address"
-						helper="Where this tenant's balance can be withdrawn to."
+						helper="Only this address can withdraw the tenant's balance, to wherever it chooses."
 					/>
 					<ActionButton
 						target={{ operation: "setTenantWithdrawAddress" }}
