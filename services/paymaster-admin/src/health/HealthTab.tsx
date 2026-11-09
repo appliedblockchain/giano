@@ -66,7 +66,8 @@ export function HealthTab({
 			]
 		: [];
 	// The ledger comparison runs on its own: until it has, "every check passes" is not yet true.
-	const comparing = platformApi && !ledger.check;
+	// With no tenant to compare it never starts, so there is nothing to wait for.
+	const comparing = platformApi && !ledger.check && !ledger.idle;
 	const groups = groupChecks([...health.checks, ...extra]);
 	const all = [...health.checks, ...extra];
 	const worst: HealthLevel = all.some((check) => check.level === "fail")
@@ -365,7 +366,7 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 		if (count > 0 && !check) void runCheck();
 	}, [count]);
 
-	return { check, loading, run: runCheck };
+	return { check, loading, run: runCheck, idle: count === 0 };
 }
 
 type LedgerResult = HealthCheck & { links?: { to: string; label: string }[] };
