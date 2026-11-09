@@ -8,6 +8,7 @@ import {
 import {
 	Alert,
 	Badge,
+	Box,
 	DataList,
 	HStack,
 	SimpleGrid,
@@ -31,6 +32,7 @@ import {
 	useAddressInput,
 	useAmountInput,
 	useCalldataInput,
+	useInput,
 	useWholeNumberInput,
 	WholeNumberInput,
 } from "../components/inputs";
@@ -44,7 +46,7 @@ import { SectionCard } from "../components/ui";
 import { AddressLabel, Amount } from "../components/values";
 import { describeError } from "../lib/format";
 import { queuedKeys } from "../lib/queued";
-import { MAX_PENALTY_BPS, MAX_UINT32 } from "../lib/validate";
+import { MAX_UINT32, parsePenaltyBps } from "../lib/validate";
 import { useConsole } from "../shell/ConsoleContext";
 import { useNow } from "../shell/Header";
 
@@ -145,7 +147,10 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 	return (
 		<DataList.Item>
 			<DataList.ItemLabel minW="36">{label}</DataList.ItemLabel>
-			<DataList.ItemValue>{children}</DataList.ItemValue>
+			<DataList.ItemValue>
+				{/* Lets a long address wrap at phone width instead of overflowing. */}
+				<Box minW="0">{children}</Box>
+			</DataList.ItemValue>
 		</DataList.Item>
 	);
 }
@@ -302,10 +307,7 @@ function ParametersCard({
 	penaltyBps: number;
 }) {
 	const gas = useWholeNumberInput({ max: MAX_UINT32, unit: "gas" });
-	const penalty = useWholeNumberInput({
-		max: MAX_PENALTY_BPS,
-		unit: "basis points",
-	});
+	const penalty = useInput(parsePenaltyBps);
 	const gasValue = gas.value;
 	const penaltyValue = penalty.value;
 	return (
