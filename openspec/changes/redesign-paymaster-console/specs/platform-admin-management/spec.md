@@ -7,15 +7,19 @@
 - when it started and when it ends;
 - whether it was revoked, and when;
 - the chain it was signed for;
-- the IP address and user agent recorded at sign-in.
+- the IP address and user agent recorded at sign-in, for the caller's own sessions only.
 
-It SHALL never return a session token or its hash.
+Another admin's sessions SHALL be returned with the IP address and user agent set to `null`: a platform admin sees when another signed in, not where from. It SHALL never return a session token or its hash.
 
 `DELETE /v1/platform/admins/:id/sessions/:sessionId` SHALL end one of the caller's own sessions. Ending another admin's session SHALL return 403; removing the admin is the way to end all of them.
 
 #### Scenario: Last sign-in
 - **WHEN** `ops-diogo` signed in yesterday and has no open session
 - **THEN** their entry shows yesterday's sign-in and 0 active sessions
+
+#### Scenario: Another admin's sessions
+- **WHEN** a platform admin lists another admin's sessions
+- **THEN** each session shows when it started, ended and was revoked, and its chain, with the IP address and user agent `null`
 
 #### Scenario: End your own other session
 - **WHEN** a platform admin ends another of their own open sessions

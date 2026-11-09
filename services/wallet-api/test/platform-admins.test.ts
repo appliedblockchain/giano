@@ -217,6 +217,8 @@ describe("sign-ins and sessions (D15)", () => {
 		id: string;
 		createdAt: string;
 		revokedAt: string | null;
+		ip: string | null;
+		userAgent: string | null;
 		current: boolean;
 	};
 	const sessionsOf = async (token: string, id: string) =>
@@ -330,6 +332,24 @@ describe("sign-ins and sessions (D15)", () => {
 				)
 			).statusCode,
 		).toBe(204);
+	});
+
+	it("shows another admin's sessions without where they were signed from", async () => {
+		const theirs = await platformSignIn(ctx.app, SECOND_ADMIN);
+		const own = (await sessionsOf(theirs, "admin-second")).find(
+			(session) => session.current,
+		);
+		// the request itself carries an IP and a user agent, so their own view has them
+		expect(own?.ip).not.toBeNull();
+
+		const mine = await platformSignIn(ctx.app, ADMIN);
+		const seen = await sessionsOf(mine, "admin-second");
+		expect(seen.some((session) => session.id === own?.id)).toBe(true);
+		expect(
+			seen.every(
+				(session) => session.ip === null && session.userAgent === null,
+			),
+		).toBe(true);
 	});
 
 	it("refuses to end another admin's session, which continues", async () => {

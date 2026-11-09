@@ -53,7 +53,9 @@ const sessionSchema = z.object({
 	expiresAt: z.string(),
 	revokedAt: z.string().nullable(),
 	chainId: z.number().int(),
+	/** Null for another admin's session: they see when it was signed, not where from. */
 	ip: z.string().nullable(),
+	/** Null for another admin's session, as `ip`. */
 	userAgent: z.string().nullable(),
 	/** The session making this request. */
 	current: z.boolean(),
@@ -113,7 +115,7 @@ export default async function platformAdminRoutes(
 			...route,
 			schema: {
 				...docs,
-				summary: `A platform admin's sessions from the last ${SESSION_HISTORY_DAYS} days, newest first; never a token or its hash`,
+				summary: `A platform admin's sessions from the last ${SESSION_HISTORY_DAYS} days, newest first; never a token or its hash, and the IP and user agent only of your own`,
 				params: z.object({ id: z.string().min(1).max(64) }),
 				response: {
 					200: z.object({ sessions: z.array(sessionSchema) }),
@@ -123,7 +125,10 @@ export default async function platformAdminRoutes(
 		},
 		async (request, reply) => {
 			try {
-				const rows = await opts.admins.sessions(request.params.id);
+				const rows = await opts.admins.sessions(
+					request.params.id,
+					request.platformAdmin!,
+				);
 				return {
 					sessions: rows.map((row) => ({
 						id: row.id,

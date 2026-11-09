@@ -140,10 +140,17 @@ export function createPlatformAdminService(db: Db) {
 			});
 		},
 
-		/** The admin's sessions from the last {@link SESSION_HISTORY_DAYS} days, newest first. */
-		async sessions(id: string): Promise<PlatformAdminSessionView[]> {
+		/**
+		 * The admin's sessions from the last {@link SESSION_HISTORY_DAYS} days, newest first. Where each
+		 * was signed from (IP and user agent) only for the caller's own: another admin sees when, not
+		 * where.
+		 */
+		async sessions(
+			id: string,
+			by: PlatformAdminContext,
+		): Promise<PlatformAdminSessionView[]> {
 			const admin = await adminById(id);
-			return db
+			const rows = await db
 				.select({
 					id: platformAdminSessions.id,
 					createdAt: platformAdminSessions.createdAt,
@@ -167,6 +174,9 @@ export function createPlatformAdminService(db: Db) {
 					desc(platformAdminSessions.createdAt),
 					desc(platformAdminSessions.id),
 				);
+			return admin.address === by.address
+				? rows
+				: rows.map((row) => ({ ...row, ip: null, userAgent: null }));
 		},
 
 		/**
