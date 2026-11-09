@@ -4,7 +4,7 @@ import type {
 	TimelockOperation,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import { describe, expect, it } from "vitest";
-import { attentionItems, groupAttention } from "./attention";
+import { attentionItems, groupAttention, unreadSources } from "./attention";
 import type { TenantSummary } from "./platform-api";
 import { joinTenants } from "./tenants";
 
@@ -16,12 +16,13 @@ const registry = (
 	id: string,
 	slug: string,
 	status: TenantSummary["status"] = "active",
+	createdAt = "2026-10-01T00:00:00.000Z",
 ) =>
 	({
 		id,
 		slug,
 		status,
-		createdAt: "2026-10-01T00:00:00.000Z",
+		createdAt,
 		users: 0,
 	}) as TenantSummary;
 
@@ -46,6 +47,9 @@ const overview = (
 		...overrides,
 	}) as PaymasterOverview;
 
+/** Everything read: the registry and its deleted tenants, an on-chain roster, no timelock. */
+const READ = { registry: { known: true }, rosterOnChain: true } as const;
+
 const keys = (items: ReturnType<typeof attentionItems>) =>
 	items.map((item) => item.key);
 
@@ -58,7 +62,7 @@ describe("attentionItems", () => {
 				rows,
 				ready: [],
 				now: 0,
-				platformApi: true,
+				sources: READ,
 			}),
 		).toEqual([]);
 	});
@@ -73,7 +77,7 @@ describe("attentionItems", () => {
 			rows,
 			ready: [],
 			now: 0,
-			platformApi: true,
+			sources: READ,
 		});
 		expect(item).toMatchObject({
 			title: "stock is in deficit",
@@ -102,7 +106,7 @@ describe("attentionItems", () => {
 					rows,
 					ready: [],
 					now: 0,
-					platformApi: true,
+					sources: READ,
 				}),
 			).sort(),
 		).toEqual(
@@ -123,7 +127,7 @@ describe("attentionItems", () => {
 				rows,
 				ready: [],
 				now: 0,
-				platformApi: false,
+				sources: { rosterOnChain: true },
 			}),
 		).toEqual([]);
 	});
@@ -145,15 +149,16 @@ describe("attentionItems", () => {
 			overview: overview({
 				config: { paused: true } as PaymasterOverview["config"],
 				solvency: { holds: false } as PaymasterOverview["solvency"],
+				// unlockStake sets staked to false and a withdrawal time
 				stake: {
-					staked: true,
+					staked: false,
 					withdrawTime: 100,
 				} as PaymasterOverview["stake"],
 			}),
 			rows,
 			ready,
 			now: 200,
-			platformApi: true,
+			sources: READ,
 		});
 		expect(keys(items)).toEqual([
 			"insolvent",
@@ -167,6 +172,118 @@ describe("attentionItems", () => {
 			link: "/timelock#0xab",
 			detail: "set the default fee to 1 ETH",
 		});
+	});
+});
+
+describe("attentionItems with sources unread or failed", () => {
+	const D = "44444444-4444-4444-8444-444444444444";
+	const run = (
+		sources: Parameters<typeof attentionItems>[0]["sources"],
+		rows = joinTenants(undefined, [chain(A), chain(B, { balance: 0n })]),
+	) =>
+		attentionItems({ overview: overview(), rows, ready: [], now: 0, sources });
+
+	it("says nothing about registry rows until the registry is read, and says it is still reading", () => {
+		const sources = { registry: { known: false }, rosterOnChain: true };
+		expect(run(sources)).toEqual([]);
+		expect(unreadSources(sources)).toEqual(["the tenant registry"]);
+	});
+
+	it("turns a failed registry read into an item, and skips the checks that need it", () => {
+		expect(
+			keys(
+				run({ registry: { known: false, error: "502" }, rosterOnChain: true }),
+			),
+		).toEqual(["unread:registry"]);
+	});
+
+	it("does not call a missing row unknown to the registry while the deleted tenants are unread", () => {
+		const rows = joinTenants([registry(A, "stock")], [chain(A), chain(D)]);
+		expect(
+			keys(
+				run(
+					{
+						registry: { known: true, deletedError: "timeout" },
+						rosterOnChain: true,
+					},
+					rows,
+				),
+			),
+		).toEqual(["unread:deleted"]);
+	});
+
+	it("turns a failed timelock read into an item, and waits for one still reading", () => {
+		const rows = joinTenants([registry(A, "stock")], [chain(A)]);
+		expect(
+			keys(
+				run(
+					{
+						...READ,
+						timelock: { settled: true, read: false, error: "range" },
+					},
+					rows,
+				),
+			),
+		).toEqual(["unread:timelock"]);
+		expect(
+			unreadSources({
+				...READ,
+				timelock: { settled: false, read: false },
+			}),
+		).toEqual(["the timelock"]);
+	});
+
+	it("flags active but disabled, and deleted but still enabled, as such", () => {
+		const rows = joinTenants(
+			[registry(A, "off"), registry(B, "gone", "deleted")],
+			[chain(A, { enabled: false }), chain(B)],
+		);
+		const items = run(READ, rows);
+		expect(items.map((item) => [item.key, item.severity])).toEqual([
+			[`enabled:${B}`, "critical"],
+			[`disabled:${A}`, "warning"],
+		]);
+	});
+
+	it("does not ask to fund a tenant being wound down", () => {
+		const rows = joinTenants(
+			[registry(A, "paused", "suspended")],
+			[chain(A, { deficit: 3n, enabled: false })],
+		);
+		expect(run(READ, rows)[0]).toMatchObject({
+			key: `deficit:${A}`,
+			severity: "warning",
+			linkLabel: "Open",
+		});
+	});
+
+	it("does not call a tenant unregistered without an on-chain roster", () => {
+		const rows = joinTenants([registry(A, "new")], []);
+		expect(run({ ...READ, rosterOnChain: false }, rows)).toEqual([]);
+	});
+
+	it("lists Health's failures it does not already state, once", () => {
+		const rows = joinTenants([registry(A, "stock")], [chain(A)]);
+		const health = [
+			{ id: "signers", level: "fail", label: "no signing key", detail: "d" },
+			{ id: "paused", level: "fail", label: "paused", detail: "d" },
+			{ id: "deposit", level: "warn", label: "deposit low", detail: "d" },
+		] as const;
+		expect(keys(run({ ...READ, health }, rows))).toEqual(["health:signers"]);
+	});
+
+	it("names the newest tenants first", () => {
+		const rows = joinTenants(
+			[
+				registry(A, "old", "active", "2026-01-01T00:00:00.000Z"),
+				registry(B, "new", "active", "2026-03-01T00:00:00.000Z"),
+			],
+			[],
+		);
+		expect(keys(run(READ, rows))).toEqual([
+			`unregistered:${B}`,
+			`unregistered:${A}`,
+		]);
 	});
 });
 

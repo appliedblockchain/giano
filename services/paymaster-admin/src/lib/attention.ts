@@ -1,4 +1,5 @@
 import type {
+	HealthCheck,
 	PaymasterOverview,
 	TimelockOperation,
 } from "@appliedblockchain/giano-paymaster-sdk";
@@ -31,6 +32,54 @@ const ORDER: Record<AttentionSeverity, number> = {
 	timelock: 2,
 };
 
+/**
+ * What the Overview has read, so "nothing found" is never said of what was not read (openspec N10).
+ * `registry` is absent without the platform API, and `timelock` without a timelock.
+ */
+export type AttentionSources = {
+	registry?: {
+		/** The first registry read has succeeded: whether a tenant has a registry row is known. */
+		known: boolean;
+		/** The last read failed. What an earlier one found stays, and this is shown. */
+		error?: string;
+		/** Only the deleted tenants could not be read: a tenant missing from the registry may be one. */
+		deletedError?: string;
+	};
+	timelock?: {
+		/** A read has finished, either way. */
+		settled: boolean;
+		/** A read has succeeded. */
+		read: boolean;
+		error?: string;
+	};
+	/**
+	 * False on a paymaster that predates the on-chain roster: the roster comes from one window of
+	 * logs, so a tenant registered before it reads as not registered.
+	 */
+	rosterOnChain: boolean;
+	/** Health's checks: any that fails and is not already an item here becomes one. */
+	health?: readonly HealthCheck[];
+};
+
+/** Health checks the Overview already states in its own words. */
+const COVERED_BY_OVERVIEW = new Set([
+	"solvency",
+	"paused",
+	"stake-unlocking",
+	"tenant-deficits",
+	"tenants-funded",
+]);
+
+/** The sources not read yet, by name: until they are, the Overview cannot say all is well. */
+export function unreadSources(sources: AttentionSources): string[] {
+	const unread: string[] = [];
+	if (sources.registry && !sources.registry.known && !sources.registry.error)
+		unread.push("the tenant registry");
+	if (sources.timelock && !sources.timelock.settled)
+		unread.push("the timelock");
+	return unread;
+}
+
 /** A tenant by the name an operator knows it by: its slug where the registry has one. */
 const nameOf = (row: TenantRow) => row.registry?.slug ?? row.id;
 const pathOf = (row: TenantRow) => tenantPath(row.registry?.slug ?? row.id);
@@ -47,16 +96,53 @@ export function attentionItems({
 	rows,
 	ready,
 	now,
-	platformApi,
+	sources,
 }: {
 	overview: PaymasterOverview;
 	rows: readonly TenantRow[];
 	ready: readonly TimelockOperation[];
 	now: number;
-	platformApi: boolean;
+	sources: AttentionSources;
 }): AttentionItem[] {
 	const items: AttentionItem[] = [];
 	const { solvency, config, stake } = overview;
+	const { registry, timelock } = sources;
+	// The registry rules wait for its first successful read: before it, every row lacks a registry
+	// row, which says nothing. "No registry row" also waits for the deleted tenants.
+	const registryKnown = registry === undefined || registry.known;
+	const rowlessKnown =
+		registry !== undefined && registry.known && !registry.deletedError;
+
+	if (registry?.error)
+		items.push({
+			key: "unread:registry",
+			kind: "unread",
+			severity: "warning",
+			title: "Could not read the tenant registry",
+			detail: `${registry.error}. ${registry.known ? "What it last returned is shown." : "The checks that need it are skipped until it is read."}`,
+			link: TAB_PATHS.tenants,
+			linkLabel: "Tenants",
+		});
+	else if (registry?.deletedError)
+		items.push({
+			key: "unread:deleted",
+			kind: "unread",
+			severity: "warning",
+			title: "Could not read the deleted tenants",
+			detail: `${registry.deletedError}. An on-chain tenant missing from the registry may be a deleted one, so it is not listed as having no registry row.`,
+			link: TAB_PATHS.tenants,
+			linkLabel: "Tenants",
+		});
+	if (timelock?.error)
+		items.push({
+			key: "unread:timelock",
+			kind: "unread",
+			severity: "warning",
+			title: "Could not read the timelock",
+			detail: `${timelock.error}. ${timelock.read ? "What it last returned is shown." : "Operations waiting or ready are not known until it is read."}`,
+			link: TAB_PATHS.timelock,
+			linkLabel: "Timelock",
+		});
 
 	if (!solvency.holds)
 		items.push({
@@ -82,7 +168,8 @@ export function attentionItems({
 			linkLabel: "Unpause",
 		});
 
-	if (!stake.staked || stake.withdrawTime > 0)
+	const stakeItem = !stake.staked || stake.withdrawTime > 0;
+	if (stakeItem)
 		items.push({
 			key: "stake",
 			kind: "stake",
@@ -99,28 +186,54 @@ export function attentionItems({
 			linkLabel: "Stake",
 		});
 
+	// Whatever Health fails that the Overview does not already say: no signing key, a deposit or a
+	// stake below the minimum, and the checks later layers add. The stake check is said above when
+	// the stake is missing or unlocking.
+	for (const check of sources.health ?? [])
+		if (
+			check.level === "fail" &&
+			!COVERED_BY_OVERVIEW.has(check.id) &&
+			!(check.id === "stake" && stakeItem)
+		)
+			items.push({
+				key: `health:${check.id}`,
+				kind: `health:${check.id}`,
+				severity: "critical",
+				title: check.label.charAt(0).toUpperCase() + check.label.slice(1),
+				detail: check.remedy ? `${check.detail} ${check.remedy}` : check.detail,
+				link: TAB_PATHS.health,
+				linkLabel: "Health",
+			});
+
 	for (const row of rows) {
 		const status = row.registry?.status;
 		if (status === "deleted" && !row.onChain) continue;
 		const name = nameOf(row);
+		// A tenant being wound down is not asked to be funded, as nextStep does not.
+		const woundDown = status === "suspended" || status === "deleted";
 
 		if (row.onChain && row.onChain.deficit > 0n)
 			items.push({
 				key: `deficit:${row.id}`,
 				kind: "deficit",
 				subject: name,
-				severity: "critical",
-				title: `${name} is in deficit`,
-				detail:
-					"It cannot be sponsored until it is funded. Funding clears the deficit first, then credits the rest.",
+				severity: woundDown ? "warning" : "critical",
+				title: woundDown
+					? `${name} is ${status} and in deficit`
+					: `${name} is in deficit`,
+				detail: woundDown
+					? "It is being wound down, so it is not asked to be funded; the deficit stays on the paymaster's books until it is."
+					: "It cannot be sponsored until it is funded. Funding clears the deficit first, then credits the rest.",
 				link: pathOf(row),
-				linkLabel: "Fund",
+				linkLabel: woundDown ? "Open" : "Fund",
 			});
 		else if (
 			row.onChain &&
 			row.onChain.balance === 0n &&
 			row.onChain.enabled &&
-			(status === undefined || status === "active")
+			// Only a tenant wallet-api knows to be active, or any without the platform API: funding
+			// one wallet-api does not know, or before the registry is read, is not the ask.
+			(registry === undefined ? true : row.registry?.status === "active")
 		)
 			items.push({
 				key: `unfunded:${row.id}`,
@@ -135,7 +248,7 @@ export function attentionItems({
 			});
 
 		if (!row.registry) {
-			if (platformApi && row.state !== "unknown")
+			if (rowlessKnown && row.state !== "unknown")
 				items.push({
 					key: `unregistry:${row.id}`,
 					kind: "unregistry",
@@ -150,7 +263,14 @@ export function attentionItems({
 			continue;
 		}
 
-		if (status === "active" && row.state === "not-registered")
+		if (!registryKnown) continue;
+		if (
+			status === "active" &&
+			row.state === "not-registered" &&
+			// Without an on-chain roster, one read from a window of logs: a tenant registered before
+			// it reads as not registered. The Tenants tab says so; here it is not claimed.
+			sources.rosterOnChain
+		)
 			items.push({
 				key: `unregistered:${row.id}`,
 				kind: "unregistered",
@@ -215,6 +335,7 @@ const GROUP_TITLES: Record<string, (count: number) => string> = {
 	disabled: (count) => `${count} tenants are active but disabled on chain`,
 	enabled: (count) =>
 		`${count} tenants are suspended or deleted but still enabled on chain`,
+	unread: (count) => `${count} sources could not be read`,
 	ready: (count) => `${count} timelock operations are ready to execute`,
 };
 

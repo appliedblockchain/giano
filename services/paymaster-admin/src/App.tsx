@@ -456,7 +456,14 @@ function RouteView({
 	switch (route.tab) {
 		case "overview":
 			return (
-				<OverviewTab client={client} overview={overview} rows={tenantRows} />
+				<OverviewTab
+					client={client}
+					overview={overview}
+					rows={tenantRows}
+					registry={registry}
+					rosterOnChain={rosterOnChain}
+					health={health}
+				/>
 			);
 		case "paymaster":
 			return <PaymasterTab client={client} overview={overview} />;

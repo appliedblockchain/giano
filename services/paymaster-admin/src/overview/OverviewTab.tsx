@@ -1,6 +1,7 @@
 import {
 	formatDuration,
 	type GianoPaymasterClient,
+	type HealthReport,
 	type PaymasterOverview,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import {
@@ -8,6 +9,7 @@ import {
 	DataList,
 	HStack,
 	SimpleGrid,
+	Spinner,
 	Stack,
 	Text,
 } from "@chakra-ui/react";
@@ -20,14 +22,17 @@ import { getAdminConfig } from "../config";
 import { useImplementation } from "../hooks/useImplementation";
 import {
 	type AttentionItem,
+	type AttentionSources,
 	attentionItems,
 	groupAttention,
+	unreadSources,
 } from "../lib/attention";
 import { relativeTime } from "../lib/proposals";
 import { Link, TAB_PATHS } from "../lib/router";
 import type { TenantRow } from "../lib/tenants";
 import { useConsole } from "../shell/ConsoleContext";
 import { useNow } from "../shell/Header";
+import type { Registry } from "../tenants/useRegistry";
 
 /**
  * The Overview (openspec K1, N10): first what needs an operator, each with a link to where it is
@@ -38,13 +43,37 @@ export function OverviewTab({
 	client,
 	overview,
 	rows,
+	registry,
+	rosterOnChain,
+	health,
 }: {
 	client: GianoPaymasterClient;
 	overview: PaymasterOverview;
 	rows: readonly TenantRow[];
+	registry: Registry;
+	rosterOnChain: boolean;
+	health: HealthReport | undefined;
 }) {
-	const { timelockOperations } = useConsole();
+	const { timelock, timelockOperations } = useConsole();
 	const now = useNow(30_000) / 1000;
+	const sources: AttentionSources = {
+		registry: getAdminConfig().platformApi
+			? {
+					known: registry.tenants !== undefined,
+					error: registry.error,
+					deletedError: registry.deletedError,
+				}
+			: undefined,
+		timelock: timelock
+			? {
+					settled: timelockOperations.settled,
+					read: timelockOperations.read,
+					error: timelockOperations.error,
+				}
+			: undefined,
+		rosterOnChain,
+		health: health?.checks,
+	};
 	const items = groupAttention(
 		attentionItems({
 			overview,
@@ -53,7 +82,7 @@ export function OverviewTab({
 				(operation) => operation.state === "ready",
 			),
 			now,
-			platformApi: getAdminConfig().platformApi,
+			sources,
 		}),
 	);
 	const { solvency, stake } = overview;
@@ -61,7 +90,7 @@ export function OverviewTab({
 
 	return (
 		<Stack gap="4">
-			<NeedsAttention items={items} />
+			<NeedsAttention items={items} sources={sources} />
 
 			<SimpleGrid columns={{ base: 1, sm: 2, xl: 4 }} gap="4">
 				<Tile
@@ -107,13 +136,36 @@ export function OverviewTab({
 	);
 }
 
-const SEVERITY = {
-	critical: { tone: "red", label: "critical" },
-	warning: { tone: "orange", label: "warning" },
-	timelock: { tone: "gray", label: "ready" },
-} as const;
+const TONE = { critical: "red", warning: "orange" } as const;
 
-function NeedsAttention({ items }: { items: readonly AttentionItem[] }) {
+function NeedsAttention({
+	items,
+	sources,
+}: {
+	items: readonly AttentionItem[];
+	sources: AttentionSources;
+}) {
+	const unread = unreadSources(sources);
+	// Nothing found is not nothing wrong until every source has been read.
+	if (items.length === 0 && unread.length > 0)
+		return (
+			<HStack
+				gap="3"
+				flexWrap="wrap"
+				borderWidth="1px"
+				rounded="lg"
+				bg="surface"
+				px="4"
+				py="3"
+				fontSize="sm"
+				data-testid="needs-attention"
+			>
+				<Spinner size="xs" />
+				<Text color="fg.muted">
+					Nothing found so far; still reading {unread.join(" and ")}.
+				</Text>
+			</HStack>
+		);
 	if (items.length === 0)
 		return (
 			<HStack
@@ -130,8 +182,11 @@ function NeedsAttention({ items }: { items: readonly AttentionItem[] }) {
 				<StatusText tone="green">Nothing needs attention</StatusText>
 				<Text color="fg.muted">
 					The invariant holds, the paymaster is staked and accepting work, every
-					tenant is funded and agrees with the registry, and nothing in the
-					timelock is waiting on you.
+					tenant is funded
+					{sources.registry ? " and agrees with the registry" : ""}
+					{sources.timelock
+						? ", and nothing in the timelock is waiting on you."
+						: "."}
 				</Text>
 			</HStack>
 		);
@@ -161,14 +216,14 @@ function NeedsAttention({ items }: { items: readonly AttentionItem[] }) {
 										</Text>
 									</HStack>
 								) : (
-									<StatusText tone={SEVERITY[item.severity].tone}>
+									<StatusText tone={TONE[item.severity]}>
 										<Text as="span" fontWeight="medium">
 											{item.title}
 										</Text>
 									</StatusText>
 								)}
 							</HStack>
-							{item.members && (
+							{item.members && item.members.length > 0 && (
 								<Text fontSize="sm">
 									{item.members.map((member, at) => (
 										<Text as="span" key={member.link}>
@@ -374,14 +429,27 @@ function QueuedCard() {
 			title={read ? `Queued changes (${pending.length})` : "Queued changes"}
 			subtitle="Waiting out the timelock's delay, or ready to execute."
 		>
+			{timelockOperations.error && (
+				<InlineError
+					title="Could not read the timelock"
+					error={timelockOperations.error}
+					retry={() => void timelockOperations.reload()}
+					retrying={timelockOperations.loading}
+					stale={read}
+				/>
+			)}
 			{pending.length === 0 ? (
-				<Text fontSize="sm" color="fg.muted">
-					{read
-						? "Nothing is queued."
-						: settled
-							? `The timelock could not be read${timelockOperations.error ? `: ${timelockOperations.error}` : "."}`
-							: "Reading the timelock…"}
-				</Text>
+				read ? (
+					<Text fontSize="sm" color="fg.muted">
+						Nothing is queued.
+					</Text>
+				) : (
+					!settled && (
+						<Text fontSize="sm" color="fg.muted">
+							Reading the timelock…
+						</Text>
+					)
+				)
 			) : (
 				<Stack gap="0">
 					{pending.map((operation, index) => (
