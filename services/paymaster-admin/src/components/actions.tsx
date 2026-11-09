@@ -7,7 +7,7 @@ import {
 	Stack,
 	Text,
 } from "@chakra-ui/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { LuClock } from "react-icons/lu";
 import { useWrite } from "../hooks/useWrite";
 import {
@@ -82,8 +82,16 @@ export function ActionButton({
 	const [confirming, setConfirming] = useState(false);
 	const timelocked = "operation" in target;
 
+	// A refresh can block the write, or drop its confirmation, while the dialog is open: it closes
+	// rather than sending, and does not reopen by itself when the state flips back.
+	const blocked = plan.kind === "blocked";
+	const asks = confirm !== undefined;
+	useEffect(() => {
+		if (blocked || !asks) setConfirming(false);
+	}, [blocked, asks]);
+
 	const doSend = async () => {
-		if (!send) return;
+		if (!send || blocked) return;
 		setConfirming(false);
 		if (await run(label, send)) onDone?.();
 	};

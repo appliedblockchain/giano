@@ -35,7 +35,6 @@ export function useInput<T>(
 export const useAddressInput = (): InputState<Address> =>
 	useInput(parseAddress);
 
-/** An amount in the selected chain's currency, at most `max` when given. */
 /**
  * An amount in the selected chain's currency, at most `max` when given. `allowZero` for a fee, where
  * 0 means free; anything moved (funding, withdrawing, staking) must be more than 0.
