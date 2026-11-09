@@ -53,6 +53,12 @@ type ActionButtonProps = {
 	onDone?: () => void;
 	icon?: ReactNode;
 	destructive?: boolean;
+	/**
+	 * A quiet control: a ghost button, for an action that sits beside a louder one and must not be
+	 * mistaken for it — renouncing your own role next to revoking someone's. A destructive one still
+	 * asks first, in red.
+	 */
+	quiet?: boolean;
 	size?: ButtonProps["size"];
 	/** Set while something else on the form makes the write impossible. */
 	disabled?: boolean;
@@ -73,6 +79,7 @@ export function ActionButton({
 	onDone,
 	icon,
 	destructive,
+	quiet,
 	size = "sm",
 	disabled,
 }: ActionButtonProps) {
@@ -126,8 +133,8 @@ export function ActionButton({
 		<Stack gap="1" align="flex-start">
 			<Button
 				size={size}
-				colorPalette={destructive ? "red" : "brand"}
-				variant={destructive ? "outline" : "solid"}
+				colorPalette={quiet ? "gray" : destructive ? "red" : "brand"}
+				variant={quiet ? "ghost" : destructive ? "outline" : "solid"}
 				disabled={plan.kind === "blocked" || !send || busy || disabled}
 				loading={busy}
 				onClick={() => (confirm ? setConfirming(true) : void doSend())}

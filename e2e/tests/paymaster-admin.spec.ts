@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { createPublicClient, formatEther, http, parseEther } from "viem";
+import {
+	createPublicClient,
+	formatEther,
+	getAddress,
+	http,
+	parseEther,
+} from "viem";
 
 import { CHAINS, ORIGINS } from "../origins.mjs";
 import {
@@ -264,6 +270,61 @@ test("the Paymaster tab fills Max from the treasury, and unlocking stake asks be
 			(method) => method === "eth_sendTransaction",
 		).length,
 	).toBe(sentBefore);
+});
+
+test("the Roles tab grants, rotates and revokes a role, each change landing on chain", async ({
+	page,
+}) => {
+	await installWallet(page, { known: [CHAINS.a.chainId] });
+	await openConsole(page);
+	await chooseDeployment(page, CHAINS.a.chainId);
+	await page.getByRole("button", { name: /^Connect wallet$/ }).click();
+	await expect(page.getByRole("button", { name: /^Connected/ })).toBeVisible();
+	await signInToPaymaster(page);
+	await tab(page, /Roles/).click();
+
+	await expect(page.getByTestId("default-admin")).toContainText(
+		"held by nobody",
+	);
+	const row = page.getByTestId("role-PAUSER_ROLE");
+	await expect(row).toContainText("May halt acceptance of new sponsorships");
+
+	// two fresh addresses, so a run leaves nothing behind for the next one
+	const stamp = Date.now().toString(16);
+	const first = `0x${"a1".padEnd(40 - stamp.length, "0")}${stamp}`;
+	const second = `0x${"b2".padEnd(40 - stamp.length, "0")}${stamp}`;
+	const holder = (address: string) => row.getByTestId(`holder-${address}`);
+
+	await page.getByLabel("Role", { exact: true }).selectOption("PAUSER_ROLE");
+	await page.getByRole("textbox", { name: "Grant to" }).fill(first);
+	await page.getByRole("button", { name: "Grant", exact: true }).click();
+	await expect(holder(first)).toBeVisible({ timeout: 30_000 });
+
+	// a rotation grants the new holder before it revokes the old one
+	await page.getByLabel("From").selectOption({ label: getAddress(first) });
+	// rotating a holder to itself would leave the role with nobody: refused before the wallet
+	await page.getByRole("textbox", { name: "To", exact: true }).fill(first);
+	await expect(page.getByText("rotating to itself would leave")).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Rotate", exact: true }),
+	).toBeDisabled();
+	await page.getByRole("textbox", { name: "To", exact: true }).fill(second);
+	// Rotate revokes, so it asks first, naming who gains the role and who loses it
+	await page.getByRole("button", { name: "Rotate", exact: true }).click();
+	const rotate = page.getByRole("alertdialog", { name: "Rotate PAUSER_ROLE" });
+	await expect(rotate).toContainText(second, { ignoreCase: true });
+	await expect(rotate).toContainText(first, { ignoreCase: true });
+	await rotate.getByRole("button", { name: "Rotate" }).click();
+	await expect(holder(second)).toBeVisible({ timeout: 30_000 });
+	await expect(holder(first)).toHaveCount(0, { timeout: 30_000 });
+
+	await holder(second).getByRole("button", { name: "Revoke" }).click();
+	const confirm = page.getByRole("alertdialog", { name: "Revoke PAUSER_ROLE" });
+	await expect(confirm).toContainText(
+		"will no longer be able to halt acceptance",
+	);
+	await confirm.getByRole("button", { name: "Revoke" }).click();
+	await expect(holder(second)).toHaveCount(0, { timeout: 30_000 });
 });
 
 /**

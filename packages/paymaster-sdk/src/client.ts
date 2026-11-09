@@ -926,14 +926,39 @@ export class GianoPaymasterClient {
 		);
 	}
 
-	revokeRole(role: PaymasterRoleName, account: Address): Promise<WriteResult> {
+	/**
+	 * `DEFAULT_ADMIN_ROLE` is accepted here only. It is never granted, and is its own admin, so on a
+	 * deployment where somebody holds it anyway, revoking it is how it goes — by another holder.
+	 */
+	revokeRole(
+		role: PaymasterRoleName | "DEFAULT_ADMIN_ROLE",
+		account: Address,
+	): Promise<WriteResult> {
 		return this.send(
 			"revokeRole",
-			[PAYMASTER_ROLES[role], account],
+			[roleHash(role), account],
 			`revoke ${role} from ${account}`,
 		);
 	}
+
+	/**
+	 * Gives up a role the connected wallet holds. Needs no admin: only the holder can renounce, and
+	 * the contract checks `account` is the caller, so a typo cannot renounce for somebody else.
+	 */
+	renounceRole(
+		role: PaymasterRoleName | "DEFAULT_ADMIN_ROLE",
+		account: Address,
+	): Promise<WriteResult> {
+		return this.send(
+			"renounceRole",
+			[roleHash(role), account],
+			`renounce ${role}`,
+		);
+	}
 }
+
+const roleHash = (role: PaymasterRoleName | "DEFAULT_ADMIN_ROLE"): Hex =>
+	role === "DEFAULT_ADMIN_ROLE" ? DEFAULT_ADMIN_ROLE : PAYMASTER_ROLES[role];
 
 /**
  * A decoded `Sponsored` log.

@@ -71,10 +71,10 @@
 
 ## 7. Roles
 
-- [ ] 7.1 The role table with timelocked/immediate and "you" badges; flag non-timelock holders of timelocked roles (K3).
-- [ ] 7.2 Revoke with confirmation. Allow revoking `DEFAULT_ADMIN_ROLE` when held (D4).
-- [ ] 7.3 "Propose a role change": grant, revoke, and rotate as one batch (N5).
-- [ ] 7.4 Each role's "may, and may not" from the SDK role table; the `DEFAULT_ADMIN_ROLE` banner; Execute on a ready role change (G8).
+- [x] 7.1 The role table with timelocked/immediate and "you" badges; flag non-timelock holders of timelocked roles (K3).
+- [x] 7.2 Revoke with confirmation. Allow revoking `DEFAULT_ADMIN_ROLE` when held (D4). Only a holder can: it is its own admin. The SDK gains `renounceRole` and a `revokeRole` that takes `DEFAULT_ADMIN_ROLE`, with a changeset. Renounce is offered on the wallet's own roles; the timelock renouncing its own is not offered in this layer, and comes with the Timelock tab's proposals (8.4). Revoking or renouncing the last holder of a role says so, and for `ROLE_ADMIN` that it freezes role management.
+- [x] 7.3 "Propose a role change": grant, revoke, and rotate as one batch (N5).
+- [x] 7.4 Each role's "may, and may not" from the SDK role table; the `DEFAULT_ADMIN_ROLE` banner; Execute on a ready role change (G8).
 
 ## 8. Timelock
 

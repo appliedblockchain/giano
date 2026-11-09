@@ -77,4 +77,19 @@ describe("resolveAction", () => {
 			resolveAction({ anyone: true }, { ...none, connected: false }).kind,
 		).toBe("blocked");
 	});
+
+	it("sends a gated write when the caller says it may, and gives the caller's reason when not", () => {
+		const gate = (allowed: boolean) => ({
+			gate: { allowed, reason: "Needs the timelock's EXECUTOR_ROLE." },
+		});
+		expect(resolveAction(gate(true), none)).toEqual({ kind: "send" });
+		expect(resolveAction(gate(false), none)).toEqual({
+			kind: "blocked",
+			reason: "Needs the timelock's EXECUTOR_ROLE.",
+			needsWallet: false,
+		});
+		expect(resolveAction(gate(true), { ...none, connected: false }).kind).toBe(
+			"blocked",
+		);
+	});
 });
