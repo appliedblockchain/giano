@@ -356,13 +356,16 @@ function OperationsCard() {
 				</Box>
 			)}
 			{shown.length === 0 ? (
-				<Text fontSize="sm" color="fg.muted">
-					{!timelockOperations.settled
-						? "Reading the timelock's logs…"
-						: filter === "pending"
-							? "Nothing pending in these blocks."
-							: "Nothing in these blocks."}
-				</Text>
+				// Until a read succeeds, an empty list means nothing was read: the error above says why.
+				timelockOperations.settled && !timelockOperations.read ? null : (
+					<Text fontSize="sm" color="fg.muted">
+						{!timelockOperations.settled
+							? "Reading the timelock's logs…"
+							: filter === "pending"
+								? "Nothing pending in these blocks."
+								: "Nothing in these blocks."}
+					</Text>
+				)
 			) : (
 				<Stack gap="3" data-testid="timelock-operations">
 					{shown.map((operation) => (
