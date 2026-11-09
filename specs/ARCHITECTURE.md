@@ -261,7 +261,13 @@ sponsorship budgets, but cannot take assets. Its lifecycle bounds that exposure 
 - the tenant's admin key, or a Giano platform admin, can end a user's sessions by user id or by
   wallet, and each revocation is recorded in the tenant history;
 - the wallet treats wallet-api's 401 as the end of the session: it drops the token and asks for a
-  passkey sign-in, and a dApp waiting on a request gets EIP-1193 4100, not 4001.
+  passkey sign-in, and a dApp waiting on a request gets EIP-1193 4100, not 4001. The token goes
+  only to wallet-api, so a bundler or paymaster service configured elsewhere neither sees it nor
+  can sign the user out with a 401 of its own.
+
+The idle timeout limits a token nobody uses, not one in use: a stolen token presented at least
+once an hour stays live until its absolute expiry (24 hours) or a revocation. Signing out
+everywhere, or the tenant revoking the user's sessions, is what ends it sooner.
 
 *Where the token lives (decided for 1.0).* The token stays a bearer token in the wallet origin's
 `localStorage`, sent only as an `Authorization` header, so wallet-api's CORS allows no credentials.
