@@ -194,8 +194,10 @@ Aderyn.
   its entry.
 - The commit range uses `--diff-merges=remerge`. By default `git log` shows no diff for a merge commit, so a secret
   added while resolving a merge would not be scanned. It also uses `--text --no-textconv`, so a `.gitattributes` line
-  that marks a file as binary cannot hide its content. The job fails unless gitleaks scanned every commit in the range,
-  because a range gitleaks cannot read scans 0 commits and passes.
+  that marks a file as binary cannot hide its content. gitleaks ignores a git error, so a range or option git rejects
+  scans 0 commits and passes. The job therefore checks the range with `git rev-list`, runs `git log` with the same
+  options, and fails if the range adds any line but gitleaks reports no scanned commit. gitleaks counts only commits
+  with a patch, so the job does not compare exact counts: empty commits and clean merges would not match.
 
 Scanning the full history is out of scope. Credentials already in history are G30.
 

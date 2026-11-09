@@ -458,19 +458,25 @@ jobs:
         # secret added while resolving a merge would not be scanned; remerge shows only what the
         # merge changed beyond git's own merge. --text --no-textconv: a .gitattributes line such as
         # `file -diff` or `file binary` would otherwise hide the file's content from the diff.
-        # --redact keeps the secret out of the log and the
-        # report. --exit-code 0: the register check decides.
-        # A commit range gitleaks cannot read scans 0 commits and passes, so the step fails unless
-        # gitleaks scanned every commit in the range.
+        # --redact keeps the secret out of the log and the report. --exit-code 0: the register check
+        # decides.
+        # gitleaks ignores a git error: a range or option git rejects scans 0 commits and passes. So
+        # git rev-list checks the range, and git log runs with the same options gitleaks gets. If the
+        # range adds any line, gitleaks must report at least one scanned commit. gitleaks counts
+        # only commits with a patch, so empty commits and clean merges are not compared.
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/reports"
-          expected=$(git rev-list --count "$BASE_SHA..$HEAD_SHA")
-          if ! gitleaks git . --config .gitleaks.toml \
-              --log-opts="--text --no-textconv --diff-merges=remerge $BASE_SHA..$HEAD_SHA" \
+          git rev-list --count "$BASE_SHA..$HEAD_SHA" > /dev/null
+          # gitleaks splits --log-opts on single spaces, as the shell splits this unquoted variable.
+          LOG_OPTS="--text --no-textconv --diff-merges=remerge $BASE_SHA..$HEAD_SHA"
+          # shellcheck disable=SC2086
+          added=$(git log $LOG_OPTS --format= --numstat | awk '$1 ~ /^[0-9]+$/ { n += $1 } END { print n + 0 }')
+          if ! gitleaks git . --config .gitleaks.toml --log-opts="$LOG_OPTS" \
               --redact --ignore-gitleaks-allow --no-banner --no-color \
               --report-format json --report-path "$RUNNER_TEMP/reports/gitleaks.json" \
               --exit-code 0 2> "$RUNNER_TEMP/gitleaks.log"; then
@@ -478,9 +484,9 @@ jobs:
             exit 1
           fi
           cat "$RUNNER_TEMP/gitleaks.log"
-          scanned=$(grep -oE '[0-9]+ commits scanned' "$RUNNER_TEMP/gitleaks.log" | cut -d' ' -f1)
-          if [ "$scanned" != "$expected" ]; then
-            echo "::error::gitleaks scanned ${scanned:-no} commits, but the pull request range has $expected"
+          scanned=$(grep -oE '[0-9]+ commits scanned' "$RUNNER_TEMP/gitleaks.log" | cut -d' ' -f1 || true)
+          if [ -z "$scanned" ] || { [ "$added" -gt 0 ] && [ "$scanned" -eq 0 ]; }; then
+            echo "::error::gitleaks scanned ${scanned:-no} commits, but the pull request adds $added lines"
             exit 1
           fi
       - name: Secrets are fixed or accepted
