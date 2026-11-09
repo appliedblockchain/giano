@@ -131,7 +131,7 @@
 
 ## 13. Phase 2: sign-ins and sessions (B6, layer 14)
 
-- [x] 13.1 wallet-api: `lastSignInAt` and `activeSessions` on `GET /v1/platform/admins`; `GET /v1/platform/admins/:id/sessions`; `DELETE /v1/platform/admins/:id/sessions/:sessionId` for your own sessions only (D15). Route tests. Also `current` on the caller's own session; OpenAPI and `PLATFORM-ADMIN-SPECS.md` §4.1 updated.
+- [x] 13.1 wallet-api: `lastSignInAt` and `activeSessions` on `GET /v1/platform/admins`; `GET /v1/platform/admins/:id/sessions`; `DELETE /v1/platform/sessions/:sessionId` for your own sessions only (D15; first built as `DELETE /v1/platform/admins/:id/sessions/:sessionId`, whose `:id` could only ever be the caller). Route tests. Also `current` on the caller's own session; OpenAPI and `PLATFORM-ADMIN-SPECS.md` §4.1 updated.
 - [x] 13.2 Console: last sign-in and active sessions on Admins; your own sessions with *End*. Absent where wallet-api lacks them (D11). e2e: a second browser's session ended from the first is signed out.
 
 ## 14. Phase 2: chains (B3, layer 15)

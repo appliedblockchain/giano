@@ -239,11 +239,9 @@ export function platformApi(token: string) {
 				"GET",
 				`/admins/${encodeURIComponent(id)}/sessions`,
 			),
-		endSession: (id: string, sessionId: string) =>
-			call<void>(
-				"DELETE",
-				`/admins/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`,
-			),
+		/** Ends one of your own sessions; it is refused from its next request. */
+		endSession: (sessionId: string) =>
+			call<void>("DELETE", `/sessions/${encodeURIComponent(sessionId)}`),
 	};
 }
 

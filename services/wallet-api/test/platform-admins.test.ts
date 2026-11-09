@@ -326,7 +326,7 @@ describe("sign-ins and sessions (D15)", () => {
 		const ended = await as(
 			mine,
 			"DELETE",
-			`/v1/platform/admins/admin-test/sessions/${target?.id}`,
+			`/v1/platform/sessions/${target?.id}`,
 		);
 		expect(ended.statusCode).toBe(204);
 		expect((await entry(mine, "admin-test")).activeSessions).toBe(open - 1);
@@ -340,13 +340,8 @@ describe("sign-ins and sessions (D15)", () => {
 		expect(after?.revokedAt).not.toBeNull();
 		// ending it again changes nothing
 		expect(
-			(
-				await as(
-					mine,
-					"DELETE",
-					`/v1/platform/admins/admin-test/sessions/${target?.id}`,
-				)
-			).statusCode,
+			(await as(mine, "DELETE", `/v1/platform/sessions/${target?.id}`))
+				.statusCode,
 		).toBe(204);
 	});
 
@@ -374,13 +369,8 @@ describe("sign-ins and sessions (D15)", () => {
 		expect(expired).toBeDefined();
 
 		expect(
-			(
-				await as(
-					mine,
-					"DELETE",
-					`/v1/platform/admins/admin-test/sessions/${expired?.id}`,
-				)
-			).statusCode,
+			(await as(mine, "DELETE", `/v1/platform/sessions/${expired?.id}`))
+				.statusCode,
 		).toBe(204);
 		const after = (await sessionsOf(mine, "admin-test")).find(
 			(session) => session.id === expired?.id,
@@ -391,13 +381,8 @@ describe("sign-ins and sessions (D15)", () => {
 	it("refuses a session id that is not one", async () => {
 		const mine = await platformSignIn(ctx.app, ADMIN);
 		expect(
-			(
-				await as(
-					mine,
-					"DELETE",
-					"/v1/platform/admins/admin-test/sessions/not-a-session",
-				)
-			).statusCode,
+			(await as(mine, "DELETE", "/v1/platform/sessions/not-a-session"))
+				.statusCode,
 		).toBe(400);
 	});
 
@@ -422,33 +407,20 @@ describe("sign-ins and sessions (D15)", () => {
 		expect(await sessionsOf(token, "admin-reused")).toEqual([]);
 	});
 
-	it("refuses to end another admin's session, which continues", async () => {
+	it("does not end another admin's session, which continues", async () => {
 		const mine = await platformSignIn(ctx.app, ADMIN);
 		const theirs = await platformSignIn(ctx.app, SECOND_ADMIN);
 		const target = (await sessionsOf(theirs, "admin-second")).find(
 			(session) => session.current,
 		);
 
+		// another admin's session is not one of yours: not found, and it continues
 		const refused = await as(
 			mine,
 			"DELETE",
-			`/v1/platform/admins/admin-second/sessions/${target?.id}`,
+			`/v1/platform/sessions/${target?.id}`,
 		);
-		expect(refused.statusCode).toBe(403);
-		expect(refused.json().error).toBe("not-your-session");
-		expect((await as(theirs, "GET", "/v1/platform/admins")).statusCode).toBe(
-			200,
-		);
-		// nor by naming yourself with their session
-		expect(
-			(
-				await as(
-					mine,
-					"DELETE",
-					`/v1/platform/admins/admin-test/sessions/${target?.id}`,
-				)
-			).statusCode,
-		).toBe(404);
+		expect(refused.statusCode).toBe(404);
 		expect((await as(theirs, "GET", "/v1/platform/admins")).statusCode).toBe(
 			200,
 		);

@@ -148,24 +148,20 @@ export default async function platformAdminRoutes(
 	);
 
 	app.delete(
-		"/v1/platform/admins/:id/sessions/:sessionId",
+		"/v1/platform/sessions/:sessionId",
 		{
 			...route,
 			schema: {
 				...docs,
 				summary:
-					"End one of your own sessions; another admin's is refused (remove them to end all of theirs)",
-				params: z.object({
-					id: z.string().min(1).max(64),
-					sessionId: z.string().uuid(),
-				}),
-				response: { 204: z.null(), ...errors, 403: errorSchema },
+					"End one of your own sessions; another admin's is not found (remove them to end all of theirs)",
+				params: z.object({ sessionId: z.string().uuid() }),
+				response: { 204: z.null(), ...errors },
 			},
 		},
 		async (request, reply) => {
 			try {
 				await opts.admins.endSession(
-					request.params.id,
 					request.params.sessionId,
 					request.platformAdmin!,
 				);
