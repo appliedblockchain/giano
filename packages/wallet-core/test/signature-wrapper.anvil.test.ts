@@ -5,12 +5,12 @@
  * decodes exactly that struct. The other tests check each side alone: the unit tests decode the
  * SDK's output with their own copy of the ABI, and the Foundry tests build the wrapper in
  * Solidity. This test runs the real SDK against the real contract, so it fails if the two ever
- * diverge (RFC: Multi-Ownership Support in Giano SDK, §3.3).
+ * diverge.
  *
  * The signers are secondary owners: added with `addOwnerAddress` / `addOwnerPublicKey` after
- * deployment, so they are not in the factory salt. That is the multi-ownership case the RFC is
- * about. The contracts come from the latest committed release (`packages/contracts/releases`),
- * which is the bytecode that is actually deployed, so no Solidity compiler is needed.
+ * deployment, so they are not in the factory salt. The contracts come from the latest committed
+ * release (`packages/contracts/releases`), which is the bytecode that is actually deployed, so no
+ * Solidity compiler is needed.
  *
  * Needs `anvil` on the PATH. Without it the suite is skipped locally but fails in CI.
  */
@@ -279,8 +279,8 @@ describe.skipIf(!anvilAvailable && !process.env.CI)(
 		});
 
 		it("rejects the old (uint8 ownerIndex, bytes) wrapper", async () => {
-			// Same owner and the same inner signature, in the format the RFC asks about. The contract
-			// must refuse it; if it ever accepted it, the wire format would have changed.
+			// Same owner and the same inner signature, in the old `(uint8 ownerIndex, bytes)` format.
+			// The contract must refuse it; if it ever accepted it, the wire format would have changed.
 			const account = await toGianoSmartAccount({
 				client,
 				address: wallet,
