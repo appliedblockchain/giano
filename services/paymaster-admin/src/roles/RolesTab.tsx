@@ -350,8 +350,9 @@ function DefaultAdminCard({
 				<Alert.Description>
 					<Stack gap="3" mt="1">
 						<Text>
-							It should be held by nobody. Its holders can grant themselves
-							anything the named roles divide up. Only a holder can revoke it.
+							It should be held by nobody. No role names it as its admin and no
+							function checks it, so in this version it grants nothing on its
+							own, but it is the superuser by name. Only a holder can revoke it.
 						</Text>
 						{holders.map((holder) => {
 							const isYou =
@@ -373,6 +374,7 @@ function DefaultAdminCard({
 										label={isYou ? "Renounce" : "Revoke"}
 										size="xs"
 										destructive
+										quiet={isYou}
 										send={() =>
 											isYou
 												? client.renounceRole("DEFAULT_ADMIN_ROLE", holder)
