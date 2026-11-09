@@ -82,16 +82,17 @@ export function ActionButton({
 	const [confirming, setConfirming] = useState(false);
 	const timelocked = "operation" in target;
 
-	// A refresh can block the write, or drop its confirmation, while the dialog is open: it closes
-	// rather than sending, and does not reopen by itself when the state flips back.
-	const blocked = plan.kind === "blocked";
+	// A refresh can block the write, turn it into a proposal (the wallet's role changed), or drop its
+	// confirmation while the dialog is open: it closes rather than sending, and does not reopen by
+	// itself when the state flips back.
+	const sendable = plan.kind === "send";
 	const asks = confirm !== undefined;
 	useEffect(() => {
-		if (blocked || !asks) setConfirming(false);
-	}, [blocked, asks]);
+		if (!sendable || !asks) setConfirming(false);
+	}, [sendable, asks]);
 
 	const doSend = async () => {
-		if (!send || blocked) return;
+		if (!send || !sendable) return;
 		setConfirming(false);
 		if (await run(label, send)) onDone?.();
 	};
