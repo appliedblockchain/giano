@@ -203,7 +203,23 @@ export function TimelockPanel({
 					</Button>
 				}
 			>
-				{!config ? (
+				{!config && error ? (
+					// A first read that failed has nothing to wait for: the spinner would turn until the
+					// next poll, and forever where polling is off. The error is stated above.
+					<HStack gap="3">
+						<Text fontSize="sm" color="fg.muted">
+							Nothing to show until the timelock can be read.
+						</Text>
+						<Button
+							size="xs"
+							variant="outline"
+							onClick={() => void load()}
+							loading={loading}
+						>
+							Try again
+						</Button>
+					</HStack>
+				) : !config ? (
 					<HStack gap="3">
 						<Spinner size="sm" color="brand.solid" />
 						<Text fontSize="sm" color="fg.muted">
