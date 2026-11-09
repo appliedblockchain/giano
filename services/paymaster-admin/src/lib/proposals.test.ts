@@ -16,18 +16,15 @@ describe("buildProposal for a rotation", () => {
 				functionName,
 				args,
 			}),
-			propose: async (calls: unknown[]) => {
+			propose: async (calls: unknown[], options?: unknown) => {
 				proposed.push(calls);
-				return { calls };
+				return { calls, options };
 			},
 		} as unknown as GianoTimelockClient;
 
-		await buildProposal(timelock, {
-			kind: "rotateRole",
-			role: "PAUSER_ROLE",
-			from: FROM,
-			to: TO,
-		});
+		await buildProposal(timelock, [
+			{ kind: "rotateRole", role: "PAUSER_ROLE", from: FROM, to: TO },
+		]);
 
 		expect(proposed).toEqual([
 			[
