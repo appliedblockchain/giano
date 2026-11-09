@@ -3,7 +3,7 @@ import {
 	type TenantView,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import { Button, HStack, Spinner, Stack, Table, Text } from "@chakra-ui/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SectionCard } from "../components/ui";
 import { type Deployment, deploymentKey, getAdminConfig } from "../config";
 import { createReadClient } from "../lib/chain";
@@ -49,18 +49,42 @@ export function useOtherDeployments(
 	);
 	const [readings, setReadings] = useState<Record<string, Reading>>({});
 
+	// One client per deployment, built once rather than on every poll. As the console's own read
+	// client does, each reads the current session token per request, so a renewed session keeps them.
+	const currentToken = useRef(token);
+	currentToken.current = token;
+	const onUnauthorized = useRef(expire);
+	onUnauthorized.current = expire;
+	const signedIn = token !== undefined;
+	const clients = useMemo(
+		() =>
+			new Map(
+				others.map((deployment) => [
+					deploymentKey(deployment),
+					deployment.sponsorshipPaymaster
+						? new GianoPaymasterClient({
+								address: deployment.sponsorshipPaymaster,
+								publicClient: createReadClient(
+									deployment,
+									signedIn
+										? {
+												token: () => currentToken.current ?? "",
+												onUnauthorized: () => onUnauthorized.current(),
+											}
+										: undefined,
+								),
+							})
+						: undefined,
+				]),
+			),
+		[others, signedIn],
+	);
+
 	const readOne = useCallback(
 		async (deployment: Deployment): Promise<Reading> => {
-			const address = deployment.sponsorshipPaymaster;
-			if (!address || !tenantId) return { kind: "no-paymaster" };
+			const client = clients.get(deploymentKey(deployment));
+			if (!client || !tenantId) return { kind: "no-paymaster" };
 			try {
-				const client = new GianoPaymasterClient({
-					address,
-					publicClient: createReadClient(
-						deployment,
-						token ? { token, onUnauthorized: expire } : undefined,
-					),
-				});
 				return { kind: "registered", tenant: await client.getTenant(tenantId) };
 			} catch (cause) {
 				const error = describeError(cause);
@@ -69,7 +93,7 @@ export function useOtherDeployments(
 					: { kind: "failed", error };
 			}
 		},
-		[tenantId, token, expire],
+		[tenantId, clients],
 	);
 
 	const read = useCallback(
