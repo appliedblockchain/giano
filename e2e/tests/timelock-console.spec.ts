@@ -236,7 +236,11 @@ test("the Timelock tab says who proposes, cancels and executes, and what this wa
 }) => {
 	await openWithTimelock(page);
 	await expect(page.getByText("2s").first()).toBeVisible();
-	await expect(page.getByText("anyone (open)")).toBeVisible();
+	// open executors, in the summary and on EXECUTOR_ROLE's row of the roles card
+	await expect(page.getByText("anyone (open)", { exact: true })).toBeVisible();
+	await expect(
+		page.getByText("anyone (open): the zero address holds it"),
+	).toBeVisible();
 	await expect(page.getByText("schedule", { exact: true })).toBeVisible();
 	await expect(page.getByText("cancel", { exact: true })).toBeVisible();
 	await expect(
