@@ -151,6 +151,13 @@ function RoleRow({
 				.map((change) => change.operationId),
 		),
 	];
+	// The last holder: revoking or renouncing it leaves the role with nobody. For ROLE_ADMIN, which
+	// administers itself and every other role, that freezes role management for good.
+	const last = entry.holders.length === 1;
+	const lastEffect =
+		entry.name === "ROLE_ADMIN"
+			? " It is the last holder of ROLE_ADMIN, which administers every role, itself included: nobody could ever grant or revoke any role again."
+			: ` It is the last holder: nobody will hold ${entry.name} until ROLE_ADMIN grants it again.`;
 
 	return (
 		<Table.Row data-testid={`role-${entry.name}`}>
@@ -231,9 +238,11 @@ function RoleRow({
 											}}
 											confirm={{
 												title: `Revoke ${entry.name}`,
-												effect: isYou
-													? `Your wallet will lose the ability to ${description.may}.`
-													: `${holder} will no longer be able to ${description.may}.`,
+												effect: `${
+													isYou
+														? `Your wallet will lose the ability to ${description.may}.`
+														: `${holder} will no longer be able to ${description.may}.`
+												}${last ? lastEffect : ""}`,
 												confirmLabel: "Revoke",
 											}}
 										/>
@@ -248,12 +257,27 @@ function RoleRow({
 												send={() => client.renounceRole(entry.name, holder)}
 												confirm={{
 													title: `Renounce ${entry.name}`,
-													effect: `Your wallet gives up the ability to ${description.may}. Only ROLE_ADMIN can grant it back.`,
+													effect: `Your wallet gives up the ability to ${description.may}.${last ? lastEffect : " Only ROLE_ADMIN can grant it back."}`,
 													confirmLabel: "Renounce",
 												}}
 											/>
 										)}
 									</HStack>
+									{last && (
+										// Before the click, for a proposal as much as a send: a proposed revoke of the
+										// timelock's ROLE_ADMIN is the usual way to lose it.
+										<Text
+											fontSize="xs"
+											color={
+												entry.name === "ROLE_ADMIN" ? "red.fg" : "orange.fg"
+											}
+											data-testid="last-holder"
+										>
+											{entry.name === "ROLE_ADMIN"
+												? "The only ROLE_ADMIN: revoking or renouncing it would freeze role management for good."
+												: `The only holder: revoking or renouncing it leaves ${entry.name} with nobody.`}
+										</Text>
+									)}
 								</Stack>
 							);
 						})}
