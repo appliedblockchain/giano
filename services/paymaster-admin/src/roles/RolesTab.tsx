@@ -36,6 +36,7 @@ import {
 	type TimelockAccess,
 	useTimelockConfig,
 } from "../hooks/useTimelockConfig";
+import { describeError } from "../lib/format";
 import { queuedKeys } from "../lib/queued";
 import { useConsole } from "../shell/ConsoleContext";
 
@@ -408,7 +409,13 @@ function ChangeCard({
 	const rotateTo = useAddressInput();
 	const holders = roles.find((entry) => entry.name === role)?.holders ?? [];
 	const [from, setFrom] = useState<string>("");
-	const rotateFrom = holders.find((holder) => holder === from) ?? holders[0];
+	// The first holder until one is chosen; a chosen holder that a refresh removes is not swapped for
+	// another, which would revoke someone the operator did not pick.
+	const rotateFrom = from
+		? holders.find((holder) => holder === from)
+		: holders[0];
+	const chosenGone = from !== "" && rotateFrom === undefined;
+	const { refresh } = useConsole();
 	const grantee = grantTo.value;
 	// Rotating a holder to itself would grant nothing and then revoke it: the role left with nobody.
 	const sameHolder =
@@ -475,10 +482,15 @@ function ChangeCard({
 									<Field.Label fontSize="sm">From</Field.Label>
 									<NativeSelect.Root size="sm">
 										<NativeSelect.Field
-											value={rotateFrom}
+											value={rotateFrom ?? ""}
 											onChange={(event) => setFrom(event.currentTarget.value)}
 											fontFamily="mono"
 										>
+											{chosenGone && (
+												<option value="" disabled>
+													choose a holder
+												</option>
+											)}
 											{holders.map((holder) => (
 												<option key={holder} value={holder}>
 													{holder}
@@ -487,6 +499,11 @@ function ChangeCard({
 										</NativeSelect.Field>
 										<NativeSelect.Indicator />
 									</NativeSelect.Root>
+									{chosenGone && (
+										<Field.HelperText color="orange.fg">
+											The holder you chose no longer holds {role}. Choose again.
+										</Field.HelperText>
+									)}
 								</Field.Root>
 								<AddressInput
 									input={rotateTo}
@@ -518,7 +535,16 @@ function ChangeCard({
 															throw new Error(
 																`The grant to ${successor} (${granted.hash}) reverted, so ${rotateFrom} keeps the role; nothing was revoked.`,
 															);
-														return client.revokeRole(role, rotateFrom);
+														try {
+															return await client.revokeRole(role, rotateFrom);
+														} catch (cause) {
+															// Half done: both hold the role now. Said as such, and the table refreshed to
+															// show it, rather than a bare "Could not rotate".
+															await refresh();
+															throw new Error(
+																`${successor} was granted ${role} (${granted.hash}), but revoking it from ${rotateFrom} failed, so both hold it now. Revoke ${rotateFrom} from its row. ${describeError(cause)}`,
+															);
+														}
 													}
 												: undefined
 										}
@@ -529,6 +555,16 @@ function ChangeCard({
 														role,
 														from: rotateFrom,
 														to: successor,
+													}
+												: undefined
+										}
+										// Rotate revokes, and revoking asks first (the spec's list), naming who it is.
+										confirm={
+											successor && rotateFrom
+												? {
+														title: `Rotate ${role}`,
+														effect: `${successor} is granted ${role}, then ${rotateFrom} loses it: two transactions, the grant first.`,
+														confirmLabel: "Rotate",
 													}
 												: undefined
 										}

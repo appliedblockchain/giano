@@ -309,7 +309,12 @@ test("the Roles tab grants, rotates and revokes a role, each change landing on c
 		page.getByRole("button", { name: "Rotate", exact: true }),
 	).toBeDisabled();
 	await page.getByRole("textbox", { name: "To", exact: true }).fill(second);
+	// Rotate revokes, so it asks first, naming who gains the role and who loses it
 	await page.getByRole("button", { name: "Rotate", exact: true }).click();
+	const rotate = page.getByRole("alertdialog", { name: "Rotate PAUSER_ROLE" });
+	await expect(rotate).toContainText(second, { ignoreCase: true });
+	await expect(rotate).toContainText(first, { ignoreCase: true });
+	await rotate.getByRole("button", { name: "Rotate" }).click();
 	await expect(holder(second)).toBeVisible({ timeout: 30_000 });
 	await expect(holder(first)).toHaveCount(0, { timeout: 30_000 });
 
