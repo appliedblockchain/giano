@@ -28,7 +28,7 @@ const entry = (overrides = {}) => ({
 	location: "packages/contracts/src/GianoSmartWallet.sol#L299-L306",
 	accepted: "2026-11-09",
 	expires: "2027-05-08",
-	owner: "Giovanni Pinto",
+	owner: "Sarah Thompson",
 	reason: "False positive: every caller is access controlled.",
 	...overrides,
 });
@@ -77,7 +77,7 @@ describe("check-accepted-findings: register", () => {
 		assert.deepEqual(rules(errs), ["expired"]);
 		assert.equal(errs[0].entry, "AF-001");
 		assert.match(errs[0].message, /2027-05-08/);
-		assert.match(errs[0].message, /Giovanni Pinto/);
+		assert.match(errs[0].message, /Sarah Thompson/);
 	});
 
 	it("still passes on the expiry date itself", () => {
@@ -188,7 +188,7 @@ describe("check-accepted-findings: register", () => {
 		assert.deepEqual(
 			rules(
 				validateRegister(
-					register(entry({ owner: "Giovanni Pinto and Bruno Neves" })),
+					register(entry({ owner: "Sarah Thompson and John Smith" })),
 					TODAY,
 				),
 			),
@@ -234,7 +234,7 @@ describe("check-accepted-findings: suppressions", () => {
 		const toml = '[[allowlists]]\ndescription = "AF-009: Anvil keys"\n';
 		assert.match(
 			checkGitleaksConfig(toml, new Set(["AF-008"]))[0].message,
-			/AF-009 not found/,
+			/\(AF-009 is not one\)/,
 		);
 	});
 
@@ -272,17 +272,59 @@ describe("check-accepted-findings: suppressions", () => {
 		assert.deepEqual(rules(checkSlitherConfig("{")), ["invalid-config"]);
 	});
 
-	it("allows scope in aderyn.toml and rejects any [detectors] setting", () => {
+	it("allows only the top-level scope keys in aderyn.toml", () => {
 		const scope =
-			'# reason\nversion = 1\nsrc = "src"\nexclude = ["src/testing/"]\n\n[detectors]\n# include = ["x"]\n';
+			'# reason\nversion = 1\nroot = "." # comment\nsrc = "src"\nexclude = ["src/testing/", "a # b"]\n';
 		assert.deepEqual(checkAderynConfig(scope), []);
 		const errs = checkAderynConfig(
 			'version = 1\n[detectors]\nexclude = ["yul-return"]\n',
 		);
 		assert.deepEqual(
 			errs.map((e) => [e.line, e.rule]),
-			[[3, "config-suppression"]],
+			[
+				[2, "config-suppression"],
+				[3, "config-suppression"],
+			],
 		);
+	});
+
+	it("rejects every other TOML form in aderyn.toml that could set detectors", () => {
+		for (const [toml, rule] of [
+			["[detectors]\n", "config-suppression"],
+			['["detectors"]\n', "unsupported-config"],
+			["detectors.yul-return = false\n", "config-suppression"],
+			["detectors = { yul-return = false }\n", "config-suppression"],
+			['"src" = "src"\n', "unsupported-config"],
+			['src = { path = "src" }\n', "config-suppression"],
+			['exclude = [\n  "src/testing/",\n]\n', "unsupported-config"],
+			["src = '''\nsrc'''\n", "unsupported-config"],
+		])
+			assert.equal(checkAderynConfig(toml)[0]?.rule, rule, toml);
+	});
+
+	it("rejects every other TOML form in .gitleaks.toml that could hide a finding", () => {
+		const ids = new Set(["AF-008"]);
+		for (const [toml, rule] of [
+			['["allowlist"]\ndescription = "AF-008"\n', "unsupported-config"],
+			["[ 'rules' . allowlists ]\n", "unsupported-config"],
+			['allowlist.paths = ["x"]\n', "unsupported-config"],
+			['allowlist = { paths = ["x"] }\n', "unsupported-config"],
+			[
+				'[[rules]]\nid = "x"\nallowlists = [{ paths = ["x"] }]\n',
+				"unsupported-config",
+			],
+			[
+				'rules = [\n  { id = "x", allowlist = { paths = ["x"] } },\n]\n',
+				"unsupported-config",
+			],
+			['[allowlist.extra]\npaths = ["x"]\n', "unsupported-config"],
+			['extend.disabledRules = ["generic-api-key"]\n', "config-suppression"],
+			["[allowlist]\ndescription = '''\nAF-008'''\n", "unsupported-config"],
+		])
+			assert.ok(rules(checkGitleaksConfig(toml, ids)).includes(rule), toml);
+		const ok =
+			"[extend]\nuseDefault = true\n\n[ rules . allowlists ]\ndescription = \"AF-008\" # c\nregexes = ['''0x[a-f]{64}''']\n";
+		assert.deepEqual(checkGitleaksConfig(ok, ids), []);
 	});
 });
 
@@ -325,6 +367,55 @@ describe("check-accepted-findings: repository check", () => {
 				(e) => e.file === "packages/contracts/src/sub/B.sol" && e.line === 2,
 			),
 		);
+	});
+
+	it("validates a register that parses to null, false, 0 or an empty string", () => {
+		const dir = mkdtempSync(join(tmpdir(), "accepted-findings-falsy-"));
+		try {
+			mkdirSync(join(dir, "security"));
+			for (const value of ["null", "false", "0", '""']) {
+				writeFileSync(join(dir, "security/accepted-findings.json"), value);
+				assert.deepEqual(rules(checkRepository(dir, TODAY)), ["bad-register"]);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("lets a gitleaks allowlist cite only a usable gitleaks entry for .gitleaks.toml", () => {
+		const dir = mkdtempSync(join(tmpdir(), "accepted-findings-allowlist-"));
+		try {
+			mkdirSync(join(dir, "security"));
+			writeFileSync(
+				join(dir, ".gitleaks.toml"),
+				'[[allowlists]]\ndescription = "AF-008: public Anvil keys"\n',
+			);
+			const check = (...entries) => {
+				writeFileSync(
+					join(dir, "security/accepted-findings.json"),
+					JSON.stringify(register(...entries)),
+				);
+				return rules(checkRepository(dir, TODAY));
+			};
+			const gitleaks = (match) =>
+				entry({ id: "AF-008", tool: "gitleaks", match, severity: "high" });
+			assert.deepEqual(check(gitleaks({ allowlist: ".gitleaks.toml" })), []);
+			assert.deepEqual(check(entry({ id: "AF-008" })), [
+				"suppression-without-entry",
+			]);
+			assert.deepEqual(check(gitleaks({ fingerprint: "a:b:c:1" })), [
+				"suppression-without-entry",
+			]);
+			assert.deepEqual(
+				check(
+					gitleaks({ allowlist: ".gitleaks.toml" }),
+					gitleaks({ allowlist: ".gitleaks.toml" }),
+				).sort(),
+				["duplicate-id", "suppression-without-entry"],
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 

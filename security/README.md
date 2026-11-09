@@ -72,7 +72,12 @@ The weekly security scan lists entries that expire within 14 days.
 - A `slither-disable`, `aderyn-ignore` or `aderyn-fp` comment under `packages/contracts/src`. A source comment changes
   the contract metadata hash, and so the bytecode and the CREATE2 addresses.
 - A detector setting in `packages/contracts/slither.config.json` or `packages/contracts/aderyn.toml`. These files set
-  scope only: dependencies, tests, scripts and `src/testing` are outside the analysis.
-- A gitleaks allowlist whose `description` does not name an entry, and any `disabledRules`.
+  scope only: dependencies, tests, scripts and `src/testing` are outside the analysis. `aderyn.toml` may contain only
+  the top-level keys `version`, `root`, `src`, `include` and `exclude`, each on one line.
+- A gitleaks allowlist whose `description` does not name a valid, unexpired `gitleaks` entry with
+  `{ "allowlist": ".gitleaks.toml" }`, and any `disabledRules`.
+- TOML that the check cannot read: a quoted table name or key, or a multi-line string. In `.gitleaks.toml`, also an
+  inline table or a dotted `allowlist` key. Write each allowlist as an `[allowlist]`, `[[allowlists]]` or
+  `[[rules.allowlists]]` table.
 - A file a tool reads by itself to hide findings: `packages/contracts/slither.db.json`,
   `packages/contracts/export.sarif.sarifexplorer` and `.gitleaksignore`.

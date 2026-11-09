@@ -321,65 +321,194 @@ export function checkSlitherConfig(text, file = SLITHER_CONFIG) {
 		}));
 }
 
-/** aderyn.toml may set scope only: any key under [detectors] turns detectors off or on. */
-export function checkAderynConfig(text, file = ADERYN_CONFIG) {
-	const errs = [];
-	let section = "";
+// The register check reads aderyn.toml and .gitleaks.toml without a TOML library. It reads a plain
+// subset of TOML and reports every line outside that subset, so no TOML form (a quoted name, a
+// dotted key, an inline table, a multi-line string) can hide a setting from the check.
+
+/** One line with string contents blanked and the comment removed. `open` is true when a string does not close on the line. */
+function scanTomlLine(raw) {
+	let code = "";
+	let quote = null;
+	for (let i = 0; i < raw.length; i++) {
+		const c = raw[i];
+		if (quote) {
+			if (quote === '"' && c === "\\") {
+				code += "  ";
+				i++;
+			} else if (c === quote) {
+				quote = null;
+				code += c;
+			} else code += " ";
+			continue;
+		}
+		if (c === "#") break;
+		if (c === '"' || c === "'") quote = c;
+		code += c;
+	}
+	return { code, open: quote !== null };
+}
+
+/**
+ * Each non-blank line as one of:
+ * - { kind: "header", path }
+ * - { kind: "key", path, code, value }: `code` is the value with strings blanked, `value` the raw value
+ * - { kind: "other", code }: a value that continues from an earlier line
+ * - { kind: "unsupported", why }
+ */
+function tomlLines(text) {
+	const lines = [];
 	text.split("\n").forEach((raw, i) => {
-		const line = raw
-			.replace(/\s+#.*$/, "")
-			.replace(/^\s*#.*$/, "")
-			.trim();
-		if (!line) return;
-		const header = line.match(/^\[\[?\s*([^\]]+?)\s*\]\]?$/);
-		if (header) {
-			section = header[1];
+		const line = i + 1;
+		const { code, open } = scanTomlLine(raw);
+		const trimmed = code.trim();
+		if (!trimmed) return;
+		if (open) {
+			lines.push({ line, kind: "unsupported", why: "A multi-line string" });
 			return;
 		}
-		if (section === "detectors" || section.startsWith("detectors."))
-			errs.push({
-				file,
-				line: i + 1,
-				rule: "config-suppression",
-				message: `[detectors] setting '${line}'. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
-			});
+		const header = trimmed.match(
+			/^\[\[\s*([^[\]]*?)\s*\]\]$|^\[\s*([^[\]]*?)\s*\]$/,
+		);
+		if (header) {
+			const name = header[1] ?? header[2];
+			lines.push(
+				/["']/.test(name)
+					? { line, kind: "unsupported", why: "A quoted table name" }
+					: {
+							line,
+							kind: "header",
+							path: name.split(".").map((s) => s.trim()),
+						},
+			);
+			return;
+		}
+		const eq = code.indexOf("=");
+		if (eq > 0 && !/[[\]{},]/.test(code.slice(0, eq))) {
+			const key = code.slice(0, eq).trim();
+			lines.push(
+				/["']/.test(key)
+					? { line, kind: "unsupported", why: "A quoted key" }
+					: {
+							line,
+							kind: "key",
+							path: key.split(".").map((s) => s.trim()),
+							code: code.slice(eq + 1).trim(),
+							value: raw.slice(eq + 1, code.length).trim(),
+						},
+			);
+			return;
+		}
+		lines.push({ line, kind: "other", code: trimmed });
 	});
+	return lines;
+}
+
+const ADERYN_SCOPE_KEYS = ["version", "root", "src", "include", "exclude"];
+
+/** aderyn.toml may set scope only: the top-level scope keys, one line each. Anything else could turn detectors off. */
+export function checkAderynConfig(text, file = ADERYN_CONFIG) {
+	const errs = [];
+	// A key after any table header belongs to that table, so it is not a top-level key.
+	let inTable = false;
+	for (const l of tomlLines(text)) {
+		if (l.kind === "header") inTable = true;
+		if (
+			l.kind === "key" &&
+			!inTable &&
+			l.path.length === 1 &&
+			ADERYN_SCOPE_KEYS.includes(l.path[0]) &&
+			!l.code.includes("{")
+		)
+			continue;
+		const what =
+			l.kind === "header"
+				? `Table [${l.path.join(".")}]`
+				: l.kind === "key"
+					? `Key '${l.path.join(".")}'${inTable ? " inside a table" : ""}`
+					: l.kind === "other"
+						? "A value that continues across lines"
+						: l.why;
+		errs.push({
+			file,
+			line: l.line,
+			rule:
+				l.kind === "header" || l.kind === "key"
+					? "config-suppression"
+					: "unsupported-config",
+			message: `${what} is not allowed. This file sets scope only: the top-level keys ${ADERYN_SCOPE_KEYS.join(", ")}, each on one line. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
+		});
+	}
 	return errs;
 }
 
-/** Every allowlist in .gitleaks.toml names an existing entry; no rule is disabled. */
-export function checkGitleaksConfig(text, ids, file = GITLEAKS_CONFIG) {
+const ALLOWLIST_NAME = /^allowlists?$/;
+
+/**
+ * Every allowlist in .gitleaks.toml is a table whose description names a gitleaks register entry
+ * for this file (`allowlistIds`); no rule is disabled.
+ */
+export function checkGitleaksConfig(
+	text,
+	allowlistIds,
+	file = GITLEAKS_CONFIG,
+) {
 	const errs = [];
+	const unsupported = (line, what) =>
+		errs.push({
+			file,
+			line,
+			rule: "unsupported-config",
+			message: `${what} is not supported here. The register check reads a plain subset of TOML: write each allowlist as an [allowlist], [[allowlists]] or [[rules.allowlists]] table`,
+		});
 	const blocks = [];
 	let current = null;
-	text.split("\n").forEach((raw, i) => {
-		const line = raw.trim();
-		const header = line.match(/^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/);
-		if (header) {
-			current = /(^|\.)allowlists?$/.test(header[1])
-				? { header: header[1], line: i + 1, description: null }
-				: null;
-			if (current) blocks.push(current);
-			return;
+	for (const l of tomlLines(text)) {
+		if (l.kind === "unsupported") {
+			unsupported(l.line, l.why);
+			continue;
 		}
-		const description = line.match(/^description\s*=\s*(["'])(.*)\1/);
-		if (current && description) current.description = description[2];
-		if (/^disabledRules\s*=/.test(line))
+		if (l.kind === "header") {
+			const at = l.path.findIndex((s) => ALLOWLIST_NAME.test(s));
+			current = null;
+			if (at === -1) continue;
+			if (at !== l.path.length - 1) {
+				unsupported(l.line, `Table [${l.path.join(".")}]`);
+				continue;
+			}
+			current = { header: l.path.join("."), line: l.line, description: null };
+			blocks.push(current);
+			continue;
+		}
+		if (l.code.includes("{")) {
+			unsupported(l.line, "An inline table");
+			continue;
+		}
+		if (l.kind !== "key") continue;
+		if (l.path.includes("disabledRules")) {
 			errs.push({
 				file,
-				line: i + 1,
+				line: l.line,
 				rule: "config-suppression",
 				message: `disabledRules turns rules off without a register entry. Use an allowlist whose description names an entry`,
 			});
-	});
+			continue;
+		}
+		if (l.path.some((s) => ALLOWLIST_NAME.test(s))) {
+			unsupported(l.line, `Key '${l.path.join(".")}'`);
+			continue;
+		}
+		const description = l.value.match(/^(["'])(.*)\1$/);
+		if (current && l.path.length === 1 && l.path[0] === "description")
+			current.description = description ? description[2] : "";
+	}
 	for (const block of blocks) {
 		const named = (block.description ?? "").match(/AF-\d{3}/g) ?? [];
-		if (!named.some((id) => ids.has(id)))
+		if (!named.some((id) => allowlistIds.has(id)))
 			errs.push({
 				file,
 				line: block.line,
 				rule: "suppression-without-entry",
-				message: `[${block.header}] block has no description naming an entry in ${REGISTER_PATH}${named.length ? ` (${named.join(", ")} not found)` : ""}`,
+				message: `[${block.header}] block has no description naming a valid, unexpired gitleaks entry in ${REGISTER_PATH} with match { "allowlist": "${GITLEAKS_CONFIG}" }${named.length ? ` (${named.join(", ")} is not one)` : ""}`,
 			});
 	}
 	return errs;
@@ -403,6 +532,8 @@ export function checkRepository(root, today) {
 	const errs = [];
 	const registerFile = resolve(root, REGISTER_PATH);
 	let register = null;
+	// Any value that parses is validated, including null, false, 0 and "".
+	let parsed = false;
 	if (!existsSync(registerFile)) {
 		errs.push({
 			file: REGISTER_PATH,
@@ -412,6 +543,7 @@ export function checkRepository(root, today) {
 	} else {
 		try {
 			register = readJsonFile(registerFile);
+			parsed = true;
 		} catch (e) {
 			errs.push({
 				file: REGISTER_PATH,
@@ -420,11 +552,16 @@ export function checkRepository(root, today) {
 			});
 		}
 	}
-	if (register)
+	if (parsed)
 		for (const e of validateRegister(register, today))
 			errs.push({ file: REGISTER_PATH, ...e });
-	const ids = new Set(
-		(register?.entries ?? []).filter(isObject).map((e) => e.id),
+	// A gitleaks allowlist may cite only a usable gitleaks entry that accepts this allowlist file.
+	const allowlistIds = new Set(
+		usableEntries(register, today)
+			.filter(
+				(e) => e.tool === "gitleaks" && e.match.allowlist === GITLEAKS_CONFIG,
+			)
+			.map((e) => e.id),
 	);
 
 	errs.push(
@@ -444,7 +581,8 @@ export function checkRepository(root, today) {
 	const aderyn = read(ADERYN_CONFIG);
 	if (aderyn !== null) errs.push(...checkAderynConfig(aderyn));
 	const gitleaks = read(GITLEAKS_CONFIG);
-	if (gitleaks !== null) errs.push(...checkGitleaksConfig(gitleaks, ids));
+	if (gitleaks !== null)
+		errs.push(...checkGitleaksConfig(gitleaks, allowlistIds));
 	for (const file of SUPPRESSION_FILES)
 		if (existsSync(resolve(root, file)))
 			errs.push({
