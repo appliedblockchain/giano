@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAdminConfig } from "../config";
 import { describeError } from "../lib/format";
 import type { TenantSummary } from "../lib/platform-api";
@@ -27,27 +27,37 @@ export function useRegistry(lastUpdated: Date | undefined): Registry {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>();
 	const [deletedError, setDeletedError] = useState<string>();
+	// Every console refresh reads again, so a slow read can land after a newer one: only the latest
+	// read's answer is kept.
+	const generation = useRef(0);
 
 	const reload = useCallback(async () => {
 		if (!platformApi) return;
+		const current = ++generation.current;
+		const latest = () => generation.current === current;
 		setLoading(true);
 		try {
-			const [current, tombstones] = await Promise.all([
+			const [listed, tombstones] = await Promise.all([
 				run((api) => api.list()),
 				run((api) => api.list("deleted")),
 			]);
-			if (!current || !tombstones) return; // the session ended; the console is back on sign-in
-			if (!current.ok) return setError(current.error.message);
+			if (!latest()) return;
+			if (!listed || !tombstones) return; // the session ended; the console is back on sign-in
+			if (!listed.ok) return setError(listed.error.message);
 			setError(undefined);
-			setLive(current.value.tenants);
+			setLive(listed.value.tenants);
 			if (tombstones.ok) {
 				setDeleted(tombstones.value.tenants);
 				setDeletedError(undefined);
-			} else setDeletedError(tombstones.error.message);
+			} else {
+				// Dropped rather than kept stale: the warning says the list has the live tenants only.
+				setDeleted([]);
+				setDeletedError(tombstones.error.message);
+			}
 		} catch (cause) {
-			setError(describeError(cause));
+			if (latest()) setError(describeError(cause));
 		} finally {
-			setLoading(false);
+			if (latest()) setLoading(false);
 		}
 	}, [platformApi, run]);
 
@@ -56,8 +66,9 @@ export function useRegistry(lastUpdated: Date | undefined): Registry {
 		void reload();
 	}, [reload, lastUpdated]);
 
+	const tenants = useMemo(() => live && [...live, ...deleted], [live, deleted]);
 	return {
-		tenants: live && [...live, ...deleted],
+		tenants,
 		loading,
 		error,
 		deletedError,
