@@ -378,7 +378,9 @@ function LedgerAgreement({
 								? "The ledger has never synced."
 								: comparison.lag > 0n
 									? `The ledger is ${comparison.lag} blocks behind; it should catch up.`
-									: "The ledger is synced to the block read, so this is drift, not lag."}
+									: comparison.lag < 0n
+										? `The ledger has synced ${-comparison.lag} blocks past the block this console read, so the console's read is the older one; the next refresh should agree.`
+										: "The ledger is synced to the block read, so this is drift, not lag."}
 						</Text>
 					</Stack>
 				</Alert.Description>

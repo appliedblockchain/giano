@@ -297,6 +297,16 @@ describe("compareLedger", () => {
 		).toMatchObject({ kind: "differs", lag: undefined });
 	});
 
+	it("says when the ledger synced past the console's read, which is then the older side", () => {
+		expect(
+			compareLedger(
+				{ ...ledger, lastSyncedBlock: "105" },
+				{ balance: 7n, deficit: 0n },
+				100n,
+			),
+		).toMatchObject({ kind: "differs", lag: -5n });
+	});
+
 	it("says when the ledger has no row for a tenant the chain has", () => {
 		expect(compareLedger(undefined, { balance: 1n, deficit: 0n }, 1n)).toEqual({
 			kind: "no-ledger",

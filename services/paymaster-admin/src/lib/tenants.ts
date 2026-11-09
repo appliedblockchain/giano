@@ -242,7 +242,10 @@ export type LedgerComparison =
 			kind: "differs";
 			ledgerBalance: bigint;
 			ledgerDeficit: bigint;
-			/** Blocks the ledger is behind the block the chain was read at; undefined if it never synced. */
+			/**
+			 * Blocks the ledger is behind the block the chain was read at; undefined if it never synced.
+			 * Negative when the ledger has synced past that block: then the console's read is the older side.
+			 */
 			lag: bigint | undefined;
 	  };
 
@@ -274,8 +277,6 @@ export function compareLedger(
 		lag:
 			synced === undefined || readAt === undefined
 				? undefined
-				: readAt > synced
-					? readAt - synced
-					: 0n,
+				: readAt - synced,
 	};
 }
