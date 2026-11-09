@@ -33,7 +33,7 @@ security check runs it on its own report. The rules are in the `ci-security-gate
 | `id` | `AF-` and three digits. Unique. Take the next free number; never reuse a removed one. |
 | `tool` | `slither`, `aderyn`, `pnpm-audit`, `trivy`, `gitleaks` or `codeql`. |
 | `match` | The tool's identifier for the finding (next section). It must match exactly. |
-| `severity` | `informational`, `low`, `medium`, `moderate`, `high` or `critical`, as the tool reports it. |
+| `severity` | `informational`, `low`, `medium`, `moderate`, `high` or `critical`, as the tool reports it. The entry accepts the finding only up to this severity: if the tool later reports it higher, CI fails until the owner reassesses it. |
 | `location` | Where the finding is, for a reader: file and line, package and lockfile, or image. |
 | `accepted` | The date of the assessment, `YYYY-MM-DD`. |
 | `expires` | At most 180 days after `accepted`. Use a shorter date for an entry that only unblocks CI until a fix lands. |

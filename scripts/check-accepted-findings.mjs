@@ -700,6 +700,7 @@ export const PARSERS = {
 					`Slither finding ${d.check}`,
 				),
 			),
+			severity: d.impact.toLowerCase(),
 			label: `${d.check} (${d.impact}) at ${d.first_markdown_element ?? "unknown location"}`,
 		}));
 	},
@@ -720,6 +721,7 @@ export const PARSERS = {
 							line_no: x.line_no,
 						},
 						gating,
+						severity: gating ? "high" : "low",
 						label: `${issue.detector_name} (${gating ? "High" : "Low"}) at ${x.contract_path}:${x.line_no}`,
 					}),
 				),
@@ -747,6 +749,7 @@ export const PARSERS = {
 					`pnpm advisory ${a.github_advisory_id ?? a.id}`,
 				),
 			),
+			severity: a.severity,
 			label: `${a.module_name} ${a.github_advisory_id ?? a.id} (${a.severity}) in workspace ${workspace}`,
 		}));
 	},
@@ -764,12 +767,14 @@ export const PARSERS = {
 							`Trivy finding ${v.VulnerabilityID}`,
 						),
 					) && Boolean(v.FixedVersion),
+				severity: v.Severity.toLowerCase(),
 				label: `${v.PkgName} ${v.InstalledVersion} ${v.VulnerabilityID} (${v.Severity}${v.FixedVersion ? `, fixed in ${v.FixedVersion}` : ", no fix"}) in ${image} ${r.Target}`,
 			})),
 		);
 	},
 	gitleaks(report) {
-		// The label never includes the secret, only where it is.
+		// gitleaks reports no severity: every finding gates. The label never includes the secret,
+		// only where it is.
 		return requireArray(report, "gitleaks report").map((f) => ({
 			key: { fingerprint: f.Fingerprint },
 			gating: true,
@@ -777,6 +782,21 @@ export const PARSERS = {
 		}));
 	},
 };
+
+// Severity order across tools. An entry accepts a gating finding only up to the severity it was
+// assessed at, so a finding the tool re-rates higher fails until the owner reassesses it.
+const SEVERITY_RANK = {
+	informational: 0,
+	low: 1,
+	medium: 2,
+	moderate: 2,
+	high: 3,
+	critical: 4,
+};
+const covers = (entry, finding) =>
+	!finding.gating ||
+	finding.severity === undefined ||
+	SEVERITY_RANK[entry.severity] >= SEVERITY_RANK[finding.severity];
 
 const matches = (entry, key) =>
 	Object.entries(entry.match).every(([k, v]) => key[k] === v);
@@ -806,7 +826,8 @@ export function evaluateReport(tool, text, register, today, options = {}) {
 	const result = { accepted: [], failures: [], belowGate: 0 };
 	for (const finding of findings) {
 		const candidates = own.filter((e) => matches(e, finding.key));
-		const entry = candidates.find((e) => usable.has(e));
+		const entry = candidates.find((e) => usable.has(e) && covers(e, finding));
+		const outranked = candidates.find((e) => usable.has(e));
 		if (entry) {
 			result.accepted.push({ entry: entry.id, label: finding.label });
 		} else if (!finding.gating) {
@@ -815,11 +836,13 @@ export function evaluateReport(tool, text, register, today, options = {}) {
 			const stale = candidates[0];
 			result.failures.push({
 				label: finding.label,
-				message: stale
-					? isExpired(stale, today)
-						? `matches ${stale.id}, but the entry ${expiredMessage(stale)}`
-						: `matches ${stale.id}, but the entry is not valid (run the register check)`
-					: `no entry in ${REGISTER_PATH}`,
+				message: outranked
+					? `matches ${outranked.id}, but the entry accepts ${outranked.severity} and the tool now reports ${finding.severity}. The owner reassesses the finding and updates the entry`
+					: stale
+						? isExpired(stale, today)
+							? `matches ${stale.id}, but the entry ${expiredMessage(stale)}`
+							: `matches ${stale.id}, but the entry is not valid (run the register check)`
+						: `no entry in ${REGISTER_PATH}`,
 			});
 		}
 	}

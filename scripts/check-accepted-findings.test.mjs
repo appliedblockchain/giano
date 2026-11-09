@@ -694,6 +694,39 @@ describe("check-accepted-findings: report details", () => {
 		);
 	});
 
+	it("accepts a gating finding only up to the severity its entry was assessed at", () => {
+		const audit = (severity, entrySeverity) =>
+			evaluateReport(
+				"pnpm-audit",
+				auditReport(advisory(severity)),
+				register({ ...auditEntry, severity: entrySeverity }),
+				TODAY,
+				{ workspace: "." },
+			);
+		const raised = audit("high", "moderate");
+		assert.deepEqual(raised.accepted, []);
+		assert.match(
+			raised.failures[0].message,
+			/matches AF-006, but the entry accepts moderate and the tool now reports high/,
+		);
+		assert.equal(audit("critical", "high").failures.length, 1);
+		assert.deepEqual(
+			audit("high", "critical").accepted.map((a) => a.entry),
+			["AF-006"],
+		);
+		assert.deepEqual(
+			audit("moderate", "moderate").accepted.map((a) => a.entry),
+			["AF-006"],
+		);
+		const slither = evaluateReport(
+			"slither",
+			slitherReport([slitherHigh]),
+			register(entry({ severity: "medium" })),
+			TODAY,
+		);
+		assert.match(slither.failures[0].message, /accepts medium .* reports high/);
+	});
+
 	it("passes a Slither report with no detectors", () => {
 		assert.deepEqual(
 			evaluateReport(
