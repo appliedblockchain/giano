@@ -21,6 +21,8 @@ import { TenantPage } from "./TenantPage";
 import { TenantsList } from "./TenantsList";
 import type { Registry } from "./useRegistry";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * The Tenants tab: the list at `/tenants`, one tenant's page at `/tenants/<slug>` — or
  * `/tenants/<id>` for a tenant with no registry row. Both read the same join, so a tenant's page
@@ -52,12 +54,14 @@ export function TenantsRoute({
 
 	if (param !== undefined) {
 		const key = param.toLowerCase();
-		const row = rows.find(
-			(candidate) =>
-				candidate.registry?.slug === param ||
-				candidate.id === key ||
-				candidate.onChain?.id.toLowerCase() === key,
-		);
+		const byId = (candidate: TenantRow) =>
+			candidate.id === key || candidate.onChain?.id.toLowerCase() === key;
+		const bySlug = (candidate: TenantRow) => candidate.registry?.slug === param;
+		// A path shaped like a tenant id is matched by id first, so a slug shaped like a UUID cannot
+		// stand in for an on-chain-only tenant at /tenants/<its id>.
+		const row = UUID.test(param)
+			? (rows.find(byId) ?? rows.find(bySlug))
+			: (rows.find(bySlug) ?? rows.find(byId));
 		if (row)
 			return (
 				<TenantPage
