@@ -85,17 +85,38 @@ describe("toRpcError", () => {
 			cause: new Error("hook failed", { cause: new SessionEndedError() }),
 		});
 		expect(toRpcError(wrapped).code).toBe(RPC_ERRORS.UNAUTHORIZED);
-		// as viem reports the bundler relay's 401
+		// as viem reports the bundler relay's 401: a status and the URL it came from
+		const relay = "https://wallet.test/api/v1/bundler/31337";
+		const isWalletApiUrl = (url: string) =>
+			url.startsWith("https://wallet.test/api/");
 		const http401 = Object.assign(new Error("HTTP request failed"), {
 			status: 401,
+			url: relay,
 		});
-		expect(toRpcError(new Error("send failed", { cause: http401 })).code).toBe(
-			RPC_ERRORS.UNAUTHORIZED,
-		);
+		expect(
+			toRpcError(new Error("send failed", { cause: http401 }), isWalletApiUrl)
+				.code,
+		).toBe(RPC_ERRORS.UNAUTHORIZED);
 		const http503 = Object.assign(new Error("HTTP request failed"), {
 			status: 503,
+			url: relay,
 		});
-		expect(toRpcError(http503).code).toBe(RPC_ERRORS.INTERNAL);
+		expect(toRpcError(http503, isWalletApiUrl).code).toBe(RPC_ERRORS.INTERNAL);
+	});
+
+	it("leaves another service's 401 as that service's error, not the end of the session (G5)", () => {
+		// a bundler dialled directly, refusing a missing API key
+		const http401 = Object.assign(new Error("HTTP request failed"), {
+			status: 401,
+			url: "https://bundler.example/rpc?apikey=",
+		});
+		const isWalletApiUrl = (url: string) =>
+			url.startsWith("https://wallet.test/api/");
+		expect(toRpcError(http401, isWalletApiUrl).code).toBe(RPC_ERRORS.INTERNAL);
+		// and without a way to tell, a bare 401 is not taken as the session's end either
+		expect(
+			toRpcError(Object.assign(new Error("x"), { status: 401 })).code,
+		).toBe(RPC_ERRORS.INTERNAL);
 	});
 
 	it("passes a TransportRpcError through", () => {

@@ -165,42 +165,25 @@ function paymasterHooks(
 }
 
 /**
- * viem's http transport with the wallet-api session on every call.
+ * viem's http transport, through the injection's `sessionFetch`.
  *
  * The default bundler URL is wallet-api's relay (`/v1/bundler/:chainId`), which sits behind the
  * session so that estimation and submission are bound to the wallet that signed in — a wallet
- * origin never needs a route to the bundler itself. The header is read per request, not at
+ * origin never needs a route to the bundler itself. The token is read per request, not at
  * construction: the runtime is built before the user signs in and the token changes over the
- * session's life. A bundler dialled directly ignores the header.
+ * session's life.
  *
- * A 401 to a request that carried the session ends it through `onUnauthorized` (G5). The response
- * itself goes back to viem unchanged: viem turns it into an HTTP 401 error, which it does not
- * retry, and the host maps that to EIP-1193 4100.
+ * `sessionFetch` sends the token only to wallet-api URLs, and only wallet-api refusing the token
+ * that is still current ends the session (G5). A bundler dialled directly gets no token, and its
+ * own 401 (a missing API key, say) is its error, not the end of the session. The response goes
+ * back to viem unchanged: viem turns a 401 into an HTTP error it does not retry, and the host
+ * maps one from wallet-api to EIP-1193 4100.
  */
 export function sessionHttp(
 	url: string,
-	getSessionToken: () => string | null,
-	onUnauthorized?: () => void,
+	sessionFetch: typeof fetch,
 ): HttpTransport {
-	return http(url, {
-		fetchFn: async (input, init) => {
-			const token = getSessionToken();
-			const response = await globalThis.fetch(
-				input,
-				token
-					? {
-							...init,
-							headers: {
-								...(init?.headers as Record<string, string> | undefined),
-								authorization: `Bearer ${token}`,
-							},
-						}
-					: init,
-			);
-			if (response.status === 401 && token) onUnauthorized?.();
-			return response;
-		},
-	});
+	return http(url, { fetchFn: sessionFetch });
 }
 
 /**
@@ -222,16 +205,11 @@ export function bundlerOptions(
 	sponsorshipClient:
 		| ReturnType<typeof createErc7677PaymasterClient>
 		| undefined,
-	getSessionToken: () => string | null,
-	onUnauthorized?: () => void,
+	sessionFetch: typeof fetch,
 ): BundlerOptions {
 	return {
 		chain,
-		transport: sessionHttp(
-			chainConfig.bundlerUrl,
-			getSessionToken,
-			onUnauthorized,
-		),
+		transport: sessionHttp(chainConfig.bundlerUrl, sessionFetch),
 		userOperation: { estimateFeesPerGas: async () => estimateFeesPerGas() },
 		...paymasterHooks(chainConfig, sponsorshipClient),
 	};
@@ -348,9 +326,13 @@ function buildRuntime(
 			? createErc7677PaymasterClient({
 					url: chainConfig.paymasterServiceUrl,
 					chainId: chainConfig.chainId,
-					// the injection holds the session (WK-03): one source of truth, and one place it ends
+					// the injection holds the session (WK-03): one source of truth, and one place it ends.
+					// A tenant's own sponsorship service gets no token, and its 401 is a refusal (G5).
 					getSessionToken: injection.getSessionToken,
 					onUnauthorized: injection.onUnauthorized,
+					sessionEndpoint: injection.isWalletApiUrl(
+						chainConfig.paymasterServiceUrl,
+					),
 				})
 			: undefined;
 
@@ -361,8 +343,7 @@ function buildRuntime(
 			chain,
 			estimateFeesPerGas,
 			sponsorshipClient,
-			injection.getSessionToken,
-			injection.onUnauthorized,
+			injection.sessionFetch,
 		),
 	);
 

@@ -116,7 +116,27 @@ describe("management API: a refused session (G5)", () => {
 		await expect(api.listCredentials()).rejects.toBeInstanceOf(
 			SessionEndedError,
 		);
-		expect(onUnauthorized).toHaveBeenCalledOnce();
+		expect(onUnauthorized).toHaveBeenCalledExactlyOnceWith("tok");
+	});
+
+	it("a 401 for a session a sign-in replaced in flight ends nothing, and says to try again", async () => {
+		let token = "old";
+		const onUnauthorized = vi.fn();
+		const api = createWalletManagementApi({
+			apiUrl: "https://wallet.test/api",
+			getSessionToken: () => token,
+			onUnauthorized,
+			fetch: (async () => {
+				token = "new";
+				return new Response("{}", { status: 401 });
+			}) as typeof fetch,
+		});
+		const error = (await api
+			.listCredentials()
+			.catch((e: unknown) => e)) as WalletManagementApiError;
+		expect(error).toBeInstanceOf(WalletManagementApiError);
+		expect(error.code).toBe("session-replaced");
+		expect(onUnauthorized).not.toHaveBeenCalled();
 	});
 
 	it("other statuses keep the session", async () => {

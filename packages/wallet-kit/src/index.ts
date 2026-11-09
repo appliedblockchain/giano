@@ -22,6 +22,8 @@ export type {
 // ── the error shapes and reason codes a client keys behaviour off (spec §9, WK-15), and the
 // exact bytes a personal_sign / eth_sign request signs, for the consent screen ──
 export {
+	isSessionEndedError,
+	SessionEndedError,
 	type SponsorshipRefusalReason,
 	type SponsorshipRuleResult,
 	toPersonalMessageBytes,

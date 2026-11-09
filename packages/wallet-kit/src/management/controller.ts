@@ -288,7 +288,7 @@ export function createManagementController({
 		createWalletManagementApi({
 			apiUrl: config.walletApiUrl,
 			getSessionToken: () => runtime.injection.getSessionToken(),
-			onUnauthorized: () => runtime.injection.onUnauthorized(),
+			onUnauthorized: (token) => runtime.injection.onUnauthorized(token),
 		});
 	const deposit =
 		internals?.depositPasskey ?? depositPasskeyIntoPendingAddition;
@@ -1157,11 +1157,15 @@ export function createManagementController({
 
 		logoutAll: () =>
 			withBusy(async () => {
+				notice = null;
 				const confirmed = await runtime.injection.logoutAll();
 				resetToSignedOut();
-				notice = confirmed
-					? "signed-out-everywhere"
-					: "signed-out-everywhere-unconfirmed";
+				// A session wallet-api had already ended was refused, not unreachable: "Your session
+				// ended" stays, rather than "try again once you're back online".
+				if (notice !== "session-ended")
+					notice = confirmed
+						? "signed-out-everywhere"
+						: "signed-out-everywhere-unconfirmed";
 			}),
 
 		rename: (credentialId, name) =>

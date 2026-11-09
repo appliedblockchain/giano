@@ -676,6 +676,60 @@ describe("createWalletApiInjection", () => {
 			expect(ended).toHaveBeenCalledTimes(1);
 		});
 
+		it("a late 401 for a token a sign-in has since replaced ends nothing", () => {
+			const { injection, ended } = make(respond(200));
+			injection.onUnauthorized("an-older-token");
+			expect(injection.getSessionToken()).toBe("tok");
+			expect(ended).not.toHaveBeenCalled();
+			injection.onUnauthorized("tok");
+			expect(ended).toHaveBeenCalledExactlyOnceWith("unauthorized");
+		});
+
+		it("tells wallet-api's URLs from everyone else's, a relative apiUrl included", () => {
+			const { injection } = make(respond(200));
+			expect(
+				injection.isWalletApiUrl("https://wallet.test/api/v1/bundler/1"),
+			).toBe(true);
+			expect(injection.isWalletApiUrl("https://wallet.test/apiary")).toBe(
+				false,
+			);
+			expect(injection.isWalletApiUrl("https://bundler.example/rpc")).toBe(
+				false,
+			);
+			expect(injection.isWalletApiUrl("not a url ::")).toBe(false);
+			const relative = createWalletApiInjection({
+				apiUrl: "/api",
+				externalUserId: "u",
+			});
+			expect(relative.isWalletApiUrl("/api/v1/paymaster")).toBe(true);
+			expect(relative.isWalletApiUrl("https://paymaster.example/rpc")).toBe(
+				false,
+			);
+		});
+
+		it("sessionFetch carries the token to wallet-api alone, and only wallet-api's 401 ends the session", async () => {
+			const fetchImpl = respond(401);
+			const { injection, ended } = make(fetchImpl);
+			const auth = (n: number) =>
+				new Headers(
+					((fetchImpl.mock.calls[n] as unknown[])[1] as RequestInit).headers,
+				).get("authorization");
+
+			await injection.sessionFetch("https://bundler.example/rpc", {
+				method: "POST",
+			});
+			expect(auth(0)).toBeNull();
+			expect(ended).not.toHaveBeenCalled();
+
+			const response = await injection.sessionFetch(
+				"https://wallet.test/api/v1/bundler/1",
+				{ method: "POST", headers: { "content-type": "application/json" } },
+			);
+			expect(response.status).toBe(401);
+			expect(auth(1)).toBe("Bearer tok");
+			expect(ended).toHaveBeenCalledExactlyOnceWith("unauthorized");
+		});
+
 		it("logoutAll signs out everywhere and ends the session here", async () => {
 			const fetchImpl = respond(200);
 			const { injection, ended } = make(fetchImpl);

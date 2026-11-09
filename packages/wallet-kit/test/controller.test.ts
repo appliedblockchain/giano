@@ -70,6 +70,7 @@ function harness({
 		for (const listener of sessionEndedListeners) listener(reason);
 	};
 	let logoutAllConfirmed = true;
+	let logoutAllRefused = false;
 
 	const runtimeCache = new Map<number, WalletRuntime>();
 	const runtimeFor = (chainId: number): WalletRuntime => {
@@ -92,8 +93,10 @@ function harness({
 				})),
 				logoutAll: vi.fn(async () => {
 					events.push("logout-all");
+					// as the injection plays it: wallet-api's 401 ends the session as refused first
+					if (logoutAllRefused) endSession("unauthorized");
 					endSession("logout-all");
-					return logoutAllConfirmed;
+					return logoutAllConfirmed && !logoutAllRefused;
 				}),
 				onUnauthorized: vi.fn(() => endSession("unauthorized")),
 				onSessionEnded: (listener: (reason: string) => void) => {
@@ -226,6 +229,10 @@ function harness({
 		endSession,
 		failLogoutAll: () => {
 			logoutAllConfirmed = false;
+		},
+		/** wallet-api had already ended the session the sign-out everywhere carried. */
+		refuseLogoutAll: () => {
+			logoutAllRefused = true;
 		},
 		/** Plays a passkey sign-in issuing a fresh session. */
 		issueSession: () => {
@@ -842,6 +849,18 @@ describe("the session ends (G5)", () => {
 		expect(offline.controller.state.notice).toBe(
 			"signed-out-everywhere-unconfirmed",
 		);
+	});
+
+	it("sign out everywhere with a session wallet-api had already ended says the session ended, not that it is offline", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		h.refuseLogoutAll();
+		await h.controller.logoutAll();
+		expect(h.controller.state).toMatchObject({
+			view: "signed-out",
+			notice: "session-ended",
+		});
 	});
 
 	it("a sign-in clears the notice", async () => {
