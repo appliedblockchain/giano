@@ -764,6 +764,10 @@ export const createGianoProvider = (
 				},
 			});
 
+			// Validate the key before anything uses the credential: a rejected key must not reach
+			// wallet-api (onCredentialCreated) or be cached as the connected account.
+			const xyVector = parseP256PublicKey(credential.publicKey);
+
 			const handlerCreatedAddress = await injection.onCredentialCreated(
 				credentialName,
 				credentialInfo.challenge,
@@ -788,8 +792,6 @@ export const createGianoProvider = (
 				owners: [toWebAuthnAccount({ getFn, credential })],
 				factoryAddress: factoryAddress!,
 			});
-
-			const xyVector = parseP256PublicKey(credential.publicKey);
 
 			// NOTE: it is needed to deploy the smart account if we want to
 			// use it for read calls or to receive funds right away, if not,
