@@ -110,7 +110,7 @@
 - [x] 10.2 Health: its own icon, a labelled badge, and the subtitle fixed (K7).
 - [x] 10.3 Admins: field-level errors; the shared confirm; the note that removing an admin ends their sessions (K12, G12).
 - [x] 10.4 README: the tab list, the write rules, and the proposal-builder claim corrected. `specs/PLATFORM-ADMIN-SPECS.md` §11.2 (C12).
-- [x] 10.5 Run `openspec validate redesign-paymaster-console --strict` and the full e2e suite. Locally, against a long-lived stack: all pass except tenant-isolation V1, which registers a fixed external user id and needs a fresh database, as CI has; BYO specs need the local packages rebuilt first, since Playwright bundles the BYO wallet from them.
+- [x] 10.5 Run `openspec validate redesign-paymaster-console --strict` and the full e2e suite. Strict validation passes with openspec 1.9.0, the version used here; later versions also warn that some requirements are long, which `--strict` counts as errors (a follow-up: move their detail into scenarios). Locally, against a long-lived stack: all pass except tenant-isolation V1, which registers a fixed external user id and needs a fresh database, as CI has; BYO specs need the local packages rebuilt first, since Playwright bundles the BYO wallet from them.
 - [x] 10.6 Activity: outcome and account filters, the overhead column, and Export CSV of the loaded rows (G5).
 - [x] 10.7 Health: checks grouped as Funds, Keys and roles, Registry and chain; the console-side registry and ledger checks; what to do, with a link, on each warning (G7, D10).
 - [x] 10.8 Phone width: every tab at 390 px with no page-level horizontal scroll; an e2e case at that size (G10).
