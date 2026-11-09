@@ -113,13 +113,28 @@ export function usePendingOperations(
 		try {
 			const from = known.current.toBlock;
 			if (from === undefined) {
+				// The first read is a span of blocks, read forward, not a count of windows: a node that
+				// narrows its windows would otherwise cover a fraction of the delay it is sized for.
 				const windows = await firstReadWindows(timelock, longestDelay);
-				const page = await timelock.getOperations({ windows });
+				const head = await timelock.publicClient.getBlockNumber();
+				const span = BigInt(windows) * DEFAULT_LOG_WINDOW;
+				const fromBlock = head + 1n > span ? head + 1n - span : 0n;
+				const page = await readForward(timelock, fromBlock);
 				if (stale()) return;
 				publish(page.operations);
 				known.current.toBlock = page.toBlock;
-				setRange({ fromBlock: page.fromBlock, toBlock: page.toBlock });
-				setOlder(page.older);
+				setRange({ fromBlock, toBlock: page.toBlock });
+				setOlder(
+					fromBlock === 0n
+						? undefined
+						: {
+								fromBlock:
+									fromBlock > DEFAULT_LOG_WINDOW
+										? fromBlock - DEFAULT_LOG_WINDOW
+										: 0n,
+								toBlock: fromBlock - 1n,
+							},
+				);
 			} else {
 				// Every block since the last read, a window at a time. One request from there to the head
 				// would be narrowed by a capped node to its newest blocks, and the rest never read.
