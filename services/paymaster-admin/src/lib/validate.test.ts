@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	parseAddress,
 	parseAmount,
+	parseCalldata,
 	parsePenaltyBps,
 	parseWholeNumber,
 } from "./validate";
@@ -112,5 +113,18 @@ describe("parseWholeNumber", () => {
 		expect(parsePenaltyBps("5001").error).toBe(
 			"The most this can be is 5000 basis points.",
 		);
+	});
+});
+
+describe("parseCalldata", () => {
+	it("accepts whole bytes of hex, lowercased, and says nothing when empty", () => {
+		expect(parseCalldata("")).toEqual({});
+		expect(parseCalldata("0x")).toEqual({ value: "0x" });
+		expect(parseCalldata("0xABcd")).toEqual({ value: "0xabcd" });
+	});
+
+	it("refuses an odd number of hex characters, or anything not hex", () => {
+		expect(parseCalldata("0xabc").error).toMatch(/whole bytes/);
+		expect(parseCalldata("abcd").error).toMatch(/0x/);
 	});
 });

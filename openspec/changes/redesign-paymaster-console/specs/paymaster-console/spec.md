@@ -194,7 +194,7 @@ Each of the following SHALL ask for confirmation in a dialog that names its effe
 ### Requirement: Inputs are validated before the wallet is asked
 Every address and amount field SHALL validate its value as it is typed. It SHALL state the problem under the field, and SHALL keep its submit control disabled while the value is invalid:
 - **Address:** `0x` followed by 40 hex characters, with a valid checksum when mixed-case.
-- **Amount:** a positive decimal in the chain's native currency, no greater than its stated maximum.
+- **Amount:** a positive decimal in the chain's native currency, no greater than its stated maximum. 0 is accepted where it is a value: a fee (the default fee or a tenant's override), where it means free, and Add stake when stake is already locked, where it locks it again or raises only the delay.
 - **Penalty:** no more than 5000 basis points.
 - **Gas and delays:** a non-negative whole number.
 

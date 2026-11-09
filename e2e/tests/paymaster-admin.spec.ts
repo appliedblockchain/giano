@@ -155,8 +155,8 @@ test("a write is signed by the connected wallet and lands on the chain", async (
 	// write would match the first one's confirmation and pass without having done anything.
 	const setFee = async (value: string) => {
 		await tab(page, /Paymaster/).click();
-		await page.getByLabel("New default fee (ETH)").fill(value);
-		await page.getByRole("button", { name: /^Set$/ }).first().click();
+		await page.getByRole("textbox", { name: "New default fee" }).fill(value);
+		await page.getByRole("button", { name: "Set default fee" }).click();
 	};
 
 	// A value no earlier run would leave behind, so a stale read cannot pass for a fresh write.
@@ -194,6 +194,76 @@ test("a write is signed by the connected wallet and lands on the chain", async (
 			await expect.poll(feeOnChain, { timeout: 60_000 }).toBe(before);
 		}
 	}
+});
+
+test("the Paymaster tab fills Max from the treasury, and unlocking stake asks before anything is sent", async ({
+	page,
+}) => {
+	await installWallet(page, { known: [CHAINS.a.chainId] });
+	await openConsole(page);
+	await chooseDeployment(page, CHAINS.a.chainId);
+	await page.getByRole("button", { name: /^Connect wallet$/ }).click();
+	await expect(page.getByRole("button", { name: /^Connected/ })).toBeVisible();
+	await signInToPaymaster(page);
+	await tab(page, /Paymaster/).click();
+
+	const chain = createPublicClient({ transport: http(CHAINS.a.rpc) });
+	const paymaster = (await page.evaluate(
+		async () =>
+			(
+				await (await fetch("/config.json")).json()
+			).deployments[0].sponsorshipPaymaster,
+	)) as `0x${string}`;
+	const treasury = () =>
+		chain.readContract({
+			address: paymaster,
+			abi: [
+				{
+					type: "function",
+					name: "treasury",
+					stateMutability: "view",
+					inputs: [],
+					outputs: [{ type: "uint256" }],
+				},
+			],
+			functionName: "treasury",
+		});
+
+	// every card names its role; admin-console holds them all
+	await expect(
+		page.getByText("FEE_COLLECTOR_ROLE", { exact: true }),
+	).toBeVisible();
+	await expect(page.getByText("you hold it").first()).toBeVisible();
+
+	// Max is the accrued treasury, exactly. Run alone on a fresh devnet nothing has been sponsored
+	// yet, so the treasury is 0 and there is nothing to withdraw: Max is then disabled.
+	const amount = page.getByRole("textbox", { name: "Amount" });
+	const max = page.getByRole("button", { name: "Max" });
+	if ((await treasury()) === 0n) await expect(max).toBeDisabled();
+	else {
+		await max.click();
+		await expect
+			.poll(
+				async () =>
+					(await amount.inputValue()) === formatEther(await treasury()),
+			)
+			.toBe(true);
+	}
+
+	// unlocking stops every bundler accepting the paymaster: it asks first, and Cancel sends nothing
+	const sentBefore = (await walletCalls(page)).filter(
+		(method) => method === "eth_sendTransaction",
+	).length;
+	await page.getByRole("button", { name: "Unlock stake" }).click();
+	const confirm = page.getByRole("alertdialog", { name: "Unlock the stake" });
+	await expect(confirm).toContainText("Bundlers stop accepting this paymaster");
+	await confirm.getByRole("button", { name: "Cancel" }).click();
+	await expect(confirm).toHaveCount(0);
+	expect(
+		(await walletCalls(page)).filter(
+			(method) => method === "eth_sendTransaction",
+		).length,
+	).toBe(sentBefore);
 });
 
 /**

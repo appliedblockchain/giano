@@ -3,15 +3,17 @@ import {
 	gianoPaymasterAbi,
 	iEntryPointAbi,
 } from "@appliedblockchain/giano-contracts";
-import type {
-	Account,
-	Address,
-	Chain,
-	Hash,
-	Hex,
-	PublicClient,
-	Transport,
-	WalletClient,
+import {
+	type Account,
+	type Address,
+	type Chain,
+	getAddress,
+	type Hash,
+	type Hex,
+	type PublicClient,
+	type Transport,
+	type WalletClient,
+	zeroAddress,
 } from "viem";
 import {
 	PaymasterSdkError,
@@ -47,6 +49,10 @@ import type {
 	TenantView,
 	WriteResult,
 } from "./types";
+
+/** `bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)`. Pinned in `test/client-upgrade.test.ts`. */
+export const ERC1967_IMPLEMENTATION_SLOT: Hex =
+	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 /**
  * A viem public client. Reads only — every read path on this SDK needs one and nothing else.
@@ -225,6 +231,27 @@ export class GianoPaymasterClient {
 				`no contract at ${this.address} on chain ${chainId}. Check the address and the RPC endpoint — this is a wrong-address or wrong-chain error, not a broken paymaster.`,
 			);
 		}
+	}
+
+	/**
+	 * The implementation behind the proxy, read from the ERC-1967 implementation slot rather than
+	 * from the contract: the slot is what the proxy actually delegates to, whatever the
+	 * implementation says about itself.
+	 */
+	async getImplementation(): Promise<Address> {
+		const word = await this.publicClient.getStorageAt({
+			address: this.address,
+			slot: ERC1967_IMPLEMENTATION_SLOT,
+		});
+		const implementation = getAddress(
+			`0x${(word ?? "0x").slice(2).padStart(64, "0").slice(24)}`,
+		);
+		// An empty slot is not a proxy: say so, rather than report 0x000… as the implementation.
+		if (implementation === zeroAddress)
+			throw new PaymasterSdkError(
+				`${this.address} has no ERC-1967 implementation: it is not a UUPS proxy`,
+			);
+		return implementation;
 	}
 
 	async getConfig(): Promise<PaymasterConfig> {
@@ -869,6 +896,22 @@ export class GianoPaymasterClient {
 
 	withdrawStake(to: Address): Promise<WriteResult> {
 		return this.send("withdrawStake", [to], "withdraw the stake");
+	}
+
+	// --- upgrade (UPGRADER_ROLE, timelocked) ---------------------------------------------------
+	// Direct only where a key holds UPGRADER_ROLE, as on a devnet. On a handed-off deployment the
+	// timelock holds it: build the proposal with `timelock(...).proposeUpgrade` instead.
+
+	/** Points the proxy at `implementation` and, when `data` is not empty, calls it in the same transaction. */
+	upgradeToAndCall(
+		implementation: Address,
+		data: Hex = "0x",
+	): Promise<WriteResult> {
+		return this.send(
+			"upgradeToAndCall",
+			[implementation, data],
+			"upgrade the paymaster",
+		);
 	}
 
 	// --- roles (ROLE_ADMIN, timelocked) ---------------------------------------------------------
