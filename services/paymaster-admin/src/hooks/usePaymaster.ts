@@ -174,10 +174,12 @@ export function usePaymaster(
 			// `withSlugs: false` deliberately: a slug exists only in a registration event, so asking for
 			// one would cost a log read on every poll. The console identifies a tenant by the id the
 			// contract itself uses, which every view call already carries.
-			const [next, head] = await Promise.all([
-				client.getOverview({ withSlugs: false }),
-				client.publicClient.getBlockNumber(),
-			]);
+			// The head first, so the overview is as of that block or later, as `block` promises; and on its
+			// own, so a failed eth_blockNumber costs the block, not a good overview.
+			const head = await client.publicClient
+				.getBlockNumber()
+				.catch(() => undefined);
+			const next = await client.getOverview({ withSlugs: false });
 			if (generation.current !== current) return;
 
 			setOverview(next);
