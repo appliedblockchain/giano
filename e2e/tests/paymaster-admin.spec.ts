@@ -458,6 +458,44 @@ test("the Roles tab grants, rotates and revokes a role, each change landing on c
  * hosted console reads the chain only through wallet-api's platform relay, with a platform admin
  * session, and its own nginx no longer proxies the keyed RPC URL to anyone who asks.
  */
+test("the Roles tab renounces the wallet's own role, says when it is the last holder, and grants it back", async ({
+	page,
+}) => {
+	await installWallet(page, { known: [CHAINS.a.chainId] });
+	await openConsole(page);
+	await chooseDeployment(page, CHAINS.a.chainId);
+	await page.getByRole("button", { name: /^Connect wallet$/ }).click();
+	await expect(page.getByRole("button", { name: /^Connected/ })).toBeVisible();
+	await signInToPaymaster(page);
+	await tab(page, /Roles/).click();
+
+	// the console's wallet holds every paymaster role, ROLE_ADMIN among them, so it can grant back
+	const row = page.getByTestId("role-PAUSER_ROLE");
+	const mine = row.getByTestId(`holder-${OPERATOR.toLowerCase()}`);
+	await expect(mine).toBeVisible({ timeout: 30_000 });
+	// whether it is the only holder decides what the confirmation says
+	const only = (await row.locator("[data-testid^=holder-]").count()) === 1;
+	if (only) await expect(mine.getByTestId("last-holder")).toBeVisible();
+
+	await mine.getByRole("button", { name: "Renounce" }).click();
+	const renounce = page.getByRole("alertdialog", {
+		name: "Renounce PAUSER_ROLE",
+	});
+	await expect(renounce).toContainText(
+		only
+			? "nobody will hold PAUSER_ROLE until ROLE_ADMIN grants it again"
+			: "Only ROLE_ADMIN can grant it back",
+	);
+	await renounce.getByRole("button", { name: "Renounce" }).click();
+	await expect(mine).toHaveCount(0, { timeout: 30_000 });
+
+	// and back: the wallet still holds ROLE_ADMIN
+	await page.getByLabel("Role", { exact: true }).selectOption("PAUSER_ROLE");
+	await page.getByRole("textbox", { name: "Grant to" }).fill(OPERATOR);
+	await page.getByRole("button", { name: "Grant", exact: true }).click();
+	await expect(mine).toBeVisible({ timeout: 30_000 });
+});
+
 test("Health says once that no timelock is configured, and names the implementation's release", async ({
 	page,
 }) => {
