@@ -189,9 +189,12 @@ function Console({
 	}, [deployment]);
 
 	const disconnect = useCallback(async () => {
+		// The session was signed by this wallet, so it goes with it, and first: revoking makes MetaMask
+		// fire accountsChanged, which reloads the page, and a logout not yet sent would never be, leaving
+		// the token valid until it expires.
+		if (session) await signOut();
 		// Best effort: a wallet that supports it forgets this site, so a reload does not reconnect it
-		// silently. The console forgets the wallet either way. The session was signed by this wallet,
-		// so it goes with it.
+		// silently. The console forgets the wallet either way.
 		await getInjectedProvider()
 			?.request({
 				method: "wallet_revokePermissions",
@@ -199,7 +202,6 @@ function Console({
 			} as never)
 			.catch(() => undefined);
 		setWallet(undefined);
-		if (session) await signOut();
 	}, [session, signOut]);
 
 	const route = useRoute();
