@@ -14,7 +14,13 @@ import {
 	Stack,
 	Text,
 } from "@chakra-ui/react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { LuPause, LuPlay, LuTrash2 } from "react-icons/lu";
 import type { Address } from "viem";
 import { ActionButton } from "../components/actions";
@@ -410,17 +416,33 @@ function StakeCard({
 	stake: PaymasterOverview["stake"];
 }) {
 	const now = useNow(15_000) / 1000;
-	const amount = useAmountInput();
+	// With stake already locked, 0 is a value: the EntryPoint takes addStake with no value, which
+	// locks an unlocking stake again or raises only the delay, without sending more funds.
+	const amount = useAmountInput(undefined, undefined, {
+		allowZero: stake.stakeWei > 0n,
+	});
+	const onChainDelay = stake.unstakeDelaySec
+		? String(stake.unstakeDelaySec)
+		: "86400";
 	const delay = useWholeNumberInput(
 		{ max: MAX_UINT32, unit: "seconds" },
-		stake.unstakeDelaySec ? String(stake.unstakeDelaySec) : "86400",
+		onChainDelay,
 	);
+	// The field shows the on-chain delay until the operator edits it, so another operator raising it
+	// does not leave Add stake disabled as "too short" until the field is retyped.
+	const shown = useRef(onChainDelay);
+	const { text: delayText, setText: setDelayText } = delay;
+	useEffect(() => {
+		if (delayText === shown.current) setDelayText(onChainDelay);
+		shown.current = onChainDelay;
+	}, [onChainDelay, delayText, setDelayText]);
 	const to = useAddressInput();
 	const wei = amount.value;
 	const delayValue = delay.value;
 	const address = to.value;
 	const unlocking = stake.withdrawTime > 0;
 	const withdrawable = unlocking && now >= stake.withdrawTime;
+	const delayZero = delayValue === 0n;
 	const delayTooShort =
 		delayValue !== undefined && delayValue < BigInt(stake.unstakeDelaySec);
 
@@ -457,24 +479,37 @@ function StakeCard({
 				</Fact>
 			</Facts>
 
-			<AmountInput input={amount} label="Add stake" />
+			<AmountInput
+				input={amount}
+				label="Add stake"
+				helper={
+					stake.stakeWei > 0n
+						? "0 locks the stake again, or sets a longer delay, without adding funds."
+						: undefined
+				}
+			/>
 			<WholeNumberInput
 				input={delay}
 				label="Unstake delay"
 				unit="seconds"
 				helper={
-					delayTooShort
-						? `The EntryPoint refuses a shorter delay than the current ${formatDuration(stake.unstakeDelaySec)}.`
-						: delayValue !== undefined
-							? `${formatDuration(delayValue)}. Adding stake locks it again.`
-							: undefined
+					delayZero
+						? "The EntryPoint requires an unstake delay above 0."
+						: delayTooShort
+							? `The EntryPoint refuses a shorter delay than the current ${formatDuration(stake.unstakeDelaySec)}.`
+							: delayValue !== undefined
+								? `${formatDuration(delayValue)}. Adding stake locks it again.`
+								: undefined
 				}
 			/>
 			<ActionButton
 				target={{ role: "STAKE_ADMIN_ROLE" }}
 				label="Add stake"
 				send={
-					wei && delayValue && !delayTooShort
+					wei !== undefined &&
+					delayValue !== undefined &&
+					!delayZero &&
+					!delayTooShort
 						? () => client.addStake(wei, Number(delayValue))
 						: undefined
 				}

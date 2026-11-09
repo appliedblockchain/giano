@@ -93,7 +93,7 @@ The new `useChainAction` hook in `hooks/` replaces the ad-hoc mix of `useWrite` 
 ### D7. Validation at the input
 `AddressInput` and `AmountInput` own their parsing:
 - an address is checksummed, or 0x plus 40 hex characters;
-- an amount goes through `parseEther` and must be above zero, with an optional max.
+- an amount goes through `parseEther` and must be above zero, with an optional max; 0 is allowed where it is a value (a fee, or Add stake on locked stake).
 
 Each states its error under the field and hands the form a typed value or `undefined`. No `as Address` survives in `pages/`.
 
