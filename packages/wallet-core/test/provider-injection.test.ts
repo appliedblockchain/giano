@@ -1,3 +1,4 @@
+import { getAddress } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	assertCredentialInfo,
@@ -211,6 +212,51 @@ describe("assertBaseCredentialInfo / assertCredentialInfo", () => {
 			assertBaseCredentialInfo({ challenge, mediation: "bad" }),
 		).toThrow();
 		expect(() => assertBaseCredentialInfo({})).toThrow(/challenge/);
+	});
+
+	it("validates an optional smart account address", () => {
+		const address = getAddress("0x5a0b54d5dc17e0aadc383d2db43b0a0d3e029c4c");
+		// The same address with the case of its first letter flipped: a broken checksum.
+		const firstLetter = address.slice(2).search(/[a-fA-F]/) + 2;
+		const flipped = address[firstLetter];
+		const badChecksum = `${address.slice(0, firstLetter)}${
+			flipped === flipped.toLowerCase()
+				? flipped.toUpperCase()
+				: flipped.toLowerCase()
+		}${address.slice(firstLetter + 1)}`;
+		expect(() =>
+			assertBaseCredentialInfo({ challenge, address }),
+		).not.toThrow();
+		expect(() =>
+			assertBaseCredentialInfo({ challenge, address: address.toLowerCase() }),
+		).not.toThrow();
+		// A mixed-case address with a wrong EIP-55 checksum is a typo, not an address.
+		expect(() =>
+			assertBaseCredentialInfo({ challenge, address: badChecksum }),
+		).toThrow(/address/);
+		expect(() =>
+			assertBaseCredentialInfo({ challenge, address: "0x1234" }),
+		).toThrow(/address/);
+		expect(() => assertBaseCredentialInfo({ challenge, address: 42 })).toThrow(
+			/address/,
+		);
+	});
+
+	it("accepts an address only for an existing credential", () => {
+		const address = "0x5a0b54d5dc17e0aadc383d2db43b0a0d3e029c4c";
+		expect(() =>
+			assertCredentialInfo({
+				challenge,
+				credentialId: new Uint8Array([1]),
+				address,
+			}),
+		).not.toThrow();
+		expect(() =>
+			assertCredentialInfo({ challenge, credentialId: "user-pick", address }),
+		).not.toThrow();
+		expect(() =>
+			assertCredentialInfo({ challenge, credentialId: null, address }),
+		).toThrow(/applies only to an existing credential/);
 	});
 
 	it("validates every credentialId variant", () => {

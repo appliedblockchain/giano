@@ -1,10 +1,13 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import {
+	type Address,
+	concatHex,
 	custom,
 	decodeFunctionData,
 	encodeErrorResult,
 	type Hex,
 	hashMessage,
+	isAddressEqual,
 	parseGwei,
 	type SignableMessage,
 	stringToBytes,
@@ -23,6 +26,7 @@ import {
 	type MockInstance,
 	vi,
 } from "vitest";
+import { GianoAccountOwnerError } from "../src/account";
 import {
 	ChainType,
 	type CreateGianoProviderParams,
@@ -341,6 +345,197 @@ describe("silent account restore (giano_restoreAccount)", () => {
 		expect(
 			await provider.request({ method: "giano_restoreAccount", params: [] }),
 		).toEqual([address]);
+	});
+});
+
+describe("explicit smart account address (secondary owner)", () => {
+	// The shared account. A passkey added with addOwnerPublicKey was never in its factory salt,
+	// so the address derived from that passkey (WALLET_ADDRESS in the mock) is a different account.
+	const SHARED_ADDRESS =
+		"0x0000000000000000000000000000000000005a5a" as Address;
+
+	/** Registers a resident passkey; returns its id and its owner bytes (x || y). */
+	async function registerCredential() {
+		const created = await mock.authenticator.create({
+			publicKey: {
+				rp: { id: "localhost", name: "g" },
+				user: { id: new Uint8Array([1]), name: "a", displayName: "a" },
+				challenge: new Uint8Array([1]),
+				pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+			},
+		} as CredentialCreationOptions);
+		const { x, y } = mock.authenticator.getPublicKeyXY(created.rawId);
+		return {
+			credentialId: new Uint8Array(created.rawId),
+			ownerBytes: concatHex([x, y]),
+		};
+	}
+
+	/** An injection whose credential info names `address` as the account to connect to. */
+	function injectionWithAddress(
+		credentialId: Uint8Array<ArrayBuffer> | null,
+		address: Address,
+		overrides: Parameters<typeof createMockInjection>[1] = {},
+	) {
+		const base = createMockInjection(mock.authenticator, {
+			credentialId,
+			...overrides,
+		});
+		return {
+			...base,
+			getCredentialInfo: async () => ({
+				...(await base.getCredentialInfo()),
+				address,
+			}),
+		} as CreateGianoProviderParams["injection"];
+	}
+
+	/** An `isOwnerBytes` answer: only `ownerBytes` owns the shared account. */
+	const ownsSharedAccount = (ownerBytes: Hex) =>
+		vi.fn(
+			(wallet: Address, bytes: Hex) =>
+				isAddressEqual(wallet, SHARED_ADDRESS) &&
+				bytes.toLowerCase() === ownerBytes.toLowerCase(),
+		);
+
+	it("connects a secondary owner to the shared account, not to its derived address", async () => {
+		const { credentialId, ownerBytes } = await registerCredential();
+		const isOwner = ownsSharedAccount(ownerBytes);
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, SHARED_ADDRESS),
+			transportOptions: { isOwner },
+		});
+		const accountsChanged: unknown[] = [];
+		provider.on("accountsChanged", (p) => accountsChanged.push(p));
+
+		const accounts = await provider.request({ method: "eth_requestAccounts" });
+
+		expect(accounts).toEqual([SHARED_ADDRESS]);
+		expect(accountsChanged).toEqual([[SHARED_ADDRESS]]);
+		expect(await provider.getSmartAccount()?.getAddress()).toBe(SHARED_ADDRESS);
+		expect(isOwner).toHaveBeenCalledOnce();
+	});
+
+	it("restores a secondary owner's session onto the shared account", async () => {
+		const { credentialId, ownerBytes } = await registerCredential();
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, SHARED_ADDRESS),
+			transportOptions: { isOwner: ownsSharedAccount(ownerBytes) },
+		});
+
+		expect(
+			await provider.request({ method: "giano_restoreAccount", params: [] }),
+		).toEqual([SHARED_ADDRESS]);
+	});
+
+	it("sends a secondary owner's transactions from the shared account", async () => {
+		const { credentialId, ownerBytes } = await registerCredential();
+		const submitUserOperation = vi.fn(
+			async (_op: { sender: Address }, _chainId: number) =>
+				`0x${"ab".repeat(32)}` as Hex,
+		);
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, SHARED_ADDRESS, {
+				submitUserOperation: submitUserOperation as never,
+			}),
+			transportOptions: { isOwner: ownsSharedAccount(ownerBytes) },
+		});
+		await provider.request({ method: "eth_requestAccounts" });
+
+		await provider.request({
+			method: "eth_sendTransaction",
+			params: [
+				{ to: "0x1111111111111111111111111111111111111111", value: "0x0" },
+			] as never,
+		});
+
+		expect(submitUserOperation).toHaveBeenCalledOnce();
+		expect(submitUserOperation.mock.calls[0][0].sender).toBe(SHARED_ADDRESS);
+	});
+
+	it("refuses a passkey that does not own the requested account", async () => {
+		const { credentialId } = await registerCredential();
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, SHARED_ADDRESS),
+			transportOptions: { isOwner: () => false },
+		});
+
+		await expect(
+			provider.request({ method: "eth_requestAccounts" }),
+		).rejects.toThrow(GianoAccountOwnerError);
+		expect(provider.getSmartAccount()).toBeNull();
+		expect(await provider.request({ method: "eth_accounts" })).toEqual([]);
+	});
+
+	it("reports a non-owner on silent restore instead of returning []", async () => {
+		const { credentialId } = await registerCredential();
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, SHARED_ADDRESS),
+			transportOptions: { isOwner: () => false },
+		});
+
+		await expect(
+			provider.request({ method: "giano_restoreAccount", params: [] }),
+		).rejects.toThrow(/not an owner of the smart account/);
+		expect(provider.getSmartAccount()).toBeNull();
+	});
+
+	it("refuses an undeployed address that is not the passkey's own account", async () => {
+		const { credentialId, ownerBytes } = await registerCredential();
+		const isOwner = ownsSharedAccount(ownerBytes);
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, SHARED_ADDRESS),
+			transportOptions: { code: "0x", isOwner },
+		});
+
+		await expect(
+			provider.request({ method: "eth_requestAccounts" }),
+		).rejects.toThrow(/is not deployed/);
+		// An undeployed account has no owners to ask about.
+		expect(isOwner).not.toHaveBeenCalled();
+		expect(provider.getSmartAccount()).toBeNull();
+	});
+
+	it("accepts the passkey's own address before its account is deployed", async () => {
+		const { credentialId } = await registerCredential();
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(credentialId, WALLET_ADDRESS),
+			transportOptions: { code: "0x" },
+		});
+
+		expect(await provider.request({ method: "eth_requestAccounts" })).toEqual([
+			WALLET_ADDRESS,
+		]);
+	});
+
+	it("keeps the derived address, with no ownership check, when no address is given", async () => {
+		const { credentialId } = await registerCredential();
+		const isOwner = vi.fn(() => false);
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: createMockInjection(mock.authenticator, { credentialId }),
+			transportOptions: { isOwner },
+		});
+
+		const [address] = await provider.request({ method: "eth_requestAccounts" });
+
+		expect(address.toLowerCase()).toBe(WALLET_ADDRESS.toLowerCase());
+		expect(isOwner).not.toHaveBeenCalled();
+	});
+
+	it("refuses an address for a credential that is being created, before the passkey prompt", async () => {
+		const create = vi.spyOn(mock.authenticator, "create");
+		const onCredentialCreated = vi.fn(async () => null);
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: injectionWithAddress(null, SHARED_ADDRESS, {
+				onCredentialCreated,
+			}),
+		});
+
+		await expect(
+			provider.request({ method: "eth_requestAccounts" }),
+		).rejects.toThrow(/applies only to an existing credential/);
+		expect(create).not.toHaveBeenCalled();
+		expect(onCredentialCreated).not.toHaveBeenCalled();
 	});
 });
 
