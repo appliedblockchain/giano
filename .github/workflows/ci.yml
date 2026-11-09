@@ -164,6 +164,23 @@ jobs:
       - name: Check every manifest and override
         run: node scripts/check-pinned-versions.mjs
 
+  accepted-findings:
+    # G25 (openspec: ci-security-gates): every finding a security check accepts is in
+    # security/accepted-findings.json with a reason, one owner and an expiry date. Fails on a bad or
+    # expired entry, a tool-config suppression without an entry, or an in-source Solidity
+    # suppression. Reads the repository only, so it runs on fork PRs as well.
+    name: Accepted-findings register
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Register check unit tests
+        run: node --test scripts/check-accepted-findings.test.mjs
+      - name: Check the register, the tool configs and the contract sources
+        run: node scripts/check-accepted-findings.mjs
+
   wallet-api:
     name: wallet-api tests + OpenAPI drift
     runs-on: ubuntu-26.04
@@ -286,3 +303,118 @@ jobs:
       - name: Coverage of src/ meets the thresholds
         working-directory: packages/contracts
         run: pnpm coverage:check
+
+  solidity-analysis:
+    # G25 (openspec: ci-security-gates, design D4): Slither and Aderyn on the production contracts,
+    # packages/contracts/src without src/testing (scope in slither.config.json and aderyn.toml).
+    # Fails on any High finding from either tool that is not in security/accepted-findings.json.
+    # A job of its own because Slither runs `forge clean` and rebuilds with --build-info. Both tools
+    # are pinned with an integrity hash (docs/abip-compliance.md, "Tools installed outside npm").
+    name: Solidity static analysis (Slither, Aderyn)
+    runs-on: ubuntu-26.04
+    env:
+      # Aderyn 0.6.8, released 2026-01-22. The sha256 of aderyn-x86_64-unknown-linux-gnu.tar.xz,
+      # as published with the release.
+      ADERYN_VERSION: 0.6.8
+      ADERYN_SHA256: ffd6ca658962e211a3ac821c646f69c8e14bf1b1001cbfe091bcd4535a691e46
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Same pin as the `forge` job.
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # The remappings resolve @openzeppelin and @account-abstraction from node_modules.
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Slither (hash-locked requirements)
+        run: |
+          python -m venv "$RUNNER_TEMP/slither"
+          "$RUNNER_TEMP/slither/bin/pip" install --require-hashes -r packages/contracts/requirements-ci.txt
+          echo "$RUNNER_TEMP/slither/bin" >> "$GITHUB_PATH"
+      - name: Install Aderyn (release binary, sha256 checked)
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o aderyn.tar.xz \
+            "https://github.com/Cyfrin/aderyn/releases/download/aderyn-v${ADERYN_VERSION}/aderyn-x86_64-unknown-linux-gnu.tar.xz"
+          echo "${ADERYN_SHA256}  aderyn.tar.xz" | sha256sum -c -
+          tar -xJf aderyn.tar.xz
+          echo "$RUNNER_TEMP/aderyn-x86_64-unknown-linux-gnu" >> "$GITHUB_PATH"
+      - name: Slither
+        # Slither exits non-zero whenever it reports a finding. The register check decides, and it
+        # fails when the report is missing or says Slither did not succeed.
+        if: ${{ !cancelled() }}
+        working-directory: packages/contracts
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          slither . --json "$RUNNER_TEMP/reports/slither.json" --sarif "$RUNNER_TEMP/reports/slither.sarif" || true
+      - name: Aderyn
+        if: ${{ !cancelled() }}
+        working-directory: packages/contracts
+        run: aderyn . --output "$RUNNER_TEMP/reports/aderyn-report.json"
+      - name: Slither High findings are fixed or accepted
+        if: ${{ !cancelled() }}
+        run: node scripts/check-accepted-findings.mjs --tool slither --report "$RUNNER_TEMP/reports/slither.json"
+      - name: Aderyn High findings are fixed or accepted
+        if: ${{ !cancelled() }}
+        run: node scripts/check-accepted-findings.mjs --tool aderyn --report "$RUNNER_TEMP/reports/aderyn-report.json"
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: solidity-analysis-reports
+          path: ${{ runner.temp }}/reports/
+          if-no-files-found: warn
+
+  ci-passed:
+    # The one required check for this workflow (openspec: ci-security-gates, design D12). GitHub
+    # can only require checks by name, so this job needs every other job here and fails unless each
+    # one succeeded: a failed, cancelled or skipped job fails it too. A new job joins the gate by
+    # being added to `needs`; the first step fails if one is missing.
+    name: CI passed
+    if: always()
+    needs:
+      - packages
+      - dockerfile-policy
+      - release-age-policy
+      - pinned-versions
+      - accepted-findings
+      - wallet-api
+      - bundler
+      - generated-drift
+      - forge
+      - forge-coverage
+      - solidity-analysis
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/workflows/ci.yml
+          sparse-checkout-cone-mode: false
+      - name: Every other job in ci.yml is in needs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jobs=$(awk '/^jobs:/ { in_jobs = 1; next }
+            in_jobs && /^  [a-z0-9_-]+:[[:space:]]*$/ { sub(/:.*/, ""); sub(/^ +/, ""); print }' \
+            .github/workflows/ci.yml | grep -vx ci-passed | sort)
+          needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
+          if [ "$jobs" != "$needed" ]; then
+            echo "ci-passed needs must list every other job in ci.yml. Missing or extra:"
+            diff <(echo "$jobs") <(echo "$needed") || true
+            exit 1
+          fi
+      - name: Every needed job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" > /dev/null

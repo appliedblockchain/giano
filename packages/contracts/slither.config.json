@@ -1,0 +1,11 @@
+{
+	"//": [
+		"Scope only (openspec: ci-security-gates, design D3). Accepted findings go in security/accepted-findings.json, never here.",
+		"filter_paths drops a finding when any of its code is in: lib/ and node_modules/ (dependencies), vendor/ (pinned upstream EntryPoint and CreateX), test/ and script/ (never deployed), src/testing/ (test-only contracts production never deploys).",
+		"Slither splits filter_paths on commas and strips a trailing slash, so each pattern is anchored at packages/contracts/.",
+		"Informational and optimization detectors are off; they are severity filters, not suppressions. Low and Medium stay on and appear in the uploaded report."
+	],
+	"filter_paths": "packages/contracts/(lib|vendor|test|script|src/testing)/,(^|/)node_modules/",
+	"exclude_informational": true,
+	"exclude_optimization": true
+}
