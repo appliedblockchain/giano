@@ -165,7 +165,7 @@ function Registered({
 	return (
 		<Stack gap="4">
 			<DataList.Root orientation="horizontal" size="sm">
-				<Item label="Balance">
+				<Item label="Balance" testId="onchain-balance">
 					<Amount wei={tenant.balance} />
 				</Item>
 				<Item label="Deficit">
@@ -173,7 +173,7 @@ function Registered({
 						<Amount wei={tenant.deficit} />
 					</Box>
 				</Item>
-				<Item label="Fee">
+				<Item label="Fee" testId="onchain-fee">
 					<Stack gap="1">
 						<HStack gap="2">
 							<Amount wei={tenant.effectiveFeeWei} decimals={6} />
@@ -399,9 +399,17 @@ function LedgerAgreement({
 	);
 }
 
-function Item({ label, children }: { label: string; children: ReactNode }) {
+function Item({
+	label,
+	children,
+	testId,
+}: {
+	label: string;
+	children: ReactNode;
+	testId?: string;
+}) {
 	return (
-		<DataList.Item>
+		<DataList.Item data-testid={testId}>
 			<DataList.ItemLabel minW="28">{label}</DataList.ItemLabel>
 			<DataList.ItemValue>{children}</DataList.ItemValue>
 		</DataList.Item>

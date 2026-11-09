@@ -1,8 +1,6 @@
-import * as http from "node:http";
 import { expect, test } from "@playwright/test";
-import { privateKeyToAccount } from "viem/accounts";
-import { loopbackOf } from "../origins.mjs";
 import { connectWallet, TENANTS } from "./helpers";
+import { platformCall, platformSignIn } from "./platform-api";
 
 /**
  * The platform tier against the real two-tenant stack (specs/PLATFORM-ADMIN-SPECS.md §14.2):
@@ -14,61 +12,8 @@ import { connectWallet, TENANTS } from "./helpers";
  * will, so they carry no Origin — platform admin routes refuse any request that does.
  */
 
-// anvil's account 3, bootstrapped as admin-e2e for the e2e environment (services/wallet-api/src/environments.ts)
-const ADMIN = privateKeyToAccount(
-	"0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
-);
-const API = loopbackOf("api");
-
-/** A raw request, so the Host header can name a tenant the way a browser on its origin would. */
-function call(
-	method: string,
-	path: string,
-	{
-		body,
-		headers = {},
-	}: { body?: unknown; headers?: Record<string, string> } = {},
-) {
-	const url = new URL(path, API);
-	const payload = body === undefined ? undefined : JSON.stringify(body);
-	return new Promise<{ status: number; json: () => any }>((resolve, reject) => {
-		const request = http.request(
-			url,
-			{
-				method,
-				headers: {
-					...(payload ? { "content-type": "application/json" } : {}),
-					...headers,
-				},
-			},
-			(response) => {
-				let text = "";
-				response.on("data", (chunk) => (text += chunk));
-				response.on("end", () =>
-					resolve({
-						status: response.statusCode ?? 0,
-						json: () => JSON.parse(text),
-					}),
-				);
-			},
-		);
-		request.on("error", reject);
-		request.end(payload);
-	});
-}
-
-async function signIn(): Promise<string> {
-	const challenge = await call("POST", "/v1/platform/auth/challenge", {
-		body: { address: ADMIN.address, chainId: 31337 },
-	});
-	expect(challenge.status).toBe(200);
-	const { message } = challenge.json();
-	const verify = await call("POST", "/v1/platform/auth/verify", {
-		body: { message, signature: await ADMIN.signMessage({ message }) },
-	});
-	expect(verify.status).toBe(200);
-	return verify.json().token;
-}
+const call = platformCall;
+const signIn = platformSignIn;
 
 test.describe("admin tenant administration", () => {
 	let token: string;
