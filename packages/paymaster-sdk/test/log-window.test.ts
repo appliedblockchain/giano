@@ -32,6 +32,8 @@ describe("isBlockRangeError", () => {
 		"Log response size exceeded. You can make eth_getLogs requests with up to a 2K block range",
 		"exceed maximum block range: 5000",
 		"requested too many blocks from 0 to 47000000, maximum is set to 1024",
+		// wallet-api's platform read relay, which the hosted console reads through
+		"eth_getLogs must name a blockHash, or hex fromBlock and toBlock spanning at most 10000 blocks",
 	])("recognises %s", (message) => {
 		expect(isBlockRangeError(new Error(message))).toBe(true);
 	});
