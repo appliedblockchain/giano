@@ -1,0 +1,5 @@
+# Slither for the "Solidity static analysis" CI job (openspec: ci-security-gates, design D4 and D11).
+# Exact version, released at least 7 days before adoption (ABIP-6, ABIP-7). Regenerate the
+# hash-locked requirements-ci.txt with the command at the top of that file, with --exclude-newer
+# set to 7 days before the day you run it.
+slither-analyzer==0.11.6

@@ -1,0 +1,107 @@
+{
+	"entries": [
+		{
+			"id": "AF-001",
+			"tool": "slither",
+			"match": {
+				"check": "arbitrary-send-eth",
+				"id": "73b125f9973ab8392f7bb64dadb71f1b6fa569496f34d7d6e787d55049ed4891"
+			},
+			"severity": "high",
+			"location": "packages/contracts/src/GianoSmartWallet.sol#L299-L306 (GianoSmartWallet._call)",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "False positive. Sending value to a target the owner chooses is what a wallet does. Only three functions reach _call: execute and executeBatch are onlyEntryPointOrOwner, and executeWithoutChainIdValidation is onlyEntryPoint and calls only address(this) with value 0. The EntryPoint calls in only after the owner's signature is validated, so no other caller chooses the target.",
+			"followUp": "G22 (independent contract review). Slither derives the id from the code, so a change to _call or a Slither upgrade needs this entry reviewed."
+		},
+		{
+			"id": "AF-002",
+			"tool": "aderyn",
+			"match": {
+				"detector_name": "contract-locks-ether",
+				"contract_path": "src/GianoSmartWalletFactory.sol",
+				"line_no": 14
+			},
+			"severity": "high",
+			"location": "packages/contracts/src/GianoSmartWalletFactory.sol:14 (contract GianoSmartWalletFactory)",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "False positive. createAccount forwards all of msg.value to the account through Solady LibClone.createDeterministicERC1967: create2 with value for a new account, or a call with value that reverts on failure for an existing one. Aderyn does not look inside inline assembly, so it misses that send. The payable constructor receives no ether: the deploy CLI deploys through CreateX deployCreate3 without value. Removing payable would change the bytecode and the CREATE2 addresses.",
+			"followUp": "G22 (independent contract review). Remove this entry if a later Aderyn version recognises sends in assembly."
+		},
+		{
+			"id": "AF-003",
+			"tool": "aderyn",
+			"match": {
+				"detector_name": "contract-locks-ether",
+				"contract_path": "src/paymaster/GianoPaymaster.sol",
+				"line_no": 50
+			},
+			"severity": "high",
+			"location": "packages/contracts/src/paymaster/GianoPaymaster.sol:50 (contract GianoPaymaster)",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "False positive. The only payable functions, depositFor and addStake, forward all of msg.value to the EntryPoint (depositTo{value: ...} and addStake{value: ...}), and receive() reverts with DirectTransferNotAllowed. Aderyn 0.6.8 counts only .call{value: ...}, transfer, send and sendValue as sends, so it misses calls with value to a named function. The deposit leaves through withdrawTo and the stake through unlockStake and withdrawStake.",
+			"followUp": "G22 (independent contract review). Remove this entry if a later Aderyn version recognises calls with value to a named function."
+		},
+		{
+			"id": "AF-004",
+			"tool": "aderyn",
+			"match": {
+				"detector_name": "unprotected-initializer",
+				"contract_path": "src/GianoSmartWalletFactory.sol",
+				"line_no": 81
+			},
+			"severity": "high",
+			"location": "packages/contracts/src/GianoSmartWalletFactory.sol:81 (GianoSmartWalletFactory.initCodeHash)",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "False positive. Aderyn matches the function by its name, which starts with init. initCodeHash() is a view function that returns the ERC-1967 init code hash and changes no state.",
+			"followUp": "G22 (independent contract review)."
+		},
+		{
+			"id": "AF-005",
+			"tool": "aderyn",
+			"match": {
+				"detector_name": "yul-return",
+				"contract_path": "src/utils/ERC1271InputGenerator.sol",
+				"line_no": 48
+			},
+			"severity": "high",
+			"location": "packages/contracts/src/utils/ERC1271InputGenerator.sol:48 (ERC1271InputGenerator constructor)",
+			"accepted": "2026-11-09",
+			"expires": "2027-05-08",
+			"owner": "Rui Sereno",
+			"reason": "By design. The contract is never deployed. Clients run its constructor in an eth_call to get the replay-safe hash of an account that may not exist yet (the ERC-6492 pattern), and the assembly return is how the constructor hands that hash back.",
+			"followUp": "G22 (independent contract review)."
+		},
+		{
+			"id": "AF-006",
+			"tool": "pnpm-audit",
+			"match": { "workspace": ".", "ghsa": "GHSA-g3hv-75wg-m249" },
+			"severity": "moderate",
+			"location": "pnpm-lock.yaml: minimatch 10.2.5 via services/wallet-api > @fastify/swagger-ui > @fastify/static > glob; minimatch 9.0.9 via @testcontainers/postgresql (dev only)",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "Denial of service through globparts amplification. The fix is minimatch 11.0.1 or later, a new major version that glob 13.0.6 and 9.x do not accept, and no override forces it because that is untested. Moderate, below the CI gate. The dependency-security spec requires every open moderate advisory to be recorded.",
+			"followUp": "Reassess before the first production release (task group 4 of openspec/changes/add-ci-security-gates): upgrade when a patched version passes the regression gates and is at least 7 days old."
+		},
+		{
+			"id": "AF-007",
+			"tool": "pnpm-audit",
+			"match": { "workspace": ".", "ghsa": "GHSA-3g3m-2fjr-6pw4" },
+			"severity": "moderate",
+			"location": "pnpm-lock.yaml: glob 13.0.6 via services/wallet-api > @fastify/swagger-ui > @fastify/static; glob 10.5.0 via @testcontainers/postgresql (dev only)",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "AbortSignal cancellation bypass allows filesystem traversal after a timeout. The fix is glob 14.0.2 or later, a new major version that @fastify/static 10.1.6 and archiver-utils 5.0.2 do not accept, and no override forces it because that is untested. Moderate, below the CI gate. The dependency-security spec requires every open moderate advisory to be recorded.",
+			"followUp": "Reassess before the first production release (task group 4 of openspec/changes/add-ci-security-gates): upgrade when a patched version passes the regression gates and is at least 7 days old."
+		}
+	]
+}

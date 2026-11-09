@@ -1,0 +1,14 @@
+# Aderyn scope for the "Solidity static analysis" CI job (openspec: ci-security-gates, design D3).
+# Scope only. Every detector stays on: accepted findings go in security/accepted-findings.json, and
+# the register check rejects any [detectors] setting here.
+version = 1
+
+# The Foundry project root, where foundry.toml and remappings.txt are.
+root = "."
+
+# Production contracts only. Dependencies (lib/, node_modules/), vendored upstream code (vendor/),
+# tests and scripts are outside src/, so they are not analysed.
+src = "src"
+
+# Test-only contracts (PermissivePaymaster, PrivateERC20) that production never deploys.
+exclude = ["src/testing/"]

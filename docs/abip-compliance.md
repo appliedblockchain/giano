@@ -111,6 +111,26 @@ capability in OpenSpec.
 "Exact dependency pins (ABIP-7)"). It fails on any non-exact manifest entry outside the library peer exemption, and on
 any non-exact override value. Transitive ranges are the lockfile's job and are out of scope.
 
+### Tools installed outside npm
+
+The security tools CI installs from outside npm (pip packages and release binaries) follow ABIP-6 and ABIP-7 too. The
+repository-level contract is the `ci-security-gates` capability in OpenSpec.
+
+- **Exact version.** Never `latest`, a major tag or a version range.
+- **At least 7 days old.** The version was released at least 7 days before the PR that adopts it.
+- **Integrity hash.** A pip package is installed from a hash-locked requirements file with `pip install
+  --require-hashes`. A release binary is checked with `sha256sum -c` against the sha256 in the workflow's `env`, next to
+  the version and a comment with the release date. A mismatch fails the job before the tool runs.
+
+Dependabot does not update these tools. Update them by hand under the same rule, in a PR that also updates the table
+below and any register entry whose finding ID the new version changes (`security/README.md`). The rule is not checked
+automatically: checking release dates would need network access to each project's release page.
+
+| Tool | Version | Released | Integrity check | Where it is pinned |
+|------|---------|----------|-----------------|--------------------|
+| Slither | 0.11.6 | 2026-07-28 | hash-locked pip requirements; every dependency also at least 7 days old (`uv pip compile --exclude-newer`) | `packages/contracts/requirements-ci.in` and `requirements-ci.txt` |
+| Aderyn | 0.6.8 | 2026-01-22 | sha256 of `aderyn-x86_64-unknown-linux-gnu.tar.xz` | `ci.yml`, job `solidity-analysis` (`ADERYN_VERSION`, `ADERYN_SHA256`) |
+
 ## ABIP-8: Key Generation Ceremony (adopted)
 
 The key inventory and the Giano runbook are in [`key-ceremony.md`](key-ceremony.md). The repository-level contract is
