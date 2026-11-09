@@ -35,6 +35,18 @@ describe("getImplementation", () => {
 	});
 });
 
+describe("getImplementation on an empty slot", () => {
+	it("says the address is not a proxy, rather than report the zero address", async () => {
+		const publicClient = {
+			getStorageAt: async () => `0x${"0".repeat(64)}` as Hex,
+		} as unknown as PaymasterPublicClient;
+		const client = new GianoPaymasterClient({ address: PROXY, publicClient });
+		await expect(client.getImplementation()).rejects.toThrow(
+			/has no ERC-1967 implementation/,
+		);
+	});
+});
+
 describe("upgradeToAndCall", () => {
 	it("simulates, then sends upgradeToAndCall with the call data, empty by default", async () => {
 		const simulated: { functionName: string; args: readonly unknown[] }[] = [];

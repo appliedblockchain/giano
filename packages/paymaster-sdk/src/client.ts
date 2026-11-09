@@ -13,6 +13,7 @@ import {
 	type PublicClient,
 	type Transport,
 	type WalletClient,
+	zeroAddress,
 } from "viem";
 import {
 	PaymasterSdkError,
@@ -49,13 +50,13 @@ import type {
 	WriteResult,
 } from "./types";
 
-/**
- * A viem public client. Reads only — every read path on this SDK needs one and nothing else.
- */
 /** `bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)`. Pinned in `test/client-upgrade.test.ts`. */
 export const ERC1967_IMPLEMENTATION_SLOT: Hex =
 	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
+/**
+ * A viem public client. Reads only — every read path on this SDK needs one and nothing else.
+ */
 export type PaymasterPublicClient = PublicClient<Transport, Chain | undefined>;
 
 /**
@@ -242,9 +243,15 @@ export class GianoPaymasterClient {
 			address: this.address,
 			slot: ERC1967_IMPLEMENTATION_SLOT,
 		});
-		return getAddress(
+		const implementation = getAddress(
 			`0x${(word ?? "0x").slice(2).padStart(64, "0").slice(24)}`,
 		);
+		// An empty slot is not a proxy: say so, rather than report 0x000… as the implementation.
+		if (implementation === zeroAddress)
+			throw new PaymasterSdkError(
+				`${this.address} has no ERC-1967 implementation: it is not a UUPS proxy`,
+			);
+		return implementation;
 	}
 
 	async getConfig(): Promise<PaymasterConfig> {
