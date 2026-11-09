@@ -332,6 +332,10 @@ function useTenantRecord(
 	const generation = useRef(0);
 	const loaded = useRef<HistoryEntry[]>([]);
 	loaded.current = history;
+	// Bumped only when a poll replaces the loaded history (page 1 no longer reaches it): an older
+	// page asked for before then continues a list that is gone. Any other poll leaves it alone, so
+	// an older page still loading when a poll starts is kept.
+	const epoch = useRef(0);
 
 	const reload = useCallback(async () => {
 		if (!slug) return;
@@ -349,7 +353,10 @@ function useTenantRecord(
 			if (page.ok) {
 				const merged = mergeFirstPage(loaded.current, page.value.entries);
 				setHistory(merged.entries);
-				if (!merged.keepCursor) setNext(page.value.next);
+				if (!merged.keepCursor) {
+					epoch.current += 1;
+					setNext(page.value.next);
+				}
 				setHistoryError(undefined);
 			} else setHistoryError(page.error.message);
 		} catch (cause) {
@@ -367,11 +374,11 @@ function useTenantRecord(
 
 	const older = async () => {
 		if (!slug || !next) return;
-		const current = generation.current;
+		const current = epoch.current;
 		setLoadingOlder(true);
 		try {
 			const page = await run((api) => api.history(slug, next));
-			if (generation.current !== current || !page) return;
+			if (epoch.current !== current || !page) return;
 			if (page.ok) {
 				setHistory((entries) => {
 					const known = new Set(entries.map((entry) => entry.id));
@@ -384,7 +391,7 @@ function useTenantRecord(
 				setHistoryError(undefined);
 			} else setHistoryError(page.error.message);
 		} catch (cause) {
-			if (generation.current === current) setHistoryError(describeError(cause));
+			if (epoch.current === current) setHistoryError(describeError(cause));
 		} finally {
 			setLoadingOlder(false);
 		}
