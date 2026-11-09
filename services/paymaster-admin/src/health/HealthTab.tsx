@@ -304,7 +304,7 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 					? {
 							id: "ledger",
 							level: "ok",
-							label: "No ledger to compare",
+							label: EMPTY_LEDGER,
 							detail:
 								"No tenant on this chain has a registry row, so there is nothing to compare.",
 						}
@@ -347,7 +347,10 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 										.slice(0, 5)
 										.map((slug) => ({ to: tenantPath(slug), label: slug })),
 								};
-			recentLedger.set(cacheKey, { at: Date.now(), check: found });
+			// Not an empty comparison: tenants to compare may arrive within the minute (the registry
+			// read landing), and the tab would then show "No ledger to compare" for them.
+			if (count > 0)
+				recentLedger.set(cacheKey, { at: Date.now(), check: found });
 			setCheck(found);
 		} catch (cause) {
 			setCheck({
@@ -363,13 +366,16 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: once when the tab opens with tenants to compare; again only when asked
 	useEffect(() => {
-		if (count > 0 && !check) void runCheck();
+		// Also when the last result was an empty comparison: tenants to compare have arrived since.
+		if (count > 0 && (!check || check.label === EMPTY_LEDGER)) void runCheck();
 	}, [count]);
 
 	return { check, loading, run: runCheck, idle: count === 0 };
 }
 
 type LedgerResult = HealthCheck & { links?: { to: string; label: string }[] };
+
+const EMPTY_LEDGER = "No ledger to compare";
 
 /** How long a ledger comparison is shown again rather than read again. */
 const LEDGER_REUSE_MS = 60_000;
