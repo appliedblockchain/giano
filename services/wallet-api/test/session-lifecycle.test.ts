@@ -507,6 +507,14 @@ const latestHistory = async (id: string) => {
 	return rows[0];
 };
 
+const revocationsRecorded = async (slug: string) => {
+	const { rows } = await ctx.db.execute<{ count: string }>(
+		sql`SELECT count(*)::text AS count FROM tenant_history h JOIN tenants t ON t.id = h.tenant_id
+        WHERE t.slug = ${slug} AND h.action = 'user-sessions-revoke'`,
+	);
+	return Number(rows[0].count);
+};
+
 const tenantRevoke = (payload: unknown, key = ADMIN_KEY) =>
 	ctx.app.inject({
 		method: "POST",
@@ -566,6 +574,14 @@ describe("a tenant admin key revokes its users' sessions", () => {
 		expect(await isRevoked(owner.token)).toBe(true);
 		expect(await isRevoked(coOwner.token)).toBe(true);
 		expect((await me(bystander.token)).statusCode).toBe(200);
+		// recorded in one case, as it is matched: 0xABC… and 0xabc… are one revocation in the history
+		expect((await latestHistory(await tenantId(TENANT_A.slug))).detail).toEqual(
+			{
+				selector: "walletAddress",
+				value: owner.walletAddress.toLowerCase(),
+				revoked: 2,
+			},
+		);
 	});
 
 	it("never reaches another tenant's user", async () => {
@@ -577,6 +593,10 @@ describe("a tenant admin key revokes its users' sessions", () => {
 		expect(res.statusCode).toBe(200);
 		expect(res.json()).toEqual({ revoked: 0 });
 		expect(await isRevoked(other.token)).toBe(false);
+		// a revocation that revokes nothing is still recorded, in the caller's tenant
+		expect((await latestHistory(await tenantId(TENANT_A.slug))).detail).toEqual(
+			{ selector: "externalUserId", value: "g5-only-in-beta", revoked: 0 },
+		);
 	});
 
 	it("succeeds and changes nothing when repeated", async () => {
@@ -587,6 +607,9 @@ describe("a tenant admin key revokes its users' sessions", () => {
 		const again = await tenantRevoke({ externalUserId: "g5-repeat" });
 		expect(again.statusCode).toBe(200);
 		expect(again.json()).toEqual({ revoked: 0 });
+		expect((await latestHistory(await tenantId(TENANT_A.slug))).detail).toEqual(
+			{ selector: "externalUserId", value: "g5-repeat", revoked: 0 },
+		);
 	});
 
 	it("refuses a body naming both selectors or neither, and a malformed address", async () => {
@@ -692,6 +715,30 @@ describe("a platform admin revokes a tenant's user's sessions", () => {
 		const res = await platformRevoke("g5-deleted", { externalUserId: "x" });
 		expect(res.statusCode).toBe(409);
 		expect(res.json().error).toBe("invalid-transition");
+		// and nothing was recorded on the deleted tenant
+		expect(await revocationsRecorded("g5-deleted")).toBe(0);
+	});
+
+	it("waits for a delete in flight, then refuses with 409 and records nothing", async () => {
+		await freshTenant("g5-deleted-meanwhile");
+		// a platform admin deleting the tenant holds its row; the revocation arrives meanwhile
+		let revoking: ReturnType<typeof platformRevoke> | undefined;
+		await ctx.db.transaction(async (tx) => {
+			await tx.execute(
+				sql`SELECT id FROM tenants WHERE slug = 'g5-deleted-meanwhile' FOR UPDATE`,
+			);
+			revoking = platformRevoke("g5-deleted-meanwhile", {
+				externalUserId: "x",
+			});
+			// long enough for the revocation to reach the lock and wait on it
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			await tx.execute(
+				sql`UPDATE tenants SET status = 'deleted' WHERE slug = 'g5-deleted-meanwhile'`,
+			);
+		});
+		const res = await revoking;
+		expect(res?.statusCode).toBe(409);
+		expect(await revocationsRecorded("g5-deleted-meanwhile")).toBe(0);
 	});
 
 	it("refuses a tenant admin key, and any request carrying an Origin", async () => {

@@ -253,24 +253,26 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 		 * An admin revocation (G5 R3): revokes the live sessions the body selects inside the tenant
 		 * and appends a `user-sessions-revoke` tenant history entry in the same transaction, even
 		 * when nothing was revoked. The tenant does not change, so before and after stay empty.
+		 *
+		 * `tenant` is the tenant's id, or a step that locks the tenant inside this transaction and
+		 * returns its id, refusing a state that does not allow the revocation: the platform route's
+		 * check then holds until the entry is written, so a tenant deleted meanwhile records nothing.
 		 */
 		async revokeAndRecord(
-			tenantId: string,
+			tenant: string | ((tx: Tx) => Promise<string>),
 			body: AdminRevocation,
 			by: { actor: string; platformAdminSessionId?: string },
 		): Promise<number> {
-			const [selector, value] =
+			// A wallet is matched ignoring case, so it is recorded in one case too: 0xABC… and 0xabc…
+			// are the same revocation in the history.
+			const selector: SessionSelector =
 				body.externalUserId !== undefined
-					? (["externalUserId", body.externalUserId] as const)
-					: (["walletAddress", body.walletAddress as string] as const);
+					? { externalUserId: body.externalUserId }
+					: { walletAddress: String(body.walletAddress).toLowerCase() };
+			const [kind, value] = Object.entries(selector)[0];
 			return db.transaction(async (tx) => {
-				const revoked = await revokeLive(
-					tenantId,
-					selector === "externalUserId"
-						? { externalUserId: value }
-						: { walletAddress: value },
-					tx,
-				);
+				const tenantId = typeof tenant === "string" ? tenant : await tenant(tx);
+				const revoked = await revokeLive(tenantId, selector, tx);
 				await appendTenantHistory(tx, {
 					tenantId,
 					action: "user-sessions-revoke",
@@ -278,7 +280,7 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 					platformAdminSessionId: by.platformAdminSessionId,
 					before: null,
 					after: null,
-					detail: { selector, value, revoked },
+					detail: { selector: kind, value, revoked },
 				});
 				return revoked;
 			});

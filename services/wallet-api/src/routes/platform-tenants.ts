@@ -509,11 +509,12 @@ export default async function platformTenantRoutes(
 		},
 		async (request, reply) => {
 			try {
-				// suspended tenants are allowed: revoking is still worth doing before a resume
-				const tenant = await admin.forSessionRevocation(request.params.slug);
+				// suspended tenants are allowed: revoking is still worth doing before a resume. The
+				// tenant is locked and checked in the revocation's transaction, so a delete cannot slip in.
 				const platformAdmin = request.platformAdmin!;
 				const revoked = await opts.sessions.revokeAndRecord(
-					tenant.id,
+					async (tx) =>
+						(await admin.lockForSessionRevocation(tx, request.params.slug)).id,
 					request.body,
 					{
 						actor: actorOf(platformAdmin),
