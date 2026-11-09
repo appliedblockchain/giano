@@ -1,13 +1,20 @@
 import type { Address } from "viem";
+import { postJsonRpc, type UpstreamLimits } from "./upstream-fetch.js";
 
 /**
  * Minimal JSON-RPC client for the ERC-4337 bundler. The EntryPoint address is ALWAYS
  * the server-configured one — never anything from a request body.
+ *
+ * Every call is bounded in time and response size (`limits`, G37). A call that hits a limit
+ * throws `UpstreamLimitError`.
  */
 export function createBundlerService(
 	bundlerUrl: string,
 	entryPoint: Address,
-	fetchImpl: typeof fetch = fetch,
+	{
+		limits,
+		fetchImpl = fetch,
+	}: { limits: UpstreamLimits; fetchImpl?: typeof fetch },
 ) {
 	let rpcId = 0;
 
@@ -16,16 +23,11 @@ export function createBundlerService(
 		params: unknown[],
 		signal?: AbortSignal,
 	): Promise<T> {
-		const response = await fetchImpl(bundlerUrl, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-			signal,
-		});
-		if (!response.ok) {
-			throw new Error(`Bundler HTTP ${response.status}`);
-		}
-		const body = (await response.json()) as {
+		const body = (await postJsonRpc(
+			bundlerUrl,
+			{ jsonrpc: "2.0", id: ++rpcId, method, params },
+			{ upstream: "bundler", limits, fetchImpl, signal },
+		)) as {
 			result?: T;
 			error?: { code: number; message: string };
 		};

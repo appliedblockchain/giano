@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
 import type { ChainServices } from "./chains.js";
 import { NodeRpcError } from "./node-rpc.js";
+import { UpstreamLimitError } from "./upstream-fetch.js";
 
 /**
  * The read relay's core, behind two doors: the tenant relay (`/v1/rpc`, tenant-bound by Origin)
@@ -55,13 +56,19 @@ export const jsonRpcResponseSchema = z.object({
 		.optional(),
 });
 
-/** `-32601`/`-32602`/`-32603` are JSON-RPC's own; `-32021`/`-32023` mean what they mean on `/v1/bundler`. */
+/**
+ * `-32601`/`-32602`/`-32603` are JSON-RPC's own; `-32021`/`-32023` mean what they mean on `/v1/bundler`.
+ * A node past the time or size limit (G37) gave no usable answer, so it is `-32023` too. The message
+ * and the counted outcome say which limit.
+ */
 const CODES = {
 	"method-not-found": -32601,
 	"invalid-params": -32602,
 	internal: -32603,
 	"rate-limited": -32021,
 	"node-unavailable": -32023,
+	"node-timeout": -32023,
+	"node-response-too-large": -32023,
 } as const;
 
 export type JsonRpcRequest = z.infer<typeof jsonRpcRequestSchema>;
@@ -169,6 +176,18 @@ export function createReadRelay<Extra extends object = object>(
 							...(error.data === undefined ? {} : { data: error.data }),
 						},
 					};
+				}
+				if (error instanceof UpstreamLimitError) {
+					log.warn(
+						{ reason: error.reason, method, chainId: chain.chainId },
+						"rpc relay: node call hit its limit",
+					);
+					return error.reason === "timeout"
+						? fail("node-timeout", "the chain RPC did not answer in time")
+						: fail(
+								"node-response-too-large",
+								"the chain RPC response is too large to relay",
+							);
 				}
 				log.error(
 					{ err: error, method, chainId: chain.chainId },

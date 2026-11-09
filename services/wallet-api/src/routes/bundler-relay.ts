@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import { BundlerRpcError } from "../services/bundler.js";
 import type { ChainServices } from "../services/chains.js";
+import { UpstreamLimitError } from "../services/upstream-fetch.js";
 import { rpcUserOpSchema, type UseropRelay } from "../services/userop-relay.js";
 
 /**
@@ -75,6 +76,10 @@ export const RELAY_ERROR_CODES = {
 	"rate-limited": -32021,
 	duplicate: -32022,
 	"bundler-unavailable": -32023,
+	// A bundler past the time or size limit (G37) gave no usable answer: the same code, with its
+	// own message and counted outcome.
+	"bundler-timeout": -32023,
+	"bundler-response-too-large": -32023,
 } as const;
 
 type RelayErrorReason = keyof typeof RELAY_ERROR_CODES;
@@ -177,6 +182,18 @@ export default async function bundlerRelayRoutes(
 					id,
 					error: { code: error.code, message: error.message },
 				};
+			}
+			if (error instanceof UpstreamLimitError) {
+				request.log.warn(
+					{ reason: error.reason, method, chainId: chain.chainId },
+					"bundler relay: bundler call hit its limit",
+				);
+				return error.reason === "timeout"
+					? fail("bundler-timeout", "the bundler did not answer in time")
+					: fail(
+							"bundler-response-too-large",
+							"the bundler response is too large to relay",
+						);
 			}
 			request.log.error(
 				{ err: error, method, chainId: chain.chainId },

@@ -105,6 +105,7 @@ example). Highlights:
 | `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` / `PLATFORM_RPC_MAX_LOG_BLOCKS` | the platform chain read relay (`/v1/platform/rpc/:chainId`): forwarded reads per session per minute (1200, a budget separate from the one above), and the widest `eth_getLogs` range it forwards (10000; at least 9000, the paymaster SDK's log window) |
 | `RPC_RELAY_RATE_LIMIT_PER_MINUTE` / `RPC_RELAY_MAX_LOG_BLOCKS` | the tenant chain read relay (`/v1/rpc/:chainId`): forwarded reads per tenant per minute (3000), and the widest `eth_getLogs` range it forwards (10000) |
 | `USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE` | the public receipt lookup (`GET /v1/userops/:hash/receipt`): requests per client IP per minute (1200). Not overridable per tenant, because the route has no tenant |
+| `UPSTREAM_TIMEOUT_MS` / `UPSTREAM_MAX_RESPONSE_BYTES` | limits on every call to the bundler or a chain's node: the longest one call may take, headers and body together (10000), and the largest response body accepted (10485760, 10 MiB). A call past either limit gets a defined error: JSON-RPC `-32023` on the relays, and `504 upstream-timeout` or `502 upstream-response-too-large` on the REST routes |
 | `TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS` | delete refuses a ledger further than this behind the chain head (50); must exceed `PAYMASTER_WATCHER_CONFIRMATIONS` |
 
 CORS is per-tenant (`corsOrigins`) and fail-closed; there is no global CORS allowlist.
