@@ -115,7 +115,7 @@ type RawDeployment = {
 	walletRpcUrl?: string;
 	sponsorshipPaymaster?: string;
 	timelockAddress?: string;
-	refreshSeconds?: number | string;
+	refreshSeconds?: number | string | null;
 	nativeCurrency?: { symbol?: string; decimals?: number };
 	explorerUrl?: string;
 	addresses?: Record<string, { label?: string; kind?: string }>;
@@ -155,16 +155,7 @@ function toDeployment(
 		throw new Error(
 			`${where} has a timelockAddress that is not an address: ${raw.timelockAddress}`,
 		);
-	// Checked rather than passed through: `Number("15s")` is NaN, and `setInterval` reads NaN as 0
-	// — a console that polls the RPC as fast as the browser will let it.
-	const refreshSeconds =
-		raw.refreshSeconds === undefined || raw.refreshSeconds === ""
-			? DEFAULT_REFRESH_SECONDS
-			: Number(raw.refreshSeconds);
-	if (!Number.isFinite(refreshSeconds) || refreshSeconds < 0)
-		throw new Error(
-			`${where} has a refreshSeconds that is not a number of seconds: ${raw.refreshSeconds}`,
-		);
+	const refreshSeconds = toRefreshSeconds(raw.refreshSeconds, where);
 
 	return {
 		name: raw.name || fallbackName || `chain ${chainId}`,
@@ -203,6 +194,35 @@ function toNativeCurrency(
 	return { symbol, decimals };
 }
 
+/** A day: anything longer is not polling, and past ~24.8 days `setInterval` overflows and fires at once. */
+const MAX_REFRESH_SECONDS = 86_400;
+
+/**
+ * 0 (no polling) or a whole number of seconds from 1 to a day; absent or empty means the default.
+ * Checked rather than passed through: `Number("15s")` is NaN and `setInterval` reads NaN as 0, `0.001`
+ * polls every millisecond, and `Number(" ")` and `Number(null)` are 0, which would turn polling off
+ * without a word.
+ */
+export function toRefreshSeconds(
+	raw: number | string | null | undefined,
+	where: string,
+): number {
+	if (raw === undefined || raw === "") return DEFAULT_REFRESH_SECONDS;
+	const seconds =
+		typeof raw === "number" || (typeof raw === "string" && raw.trim() === raw)
+			? Number(raw)
+			: Number.NaN;
+	if (
+		!Number.isInteger(seconds) ||
+		seconds < 0 ||
+		seconds > MAX_REFRESH_SECONDS
+	)
+		throw new Error(
+			`${where} has a refreshSeconds that is not 0 or a whole number of seconds from 1 to ${MAX_REFRESH_SECONDS}: ${JSON.stringify(raw)}`,
+		);
+	return seconds;
+}
+
 /**
  * HTTPS, or plain HTTP to a local explorer. A link an operator follows to check a transaction is
  * one an attacker on the path would most like to rewrite.
@@ -222,6 +242,12 @@ export function toExplorerUrl(
 	if (url.protocol !== "https:" && !(url.protocol === "http:" && local))
 		throw new Error(
 			`${where} has an explorerUrl that is not https (or http on localhost): ${raw}`,
+		);
+	// Links are built by appending `/tx/<hash>` or `/address/<address>`, which a query or a fragment
+	// would swallow.
+	if (url.search || url.hash || raw.includes("?") || raw.includes("#"))
+		throw new Error(
+			`${where} has an explorerUrl with a query or a fragment, which links cannot be appended to: ${raw}`,
 		);
 	return raw.replace(/\/+$/, "");
 }
