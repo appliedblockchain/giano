@@ -498,11 +498,17 @@ function OperationRow({ operation }: { operation: TimelockOperation }) {
 							<Stack gap="1">
 								<Text fontSize="sm">
 									{scheduled
-										? `by ${addressNames(scheduled.by, context)[0] ?? scheduled.by} at ${new Date(scheduled.at * 1000).toLocaleString()}`
+										? `sent by ${addressNames(scheduled.by, context)[0] ?? scheduled.by} at ${new Date(scheduled.at * 1000).toLocaleString()}`
 										: `in block ${operation.scheduledBlock}`}
 								</Text>
 								{scheduled && !addressNames(scheduled.by, context).length && (
-									<Copyable value={scheduled.by} label="Scheduled by" />
+									<Copyable value={scheduled.by} label="Sent by" />
+								)}
+								{scheduled && (
+									<Text fontSize="xs" color="fg.muted">
+										The transaction's sender: for a Safe proposer, the account
+										that relayed it, not the Safe.
+									</Text>
 								)}
 								<TxLink hash={operation.scheduledTransaction} />
 							</Stack>
@@ -629,87 +635,99 @@ function DelaysCard() {
 					Reading the delays…
 				</Text>
 			) : (
-				<Table.ScrollArea borderWidth="1px" rounded="md">
-					<Table.Root size="sm">
-						<Table.Header>
-							<Table.Row>
-								<Table.ColumnHeader>Function</Table.ColumnHeader>
-								<Table.ColumnHeader textAlign="end">Delay</Table.ColumnHeader>
-								<Table.ColumnHeader>Change</Table.ColumnHeader>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							<Table.Row>
-								<Table.Cell>
-									<Text fontSize="sm" fontWeight="medium">
-										Minimum
-									</Text>
-									<Text fontSize="xs" color="fg.muted">
-										every operation, and any function without its own
-									</Text>
-								</Table.Cell>
-								<Table.Cell textAlign="end" fontFamily="mono" fontSize="sm">
-									{formatDuration(config.minDelay)}
-								</Table.Cell>
-								<Table.Cell>
-									<ChangeDelay
-										current={config.minDelay}
-										onPropose={(seconds) =>
-											propose?.({ kind: "updateDelay", seconds })
-										}
-									/>
-								</Table.Cell>
-							</Table.Row>
-							{config.functions.map((entry) => (
-								<Table.Row key={entry.functionName}>
+				<>
+					<Table.ScrollArea borderWidth="1px" rounded="md">
+						<Table.Root size="sm">
+							<Table.Header>
+								<Table.Row>
+									<Table.ColumnHeader>Function</Table.ColumnHeader>
+									<Table.ColumnHeader textAlign="end">Delay</Table.ColumnHeader>
+									<Table.ColumnHeader>Change</Table.ColumnHeader>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								<Table.Row>
 									<Table.Cell>
-										<Text fontSize="sm" fontFamily="mono">
-											{entry.functionName}
+										<Text fontSize="sm" fontWeight="medium">
+											Minimum
 										</Text>
-										<HStack gap="1" flexWrap="wrap">
-											<Text fontSize="xs" color="fg.muted">
-												{entry.role}
-											</Text>
-											{!config.holdsRole[entry.role] && (
-												<Badge
-													colorPalette="orange"
-													size="sm"
-													variant="outline"
-												>
-													not held by the timelock
-												</Badge>
-											)}
-										</HStack>
-										<QueuedMarker
-											keys={queuedKeys.timelockDelay(entry.selector)}
-										/>
+										<Text fontSize="xs" color="fg.muted">
+											every operation, and any function without its own
+										</Text>
 									</Table.Cell>
 									<Table.Cell textAlign="end" fontFamily="mono" fontSize="sm">
-										{formatDuration(entry.effectiveDelay)}
-										{entry.functionDelay === 0n && (
-											<Text fontSize="xs" color="fg.muted">
-												the minimum
-											</Text>
-										)}
+										{formatDuration(config.minDelay)}
 									</Table.Cell>
 									<Table.Cell>
 										<ChangeDelay
-											current={entry.functionDelay}
+											current={config.minDelay}
 											onPropose={(seconds) =>
-												propose?.({
-													kind: "setFunctionDelay",
-													functionName: entry.functionName,
-													selector: entry.selector,
-													seconds,
-												})
+												propose?.({ kind: "updateDelay", seconds })
 											}
 										/>
 									</Table.Cell>
 								</Table.Row>
-							))}
-						</Table.Body>
-					</Table.Root>
-				</Table.ScrollArea>
+								{config.functions.map((entry) => (
+									<Table.Row key={entry.functionName}>
+										<Table.Cell>
+											<Text fontSize="sm" fontFamily="mono">
+												{entry.functionName}
+											</Text>
+											<HStack gap="1" flexWrap="wrap">
+												<Text fontSize="xs" color="fg.muted">
+													{entry.role}
+												</Text>
+												{!config.holdsRole[entry.role] && (
+													<Badge
+														colorPalette="orange"
+														size="sm"
+														variant="outline"
+													>
+														not held by the timelock
+													</Badge>
+												)}
+											</HStack>
+											<Text fontSize="xs" color="fg.muted">
+												{entry.why}
+											</Text>
+											<QueuedMarker
+												keys={queuedKeys.timelockDelay(entry.selector)}
+											/>
+										</Table.Cell>
+										<Table.Cell textAlign="end" fontFamily="mono" fontSize="sm">
+											{formatDuration(entry.effectiveDelay)}
+											{entry.functionDelay === 0n && (
+												<Text fontSize="xs" color="fg.muted">
+													the minimum
+												</Text>
+											)}
+										</Table.Cell>
+										<Table.Cell>
+											<ChangeDelay
+												current={entry.functionDelay}
+												onPropose={(seconds) =>
+													propose?.({
+														kind: "setFunctionDelay",
+														functionName: entry.functionName,
+														selector: entry.selector,
+														seconds,
+													})
+												}
+											/>
+										</Table.Cell>
+									</Table.Row>
+								))}
+							</Table.Body>
+						</Table.Root>
+					</Table.ScrollArea>
+					{Object.values(config.holdsRole).some((held) => !held) && (
+						<Text fontSize="xs" color="orange.fg" mt="2">
+							The timelock does not hold every timelocked role yet, so the
+							functions marked "not held by the timelock" are still sent from
+							whichever key holds them. The deploy CLI's handoff moves them.
+						</Text>
+					)}
+				</>
 			)}
 		</SectionCard>
 	);
@@ -767,8 +785,16 @@ function ChangeDelay({
 	);
 }
 
+/** What each of the timelock's roles lets its holders do, for a warning before the last one goes. */
+const TIMELOCK_ROLE_DOES: Record<TimelockRoleName, string> = {
+	PROPOSER_ROLE: "schedule operations",
+	CANCELLER_ROLE: "cancel operations",
+	EXECUTOR_ROLE: "execute ready operations",
+};
+
 function TimelockRolesCard({ holders }: { holders: Holders["holders"] }) {
-	const { propose } = useConsole();
+	const { propose, timelockAccess } = useConsole();
+	const executorsOpen = timelockAccess.config?.executorsOpen ?? false;
 	const [role, setRole] = useState<TimelockRoleName>("PROPOSER_ROLE");
 	const account = useAddressInput();
 	const grantee = account.value;
@@ -786,7 +812,11 @@ function TimelockRolesCard({ holders }: { holders: Holders["holders"] }) {
 							</Text>
 							<QueuedMarker keys={queuedKeys.timelockRole(name)} />
 						</HStack>
-						{holders?.[name].length ? (
+						{name === "EXECUTOR_ROLE" && executorsOpen ? (
+							<Text fontSize="xs" color="fg.muted">
+								anyone (open): the zero address holds it
+							</Text>
+						) : holders?.[name].length ? (
 							holders[name].map((holder) => (
 								<HStack key={holder} gap="2" flexWrap="wrap">
 									<AddressLabel address={holder} label={name} />
@@ -804,6 +834,13 @@ function TimelockRolesCard({ holders }: { holders: Holders["holders"] }) {
 									>
 										<LuClock /> Propose revoke
 									</Button>
+									{holders[name].length === 1 && (
+										<Text fontSize="xs" color="orange.fg" flexBasis="100%">
+											The only holder found: revoking it leaves nobody able to{" "}
+											{TIMELOCK_ROLE_DOES[name]}, unless another address the
+											console does not check holds it.
+										</Text>
+									)}
 								</HStack>
 							))
 						) : (
