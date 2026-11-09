@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -7,12 +13,15 @@ import { after, describe, it } from "node:test";
 import {
 	checkAderynConfig,
 	checkGitleaksConfig,
+	checkPnpmAuditSettings,
 	checkRepository,
 	checkSlitherConfig,
 	evaluateReport,
 	findInSourceSuppressions,
 	main,
 	ReportError,
+	SLITHER_SCOPE,
+	usableEntries,
 	validateRegister,
 } from "./check-accepted-findings.mjs";
 
@@ -35,6 +44,8 @@ const entry = (overrides = {}) => ({
 const register = (...entries) => ({ entries });
 const rules = (errs) => errs.map((e) => e.rule);
 const DEFAULT_RULES = "[extend]\nuseDefault = true\n\n";
+const ADERYN_TOML =
+	'version = 1\nroot = "."\nsrc = "src"\nexclude = ["src/testing/"]\n';
 
 describe("check-accepted-findings: register", () => {
 	it("passes a valid entry, with expiry exactly 180 days after acceptance", () => {
@@ -79,6 +90,21 @@ describe("check-accepted-findings: register", () => {
 		assert.equal(errs[0].entry, "AF-001");
 		assert.match(errs[0].message, /2027-05-08/);
 		assert.match(errs[0].message, /Sarah Thompson/);
+	});
+
+	it("rejects an id that is not a string, even one that reads as a valid id", () => {
+		for (const id of [["AF-002"], 2, { id: "AF-002" }]) {
+			const reg = register(entry(), entry({ id }));
+			assert.deepEqual(
+				rules(validateRegister(reg, TODAY)),
+				["bad-id"],
+				`${JSON.stringify(id)}`,
+			);
+			assert.deepEqual(
+				usableEntries(reg, TODAY).map((e) => e.id),
+				["AF-001"],
+			);
+		}
 	});
 
 	it("rejects an entry accepted after today, so it cannot take effect early", () => {
@@ -207,6 +233,21 @@ describe("check-accepted-findings: register", () => {
 			),
 			["bad-owner"],
 		);
+		for (const owner of [
+			"Security Team",
+			"Sarah Thompson; John Smith",
+			"Sarah + John",
+			"Sarah | John",
+			"Sarah or John",
+			"Sarah\nJohn",
+			"Platform Teams",
+			"Security Group",
+		])
+			assert.deepEqual(
+				rules(validateRegister(register(entry({ owner })), TODAY)),
+				["bad-owner"],
+				owner,
+			);
 	});
 
 	it("rejects a register without an entries array", () => {
@@ -261,43 +302,57 @@ describe("check-accepted-findings: suppressions", () => {
 		]);
 	});
 
-	it("allows scope keys in slither.config.json and rejects detector suppressions", () => {
-		const scope = JSON.stringify({
-			"//": ["reason"],
-			filter_paths: "lib",
-			exclude_informational: true,
-			exclude_optimization: true,
-		});
-		assert.deepEqual(checkSlitherConfig(scope), []);
-		assert.deepEqual(
-			rules(
-				checkSlitherConfig(
-					JSON.stringify({ detectors_to_exclude: "arbitrary-send-eth" }),
-				),
-			),
-			["config-suppression"],
-		);
-		assert.deepEqual(
-			rules(checkSlitherConfig(JSON.stringify({ exclude_high: true }))),
-			["config-suppression"],
-		);
+	it("allows exactly the fixed scope in slither.config.json", () => {
+		const scope = { "//": ["reason"], ...SLITHER_SCOPE };
+		assert.deepEqual(checkSlitherConfig(JSON.stringify(scope)), []);
+		for (const [config, expected] of [
+			[
+				{ ...scope, detectors_to_exclude: "arbitrary-send-eth" },
+				["config-suppression"],
+			],
+			[{ ...scope, exclude_high: true }, ["config-suppression"]],
+			[{ ...scope, exclude_dependencies: true }, ["config-suppression"]],
+			[
+				{ ...scope, filter_paths: "packages/contracts/src/" },
+				["config-suppression"],
+			],
+			[
+				{ ...scope, include_paths: "packages/contracts/src/,.*" },
+				["config-scope"],
+			],
+			[{ ...scope, show_ignored_findings: false }, ["config-scope"]],
+			[{ ...scope, exclude_optimization: undefined }, ["config-scope"]],
+		])
+			assert.deepEqual(
+				rules(checkSlitherConfig(JSON.stringify(config))),
+				expected,
+				JSON.stringify(config),
+			);
 		assert.deepEqual(rules(checkSlitherConfig("{")), ["invalid-config"]);
 	});
 
-	it("allows only the top-level scope keys in aderyn.toml", () => {
+	it("allows exactly the fixed scope in aderyn.toml", () => {
 		const scope =
-			'# reason\nversion = 1\nroot = "." # comment\nsrc = "src"\nexclude = ["src/testing/", "a # b"]\n';
+			'# reason\nversion = 1\nroot = "." # comment\nsrc = "src"\nexclude = [ "src/testing/" ]\n';
 		assert.deepEqual(checkAderynConfig(scope), []);
 		const errs = checkAderynConfig(
-			'version = 1\n[detectors]\nexclude = ["yul-return"]\n',
+			`${scope}[detectors]\nexclude = ["yul-return"]\n`,
 		);
 		assert.deepEqual(
 			errs.map((e) => [e.line, e.rule]),
 			[
-				[2, "config-suppression"],
-				[3, "config-suppression"],
+				[6, "config-suppression"],
+				[7, "config-suppression"],
 			],
 		);
+		for (const [toml, expected] of [
+			[scope.replace('src = "src"', 'src = "src/testing"'), ["config-scope"]],
+			[scope.replace('"src/testing/"', '"src/"'), ["config-scope"]],
+			[`${scope}include = ["src/utils/"]\n`, ["config-suppression"]],
+			[scope.replace('root = "."', 'root = "lib"'), ["config-scope"]],
+			[scope.replace('src = "src"\n', ""), ["config-scope"]],
+		])
+			assert.deepEqual(rules(checkAderynConfig(toml)), expected, toml);
 	});
 
 	it("rejects every other TOML form in aderyn.toml that could set detectors", () => {
@@ -307,11 +362,70 @@ describe("check-accepted-findings: suppressions", () => {
 			["detectors.yul-return = false\n", "config-suppression"],
 			["detectors = { yul-return = false }\n", "config-suppression"],
 			['"src" = "src"\n', "unsupported-config"],
-			['src = { path = "src" }\n', "config-suppression"],
+			['src = { path = "src" }\n', "config-scope"],
 			['exclude = [\n  "src/testing/",\n]\n', "unsupported-config"],
 			["src = '''\nsrc'''\n", "unsupported-config"],
 		])
-			assert.equal(checkAderynConfig(toml)[0]?.rule, rule, toml);
+			assert.ok(rules(checkAderynConfig(toml)).includes(rule), toml);
+	});
+
+	it("lets each gitleaks entry accept exactly one allowlist, named first in its description", () => {
+		const ids = new Set(["AF-008", "AF-009"]);
+		const block = (d) => `[[allowlists]]\ndescription = "${d}"\n`;
+		assert.deepEqual(
+			checkGitleaksConfig(
+				`${DEFAULT_RULES}${block("AF-008: Anvil keys")}${block("AF-009: fixtures")}`,
+				ids,
+			),
+			[],
+		);
+		for (const toml of [
+			`${DEFAULT_RULES}${block("AF-008: Anvil keys")}[[allowlists]]\ndescription = "AF-008: all"\npaths = ['''.*''']\n`,
+			`${DEFAULT_RULES}${block("unrelated; NOT AF-008")}`,
+			`${DEFAULT_RULES}${block("AF-008 and AF-009")}`,
+			`${DEFAULT_RULES}${block("AF-0081 other")}`,
+		])
+			assert.deepEqual(
+				rules(checkGitleaksConfig(toml, ids)),
+				["suppression-without-entry"],
+				toml,
+			);
+	});
+
+	it("rejects pnpm settings that hide advisories from pnpm audit", () => {
+		for (const text of [
+			"auditConfig:\n  ignoreGhsas:\n    - GHSA-x\n",
+			"ignore:\n  - GHSA-x\n",
+			"audit-level=critical\n",
+			"ignore=GHSA-x\n",
+			'{ "pnpm": { "auditConfig": { "ignoreCves": ["CVE-1"] } } }',
+		])
+			assert.equal(
+				rules(checkPnpmAuditSettings([{ file: "f", text }]))[0],
+				"suppression-setting",
+				text,
+			);
+		for (const [file, text] of [
+			[
+				"package.json",
+				'{ "pnpm": { "\\u0061uditConfig": { "ignoreGhsas": ["G"] } } }',
+			],
+			["pnpm-workspace.yaml", '"\\x61uditConfig":\n  ignoreGhsas: [G]\n'],
+		])
+			assert.equal(
+				rules(checkPnpmAuditSettings([{ file, text }]))[0],
+				"suppression-setting",
+				text,
+			);
+		assert.deepEqual(
+			checkPnpmAuditSettings([
+				{
+					file: "pnpm-workspace.yaml",
+					text: "packages:\n  - services/*\nignoredBuiltDependencies:\n  - esbuild\nminimumReleaseAge: 10080\n",
+				},
+			]),
+			[],
+		);
 	});
 
 	it("requires .gitleaks.toml to keep the default rules and rejects custom rules", () => {
@@ -396,8 +510,9 @@ describe("check-accepted-findings: repository check", () => {
 		write("packages/contracts/src/sub/A.sol", "contract A {}\n");
 		write(
 			"packages/contracts/slither.config.json",
-			JSON.stringify({ filter_paths: "lib" }),
+			JSON.stringify(SLITHER_SCOPE),
 		);
+		write("packages/contracts/aderyn.toml", ADERYN_TOML);
 		assert.deepEqual(checkRepository(root, TODAY), []);
 
 		write(
@@ -421,6 +536,67 @@ describe("check-accepted-findings: repository check", () => {
 				(e) => e.file === "packages/contracts/src/sub/B.sol" && e.line === 2,
 			),
 		);
+	});
+
+	it("rejects a symlink under packages/contracts/src and pnpm audit settings in a workspace", () => {
+		const dir = mkdtempSync(join(tmpdir(), "accepted-findings-links-"));
+		try {
+			mkdirSync(join(dir, "security"));
+			writeFileSync(
+				join(dir, "security/accepted-findings.json"),
+				JSON.stringify(register(entry())),
+			);
+			mkdirSync(join(dir, "hidden"));
+			writeFileSync(join(dir, "hidden/Baz.sol"), "// slither-disable-start\n");
+			mkdirSync(join(dir, "packages/contracts/src"), { recursive: true });
+			writeFileSync(
+				join(dir, "packages/contracts/slither.config.json"),
+				JSON.stringify(SLITHER_SCOPE),
+			);
+			writeFileSync(join(dir, "packages/contracts/aderyn.toml"), ADERYN_TOML);
+			symlinkSync(
+				join(dir, "hidden/Baz.sol"),
+				join(dir, "packages/contracts/src/Baz.sol"),
+			);
+			mkdirSync(join(dir, "services/custom-example"), { recursive: true });
+			writeFileSync(
+				join(dir, "services/custom-example/.npmrc"),
+				"audit-level=critical\n",
+			);
+			const errs = checkRepository(dir, TODAY);
+			assert.deepEqual(rules(errs).sort(), ["suppression-setting", "symlink"]);
+			assert.ok(errs.some((e) => e.file === "packages/contracts/src/Baz.sol"));
+			assert.ok(errs.some((e) => e.file === "services/custom-example/.npmrc"));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("fails when src is a symlink, a tool config is missing, or slither.conf.json exists", () => {
+		const dir = mkdtempSync(join(tmpdir(), "accepted-findings-src-"));
+		try {
+			mkdirSync(join(dir, "security"));
+			writeFileSync(
+				join(dir, "security/accepted-findings.json"),
+				JSON.stringify(register(entry())),
+			);
+			mkdirSync(join(dir, "production"));
+			mkdirSync(join(dir, "packages/contracts"), { recursive: true });
+			symlinkSync(join(dir, "production"), join(dir, "packages/contracts/src"));
+			writeFileSync(
+				join(dir, "packages/contracts/slither.conf.json"),
+				'{ "exclude_high": true }',
+			);
+			const errs = checkRepository(dir, TODAY);
+			assert.deepEqual(errs.map((e) => `${e.file} ${e.rule}`).sort(), [
+				"packages/contracts/aderyn.toml config-scope",
+				"packages/contracts/slither.conf.json suppression-file",
+				"packages/contracts/slither.config.json config-scope",
+				"packages/contracts/src symlink",
+			]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("validates a register that parses to null, false, 0 or an empty string", () => {
@@ -483,8 +659,10 @@ const slitherHigh = {
 	impact: "High",
 	first_markdown_element: "src/GianoSmartWallet.sol#L299-L306",
 };
+// Like Aderyn 0.6.8: issue_count counts issues (detectors), not instances.
 const aderynReport = (high, low = []) =>
 	JSON.stringify({
+		issue_count: { high: high.length, low: low.length },
 		high_issues: { issues: high },
 		low_issues: { issues: low },
 	});
@@ -503,8 +681,19 @@ const aderynEntry = entry({
 		line_no: 48,
 	},
 });
-const auditReport = (advisories) =>
-	JSON.stringify({ advisories, metadata: { vulnerabilities: {} } });
+// Like pnpm audit: metadata.vulnerabilities counts each advisory once, by severity.
+const auditReport = (advisories) => {
+	const vulnerabilities = {
+		info: 0,
+		low: 0,
+		moderate: 0,
+		high: 0,
+		critical: 0,
+	};
+	for (const a of Object.values(advisories))
+		if (a?.severity in vulnerabilities) vulnerabilities[a.severity]++;
+	return JSON.stringify({ advisories, metadata: { vulnerabilities } });
+};
 const advisory = (severity, ghsa = "GHSA-g3hv-75wg-m249") => ({
 	1: { id: 1, module_name: "minimatch", severity, github_advisory_id: ghsa },
 });
@@ -727,6 +916,87 @@ describe("check-accepted-findings: report details", () => {
 		assert.match(slither.failures[0].message, /accepts medium .* reports high/);
 	});
 
+	it("fails a report whose findings are not objects or whose lists are null", () => {
+		const cases = [
+			[
+				"slither",
+				JSON.stringify({ success: true, results: { detectors: [null] } }),
+			],
+			[
+				"slither",
+				JSON.stringify({ success: true, results: { detectors: null } }),
+			],
+			["aderyn", aderynReport([{ detector_name: "x", instances: [null] }])],
+			["aderyn", aderynReport([null])],
+			[
+				"pnpm-audit",
+				JSON.stringify({
+					advisories: { 1: null },
+					metadata: { vulnerabilities: {} },
+				}),
+				{ workspace: "." },
+			],
+			[
+				"trivy",
+				JSON.stringify({ SchemaVersion: 2, Results: [null] }),
+				{ image: "i" },
+			],
+			[
+				"trivy",
+				JSON.stringify({ SchemaVersion: 2, Results: null }),
+				{ image: "i" },
+			],
+			[
+				"trivy",
+				JSON.stringify({
+					SchemaVersion: 2,
+					Results: [{ Vulnerabilities: null }],
+				}),
+				{ image: "i" },
+			],
+			["gitleaks", "[null]"],
+		];
+		for (const [tool, text, options] of cases)
+			assert.throws(
+				() => evaluateReport(tool, text, register(), TODAY, options),
+				ReportError,
+				`${tool} ${text}`,
+			);
+	});
+
+	it("fails an Aderyn report whose counts or categories do not match its issues", () => {
+		const run = (report) => () =>
+			evaluateReport("aderyn", JSON.stringify(report), register(), TODAY);
+		const base = JSON.parse(aderynReport([aderynHigh]));
+		assert.throws(
+			run({
+				...base,
+				issue_count: { high: 3, low: 0 },
+				high_issues: { issues: [] },
+			}),
+			/counts 3 high issues but lists 0/,
+		);
+		assert.throws(run({ ...base, issue_count: undefined }), /counts undefined/);
+		assert.throws(
+			run({ ...base, critical_issues: { issues: [] } }),
+			/unknown categories/,
+		);
+	});
+
+	it("fails a pnpm audit report whose summary counts a gated advisory it does not list", () => {
+		const report = JSON.stringify({
+			advisories: {},
+			metadata: { vulnerabilities: { moderate: 0, high: 1, critical: 0 } },
+		});
+		assert.throws(
+			() =>
+				evaluateReport("pnpm-audit", report, register(), TODAY, {
+					workspace: ".",
+				}),
+			/counts 1 high advisories but lists 0/,
+		);
+	});
+
 	it("passes a Slither report with no detectors", () => {
 		assert.deepEqual(
 			evaluateReport(
@@ -858,16 +1128,19 @@ describe("check-accepted-findings: CLI", () => {
 		}
 	};
 
-	it("fails closed when the report file does not exist", () => {
-		assert.equal(
-			quiet(() =>
-				main(["--tool", "slither", "--report", join(root, "nope.json")], {
-					root,
-					today: TODAY,
-				}),
-			),
-			1,
-		);
+	it("fails closed when the report file does not exist or is a directory", () => {
+		mkdirSync(join(root, "a-directory"), { recursive: true });
+		for (const report of [join(root, "nope.json"), join(root, "a-directory")])
+			assert.equal(
+				quiet(() =>
+					main(["--tool", "slither", "--report", report], {
+						root,
+						today: TODAY,
+					}),
+				),
+				1,
+				report,
+			);
 	});
 
 	it("needs --workspace for pnpm-audit and --image for trivy", () => {

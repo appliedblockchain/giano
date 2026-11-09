@@ -353,13 +353,17 @@ jobs:
         # fails when the report is missing or says Slither did not succeed.
         if: ${{ !cancelled() }}
         working-directory: packages/contracts
+        # Slither keeps an existing report file instead of overwriting it, so delete any old one first.
         run: |
           mkdir -p "$RUNNER_TEMP/reports"
-          slither . --json "$RUNNER_TEMP/reports/slither.json" --sarif "$RUNNER_TEMP/reports/slither.sarif" || true
+          rm -f "$RUNNER_TEMP/reports/slither.json" "$RUNNER_TEMP/reports/slither.sarif"
+          slither . --config-file slither.config.json --json "$RUNNER_TEMP/reports/slither.json" --sarif "$RUNNER_TEMP/reports/slither.sarif" || true
       - name: Aderyn
         if: ${{ !cancelled() }}
         working-directory: packages/contracts
-        run: aderyn . --output "$RUNNER_TEMP/reports/aderyn-report.json"
+        run: |
+          rm -f "$RUNNER_TEMP/reports/aderyn-report.json"
+          aderyn . --output "$RUNNER_TEMP/reports/aderyn-report.json"
       - name: Slither High findings are fixed or accepted
         if: ${{ !cancelled() }}
         run: node scripts/check-accepted-findings.mjs --tool slither --report "$RUNNER_TEMP/reports/slither.json"
@@ -400,11 +404,26 @@ jobs:
           sparse-checkout: .github/workflows/ci.yml
           sparse-checkout-cone-mode: false
       - name: Every other job in ci.yml is in needs
+        # Every line indented two spaces under `jobs:` is a job key, in any form (quoted, upper case,
+        # with a comment). A jobs section in another layout lists no job and so fails the check.
+        # continue-on-error would let a failed job or step count as success, so it is not allowed.
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
+          if grep -nE -e '^[[:space:]-]*["'"'"']?continue-on-error["'"'"']?[[:space:]]*:' \
+            -e '[{,][[:space:]]*["'"'"']?continue-on-error["'"'"']?[[:space:]]*:' .github/workflows/ci.yml; then
+            echo "continue-on-error is not allowed in ci.yml: it lets a failure count as success."
+            exit 1
+          fi
+          # A double-quoted key with an escape ("continue\x2Don-error") reads differently to grep.
+          if grep -nE -e '^[[:space:]-]*"[^"]*\\[^"]*"[[:space:]]*:' \
+            -e '[{,][[:space:]]*"[^"]*\\[^"]*"[[:space:]]*:' .github/workflows/ci.yml; then
+            echo "Escaped keys are not allowed in ci.yml: write every key without escapes."
+            exit 1
+          fi
           jobs=$(awk '/^jobs:/ { in_jobs = 1; next }
-            in_jobs && /^  [a-z0-9_-]+:[[:space:]]*$/ { sub(/:.*/, ""); sub(/^ +/, ""); print }' \
+            in_jobs && /^[^ #]/ { in_jobs = 0 }
+            in_jobs && /^  [^ #]/ { sub(/^  /, ""); sub(/[[:space:]]*:.*/, ""); gsub(/["'"'"']/, ""); print }' \
             .github/workflows/ci.yml | grep -vx ci-passed | sort)
           needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
           if [ "$jobs" != "$needed" ]; then

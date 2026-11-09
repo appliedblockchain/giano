@@ -37,7 +37,7 @@ security check runs it on its own report. The rules are in the `ci-security-gate
 | `location` | Where the finding is, for a reader: file and line, package and lockfile, or image. |
 | `accepted` | The date of the assessment, `YYYY-MM-DD`. |
 | `expires` | At most 180 days after `accepted`. Use a shorter date for an entry that only unblocks CI until a fix lands. |
-| `owner` | One person, not a team. They reassess the finding before it expires. |
+| `owner` | One person, not a team or a list. They reassess the finding before it expires. The check rejects list separators and the words `and`, `or`, `team` and `group`; review catches the rest. |
 | `reason` | Why the finding is accepted: false positive, by design, no fix available, or not reachable. Give the evidence. |
 | `followUp` | Optional. The ticket or condition that removes the entry. |
 
@@ -51,7 +51,7 @@ Each tool's CI job uploads its full report. Download it from the run's artifacts
 | `aderyn` | High | `detector_name`, `contract_path`, `line_no` | `aderyn-report.json`: `high_issues.issues[].detector_name`, and `contract_path` and `line_no` of the instance. Aderyn has no stable finding ID, so an edit above the finding that moves its line needs the entry updated. |
 | `pnpm-audit` | high, critical | `workspace` (`.` or `services/custom-example`), `ghsa` | `pnpm audit --json` in that workspace: `advisories.*.github_advisory_id`. |
 | `trivy` | HIGH, CRITICAL with a fix | `image`, `package`, `vulnerability` | The image name without registry or tag (`giano-wallet-api`), and `PkgName` and `VulnerabilityID` from the Trivy JSON. |
-| `gitleaks` | any | `fingerprint`, or `allowlist` | `Fingerprint` from the gitleaks JSON. An entry for an allowlist in `.gitleaks.toml` uses `{ "allowlist": ".gitleaks.toml" }`, and the allowlist's `description` names the entry ID. |
+| `gitleaks` | any | `fingerprint`, or `allowlist` | `Fingerprint` from the gitleaks JSON. An entry for an allowlist in `.gitleaks.toml` uses `{ "allowlist": ".gitleaks.toml" }`, and the allowlist's `description` starts with the entry ID. Each entry accepts one allowlist. |
 | `codeql` | checked weekly | `rule`, `alert` | The rule ID and alert number of the dismissed alert in the repository's code scanning alerts. |
 
 Findings below the gate do not fail CI. They stay in the uploaded reports. An open moderate advisory must still be
@@ -67,19 +67,33 @@ The weekly security scan lists entries that expire within 14 days.
 
 ## What the register check rejects
 
+Register entries:
 - A missing or empty field, an unknown field, a duplicate ID, a bad date or an expiry beyond 180 days.
 - An expired entry, and an entry whose `accepted` date is after today.
+
+Contract sources and Solidity tool configs:
 - A `slither-disable`, `aderyn-ignore` or `aderyn-fp` comment under `packages/contracts/src`. A source comment changes
   the contract metadata hash, and so the bytecode and the CREATE2 addresses.
-- A detector setting in `packages/contracts/slither.config.json` or `packages/contracts/aderyn.toml`. These files set
-  scope only: dependencies, tests, scripts and `src/testing` are outside the analysis. `aderyn.toml` may contain only
-  the top-level keys `version`, `root`, `src`, `include` and `exclude`, each on one line.
-- A gitleaks allowlist whose `description` does not name a valid, unexpired `gitleaks` entry with
-  `{ "allowlist": ".gitleaks.toml" }`, and any `disabledRules`.
+- A symlink under `packages/contracts/src`, or `src` or a folder above it as a symlink.
+- A missing `packages/contracts/slither.config.json` or `packages/contracts/aderyn.toml`, or any change to them other
+  than the reasons. They set the scope only: `packages/contracts/src` without `src/testing`. The script fixes every key
+  and value, so a scope change is a change to `scripts/check-accepted-findings.mjs`. `aderyn.toml` holds one top-level
+  key per line.
+
+gitleaks:
 - A `.gitleaks.toml` that does not keep every default rule. It must have `[extend]` with `useDefault = true`, and may
   contain only that, allowlist tables and a top-level `title`. Another base config (`path` or `url`) and custom
-  `[[rules]]` are rejected, because they can replace or weaken a default rule.
-- TOML that the check cannot read: a quoted table name or key, or a multi-line string. In `.gitleaks.toml`, also an
-  inline table or a dotted `allowlist` key. Write each allowlist as an `[allowlist]` or `[[allowlists]]` table.
-- A file a tool reads by itself to hide findings: `packages/contracts/slither.db.json`,
-  `packages/contracts/export.sarif.sarifexplorer` and `.gitleaksignore`.
+  `[[rules]]` are rejected, because they can replace or weaken a default rule. `disabledRules` is rejected anywhere.
+- An allowlist whose `description` does not start with the ID of a valid, unexpired `gitleaks` entry with
+  `{ "allowlist": ".gitleaks.toml" }`, names another ID too, or uses an entry that already accepts another allowlist.
+- TOML that the check cannot read: a quoted table name or key, a multi-line string, an inline table or a dotted
+  `allowlist` key. Write each allowlist as an `[allowlist]` or `[[allowlists]]` table.
+
+pnpm:
+- A setting that hides advisories (`auditConfig`, `auditLevel`, `ignore`, …) in `pnpm-workspace.yaml`, `.npmrc` or
+  `package.json` of either workspace, and a backslash escape in `pnpm-workspace.yaml`, which could hide such a setting.
+
+Files a tool reads by itself to hide findings:
+- `packages/contracts/slither.db.json`, `packages/contracts/slither.conf.json`,
+  `packages/contracts/export.sarif.sarifexplorer`, `.gitleaksignore`, `.trivyignore`, `.trivyignore.yaml` and
+  `trivy.yaml`.

@@ -101,10 +101,17 @@ and the database cannot hold an owner or an expiry.
 ### D3. No in-source suppression in Solidity
 
 A `// slither-disable-next-line` comment changes the metadata hash, and so the canonical CREATE2 addresses of the
-wallet factory, implementation and paymaster. The register check rejects these comments under `packages/contracts/src`.
-Tool configs hold only scope filters: `lib/`, `node_modules/`, `vendor/`, `test/`, `script/` and `src/testing/`. The
-last one holds test-only contracts (`PermissivePaymaster`, `PrivateERC20`) that production never deploys. Slither keeps
-its informational and optimization detectors off. Severity filters are not suppressions.
+wallet factory, implementation and paymaster. The register check rejects these comments and symlinks under
+`packages/contracts/src`, and `src` itself as a symlink. Slither also runs with `show_ignored_findings` and an explicit
+`--config-file`, so it ignores `slither-disable` comments and triage files in every file, including dependencies, and
+never falls back to `slither.conf.json`.
+
+Tool configs hold only the scope: production contracts in `packages/contracts/src` without `src/testing/`, which holds
+test-only contracts (`PermissivePaymaster`, `PrivateERC20`) that production never deploys. Slither uses `include_paths`,
+which keeps a finding when any of its code is in that scope; `filter_paths` would drop a finding in `src/` that also
+touches `lib/`. The script fixes every key and value of both configs, and fails if either is missing, so a scope
+change is a change to the script.
+Slither keeps its informational and optimization detectors off. Severity filters are not suppressions.
 
 ### D4. Solidity analysis is its own job in `ci.yml`
 
@@ -116,8 +123,9 @@ Job `solidity-analysis`, named "Solidity static analysis (Slither, Aderyn)". It 
   `requirements-ci.in` pins `slither-analyzer==0.11.6` (the trial version). `requirements-ci.txt` is generated with
   `uv pip compile requirements-ci.in --python-version 3.12 --universal --generate-hashes`.
 - Aderyn v0.6.8 Linux x86_64 release archive, checked with `sha256sum -c` against the sha256 recorded in the workflow.
-- Config files in `packages/contracts`: `slither.config.json` (`filter_paths`, informational and optimization off) and
-  `aderyn.toml` (source root `src`, exclude `src/testing`).
+- Config files in `packages/contracts`: `slither.config.json` (`include_paths`, `show_ignored_findings`, informational
+  and optimization off) and `aderyn.toml` (source root `src`, exclude `src/testing`).
+- Each tool step deletes its old report first: Slither keeps an existing report file instead of overwriting it.
 - Run both tools with `if: ${{ !cancelled() }}` on the second, so one failure does not hide the other report. Then
   run the script in report mode for each report. Upload `slither.json`, `slither.sarif` and `aderyn-report.json` with
   `if: always()`.
@@ -163,11 +171,13 @@ gitleaks GitHub Action needs a paid licence for organisation repositories, and a
 Aderyn.
 
 - On `pull_request`: checkout with full history, then `gitleaks git --log-opts="<base sha>..<head sha>" --redact
-  --report-format json --exit-code 0`. The script then decides, in report mode.
+  --ignore-gitleaks-allow --report-format json --exit-code 0`. `--ignore-gitleaks-allow` makes gitleaks ignore
+  `gitleaks:allow` comments, which would hide a secret without a register entry. The script then decides, in report
+  mode.
 - On `workflow_call` (the release run): every commit on `main` arrived through a PR that ran the scan, so the job
   checks the register only and passes. It still reports the same check name.
-- `.gitleaks.toml` extends the default rules. Its one allowlist covers the public Anvil development keys that the
-  devnet and tests use. The allowlist description names its register entry.
+- `.gitleaks.toml` extends the default rules and adds no rule of its own. Its one allowlist covers the public Anvil
+  development keys that the devnet and tests use. The allowlist description starts with its register entry ID.
 
 Scanning the full history is out of scope. Credentials already in history are G30.
 
