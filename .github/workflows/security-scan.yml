@@ -70,16 +70,16 @@ jobs:
       - name: Audit both workspaces
         run: |
           set -o pipefail
-          mkdir -p "$RUNNER_TEMP/reports" "$RUNNER_TEMP/results"
-          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-root.json" || true
-          (cd services/custom-example && pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-custom-example.json") || true
+          mkdir -p "$RUNNER_TEMP/results"
+          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/results/audit-root.json" || true
+          (cd services/custom-example && pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/results/audit-custom-example.json") || true
           status=0
           for ws in . services/custom-example; do
             report=audit-root.json
             [ "$ws" = . ] || report=audit-custom-example.json
             echo "== workspace $ws" >> "$RUNNER_TEMP/results/audit.txt"
             node scripts/check-accepted-findings.mjs --tool pnpm-audit --workspace "$ws" \
-              --report "$RUNNER_TEMP/reports/$report" >> "$RUNNER_TEMP/results/audit.txt" 2>&1 || status=1
+              --report "$RUNNER_TEMP/results/$report" >> "$RUNNER_TEMP/results/audit.txt" 2>&1 || status=1
           done
           cat "$RUNNER_TEMP/results/audit.txt"
           exit "$status"
@@ -253,13 +253,16 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Lines other than "accepted" ones come first, so the 4000-byte cut removes accepted
+          # findings before any FAIL line. The accepted lines follow as context.
           section() {
             echo "### $1"
             echo
             if [ -s "results/$2" ]; then
+              { grep -v '^accepted ' "results/$2" || true; grep '^accepted ' "results/$2" || true; } > section.txt
               echo '```'
-              head -c 4000 "results/$2"
-              [ "$(wc -c < "results/$2")" -le 4000 ] || printf '\n[truncated: the full output is in the run]'
+              head -c 4000 section.txt
+              [ "$(wc -c < section.txt)" -le 4000 ] || printf '\n[truncated: the full output is in the run]'
               echo
               echo '```'
             else
