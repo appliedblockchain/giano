@@ -1,6 +1,6 @@
 import type { TimelockOperation } from "@appliedblockchain/giano-paymaster-sdk";
 import { describe, expect, it } from "vitest";
-import { merge } from "./usePendingOperations";
+import { merge, readForward } from "./usePendingOperations";
 
 const operation = (
 	id: string,
@@ -60,5 +60,84 @@ describe("merge", () => {
 		const [merged] = merge([partial], [operation("3")]);
 		expect(merged.complete).toBe(true);
 		expect(merged.salt).toBe(`0x${"5a".repeat(32)}`);
+	});
+});
+
+describe("merge of a cancelled operation scheduled again", () => {
+	it("takes the new scheduling whole, with nothing of the cancelled one", () => {
+		const cancelled = operation("1", {
+			state: "cancelled",
+			cancelledBlock: 20n,
+			cancelledTransaction: `0x${"cc".repeat(32)}`,
+		});
+		const again = operation("1", {
+			scheduledBlock: 30n,
+			scheduledTransaction: `0x${"bb".repeat(32)}`,
+		});
+		const [merged] = merge([cancelled], [again]);
+		expect(merged.state).toBe("waiting");
+		expect(merged.cancelledBlock).toBeUndefined();
+		expect(merged.scheduledTransaction).toBe(again.scheduledTransaction);
+	});
+});
+
+describe("readForward", () => {
+	/** A timelock whose node accepts at most `cap` blocks a query, narrowing to the newest as readWindow does. */
+	const timelock = (head: bigint, cap: bigint, found: Map<bigint, string>) => {
+		const asked: [bigint, bigint][] = [];
+		return {
+			asked,
+			client: {
+				publicClient: { getBlockNumber: async () => head },
+				getOperations: async ({
+					range,
+				}: {
+					range: { fromBlock: bigint; toBlock: bigint };
+				}) => {
+					const fromBlock =
+						range.toBlock - range.fromBlock + 1n > cap
+							? range.toBlock - cap + 1n
+							: range.fromBlock;
+					asked.push([fromBlock, range.toBlock]);
+					const operations = [...found]
+						.filter(([block]) => block >= fromBlock && block <= range.toBlock)
+						.map(([block, id]) => operation(id, { scheduledBlock: block }));
+					return { fromBlock, toBlock: range.toBlock, operations };
+				},
+			} as unknown as Parameters<typeof readForward>[0],
+		};
+	};
+
+	it("reads every block to the head, including what a capped node narrowed away", async () => {
+		// a long gap: 25,000 blocks, read from a node that takes 2,000 a query
+		const found = new Map([
+			[1_000n, "1"],
+			[12_000n, "2"],
+			[25_000n, "3"],
+		]);
+		const { client, asked } = timelock(25_000n, 2_000n, found);
+		const result = await readForward(client, 1n);
+
+		expect(result.toBlock).toBe(25_000n);
+		expect(result.operations.map((entry) => entry.id.slice(-1)).sort()).toEqual(
+			["1", "2", "3"],
+		);
+		// covered without a hole: every block from 1 to the head is in some query
+		const covered = [...asked].sort((a, b) => Number(a[0] - b[0]));
+		let next = 1n;
+		for (const [from, to] of covered) {
+			expect(from).toBeLessThanOrEqual(next);
+			if (to + 1n > next) next = to + 1n;
+		}
+		expect(next).toBe(25_001n);
+	});
+
+	it("reads nothing when there are no new blocks", async () => {
+		const { client, asked } = timelock(100n, 9_000n, new Map());
+		expect(await readForward(client, 101n)).toEqual({
+			toBlock: 100n,
+			operations: [],
+		});
+		expect(asked).toEqual([]);
 	});
 });

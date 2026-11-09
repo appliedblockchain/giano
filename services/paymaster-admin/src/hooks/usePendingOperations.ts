@@ -69,6 +69,8 @@ export function usePendingOperations(
 		toBlock?: bigint;
 	}>({ operations: [] });
 	const running = useRef(false);
+	/** The read in flight, poll or "Look further back", so the other waits for it rather than racing. */
+	const inflight = useRef<Promise<void>>(Promise.resolve());
 	/**
 	 * Bumped whenever the timelock changes. A read started for an earlier one finishes into nothing:
 	 * without it, a read still in flight when the client was rebuilt (connecting a wallet rebuilds it)
@@ -104,6 +106,10 @@ export function usePendingOperations(
 		const run = generation.current;
 		const stale = () => run !== generation.current;
 		setLoading(true);
+		let done = () => {};
+		inflight.current = new Promise((resolve) => {
+			done = resolve;
+		});
 		try {
 			const from = known.current.toBlock;
 			if (from === undefined) {
@@ -115,9 +121,9 @@ export function usePendingOperations(
 				setRange({ fromBlock: page.fromBlock, toBlock: page.toBlock });
 				setOlder(page.older);
 			} else {
-				const page = await timelock.getOperations({
-					range: { fromBlock: from + 1n },
-				});
+				// Every block since the last read, a window at a time. One request from there to the head
+				// would be narrowed by a capped node to its newest blocks, and the rest never read.
+				const page = await readForward(timelock, from + 1n);
 				const merged = merge(known.current.operations, page.operations);
 				// What the new blocks did not mention may still have moved on: waiting becomes ready
 				// with time alone, and the contract, not the logs, says so.
@@ -147,6 +153,7 @@ export function usePendingOperations(
 			setError(describeError(cause));
 			console.error("[paymaster-admin] Could not read the timelock", cause);
 		} finally {
+			done();
 			if (!stale()) {
 				running.current = false;
 				setLoading(false);
@@ -164,6 +171,15 @@ export function usePendingOperations(
 	const lookFurther = useCallback(async () => {
 		if (!timelock || !older) return;
 		const run = generation.current;
+		// A poll in flight merges from its own copy of what is known and would publish over this
+		// window's operations: wait for it, and hold the next one off until this is merged.
+		while (running.current) await inflight.current;
+		if (run !== generation.current) return;
+		running.current = true;
+		let done = () => {};
+		inflight.current = new Promise((resolve) => {
+			done = resolve;
+		});
 		setLoading(true);
 		try {
 			const page = await timelock.getOperations({ range: older });
@@ -175,9 +191,13 @@ export function usePendingOperations(
 			setOlder(page.older);
 			setError(undefined);
 		} catch (cause) {
-			setError(describeError(cause));
+			if (run === generation.current) setError(describeError(cause));
 		} finally {
-			setLoading(false);
+			done();
+			if (run === generation.current) {
+				running.current = false;
+				setLoading(false);
+			}
 		}
 	}, [timelock, older, publish]);
 
@@ -207,8 +227,43 @@ export function usePendingOperations(
 }
 
 /**
+ * The operations in every block from `fromBlock` to the head, read forward a window at a time.
+ *
+ * A node that refuses a window's span narrows it to its newest blocks (`readWindow`), so each window
+ * is read until its first block is covered: what the narrowed read skipped is read next, with the
+ * narrower span. The result covers every block in between, oldest window merged first.
+ */
+export async function readForward(
+	timelock: Pick<GianoTimelockClient, "getOperations" | "publicClient">,
+	fromBlock: bigint,
+): Promise<{ toBlock: bigint; operations: TimelockOperation[] }> {
+	const head = await timelock.publicClient.getBlockNumber();
+	let operations: TimelockOperation[] = [];
+	let width = DEFAULT_LOG_WINDOW;
+	for (let start = fromBlock; start <= head; ) {
+		const end = start + width - 1n < head ? start + width - 1n : head;
+		const pages: (readonly TimelockOperation[])[] = [];
+		for (let to = end; to >= start; ) {
+			const page = await timelock.getOperations({
+				range: { fromBlock: start, toBlock: to },
+			});
+			pages.unshift(page.operations);
+			if (page.fromBlock <= start) break;
+			// Narrowed: keep the span the node accepts, and read what it left out.
+			width = page.toBlock - page.fromBlock + 1n;
+			to = page.fromBlock - 1n;
+		}
+		for (const found of pages) operations = merge(operations, found);
+		start = end + 1n;
+	}
+	return { toBlock: head, operations };
+}
+
+/**
  * Enough windows to reach back past the longest delay, so a pending operation's scheduling is in the
- * blocks read: the delay over the chain's recent seconds per block, in windows, plus one.
+ * blocks read: the delay over the chain's recent seconds per block, in windows, plus one. Never
+ * fewer than {@link INITIAL_WINDOWS}: an operation that became ready long ago and was never
+ * executed, or one scheduled with more than the minimum delay, is older than the delay alone.
  */
 async function firstReadWindows(
 	timelock: GianoTimelockClient,
@@ -227,7 +282,10 @@ async function firstReadWindows(
 	);
 	const blocks = Number(longestDelay) / secondsPerBlock;
 	return Math.min(
-		Math.max(Math.ceil(blocks / Number(DEFAULT_LOG_WINDOW)) + 1, 1),
+		Math.max(
+			Math.ceil(blocks / Number(DEFAULT_LOG_WINDOW)) + 1,
+			INITIAL_WINDOWS,
+		),
 		MAX_WINDOWS,
 	);
 }
@@ -244,6 +302,16 @@ export function merge(
 	for (const update of newer) {
 		const existing = byId.get(update.id);
 		if (!existing) {
+			byId.set(update.id, update);
+			continue;
+		}
+		// A cancelled operation scheduled again (same calls, salt and predecessor, so the same id) is a
+		// new scheduling: it keeps nothing of the cancelled one, not its cancel nor who proposed it.
+		const rescheduled =
+			existing.cancelledBlock !== undefined &&
+			update.scheduledBlock !== undefined &&
+			update.scheduledBlock > existing.cancelledBlock;
+		if (rescheduled) {
 			byId.set(update.id, update);
 			continue;
 		}
