@@ -59,7 +59,7 @@ export function usePaymaster(
 	// callback is likewise read when a 401 arrives, whatever its identity.
 	const currentToken = useRef(token);
 	currentToken.current = token;
-	const onUnauthorized = useRef<() => void>(undefined);
+	const onUnauthorized = useRef<(token: string) => void>(undefined);
 	onUnauthorized.current =
 		auth === "required" ? undefined : auth?.onUnauthorized;
 	const publicClient = useMemo(
@@ -76,7 +76,8 @@ export function usePaymaster(
 											? current()
 											: (current ?? "");
 									},
-									onUnauthorized: () => onUnauthorized.current?.(),
+									onUnauthorized: (refused) =>
+										onUnauthorized.current?.(refused),
 								}
 							: undefined,
 					),

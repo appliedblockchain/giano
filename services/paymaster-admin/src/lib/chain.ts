@@ -44,8 +44,12 @@ export type ReadAuth = {
 	 * and unmount the page the operator was typing into.
 	 */
 	token: string | (() => string);
-	/** A 401 means the session is gone; the session layer drops it and the console signs in again. */
-	onUnauthorized: () => void;
+	/**
+	 * A 401 means the session is gone; the session layer drops it and the console signs in again. It
+	 * is told which token was refused: a request still in flight on a token just replaced (Stay signed
+	 * in revokes the old one) must not end the new session.
+	 */
+	onUnauthorized: (token: string) => void;
 };
 
 export function createReadClient(
@@ -57,15 +61,16 @@ export function createReadClient(
 		transport: http(
 			deployment.rpcUrl,
 			auth && {
-				fetchFn: (input, init) => {
+				// The 401 is seen here, beside the token the request carried, rather than in
+				// onFetchResponse, which cannot tell which token was refused.
+				fetchFn: async (input, init) => {
 					const headers = new Headers(init?.headers);
 					const token =
 						typeof auth.token === "function" ? auth.token() : auth.token;
 					headers.set("authorization", `Bearer ${token}`);
-					return fetch(input, { ...init, headers });
-				},
-				onFetchResponse: (response) => {
-					if (response.status === 401) auth.onUnauthorized();
+					const response = await fetch(input, { ...init, headers });
+					if (response.status === 401) auth.onUnauthorized(token);
+					return response;
 				},
 			},
 		),

@@ -6,6 +6,7 @@ import {
 	useContext,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
 import { type ConnectedWallet, isUserRejection } from "./chain";
@@ -57,7 +58,7 @@ type PlatformAdminContextValue = {
 	 * Ends the session because the API refused it — what a 401 on a chain read calls, as {@link run}
 	 * does for the platform routes.
 	 */
-	expire: () => void;
+	expire: (token?: string) => void;
 	/**
 	 * Runs a platform admin call with the session's token. Resolves to undefined when the session ended
 	 * under it, having already dropped the session — callers only ever handle a result.
@@ -75,8 +76,11 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 	const [session, setSession] = useState<PlatformSession>();
 	const [endedNotice, setEndedNotice] = useState<string>();
 	const [disabled, setDisabled] = useState(false);
+	/** The token in use now, read synchronously: a 401 for any other token is about a replaced one. */
+	const currentToken = useRef<string>(undefined);
 
 	const end = useCallback((notice?: string) => {
+		currentToken.current = undefined;
 		setSession(undefined);
 		setEndedNotice(notice);
 	}, []);
@@ -128,11 +132,19 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 						message: verified.error.message,
 					};
 				}
+				// A renewal (Stay signed in) replaces a session that is still valid: revoke it, rather
+				// than leave its token usable until it expires. Best effort, after the swap, so a failed
+				// logout never costs the new session; a request still in flight on the old token gets a
+				// 401 that names it, which `expire` ignores.
+				const replaced = currentToken.current;
+				currentToken.current = verified.value.token;
 				setSession({
 					token: verified.value.token,
 					admin: verified.value.admin,
 					expiresAt: new Date(verified.value.expiresAt),
 				});
+				if (replaced && replaced !== verified.value.token)
+					void platformAuth.logout(replaced).catch(() => undefined);
 				return { ok: true };
 			} catch (cause) {
 				if (isUserRejection(cause)) return { ok: false, reason: "rejected" };
@@ -154,18 +166,23 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 	}, [session, end]);
 
 	const expire = useCallback(
-		() => end("Your platform admin session ended. Sign in again to continue."),
+		(token?: string) => {
+			// A refusal of a token no longer in use (one Stay signed in replaced) ends nothing.
+			if (token !== undefined && token !== currentToken.current) return;
+			end("Your platform admin session ended. Sign in again to continue.");
+		},
 		[end],
 	);
 
 	const run = useCallback<PlatformAdminContextValue["run"]>(
 		async (call) => {
 			if (!session) return undefined;
+			const token = session.token;
 			try {
-				return await call(platformApi(session.token));
+				return await call(platformApi(token));
 			} catch (cause) {
 				if (cause instanceof PlatformUnauthorized) {
-					expire();
+					expire(token);
 					return undefined;
 				}
 				throw cause;

@@ -69,7 +69,8 @@ export function useOtherDeployments(
 									signedIn
 										? {
 												token: () => currentToken.current ?? "",
-												onUnauthorized: () => onUnauthorized.current(),
+												onUnauthorized: (refused) =>
+													onUnauthorized.current(refused),
 											}
 										: undefined,
 								),
