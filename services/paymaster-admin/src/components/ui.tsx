@@ -46,12 +46,19 @@ export const toaster: CreateToasterReturn = createToaster({
 export function Toaster() {
 	return (
 		<Portal>
-			<ChakraToaster toaster={toaster} insetInline={{ mdDown: "4" }}>
+			<ChakraToaster
+				toaster={toaster}
+				insetInline={{ mdDown: "4" }}
+				pointerEvents="none"
+			>
 				{(toast) => (
 					<Toast.Root
 						width={{ md: "md" }}
-						pointerEvents="none"
-						css={{ "& [data-ghost]": { pointerEvents: "none" } }}
+						// Zag sets `pointer-events: auto` inline on the root, which beats any class, so this has to
+						// be inline too (Ark merges it after Zag's). The ghost before the toast sets it inline as
+						// it leaves, hence the !important.
+						style={{ pointerEvents: "none" }}
+						css={{ "& [data-ghost]": { pointerEvents: "none !important" } }}
 					>
 						{toast.type === "loading" ? (
 							<Spinner size="sm" color="brand.solid" />

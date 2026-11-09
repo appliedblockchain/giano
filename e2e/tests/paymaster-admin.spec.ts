@@ -169,6 +169,21 @@ test("a write is signed by the connected wallet and lands on the chain", async (
 			timeout: 60_000,
 		});
 		expect(await walletCalls(page)).toContain("eth_sendTransaction");
+		// A toast never takes a click: whatever is under its centre gets it. Asked of the browser's own
+		// hit test, since Playwright's click would wait for the toast to leave and pass either way.
+		const toastHit = await page
+			.getByText("Set default fee confirmed")
+			.evaluate((title) => {
+				const box = (
+					title.closest('[data-scope="toast"][data-part="root"]') ?? title
+				).getBoundingClientRect();
+				const hit = document.elementFromPoint(
+					box.left + box.width / 2,
+					box.top + box.height / 2,
+				);
+				return hit?.closest('[data-scope="toast"]') !== null;
+			});
+		expect(toastHit).toBe(false);
 		// The console says it landed; the chain is what settles it.
 		await expect.poll(feeOnChain, { timeout: 30_000 }).toBe(parseEther(fee));
 	} finally {
