@@ -11,6 +11,7 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityTab } from "./activity/ActivityTab";
 import { ProposalDialog } from "./components/ProposalDialog";
 import { Copyable, notifyError } from "./components/ui";
 import {
@@ -20,6 +21,7 @@ import {
 	initialDeployment,
 	rememberDeployment,
 } from "./config";
+import { HealthTab } from "./health/HealthTab";
 import { usePaymaster } from "./hooks/usePaymaster";
 import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useTimelockAccess } from "./hooks/useTimelockConfig";
@@ -37,8 +39,6 @@ import type { ProposalRequest } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
 import { joinTenants, type TenantRow } from "./lib/tenants";
 import { OverviewTab } from "./overview/OverviewTab";
-import { HealthPanel } from "./panels/HealthPanel";
-import { HistoryPanel } from "./panels/HistoryPanel";
 import { PaymasterTab } from "./paymaster/PaymasterTab";
 import { AdminsTab } from "./platform/AdminsTab";
 import { SignIn } from "./platform/SignIn";
@@ -472,9 +472,17 @@ function RouteView({
 		case "timelock":
 			return <TimelockTab tenants={overview.tenants} />;
 		case "activity":
-			return <HistoryPanel client={client} />;
+			return (
+				<ActivityTab
+					client={client}
+					rows={tenantRows}
+					lastUpdated={lastUpdated}
+				/>
+			);
 		case "health":
-			return health ? <HealthPanel health={health} /> : null;
+			return health ? (
+				<HealthTab health={health} rows={tenantRows} registry={registry} />
+			) : null;
 	}
 }
 

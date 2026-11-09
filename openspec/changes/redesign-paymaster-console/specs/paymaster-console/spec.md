@@ -123,9 +123,9 @@ Every page SHALL be usable at 390 px wide with no horizontal scroll of the page:
 - **THEN** the page does not scroll sideways, and the tenant table scrolls within its box
 
 ### Requirement: One refresh for everything on screen
-Every chain and platform API read on screen SHALL be refreshed together: by the refresh control, and every `refreshSeconds` while the browser tab is visible. Polling SHALL stop while the browser tab is hidden, and SHALL refresh once when it becomes visible again. A refresh SHALL NOT discard older pages an operator has already loaded.
+Every chain and platform API read on screen SHALL be refreshed together: by the refresh control, and every `refreshSeconds` while the browser tab is visible. A read that costs one request per tenant SHALL instead run on demand (the Health tab's ledger comparison, D22). Polling SHALL stop while the browser tab is hidden, and SHALL refresh once when it becomes visible again. A refresh SHALL NOT discard older pages an operator has already loaded, and SHALL read every block since the last one, however long the gap.
 
-A `refreshSeconds` that is not a non-negative number SHALL be refused at config load.
+A `refreshSeconds` other than 0 or a whole number of seconds from 1 to 86400 SHALL be refused at config load.
 
 #### Scenario: Hidden tab
 - **WHEN** the console's browser tab is in the background for ten minutes
@@ -181,7 +181,9 @@ Each of the following SHALL ask for confirmation in a dialog that names its effe
 - unlock stake;
 - withdraw stake;
 - execute a timelock operation;
-- cancel a timelock operation.
+- cancel a timelock operation;
+- upgrade the paymaster, when sent rather than proposed;
+- renounce a role.
 
 #### Scenario: Revoking your own role
 - **WHEN** an operator revokes `ROLE_ADMIN` from the connected address
@@ -198,7 +200,7 @@ Every address and amount field SHALL validate its value as it is typed. It SHALL
 - **Penalty:** no more than 5000 basis points.
 - **Gas and delays:** a non-negative whole number.
 
-A field SHALL be cleared after its write succeeds.
+A field SHALL be cleared after its write succeeds, unless it was changed while the write was pending: what was typed since belongs to the operator.
 
 #### Scenario: Short address
 - **WHEN** an operator types a 39-character hex address into a grant field
@@ -207,9 +209,15 @@ A field SHALL be cleared after its write succeeds.
 ### Requirement: Failures are stated where they happened
 Every failed read or write SHALL be stated where it happened: inline for reads and for form submissions, and as a toast for other writes. No failure SHALL leave the page unchanged without a message. A read that failed SHALL offer a retry, and SHALL NOT show a loading indicator after it failed. A failed refresh SHALL keep the last good data on screen, marked as stale.
 
+A write SHALL be reported as confirmed only when its receipt says it succeeded. A transaction mined but reverted SHALL be reported as a failure, with its hash.
+
 #### Scenario: Failed timelock read
 - **WHEN** the first read of the timelock fails
 - **THEN** the Timelock tab states the error and offers to try again, and no spinner remains
+
+#### Scenario: Reverted write
+- **WHEN** a write's transaction is mined but reverts
+- **THEN** the console says it failed, with the transaction hash, and does not say it was confirmed
 
 ### Requirement: The Paymaster tab covers every paymaster setting
 The Paymaster tab SHALL show one card per area, each naming the role it needs, whether that role is timelocked, and whether the connected wallet holds it:
@@ -251,7 +259,7 @@ The Roles tab SHALL list every paymaster role with:
 
 It SHALL flag a timelocked role held by anything other than the timelock. It SHALL say whether `DEFAULT_ADMIN_ROLE` is held by anybody, and SHALL offer to revoke it from a holder, following the write rules.
 
-Grant, revoke and renounce SHALL follow the Send or Propose rule. *Propose a role change* SHALL offer grant, revoke, and rotate; a rotation SHALL put the grant and the revoke in one operation.
+Grant and revoke SHALL follow the Send or Propose rule. *Propose a role change* SHALL offer grant, revoke, and rotate; a rotation SHALL put the grant and the revoke in one operation. Renounce SHALL be offered on the connected wallet's own roles and sent by it, since only a holder can renounce; it SHALL be styled so it cannot be mistaken for Revoke.
 
 #### Scenario: Timelocked role outside the timelock
 - **WHEN** `UPGRADER_ROLE` is held by an address other than the timelock on a deployment with a timelock
@@ -275,6 +283,8 @@ It SHALL list the timelock's operations with a Pending, Done, Cancelled or All f
 - its delay, salt and predecessor;
 - when it is ready;
 - its schedule and execute transactions.
+
+An operation past its ready time that the chain still reports as waiting SHALL say it is executable from the chain's next block.
 
 A later refresh SHALL read only the blocks not yet read.
 
@@ -330,6 +340,8 @@ The Overview SHALL list first the conditions that need an operator, each linking
 - a timelock operation that is ready;
 - the paymaster paused;
 - the solvency invariant failing.
+
+When more than three conditions are of one kind, they SHALL be shown as one line that says how many, names the first three, newest first, each linking to its tenant page, and says how many more.
 
 Below them it SHALL show:
 - the deposit, tenant balances, treasury and stake;
