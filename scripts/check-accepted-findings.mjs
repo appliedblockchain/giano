@@ -13,7 +13,7 @@
 // The security tools run without suppressions; this script is the one place that decides. No
 // dependencies and no network access, so it runs on fork PRs too. See security/README.md.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,22 +32,47 @@ export const WORKSPACES = [".", "services/custom-example"];
 // register replaces them.
 export const SUPPRESSION_FILES = [
 	"packages/contracts/slither.db.json",
+	// Slither reads this when slither.config.json is missing.
+	"packages/contracts/slither.conf.json",
 	"packages/contracts/export.sarif.sarifexplorer",
 	".gitleaksignore",
+	".trivyignore",
+	".trivyignore.yaml",
+	"trivy.yaml",
 ];
+
+// pnpm settings that hide advisories from `pnpm audit`, in each workspace's config files.
+export const PNPM_CONFIG_FILES = [
+	"pnpm-workspace.yaml",
+	".npmrc",
+	"package.json",
+];
+const PNPM_AUDIT_SETTING =
+	/\b(auditConfig|audit-config|auditLevel|audit-level|ignoreGhsas|ignore-ghsas|ignoreCves|ignore-cves)\b|^\s*["']?ignore["']?\s*[:=]/m;
 
 // A source comment changes the contract metadata hash, and so the CREATE2 addresses.
 const IN_SOURCE_SUPPRESSION = /slither-disable|aderyn-ignore|aderyn-fp/;
 
-// Slither keys that only set scope or output. Anything else (detectors_to_exclude, exclude_high,
-// triage settings, …) would hide findings without a register entry. `//` holds the reasons.
-export const SLITHER_SCOPE_KEYS = [
-	"//",
-	"filter_paths",
-	"exclude_dependencies",
-	"exclude_informational",
-	"exclude_optimization",
-];
+// The exact scope of each Solidity tool. Any other key (detectors_to_exclude, exclude_high, …)
+// would hide findings without a register entry, and a changed value could drop production code
+// from the analysis. So the register check compares every key and value: changing the scope means
+// changing this script, in review. In slither.config.json, `//` holds the reasons.
+// - include_paths keeps a Slither finding when any of its code is in packages/contracts/src outside
+//   src/testing/. (filter_paths would drop a finding in src/ that also touches lib/.)
+// - show_ignored_findings makes Slither ignore slither-disable comments and triage files in every
+//   file, including imported dependencies.
+export const SLITHER_SCOPE = {
+	include_paths: "packages/contracts/src/(?!testing/)",
+	exclude_informational: true,
+	exclude_optimization: true,
+	show_ignored_findings: true,
+};
+export const ADERYN_SCOPE = {
+	version: 1,
+	root: ".",
+	src: "src",
+	exclude: ["src/testing/"],
+};
 
 const REQUIRED_FIELDS = [
 	"id",
@@ -165,8 +190,15 @@ function entryErrors(entry, index) {
 		if (!REQUIRED_FIELDS.includes(field) && !OPTIONAL_FIELDS.includes(field))
 			err("unknown-field", `has an unknown field '${field}'`);
 	}
-	if (entry.id !== undefined && !/^AF-\d{3}$/.test(entry.id))
-		err("bad-id", `id '${entry.id}' is not AF- followed by three digits`);
+	// typeof first: RegExp.test turns a value such as ["AF-001"] into the string "AF-001".
+	if (
+		entry.id !== undefined &&
+		(typeof entry.id !== "string" || !/^AF-\d{3}$/.test(entry.id))
+	)
+		err(
+			"bad-id",
+			`id ${JSON.stringify(entry.id)} is not a string of AF- followed by three digits`,
+		);
 	if (entry.tool !== undefined && !TOOLS.includes(entry.tool))
 		err("bad-tool", `tool '${entry.tool}' is not one of ${TOOLS.join(", ")}`);
 	else if (
@@ -187,7 +219,10 @@ function entryErrors(entry, index) {
 		if (entry[field] !== undefined && typeof entry[field] !== "string")
 			err("bad-field", `${field} is not a string`);
 	}
-	if (typeof entry.owner === "string" && /,|&|\/|\band\b/.test(entry.owner))
+	if (
+		typeof entry.owner === "string" &&
+		/[,&/;+|\r\n]|\b(and|or|teams?|group)\b/i.test(entry.owner)
+	)
 		err(
 			"bad-owner",
 			`owner '${entry.owner}' must name one person, not a list or a team`,
@@ -322,14 +357,23 @@ export function checkSlitherConfig(text, file = SLITHER_CONFIG) {
 				message: "is not a JSON object",
 			},
 		];
-	return Object.keys(config)
-		.filter((key) => !SLITHER_SCOPE_KEYS.includes(key))
+	const errs = Object.keys(config)
+		.filter((key) => key !== "//" && !Object.hasOwn(SLITHER_SCOPE, key))
 		.map((key) => ({
 			file,
 			line: 1,
 			rule: "config-suppression",
 			message: `'${key}' is not a scope setting. A JSON config cannot name a register entry, so record each accepted finding in ${REGISTER_PATH} instead`,
 		}));
+	for (const [key, value] of Object.entries(SLITHER_SCOPE))
+		if (JSON.stringify(config[key]) !== JSON.stringify(value))
+			errs.push({
+				file,
+				line: 1,
+				rule: "config-scope",
+				message: `'${key}' must be ${JSON.stringify(value)}, not ${JSON.stringify(config[key]) ?? "missing"}. The scope is fixed in scripts/check-accepted-findings.mjs`,
+			});
+	return errs;
 }
 
 // The register check reads aderyn.toml and .gitleaks.toml without a TOML library. It reads a plain
@@ -421,23 +465,35 @@ function tomlLines(text) {
 	return lines;
 }
 
-const ADERYN_SCOPE_KEYS = ["version", "root", "src", "include", "exclude"];
-
-/** aderyn.toml may set scope only: the top-level scope keys, one line each. Anything else could turn detectors off. */
+/** aderyn.toml holds exactly the scope in ADERYN_SCOPE, one top-level key per line. Anything else could turn detectors off or drop code. */
 export function checkAderynConfig(text, file = ADERYN_CONFIG) {
 	const errs = [];
 	// A key after any table header belongs to that table, so it is not a top-level key.
 	let inTable = false;
+	const seen = new Set();
 	for (const l of tomlLines(text)) {
 		if (l.kind === "header") inTable = true;
 		if (
 			l.kind === "key" &&
 			!inTable &&
 			l.path.length === 1 &&
-			ADERYN_SCOPE_KEYS.includes(l.path[0]) &&
-			!l.code.includes("{")
-		)
+			Object.hasOwn(ADERYN_SCOPE, l.path[0])
+		) {
+			const key = l.path[0];
+			seen.add(key);
+			let value;
+			try {
+				value = JSON.parse(l.value);
+			} catch {}
+			if (JSON.stringify(value) !== JSON.stringify(ADERYN_SCOPE[key]))
+				errs.push({
+					file,
+					line: l.line,
+					rule: "config-scope",
+					message: `'${key}' must be ${JSON.stringify(ADERYN_SCOPE[key])}, not ${l.value}. The scope is fixed in scripts/check-accepted-findings.mjs`,
+				});
 			continue;
+		}
 		const what =
 			l.kind === "header"
 				? `Table [${l.path.join(".")}]`
@@ -453,9 +509,17 @@ export function checkAderynConfig(text, file = ADERYN_CONFIG) {
 				l.kind === "header" || l.kind === "key"
 					? "config-suppression"
 					: "unsupported-config",
-			message: `${what} is not allowed. This file sets scope only: the top-level keys ${ADERYN_SCOPE_KEYS.join(", ")}, each on one line. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
+			message: `${what} is not allowed. This file sets scope only: the top-level keys ${Object.keys(ADERYN_SCOPE).join(", ")}, each on one line. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
 		});
 	}
+	for (const key of Object.keys(ADERYN_SCOPE))
+		if (!seen.has(key))
+			errs.push({
+				file,
+				line: 1,
+				rule: "config-scope",
+				message: `has no '${key}'. It must be ${JSON.stringify(ADERYN_SCOPE[key])}`,
+			});
 	return errs;
 }
 
@@ -553,8 +617,29 @@ export function checkGitleaksConfig(
 			message:
 				"has no [extend] table with useDefault = true. Without it, gitleaks does not run its default rules",
 		});
+	// Each allowlist starts its description with the one entry that accepts it, and each entry
+	// accepts one allowlist, so one assessment cannot cover other allowlists.
+	const used = new Map();
 	for (const block of blocks) {
-		const named = (block.description ?? "").match(/AF-\d{3}/g) ?? [];
+		const named = (block.description ?? "").match(/\bAF-\d{3}\b/g) ?? [];
+		if (named.length === 1 && block.description.startsWith(named[0])) {
+			if (used.has(named[0]))
+				errs.push({
+					file,
+					line: block.line,
+					rule: "suppression-without-entry",
+					message: `[${block.header}] block names ${named[0]}, which already accepts the block on line ${used.get(named[0])}. Each allowlist needs its own entry`,
+				});
+			else used.set(named[0], block.line);
+		} else if (named.length > 0) {
+			errs.push({
+				file,
+				line: block.line,
+				rule: "suppression-without-entry",
+				message: `[${block.header}] block description must start with one entry ID and name no other (found ${named.join(", ")})`,
+			});
+			continue;
+		}
 		if (!named.some((id) => allowlistIds.has(id)))
 			errs.push({
 				file,
@@ -573,6 +658,68 @@ function solidityFiles(root, dir) {
 		.filter((d) => d.isFile() && d.name.endsWith(".sol"))
 		.map((d) => relative(root, join(d.parentPath, d.name)))
 		.sort();
+}
+
+// A symlink under src could bring in a file the in-source scan does not read.
+function symlinks(root, dir) {
+	const abs = resolve(root, dir);
+	if (!existsSync(abs)) return [];
+	return readdirSync(abs, { recursive: true, withFileTypes: true })
+		.filter((d) => d.isSymbolicLink())
+		.map((d) => relative(root, join(d.parentPath, d.name)))
+		.sort();
+}
+
+// Every key in a JSON value, at any depth, with JSON escapes already decoded.
+const jsonKeys = (value) =>
+	isObject(value)
+		? Object.entries(value).flatMap(([k, v]) => [k, ...jsonKeys(v)])
+		: Array.isArray(value)
+			? value.flatMap(jsonKeys)
+			: [];
+const PNPM_AUDIT_KEY =
+	/^(auditConfig|audit-config|auditLevel|audit-level|ignoreGhsas|ignore-ghsas|ignoreCves|ignore-cves)$/;
+
+/** pnpm settings that hide advisories, in each workspace's config files. */
+export function checkPnpmAuditSettings(files) {
+	const errs = [];
+	for (const { file, text } of files) {
+		// An escaped key ("\x61uditConfig") reads as auditConfig to pnpm but not to a text match, so a
+		// YAML file may hold no escape, and package.json keys are read after JSON decoding.
+		if (file.endsWith(".yaml") && text.includes("\\"))
+			errs.push({
+				file,
+				line: text.slice(0, text.indexOf("\\")).split("\n").length,
+				rule: "suppression-setting",
+				message:
+					"has a backslash escape. Write every key and value without escapes, so the check can read them",
+			});
+		if (file.endsWith("package.json")) {
+			let keys = [];
+			try {
+				keys = jsonKeys(JSON.parse(text));
+			} catch {}
+			for (const key of keys.filter((k) => PNPM_AUDIT_KEY.test(k)))
+				errs.push({
+					file,
+					line: 1,
+					rule: "suppression-setting",
+					message: `'${key}' hides advisories from pnpm audit without an owner or an expiry. Record each accepted advisory in ${REGISTER_PATH} instead`,
+				});
+			continue;
+		}
+		text.split("\n").forEach((line, i) => {
+			const m = line.match(PNPM_AUDIT_SETTING);
+			if (m)
+				errs.push({
+					file,
+					line: i + 1,
+					rule: "suppression-setting",
+					message: `'${m[0].trim()}' hides advisories from pnpm audit without an owner or an expiry. Record each accepted advisory in ${REGISTER_PATH} instead`,
+				});
+		});
+	}
+	return errs;
 }
 
 function readJsonFile(path) {
@@ -628,13 +775,55 @@ export function checkRepository(root, today) {
 		existsSync(resolve(root, file))
 			? readFileSync(resolve(root, file), "utf8")
 			: null;
-	const slither = read(SLITHER_CONFIG);
-	if (slither !== null) errs.push(...checkSlitherConfig(slither));
-	const aderyn = read(ADERYN_CONFIG);
-	if (aderyn !== null) errs.push(...checkAderynConfig(aderyn));
+	// Without its config, a tool falls back to its defaults or to another config file, so both
+	// configs must exist while the contracts package does.
+	const contracts = dirname(CONTRACTS_SRC);
+	for (const [file, check] of [
+		[SLITHER_CONFIG, checkSlitherConfig],
+		[ADERYN_CONFIG, checkAderynConfig],
+	]) {
+		const text = read(file);
+		if (text !== null) errs.push(...check(text));
+		else if (existsSync(resolve(root, contracts)))
+			errs.push({
+				file,
+				rule: "config-scope",
+				message: "does not exist. The tool needs it to analyse the fixed scope",
+			});
+	}
+	// If src itself, or a folder above it, is a symlink, the tools resolve the paths outside the
+	// fixed scope and drop every finding.
+	const src = resolve(root, CONTRACTS_SRC);
+	if (
+		existsSync(src) &&
+		realpathSync(src) !== join(realpathSync(root), CONTRACTS_SRC)
+	)
+		errs.push({
+			file: CONTRACTS_SRC,
+			rule: "symlink",
+			message:
+				"or a folder above it is a symlink. The contract sources must be in a regular directory",
+		});
 	const gitleaks = read(GITLEAKS_CONFIG);
 	if (gitleaks !== null)
 		errs.push(...checkGitleaksConfig(gitleaks, allowlistIds));
+	for (const file of symlinks(root, CONTRACTS_SRC))
+		errs.push({
+			file,
+			rule: "symlink",
+			message:
+				"is a symlink. Every contract source under packages/contracts/src must be a regular file",
+		});
+	errs.push(
+		...checkPnpmAuditSettings(
+			WORKSPACES.flatMap((ws) => PNPM_CONFIG_FILES.map((f) => join(ws, f)))
+				.filter((file) => existsSync(resolve(root, file)))
+				.map((file) => ({
+					file,
+					text: readFileSync(resolve(root, file), "utf8"),
+				})),
+		),
+	);
 	for (const file of SUPPRESSION_FILES)
 		if (existsSync(resolve(root, file)))
 			errs.push({
@@ -673,10 +862,19 @@ function requireSeverity(value, allowed, what) {
 	return value;
 }
 
+/** An array whose every element is an object. */
 function requireArray(value, what) {
 	if (!Array.isArray(value)) throw new ReportError(`${what} is not an array`);
+	value.forEach((v, i) => {
+		if (!isObject(v)) throw new ReportError(`${what}[${i}] is not an object`);
+	});
 	return value;
 }
+
+// A list the tool leaves out when it is empty. Only an absent key means "none": null or any other
+// value makes the report invalid.
+const optionalArray = (value, what) =>
+	value === undefined ? [] : requireArray(value, what);
 
 // Each parser returns [{ key, gating, label }]. `key` holds the same fields as the tool's match
 // shape, so an entry matches when every field of its `match` equals the finding's key.
@@ -688,21 +886,20 @@ export const PARSERS = {
 			);
 		if (!isObject(report.results))
 			throw new ReportError("Slither report has no results object");
-		return requireArray(
-			report.results.detectors ?? [],
-			"results.detectors",
-		).map((d) => ({
-			key: { check: d.check, id: d.id },
-			gating: SLITHER_GATE.includes(
-				requireSeverity(
-					d.impact,
-					SLITHER_IMPACTS,
-					`Slither finding ${d.check}`,
+		return optionalArray(report.results.detectors, "results.detectors").map(
+			(d) => ({
+				key: { check: d.check, id: d.id },
+				gating: SLITHER_GATE.includes(
+					requireSeverity(
+						d.impact,
+						SLITHER_IMPACTS,
+						`Slither finding ${d.check}`,
+					),
 				),
-			),
-			severity: d.impact.toLowerCase(),
-			label: `${d.check} (${d.impact}) at ${d.first_markdown_element ?? "unknown location"}`,
-		}));
+				severity: d.impact.toLowerCase(),
+				label: `${d.check} (${d.impact}) at ${d.first_markdown_element ?? "unknown location"}`,
+			}),
+		);
 	},
 	aderyn(report) {
 		if (
@@ -711,6 +908,23 @@ export const PARSERS = {
 			!isObject(report.low_issues)
 		)
 			throw new ReportError("Aderyn report has no high_issues and low_issues");
+		// Aderyn 0.6.8 has two categories. Any other one (older versions had critical and medium)
+		// would be ignored, so it makes the report invalid.
+		const categories = Object.keys(report).filter((k) => k.endsWith("_issues"));
+		if (categories.some((k) => k !== "high_issues" && k !== "low_issues"))
+			throw new ReportError(
+				`Aderyn report has unknown categories: ${categories.join(", ")}`,
+			);
+		for (const level of ["high", "low"]) {
+			const issues = requireArray(
+				report[`${level}_issues`].issues,
+				`${level}_issues.issues`,
+			);
+			if (report.issue_count?.[level] !== issues.length)
+				throw new ReportError(
+					`Aderyn report counts ${report.issue_count?.[level]} ${level} issues but lists ${issues.length}`,
+				);
+		}
 		const instances = (issues, gating) =>
 			requireArray(issues.issues, "issues").flatMap((issue) =>
 				requireArray(issue.instances, `${issue.detector_name} instances`).map(
@@ -740,7 +954,22 @@ export const PARSERS = {
 			);
 		if (!isObject(report.advisories) || !isObject(report.metadata))
 			throw new ReportError("pnpm audit output has no advisories and metadata");
-		return Object.values(report.advisories).map((a) => ({
+		const advisories = Object.values(report.advisories);
+		advisories.forEach((a, i) => {
+			if (!isObject(a))
+				throw new ReportError(`pnpm advisory #${i + 1} is not an object`);
+		});
+		// The summary counts each advisory once. A gated advisory that is counted but not listed
+		// was dropped from the list, so the report is invalid.
+		for (const level of PNPM_GATE) {
+			const counted = report.metadata.vulnerabilities?.[level];
+			const listed = advisories.filter((a) => a.severity === level).length;
+			if (counted !== listed)
+				throw new ReportError(
+					`pnpm audit counts ${counted} ${level} advisories but lists ${listed}`,
+				);
+		}
+		return advisories.map((a) => ({
 			key: { workspace, ghsa: a.github_advisory_id ?? `npm-advisory-${a.id}` },
 			gating: PNPM_GATE.includes(
 				requireSeverity(
@@ -756,8 +985,8 @@ export const PARSERS = {
 	trivy(report, { image }) {
 		if (!isObject(report) || typeof report.SchemaVersion !== "number")
 			throw new ReportError("Trivy report has no SchemaVersion");
-		return requireArray(report.Results ?? [], "Results").flatMap((r) =>
-			requireArray(r.Vulnerabilities ?? [], "Vulnerabilities").map((v) => ({
+		return optionalArray(report.Results, "Results").flatMap((r) =>
+			optionalArray(r.Vulnerabilities, "Vulnerabilities").map((v) => ({
 				key: { image, package: v.PkgName, vulnerability: v.VulnerabilityID },
 				gating:
 					TRIVY_GATE.includes(
@@ -882,19 +1111,19 @@ function reportMode(args, root, today) {
 		throw new ReportError(
 			`report ${args.report} does not exist: the tool did not produce a result`,
 		);
+	let text;
+	try {
+		text = readFileSync(reportFile, "utf8");
+	} catch (e) {
+		throw new ReportError(`cannot read report ${args.report}: ${e.message}`);
+	}
 	let register;
 	try {
 		register = readJsonFile(resolve(root, REGISTER_PATH));
 	} catch (e) {
 		throw new ReportError(`cannot read ${REGISTER_PATH}: ${e.message}`);
 	}
-	const result = evaluateReport(
-		args.tool,
-		readFileSync(reportFile, "utf8"),
-		register,
-		today,
-		args,
-	);
+	const result = evaluateReport(args.tool, text, register, today, args);
 	for (const a of result.accepted)
 		console.log(`accepted  ${a.entry}  ${a.label}`);
 	if (result.belowGate)

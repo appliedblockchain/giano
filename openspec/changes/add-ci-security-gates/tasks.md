@@ -23,7 +23,7 @@
 - [ ] 2.2 Add `.github/dependabot.yml` as in D6. Verify GitHub reports no configuration error for it in the PR's checks.
 - [ ] 2.3 Update the ABIP-6 section of `docs/abip-compliance.md`: the audit runs in CI, and accepted residuals live in the register. Verify the doc links resolve.
 - [ ] 2.4 Add `.gitleaks.toml` that extends the default rules, with one allowlist for the public Anvil keys, and register entry AF-008 for it. Verify the register check passes.
-- [ ] 2.5 Add job `secret-scan` ("Secret scan (gitleaks)") to `ci.yml` as in D8, and add it to the `needs` of `ci-passed`: gitleaks binary with recorded sha256, released at least 7 days ago. Add gitleaks to the pinning table. Verify it is green on the PR and passes on the `workflow_call` path.
+- [ ] 2.5 Add job `secret-scan` ("Secret scan (gitleaks)") to `ci.yml` as in D8, and add it to the `needs` of `ci-passed`: gitleaks binary with recorded sha256, released at least 7 days ago, run with `--ignore-gitleaks-allow`. Add gitleaks to the pinning table. Verify it is green on the PR and passes on the `workflow_call` path.
 - [ ] 2.6 Verify the secret gate fails: on a scratch branch that is never merged, commit a fake key that matches a gitleaks rule and confirm the job fails with the secret redacted. Record the run link in the PR description.
 - [ ] 2.7 Add `.github/workflows/codeql.yml` as in D7. Verify both matrix legs succeed on the PR and the "CodeQL" check appears.
 - [ ] 2.8 After the first CodeQL run on `main`, triage the baseline alerts: fix each one, or dismiss it in GitHub and add a register entry with tool `codeql`. Verify no open high or critical alert remains without an entry.
