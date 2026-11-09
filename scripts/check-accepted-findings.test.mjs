@@ -916,6 +916,19 @@ describe("check-accepted-findings: report details", () => {
 		assert.match(slither.failures[0].message, /accepts medium .* reports high/);
 	});
 
+	it("fails an Aderyn issue that lists no instances", () => {
+		for (const level of ["high", "low"]) {
+			const issue = { detector_name: "x", instances: [] };
+			const text =
+				level === "high" ? aderynReport([issue]) : aderynReport([], [issue]);
+			assert.throws(
+				() => evaluateReport("aderyn", text, [], TODAY),
+				/Aderyn issue x lists no instances/,
+				level,
+			);
+		}
+	});
+
 	it("fails a report whose findings are not objects or whose lists are null", () => {
 		const cases = [
 			[

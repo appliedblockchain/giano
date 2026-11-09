@@ -239,6 +239,13 @@ GitHub has no "every job must pass" setting. Branch protection and rulesets acce
 `ci.yml` gets a last job, `ci-passed` ("CI passed"). It `needs` every other job in the file, runs with `if: always()`,
 and fails unless every needed job succeeded. A failed, cancelled or skipped job fails it.
 
+`scripts/check-ci-gate.mjs` runs first in `ci-passed` and keeps the gate complete. It parses `ci.yml` with a full YAML
+parser (`yaml`, a root devDependency), so it reads every key form as GitHub does: quoted, escaped, explicit (`?`),
+tagged, anchored or merged. It fails when a job is missing from `needs`, when `ci-passed` loses `if: always()`, or when
+any job or step has `continue-on-error`. Without `if: always()`, a failed job would skip `ci-passed`, and GitHub counts
+a skipped required check as passed. `continue-on-error` lets a failed job or step count as success. A text scan with
+`grep` missed some of these key forms, so the check does not use one.
+
 With this job, `ci.yml` needs only one required check. A new job joins the gate when its PR adds it to the `needs`
 list, with no settings change. The two checks outside `ci.yml` keep their own names:
 `Two-tenant Playwright suite (Chromium + virtual authenticator)` (`e2e.yml`) and `CodeQL` (`codeql.yml`).

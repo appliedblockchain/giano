@@ -876,6 +876,19 @@ function requireArray(value, what) {
 const optionalArray = (value, what) =>
 	value === undefined ? [] : requireArray(value, what);
 
+// An Aderyn issue with no instance would add no finding, so a listed High would pass unseen.
+function requireInstances(issue) {
+	const instances = requireArray(
+		issue.instances,
+		`${issue.detector_name} instances`,
+	);
+	if (instances.length === 0)
+		throw new ReportError(
+			`Aderyn issue ${issue.detector_name} lists no instances`,
+		);
+	return instances;
+}
+
 // Each parser returns [{ key, gating, label }]. `key` holds the same fields as the tool's match
 // shape, so an entry matches when every field of its `match` equals the finding's key.
 export const PARSERS = {
@@ -927,18 +940,16 @@ export const PARSERS = {
 		}
 		const instances = (issues, gating) =>
 			requireArray(issues.issues, "issues").flatMap((issue) =>
-				requireArray(issue.instances, `${issue.detector_name} instances`).map(
-					(x) => ({
-						key: {
-							detector_name: issue.detector_name,
-							contract_path: x.contract_path,
-							line_no: x.line_no,
-						},
-						gating,
-						severity: gating ? "high" : "low",
-						label: `${issue.detector_name} (${gating ? "High" : "Low"}) at ${x.contract_path}:${x.line_no}`,
-					}),
-				),
+				requireInstances(issue).map((x) => ({
+					key: {
+						detector_name: issue.detector_name,
+						contract_path: x.contract_path,
+						line_no: x.line_no,
+					},
+					gating,
+					severity: gating ? "high" : "low",
+					label: `${issue.detector_name} (${gating ? "High" : "Low"}) at ${x.contract_path}:${x.line_no}`,
+				})),
 			);
 		return [
 			...instances(report.high_issues, true),
