@@ -272,6 +272,128 @@ test("the Paymaster tab fills Max from the treasury, and unlocking stake asks be
 	).toBe(sentBefore);
 });
 
+test("the Paymaster tab adds and removes a signing key, sets each parameter, withdraws a wei of fees and re-locks the stake with 0", async ({
+	page,
+}) => {
+	await installWallet(page, { known: [CHAINS.a.chainId] });
+	await openConsole(page);
+	await chooseDeployment(page, CHAINS.a.chainId);
+	await page.getByRole("button", { name: /^Connect wallet$/ }).click();
+	await expect(page.getByRole("button", { name: /^Connected/ })).toBeVisible();
+	await signInToPaymaster(page);
+	await tab(page, /Paymaster/).click();
+
+	const chain = createPublicClient({ transport: http(CHAINS.a.rpc) });
+	const paymaster = (await page.evaluate(
+		async () =>
+			(
+				await (await fetch("/config.json")).json()
+			).deployments[0].sponsorshipPaymaster,
+	)) as `0x${string}`;
+	const read = <T>(functionName: string, outputs: string) =>
+		chain.readContract({
+			address: paymaster,
+			abi: [
+				{
+					type: "function",
+					name: functionName,
+					stateMutability: "view",
+					inputs: [],
+					outputs: [{ type: outputs }],
+				},
+			],
+			functionName,
+		}) as Promise<T>;
+	const confirmed = (label: string) =>
+		expect(page.getByText(`${label} confirmed`).last()).toBeVisible({
+			timeout: 60_000,
+		});
+
+	// a signing key, added and removed again: nothing is left behind for the sponsorship specs
+	const key = getAddress(
+		`0x${"5e".padEnd(40 - 12, "0")}${Date.now().toString(16).padStart(12, "0")}`,
+	);
+	await page.getByRole("textbox", { name: "Add a signing key" }).fill(key);
+	await page.getByRole("button", { name: "Add signing key" }).click();
+	await confirmed("Add signing key");
+	const keyRow = page.getByText(key).first();
+	await expect(keyRow).toBeVisible({ timeout: 30_000 });
+	await page
+		.locator("div", { has: page.getByText(key, { exact: true }) })
+		.getByRole("button", { name: "Remove" })
+		.last()
+		.click();
+	const removeKey = page.getByRole("alertdialog", {
+		name: "Remove a signing key",
+	});
+	await expect(removeKey).toContainText(key);
+	await removeKey.getByRole("button", { name: "Remove key" }).click();
+	await confirmed("Remove");
+	await expect(page.getByText(key)).toHaveCount(0, { timeout: 30_000 });
+
+	// each parameter moved by one and put back, read from the chain each time
+	const gas = await read<number>("postOpGasAllowance", "uint32");
+	const penalty = await read<number>("penaltyBps", "uint16");
+	const setGas = async (value: number) => {
+		await page
+			.getByRole("textbox", { name: "New post-op gas allowance" })
+			.fill(String(value));
+		await page
+			.getByRole("button", { name: "Set post-op gas allowance" })
+			.click();
+		await confirmed("Set post-op gas allowance");
+		await expect
+			.poll(() => read<number>("postOpGasAllowance", "uint32"))
+			.toBe(value);
+	};
+	const setPenalty = async (value: number) => {
+		await page
+			.getByRole("textbox", { name: "New unused-gas penalty" })
+			.fill(String(value));
+		await page.getByRole("button", { name: "Set penalty" }).click();
+		await confirmed("Set penalty");
+		await expect.poll(() => read<number>("penaltyBps", "uint16")).toBe(value);
+	};
+	try {
+		await setGas(gas + 1);
+		await setPenalty(penalty === 0 ? 1 : penalty - 1);
+	} finally {
+		await setGas(gas);
+		await setPenalty(penalty);
+	}
+
+	// a wei of accrued fees, where there are any (none on a fresh devnet before sponsorship)
+	const treasury = await read<bigint>("treasury", "uint256");
+	if (treasury > 0n) {
+		await page
+			.getByRole("textbox", { name: "Withdraw to" })
+			.fill("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+		await page
+			.getByRole("textbox", { name: "Amount" })
+			.fill("0.000000000000000001");
+		await page.getByRole("button", { name: "Withdraw fees" }).click();
+		const withdraw = page.getByRole("alertdialog", {
+			name: "Withdraw from the treasury",
+		});
+		await expect(withdraw).toContainText(
+			"0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+		);
+		await withdraw.getByRole("button", { name: "Withdraw" }).click();
+		await confirmed("Withdraw fees");
+		await expect
+			.poll(() => read<bigint>("treasury", "uint256"))
+			.toBe(treasury - 1n);
+	}
+
+	// Add stake with 0 re-locks with the delay shown, which is the on-chain one: no funds move
+	const locked = page.getByText("Staked and locked");
+	await expect(locked).toBeVisible();
+	await page.getByRole("textbox", { name: "Add stake" }).fill("0");
+	await page.getByRole("button", { name: "Add stake", exact: true }).click();
+	await confirmed("Add stake");
+	await expect(locked).toBeVisible();
+});
+
 test("the Roles tab grants, rotates and revokes a role, each change landing on chain", async ({
 	page,
 }) => {
