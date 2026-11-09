@@ -307,7 +307,8 @@ export const sessions = pgTable(
 		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 		/**
 		 * When wallet-api last accepted this session, to a resolution of a minute (G5). The idle
-		 * timeout reads it; resolve() writes it only when the stored value is a minute old.
+		 * timeout reads it; touch() writes it, once a request has passed every check, and only
+		 * when the stored value is a minute old.
 		 */
 		lastUsedAt: timestamp("last_used_at", { withTimezone: true })
 			.notNull()
@@ -321,6 +322,10 @@ export const sessions = pgTable(
 		// the per-user cap and revocation by user only look at sessions not yet revoked
 		index("sessions_user_live_idx")
 			.on(t.userId, t.lastUsedAt)
+			.where(sql`${t.revokedAt} IS NULL`),
+		// an admin revoking every session acting for a wallet matches it ignoring case
+		index("sessions_wallet_live_idx")
+			.on(sql`lower(${t.walletAddress})`)
 			.where(sql`${t.revokedAt} IS NULL`),
 	],
 );

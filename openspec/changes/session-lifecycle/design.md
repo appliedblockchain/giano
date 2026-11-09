@@ -41,7 +41,7 @@ Why 60 minutes: an operation that moves funds needs a passkey signature anyway, 
 2. Insert the new session.
 3. Revoke the live sessions beyond the newest `SESSION_MAX_PER_USER`, ordered by `last_used_at DESC, created_at DESC`.
 
-"Live" uses the same predicate as `resolve()`, so idle and expired sessions never count and are never touched. A partial index `sessions_user_live_idx ON sessions (user_id, last_used_at) WHERE revoked_at IS NULL` keeps step 3 and the revocations by user cheap.
+"Live" uses the same predicate as `resolve()`, so idle and expired sessions never count and are never touched. A partial index `sessions_user_live_idx ON sessions (user_id, last_used_at) WHERE revoked_at IS NULL` keeps step 3 and the revocations by user cheap, and `sessions_wallet_live_idx ON sessions (lower(wallet_address)) WHERE revoked_at IS NULL` does the same for an admin revoking by wallet, which matches ignoring case: dead rows stay until retention (G34), so neither path scans them.
 - *Alternative:* refuse the new sign-in at the cap. Rejected: it locks out the legitimate user, which is exactly what a script holding 10 tokens would want.
 
 ### D4. Revocation is one service method with two selectors

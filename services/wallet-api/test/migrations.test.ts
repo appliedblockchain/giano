@@ -264,6 +264,13 @@ describe("migration 0007_tenant_lifecycle", () => {
 				)
 			).rows[0].indexdef,
 		).toMatch(/\(user_id, last_used_at\) WHERE \(revoked_at IS NULL\)/);
+		expect(
+			(
+				await client.query(
+					`SELECT indexdef FROM pg_indexes WHERE indexname = 'sessions_wallet_live_idx'`,
+				)
+			).rows[0].indexdef,
+		).toMatch(/\(lower\(wallet_address\)\) WHERE \(revoked_at IS NULL\)/);
 
 		await client.query(
 			`INSERT INTO tenant_history (tenant_id, action, actor, detail)

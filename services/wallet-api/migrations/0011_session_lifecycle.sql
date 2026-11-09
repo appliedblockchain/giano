@@ -5,8 +5,10 @@
 -- their issue time, so a session issued before this release goes idle an hour after issue at the
 -- latest: the safe direction for a control that ends sessions.
 --
--- The partial index serves the hot paths that only care about sessions not yet revoked: the
--- per-user cap at issue, and revocation by user.
+-- The partial indexes serve the paths that only care about sessions not yet revoked: the per-user
+-- cap at issue and revocation by user, and an admin revoking every session acting for a wallet,
+-- matched ignoring case. Dead rows stay in the table until retention (G34), so the emergency route
+-- must not scan them.
 --
 -- tenant_history gains 'user-sessions-revoke': a tenant admin key or a platform admin revoking a
 -- user's sessions is recorded there, with the tenant left unchanged (before/after null).
@@ -20,6 +22,7 @@ ALTER TABLE sessions ALTER COLUMN last_used_at SET DEFAULT now();
 ALTER TABLE sessions ALTER COLUMN last_used_at SET NOT NULL;
 
 CREATE INDEX sessions_user_live_idx ON sessions (user_id, last_used_at) WHERE revoked_at IS NULL;
+CREATE INDEX sessions_wallet_live_idx ON sessions (lower(wallet_address)) WHERE revoked_at IS NULL;
 
 ALTER TABLE tenant_history DROP CONSTRAINT tenant_history_action_check;
 ALTER TABLE tenant_history ADD CONSTRAINT tenant_history_action_check CHECK (action IN (
