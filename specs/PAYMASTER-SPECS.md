@@ -1187,6 +1187,8 @@ New Prometheus series, all `tenant`-labelled to match the existing convention
 | `giano_paymaster_watcher_active{chain}` | gauge | Sum across replicas is 0: no replica holds the chain's watcher lock |
 | `giano_sponsorship_unavailable_total{cause}` | counter | Signer/HSM/database failures — outage, not misconfiguration (R-21) |
 | `giano_paymaster_reconciliation_divergence_wei` | gauge | Unexplained drawdown (R-26) |
+| `giano_paymaster_drifted_tenants{chain}` | gauge | This deployment's tenants whose registry, ledger and paymaster disagree (drift, `GET /v1/platform/drift`); reported, not a health failure |
+| `giano_paymaster_unknown_tenants{chain}` | gauge | Tenants on the paymaster with no registry row (another deployment's, on a shared paymaster) |
 
 `GET /readyz` gains the signer and the paymaster's reachability, so a deployment that cannot sponsor
 does not report itself healthy.

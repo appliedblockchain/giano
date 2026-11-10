@@ -401,6 +401,15 @@ test.describe("admin console", () => {
 		}
 		// the console reads it through wallet-api; no node or bundler address is shown
 		await expect(chains).not.toContainText("http");
+
+		// the Registry and chain group is wallet-api's drift, compared where the watcher's block is known
+		const registry = page.getByTestId("health-registry");
+		await expect(registry.getByTestId("check-drift-enabled")).toContainText(
+			"On-chain state matches the registry",
+		);
+		await expect(registry.getByTestId("check-ledger")).toContainText(
+			"as wallet-api compared",
+		);
 	});
 
 	test("admins are added and removed from the console, but never yourself", async ({

@@ -8,6 +8,7 @@ import { LuArrowRight, LuRefreshCw } from "react-icons/lu";
 import { StatusText } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { getAdminConfig } from "../config";
+import { driftChecks, shouldCompareLedger } from "../lib/drift";
 import { amount, describeError } from "../lib/format";
 import {
 	type ConsoleHealth,
@@ -21,7 +22,7 @@ import {
 	pendingText,
 	signerCheck,
 } from "../lib/health";
-import type { ChainsStatus } from "../lib/platform-api";
+import type { ChainDrift, ChainsStatus } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
 import { Link, tenantPath } from "../lib/router";
 import { compareLedger, type TenantRow } from "../lib/tenants";
@@ -56,33 +57,45 @@ export function HealthTab({
 	registry: Registry;
 }) {
 	const { platformApi } = getAdminConfig();
-	const ledger = useLedgerCheck(rows, platformApi);
+	const { deployment } = useConsole();
+	const drift = useDrift(platformApi, deployment.chainId);
+	// Where wallet-api reports drift for this chain, its comparison replaces the console's (D10):
+	// it knows the block the watcher reached. Until it has answered, the console waits rather than
+	// starting its own comparison, one request per tenant, for nothing.
+	const ledger = useLedgerCheck(rows, platformApi && drift.state === "absent");
 	// "Every on-chain tenant has a registry row" is only a finding once the registry has been read
 	// in full, deleted tenants included: before that, every tenant would look unknown to wallet-api.
 	const registryRead = registry.tenants !== undefined && !registry.deletedError;
 	const chains = useChains(platformApi);
-	const extra: HealthCheck[] = platformApi
-		? [
-				registryRead
-					? registryRowsCheck(rows)
-					: {
-							id: "registry-rows",
-							level: "warn",
-							label: "The tenant registry has not been read in full",
-							detail:
-								registry.error ??
-								registry.deletedError ??
-								"Reading wallet-api's registry, so whether every on-chain tenant has a row is not known yet.",
-						},
-				...(ledger.check ? [ledger.check] : []),
-			]
-		: [];
+	const money = (wei: bigint) =>
+		`${amount(wei, deployment.nativeCurrency)} ${deployment.nativeCurrency.symbol}`;
+	const extra: HealthCheck[] = !platformApi
+		? []
+		: drift.chain
+			? driftChecks(drift.chain, money)
+			: [
+					registryRead
+						? registryRowsCheck(rows)
+						: {
+								id: "registry-rows",
+								level: "warn",
+								label: "The tenant registry has not been read in full",
+								detail:
+									registry.error ??
+									registry.deletedError ??
+									"Reading wallet-api's registry, so whether every on-chain tenant has a row is not known yet.",
+							},
+					...(ledger.check ? [ledger.check] : []),
+				];
 	// A check still waiting for its read is not a pass: until none is, "every check passes" is not
-	// yet true. The ledger comparison runs on its own; with no tenant to compare it never starts, so
-	// there is nothing to wait for.
+	// yet true. Until wallet-api's drift or the console's own ledger comparison has answered, the
+	// ledger is still being read; with no tenant to compare it never starts, so there is nothing to
+	// wait for.
 	const pending: PendingCheck[] = [
 		...health.pending,
-		...(platformApi && !ledger.check && !ledger.idle
+		...(platformApi &&
+		!drift.chain &&
+		(drift.state === "pending" || (!ledger.check && !ledger.idle))
 			? [{ id: "ledger", label: "the ledger" }]
 			: []),
 		...(chains.pending ? [{ id: "chains", label: "the chains" }] : []),
@@ -166,8 +179,8 @@ export function HealthTab({
 								size="sm"
 								variant="ghost"
 								aria-label="Compare the ledger again"
-								loading={ledger.loading}
-								onClick={() => void ledger.run()}
+								loading={drift.chain ? drift.loading : ledger.loading}
+								onClick={() => void (drift.chain ? drift.read() : ledger.run())}
 							>
 								<LuRefreshCw />
 							</Button>
@@ -290,6 +303,63 @@ function PendingRow({ entry, first }: { entry: PendingCheck; first: boolean }) {
 			<StatusText tone="gray">not checked yet</StatusText>
 		</HStack>
 	);
+}
+
+/**
+ * wallet-api's drift for the selected chain (B5), read when the tab opens and with each console
+ * refresh. `absent` where wallet-api does not serve the endpoint (D11), or does not sponsor this
+ * chain, so keeps no ledger for it: the console then compares for itself.
+ */
+function useDrift(enabled: boolean, chainId: number) {
+	const { run } = usePlatform();
+	// Not `block`, which stays the same on an idle chain: drift is read with every refresh.
+	const { lastUpdated } = useConsole();
+	const [state, setState] = useState<"pending" | "served" | "absent">(
+		enabled ? "pending" : "absent",
+	);
+	const [chain, setChain] = useState<ChainDrift>();
+	const [loading, setLoading] = useState(false);
+	/** A wallet-api without the endpoint will not grow one between refreshes. */
+	const notServed = useRef(false);
+
+	const read = useCallback(async () => {
+		if (!enabled || notServed.current) return;
+		setLoading(true);
+		try {
+			const result = await run((api) => api.drift());
+			if (!result) return;
+			if (result.ok) {
+				const found = result.value.chains.find(
+					(entry) => entry.chainId === chainId,
+				);
+				// A chain wallet-api could not compute drift for: the console compares for itself.
+				const served = found && !("error" in found) ? found : undefined;
+				setChain(served);
+				setState(served ? "served" : "absent");
+			} else if (result.error.status === 404) {
+				notServed.current = true;
+				setState("absent");
+			}
+			// any other failure: keep the last answer, and fall back if there never was one
+			else setState((current) => (current === "pending" ? "absent" : current));
+		} catch {
+			setState((current) => (current === "pending" ? "absent" : current));
+		} finally {
+			setLoading(false);
+		}
+	}, [enabled, run, chainId]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: read again with every console refresh
+	useEffect(() => {
+		void read();
+	}, [read, lastUpdated]);
+
+	return {
+		state,
+		chain: state === "served" ? chain : undefined,
+		loading,
+		read,
+	};
 }
 
 /**
@@ -565,11 +635,18 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 		}
 	}, [enabled, run, deployment, block, count, cacheKey]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: once when the tab opens with tenants to compare; again only when asked
+	// biome-ignore lint/correctness/useExhaustiveDependencies: when the tab opens with tenants to compare, and when it becomes this tab's job (wallet-api serves no drift); otherwise only when asked
 	useEffect(() => {
-		// Also when the last result was an empty comparison: tenants to compare have arrived since.
-		if (count > 0 && (!check || check.label === EMPTY_LEDGER)) void runCheck();
-	}, [count]);
+		if (
+			shouldCompareLedger({
+				enabled,
+				count,
+				emptyBefore: check?.label === EMPTY_LEDGER,
+				compared: check !== undefined,
+			})
+		)
+			void runCheck();
+	}, [count, enabled]);
 
 	return { check, loading, run: runCheck, idle: count === 0 };
 }

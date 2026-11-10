@@ -758,6 +758,41 @@ The thresholds that turn these figures into a verdict (head age, watcher lag) st
 next to the `giano-doctor` thresholds it already applies, until O-1 says who consumes the status
 and whether it should also alert.
 
+### 10.3 `GET /v1/platform/drift`
+
+Where wallet-api's records and a sponsoring chain's paymaster disagree (B5), per chain with when it
+was checked:
+
+| Kind | Drift when |
+| --- | --- |
+| `unknown-tenant` | a tenant on the paymaster's roster has no registry row: another deployment's on a shared paymaster, or a registration whose tenant was never created |
+| `enabled-state` | an active tenant is disabled on chain, or a suspended or deleted one is enabled. A tenant not yet registered is a step not yet taken, not drift |
+| `no-ledger` | the paymaster holds a balance or deficit for a registry tenant, and the ledger has no row for it (it was funded before its registry row existed) |
+| `ledger-balance` | the ledger's balance or deficit is not what the paymaster held at the block the ledger describes |
+| `withdraw-address` | the ledger's withdrawal address is not the paymaster's at that block |
+
+The ledger is checked at the block it describes: the later of the watcher's cursor (every event up
+to it is in the ledger) and the row's own block (a reconcile writes the head). A watcher that has
+not reached the block that changed a balance is behind, not wrong, and is not reported. A tenant
+the node cannot read at that block, or whose row the watcher has never synced, is listed as
+`unchecked`, not guessed.
+
+The watcher computes it before each reconcile (every `PAYMASTER_RECONCILE_INTERVAL_MS`), with the
+poll and the reconcile running one at a time so it never reads a poll half-way, before the reconcile
+overwrites the ledger with the chain, and keeps it in memory (`src/services/drift.ts`). That result
+is served while it is no older than two reconcile intervals, and forgotten when the replica loses
+the watcher lock or a drift pass fails. Otherwise, as on a replica that does not run that chain's
+watcher, it is computed on request from the same database and chain, reused for 15 seconds, and
+shared while in flight. A chain whose drift cannot be computed is an error for that chain alone.
+
+It is also the metrics `giano_paymaster_drifted_tenants{chain}` (this deployment's tenants) and
+`giano_paymaster_unknown_tenants{chain}` (tenants with no registry row: on a shared paymaster,
+another deployment's), and `giano-doctor chain`'s drift check, which fails on this deployment's
+drift and warns on unknown tenants, an old result and tenants not compared. The doctor reads it from
+`GIANO_DOCTOR_WALLET_API_URL` (https, except on localhost) with a platform session in
+`GIANO_PLATFORM_SESSION`. Drift is reported, not a `/healthz` failure: who acts on it is the
+alerting non-goal.
+
 ---
 
 ## 11. The console

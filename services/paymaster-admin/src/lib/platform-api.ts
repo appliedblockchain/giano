@@ -230,6 +230,8 @@ export function platformApi(token: string) {
 		platformAdminHistory: () =>
 			call<{ entries: PlatformAdminHistoryEntry[] }>("GET", "/admins/history"),
 		chains: () => call<ChainsStatus>("GET", "/chains"),
+		drift: () =>
+			call<{ chains: (ChainDrift | ChainDriftError)[] }>("GET", "/drift"),
 		adminSessions: (id: string) =>
 			call<{ sessions: PlatformAdminSession[] }>(
 				"GET",
@@ -256,6 +258,60 @@ export type PlatformAdminRow = {
 	/** B6: sessions neither expired nor revoked. Absent from a wallet-api that predates it. */
 	activeSessions?: number;
 };
+
+/** One chain's drift, as GET /v1/platform/drift reports it (B5). */
+export type ChainDrift = {
+	chainId: number;
+	checkedAt: string;
+	entries: DriftEntry[];
+	/** Tenants not compared: not yet synced, or the chain unreadable at the ledger's block. */
+	unchecked: string[];
+};
+
+/** A chain wallet-api could not compute drift for; the console then compares for itself. */
+export type ChainDriftError = {
+	chainId: number;
+	error: string;
+	message: string;
+};
+
+export type DriftEntry =
+	| {
+			kind: "unknown-tenant";
+			tenantId: string;
+			enabledOnChain: boolean;
+			balanceWei: string;
+	  }
+	| {
+			kind: "enabled-state";
+			tenantId: string;
+			slug: string;
+			registryStatus: string;
+			enabledOnChain: boolean;
+	  }
+	| {
+			/** The chain holds a balance or deficit for a registry tenant; the ledger has no row. */
+			kind: "no-ledger";
+			tenantId: string;
+			slug: string;
+			chain: { balanceWei: string; deficitWei: string };
+	  }
+	| {
+			kind: "ledger-balance";
+			tenantId: string;
+			slug: string;
+			atBlock: string;
+			ledger: { balanceWei: string; deficitWei: string };
+			chain: { balanceWei: string; deficitWei: string };
+	  }
+	| {
+			kind: "withdraw-address";
+			tenantId: string;
+			slug: string;
+			atBlock: string;
+			ledger: string;
+			chain: string;
+	  };
 
 /** GET /v1/platform/chains (B3): what only wallet-api can see about each chain it serves. */
 export type ChainsStatus = {

@@ -756,6 +756,8 @@ that looks nothing like a clock problem. Run NTP and alert on drift.
 | `giano_tenant_deficit_wei` | Any non-zero value: the pooled deposit absorbed a shortfall for one tenant |
 | `giano_tenant_available_wei` | Below the tenant's threshold — tell the tenant *and* the operator |
 | `giano_paymaster_reconciliation_divergence_wei` | Any positive value: an unexplained drawdown, the signature of a leaked signing key |
+| `giano_paymaster_drifted_tenants{chain}` | Reported, not paged by default: this deployment's tenants whose registry, ledger and paymaster disagree. Absent while no current drift pass stands. `GET /v1/platform/drift` says which and how |
+| `giano_paymaster_unknown_tenants{chain}` | Tenants on the paymaster with no registry row: on a shared paymaster, another deployment's |
 | `giano_sponsorship_decisions_total{outcome="refused"}` | A refusal-rate spike for one tenant, which usually means a rule change went wrong |
 | `giano_sponsorship_signatures_total{key_id}` | Any signature from an unexpected `key_id`; signing stopping entirely |
 | `giano_sponsorship_unavailable_total` | Signer, HSM or database failures — an outage, not a misconfiguration |

@@ -76,6 +76,10 @@ describe("checkLink", () => {
 			to: "/paymaster",
 			label: "Paymaster",
 		});
+		expect(checkLink("drift-enabled")).toEqual({
+			to: "/tenants",
+			label: "Tenants",
+		});
 		expect(checkLink("stake")).toEqual({
 			to: "/paymaster",
 			label: "Paymaster",
