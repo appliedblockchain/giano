@@ -187,6 +187,7 @@ describe("config: where the sponsorship signer key lives (ABIP-8, docs/key-cerem
 			SPONSORSHIP_PAYMASTER_ADDRESS: PAYMASTER,
 			SPONSORSHIP_SIGNER_KIND: "local",
 			SPONSORSHIP_SIGNER_KEY_REF: KEY,
+			METRICS_BEARER_TOKEN: "test-metrics-token-0123456789",
 			...extra,
 		}) as NodeJS.ProcessEnv;
 
@@ -201,5 +202,56 @@ describe("config: where the sponsorship signer key lives (ABIP-8, docs/key-cerem
 			loadConfig(env({ GIANO_DEPLOYMENT_CLASS: "testnet" }))
 				.SPONSORSHIP_SIGNER_KIND,
 		).toBe("local");
+	});
+});
+
+describe("config: the /metrics bearer token", () => {
+	const env = (extra: Record<string, string | undefined>) =>
+		({
+			NODE_ENV: "test",
+			GIANO_ENVIRONMENT: "test",
+			LOG_LEVEL: "error",
+			DATABASE_URL: "postgres://u:p@localhost:5432/x",
+			CHAIN_ID: "31337",
+			RPC_URL: "http://a:8545",
+			BUNDLER_URL: "http://a:4337",
+			ENTRYPOINT_ADDRESS: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+			FACTORY_ADDRESS: "0x2222222222222222222222222222222222222222",
+			...extra,
+		}) as NodeJS.ProcessEnv;
+
+	it.each(["testnet", "production"])(
+		"refuses to start without a token when GIANO_DEPLOYMENT_CLASS=%s",
+		(deploymentClass) => {
+			expect(() =>
+				loadConfig(env({ GIANO_DEPLOYMENT_CLASS: deploymentClass })),
+			).toThrow(/METRICS_BEARER_TOKEN: required when GIANO_DEPLOYMENT_CLASS/);
+		},
+	);
+
+	it("treats an empty token as unset", () => {
+		expect(() =>
+			loadConfig(
+				env({ GIANO_DEPLOYMENT_CLASS: "testnet", METRICS_BEARER_TOKEN: "" }),
+			),
+		).toThrow(/METRICS_BEARER_TOKEN: required/);
+	});
+
+	it("starts with a token on a testnet deployment", () => {
+		expect(
+			loadConfig(
+				env({
+					GIANO_DEPLOYMENT_CLASS: "testnet",
+					METRICS_BEARER_TOKEN: "test-metrics-token-0123456789",
+				}),
+			).METRICS_BEARER_TOKEN,
+		).toBe("test-metrics-token-0123456789");
+	});
+
+	it("still allows an open /metrics on a development deployment", () => {
+		expect(
+			loadConfig(env({ GIANO_DEPLOYMENT_CLASS: "development" }))
+				.METRICS_BEARER_TOKEN,
+		).toBeUndefined();
 	});
 });
