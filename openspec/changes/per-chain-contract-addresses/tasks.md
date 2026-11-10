@@ -21,16 +21,16 @@
 - [x] 3.6 Refuse to sign for a class whose deployer is `null`, while still printing the plan. Verify with a test against a mainnet profile while `mainnet` is `null`.
 - [x] 3.7 Records v2: add `network`, per-contract `deterministic` and `expected`, and `deviations` (design D5). Update `records.ts` and `operations.ts`. Verify with `deploy.test.ts`, which checks that a confirmed deviation is written.
 - [x] 3.8 `generate-addresses.ts`: drop the canonical-deployer and canonical-address checks, and use `releaseOf` for code. Verify with tests for a record carrying an overridden address (accepted) and a record with foreign code (rejected), and that `pnpm gen:addresses` leaves no drift.
-- [ ] 3.9 Remove `canonical.ts`, `scripts/generate-canonical.ts` and the `CANONICAL_*` exports, and export `releaseOf` and the fingerprints from `index.ts`. Fix `deploy-local.ts` and every in-repo import. Add a major changeset that names the replacements. Verify with `pnpm -r typecheck` and with `grep -r CANONICAL_FACTORY`, which should match nothing outside the CHANGELOG.
+- [x] 3.9 Remove `canonical.ts`, `scripts/generate-canonical.ts` and the `CANONICAL_*` exports, and export `releaseOf` and the fingerprints from `index.ts`. Fix `deploy-local.ts` and every in-repo import. Add a major changeset that names the replacements. Verify with `pnpm -r typecheck` and with `grep -r CANONICAL_FACTORY`, which should match nothing outside the CHANGELOG.
 - [ ] 3.10 CI: in `determinism.yml`, assert the CREATE3 math and the `releaseOf` result for `local` and for each class deployer that is set (design D7). Verify with a green run on the layer.
 - [x] 3.11 Rewrite the contracts README sections "Canonical addresses" and "Deploying", and `deploy/contracts/README.md`, for classes, overrides and the mainnet guard. Verify by following the `--plan` commands as written against Base Sepolia (read-only).
 
 ## 4. wallet-api and doctor (PR 4, design D6)
 
-- [ ] 4.1 `chain-verify.ts`: remove `factory-not-canonical`; compare `factory.implementation()` with the chain's resolved implementation; use `releaseOf` for the factory and the implementation (`code-not-release`, with the kind); check that the paymaster proxy's implementation slot holds paymaster release code. Update `describeFailure`. Verify with `pnpm -F @appliedblockchain/giano-wallet-api test`, including new cases: two chains with different paymaster addresses are both admitted, and diverging probe addresses refuse start-up.
-- [ ] 4.2 Let `GIANO_CHAINS` `walletApi` carry an optional `implementation`, falling back to the registry. Verify with a config test, and with `openapi:check` if the schema is published.
-- [ ] 4.3 `openapi/generate.ts`: replace `CANONICAL_FACTORY` with a fixed dummy address. Verify that `openapi:check` passes with no diff.
-- [ ] 4.4 `scripts/doctor.ts`: replace the canonical comparisons with `releaseOf` and the semantic checks. Report whether each address is deterministic for the class. With a profile, flag mainnet deviations missing from the record. Verify with `pnpm run doctor chain` against the e2e devnet (all ok), and with a doctor test for an undeclared deviation.
+- [x] 4.1 `chain-verify.ts`: remove `factory-not-canonical`; compare `factory.implementation()` with the chain's resolved implementation; use `releaseOf` for the factory and the implementation (`code-not-release`, with the kind); check that the paymaster proxy's implementation slot holds paymaster release code. Update `describeFailure`. Verify with `pnpm -F @appliedblockchain/giano-wallet-api test`, including new cases: two chains with different paymaster addresses are both admitted, and diverging probe addresses refuse start-up.
+- [x] 4.2 Let `GIANO_CHAINS` `walletApi` carry an optional `implementation`, falling back to the registry. Verify with a config test, and with `openapi:check` if the schema is published.
+- [x] 4.3 `openapi/generate.ts`: replace `CANONICAL_FACTORY` with a fixed dummy address. Verify that `openapi:check` passes with no diff.
+- [x] 4.4 `scripts/doctor.ts`: replace the canonical comparisons with `releaseOf` and the semantic checks. Report whether each address is deterministic for the class. With a profile, flag mainnet deviations missing from the record. Verify with `pnpm run doctor chain` against the e2e devnet (all ok), and with a doctor test for an undeclared deviation.
 - [ ] 4.5 Run the e2e suite against the stack built from this layer. Verify that Playwright is green, re-running once for the known watcher-stall flake before investigating.
 
 ## 5. Docs and specs (PR 5)
@@ -53,8 +53,8 @@
 - [x] 6.3 `deploy:cli core`: remove `--allow-deviation`, and always refuse a mainnet deviation, pointing at the wizard. Verify with a `deviationGate` test.
 - [x] 6.4 Refuse a deployer (the signer, or a configured class deployer) as `ROLE_ADMIN` on non-local chains, and an existing proxy on which one holds it. Verify with tests.
 - [x] 6.5 `gen:addresses`: refuse a Giano contract field in `address-overrides.json`; treat a record with `network: "mainnet"` as R-29 production. `deploy:cli testing` refuses a mainnet-class chain. Verify with `registry.test.ts` cases.
-- [ ] 6.6 wallet-api: compare a recovering chain's probe address with the served chains' before serving it; pass addresses to `releaseOf`; warn when a chain has no implementation to compare. Verify with a test where a recovering chain with another probe stays unavailable.
-- [ ] 6.7 doctor: the same `releaseOf` address check, and R-29 for a `--chain` mainnet profile.
+- [x] 6.6 wallet-api: compare a recovering chain's probe address with the served chains' before serving it; pass addresses to `releaseOf`; warn when a chain has no implementation to compare. Verify with a test where a recovering chain with another probe stays unavailable.
+- [x] 6.7 doctor: the same `releaseOf` address check, and R-29 for a `--chain` mainnet profile.
 - [x] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.
 
 ## 7. Review fixes (stack review)

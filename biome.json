@@ -13,7 +13,6 @@
 			"!!**/packages/contracts/vendor",
 			"!**/packages/contracts/generated.ts",
 			"!**/packages/contracts/addresses.ts",
-			"!**/packages/contracts/canonical.ts",
 			"!**/packages/contracts/release-fingerprints.ts",
 			"!**/packages/contracts/releases",
 			"!**/packages/contracts/deployments/*.json",

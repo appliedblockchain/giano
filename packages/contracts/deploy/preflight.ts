@@ -8,6 +8,7 @@ import {
 	zeroAddress,
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
+import { proxyImplementation } from "../erc1967";
 import { gianoPaymasterAbi } from "../generated";
 import { DEPLOYERS, ENTRY_POINT_V09, isClassDeployer } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
@@ -93,15 +94,8 @@ export async function verifyCoreState(
 	const code = await client.getCode({ address: proxy.actual });
 	if (!code || code === "0x") return [];
 	const implementation = planned(plan, "paymasterImplementation")?.actual;
-	const slot = await client.getStorageAt({
-		address: proxy.actual,
-		slot: IMPLEMENTATION_SLOT,
-	});
-	if (
-		!slot ||
-		!implementation ||
-		getAddress(`0x${slot.slice(-40)}`) !== getAddress(implementation)
-	)
+	const current = await proxyImplementation(client, proxy.actual);
+	if (!current || !implementation || current !== getAddress(implementation))
 		throw new GateError(
 			"Paymaster was upgraded or points to an unexpected implementation; use the upgrade procedure.",
 		);

@@ -6,10 +6,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-	CANONICAL_FACTORY,
-	ENTRYPOINT_V09_ADDRESS,
-} from "@appliedblockchain/giano-contracts";
+import { ENTRYPOINT_V09_ADDRESS } from "@appliedblockchain/giano-contracts";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { createDb } from "../src/db/index.js";
@@ -33,7 +30,8 @@ const config = loadConfig({
 	// Explicit rather than from the contracts registry, which only lists chains with a committed
 	// deployment: the document must not depend on which chains happen to be deployed.
 	ENTRYPOINT_ADDRESS: ENTRYPOINT_V09_ADDRESS,
-	FACTORY_ADDRESS: CANONICAL_FACTORY,
+	// A stand-in: the document does not depend on any chain's addresses.
+	FACTORY_ADDRESS: "0x0000000000000000000000000000000000000002",
 	RPC_URL: "http://localhost:8545",
 	BUNDLER_URL: "http://localhost:4337",
 	SPONSORSHIP_ENABLED: "true",

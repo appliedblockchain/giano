@@ -96,12 +96,14 @@ export const chainPolicySchema: z.ZodObject<ChainPolicyShape, z.core.$strict> =
 export type ChainPolicy = z.infer<typeof chainPolicySchema>;
 
 /**
- * wallet-api's section of a backend chain entry. `factory` defaults from the contracts registry
- * for `chainId`. `bundlerUrl` defaults to wallet-api's `BUNDLER_BASE_URL` with `/<chainId>`
- * appended; set it for a chain submitted through some other bundler.
+ * wallet-api's section of a backend chain entry. `factory` and `implementation` (the wallet
+ * implementation the factory must clone) default from the contracts registry for `chainId`.
+ * `bundlerUrl` defaults to wallet-api's `BUNDLER_BASE_URL` with `/<chainId>` appended; set it for
+ * a chain submitted through some other bundler.
  */
 type WalletApiChainSectionShape = {
 	factory: z.ZodOptional<z.ZodType<`0x${string}`>>;
+	implementation: z.ZodOptional<z.ZodType<`0x${string}`>>;
 	policy: z.ZodOptional<z.ZodObject<ChainPolicyShape, z.core.$strict>>;
 	bundlerUrl: z.ZodOptional<z.ZodString>;
 };
@@ -112,6 +114,7 @@ export const walletApiChainSectionSchema: z.ZodObject<
 > = z
 	.object({
 		factory: chainAddressSchema.optional(),
+		implementation: chainAddressSchema.optional(),
 		policy: chainPolicySchema.optional(),
 		bundlerUrl: z.string().url().optional(),
 	})

@@ -21,6 +21,7 @@ import {
 	keccak256,
 	type PublicClient,
 } from "viem";
+import { proxyImplementation } from "../erc1967";
 import { gianoSmartWalletFactoryAbi } from "../generated";
 import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
@@ -43,9 +44,7 @@ export const CORE_KEYS = [
 ] as const;
 export type CoreKey = (typeof CORE_KEYS)[number];
 
-/** ERC-1967 implementation slot. */
-export const IMPLEMENTATION_SLOT =
-	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+export { IMPLEMENTATION_SLOT } from "../erc1967";
 
 export type DeviationReason =
 	/** The profile overrides the contract's address. */
@@ -349,11 +348,7 @@ async function immutableProblems(
 	const proxy = find("paymasterProxy");
 	const paymaster = find("paymasterImplementation");
 	if (proxy?.actual && proxy.code.state === "release") {
-		const slot = await client.getStorageAt({
-			address: proxy.actual,
-			slot: IMPLEMENTATION_SLOT,
-		});
-		const implementation = slot ? getAddress(`0x${slot.slice(-40)}`) : null;
+		const implementation = await proxyImplementation(client, proxy.actual);
 		const code = implementation
 			? await codeAt(client, "GianoPaymaster", implementation)
 			: ({ state: "empty" } as const);
@@ -462,6 +457,62 @@ export function deviationGate(
 			reason: `A non-interactive run refuses a mainnet deployment that deviates (${pending.map((d) => `${d.key}: ${d.reason}`).join("; ")}). Run the guided wizard (pnpm deploy:guided) to review and confirm it, or fix the deviation.`,
 		};
 	return { kind: "confirm", phrase: `deviate ${profileId}` };
+}
+
+/** Where an address in use on a chain sits relative to the class's deterministic addresses. */
+export type Placement = {
+	key: CoreKey;
+	address: Address;
+	/** CREATE3(class deployer, label); null when the class deployer is not configured. */
+	expected: Address | null;
+	deterministic: boolean;
+};
+
+/**
+ * For each contract address in use, whether it is the deterministic one for `deployer`. An upgrade
+ * target deployed under a versioned label (`giano.paymaster.impl@v2`, listed in the record's
+ * `upgrades`) is deterministic too: its expected address is CREATE3 of that label, not the base one.
+ */
+export function placements(
+	addresses: Partial<Record<CoreKey, Address>>,
+	deployer: Address | null,
+	upgrades: DeploymentRecord["upgrades"] = [],
+): Placement[] {
+	return CORE_KEYS.flatMap((key) => {
+		const address = addresses[key];
+		if (!address) return [];
+		return [
+			{
+				key,
+				address: getAddress(address),
+				...placementOf(key, address, deployer, upgrades),
+			},
+		];
+	});
+}
+
+/**
+ * Non-deterministic addresses the chain's record does not list as a deviation. On a mainnet every
+ * such address must have been confirmed by an operator when it was deployed or adopted, so with
+ * `confirmedOnly` (doctor passes it for a mainnet profile) a deviation that was only reported does
+ * not count; on a testnet a recorded one is enough.
+ */
+export function undeclaredDeviations(
+	inUse: Placement[],
+	record: DeploymentRecord | undefined,
+	{ confirmedOnly = false }: { confirmedOnly?: boolean } = {},
+): Placement[] {
+	return inUse.filter(
+		(p) =>
+			p.expected !== null &&
+			!p.deterministic &&
+			!(record?.deviations ?? []).some(
+				(d) =>
+					d.contract === p.key &&
+					same(d.actual, p.address) &&
+					(!confirmedOnly || d.confirmed),
+			),
+	);
 }
 
 /**
