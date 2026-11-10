@@ -143,7 +143,7 @@
 
 ## 15. Phase 2: drift (B5, layer 16)
 
-- [x] 15.1 wallet-api: drift computed at the end of each watcher pass, held in memory with its time (D14). Unit tests for each kind of drift, and for a watcher that is behind. The watcher also ingests `TenantWithdrawAddressChanged` (D26).
+- [x] 15.1 wallet-api: drift computed before each reconcile, held in memory with its time while fresh (D14). Unit tests for each kind of drift, and for a watcher that is behind. The watcher also ingests `TenantWithdrawAddressChanged` (D26).
 - [x] 15.2 wallet-api: `GET /v1/platform/drift` and the per-chain drifted-tenants metric.
 - [x] 15.3 `giano-doctor`: a drift check. It reads wallet-api's comparison (D26); run against the local stack, it caught a registry-only suspension and cleared on resume.
 - [x] 15.4 Console: Health's Registry and chain group reads the endpoint when it exists (D10, D11).
