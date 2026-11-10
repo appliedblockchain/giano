@@ -38,7 +38,11 @@ export function useAdminEvents(
 		},
 		[client, timelock, tenantId],
 	);
-	return useWindows(read, trigger);
+	const head = useCallback(
+		() => client.publicClient.getBlockNumber(),
+		[client],
+	);
+	return useWindows(read, head, trigger);
 }
 
 /** How the console names things in an event's sentence. */
@@ -52,6 +56,7 @@ export function useNamer(tenantName: (uuid: string) => string): Namer {
 			tenant: tenantName,
 			money: (wei: bigint) =>
 				`${amount(wei, nativeCurrency, 6)} ${nativeCurrency.symbol}`,
+			time: (unix: number) => new Date(unix * 1000).toLocaleString(),
 		}),
 		[context, nativeCurrency, tenantName],
 	);

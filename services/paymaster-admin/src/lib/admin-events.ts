@@ -25,6 +25,8 @@ export const EVENT_GROUPS: { group: EventGroup; label: string }[] = [
 
 export function eventGroup(event: AdminEvent): EventGroup {
 	if (event.source === "timelock") return "timelock";
+	// The paymaster's stake, from the EntryPoint.
+	if (event.source === "entrypoint") return "funds";
 	switch (event.kind) {
 		case "RoleGranted":
 		case "RoleRevoked":
@@ -55,6 +57,8 @@ export type Namer = {
 	address: (address: string) => string;
 	tenant: (uuid: string) => string;
 	money: (wei: bigint) => string;
+	/** A unix time, for a stake's unlock. */
+	time: (unix: number) => string;
 };
 
 /**
@@ -68,8 +72,11 @@ export function describeAdminEvent(event: AdminEvent, name: Namer): string {
 	const on = event.source === "timelock" ? " on the timelock" : "";
 	switch (event.kind) {
 		case "RoleGranted":
-			// OpenZeppelin's convention: the role held by address(0) is open to anyone.
-			return BigInt(String(arg("account"))) === 0n
+			// OpenZeppelin's timelock convention: EXECUTOR_ROLE held by address(0) is open to anyone.
+			// Nothing else reads address(0) that way.
+			return event.source === "timelock" &&
+				arg("role") === "EXECUTOR_ROLE" &&
+				BigInt(String(arg("account"))) === 0n
 				? `opened ${arg("role")}${on} to anyone`
 				: `granted ${arg("role")}${on} to ${address("account")}`;
 		case "RoleRevoked":
@@ -120,7 +127,14 @@ export function describeAdminEvent(event: AdminEvent, name: Namer): string {
 		case "MinDelayChange":
 			return `changed the minimum delay from ${formatDuration(arg("oldDuration") as bigint)} to ${formatDuration(arg("newDuration") as bigint)}`;
 		case "FunctionDelayChange":
-			return `changed the delay of ${arg("functionName") ?? arg("selector")} from ${formatDuration(arg("oldDuration") as bigint)} to ${formatDuration(arg("newDuration") as bigint)}`;
+			// The SDK names the function only when the target is the paymaster.
+			return `changed the delay of ${arg("functionName") ?? `${arg("selector")} on ${address("target")}`} from ${formatDuration(arg("oldDuration") as bigint)} to ${formatDuration(arg("newDuration") as bigint)}`;
+		case "StakeLocked":
+			return `locked ${name.money(arg("totalStaked") as bigint)} of stake, ${formatDuration(arg("unstakeDelaySec") as bigint)} to unlock`;
+		case "StakeUnlocked":
+			return `unlocked the stake, withdrawable from ${name.time(Number(arg("withdrawTime")))}`;
+		case "StakeWithdrawn":
+			return `withdrew ${name.money(arg("amount") as bigint)} of stake to ${address("withdrawAddress")}`;
 		default:
 			return event.kind;
 	}
