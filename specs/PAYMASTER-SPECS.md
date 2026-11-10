@@ -479,7 +479,7 @@ fails CI rather than surfacing as a `postOp` that ran out of gas:
 | `validatePaymasterUserOp` | ~37.3k | < 60k |
 | `postOp`, cold treasury slot | ~49.9k | < 80k |
 | `postOp`, warm treasury slot | ~10.2k | < 80k |
-| `postOp`, worst case (cold, empty treasury credited, deficit opened) | ~54.7k | < `MIN_POST_OP_GAS_LIMIT` (100k) |
+| `postOp`, worst case (cold, empty treasury credited, deficit opened) | ~52.6k | < 63/64 of `MIN_POST_OP_GAS_LIMIT`, less 10k (~88.4k) |
 
 > **Corrected during implementation.** This section originally budgeted 15–20k for validation and
 > 25–35k for settlement. Validation is about twice the original figure: the EIP-712 digest covers
@@ -496,7 +496,9 @@ per-transaction cost cap, and `paymasterPostOpGasLimit` must be set high enough 
 run out of gas — a `postOp` revert is a `PostOpReverted` for the whole operation, and the tenant is
 not charged for it (§3.6). The contract therefore refuses any limit below `MIN_POST_OP_GAS_LIMIT`
 (100,000 gas). It is a constant, not a parameter, because settlement's gas depends on the code and
-not on the deployment. The worst-case row above must stay below it, and `Gas.t.sol` asserts that.
+not on the deployment. `Gas.t.sol` asserts that the worst-case row above stays below 63/64 of the
+floor, less 10,000 gas of headroom. The 63/64 is what the proxy's `delegatecall` passes on, and the
+headroom covers the call costs and changes the measurement cannot see.
 The sponsorship service's default for an omitted limit is the same 100,000.
 
 ---
