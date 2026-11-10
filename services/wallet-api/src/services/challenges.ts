@@ -17,11 +17,16 @@ const base64url = (buf: Buffer) => buf.toString("base64url");
 
 export function createChallengeService(db: Db, ttlSeconds: number) {
 	return {
-		/** Issues a new one-time challenge (base64url of 32 random bytes), bound to a tenant. */
+		/**
+		 * Issues a new one-time challenge (base64url of 32 random bytes), bound to a tenant.
+		 * `externalId` records the external user id the challenge was requested for. It is set
+		 * even when that user does not exist yet (userId null), so registration can bind to it.
+		 */
 		async issue(
 			kind: ChallengeKind,
 			userId: string | null,
 			tenantId: string,
+			externalId: string | null = null,
 		): Promise<string> {
 			const challenge = base64url(randomBytes(32));
 			await db.insert(challenges).values({
@@ -29,6 +34,7 @@ export function createChallengeService(db: Db, ttlSeconds: number) {
 				kind,
 				tenantId,
 				userId,
+				externalId,
 				expiresAt: new Date(Date.now() + ttlSeconds * 1000),
 			});
 			return challenge;
@@ -38,12 +44,16 @@ export function createChallengeService(db: Db, ttlSeconds: number) {
 		 * Atomically consumes a challenge: only succeeds if it exists, is of the right
 		 * kind, has not been consumed, and has not expired. Single UPDATE … RETURNING
 		 * makes replay a guaranteed failure even under concurrency. The returned tenant
-		 * and user bindings MUST be enforced by the caller (C3).
+		 * and user bindings (userId and externalId) MUST be enforced by the caller (C3).
 		 */
 		async consume(
 			challenge: string,
 			kind: ChallengeKind,
-		): Promise<{ userId: string | null; tenantId: string } | null> {
+		): Promise<{
+			userId: string | null;
+			tenantId: string;
+			externalId: string | null;
+		} | null> {
 			const rows = await db
 				.update(challenges)
 				.set({ consumedAt: sql`now()` })
@@ -58,6 +68,7 @@ export function createChallengeService(db: Db, ttlSeconds: number) {
 				.returning({
 					userId: challenges.userId,
 					tenantId: challenges.tenantId,
+					externalId: challenges.externalId,
 				});
 			return rows[0] ?? null;
 		},
