@@ -10,6 +10,7 @@ import {
 	tenantSponsorship,
 	tenants,
 } from "../src/db/schema.js";
+import { MIN_PAYMASTER_POST_OP_GAS_LIMIT } from "../src/routes/paymaster.js";
 import {
 	ADMIN_KEY,
 	type SponsorshipTestContext,
@@ -312,6 +313,47 @@ describe("request validation", () => {
 			},
 		);
 		expect(body.error?.code).toBe(-32602);
+	});
+
+	// The tenant pays only in the paymaster's postOp. A postOp that runs out of gas leaves the
+	// deposit paying while the tenant pays nothing, so the service must not sign such a limit.
+	it.each(["pm_getPaymasterStubData", "pm_getPaymasterData"] as const)(
+		"refuses a postOp gas limit below the floor (%s)",
+		async (method) => {
+			await setConfig(ADMIN_KEY, generousConfig);
+			await fund(tenantAId, 10n ** 18n);
+			const session = await newSession(`postop-${method}`);
+
+			for (const limit of [1n, MIN_PAYMASTER_POST_OP_GAS_LIMIT - 1n]) {
+				const body = await rpc(
+					session.token,
+					method,
+					candidateOp(session.walletAddress, execute(TOKEN, TRANSFER), {
+						paymasterPostOpGasLimit: `0x${limit.toString(16)}`,
+					}),
+				);
+				expect(body.error?.code).toBe(-32602);
+				expect(body.error?.message).toMatch(/paymasterPostOpGasLimit/);
+				expect(body.result).toBeUndefined();
+			}
+		},
+	);
+
+	it("authorises a postOp gas limit exactly at the floor", async () => {
+		await setConfig(ADMIN_KEY, generousConfig);
+		await fund(tenantAId, 10n ** 18n);
+		const session = await newSession("postop-floor");
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterData",
+			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER), {
+				paymasterPostOpGasLimit: `0x${MIN_PAYMASTER_POST_OP_GAS_LIMIT.toString(16)}`,
+			}),
+		);
+		expect(body.error).toBeUndefined();
+		expect(BigInt(body.result!.paymasterPostOpGasLimit)).toBe(
+			MIN_PAYMASTER_POST_OP_GAS_LIMIT,
+		);
 	});
 
 	it("accepts the documented pre-flight hint", async () => {
