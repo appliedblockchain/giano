@@ -428,7 +428,7 @@ test.describe("admin console", () => {
 				"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
 			);
 			await expect(executor).toContainText(
-				"submissions at the current gas price",
+				"submissions at 400k gas and the current gas price (approximate)",
 			);
 			// an idle devnet's head is old by design; it is shown, not failed
 			await expect(chain).not.toContainText("failing");
