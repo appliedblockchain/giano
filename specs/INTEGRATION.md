@@ -94,12 +94,19 @@ backward-compatible across one minor.
 ## 5. Contracts
 
 Use the published `giano-contracts` deployments for supported chains. The `giano-contracts-deployer`
-one-shot (the Helm pre-install hook) runs with `RPC_URL`, `CHAIN_ID` and `ROLE_ADMIN` (the paymaster's
-role admin) and **no key**. It checks that every canonical contract is on the chain with a release's
-code (the same addresses on every chain, set by the canonical deployer and fixed labels), and emits
-`giano-addresses.<chainId>.json`. Only the canonical deployer can deploy to the canonical addresses,
-and its key is an Applied Blockchain production key, generated in an ABIP-8 ceremony and held by
-DevOps only (`docs/key-ceremony.md`). **Never put `DEPLOYER_PRIVATE_KEY` in a client's secret.**
+one-shot (the Helm pre-install hook) runs with `RPC_URL`, `CHAIN_ID`, `NETWORK` (the chain's class,
+`mainnet` or `testnet`; `deployer.network` in the chart) and `ROLE_ADMIN` (the paymaster's role admin)
+and **no key**. For a chain adopted with an address override or by another key, also pass the chain's
+profile and committed deployment record (`CHAIN_PROFILE_JSON` and `DEPLOYMENT_RECORD_JSON`;
+`deployer.chainProfile` and `deployer.deploymentRecord`, set with `--set-file`): without them the Job
+looks for the contracts at the class's deterministic addresses only. It checks that every contract is
+at the chain's registered addresses with a release's code (verified by release fingerprint), that an
+existing paymaster is configured as the run expects, and emits `giano-addresses.<chainId>.json`. Addresses are per
+chain (`getGianoDeployment(chainId)`): every chain of a class normally shares the deterministic
+addresses of that class's canonical deployer, so testnet and mainnet addresses differ. Only the
+class's canonical deployer can deploy to those addresses; both deployer keys are development-team
+keys kept in 1Password (`docs/key-ceremony.md`) and are never given to a client deployment.
+**Never put `DEPLOYER_PRIVATE_KEY` in a client's secret.**
 Adopting a new chain is a request to Applied Blockchain; the Job fails on a chain where a contract is
 missing.
 

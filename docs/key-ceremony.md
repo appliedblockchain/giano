@@ -27,8 +27,9 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 | Platform-admin API keys (`ADMIN_API_KEYS`) | Bearer tokens for the wallet-api admin routes. Not private keys. | Out of scope for ABIP-8; still secrets, kept in the secret store. | 1Password → Secrets Manager | wallet-api |
 | Anvil dev keys ([`E2E-DEV-KEYS.md`](E2E-DEV-KEYS.md)) | Local chains 31337/31338 and CI only; recoverable from anvil's public mnemonic. | Out of scope: local and CI keys. They must never be used on a public chain. | committed / anvil defaults | e2e, devnet |
 
-Giano has no production environment yet (`infra/versions.json` `prd` is empty), and
-`CANONICAL_DEPLOYER` is still the placeholder `0x…dEaD`. No in-scope key exists today. Every key in
+Giano has no production environment yet (`infra/versions.json` `prd` is empty), and neither canonical
+deployer is configured yet (`DEPLOYERS.mainnet` and `DEPLOYERS.testnet` are `null` in
+`packages/contracts/deploy/config.ts`). No in-scope key exists today. Every key in
 scope above is created by a ceremony when it is first needed.
 
 ### Canonical deployers
@@ -37,15 +38,28 @@ The canonical deployers do not go through the ceremony. They are created by the 
 stored in 1Password:
 
 - **Two keys.** One owns the mainnet salts and one the testnet salts, so a testnet adoption never
-  touches the mainnet key. The OpenSpec change `per-chain-contract-addresses` introduces the split.
-  Until it lands, `packages/contracts/deploy/config.ts` has a single placeholder deployer.
-- **Use.** Load the key from its 1Password item into the environment of the deploying shell only, for
-  the run. Never write it to a file in the repository, a client's configuration or a deployment
-  record.
+  touches the mainnet key. They are independent random keys, never one key or two derived from a
+  common seed, and `deploy/config.ts` refuses equal addresses. Local chains use a fixed placeholder
+  (`0x…dEaD`, impersonated) that has no key at all.
+
+  | Deployer | `deploy/config.ts` | 1Password item |
+  |----------|--------------------|----------------|
+  | Mainnet canonical deployer | `DEPLOYERS.mainnet` | not created yet; the PR that sets the address names it here |
+  | Testnet canonical deployer | `DEPLOYERS.testnet` | not created yet; the PR that sets the address names it here |
+
+- **Use.** Load the key for the chain's class from its 1Password item into the environment of the
+  deploying shell only, for the run (`CANONICAL_DEPLOYER_PRIVATE_KEY` for the guided wizard,
+  `DEPLOYER_PRIVATE_KEY` for `deploy:cli`). Never write it to a file in the repository, a dotenv
+  file, a client's configuration or a deployment record; the deploy tooling never prints or records
+  it. A testnet run takes the testnet key, never the mainnet one.
+- **Mainnet guard.** A mainnet deployment signed by any key other than the mainnet canonical deployer
+  lands on that key's own addresses. The wizard treats it as a deviation: it warns, names every
+  affected contract and requires a typed confirmation, and the deployment record keeps it.
 - **Funding.** Keep only enough gas on the key for the adoption at hand. Top it up per run rather than
   holding a balance.
-- **Address.** Setting a deployer address in `deploy/config.ts` moves every canonical address of that
-  class. The PR names the 1Password item that holds the matching key.
+- **Address.** Setting a deployer address in `deploy/config.ts` sets the deterministic addresses of
+  that class; no local-chain or devnet address moves. The PR names the 1Password item that holds the
+  matching key, and no ceremony record is needed.
 - **Loss or leak.** A leaked key cannot touch any deployed contract. It can, however, occupy the
   canonical addresses of its class on chains not yet adopted. If that happens, create a new key and
   update `deploy/config.ts`. Chains adopted afterwards then get the new key's addresses, or a per-chain
@@ -83,7 +97,8 @@ For every in-scope key, DevOps:
 
 - `deploy:cli core` / `testing` without `DEPLOYER_PRIVATE_KEY` only verify. Every contract must
   already be in place with a release's code, and a missing one fails: adopting a chain needs the
-  canonical deployer. The `giano-contracts-deployer` image and the Helm pre-install Job run that way.
+  class's canonical deployer, which the development team operates. The `giano-contracts-deployer`
+  image and the Helm pre-install Job run that way, and never ask for the key.
   The chart's `values.yaml` says never to put the key in `secrets.existingSecret`.
 - The developer-facing docs mark `DEPLOYER_PRIVATE_KEY=…` commands as local/testnet operator commands,
   or as canonical-deployer runs that take the key from 1Password: `packages/contracts/README.md`,

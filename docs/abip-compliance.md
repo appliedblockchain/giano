@@ -116,10 +116,12 @@ The key inventory and the Giano runbook are in [`key-ceremony.md`](key-ceremony.
 the `production-key-ceremony` capability in OpenSpec. Ceremonies are run by DevOps; the repository makes sure nothing
 in it needs, or tells anyone to hold, a production key:
 
-- **The canonical deployer is in scope on every chain.** One key owns every canonical CREATE3 salt, so the key that
-  adopts a testnet is the key that adopts mainnet. ABIP-8's testnet exception does not cover it.
+- **The canonical deployers are out of scope.** There are two independent development-team keys, one per network class
+  (mainnet, testnet), kept in 1Password. A deployer only places contracts at addresses and holds no role or funds on
+  them once deployment ends, so neither goes through an ABIP-8 ceremony (`docs/key-ceremony.md`). A testnet adoption
+  never touches the mainnet key.
 - **Verify-only deploys.** `deploy:cli core` / `testing` without `DEPLOYER_PRIVATE_KEY` check every contract against a
-  release's code and send nothing. A missing contract fails the run, pointing to DevOps. The
+  release's code and send nothing. A missing contract fails the run, pointing to the development team. The
   `giano-contracts-deployer` image and the Helm pre-install Job run this way. The chart says never to put the key in a
   client's secret.
 - **Docs.** `packages/contracts/README.md`, `specs/INFRASTRUCTURE.md`, `specs/INTEGRATION.md`,

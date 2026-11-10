@@ -47,8 +47,8 @@ Set `PAYMASTER_ROLE_ADMIN` to the intended operator address first. Use `DEPLOY_R
 endpoint without putting its credentials in shell arguments. Without it, plans use the public
 network default. RPC identity must match the selected network; failures suppress provider error
 bodies because they may contain credentials. Noninteractive runs only print a plan and never sign;
-a plan for a class whose deployer is not configured, or a mainnet plan with a deviation, exits
-nonzero.
+a plan for a class whose deployer is not configured exits nonzero. A mainnet plan with a deviation
+prints the warning and exits zero: the typed confirmation is asked only by a run that will sign.
 The checked-in bootstrap script (`bash deploy/contracts/run.sh deploy`) also explains missing Node,
 pnpm or installed dependencies before loading TypeScript. Use it if pnpm itself is unavailable.
 No Foundry installation or Solidity compilation is needed to deploy the committed release.
@@ -83,12 +83,16 @@ address:
 "addresses": { "paymasterProxy": "0x…", "walletImplementation": "0x…" }
 ```
 
-Overridable: `walletImplementation`, `factory`, `paymasterImplementation`, `paymasterProxy`,
-`timelock`. An overridden contract is verified (its code must match a release's fingerprint, and
-its immutables the chain's other addresses) and recorded, never deployed; contracts that depend on
-it use it (the factory is built for an overridden wallet implementation, the proxy initialised with
-an overridden paymaster implementation). An override with no code or foreign code stops the run
-before signing. Every override is a deviation.
+Overridable: `walletImplementation`, `factory`, `paymasterImplementation`, `paymasterProxy`. The
+timelock is not: its address is the profile's `timelock.address`. An overridden contract is verified
+(its code must match a release's fingerprint, and its immutables the chain's other addresses) and
+recorded, never deployed; contracts that depend on it use it (the factory is built for an overridden
+wallet implementation, the proxy initialised with an overridden paymaster implementation). An
+overridden factory must clone the planned wallet implementation, and an overridden paymaster proxy
+must point at the planned paymaster implementation, so overriding the proxy usually means
+overriding `paymasterImplementation` too. The proxy's EntryPoint, fees and ROLE_ADMIN are checked as
+for any existing proxy, and no deployer may hold ROLE_ADMIN on it. An override with no code, foreign
+code or another configuration stops the run before signing. Every override is a deviation.
 The shipped profiles leave ROLE_ADMIN unset until a custodian supplies it. Interactive deployment
 can persist that address and the chosen release after showing the destination file. Review/commit
 those public changes for reproducibility. For a private environment, use an ignored custom profile

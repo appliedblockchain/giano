@@ -141,7 +141,7 @@ nothing in the `dev` workspace values should be mistaken for a production postur
 | # | Decision | Chosen | Alternative rejected | Why |
 |---|---|---|---|---|
 | D1 | Compute | **ECS Fargate** | EC2 + compose; EKS; App Runner | No control-plane fee, no hosts to patch, task definitions map ~1:1 onto the existing compose services. EKS costs $73/mo before a pod runs. |
-| D2 | Chain | **Two: Base Sepolia (84532) and Ethereum Sepolia (11155111)**, RPC via QuickNode | Self-hosted anvil devnet; Base Sepolia alone | Persistent state and a realistic, multi-chain stack — "one passkey, one address, every chain" is only demonstrable with more than one chain. The canonical factory and implementation are already registered and deployed on both ([§13](#13-chain-prerequisites)). |
+| D2 | Chain | **Two: Base Sepolia (84532) and Ethereum Sepolia (11155111)**, RPC via QuickNode | Self-hosted anvil devnet; Base Sepolia alone | Persistent state and a realistic, multi-chain stack — "one passkey, one address, every chain" is only demonstrable with more than one chain. Both are `testnet`-class chains, so the factory and implementation sit at the same testnet deterministic addresses on both, once deployed ([§13](#13-chain-prerequisites)). |
 | D3 | Bundler | **Self-hosted Alto on Fargate, one per chain** | Pimlico hosted; one bundler shared across chains | `services/bundler` already exists, pinned and env-driven. No third-party account, no shared API key. A bundler's executor and submission endpoint are chain-specific — Alto does not multiplex chains inside one process — so two chains need two services ([§14.7](#147-bundler)). Both share one executor and one utility key, funded on both chains; only the RPC endpoint differs between them. *(Superseded: giano-bundler replaced Alto — still self-hosted, but one process serves every chain in the `chains` document at `POST /<chainId>`, isolated per chain inside it, with one shared executor key and no utility key; one service, `bundler`. See `services/bundler/README.md`.)* |
 | D4 | Database | **RDS Postgres 17, `db.t4g.micro`, single-AZ in `dev`** | Aurora Serverless v2 min-0; Postgres container on EFS | Managed backups for ~$16/mo. Aurora's scale-to-zero is attractive but adds cold-start latency to a stack that is already asleep out of hours (D9). |
 | D5 | Region | **`eu-west-2` (London)** | `eu-west-1`; `us-east-1` | Team latency and UK residency, at ~5–10% over Ireland. |
@@ -2870,27 +2870,30 @@ and so the deployment exercises the same multi-chain shape `wallet-api`, `wallet
 dApps already support. Everything in this section happens **on both chains independently**: the
 paymaster is deployed twice, two sets of accounts are funded, and two RPC endpoints are provisioned.
 
-`wallet-api` verifies at boot that each served chain carries the canonical factory and
-implementation — at the addresses in `packages/contracts/canonical.ts` and running a release's code
-(its codehash is in `CANONICAL_CODE`) — and refuses to start otherwise. The canonical contracts are
-deployed with CREATE3 through CreateX, so their addresses are a pure function of the canonical
-deployer and fixed labels, and are the **same addresses** on both chains:
+`wallet-api` verifies at boot that each served chain carries a factory and implementation running
+a release's code — at the chain's own addresses (`GIANO_CHAINS`, else the per-chain registry
+`getGianoDeployment(chainId)`), matched by release fingerprint (`releaseOf`), with the factory
+cloning the chain's implementation — and refuses to start otherwise. The contracts are deployed
+with CREATE3 through CreateX, so their addresses are a pure function of the network class's
+canonical deployer and fixed labels. Both chains are profiles of class `testnet`
+(`deploy/chains/*.json`), so they get the **same addresses** (mainnets get a different set):
 
 | Contract | Address | On 84532? | On 11155111? |
 |---|---|---|---|
 | EntryPoint v0.9 | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` | yes (canonical, everywhere) | yes |
-| `GianoSmartWalletFactory` | `CANONICAL_FACTORY` | **no** — to be deployed (§13.1) | **no** — to be deployed |
-| `GianoSmartWallet` implementation | `CANONICAL_IMPLEMENTATION` | **no** — same | **no** — same |
-| `GianoPaymaster` proxy | `CANONICAL_SPONSORSHIP_PAYMASTER` | **no** | **no** |
+| `GianoSmartWalletFactory` | testnet deterministic address (`getGianoDeployment(chainId).factory`) | **no** — to be deployed (§13.1) | **no** — to be deployed |
+| `GianoSmartWallet` implementation | testnet deterministic address (`.implementation`) | **no** — same | **no** — same |
+| `GianoPaymaster` proxy | testnet deterministic address (`.sponsorshipPaymaster`) | **no** | **no** |
 
-⚠ **Neither chain carries the current canonical contracts.** The contracts both chains hold were
-deployed under the previous scheme (CREATE2, salt `0xAB…AB`, factory `0x26dCd293…`); that scheme has
-been replaced and its deployment records removed, so the registry (`addresses.ts`) has no entry for
+⚠ **Neither chain carries the current contracts.** The contracts both chains hold were deployed
+under the previous scheme (CREATE2, salt `0xAB…AB`, factory `0x26dCd293…`); that scheme has been
+replaced and its deployment records removed, so the registry (`addresses.ts`) has no entry for
 either chain. Until both are redeployed (§13.1), `wallet-web` cannot default `factoryAddress` and the
-SPA refuses to load ([§14.3](#143-wallet-web)), and `wallet-api` refuses a chain whose factory is not
-the canonical one. `CANONICAL_DEPLOYER` in `packages/contracts/deploy/config.ts` is still a
-placeholder, and the deploy CLI refuses every non-local chain until the real deployer is set and
-`pnpm gen:canonical` has been rerun; the canonical addresses change at that point.
+SPA refuses to load ([§14.3](#143-wallet-web)), and `wallet-api` refuses a chain with no factory
+running release code. The testnet canonical deployer (`DEPLOYERS.testnet` in
+`packages/contracts/deploy/config.ts`) is still `null`: the deploy tooling plans but refuses to sign
+for a testnet until the development team has created the key and set its address. Setting it needs
+no regeneration of any generated file, devnet or e2e state.
 
 ### 13.1 The canonical contracts must be deployed on both chains
 
@@ -2898,18 +2901,19 @@ placeholder, and the deploy CLI refuses every non-local chain until the real dep
 one-off chain operation performed with the contracts package's deploy CLI, before the first
 `terraform apply`:
 
-**The canonical deployer key is a production key, even here.** One key owns every canonical salt
-on every chain, testnets included, so it is in ABIP-8 scope with no testnet exception. It is generated
-in a Key Generation Ceremony and held by DevOps only; the development team never sees it
-([`docs/key-ceremony.md`](../docs/key-ceremony.md)). The two `core` runs below are therefore a DevOps
-operation, run with the key read from the secret store, with shell history off, and never exported in
-a developer's shell. Anyone can check the result without the key: `deploy:cli core` with no
-`DEPLOYER_PRIVATE_KEY` verifies every contract and code, and sends nothing.
+**The two `core` runs below use the testnet canonical deployer key.** There is one canonical
+deployer per network class, and both keys are development-team keys kept in 1Password, outside
+ABIP-8 scope: a deployer only places contracts, and holds no role or funds once deployment ends
+([`docs/key-ceremony.md`](../docs/key-ceremony.md) names the items). Load the testnet key from its
+1Password item into the deploying shell's environment only — never into a file in the repository, a
+dotenv or this environment's secrets — and never use the mainnet key here. Anyone can check the
+result without a key: `deploy:cli core` with no `DEPLOYER_PRIVATE_KEY` verifies every contract and
+code, and sends nothing.
 
 ```
-# DevOps, canonical deployer key from the secret store (docs/key-ceremony.md):
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
+# development team, testnet canonical deployer key from 1Password in DEPLOYER_PRIVATE_KEY (this shell only):
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --chain base-sepolia --role-admin <EOA>
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --chain ethereum-sepolia --role-admin <EOA>
 
 # anyone, no key:
 pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
@@ -2918,12 +2922,14 @@ pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
 `core` deploys the wallet implementation, the factory and the paymaster (implementation, and proxy
 initialised in the same transaction) from the latest release. `--role-admin` is the paymaster's sole
 `ROLE_ADMIN`; for a dev environment that is a developer-held EOA rather than a timelock, and the same
-EOA can hold the role on both chains. Only the canonical deployer's key can deploy (the salts are
-permissioned), and the proxy lands at `CANONICAL_SPONSORSHIP_PAYMASTER` on both chains regardless of
-the role admin or any other parameter. Each run writes `packages/contracts/deployments/<chainId>.json`;
-commit both records, run `pnpm --filter @appliedblockchain/giano-contracts gen:addresses`, and the
-registry carries the factory and paymaster for both chains, so `var.paymaster_address` only needs to
-match `CANONICAL_SPONSORSHIP_PAYMASTER`.
+EOA can hold the role on both chains. Only the testnet canonical deployer's key can deploy at the
+deterministic addresses (the salts are permissioned; another key lands at its own addresses and is
+recorded as a deviation), and the proxy lands at the same testnet address on both chains regardless
+of the role admin or any other parameter. Each run writes
+`packages/contracts/deployments/<chainId>.json`; commit both records, run
+`pnpm --filter @appliedblockchain/giano-contracts gen:addresses`, and the registry carries the
+factory and paymaster for both chains, so `var.paymaster_address` only needs to match
+`getGianoDeployment(chainId).sponsorshipPaymaster` for each.
 
 ### 13.2 Funded accounts
 
@@ -3016,20 +3022,20 @@ others' as-is. `entryPoint`, `factory` and `sponsorshipPaymaster` are the same a
     "chainId": 84532, "name": "Base Sepolia",
     "rpcUrl": "<base sepolia quicknode endpoint>",
     "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
-    "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
+    "sponsorshipPaymaster": "<sponsorshipPaymaster from getGianoDeployment(chainId)>",
     "walletApi": {
-      "factory": "<CANONICAL_FACTORY>",
-      "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
+      "factory": "<factory from getGianoDeployment(chainId)>",
+      "policy": { "allowedPaymasters": ["<sponsorshipPaymaster from getGianoDeployment(chainId)>"] }
     }
   },
   {
     "chainId": 11155111, "name": "Ethereum Sepolia",
     "rpcUrl": "<eth sepolia quicknode endpoint>",
     "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
-    "sponsorshipPaymaster": "<CANONICAL_SPONSORSHIP_PAYMASTER>",
+    "sponsorshipPaymaster": "<sponsorshipPaymaster from getGianoDeployment(chainId)>",
     "walletApi": {
-      "factory": "<CANONICAL_FACTORY>",
-      "policy": { "allowedPaymasters": ["<CANONICAL_SPONSORSHIP_PAYMASTER>"] }
+      "factory": "<factory from getGianoDeployment(chainId)>",
+      "policy": { "allowedPaymasters": ["<sponsorshipPaymaster from getGianoDeployment(chainId)>"] }
     }
   }
 ]
@@ -3066,7 +3072,8 @@ reach that chain's bundler path through the relay. Because the whole array — i
 references, `entryPoint`/`factory`/`sponsorshipPaymaster` are typed here directly rather than left to
 default from the contracts registry the way a single-chain shorthand deployment would; getting one
 wrong here is a drift risk the shorthand shape does not have, and worth double-checking against
-`packages/contracts/canonical.ts` when this secret is authored or updated.
+each chain's entry in the contracts registry (`getGianoDeployment(chainId)`, `addresses.ts`) when
+this secret is authored or updated.
 
 The tenants are not configuration. `TENANTS_SEED` is retired: wallet-api no longer reads it, boots
 fine with no tenants, and Giano's platform admins create and edit them in the paymaster console's Platform
@@ -3237,7 +3244,7 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 | `CHAIN_NAME` | `Base Sepolia` (tfvar `var.chain_name` — the same one `custom-example`'s `GIANO_CHAIN_NAME` already reads, [§14.4](#144-custom-example)) — **not currently wired**, see below |
 | `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
 | `CHAIN_B_NAME` | `Ethereum Sepolia` (tfvar `var.chain_b_name`) — **not currently wired**, see below |
-| `FACTORY_ADDRESS` | `CANONICAL_FACTORY` from `packages/contracts/canonical.ts` ([§13](#13-chain-prerequisites), same on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
+| `FACTORY_ADDRESS` | the factory from the contracts registry, `getGianoDeployment(chainId).factory` ([§13](#13-chain-prerequisites), the same testnet address on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
 | `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
 | `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
 | `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.appliedblockchain.dev"]` — this tenant's own allowlist, which is why R9 does not reach it |
@@ -4450,13 +4457,14 @@ rather than a paragraph.
 #### Step 3 — Deploy the contracts and fund the accounts, on both chains 🖥️
 
 A chain operation, not an infrastructure one, done twice
-([§13.1](#131-the-canonical-contracts-must-be-deployed-on-both-chains)). DevOps run it with the
-ceremony-generated canonical deployer key from the secret store ([`docs/key-ceremony.md`](../docs/key-ceremony.md));
-nobody else holds that key:
+([§13.1](#131-the-canonical-contracts-must-be-deployed-on-both-chains)). The development team runs
+it with the **testnet** canonical deployer key, loaded from its 1Password item into the deploying
+shell's environment (`DEPLOYER_PRIVATE_KEY`) only, never into a file or this environment's secrets
+([`docs/key-ceremony.md`](../docs/key-ceremony.md)); the mainnet key is never used here:
 
 ```bash
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --role-admin <EOA>
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --role-admin <EOA>
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --chain base-sepolia --role-admin <EOA>
+pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --chain ethereum-sepolia --role-admin <EOA>
 ```
 
 Run without the key, the same commands verify the result.

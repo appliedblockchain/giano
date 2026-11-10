@@ -1,4 +1,12 @@
-## ADDED Requirements
+# contract-address-registry Specification
+
+## Purpose
+Giano contract addresses are resolved per chain, never assumed to match across chains. Each chain's addresses come
+from its verified deployment record and its overrides, and every consumer (the contracts package, wallet-api and
+`giano-doctor`) verifies the code at those addresses against the release's code fingerprints, wherever the contracts
+sit.
+
+## Requirements
 
 ### Requirement: Contract addresses are resolved per chain
 Every Giano-deployed contract address SHALL be resolved per chain: from the chain's deployment record, then the chain's
@@ -54,7 +62,8 @@ the address the code was read from. Verification SHALL report which release matc
 Because fingerprints mask immutables, verification SHALL check each meaningful immutable against the chain's
 registered addresses. The factory's `implementation` SHALL be the chain's registered wallet implementation. The wallet
 implementation's EntryPoint SHALL be the chain's EntryPoint. The paymaster proxy's own code SHALL be release
-`ERC1967Proxy` code, and its implementation slot SHALL hold paymaster release code.
+`ERC1967Proxy` code, and its implementation slot SHALL hold paymaster release code. The paymaster's EntryPoint,
+which `initialize` stores, SHALL be the chain's EntryPoint.
 
 #### Scenario: Factory bound to another implementation
 - **WHEN** a factory runs release code but its `implementation` differs from the chain's registered implementation
@@ -64,6 +73,11 @@ implementation's EntryPoint SHALL be the chain's EntryPoint. The paymaster proxy
 - **WHEN** the code at a chain's paymaster address is not release proxy code, but its implementation slot holds a
   genuine paymaster implementation
 - **THEN** verification fails for the proxy, naming its address
+
+#### Scenario: Paymaster initialised with another EntryPoint
+- **WHEN** a paymaster proxy and its implementation run release code, but the proxy was initialised with another
+  EntryPoint than the chain's
+- **THEN** verification fails, naming the paymaster and both EntryPoints
 
 #### Scenario: New immutable without a check
 - **WHEN** a release adds a contract immutable that has no registered semantic check
@@ -94,7 +108,11 @@ wallet-api SHALL admit a chain only after verifying, at configuration load and a
 - the chain id;
 - the EntryPoint;
 - release code and immutables at the chain's resolved factory and wallet implementation;
-- release proxy code at the paymaster, and paymaster release code behind it, when one is configured.
+- release proxy code at the paymaster, and paymaster release code behind it initialised with the chain's EntryPoint,
+  when one is configured.
+
+The wallet implementation SHALL default from the registry only when the factory does too: a configured factory without
+a configured implementation is checked against the implementation it reports.
 
 It SHALL NOT compare a factory or implementation address with a constant. An unreachable endpoint stays non-fatal: the
 chain starts unavailable and is retried. A retried chain SHALL pass the same checks, including the probe comparison

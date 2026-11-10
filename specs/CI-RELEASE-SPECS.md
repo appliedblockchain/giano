@@ -244,7 +244,7 @@ Unchanged by H2, recorded because R1's "published" means "published usably":
 
 | Package | `files` | `prepublishOnly` | Workspace deps |
 | --- | --- | --- | --- |
-| `giano-contracts` | `dist`, `src/**/*.sol`, `index.ts`, `generated.ts`, `addresses.ts`, `canonical.ts`, `chains.ts`, `address-overrides.json`, `remappings.txt` | `pnpm build:ts` | — |
+| `giano-contracts` | `dist`, `src/**/*.sol`, `index.ts`, `generated.ts`, `addresses.ts`, `chains.ts`, `address-overrides.json`, `remappings.txt` | `pnpm build:ts` | — |
 | `giano-wallet-transport` | `dist` | `pnpm build` | — |
 | `giano-wallet-core` | `dist` | `pnpm build` | contracts |
 | `giano-connector` | `dist` | `pnpm build` | wallet-transport |
@@ -502,7 +502,7 @@ from a CI job, so every one of them has to be in the gate:
 | Foundry test failure | `Foundry tests` (`forge test -vvv`) | `ci.yml` |
 | ABI drift against the committed `generated.ts` | `generated.ts drift check (solc)` | `ci.yml` |
 | `addresses.ts` drift | `Build & typecheck packages (no solc)` | `ci.yml` |
-| A release that does not reproduce from its solc input, `canonical.ts` drift (canonical addresses or code), or a deploy CLI that deploys off-canonical or is not idempotent | `Canonical releases, addresses and code` | `determinism.yml` |
+| A release that does not reproduce from its solc input, `release-fingerprints.ts` drift (`pnpm gen:releases`), an unreported immutable (`pnpm test:releases`), a configured class deployer (or the local one) whose CREATE3 deployment misses its address or release code (`pnpm check:determinism`), or a deploy CLI that deploys off its deterministic addresses or is not idempotent | `Releases, fingerprints and deterministic addresses` | `determinism.yml` |
 | Unsafe paymaster storage layout | `Paymaster storage layout is upgrade-safe` (`pnpm storage:check`) | `determinism.yml` |
 
 No job in either workflow sets `continue-on-error`, so any of these fails its workflow, and a failed
