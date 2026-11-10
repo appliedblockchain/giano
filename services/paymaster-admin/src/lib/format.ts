@@ -48,6 +48,13 @@ export const exactAmount = (wei: bigint, currency: NativeCurrency): string =>
  * full value and copies it on click.
  */
 
+/** One entry per line or comma, trimmed, blanks dropped: how every list field is typed. */
+export const linesToList = (text: string): string[] =>
+	text
+		.split(/[\n,]/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+
 /**
  * Turns any thrown value into something worth showing a person.
  *
@@ -57,13 +64,6 @@ export const exactAmount = (wei: bigint, currency: NativeCurrency): string =>
  * the one sentence the operator needed. Some wallets, and some nodes behind them, put the useful
  * half another level down under `data`.
  */
-/** One entry per line or comma, trimmed, blanks dropped: how every list field is typed. */
-export const linesToList = (text: string): string[] =>
-	text
-		.split(/[\n,]/)
-		.map((line) => line.trim())
-		.filter(Boolean);
-
 export function describeError(error: unknown): string {
 	if (typeof error === "string") return error;
 	// viem's message runs to the request body, the arguments and a docs link; its short message and
