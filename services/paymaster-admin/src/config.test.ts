@@ -83,22 +83,40 @@ describe("toAddresses", () => {
 });
 
 describe("toTimelockDelays", () => {
+	// base-sepolia's profile (deploy/chains/base-sepolia.json).
+	const PUBLISHED = {
+		minDelay: 300,
+		upgradeToAndCall: 3600,
+		grantRole: 3600,
+		revokeRole: 3600,
+		renounceRole: 3600,
+		setTenantWithdrawAddress: 1800,
+		setDefaultFee: 1200,
+		setTenantFee: 600,
+	};
+
 	it("keeps the published delays, in seconds, and treats none as unset", () => {
-		expect(
-			toTimelockDelays({ minDelay: 300, upgradeToAndCall: 3600 }, "d"),
-		).toEqual({ minDelay: 300, upgradeToAndCall: 3600 });
+		expect(toTimelockDelays(PUBLISHED, "d")).toEqual(PUBLISHED);
 		expect(toTimelockDelays(undefined, "d")).toBeUndefined();
 		expect(toTimelockDelays({}, "d")).toBeUndefined();
 	});
 
+	it("refuses a partial list, naming every delay it leaves out", () => {
+		expect(() =>
+			toTimelockDelays({ minDelay: 300, upgradeToAndCall: 3600 }, "d"),
+		).toThrow(
+			/without grantRole, revokeRole, renounceRole, setTenantWithdrawAddress, setDefaultFee, setTenantFee/,
+		);
+	});
+
 	it("refuses a name the timelock has no delay for, and a delay that is not whole seconds", () => {
-		expect(() => toTimelockDelays({ upgrade: 3600 }, "d")).toThrow(
-			/"upgrade"; the names are minDelay, upgradeToAndCall/,
-		);
-		expect(() => toTimelockDelays({ minDelay: "2d" }, "d")).toThrow(
-			/minDelay delay that is not a whole number of seconds/,
-		);
-		expect(() => toTimelockDelays({ minDelay: -1 }, "d")).toThrow(
+		expect(() =>
+			toTimelockDelays({ ...PUBLISHED, upgrade: 3600 }, "d"),
+		).toThrow(/"upgrade"; the names are minDelay, upgradeToAndCall/);
+		expect(() =>
+			toTimelockDelays({ ...PUBLISHED, minDelay: "2d" }, "d"),
+		).toThrow(/minDelay delay that is not a whole number of seconds/);
+		expect(() => toTimelockDelays({ ...PUBLISHED, minDelay: -1 }, "d")).toThrow(
 			/not a whole number/,
 		);
 	});

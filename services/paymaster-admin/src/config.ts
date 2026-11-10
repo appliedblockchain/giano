@@ -52,9 +52,10 @@ export type Deployment = {
 	/**
 	 * The timelock delays this chain publishes, in seconds: its profile's `timelock.delays`
 	 * (deploy/chains/*.json). Set, Health fails a delay below its published value, as giano-doctor
-	 * does; unset, Health says the delays were not compared. A name left out is not checked.
+	 * does; unset, Health says the delays were not compared. Every name is required: a delay left
+	 * out would be one Health says is "at or above the published value" without comparing it.
 	 */
-	timelockDelays?: Partial<TimelockDelays>;
+	timelockDelays?: TimelockDelays;
 	/**
 	 * Where a *wallet* should reach this chain, when that is not where the console reads.
 	 *
@@ -195,8 +196,15 @@ const DELAY_NAMES: readonly (keyof TimelockDelays)[] = [
 export function toTimelockDelays(
 	raw: RawDeployment["timelockDelays"],
 	where: string,
-): Partial<TimelockDelays> | undefined {
+): TimelockDelays | undefined {
 	if (!raw || Object.keys(raw).length === 0) return undefined;
+	// All or none, as deploy/cli.ts requires of a profile: a partial list would let a shortened delay
+	// it leaves out pass as "at or above the published values".
+	const missing = DELAY_NAMES.filter((name) => !(name in raw));
+	if (missing.length > 0)
+		throw new Error(
+			`${where} has timelockDelays without ${missing.join(", ")}; give every delay the chain's profile publishes (deploy/chains/*.json), or none`,
+		);
 	const delays: Partial<TimelockDelays> = {};
 	for (const [name, value] of Object.entries(raw)) {
 		if (!DELAY_NAMES.includes(name as keyof TimelockDelays))
@@ -209,7 +217,7 @@ export function toTimelockDelays(
 			);
 		delays[name as keyof TimelockDelays] = value;
 	}
-	return delays;
+	return delays as TimelockDelays;
 }
 
 function toNativeCurrency(
