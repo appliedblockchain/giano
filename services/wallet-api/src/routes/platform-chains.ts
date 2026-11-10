@@ -74,6 +74,11 @@ const chainSchema = z.object({
 					busy: z.boolean(),
 					/** When the lane took the transaction it holds; null while idle. */
 					busySince: z.string().nullable(),
+					/**
+					 * How long the lane has held it, by the bundler's own clock; null while idle or from a
+					 * bundler that predates it. The stuck check uses this, not a reader's clock.
+					 */
+					heldSeconds: z.number().int().nonnegative().nullable(),
 					latestNonce: z.number().int(),
 					pendingNonce: z.number().int(),
 				}),
@@ -113,6 +118,7 @@ const lanesSchema = z.object({
 			balanceWei: quantity,
 			busy: z.boolean(),
 			busySince: quantity.nullable().optional(),
+			heldSeconds: quantity.nullable().optional(),
 			latestNonce: quantity,
 			pendingNonce: quantity,
 		}),
@@ -153,6 +159,7 @@ function executorsOf(
 			busySince: lane.busySince
 				? new Date(Number(BigInt(lane.busySince)) * 1000).toISOString()
 				: null,
+			heldSeconds: lane.heldSeconds ? Number(BigInt(lane.heldSeconds)) : null,
 			latestNonce: Number(BigInt(lane.latestNonce)),
 			pendingNonce: Number(BigInt(lane.pendingNonce)),
 		})),

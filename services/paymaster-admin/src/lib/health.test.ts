@@ -364,6 +364,13 @@ describe("executorStanding", () => {
 		});
 		// without the bundler's limit (an older wallet-api) the hold time alone says nothing
 		expect(executorStanding(busy(90), gwei).stuck).toBeUndefined();
+		// the bundler's own count wins over this browser's clock: here it is 10 minutes slow
+		expect(
+			executorStanding({ ...busy(-10), heldSeconds: 5_400 }, gwei, options),
+		).toMatchObject({ stuck: "held", heldSeconds: 5_400 });
+		expect(
+			executorStanding({ ...busy(90), heldSeconds: 60 }, gwei, options).stuck,
+		).toBeUndefined();
 	});
 });
 
