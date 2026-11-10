@@ -9729,45 +9729,74 @@
                     "chains": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "chainId": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "checkedAt": {
-                            "type": "string"
-                          },
-                          "entries": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "kind": {
-                                  "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "chainId": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "checkedAt": {
+                                "type": "string"
+                              },
+                              "entries": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "additionalProperties": {}
                                 }
                               },
-                              "required": [
-                                "kind"
-                              ],
-                              "additionalProperties": {}
-                            }
+                              "unchecked": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "chainId",
+                              "checkedAt",
+                              "entries",
+                              "unchecked"
+                            ],
+                            "additionalProperties": false
                           },
-                          "unchecked": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
+                          {
+                            "type": "object",
+                            "properties": {
+                              "chainId": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "error": {
+                                "type": "string",
+                                "enum": [
+                                  "drift-unavailable"
+                                ]
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "chainId",
+                              "error",
+                              "message"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "chainId",
-                          "checkedAt",
-                          "entries",
-                          "unchecked"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     }
                   },
@@ -9780,29 +9809,6 @@
             }
           },
           "401": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "502": {
             "description": "Default Response",
             "content": {
               "application/json": {

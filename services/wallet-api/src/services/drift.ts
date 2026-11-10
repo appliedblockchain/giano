@@ -6,7 +6,8 @@ import type { PaymasterReader } from "./paymaster-contract.js";
 
 /**
  * Drift (B5, specs/PLATFORM-ADMIN-SPECS.md §5, openspec tenant-chain-drift): where wallet-api's
- * records and a paymaster disagree. Computed per chain at the end of each watcher pass, before the
+ * records and a paymaster disagree. Computed per chain before each reconcile (every
+ * PAYMASTER_RECONCILE_INTERVAL_MS), by the replica that runs that chain's watcher, before the
  * reconcile overwrites the ledger with the chain, and kept in memory with its time (D14).
  *
  * The ledger is checked at the block it describes, never at the head: a watcher that has not yet
@@ -28,6 +29,17 @@ export type DriftEntry =
 			slug: string;
 			registryStatus: string;
 			enabledOnChain: boolean;
+	  }
+	| {
+			/**
+			 * The chain holds a balance or a deficit for a registry tenant, and wallet-api's ledger has no
+			 * row for it: events before the registry row existed made none, and the reconcile reads only
+			 * tenants it already has.
+			 */
+			kind: "no-ledger";
+			tenantId: string;
+			slug: string;
+			chain: { balanceWei: string; deficitWei: string };
 	  }
 	| {
 			kind: "ledger-balance";
@@ -103,6 +115,16 @@ export function tenantDrift(args: {
 			registryStatus: registry.status,
 			enabledOnChain: onChain.enabled,
 		});
+	if (!ledger && (onChain.balanceWei > 0n || onChain.deficitWei > 0n))
+		entries.push({
+			kind: "no-ledger",
+			tenantId,
+			slug: registry.slug,
+			chain: {
+				balanceWei: onChain.balanceWei.toString(),
+				deficitWei: onChain.deficitWei.toString(),
+			},
+		});
 	if (ledger && atLedgerBlock) {
 		const { block, chain } = atLedgerBlock;
 		if (
@@ -146,10 +168,26 @@ const toUuid = (id: Hex) => {
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 };
 
+/** How many tenants are read at a past block at once: bounded, so a large roster does not burst the node. */
+const DRIFT_READ_CONCURRENCY = 5;
+
+/**
+ * The block a ledger row describes: the later of the watcher's cursor (every event up to it is in
+ * the ledger) and the row's own block (a reconcile writes the head). Undefined for a row the watcher
+ * has never synced: it holds no balance yet, so it is not compared.
+ */
+export function ledgerBlock(
+	cursor: bigint | null,
+	rowBlock: bigint | null,
+): bigint | undefined {
+	if (rowBlock === null) return undefined;
+	return cursor !== null && cursor > rowBlock ? cursor : rowBlock;
+}
+
 /**
  * Every drifted tenant on one chain's paymaster. Reads the roster at the head, the registry and the
- * ledger, and the chain again at each ledger row's block: the later of the watcher's cursor (every
- * event up to it is in the ledger) and the row's own block (a reconcile writes the head).
+ * ledger, and the chain again at each ledger row's block ({@link ledgerBlock}), a few tenants at a
+ * time.
  */
 export async function computeDrift(options: {
 	db: Db;
@@ -183,10 +221,11 @@ export async function computeDrift(options: {
 	const ledgerById = new Map(ledger.map((row) => [row.tenantId, row]));
 	const cursor = state?.cursor ?? null;
 
-	const entries: DriftEntry[] = [];
-	const unchecked: string[] = [];
-	for (const [index, onChain] of roster.entries()) {
+	const perTenant: { entries: DriftEntry[]; unchecked: boolean }[] = [];
+	const compare = async (index: number) => {
+		const onChain = roster[index];
 		const tenantId = uuids[index];
+		const registryRow = registryById.get(tenantId);
 		const row = ledgerById.get(tenantId);
 		const ledgerRow: LedgerRow | undefined = row
 			? {
@@ -196,43 +235,107 @@ export async function computeDrift(options: {
 					lastSyncedBlock: row.lastSyncedBlock,
 				}
 			: undefined;
-		const block =
-			ledgerRow?.lastSyncedBlock === null || ledgerRow === undefined
-				? cursor
-				: cursor !== null && cursor > ledgerRow.lastSyncedBlock
-					? cursor
-					: ledgerRow.lastSyncedBlock;
+		const block = ledgerRow
+			? ledgerBlock(cursor, ledgerRow.lastSyncedBlock)
+			: undefined;
 		let atLedgerBlock: { block: bigint; chain: ChainTenant } | undefined;
-		if (ledgerRow && block !== null) {
+		// A row not yet synced, or a chain unreadable at its block, cannot settle the ledger either
+		// way: say so, do not guess. The rules that need no past block still apply.
+		let notCompared = registryRow !== undefined && ledgerRow !== undefined;
+		if (ledgerRow && block !== undefined && registryRow) {
 			try {
 				atLedgerBlock = {
 					block,
 					chain: await paymaster.tenantAt(onChain.tenantId, block),
 				};
+				notCompared = false;
 			} catch {
-				// A node without that block's state cannot settle it either way: say so, do not guess.
-				unchecked.push(tenantId);
+				// A node without that block's state.
 			}
 		}
-		entries.push(
-			...tenantDrift({
+		perTenant[index] = {
+			entries: tenantDrift({
 				tenantId,
 				onChain,
-				registry: registryById.get(tenantId),
+				registry: registryRow,
 				ledger: ledgerRow,
 				atLedgerBlock,
 			}),
-		);
-	}
-	return { chainId, checkedAt: new Date(), entries, unchecked };
+			unchecked: notCompared && onChain.registered,
+		};
+	};
+	let next = 0;
+	await Promise.all(
+		Array.from(
+			{ length: Math.min(DRIFT_READ_CONCURRENCY, roster.length) },
+			async () => {
+				for (let index = next++; index < roster.length; index = next++)
+					await compare(index);
+			},
+		),
+	);
+	return {
+		chainId,
+		checkedAt: new Date(),
+		entries: perTenant.flatMap((tenant) => tenant.entries),
+		unchecked: uuids.filter((_, index) => perTenant[index].unchecked),
+	};
 }
 
-/** The latest drift per chain, kept in memory by whichever replica runs that chain's watcher. */
+/** Drift entries that are drift in this deployment's own records: not another deployment's tenants. */
+export const isOwnDrift = (entry: DriftEntry) =>
+	entry.kind !== "unknown-tenant";
+
+/** How long a result computed on demand (by a replica without the watcher) is reused. */
+export const DRIFT_REUSE_MS = 15_000;
+
+/**
+ * The latest drift per chain, in memory. The watcher's replica sets each pass's result. A replica
+ * without the watcher computes on demand, reuses that for {@link DRIFT_REUSE_MS}, and shares a
+ * computation in flight, so a console refreshing every few seconds does not read the whole roster
+ * each time.
+ *
+ * The watcher's result is served only while it is fresh (`maxAgeMs`): one older is a watcher that
+ * stopped or lost its lock, and is computed again rather than served as current.
+ */
 export function createDriftStore() {
 	const latest = new Map<number, ChainDrift>();
+	const recent = new Map<number, ChainDrift>();
+	const inFlight = new Map<number, Promise<ChainDrift>>();
+	const youngerThan = (drift: ChainDrift | undefined, ms: number) =>
+		drift && Date.now() - drift.checkedAt.getTime() <= ms ? drift : undefined;
 	return {
+		/** A watcher pass's result. */
 		set: (drift: ChainDrift) => latest.set(drift.chainId, drift),
-		get: (chainId: number) => latest.get(chainId),
+		/** Forget a chain's results: the watcher lost its lock, or its drift pass failed. */
+		clear: (chainId: number) => {
+			latest.delete(chainId);
+			recent.delete(chainId);
+		},
+		/** The watcher's result, if it is no older than `maxAgeMs`. */
+		get: (chainId: number, maxAgeMs: number) =>
+			youngerThan(latest.get(chainId), maxAgeMs),
+		/** The watcher's result if fresh, else a recent or shared computation, else a new one. */
+		fresh(
+			chainId: number,
+			maxAgeMs: number,
+			compute: () => Promise<ChainDrift>,
+		): Promise<ChainDrift> {
+			const stored =
+				youngerThan(latest.get(chainId), maxAgeMs) ??
+				youngerThan(recent.get(chainId), DRIFT_REUSE_MS);
+			if (stored) return Promise.resolve(stored);
+			const running = inFlight.get(chainId);
+			if (running) return running;
+			const started = compute()
+				.then((drift) => {
+					recent.set(chainId, drift);
+					return drift;
+				})
+				.finally(() => inFlight.delete(chainId));
+			inFlight.set(chainId, started);
+			return started;
+		},
 	};
 }
 

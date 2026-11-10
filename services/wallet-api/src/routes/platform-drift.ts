@@ -18,9 +18,11 @@ const errorSchema = z
  * The drift between wallet-api's registry and ledger and each paymaster (B5, openspec
  * tenant-chain-drift). Reported, never a health failure: who acts on it is the alerting non-goal.
  *
- * The watcher computes it each pass on the replica that holds that chain's lock. Another replica,
- * or one whose watcher has not run yet, computes it here from the same database and chain, so the
- * answer does not depend on which replica the request reached.
+ * The watcher computes it before each reconcile on the replica that holds that chain's lock. Its
+ * result is served while it is no older than two reconcile intervals; another replica, one whose
+ * watcher has not run yet, or one whose last result is older (a watcher that stopped or lost its
+ * lock) computes it here from the same database and chain. Each chain answers on its own: one that
+ * cannot be read is an error for that chain, not for every chain.
  */
 export default async function platformDriftRoutes(
 	instance: FastifyInstance,
@@ -40,6 +42,7 @@ export default async function platformDriftRoutes(
 		entries: drift.entries,
 		unchecked: drift.unchecked,
 	});
+	const maxAgeMs = 2 * opts.config.PAYMASTER_RECONCILE_INTERVAL_MS;
 
 	app.get(
 		"/v1/platform/drift",
@@ -60,44 +63,59 @@ export default async function platformDriftRoutes(
 				response: {
 					200: z.object({
 						chains: z.array(
-							z.object({
-								chainId: z.number().int(),
-								checkedAt: z.string(),
-								entries: z.array(z.object({ kind: z.string() }).passthrough()),
-								/** Tenants the chain could not be read for at the ledger's block. */
-								unchecked: z.array(z.string()),
-							}),
+							z.union([
+								z.object({
+									chainId: z.number().int(),
+									checkedAt: z.string(),
+									entries: z.array(
+										z.object({ kind: z.string() }).passthrough(),
+									),
+									/** Tenants not compared: the chain could not be read at the ledger's block, or the row is not yet synced. */
+									unchecked: z.array(z.string()),
+								}),
+								z.object({
+									chainId: z.number().int(),
+									/** This chain's drift could not be computed; a fixed message, never the cause. */
+									error: z.literal("drift-unavailable"),
+									message: z.string(),
+								}),
+							]),
 						),
 					}),
 					401: errorSchema,
-					502: errorSchema,
 				},
 			},
 		},
-		async (request, reply) => {
-			try {
-				const chains = await Promise.all(
-					opts.registry.all
-						.filter((chain) => chain.paymaster)
-						.map(
-							async (chain) =>
-								opts.drift.get(chain.chainId) ??
-								computeDrift({
-									db: opts.db,
-									chainId: chain.chainId,
-									// biome-ignore lint/style/noNonNullAssertion: filtered to sponsoring chains above
-									paymaster: chain.paymaster!,
-								}),
-						),
-				);
-				return { chains: chains.map(view) };
-			} catch (error) {
-				request.log.warn({ err: error }, "drift could not be computed");
-				return reply.code(502).send({
-					error: "chain-unreachable",
-					message: "a paymaster could not be read to compare against",
-				});
-			}
+		async (request) => {
+			const sponsoring = opts.registry.all.filter((chain) => chain.paymaster);
+			const results = await Promise.allSettled(
+				sponsoring.map((chain) =>
+					opts.drift.fresh(chain.chainId, maxAgeMs, () =>
+						computeDrift({
+							db: opts.db,
+							chainId: chain.chainId,
+							// biome-ignore lint/style/noNonNullAssertion: filtered to sponsoring chains above
+							paymaster: chain.paymaster!,
+						}),
+					),
+				),
+			);
+			return {
+				chains: results.map((result, index) => {
+					if (result.status === "fulfilled") return view(result.value);
+					const { chainId } = sponsoring[index];
+					request.log.warn(
+						{ err: result.reason, chainId },
+						"drift could not be computed",
+					);
+					return {
+						chainId,
+						error: "drift-unavailable" as const,
+						message:
+							"the paymaster or wallet-api's records could not be read to compare",
+					};
+				}),
+			};
 		},
 	);
 }

@@ -16,6 +16,7 @@ import {
 	recoveryVerified,
 	verifyChain,
 } from "./services/chain-verify.js";
+import { isOwnDrift } from "./services/drift.js";
 import {
 	HOUSEKEEPING_INTERVAL_MS,
 	pruneExpiredChallenges,
@@ -255,10 +256,23 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
 			},
 			onDrift: (drift) => {
 				app.drift.set(drift);
+				// Another deployment's tenants on a shared paymaster are not this deployment's drift
+				// (PAYMASTER-SPECS): counted apart, so the drift gauge can be 0.
 				app.metrics.paymasterDriftedTenants.set(
 					{ chain: chainLabel },
-					new Set(drift.entries.map((entry) => entry.tenantId)).size,
+					new Set(
+						drift.entries.filter(isOwnDrift).map((entry) => entry.tenantId),
+					).size,
 				);
+				app.metrics.paymasterUnknownTenants.set(
+					{ chain: chainLabel },
+					drift.entries.filter((entry) => !isOwnDrift(entry)).length,
+				);
+			},
+			onDriftLost: () => {
+				app.drift.clear(chain.chainId);
+				app.metrics.paymasterDriftedTenants.remove({ chain: chainLabel });
+				app.metrics.paymasterUnknownTenants.remove({ chain: chainLabel });
 			},
 			logger: app.log.child({ chainId: chain.chainId }),
 		});

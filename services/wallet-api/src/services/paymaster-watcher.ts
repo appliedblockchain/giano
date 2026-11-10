@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type pg from "pg";
 import type { Address, Log, PublicClient } from "viem";
 import { parseAbiItem } from "viem";
@@ -47,6 +47,11 @@ export type WatcherOptions = {
 	metrics?: WatcherMetrics;
 	/** Each pass's drift between the registry, the ledger and the paymaster (B5). */
 	onDrift?: (drift: ChainDrift) => void;
+	/**
+	 * The last drift no longer stands: the drift pass failed, or this replica stopped running the
+	 * watcher. Whoever kept the last result forgets it, rather than serve it as current.
+	 */
+	onDriftLost?: () => void;
 	logger?: {
 		info: (o: unknown, m?: string) => void;
 		warn: (o: unknown, m?: string) => void;
@@ -407,6 +412,8 @@ export function createPaymasterWatcher(
 					tenantId: `0x${string}`;
 					newAddress: Address;
 				};
+				// As applyBalance: a change replayed from an older block must not overwrite what a
+				// reconcile wrote at a newer one (a catch-up after an outage).
 				await db
 					.update(paymasterTenants)
 					.set({ withdrawAddress: args.newAddress.toLowerCase() })
@@ -414,6 +421,10 @@ export function createPaymasterWatcher(
 						and(
 							eq(paymasterTenants.tenantId, bytes16ToUuid(args.tenantId)),
 							eq(paymasterTenants.chainId, chainId),
+							or(
+								isNull(paymasterTenants.lastSyncedBlock),
+								lte(paymasterTenants.lastSyncedBlock, entry.blockNumber!),
+							),
 						),
 					);
 			}
@@ -672,6 +683,7 @@ export function createPaymasterWatcher(
 			if (retryTimer) clearTimeout(retryTimer);
 			retryTimer = undefined;
 			stopTimers();
+			options.onDriftLost?.();
 			const connection = lockConnection;
 			lockConnection = undefined;
 			if (connection) {
@@ -770,28 +782,23 @@ export function createPaymasterWatcher(
 				return false;
 			}
 		};
-		const runPoll = async () => {
-			if (!(await holdsLock())) return;
-			try {
-				await watcher.pollOnce();
-			} catch (error) {
-				log.warn({ err: error }, "paymaster watcher poll failed");
-			}
-		};
-		const runReconcile = async () => {
-			if (!(await holdsLock())) return;
-			// Before the reconcile overwrites the ledger with the chain: after it, they agree by construction.
-			try {
-				await watcher.driftOnce();
-			} catch (error) {
-				log.warn({ err: error }, "paymaster drift check failed");
-			}
-			try {
-				await watcher.reconcileOnce();
-			} catch (error) {
-				log.warn({ err: error }, "paymaster reconciliation failed");
-			}
-		};
+		// The poll and the drift-and-reconcile pass run one at a time: drift must not read a poll
+		// half-way (a balance written, its deficit not yet). A pass already queued is not queued again.
+		const serial = createSerialRunner();
+		const runPoll = () =>
+			serial.run("poll", async () => {
+				if (!(await holdsLock())) return;
+				try {
+					await watcher.pollOnce();
+				} catch (error) {
+					log.warn({ err: error }, "paymaster watcher poll failed");
+				}
+			});
+		const runReconcile = () =>
+			serial.run("reconcile", async () => {
+				if (!(await holdsLock())) return;
+				await driftThenReconcile(watcher, log, options.onDriftLost);
+			});
 
 		await runPoll();
 		await runReconcile();
@@ -806,6 +813,7 @@ export function createPaymasterWatcher(
 		if (lockConnection !== connection) return;
 		lockConnection = undefined;
 		stopTimers();
+		options.onDriftLost?.();
 		connection.release(
 			error instanceof Error ? error : new Error(String(error)),
 		);
@@ -818,6 +826,49 @@ export function createPaymasterWatcher(
 	}
 
 	return watcher;
+}
+
+/**
+ * One reconcile pass: drift first, before the reconcile overwrites the ledger with the chain (after
+ * it, they agree by construction), then the reconcile. A failed drift pass forgets the last result
+ * (`onDriftLost`) rather than leave it standing as current.
+ */
+export async function driftThenReconcile(
+	watcher: Pick<PaymasterWatcher, "driftOnce" | "reconcileOnce">,
+	log: { warn: (o: unknown, m?: string) => void },
+	onDriftLost?: () => void,
+): Promise<void> {
+	try {
+		await watcher.driftOnce();
+	} catch (error) {
+		onDriftLost?.();
+		log.warn({ err: error }, "paymaster drift check failed");
+	}
+	try {
+		await watcher.reconcileOnce();
+	} catch (error) {
+		log.warn({ err: error }, "paymaster reconciliation failed");
+	}
+}
+
+/** Runs one task at a time, in order; a kind already waiting is not queued twice. */
+export function createSerialRunner() {
+	let tail: Promise<void> = Promise.resolve();
+	const waiting = new Set<string>();
+	return {
+		run(kind: string, task: () => Promise<void>): Promise<void> {
+			if (waiting.has(kind)) return tail;
+			waiting.add(kind);
+			// A task that throws must not stop the ones after it.
+			tail = tail
+				.then(async () => {
+					waiting.delete(kind);
+					await task();
+				})
+				.catch(() => undefined);
+			return tail;
+		},
+	};
 }
 
 export { bytes16ToUuid, uuidToBytes16 };

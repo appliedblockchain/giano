@@ -63,6 +63,7 @@ declare module "fastify" {
 			paymasterReconciliationDivergenceWei: Gauge<"chain">;
 			/** Tenants whose registry, ledger and paymaster disagree, per chain (B5); reported, not a health failure. */
 			paymasterDriftedTenants: Gauge<"chain">;
+			paymasterUnknownTenants: Gauge<"chain">;
 			/** 0/1 per served chain — drives the chain-unavailable alert (MC-54, MC-103). */
 			chainAvailable: Gauge<"chain">;
 		};
@@ -242,7 +243,13 @@ export default fp(
 			}),
 			paymasterDriftedTenants: new Gauge({
 				name: "giano_paymaster_drifted_tenants",
-				help: "Tenants whose registry, ledger and paymaster disagree, from the watcher's last drift pass",
+				help: "This deployment's tenants whose registry, ledger and paymaster disagree, from the watcher's last drift pass; absent while no current pass stands",
+				labelNames: ["chain"] as const,
+				registers: [registry],
+			}),
+			paymasterUnknownTenants: new Gauge({
+				name: "giano_paymaster_unknown_tenants",
+				help: "Tenants on the paymaster with no registry row (another deployment's, on a shared paymaster), from the watcher's last drift pass",
 				labelNames: ["chain"] as const,
 				registers: [registry],
 			}),
