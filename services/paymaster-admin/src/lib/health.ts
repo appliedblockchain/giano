@@ -257,18 +257,16 @@ export function executorStanding(
 		perSubmission > 0n ? Number(balance / perSubmission) : null;
 	const ahead = executor.pendingNonce - executor.latestNonce;
 	// The bundler's own count where it gives one; otherwise from busySince and this browser's clock.
-	const heldSeconds =
-		executor.busy && executor.heldSeconds != null
-			? executor.heldSeconds
-			: executor.busy && executor.busySince
-				? Math.max(
-						0,
-						Math.round(
-							((lane.now ?? Date.now()) - Date.parse(executor.busySince)) /
-								1000,
-						),
-					)
-				: undefined;
+	let heldSeconds: number | undefined;
+	if (executor.busy && executor.heldSeconds != null)
+		heldSeconds = executor.heldSeconds;
+	else if (executor.busy && executor.busySince)
+		heldSeconds = Math.max(
+			0,
+			Math.round(
+				((lane.now ?? Date.now()) - Date.parse(executor.busySince)) / 1000,
+			),
+		);
 	const held =
 		heldSeconds !== undefined &&
 		lane.stuckAfterSeconds != null &&

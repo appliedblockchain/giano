@@ -267,7 +267,7 @@ export type BundlerExecutor = {
 	busy: boolean;
 	/** When the lane took the transaction it holds; null while idle, absent from an older wallet-api. */
 	busySince?: string | null;
-	/** How long the lane has held its transaction, by the bundler's clock; null while idle. */
+	/** How long the lane has held its transaction, by the bundler's clock; null while idle or from an older bundler. */
 	heldSeconds?: number | null;
 	latestNonce: number;
 	pendingNonce: number;

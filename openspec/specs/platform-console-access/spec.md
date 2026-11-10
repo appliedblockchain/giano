@@ -118,6 +118,10 @@ A `401` for a token *Stay signed in* has replaced SHALL NOT end the session: a c
 - **WHEN** a platform admin saves a tenant edit while *Stay signed in* replaces the session, and the edit is refused for the replaced token
 - **THEN** the edit is sent again with the new token, and the console stays signed in
 
+#### Scenario: A 401 after Sign out
+- **WHEN** a platform admin signs out while a call made with the session's token is still in flight, and that call is then refused with `401`
+- **THEN** the call is not sent again, and the sign-in page shows no session-expired message
+
 #### Scenario: Deployment switch
 - **WHEN** a signed-in platform admin switches deployment in the header
 - **THEN** the console returns to the sign-in page

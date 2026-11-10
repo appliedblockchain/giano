@@ -50,11 +50,15 @@ For each chain, the prober SHALL keep its last full verification and the time an
 - **THEN** its `lastProbe.at` is 30 seconds ago
 
 ### Requirement: giano-bundler reports its executors
-giano-bundler SHALL answer `giano_executors` on each chain's endpoint with the chain's current gas price and, for every executor key it signs with, the executor's address, its native balance read when asked, whether its lane holds a transaction and since when, and its latest and pending nonces, with how long a lane may hold one transaction before it is stuck. It SHALL NOT return a key.
+giano-bundler SHALL answer `giano_executors` on each chain's endpoint with the chain's current gas price and, for every executor key it signs with, the executor's address, its native balance read when asked, whether its lane holds a transaction, since when and for how many seconds by the bundler's own clock, and its latest and pending nonces, with how long a lane may hold one transaction before it is stuck. It SHALL NOT return a key.
 
 #### Scenario: Executors asked for
 - **WHEN** `giano_executors` is called on a chain's endpoint
-- **THEN** the answer holds the chain's gas price and, for each executor key, its address, balance, whether its lane holds a transaction, and its latest and pending nonces, and no key
+- **THEN** the answer holds the chain's gas price and, for each executor key, its address, balance, whether its lane holds a transaction and for how long, and its latest and pending nonces, and no key
+
+#### Scenario: A lane held for 90 seconds
+- **WHEN** an executor's lane took its transaction 90 seconds ago by the bundler's clock
+- **THEN** that executor's `heldSeconds` is 90, whatever the caller's clock says, and an idle lane's is null
 
 ### Requirement: The bundler's executors are reported per chain
 `GET /v1/platform/chains` SHALL report, for each chain, the bundler's executors and gas price within the bundler's timeout, and SHALL report them as unknown, not as a failure, where the bundler does not answer the method, saying whether the bundler lacks the method or did not answer. An answer of the wrong shape SHALL make that chain's executors unknown, not fail the response.

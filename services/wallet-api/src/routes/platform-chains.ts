@@ -78,7 +78,7 @@ const chainSchema = z.object({
 					 * How long the lane has held it, by the bundler's own clock; null while idle or from a
 					 * bundler that predates it. The stuck check uses this, not a reader's clock.
 					 */
-					heldSeconds: z.number().int().nullable(),
+					heldSeconds: z.number().int().nonnegative().nullable(),
 					latestNonce: z.number().int(),
 					pendingNonce: z.number().int(),
 				}),
