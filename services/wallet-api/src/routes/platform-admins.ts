@@ -116,7 +116,7 @@ export default async function platformAdminRoutes(
 			...route,
 			schema: {
 				...docs,
-				summary: `A platform admin's sessions from the last ${SESSION_HISTORY_DAYS} days, newest first; never a token or its hash, and the IP and user agent only of your own`,
+				summary: `A platform admin's sessions from the last ${SESSION_HISTORY_DAYS} days, newest first; never a token or its hash, no IP, and the user agent only of your own`,
 				params: z.object({ id: z.string().min(1).max(64) }),
 				response: {
 					200: z.object({ sessions: z.array(sessionSchema) }),

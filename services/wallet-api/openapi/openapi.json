@@ -8864,7 +8864,7 @@
     },
     "/v1/platform/admins/{id}/sessions": {
       "get": {
-        "summary": "A platform admin's sessions from the last 30 days, newest first; never a token or its hash, and the IP and user agent only of your own",
+        "summary": "A platform admin's sessions from the last 30 days, newest first; never a token or its hash, no IP, and the user agent only of your own",
         "tags": [
           "platform"
         ],

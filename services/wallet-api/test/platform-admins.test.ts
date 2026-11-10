@@ -384,6 +384,16 @@ describe("sign-ins and sessions (D15)", () => {
 			(await as(mine, "DELETE", "/v1/platform/sessions/not-a-session"))
 				.statusCode,
 		).toBe(400);
+		// a well-formed id that is none of yours: not found, as another admin's is
+		expect(
+			(
+				await as(
+					mine,
+					"DELETE",
+					"/v1/platform/sessions/00000000-0000-4000-8000-000000000000",
+				)
+			).statusCode,
+		).toBe(404);
 	});
 
 	it("matches sessions by address: a reused id does not inherit the old admin's", async () => {
