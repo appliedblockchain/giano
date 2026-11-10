@@ -369,7 +369,7 @@ test("Health checks the timelock: who else holds its roles, a delay below the pu
 		"upgradeToAndCall waits 2s, below the published 1h",
 	);
 	await expect(page.getByTestId("check-implementation")).toContainText(
-		"release v2",
+		"release v3",
 	);
 	// The timelock is configured, so nothing says there is none, or asks to verify a holder.
 	await expect(page.getByTestId("check-timelock")).toHaveCount(0);

@@ -351,7 +351,7 @@ test("Health says once that no timelock is configured, and names the implementat
 	);
 	await expect(keys.getByTestId("check-timelock")).toContainText("warning");
 	await expect(keys.getByTestId("check-implementation")).toContainText(
-		"release v2",
+		"release v3",
 	);
 	// One warning for the deployment, not one per holder asking to verify it.
 	await expect(page.getByText(/verify this is the timelock/)).toHaveCount(0);
