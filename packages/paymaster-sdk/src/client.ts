@@ -21,7 +21,7 @@ import {
 	translateContractError,
 } from "./errors";
 import { withGasHeadroom } from "./gas";
-import { assessHealth } from "./health";
+import { assessHealth, type HealthContext } from "./health";
 import {
 	type BlockRange,
 	DEFAULT_LOG_WINDOW,
@@ -253,6 +253,15 @@ export class GianoPaymasterClient {
 				`${this.address} has no ERC-1967 implementation: it is not a UUPS proxy`,
 			);
 		return implementation;
+	}
+
+	/** The implementation's address and its runtime code, for `assessHealth` to match to a release. */
+	async getImplementationCode(): Promise<{
+		address: Address;
+		code: Hex | undefined;
+	}> {
+		const address = await this.getImplementation();
+		return { address, code: await this.publicClient.getCode({ address }) };
 	}
 
 	async getConfig(): Promise<PaymasterConfig> {
@@ -613,11 +622,17 @@ export class GianoPaymasterClient {
 	 * The deployment's health, in the checks `giano-doctor` runs.
 	 *
 	 * Same thresholds and the same verdicts, so a panel and the CLI gate cannot disagree about
-	 * whether a deployment is usable.
+	 * whether a deployment is usable. The implementation is matched to a release here; the
+	 * timelock, which the paymaster cannot name, is the caller's to pass (see `timelockDelays`).
 	 */
-	async getHealth(): Promise<HealthReport> {
-		const overview = await this.getOverview();
-		return assessHealth(overview);
+	async getHealth(
+		context: Omit<HealthContext, "implementation"> = {},
+	): Promise<HealthReport> {
+		const [overview, implementation] = await Promise.all([
+			this.getOverview(),
+			this.getImplementationCode(),
+		]);
+		return assessHealth(overview, { ...context, implementation });
 	}
 
 	// -------------------------------------------------------------------------------------------
