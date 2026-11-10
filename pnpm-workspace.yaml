@@ -67,6 +67,10 @@ overrides:
   "yaml@>=2.0.0 <2.8.3": "2.9.1"
   # GHSA-jggr-w7fw-pc2j — pino-pretty (wallet-api dev logging)
   "fast-copy@>=4.0.0 <4.1.0": "4.2.0"
+  # GHSA-3g3m-2fjr-6pw4 (glob), GHSA-g3hv-75wg-m249 (minimatch via glob) — archiver-utils 5.0.2
+  # (testcontainers) asks for glob 10, @fastify/static 10.1.6 for glob 13; only 14.0.2+ is fixed.
+  # glob 14 keeps the glob() and sync() exports both parents call, and brings minimatch 11.
+  "glob@>=9.0.0 <14.0.2": "14.0.3"
   # High-severity lines (lowest advisory on each is high).
   # @grpc/grpc-js — dockerode via testcontainers (wallet-api tests)
   "@grpc/grpc-js@>=1.13.0 <1.13.5": "1.14.6"
@@ -75,9 +79,7 @@ overrides:
   "fast-uri@>=3.0.0 <3.1.9": "3.1.9"
   "fast-uri@>=4.0.0 <4.2.3": "4.2.3"
   "find-my-way@>=9.0.0 <9.7.0": "9.10.0"
-  "glob@>=10.0.0 <10.5.0": "10.5.0"
   "minimatch@>=5.0.0 <5.1.8": "5.1.9"
-  "minimatch@>=9.0.0 <9.0.7": "9.0.9"
   # preact — @coinbase/wallet-sdk via wagmi connectors
   "preact@>=10.0.0 <10.26.10": "10.29.8"
   # socket.io-parser — @metamask/sdk via wagmi connectors
