@@ -1,7 +1,6 @@
 import {
 	formatDuration,
 	type GianoPaymasterClient,
-	type HealthReport,
 	type PaymasterOverview,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import {
@@ -27,6 +26,7 @@ import {
 	groupAttention,
 	unreadSources,
 } from "../lib/attention";
+import type { ConsoleHealth } from "../lib/health";
 import { relativeTime } from "../lib/proposals";
 import { Link, TAB_PATHS } from "../lib/router";
 import type { TenantRow } from "../lib/tenants";
@@ -52,7 +52,7 @@ export function OverviewTab({
 	rows: readonly TenantRow[];
 	registry: Registry;
 	rosterOnChain: boolean;
-	health: HealthReport | undefined;
+	health: ConsoleHealth | undefined;
 }) {
 	const { timelock, timelockOperations } = useConsole();
 	const now = useNow(30_000) / 1000;
@@ -73,6 +73,7 @@ export function OverviewTab({
 			: undefined,
 		rosterOnChain,
 		health: health?.checks,
+		healthPending: health?.pending.map((entry) => entry.label),
 	};
 	const items = groupAttention(
 		attentionItems({

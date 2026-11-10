@@ -12,6 +12,10 @@
  * the safety property — switching between known environments is routine; reaching an unknown one
  * by accident is what must stay impossible.
  */
+import {
+	TIMELOCKED_FUNCTION_NAMES,
+	type TimelockDelays,
+} from "@appliedblockchain/giano-paymaster-sdk";
 
 /**
  * One paymaster deployment the console can administer.
@@ -45,6 +49,13 @@ export type Deployment = {
 	 * is just an address — so it is configured beside it.
 	 */
 	timelockAddress?: `0x${string}`;
+	/**
+	 * The timelock delays this chain publishes, in seconds: its profile's `timelock.delays`
+	 * (deploy/chains/*.json). Set, Health fails a delay below its published value, as giano-doctor
+	 * does; unset, Health says the delays were not compared. Every name is required: a delay left
+	 * out would be one Health says is "at or above the published value" without comparing it.
+	 */
+	timelockDelays?: TimelockDelays;
 	/**
 	 * Where a *wallet* should reach this chain, when that is not where the console reads.
 	 *
@@ -115,6 +126,7 @@ type RawDeployment = {
 	walletRpcUrl?: string;
 	sponsorshipPaymaster?: string;
 	timelockAddress?: string;
+	timelockDelays?: Record<string, unknown>;
 	refreshSeconds?: number | string | null;
 	nativeCurrency?: { symbol?: string; decimals?: number };
 	explorerUrl?: string;
@@ -168,11 +180,44 @@ function toDeployment(
 		timelockAddress: raw.timelockAddress
 			? (raw.timelockAddress as `0x${string}`)
 			: undefined,
+		timelockDelays: toTimelockDelays(raw.timelockDelays, where),
 		refreshSeconds,
 		nativeCurrency: toNativeCurrency(raw.nativeCurrency, where),
 		explorerUrl: toExplorerUrl(raw.explorerUrl, where),
 		addresses: toAddresses(raw.addresses, where),
 	};
+}
+
+const DELAY_NAMES: readonly (keyof TimelockDelays)[] = [
+	"minDelay",
+	...TIMELOCKED_FUNCTION_NAMES,
+];
+
+export function toTimelockDelays(
+	raw: RawDeployment["timelockDelays"],
+	where: string,
+): TimelockDelays | undefined {
+	if (!raw || Object.keys(raw).length === 0) return undefined;
+	// All or none, as deploy/cli.ts requires of a profile: a partial list would let a shortened delay
+	// it leaves out pass as "at or above the published values".
+	const missing = DELAY_NAMES.filter((name) => !(name in raw));
+	if (missing.length > 0)
+		throw new Error(
+			`${where} has timelockDelays without ${missing.join(", ")}; give every delay the chain's profile publishes (deploy/chains/*.json), or none`,
+		);
+	const delays: Partial<TimelockDelays> = {};
+	for (const [name, value] of Object.entries(raw)) {
+		if (!DELAY_NAMES.includes(name as keyof TimelockDelays))
+			throw new Error(
+				`${where} has a timelock delay for "${name}"; the names are ${DELAY_NAMES.join(", ")}`,
+			);
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+			throw new Error(
+				`${where} has a ${name} delay that is not a whole number of seconds: ${JSON.stringify(value)}`,
+			);
+		delays[name as keyof TimelockDelays] = value;
+	}
+	return delays as TimelockDelays;
 }
 
 function toNativeCurrency(

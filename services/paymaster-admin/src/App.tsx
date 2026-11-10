@@ -1,4 +1,3 @@
-import type { HealthReport } from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Alert,
 	Box,
@@ -11,6 +10,7 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isAddressEqual } from "viem";
 import { ActivityTab } from "./activity/ActivityTab";
 import { ProposalDialog } from "./components/ProposalDialog";
 import { Copyable, notifyError } from "./components/ui";
@@ -22,6 +22,7 @@ import {
 	rememberDeployment,
 } from "./config";
 import { HealthTab } from "./health/HealthTab";
+import { useHealth } from "./hooks/useHealth";
 import { usePaymaster } from "./hooks/usePaymaster";
 import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useTimelockAccess } from "./hooks/useTimelockConfig";
@@ -34,6 +35,7 @@ import {
 	isUserRejection,
 	networkDetails,
 } from "./lib/chain";
+import type { ConsoleHealth } from "./lib/health";
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import type { ProposalRequest } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
@@ -112,7 +114,6 @@ function Console({
 	const {
 		client,
 		overview,
-		health,
 		myRoles,
 		rosterOnChain,
 		loading,
@@ -138,11 +139,43 @@ function Console({
 	const [proposal, setProposal] = useState<ProposalRequest>();
 	const propose = timelock ? setProposal : undefined;
 	const timelockAccess = useTimelockAccess(timelock, wallet);
+	const health = useHealth({
+		client,
+		overview,
+		block,
+		deployment,
+		timelockConfig: timelockAccess.config,
+		timelockError: timelockAccess.error,
+	});
 	const timelockOperations = usePendingOperations(
 		timelock,
 		lastUpdated,
 		timelockAccess.error ? null : timelockAccess.longestDelay,
 	);
+	// The timelock's config is read once (D17), and a delay change is itself a timelocked operation:
+	// when one aimed at the timelock is executed, from here or from a Safe, read the config again.
+	const executedOnTimelock = timelock
+		? timelockOperations.operations
+				.filter(
+					(operation) =>
+						operation.state === "done" &&
+						operation.calls.some((call) =>
+							isAddressEqual(call.target, timelock.address),
+						),
+				)
+				.map((operation) => operation.id)
+				.join()
+		: "";
+	const seenExecuted = useRef<string>(undefined);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only a newly executed operation re-reads
+	useEffect(() => {
+		if (
+			seenExecuted.current !== undefined &&
+			seenExecuted.current !== executedOnTimelock
+		)
+			void timelockAccess.reload();
+		seenExecuted.current = executedOnTimelock;
+	}, [executedOnTimelock]);
 	// Read for the whole console, not only the Tenants tab: the tab bar counts the same tenants the
 	// list shows.
 	const registry = useRegistry(lastUpdated);
@@ -414,7 +447,7 @@ function RouteView({
 }: {
 	route: Route;
 	platformProps: PlatformAreaProps;
-	health: HealthReport | undefined;
+	health: ConsoleHealth | undefined;
 	lastUpdated: Date | undefined;
 	rosterOnChain: boolean;
 	loading: boolean;

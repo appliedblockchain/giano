@@ -21,7 +21,7 @@ import {
 	translateContractError,
 } from "./errors";
 import { withGasHeadroom } from "./gas";
-import { assessHealth } from "./health";
+import { assessHealth, type HealthContext } from "./health";
 import {
 	type BlockRange,
 	DEFAULT_LOG_WINDOW,
@@ -240,19 +240,42 @@ export class GianoPaymasterClient {
 	 * implementation says about itself.
 	 */
 	async getImplementation(): Promise<Address> {
-		const word = await this.publicClient.getStorageAt({
-			address: this.address,
-			slot: ERC1967_IMPLEMENTATION_SLOT,
-		});
-		const implementation = getAddress(
-			`0x${(word ?? "0x").slice(2).padStart(64, "0").slice(24)}`,
-		);
+		const implementation = await this.readImplementationSlot();
 		// An empty slot is not a proxy: say so, rather than report 0x000… as the implementation.
 		if (implementation === zeroAddress)
 			throw new PaymasterSdkError(
 				`${this.address} has no ERC-1967 implementation: it is not a UUPS proxy`,
 			);
 		return implementation;
+	}
+
+	/**
+	 * The implementation's address and its runtime code, for `assessHealth` to match to a release.
+	 * Unlike {@link getImplementation} it does not throw on an empty slot: health reports that as a
+	 * failed check (the zero address, no code) rather than failing as a whole.
+	 */
+	async getImplementationCode(): Promise<{
+		address: Address;
+		code: Hex | undefined;
+	}> {
+		const address = await this.readImplementationSlot();
+		if (address === zeroAddress) return { address, code: undefined };
+		return { address, code: await this.publicClient.getCode({ address }) };
+	}
+
+	/**
+	 * The ERC-1967 implementation slot as it is: the zero address when it is empty, where
+	 * {@link getImplementation} throws. For a caller that re-reads the address often and fetches the
+	 * code, the size of a contract, only when it changes.
+	 */
+	async readImplementationSlot(): Promise<Address> {
+		const word = await this.publicClient.getStorageAt({
+			address: this.address,
+			slot: ERC1967_IMPLEMENTATION_SLOT,
+		});
+		return getAddress(
+			`0x${(word ?? "0x").slice(2).padStart(64, "0").slice(24)}`,
+		);
 	}
 
 	async getConfig(): Promise<PaymasterConfig> {
@@ -613,11 +636,17 @@ export class GianoPaymasterClient {
 	 * The deployment's health, in the checks `giano-doctor` runs.
 	 *
 	 * Same thresholds and the same verdicts, so a panel and the CLI gate cannot disagree about
-	 * whether a deployment is usable.
+	 * whether a deployment is usable. The implementation is matched to a release here; the
+	 * timelock, which the paymaster cannot name, is the caller's to pass (see `timelockDelays`).
 	 */
-	async getHealth(): Promise<HealthReport> {
-		const overview = await this.getOverview();
-		return assessHealth(overview);
+	async getHealth(
+		context: Omit<HealthContext, "implementation"> = {},
+	): Promise<HealthReport> {
+		const [overview, implementation] = await Promise.all([
+			this.getOverview(),
+			this.getImplementationCode(),
+		]);
+		return assessHealth(overview, { ...context, implementation });
 	}
 
 	// -------------------------------------------------------------------------------------------

@@ -35,8 +35,16 @@ if [ -z "${GIANO_DEPLOYMENTS:-}" ]; then
   # Optional. A block explorer to link transactions and addresses to; empty on a devnet.
   GIANO_EXPLORER_URL="${GIANO_EXPLORER_URL:-}"
 
-  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","walletRpcUrl":"%s","sponsorshipPaymaster":"%s","timelockAddress":"%s","explorerUrl":"%s","refreshSeconds":%s}]' \
-    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_WALLET_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_TIMELOCK_ADDRESS" "$GIANO_EXPLORER_URL" "$GIANO_REFRESH_SECONDS")
+  # Optional. The timelock delays the chain publishes, as a JSON object in seconds: its profile's
+  # `timelock.delays` (deploy/chains/*.json), every name. Health compares the timelock against them.
+  GIANO_TIMELOCK_DELAYS="${GIANO_TIMELOCK_DELAYS:-null}"
+  if ! printf '%s' "$GIANO_TIMELOCK_DELAYS" | jq -e 'type == "object" or type == "null"' > /dev/null; then
+    echo "FATAL: GIANO_TIMELOCK_DELAYS must be a JSON object of delays in seconds" >&2
+    exit 1
+  fi
+
+  GIANO_DEPLOYMENTS=$(printf '[{"name":"%s","chainId":%s,"rpcUrl":"%s","walletRpcUrl":"%s","sponsorshipPaymaster":"%s","timelockAddress":"%s","timelockDelays":%s,"explorerUrl":"%s","refreshSeconds":%s}]' \
+    "$GIANO_ENVIRONMENT_LABEL" "$GIANO_CHAIN_ID" "$GIANO_RPC_URL" "$GIANO_WALLET_RPC_URL" "$GIANO_PAYMASTER_ADDRESS" "$GIANO_TIMELOCK_ADDRESS" "$GIANO_TIMELOCK_DELAYS" "$GIANO_EXPLORER_URL" "$GIANO_REFRESH_SECONDS")
 fi
 
 # Keep the fields the console reads and drop the rest.
@@ -65,6 +73,7 @@ GIANO_DEPLOYMENTS=$(printf '%s' "$GIANO_DEPLOYMENTS" | jq -c '
     | { name, chainId, rpcUrl, sponsorshipPaymaster, nativeCurrency,
         walletRpcUrl: (.paymasterAdmin.walletRpcUrl // .walletRpcUrl),
         timelockAddress: (.paymasterAdmin.timelockAddress // .timelockAddress),
+        timelockDelays: (.paymasterAdmin.timelockDelays // .timelockDelays),
         explorerUrl: (.paymasterAdmin.explorerUrl // .explorerUrl),
         addresses: (.paymasterAdmin.addresses // .addresses),
         refreshSeconds: (.paymasterAdmin.refreshSeconds // .refreshSeconds // 15) }

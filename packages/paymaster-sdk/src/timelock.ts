@@ -10,6 +10,7 @@ import {
 	TIMELOCKED_OPERATIONS,
 	TIMELOCKED_ROLES,
 	type TimelockCall,
+	type TimelockDelays,
 	type TimelockedFunctionName,
 	type TimelockedOperation,
 	type TimelockProposal,
@@ -75,6 +76,7 @@ import type { WriteResult } from "./types";
 export {
 	encodeTimelockProposal,
 	formatDuration,
+	parseDelayList,
 	parseDuration,
 	type SafeTransactionBatch,
 	safeTransactionBatch,
@@ -243,6 +245,17 @@ export type TimelockOperationsOptions = {
 	 */
 	windows?: number;
 };
+
+/**
+ * What a timelock enforces, as `assessHealth` and `delayShortfalls` take it: its `minDelay`, and
+ * each timelocked function's effective delay.
+ */
+export function timelockDelays(config: TimelockConfig): TimelockDelays {
+	const delays = { minDelay: Number(config.minDelay) } as TimelockDelays;
+	for (const entry of config.functions)
+		delays[entry.functionName] = Number(entry.effectiveDelay);
+	return delays;
+}
 
 /**
  * Client for the paymaster's GianoTimelock.

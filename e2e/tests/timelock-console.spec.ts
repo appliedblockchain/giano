@@ -205,14 +205,22 @@ test.afterAll(async () => {
 		throw new AggregateError(failures, "cleaning up after the timelock spec");
 });
 
-/** Opens the console on chain A with this file's timelock configured, signed in as admin-console. */
-async function openWithTimelock(page: Page) {
+/**
+ * Opens the console on chain A with this file's timelock configured, signed in as admin-console.
+ * `timelockDelays` are the published delays Health compares the timelock's with.
+ */
+async function openWithTimelock(
+	page: Page,
+	timelockDelays?: Record<string, number>,
+) {
 	await page.route("**/config.json", async (route) => {
 		const response = await route.fetch();
 		const json = await response.json();
 		for (const deployment of json.deployments)
-			if (deployment.chainId === CHAINS.a.chainId)
+			if (deployment.chainId === CHAINS.a.chainId) {
 				deployment.timelockAddress = timelock;
+				if (timelockDelays) deployment.timelockDelays = timelockDelays;
+			}
 		await route.fulfill({ response, json });
 	});
 	await installWallet(page, { known: [CHAINS.a.chainId] });
@@ -339,4 +347,46 @@ test("a scheduled change is cancelled by the canceller and never executes", asyn
 	await expect(
 		cancelled.getByRole("button", { name: "Execute", exact: true }),
 	).toHaveCount(0);
+});
+
+test("Health checks the timelock: who else holds its roles, a delay below the published one, and the release", async ({
+	page,
+}) => {
+	// The timelock waits 2s for everything; the deployment publishes an hour for upgrades, and 2s for
+	// the rest (the console takes every delay or none).
+	await openWithTimelock(page, {
+		minDelay: 2,
+		upgradeToAndCall: 3600,
+		grantRole: 2,
+		revokeRole: 2,
+		renounceRole: 2,
+		setTenantWithdrawAddress: 2,
+		setDefaultFee: 2,
+		setTenantFee: 2,
+	});
+	await tab(page, /Health/).click();
+
+	// admin-console keeps every role beside this file's timelock, which holds ROLE_ADMIN only.
+	const roles = page.getByTestId("check-timelocked-roles");
+	await expect(roles).toContainText("failing");
+	await expect(roles).toContainText(
+		`${getAddress(OPERATOR)} also holds ROLE_ADMIN, UPGRADER_ROLE, FEE_ADMIN_ROLE, WITHDRAW_ADDRESS_ADMIN_ROLE`,
+	);
+	await expect(roles).toContainText(
+		`the timelock ${getAddress(timelock)} does not hold UPGRADER_ROLE, FEE_ADMIN_ROLE, WITHDRAW_ADDRESS_ADMIN_ROLE`,
+	);
+	await expect(page.getByTestId("check-timelock-delays")).toContainText(
+		"upgradeToAndCall waits 2s, below the published 1h",
+	);
+	await expect(page.getByTestId("check-implementation")).toContainText(
+		"release v3",
+	);
+	// The timelock is configured and read, so nothing says there is none, or asks to verify a holder.
+	await expect(page.getByTestId("pending-timelock")).toHaveCount(0);
+	await expect(page.getByTestId("check-timelock")).toHaveCount(0);
+	await expect(page.getByText(/verify this is the timelock/)).toHaveCount(0);
+	for (const id of ["timelocked-roles", "timelock-delays", "implementation"])
+		await expect(
+			page.getByTestId("health-keys").getByTestId(`check-${id}`),
+		).toBeVisible();
 });

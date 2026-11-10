@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { toAddresses, toExplorerUrl, toRefreshSeconds } from "./config";
+import {
+	toAddresses,
+	toExplorerUrl,
+	toRefreshSeconds,
+	toTimelockDelays,
+} from "./config";
 
 const SAFE = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 
@@ -74,5 +79,45 @@ describe("toAddresses", () => {
 		expect(() =>
 			toAddresses({ [SAFE]: { label: "x", kind: "eoa" } }, "d"),
 		).toThrow(/only kind is "safe"/);
+	});
+});
+
+describe("toTimelockDelays", () => {
+	// base-sepolia's profile (deploy/chains/base-sepolia.json).
+	const PUBLISHED = {
+		minDelay: 300,
+		upgradeToAndCall: 3600,
+		grantRole: 3600,
+		revokeRole: 3600,
+		renounceRole: 3600,
+		setTenantWithdrawAddress: 1800,
+		setDefaultFee: 1200,
+		setTenantFee: 600,
+	};
+
+	it("keeps the published delays, in seconds, and treats none as unset", () => {
+		expect(toTimelockDelays(PUBLISHED, "d")).toEqual(PUBLISHED);
+		expect(toTimelockDelays(undefined, "d")).toBeUndefined();
+		expect(toTimelockDelays({}, "d")).toBeUndefined();
+	});
+
+	it("refuses a partial list, naming every delay it leaves out", () => {
+		expect(() =>
+			toTimelockDelays({ minDelay: 300, upgradeToAndCall: 3600 }, "d"),
+		).toThrow(
+			/without grantRole, revokeRole, renounceRole, setTenantWithdrawAddress, setDefaultFee, setTenantFee/,
+		);
+	});
+
+	it("refuses a name the timelock has no delay for, and a delay that is not whole seconds", () => {
+		expect(() =>
+			toTimelockDelays({ ...PUBLISHED, upgrade: 3600 }, "d"),
+		).toThrow(/"upgrade"; the names are minDelay, upgradeToAndCall/);
+		expect(() =>
+			toTimelockDelays({ ...PUBLISHED, minDelay: "2d" }, "d"),
+		).toThrow(/minDelay delay that is not a whole number of seconds/);
+		expect(() => toTimelockDelays({ ...PUBLISHED, minDelay: -1 }, "d")).toThrow(
+			/not a whole number/,
+		);
 	});
 });

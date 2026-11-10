@@ -392,11 +392,17 @@ Where the platform API is configured, the Registry and chain group SHALL add:
 
 A registry tenant not yet registered on chain SHALL be listed under Needs attention on the Overview, not as a failed check.
 
+A check whose input has not been read yet (the implementation, a configured timelock, the ledger comparison) SHALL be shown as still being read, never left out, and a failed read SHALL be a warning. The summary SHALL say every check passes only once nothing is still being read.
+
 Where wallet-api serves `GET /v1/platform/chains`, the tab SHALL show a Chains section with one row per served chain. Where it serves `GET /v1/platform/drift`, the Registry and chain group SHALL use its result. Where it serves neither, those parts SHALL be absent, not placeholders.
 
 #### Scenario: Ledger behind the chain
 - **WHEN** wallet-api's ledger for `byo` differs from the chain
 - **THEN** the ledger check warns, naming `byo`, both figures and the lag in blocks
+
+#### Scenario: Timelock still being read
+- **WHEN** the deployment configures a timelock and the console has not read it yet
+- **THEN** Health shows the timelock as still being read, without the no-timelock warning, and does not say every check passes
 
 ### Requirement: Admins shows who may sign in and what changed
 The Admins tab SHALL list the platform admins with id, address, who added them and when. It SHALL offer *Add an admin* with field-level validation of the id and the address, and *Remove* with confirmation. It SHALL NOT offer to remove yourself or the last admin, and SHALL say why. It SHALL state that removing an admin ends their sessions at once. It SHALL list the change history, newest first.

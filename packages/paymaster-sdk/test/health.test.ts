@@ -1,11 +1,35 @@
-import { parseEther } from "viem";
-import { describe, expect, it } from "vitest";
-import { assessHealth } from "../src/health";
+import { RELEASE_FINGERPRINTS } from "@appliedblockchain/giano-contracts";
+import { keccak256, parseEther, zeroAddress } from "viem";
+import { describe, expect, it, vi } from "vitest";
+import { assessHealth, type HealthTimelock } from "../src/health";
 import { DEFAULT_ADMIN_ROLE, PAYMASTER_ROLES } from "../src/roles";
 import type { PaymasterOverview, RoleHolders, TenantView } from "../src/types";
 
 const TIMELOCK = "0x1111111111111111111111111111111111111111" as const;
 const SIGNER = "0x2222222222222222222222222222222222222222" as const;
+const IMPLEMENTATION = "0x4444444444444444444444444444444444444444" as const;
+/** An address whose checksum has letters in both cases. */
+const MIXED_CASE = "0xf274De14171Ab928A5Ec19928cE35FaD91a42B64" as const;
+/** Stands in for the runtime code of a release; the real matching is the contracts package's. */
+const V2_CODE = "0x6080600101" as const;
+
+vi.mock("@appliedblockchain/giano-contracts", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("@appliedblockchain/giano-contracts")>();
+	return {
+		...actual,
+		releaseOf: (contract: string, code: string) =>
+			contract === "GianoPaymaster" && code === V2_CODE
+				? {
+						contract,
+						release: "v2",
+						size: 5,
+						immutables: [],
+						fingerprint: "0x00",
+					}
+				: undefined,
+	};
+});
 
 function tenant(overrides: Partial<TenantView> = {}): TenantView {
 	return {
@@ -44,6 +68,16 @@ function roles(
 			name: "UPGRADER_ROLE",
 			role: PAYMASTER_ROLES.UPGRADER_ROLE,
 			holders: holders("UPGRADER_ROLE", [TIMELOCK]),
+		},
+		{
+			name: "FEE_ADMIN_ROLE",
+			role: PAYMASTER_ROLES.FEE_ADMIN_ROLE,
+			holders: holders("FEE_ADMIN_ROLE", [TIMELOCK]),
+		},
+		{
+			name: "WITHDRAW_ADDRESS_ADMIN_ROLE",
+			role: PAYMASTER_ROLES.WITHDRAW_ADDRESS_ADMIN_ROLE,
+			holders: holders("WITHDRAW_ADDRESS_ADMIN_ROLE", [TIMELOCK]),
 		},
 	];
 }
@@ -95,7 +129,7 @@ const check = (report: ReturnType<typeof assessHealth>, id: string) =>
 	report.checks.find((candidate) => candidate.id === id);
 
 describe("assessHealth", () => {
-	it("passes a well-provisioned deployment, warning only that the authority is unverified", () => {
+	it("passes a well-provisioned deployment, warning only that no timelock is configured", () => {
 		const report = assessHealth(overview());
 
 		expect(check(report, "solvency")?.level).toBe("ok");
@@ -104,7 +138,15 @@ describe("assessHealth", () => {
 		expect(check(report, "signers")?.level).toBe("ok");
 		expect(check(report, "no-superuser")?.level).toBe("ok");
 		expect(check(report, "tenants-funded")?.level).toBe("ok");
-		// ROLE_ADMIN / UPGRADER_ROLE holders can only be reported, not asserted, from on-chain data.
+		// Without a timelock the timelocked roles cannot be asserted: one warning, not one per holder.
+		expect(check(report, "timelock")?.level).toBe("warn");
+		expect(check(report, "timelock")?.detail).toContain(TIMELOCK);
+		expect(check(report, "role-ROLE_ADMIN")).toBeUndefined();
+		expect(
+			report.checks.some((entry) =>
+				/verify this is the timelock/.test(entry.detail),
+			),
+		).toBe(false);
 		expect(report.level).toBe("warn");
 	});
 
@@ -245,5 +287,179 @@ describe("assessHealth", () => {
 
 		const broken = assessHealth({ ...base, signers: [] });
 		expect(broken.level).toBe("fail");
+	});
+});
+
+const DELAYS = {
+	minDelay: 2 * 86_400,
+	upgradeToAndCall: 7 * 86_400,
+	grantRole: 7 * 86_400,
+	revokeRole: 7 * 86_400,
+	renounceRole: 7 * 86_400,
+	setTenantWithdrawAddress: 3 * 86_400,
+	setDefaultFee: 2 * 86_400,
+	setTenantFee: 2 * 86_400,
+};
+
+const timelock = (overrides: Partial<HealthTimelock> = {}): HealthTimelock => ({
+	address: TIMELOCK,
+	delays: DELAYS,
+	expected: DELAYS,
+	...overrides,
+});
+
+describe("assessHealth with a timelock (B2)", () => {
+	it("passes when the timelock alone holds every timelocked role, and asks to verify nothing", () => {
+		const report = assessHealth(overview(), { timelock: timelock() });
+
+		expect(check(report, "timelocked-roles")?.level).toBe("ok");
+		expect(check(report, "timelock-delays")?.level).toBe("ok");
+		expect(check(report, "timelock")).toBeUndefined();
+		expect(report.checks.every((entry) => entry.level === "ok")).toBe(true);
+		expect(report.level).toBe("ok");
+	});
+
+	it("names a key that kept several roles once, with its roles", () => {
+		const report = assessHealth(
+			{
+				...overview(),
+				roles: roles({
+					ROLE_ADMIN: [TIMELOCK, SIGNER],
+					UPGRADER_ROLE: [SIGNER],
+				}),
+			},
+			{ timelock: timelock() },
+		);
+
+		expect(check(report, "timelocked-roles")?.detail).toBe(
+			`${SIGNER} also holds ROLE_ADMIN, UPGRADER_ROLE; the timelock ${TIMELOCK} does not hold UPGRADER_ROLE`,
+		);
+	});
+
+	it("fails an extra holder beside the timelock, and names it", () => {
+		const report = assessHealth(
+			{ ...overview(), roles: roles({ FEE_ADMIN_ROLE: [TIMELOCK, SIGNER] }) },
+			{ timelock: timelock() },
+		);
+
+		expect(check(report, "timelocked-roles")?.level).toBe("fail");
+		expect(check(report, "timelocked-roles")?.detail).toBe(
+			`${SIGNER} also holds FEE_ADMIN_ROLE`,
+		);
+	});
+
+	it("fails a timelocked role the timelock does not hold, naming the timelock checksummed", () => {
+		const report = assessHealth(
+			{ ...overview(), roles: roles({ UPGRADER_ROLE: [SIGNER] }) },
+			{
+				timelock: timelock({
+					address: MIXED_CASE.toLowerCase() as `0x${string}`,
+				}),
+			},
+		);
+
+		expect(check(report, "timelocked-roles")?.detail).toContain(
+			`the timelock ${MIXED_CASE} does not hold ROLE_ADMIN, UPGRADER_ROLE, FEE_ADMIN_ROLE, WITHDRAW_ADDRESS_ADMIN_ROLE`,
+		);
+	});
+
+	it("fails a delay below the profile, naming it, what it is and what it should be", () => {
+		const report = assessHealth(overview(), {
+			timelock: timelock({
+				delays: { ...DELAYS, upgradeToAndCall: 86_400 },
+			}),
+		});
+
+		expect(check(report, "timelock-delays")?.level).toBe("fail");
+		expect(check(report, "timelock-delays")?.detail).toContain(
+			"upgradeToAndCall waits 1d, below the published 7d",
+		);
+	});
+
+	it("fails a role change that waits less than what it could bypass, even without published values", () => {
+		const report = assessHealth(overview(), {
+			timelock: timelock({
+				delays: { ...DELAYS, grantRole: 86_400, minDelay: 86_400 },
+				expected: undefined,
+			}),
+		});
+
+		expect(check(report, "timelock-delays")?.level).toBe("fail");
+		expect(check(report, "timelock-delays")?.detail).toMatch(
+			/grantRole waits 1d/,
+		);
+	});
+
+	it("warns that the delays were not compared when there are no published values", () => {
+		const report = assessHealth(overview(), {
+			timelock: timelock({ expected: undefined }),
+		});
+
+		expect(check(report, "timelock-delays")?.level).toBe("warn");
+	});
+
+	it("warns, naming each, about delays with no published value rather than passing them", () => {
+		// Only minDelay is published, and upgradeToAndCall is lowered to it: nothing it can compare
+		// is short, and grantRole still waits longest, so only the missing names can say so.
+		const report = assessHealth(overview(), {
+			timelock: timelock({
+				delays: { ...DELAYS, upgradeToAndCall: DELAYS.minDelay },
+				expected: { minDelay: DELAYS.minDelay },
+			}),
+		});
+
+		expect(check(report, "timelock-delays")?.level).toBe("warn");
+		expect(check(report, "timelock-delays")?.detail).toBe(
+			"no published value for upgradeToAndCall, grantRole, revokeRole, renounceRole, setTenantWithdrawAddress, setDefaultFee, setTenantFee; the others are at or above theirs",
+		);
+	});
+});
+
+describe("assessHealth and the implementation (B2)", () => {
+	it("passes code that is a release, and says which", () => {
+		const report = assessHealth(overview(), {
+			timelock: timelock(),
+			implementation: { address: IMPLEMENTATION, code: V2_CODE },
+		});
+
+		expect(check(report, "implementation")?.level).toBe("ok");
+		expect(check(report, "implementation")?.detail).toBe(
+			`release v2 at ${IMPLEMENTATION}`,
+		);
+	});
+
+	it("fails code that matches no release, giving the address and its codehash", () => {
+		const code = "0x60806001ff" as const;
+		const report = assessHealth(overview(), {
+			implementation: { address: IMPLEMENTATION, code },
+		});
+
+		expect(check(report, "implementation")?.level).toBe("fail");
+		expect(check(report, "implementation")?.detail).toBe(
+			`${IMPLEMENTATION}, codehash ${keccak256(code)}`,
+		);
+		// A newer release than this SDK knows reads the same, so the label says how far it knows.
+		expect(check(report, "implementation")?.label).toBe(
+			`implementation matches none of the releases this SDK knows (up to ${RELEASE_FINGERPRINTS.filter((entry) => entry.contract === "GianoPaymaster").at(-1)?.release})`,
+		);
+	});
+
+	it("fails an implementation with no code", () => {
+		const report = assessHealth(overview(), {
+			implementation: { address: IMPLEMENTATION, code: undefined },
+		});
+
+		expect(check(report, "implementation")?.detail).toBe(
+			`no code at ${IMPLEMENTATION}`,
+		);
+	});
+
+	it("fails a paymaster whose implementation slot is empty, saying it is not a proxy", () => {
+		const report = assessHealth(overview(), {
+			implementation: { address: zeroAddress, code: undefined },
+		});
+
+		expect(check(report, "implementation")?.level).toBe("fail");
+		expect(check(report, "implementation")?.detail).toMatch(/not a UUPS proxy/);
 	});
 });
