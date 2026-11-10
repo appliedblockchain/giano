@@ -19,7 +19,6 @@ const errorSchema = z
 const errors = {
 	400: errorSchema,
 	401: errorSchema,
-	403: errorSchema,
 	404: errorSchema,
 	409: errorSchema,
 };
@@ -53,9 +52,11 @@ const sessionSchema = z.object({
 	expiresAt: z.string(),
 	revokedAt: z.string().nullable(),
 	chainId: z.number().int(),
-	/** Null for another admin's session: they see when it was signed, not where from. */
-	ip: z.string().nullable(),
-	/** Null for another admin's session, as `ip`. */
+	/**
+	 * The browser that signed in; null for another admin's session, who sees when it was signed, not
+	 * where from. No IP: behind the console's proxy every request arrives from the proxy's address,
+	 * which would give false comfort beside a stolen session.
+	 */
 	userAgent: z.string().nullable(),
 	/** The session making this request. */
 	current: z.boolean(),
@@ -136,7 +137,6 @@ export default async function platformAdminRoutes(
 						expiresAt: row.expiresAt.toISOString(),
 						revokedAt: row.revokedAt?.toISOString() ?? null,
 						chainId: row.chainId,
-						ip: row.ip,
 						userAgent: row.userAgent,
 						current: row.id === request.platformAdmin?.sessionId,
 					})),
@@ -159,7 +159,7 @@ export default async function platformAdminRoutes(
 					id: z.string().min(1).max(64),
 					sessionId: z.string().uuid(),
 				}),
-				response: { 204: z.null(), ...errors },
+				response: { 204: z.null(), ...errors, 403: errorSchema },
 			},
 		},
 		async (request, reply) => {

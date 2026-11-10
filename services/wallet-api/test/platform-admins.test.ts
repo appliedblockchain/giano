@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { eq, sql } from "drizzle-orm";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	platformAdminHistory,
@@ -217,7 +218,6 @@ describe("sign-ins and sessions (D15)", () => {
 		id: string;
 		createdAt: string;
 		revokedAt: string | null;
-		ip: string | null;
 		userAgent: string | null;
 		current: boolean;
 	};
@@ -229,19 +229,33 @@ describe("sign-ins and sessions (D15)", () => {
 			.json()
 			.admins.find((admin: { id: string }) => admin.id === id);
 
+	/** An admin of its own, at a fresh address, so no other test's sign-ins count for it. */
+	const freshAdmin = async (token: string, id: string) => {
+		const address = privateKeyToAccount(generatePrivateKey()).address;
+		const added = await as(token, "POST", "/v1/platform/admins", {
+			id,
+			address,
+		});
+		expect(added.statusCode).toBe(201);
+		return address.toLowerCase();
+	};
+	const pastSession = (adminId: string, address: string, at: Date) =>
+		ctx.db.insert(platformAdminSessions).values({
+			tokenHash: `test-${adminId}-${at.getTime()}-${Math.random()}`,
+			adminId,
+			address,
+			chainId: 31337,
+			createdAt: at,
+			expiresAt: new Date(at.getTime() + 3600 * 1000),
+		});
+
 	it("lists each admin's last sign-in and open sessions: yesterday's, with none open", async () => {
 		const token = await platformSignIn(ctx.app, ADMIN);
 		const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
-		await ctx.db.insert(platformAdminSessions).values({
-			tokenHash: `test-${Date.now()}`,
-			adminId: "admin-second",
-			address: SECOND_ADMIN.address.toLowerCase(),
-			chainId: 31337,
-			createdAt: yesterday,
-			expiresAt: new Date(yesterday.getTime() + 3600 * 1000),
-		});
+		const address = await freshAdmin(token, "admin-yesterday");
+		await pastSession("admin-yesterday", address, yesterday);
 
-		expect(await entry(token, "admin-second")).toMatchObject({
+		expect(await entry(token, "admin-yesterday")).toMatchObject({
 			lastSignInAt: yesterday.toISOString(),
 			activeSessions: 0,
 		});
@@ -292,7 +306,6 @@ describe("sign-ins and sessions (D15)", () => {
 			"current",
 			"expiresAt",
 			"id",
-			"ip",
 			"revokedAt",
 			"userAgent",
 		]);
@@ -308,12 +321,15 @@ describe("sign-ins and sessions (D15)", () => {
 		);
 		expect(target).toBeDefined();
 
+		const open = (await entry(mine, "admin-test")).activeSessions;
+
 		const ended = await as(
 			mine,
 			"DELETE",
 			`/v1/platform/admins/admin-test/sessions/${target?.id}`,
 		);
 		expect(ended.statusCode).toBe(204);
+		expect((await entry(mine, "admin-test")).activeSessions).toBe(open - 1);
 		expect((await as(other, "GET", "/v1/platform/admins")).statusCode).toBe(
 			401,
 		);
@@ -334,22 +350,76 @@ describe("sign-ins and sessions (D15)", () => {
 		).toBe(204);
 	});
 
-	it("shows another admin's sessions without where they were signed from", async () => {
+	it("lists another admin's sessions without the browser they were signed from", async () => {
 		const theirs = await platformSignIn(ctx.app, SECOND_ADMIN);
 		const own = (await sessionsOf(theirs, "admin-second")).find(
 			(session) => session.current,
 		);
-		// the request itself carries an IP and a user agent, so their own view has them
-		expect(own?.ip).not.toBeNull();
+		// the sign-in request carried a user agent, so their own view has it
+		expect(own?.userAgent).not.toBeNull();
 
 		const mine = await platformSignIn(ctx.app, ADMIN);
 		const seen = await sessionsOf(mine, "admin-second");
 		expect(seen.some((session) => session.id === own?.id)).toBe(true);
+		expect(seen.every((session) => session.userAgent === null)).toBe(true);
+	});
+
+	it("leaves an expired session expired when asked to end it", async () => {
+		const mine = await platformSignIn(ctx.app, ADMIN);
+		const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+		await pastSession("admin-test", ADMIN.address.toLowerCase(), twoHoursAgo);
+		const expired = (await sessionsOf(mine, "admin-test")).find(
+			(session) => session.createdAt === twoHoursAgo.toISOString(),
+		);
+		expect(expired).toBeDefined();
+
 		expect(
-			seen.every(
-				(session) => session.ip === null && session.userAgent === null,
-			),
-		).toBe(true);
+			(
+				await as(
+					mine,
+					"DELETE",
+					`/v1/platform/admins/admin-test/sessions/${expired?.id}`,
+				)
+			).statusCode,
+		).toBe(204);
+		const after = (await sessionsOf(mine, "admin-test")).find(
+			(session) => session.id === expired?.id,
+		);
+		expect(after?.revokedAt).toBeNull();
+	});
+
+	it("refuses a session id that is not one", async () => {
+		const mine = await platformSignIn(ctx.app, ADMIN);
+		expect(
+			(
+				await as(
+					mine,
+					"DELETE",
+					"/v1/platform/admins/admin-test/sessions/not-a-session",
+				)
+			).statusCode,
+		).toBe(400);
+	});
+
+	it("matches sessions by address: a reused id does not inherit the old admin's", async () => {
+		const token = await platformSignIn(ctx.app, ADMIN);
+		const first = await freshAdmin(token, "admin-reused");
+		await pastSession(
+			"admin-reused",
+			first,
+			new Date(Date.now() - 3600 * 1000),
+		);
+		expect(
+			(await as(token, "DELETE", "/v1/platform/admins/admin-reused"))
+				.statusCode,
+		).toBe(204);
+		await freshAdmin(token, "admin-reused");
+
+		expect(await entry(token, "admin-reused")).toMatchObject({
+			lastSignInAt: null,
+			activeSessions: 0,
+		});
+		expect(await sessionsOf(token, "admin-reused")).toEqual([]);
 	});
 
 	it("refuses to end another admin's session, which continues", async () => {

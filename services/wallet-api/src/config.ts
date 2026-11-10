@@ -99,11 +99,16 @@ const envSchema = z
 			.int()
 			.positive()
 			.default(300),
-		/** Absolute platform admin session lifetime; sessions are never renewed. */
+		/**
+		 * Absolute platform admin session lifetime; sessions are never renewed. At most 30 days, the span
+		 * Admins lists an admin's sessions for (SESSION_HISTORY_DAYS): a longer one could be counted as
+		 * open but never listed, so never ended.
+		 */
 		PLATFORM_SESSION_TTL_SECONDS: z.coerce
 			.number()
 			.int()
 			.positive()
+			.max(30 * 86_400, "must be at most 30 days (2592000 seconds)")
 			.default(1800),
 		/**
 		 * Per platform admin session, and per address for challenge and verify, never per IP. Sign-in also

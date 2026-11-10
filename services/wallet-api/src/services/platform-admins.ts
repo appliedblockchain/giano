@@ -35,7 +35,6 @@ export type PlatformAdminSessionView = {
 	expiresAt: Date;
 	revokedAt: Date | null;
 	chainId: number;
-	ip: string | null;
 	userAgent: string | null;
 };
 
@@ -123,7 +122,8 @@ export function createPlatformAdminService(db: Db) {
 				db
 					.select({
 						address: platformAdminSessions.address,
-						lastSignInAt: sql<Date>`max(${platformAdminSessions.createdAt})`,
+						// node-postgres returns an aggregate timestamptz as a string, not a Date.
+						lastSignInAt: sql<string>`max(${platformAdminSessions.createdAt})`,
 						activeSessions: sql<number>`count(*) filter (where ${platformAdminSessions.revokedAt} is null and ${platformAdminSessions.expiresAt} > now())`,
 					})
 					.from(platformAdminSessions)
@@ -141,9 +141,9 @@ export function createPlatformAdminService(db: Db) {
 		},
 
 		/**
-		 * The admin's sessions from the last {@link SESSION_HISTORY_DAYS} days, newest first. Where each
-		 * was signed from (IP and user agent) only for the caller's own: another admin sees when, not
-		 * where.
+		 * The admin's sessions from the last {@link SESSION_HISTORY_DAYS} days, newest first. The browser
+		 * each was signed from only for the caller's own: another admin sees when, not where. Not the IP:
+		 * sign-in records `request.ip`, which behind the console's proxy is the proxy's address.
 		 */
 		async sessions(
 			id: string,
@@ -157,7 +157,6 @@ export function createPlatformAdminService(db: Db) {
 					expiresAt: platformAdminSessions.expiresAt,
 					revokedAt: platformAdminSessions.revokedAt,
 					chainId: platformAdminSessions.chainId,
-					ip: platformAdminSessions.ip,
 					userAgent: platformAdminSessions.userAgent,
 				})
 				.from(platformAdminSessions)
@@ -176,12 +175,13 @@ export function createPlatformAdminService(db: Db) {
 				);
 			return admin.address === by.address
 				? rows
-				: rows.map((row) => ({ ...row, ip: null, userAgent: null }));
+				: rows.map((row) => ({ ...row, userAgent: null }));
 		},
 
 		/**
 		 * Ends one of the caller's own sessions (D15). Another admin's is refused: removing them is the
-		 * recorded way to end all of theirs. Ending one already ended is a no-op.
+		 * recorded way to end all of theirs. Ending one already ended or expired is a no-op: an
+		 * expired session stays "expired", not "ended".
 		 */
 		async endSession(
 			id: string,
@@ -217,6 +217,7 @@ export function createPlatformAdminService(db: Db) {
 					and(
 						eq(platformAdminSessions.id, sessionId),
 						isNull(platformAdminSessions.revokedAt),
+						gt(platformAdminSessions.expiresAt, sql`now()`),
 					),
 				);
 		},
