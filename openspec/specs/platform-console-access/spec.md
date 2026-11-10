@@ -93,9 +93,15 @@ Two minutes before the session expires, the console SHALL say so. It SHALL offer
 - *Stay signed in*, which signs a fresh challenge and replaces the session without leaving the page;
 - *Sign out*.
 
+*Stay signed in* SHALL revoke the session it replaces on the API, after the new one is held, so the old token is not usable until it expires. A failed revocation SHALL NOT end the new session, and SHALL be said, pointing to where the old session can be ended.
+
 #### Scenario: Session about to end
 - **WHEN** a session has two minutes left and the platform admin chooses *Stay signed in* and signs
 - **THEN** the console holds a new session, the page and any unsaved input stay as they were, and the old token is no longer sent
+
+#### Scenario: Old token revoked
+- **WHEN** *Stay signed in* replaces a session
+- **THEN** the replaced token is refused by the API from then on, and the new session continues
 
 ### Requirement: The session ends with the page, the wallet, the deployment or a 401
 The session SHALL end in the console, returning it to the sign-in page, on any of these:
@@ -104,7 +110,13 @@ The session SHALL end in the console, returning it to the sign-in page, on any o
 - disconnecting the wallet, since the session was signed by it;
 - switching deployment;
 - *Sign out*, which also calls logout on the API;
-- any platform admin call answered `401`, a chain read included.
+- any platform admin call answered `401` for the token in use, a chain read included.
+
+A `401` for a token *Stay signed in* has replaced SHALL NOT end the session: a call made with it SHALL be sent once more with the token in use.
+
+#### Scenario: A call crosses a renewal
+- **WHEN** a platform admin saves a tenant edit while *Stay signed in* replaces the session, and the edit is refused for the replaced token
+- **THEN** the edit is sent again with the new token, and the console stays signed in
 
 #### Scenario: Deployment switch
 - **WHEN** a signed-in platform admin switches deployment in the header
