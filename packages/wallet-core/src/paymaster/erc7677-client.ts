@@ -238,12 +238,17 @@ export function createErc7677PaymasterClient(
 
 		if (response.status === 401 && sessionEndpoint) {
 			// wallet-api refused the session: idle, expired or revoked, and no retry brings it back,
-			// so it ends here rather than reading as a refusal the user could act on (G5). Unless a
-			// sign-in replaced it while this was in flight: then the new session carries on.
+			// so it ends here rather than reading as a refusal the user could act on (G5).
 			if (options.getSessionToken() === token) {
 				options.onUnauthorized?.(token);
 				throw new SessionEndedError();
 			}
+			// A sign-in replaced it while this was in flight: the new session carries on, and a
+			// retry sends it. Retryable, as the management API's `session-replaced` is.
+			throw new SponsorshipRefusedError(
+				"the request was sent with a session that has since been replaced; try again",
+				{ reason: "temporarily-unavailable", code: -32011 },
+			);
 		}
 		if (response.status === 401 || response.status === 403) {
 			throw new SponsorshipRefusedError(

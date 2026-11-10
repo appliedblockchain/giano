@@ -293,7 +293,11 @@ describe("ERC-7677 paymaster client", () => {
 			})
 				.getPaymasterData({ userOperation })
 				.catch((e: unknown) => e)) as SponsorshipRefusedError;
-			expect(error).not.toBeInstanceOf(SessionEndedError);
+			expect(error).toBeInstanceOf(SponsorshipRefusedError);
+			// a retry sends the new session: retryable, like the management API's session-replaced
+			expect(error.reason).toBe("temporarily-unavailable");
+			expect(error.retryable).toBe(true);
+			expect(error.message).toMatch(/replaced; try again/);
 			expect(onUnauthorized).not.toHaveBeenCalled();
 		});
 
