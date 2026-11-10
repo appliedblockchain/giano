@@ -70,6 +70,15 @@ export function HealthTab({
 	const chains = useChains(platformApi);
 	const money = (wei: bigint) =>
 		`${amount(wei, deployment.nativeCurrency)} ${deployment.nativeCurrency.symbol}`;
+	// Each served chain's balances in its own currency, from the deployments this console knows;
+	// in wei for a chain it has no deployment for.
+	const moneyOn = (chainId: number) => {
+		const currency = getAdminConfig().deployments.find(
+			(entry) => entry.chainId === chainId,
+		)?.nativeCurrency;
+		return (wei: bigint) =>
+			currency ? `${amount(wei, currency)} ${currency.symbol}` : `${wei} wei`;
+	};
 	const extra: HealthCheck[] = !platformApi
 		? []
 		: drift.chain
@@ -106,7 +115,7 @@ export function HealthTab({
 	const chainRows = chains.status
 		? chains.status.chains.map((chain) => ({
 				chain,
-				checks: chainChecks(chain, money, thresholds),
+				checks: chainChecks(chain, moneyOn(chain.chainId), thresholds),
 			}))
 		: [];
 	const signer = chains.status ? signerCheck(chains.status.signer) : undefined;

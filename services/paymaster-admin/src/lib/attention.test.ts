@@ -233,6 +233,24 @@ describe("attentionItems with sources unread or failed", () => {
 		).toEqual(["the timelock"]);
 	});
 
+	it("waits for the chains' status, and turns a failed read into an item", () => {
+		const rows = joinTenants([registry(A, "stock")], [chain(A)]);
+		expect(
+			unreadSources({
+				...READ,
+				chains: { pending: true, read: false },
+			}),
+		).toEqual(["the chains"]);
+		expect(
+			keys(
+				run(
+					{ ...READ, chains: { pending: false, read: false, error: "502" } },
+					rows,
+				),
+			),
+		).toEqual(["unread:chains"]);
+	});
+
 	it("flags active but disabled, and deleted but still enabled, as such", () => {
 		const rows = joinTenants(
 			[registry(A, "off"), registry(B, "gone", "deleted")],

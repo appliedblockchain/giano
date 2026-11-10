@@ -59,6 +59,18 @@ export type AttentionSources = {
 	 * logs, so a tenant registered before it reads as not registered.
 	 */
 	rosterOnChain: boolean;
+	/**
+	 * wallet-api's chain status (B3, B7), where it serves it: the bundler's executors come from it.
+	 * Absent without the platform API, or from a wallet-api that does not serve it.
+	 */
+	chains?: {
+		/** No answer yet, and no failure either. */
+		pending: boolean;
+		/** The last read failed. What an earlier one found stays, and this is shown. */
+		error?: string;
+		/** A read has succeeded. */
+		read: boolean;
+	};
 	/** Health's checks: any that fails and is not already an item here becomes one. */
 	health?: readonly HealthCheck[];
 	/** Health checks still waiting for a read (useHealth's `pending`), by name. */
@@ -81,6 +93,7 @@ export function unreadSources(sources: AttentionSources): string[] {
 		unread.push("the tenant registry");
 	if (sources.timelock && !sources.timelock.settled)
 		unread.push("the timelock");
+	if (sources.chains?.pending) unread.push("the chains");
 	for (const label of sources.healthPending ?? [])
 		if (!unread.includes(label)) unread.push(label);
 	return unread;
@@ -171,6 +184,17 @@ export function attentionItems({
 			detail: `${timelock.error}. ${timelock.read ? "What it last returned is shown." : "Operations waiting or ready are not known until it is read."}`,
 			link: TAB_PATHS.timelock,
 			linkLabel: "Timelock",
+		});
+
+	if (sources.chains?.error)
+		items.push({
+			key: "unread:chains",
+			kind: "unread",
+			severity: "warning",
+			title: "Could not read the chains' status",
+			detail: `${sources.chains.error}. ${sources.chains.read ? "What it last returned is shown." : "The bundler's executors are not checked until it is read."}`,
+			link: TAB_PATHS.health,
+			linkLabel: "Health",
 		});
 
 	if (!solvency.holds)

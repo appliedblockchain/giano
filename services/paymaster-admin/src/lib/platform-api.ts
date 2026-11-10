@@ -267,6 +267,8 @@ export type BundlerExecutor = {
 	balanceWei: string;
 	/** Its lane holds a transaction in flight. */
 	busy: boolean;
+	/** When the lane took the transaction it holds; null while idle, absent from an older wallet-api. */
+	busySince?: string | null;
 	latestNonce: number;
 	pendingNonce: number;
 };
@@ -389,6 +391,10 @@ export type ChainStatus = {
 		/** B7: null where the bundler does not report its executors. */
 		gasPriceWei?: string | null;
 		executors?: BundlerExecutor[] | null;
+		/** Why the executors are null: the bundler lacks the method, or it or its node did not answer. */
+		executorsUnknown?: "unsupported" | "unavailable" | null;
+		/** How long a lane may hold one transaction before the bundler has given up on it. */
+		laneStuckAfterSeconds?: number | null;
 	};
 	paymaster: {
 		address: string;

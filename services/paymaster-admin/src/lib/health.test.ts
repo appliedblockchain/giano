@@ -322,20 +322,57 @@ describe("executorStanding", () => {
 		expect(executorStanding(lane("1"), null).level).toBe("ok");
 	});
 
-	it("warns on a stuck nonce: pending while the lane is idle, or more than one ahead", () => {
+	it("warns on a transaction the bundler is not working on: pending while the lane is idle, or more than one ahead", () => {
 		const funded = "1000000000000000000";
-		expect(executorStanding(lane(funded, [5, 6], true), gwei).stuck).toBe(
-			false,
-		);
+		expect(
+			executorStanding(lane(funded, [5, 6], true), gwei).stuck,
+		).toBeUndefined();
 		expect(executorStanding(lane(funded, [5, 6], false), gwei)).toMatchObject({
 			level: "warn",
-			stuck: true,
+			stuck: "mempool",
 		});
-		expect(executorStanding(lane(funded, [5, 7], true), gwei).stuck).toBe(true);
+		expect(executorStanding(lane(funded, [5, 7], true), gwei).stuck).toBe(
+			"mempool",
+		);
+	});
+
+	it("warns on a lane the bundler has held past its replacements and cancellation", () => {
+		const now = Date.parse("2026-11-10T12:00:00Z");
+		const busy = (minutesAgo: number) => ({
+			...lane("1000000000000000000", [5, 6], true),
+			busySince: new Date(now - minutesAgo * 60_000).toISOString(),
+		});
+		// 270 s is what giano-bundler reports for 3 replacements at a 30 s resubmit timeout
+		const options = { stuckAfterSeconds: 270, now };
+		expect(executorStanding(busy(2), gwei, options).stuck).toBeUndefined();
+		expect(executorStanding(busy(90), gwei, options)).toMatchObject({
+			level: "warn",
+			stuck: "held",
+			heldSeconds: 5400,
+		});
+		// without the bundler's limit (an older wallet-api) the hold time alone says nothing
+		expect(executorStanding(busy(90), gwei).stuck).toBeUndefined();
 	});
 });
 
 describe("executor checks on a chain", () => {
+	it("blames the node or the time budget, not the bundler, when the executors could not be read", () => {
+		const [check] = chainChecks(
+			{
+				...healthy,
+				bundler: {
+					reachable: true,
+					entryPointSupported: true,
+					executors: null,
+					executorsUnknown: "unavailable",
+				},
+			},
+			(wei) => `${wei} wei`,
+		).filter((entry) => entry.id.includes("executors"));
+		expect(check.detail).toContain("did not report them in time");
+		expect(check.remedy).toContain("node first");
+	});
+
 	it("lists each executor, and warns once where the bundler does not report them", () => {
 		const money = (wei: bigint) => `${wei} wei`;
 		const withLanes = chainChecks(
