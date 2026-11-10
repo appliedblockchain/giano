@@ -2,8 +2,8 @@ import type {
 	HealthCheck,
 	HealthLevel,
 } from "@appliedblockchain/giano-paymaster-sdk";
-import { Button, HStack, Stack, Text } from "@chakra-ui/react";
-import { useCallback, useEffect, useState } from "react";
+import { Button, Heading, HStack, Stack, Text } from "@chakra-ui/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowRight, LuRefreshCw } from "react-icons/lu";
 import { StatusText } from "../components/status";
 import { SectionCard } from "../components/ui";
@@ -11,13 +11,17 @@ import { getAdminConfig } from "../config";
 import { amount, describeError } from "../lib/format";
 import {
 	type ConsoleHealth,
+	chainChecks,
+	chainThresholds,
 	checkGroup,
 	checkLink,
 	groupChecks,
 	HEALTH_GROUPS,
 	type PendingCheck,
 	pendingText,
+	signerCheck,
 } from "../lib/health";
+import type { ChainsStatus } from "../lib/platform-api";
 import { usePlatform } from "../lib/platform-session";
 import { Link, tenantPath } from "../lib/router";
 import { compareLedger, type TenantRow } from "../lib/tenants";
@@ -56,6 +60,7 @@ export function HealthTab({
 	// "Every on-chain tenant has a registry row" is only a finding once the registry has been read
 	// in full, deleted tenants included: before that, every tenant would look unknown to wallet-api.
 	const registryRead = registry.tenants !== undefined && !registry.deletedError;
+	const chains = useChains(platformApi);
 	const extra: HealthCheck[] = platformApi
 		? [
 				registryRead
@@ -80,10 +85,33 @@ export function HealthTab({
 		...(platformApi && !ledger.check && !ledger.idle
 			? [{ id: "ledger", label: "the ledger" }]
 			: []),
+		...(chains.pending ? [{ id: "chains", label: "the chains" }] : []),
 	];
 	const comparing = pending.length > 0;
+	const thresholds = chainThresholds(chains.status);
+	const chainRows = chains.status
+		? chains.status.chains.map((chain) => ({
+				chain,
+				checks: chainChecks(chain, thresholds),
+			}))
+		: [];
+	const signer = chains.status ? signerCheck(chains.status.signer) : undefined;
+	// A failed read is a warning, and the status from before it is shown, not counted: it may no
+	// longer hold.
+	const chainsRead: HealthCheck[] = chains.error
+		? [
+				{
+					id: "chains-read",
+					level: "warn",
+					label: "The chains could not be read",
+					detail: chains.error,
+					remedy:
+						"What wallet-api sees of each chain is not checked until it is read. Read the chains again; if it keeps failing, check wallet-api.",
+				},
+			]
+		: [...(signer ? [signer] : []), ...chainRows.flatMap((row) => row.checks)];
 	const groups = groupChecks([...health.checks, ...extra]);
-	const all = [...health.checks, ...extra];
+	const all = [...health.checks, ...extra, ...chainsRead];
 	const worst: HealthLevel = all.some((check) => check.level === "fail")
 		? "fail"
 		: all.some((check) => check.level === "warn")
@@ -153,7 +181,9 @@ export function HealthTab({
 						{pending
 							.filter(
 								(entry) =>
-									checkGroup(entry.id) === group && entry.id !== "ledger",
+									checkGroup(entry.id) === group &&
+									entry.id !== "ledger" &&
+									entry.id !== "chains",
 							)
 							.map((entry, index) => (
 								<PendingRow
@@ -173,6 +203,74 @@ export function HealthTab({
 					</Stack>
 				</SectionCard>
 			))}
+			{(chains.status || chains.error || chains.pending) && (
+				<SectionCard
+					title="Chains"
+					subtitle={`What wallet-api sees of each chain it serves, as of ${chains.at?.toLocaleTimeString() ?? "now"}. A head older than ${thresholds.headAgeWarnSeconds}s warns and ${thresholds.headAgeFailSeconds / 60} minutes fails; a ledger watcher more than ${thresholds.watcherLagWarnBlocks} blocks behind warns and ${thresholds.watcherLagFailBlocks.toLocaleString()} fails.`}
+					action={
+						<Button
+							size="sm"
+							variant="ghost"
+							aria-label="Read the chains again"
+							loading={chains.loading}
+							onClick={() => void chains.read()}
+						>
+							<LuRefreshCw />
+						</Button>
+					}
+				>
+					<Stack gap="4" data-testid="health-chains">
+						{chains.pending && (
+							<Text fontSize="sm" color="fg.muted">
+								Reading the chains…
+							</Text>
+						)}
+						{chains.error && (
+							<Text fontSize="sm" color="fg.error">
+								Could not read the chains: {chains.error}
+								{chains.status &&
+									" The rows below are from the last read, and are not counted."}
+							</Text>
+						)}
+						{signer && (
+							<Stack gap="0">
+								<CheckRow check={signer} first noLink />
+							</Stack>
+						)}
+						{chainRows.map(({ chain, checks }) => {
+							const level = checks.some((check) => check.level === "fail")
+								? "fail"
+								: checks.some((check) => check.level === "warn")
+									? "warn"
+									: "ok";
+							return (
+								<Stack
+									key={chain.chainId}
+									gap="0"
+									data-testid={`chain-${chain.chainId}`}
+								>
+									<HStack gap="3" pb="1">
+										<Heading size="sm">
+											{chain.name} · {chain.chainId}
+										</Heading>
+										<StatusText tone={LEVEL[level].tone}>
+											{LEVEL[level].label}
+										</StatusText>
+									</HStack>
+									{checks.map((check, index) => (
+										<CheckRow
+											key={check.id}
+											check={check}
+											first={index === 0}
+											noLink
+										/>
+									))}
+								</Stack>
+							);
+						})}
+					</Stack>
+				</SectionCard>
+			)}
 		</Stack>
 	);
 }
@@ -194,12 +292,72 @@ function PendingRow({ entry, first }: { entry: PendingCheck; first: boolean }) {
 	);
 }
 
+/**
+ * wallet-api's view of every chain it serves (B3), read when the tab opens and with each console
+ * refresh. Absent, not an error, where wallet-api does not serve the endpoint (D11); asked again
+ * with each refresh, so a 404 during a rolling deploy does not hide it for the session.
+ */
+function useChains(enabled: boolean) {
+	const { run } = usePlatform();
+	// Not `block`: it stays the same on an idle chain or a failed head read, and the chains are
+	// read with every refresh (D25).
+	const { lastUpdated } = useConsole();
+	const [status, setStatus] = useState<ChainsStatus>();
+	const [at, setAt] = useState<Date>();
+	const [error, setError] = useState<string>();
+	const [loading, setLoading] = useState(false);
+	const [served, setServed] = useState(true);
+	// A manual read and a refresh can overlap: only the latest one's answer counts.
+	const generation = useRef(0);
+
+	const read = useCallback(async () => {
+		if (!enabled) return;
+		const current = ++generation.current;
+		setLoading(true);
+		try {
+			const result = await run((api) => api.chains());
+			if (!result || current !== generation.current) return;
+			if (result.ok) {
+				setStatus(result.value);
+				setAt(new Date());
+				setError(undefined);
+				setServed(true);
+			} else if (result.error.status === 404) {
+				setServed(false);
+				setError(undefined);
+			} else setError(result.error.message);
+		} catch (cause) {
+			if (current === generation.current) setError(describeError(cause));
+		} finally {
+			if (current === generation.current) setLoading(false);
+		}
+	}, [enabled, run]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: read again with every console refresh
+	useEffect(() => {
+		void read();
+	}, [read, lastUpdated]);
+
+	return {
+		status: served ? status : undefined,
+		at,
+		error: served ? error : undefined,
+		// Enabled and served, and neither an answer nor a failure yet: not a pass.
+		pending: enabled && served && status === undefined && !error,
+		loading,
+		read,
+	};
+}
+
 function CheckRow({
 	check,
 	first,
+	noLink,
 }: {
 	check: HealthCheck & { links?: { to: string; label: string }[] };
 	first: boolean;
+	/** For a check nothing in this console fixes. */
+	noLink?: boolean;
 }) {
 	const level = LEVEL[check.level];
 	const link = checkLink(check.id);
@@ -233,7 +391,7 @@ function CheckRow({
 					</HStack>
 				)}
 			</Stack>
-			{check.level !== "ok" && (
+			{check.level !== "ok" && !noLink && (
 				<Link
 					to={link.to}
 					fontSize="sm"

@@ -1,6 +1,16 @@
 import type { HealthCheck } from "@appliedblockchain/giano-paymaster-sdk";
 import { describe, expect, it } from "vitest";
-import { checkLink, groupChecks, pendingText, withReads } from "./health";
+import {
+	CHAIN_THRESHOLDS,
+	chainChecks,
+	chainThresholds,
+	checkLink,
+	groupChecks,
+	pendingText,
+	signerCheck,
+	withReads,
+} from "./health";
+import type { ChainStatus } from "./platform-api";
 
 const check = (id: string): HealthCheck => ({
 	id,
@@ -141,5 +151,129 @@ describe("withReads", () => {
 		});
 		expect(health.checks).toEqual(noTimelock.checks);
 		expect(health.level).toBe("fail");
+	});
+});
+
+const healthy: ChainStatus = {
+	chainId: 84532,
+	name: "Base Sepolia",
+	registryStatus: "ready",
+	verification: { checkedAt: "2026-11-03T12:00:00Z", failures: [] },
+	lastProbe: { at: "2026-11-03T12:00:00Z", ok: true },
+	node: { reachable: true, headBlock: "1000", headAgeSeconds: 2 },
+	bundler: { reachable: true, entryPointSupported: true },
+	paymaster: {
+		address: "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+		depositWei: "1",
+		treasuryWei: "0",
+		stakeWei: "1",
+		invariantSlackWei: "0",
+		lastSyncedBlock: "990",
+		watcherLagBlocks: 10,
+		checkedAt: "2026-11-03T12:00:00Z",
+	},
+};
+const levels = (chain: ChainStatus) =>
+	Object.fromEntries(
+		chainChecks(chain).map((check) => [
+			check.id.replace(`chain-${chain.chainId}-`, ""),
+			check.level,
+		]),
+	);
+
+describe("chainChecks", () => {
+	it("passes a chain that is served, current, submitting and synced", () => {
+		expect(levels(healthy)).toEqual({
+			status: "ok",
+			node: "ok",
+			bundler: "ok",
+			watcher: "ok",
+		});
+	});
+
+	it("applies the head-age and watcher-lag thresholds", () => {
+		const at = (headAgeSeconds: number, watcherLagBlocks: number) =>
+			levels({
+				...healthy,
+				node: { ...healthy.node, headAgeSeconds },
+				paymaster: healthy.paymaster && {
+					...healthy.paymaster,
+					watcherLagBlocks,
+				},
+			});
+		expect(at(61, 51)).toMatchObject({ node: "warn", watcher: "warn" });
+		expect(at(301, 1_001)).toMatchObject({ node: "fail", watcher: "fail" });
+		expect(at(60, 50)).toMatchObject({ node: "ok", watcher: "ok" });
+	});
+
+	it("shows a local devnet's head age without judging it: it mines on demand", () => {
+		const idle = (chainId: number) =>
+			levels({
+				...healthy,
+				chainId,
+				node: { ...healthy.node, headAgeSeconds: 90_000 },
+			}).node;
+		expect(idle(31338)).toBe("ok");
+		expect(idle(84532)).toBe("fail");
+	});
+
+	it("fails what cannot work: a dead node, a bundler on another EntryPoint, an unserved chain", () => {
+		expect(
+			levels({
+				...healthy,
+				registryStatus: "unavailable",
+				node: { reachable: false, headBlock: null, headAgeSeconds: null },
+				bundler: { reachable: true, entryPointSupported: false },
+			}),
+		).toMatchObject({ status: "fail", node: "fail", bundler: "fail" });
+		expect(
+			levels({
+				...healthy,
+				bundler: { reachable: true, entryPointSupported: null },
+			}).bundler,
+		).toBe("warn");
+	});
+
+	it("names a failed verification, and leaves the watcher out where the chain does not sponsor", () => {
+		const checks = chainChecks({
+			...healthy,
+			paymaster: null,
+			verification: {
+				checkedAt: "2026-11-03T12:00:00Z",
+				failures: [{ kind: "factory-not-canonical" }, { kind: "unreachable" }],
+			},
+		});
+		expect(
+			checks.find((check) => check.id.endsWith("verification")),
+		).toMatchObject({
+			level: "fail",
+			detail: "factory-not-canonical",
+		});
+		expect(checks.some((check) => check.id.endsWith("watcher"))).toBe(false);
+	});
+});
+
+describe("signerCheck", () => {
+	it("fails an unavailable signer, and says nothing where sponsorship is off", () => {
+		expect(signerCheck("unavailable")?.level).toBe("fail");
+		expect(signerCheck("ok")?.level).toBe("ok");
+		expect(signerCheck("disabled")).toBeUndefined();
+	});
+});
+
+describe("chainThresholds", () => {
+	it("warns at wallet-api's own ledger lag limit, and the console's default without one", () => {
+		expect(chainThresholds(undefined)).toEqual(CHAIN_THRESHOLDS);
+		const status = { signer: "ok" as const, chains: [] };
+		expect(chainThresholds(status).watcherLagWarnBlocks).toBe(50);
+		expect(
+			chainThresholds({ ...status, maxLedgerLagBlocks: 200 })
+				.watcherLagWarnBlocks,
+		).toBe(200);
+		// a limit past the failing lag moves the failing lag with it
+		expect(
+			chainThresholds({ ...status, maxLedgerLagBlocks: 5_000 })
+				.watcherLagFailBlocks,
+		).toBe(5_000);
 	});
 });

@@ -689,9 +689,9 @@ resets the fixtures. On any environment that is not a local stack, init refuses 
 
 ## 10. Blockchain status
 
-**Not delivered by H5** (H-k). The card names it and gives no requirement (O-1). This section is
-kept as the starting point for the follow-up card. It is specified at the size of the data
-`wallet-api` already has, so it costs little if the real requirement turns out different.
+**Delivered as B3** of `openspec/changes/redesign-paymaster-console` (it was not part of H5, H-k).
+It is specified at the size of the data `wallet-api` already has: `src/routes/platform-chains.ts`,
+and the prober in `src/services/chain-probe.ts`.
 
 ### 10.1 Why server-side
 
@@ -710,12 +710,15 @@ not stall the response:
 {
   "signer": "ok",                              // sponsorship signer health, "unavailable" or "disabled";
                                                // one signer serves every chain, so it is not per chain
+  "maxLedgerLagBlocks": 50,                    // TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS, the console's lag warning
   "chains": [{
     "chainId": 84532,
     "name": "Base Sepolia",
     "registryStatus": "ready",                 // the prober's verdict, as /v1/version reports it
-    "verification": { "checkedAt": "…", "failures": [] },   // last full ChainVerification (boot or recovery)
-    "lastProbe": { "at": "…", "ok": true },    // the prober's last reachability probe
+    "verification": { "checkedAt": "…", "failures": [] },   // last full ChainVerification (boot or recovery),
+                                               // each failure as { "kind" } only
+    "lastProbe": { "at": "…", "ok": true },    // the prober's last reachability probe; when it failed,
+                                               // "detail" is a category ("timeout", "http 429"), never a message
     "node":    { "reachable": true, "headBlock": "18234411", "headAgeSeconds": 2 },
     "bundler": { "reachable": true, "entryPointSupported": true },  // new BundlerClient.supportedEntryPoints()
     "paymaster": {                             // null when this chain does not sponsor
@@ -730,14 +733,24 @@ not stall the response:
 }
 ```
 
-No new background job, table or metric, but some new code:
+No new background job, table or metric. What was added:
 
-- **The prober records what it finds.** For a `ready` chain it only calls `getChainId()` and keeps
-  nothing (§3), so it must store its last full `ChainVerification` *and* the time and outcome of
-  each reachability probe in the registry entry. Without that, `checkedAt` for a healthy chain
+- **The prober records what it finds.** For a `ready` chain it calls only `getChainId()`, so each
+  registry entry now keeps its last full `ChainVerification` (`verification`) *and* the time and
+  outcome of each reachability probe (`lastProbe`). Without that, `checkedAt` for a healthy chain
   would be the boot time. This is deployment state the registry already holds, not tenant state.
-- **The bundler client gains `supportedEntryPoints()`.** `eth_supportedEntryPoints` is answered
-  from configuration today and never asked of the bundler (§3).
+- **No error message is kept or returned.** viem's `HttpRequestError` and `TimeoutError` messages
+  hold `URL: <the node's URL>`, and a provider key in its path (Alchemy's `/v2/<key>`, Infura's
+  `/v3/<key>`) survives viem's credential stripping. The registry keeps a category for a failed
+  probe (`timeout`, `http 429`, `connection refused`, `rpc error <code>`, `unreachable`) and an
+  `unreachable` verification failure without its message, and the response gives each failure
+  by `kind` only.
+- **The bundler client has `supportedEntryPoints()`.** The wallet relay still answers
+  `eth_supportedEntryPoints` from configuration (§3); this asks the bundler itself. A bundler that
+  answers with a JSON-RPC error is reachable, with `entryPointSupported: null`.
+- **Each part is bounded.** The node's head, the bundler and the signer each get 3 seconds, every
+  chain at once, so the response takes about 3 seconds however many chains are down. A part that
+  times out is reported unreachable.
 - **The signer stays deployment-wide.** `SponsorshipSigner.health()` already answers for every chain
   (`app.ts`, MC-72), so `signer` sits at the top of the response.
 
@@ -791,7 +804,7 @@ tenant in two places. The selected deployment is chosen in the header and is not
 | **Tenants** (`/tenants`) | One list: the registry joined by tenant id to the selected chain's paymaster roster — slug, wallet origin, lifecycle status, *registered · enabled*, *registered · disabled* or *not registered*, balance, deficit, fee, users, any queued timelock change, and the next on-chain step. Tenants on the roster with **no** registry row are listed in it, marked as such. Search, a state filter, *Show deleted*, and totals for the chain. |
 | **A tenant** (`/tenants/<slug>`) | A page, not a drawer: the tenant on this chain with its on-chain actions under the console's write rules; wallet-api's ledger compared with the chain; the tenant on every other configured chain; recent sponsorships; fields, the policy as fields, admin keys (never key material) and history with each edit's before and after; and the lifecycle actions its state allows (§11.3). |
 | **Admins** (`/admins`) | The platform admins (id, address, who added them, when), *Add admin* with the id and address checked as they are typed, and *Remove* with a confirmation, plus the change history (§4.1). Your own row and the last admin's say why they cannot be removed; the API refuses both anyway. Removing an admin ends their sessions at once. |
-| **Chains** *(follow-up card, B3)* | A section of the Health tab once wallet-api serves `/v1/platform/chains`: one row per served chain, with the thresholds applied. Absent until then. |
+| **Chains** *(B3)* | A section of the Health tab where wallet-api serves `/v1/platform/chains`: one row per served chain, with the thresholds applied. Absent where it does not. |
 | **Sign-in** | Shown in place of whatever path was opened until the platform admin has a session, and that path after. *Sign in with wallet* connects the wallet if needed, then runs §4.2 with the connected address and the selected chain. The header shows who is signed in and for how long; two minutes before the session ends, *Stay signed in* signs again and replaces the session in place. Any `401` returns here. |
 
 ### 11.3 Flows

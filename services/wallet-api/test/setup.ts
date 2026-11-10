@@ -83,7 +83,10 @@ const SEL_IS_OWNER_ADDRESS = "0xa2e1a8d8"; // isOwnerAddress(address)
  */
 export function startMockRpc(
 	chainState?: MockChainState,
+	/** The head block the node reports; genesis unless a test needs a chain with history. */
+	options: { head?: bigint } = {},
 ): Promise<{ url: string; close: () => Promise<void> }> {
+	const head = `0x${(options.head ?? 0n).toString(16)}`;
 	const server = http.createServer((req, res) => {
 		let body = "";
 		req.on("data", (chunk) => (body += chunk));
@@ -93,7 +96,7 @@ export function startMockRpc(
 				method: string;
 				params?: [{ data?: string; to?: string }, ...unknown[]];
 			};
-			let result: string = "0x0";
+			let result: unknown = "0x0";
 			if (method === "eth_call") {
 				const data = params?.[0]?.data ?? "0x";
 				const selector = data.slice(0, 10).toLowerCase();
@@ -119,6 +122,17 @@ export function startMockRpc(
 				result = chainState?.contracts.has(address) ? "0x6080" : "0x";
 			} else if (method === "eth_chainId") {
 				result = "0x7a69";
+			} else if (method === "eth_blockNumber") {
+				result = head;
+			} else if (method === "eth_getBlockByNumber") {
+				// the head, two seconds old: what GET /v1/platform/chains reads for head and head age
+				result = {
+					number: head,
+					timestamp: `0x${(Math.floor(Date.now() / 1000) - 2).toString(16)}`,
+					hash: `0x${"11".repeat(32)}`,
+					parentHash: `0x${"22".repeat(32)}`,
+					transactions: [],
+				};
 			}
 			res.setHeader("content-type", "application/json");
 			res.end(JSON.stringify({ jsonrpc: "2.0", id, result }));
@@ -153,13 +167,15 @@ export function createMockBundlerFetch(results: Record<string, unknown> = {}) {
 				? results[method]
 				: method === "eth_sendUserOperation"
 					? "0x" + "ab".repeat(32)
-					: method === "eth_estimateUserOperationGas"
-						? {
-								preVerificationGas: "0x10000",
-								verificationGasLimit: "0xc3500",
-								callGasLimit: "0x30000",
-							}
-						: null;
+					: method === "eth_supportedEntryPoints"
+						? ["0x433709009B8330FDa32311DF1C2AFA402eD8D009"]
+						: method === "eth_estimateUserOperationGas"
+							? {
+									preVerificationGas: "0x10000",
+									verificationGasLimit: "0xc3500",
+									callGasLimit: "0x30000",
+								}
+							: null;
 		return new Response(JSON.stringify({ jsonrpc: "2.0", id, result }), {
 			headers: { "content-type": "application/json" },
 		});
