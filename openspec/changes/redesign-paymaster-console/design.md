@@ -121,7 +121,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 
 12. B2: timelock-aware `assessHealth`, release codehashes, `giano-doctor`. SDK and contracts changesets. **Done** (#205).
 13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
-14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns.
+14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
 17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
@@ -170,6 +170,8 @@ wallet-api's paymaster watcher already reads each paymaster and writes `paymaste
 `platform_admin_sessions` already records start, expiry, revocation, chain, IP and user agent. The last sign-in is the newest `created_at` for the admin; active sessions are those neither expired nor revoked. No migration.
 
 An admin can end only their own sessions. Ending someone else's is already possible by removing them, which is recorded in the admin history; a second, unrecorded way to lock someone out is not worth adding.
+
+As built: sessions are matched to an admin by address, as a session is resolved, not by the id recorded at sign-in (an id can be reused after removal; the address is who signed). The list marks the caller's own session `current`, so the console can offer *End* on every open session but the one it is using. Where a session was signed from (the user agent) is returned only for the caller's own sessions: another admin's show when, not where, which is enough to see that someone signed in and keeps one admin's locations from every other (raised in review of #184). The IP is not returned at all: wallet-api sets no `trustProxy`, so behind the console's nginx every session records the proxy's address, which beside a stolen session would read as the admin's own (raised in review of #207). Carrying the real client IP is a follow-up: turning on `trustProxy` also changes the rate-limit keys of wallet-web's routes, and needs the ALB → nginx → wallet-api hops counted exactly. Ending a session already ended, or expired, is `204` and changes nothing, and ending another admin's by naming yourself is `404`, since that session is not one of yours.
 
 ### D16. One console context
 `shell/ConsoleContext.tsx` provides what every primitive needs about the console around it: the deployment, the wallet and its paymaster roles, the paymaster address, the timelock client, the `propose` callback, the console refresh and the block it read at, the timelock's operations and access (D17), and each configured Safe's threshold. A control deep in a tab reads it with `useConsole()` instead of having half a dozen props threaded down to it. The paymaster overview and the joined tenant rows stay props: they are what a tab renders, not what a control decides with.
@@ -235,4 +237,6 @@ Resolved in phase 1: *Stay signed in* signs a fresh SIWE message, with no refres
 - B4: refusals are grouped by `SponsorshipRefusalReason`, plus `temporarily-unavailable`. Should a tenant's own sponsorship-rule refusals be split from platform refusals (paused, deficit), so the Overview does not blame the platform for a tenant's rules?
 - B5: should drift also be a `/healthz` signal, so a deploy fails on it? This change exposes it; who acts on it is the alerting non-goal.
 - B6: is 30 days of session history enough, or does it follow `platform_admin_sessions` retention, whatever housekeeping sets?
+- B6 follow-up: ending a session only ever applies to the caller's own, so `:id` in `DELETE /v1/platform/admins/:id/sessions/:sessionId` is always the caller. `DELETE /v1/platform/sessions/:sessionId` would drop the 403 case; left for a later change so this one does not reshape the API again.
+- B6 follow-ups from review of #207: carry the admin's real IP (`trustProxy` with the hops counted, see D15); index `platform_admin_sessions` on `(address, created_at)`, as `list()` groups the whole table and `sessions()` filters by an unindexed `address` (a migration, so its own change).
 - G3: do the `addresses` labels belong in the console config, or in the shared chain descriptor wallet-api also reads? The console config for now; nothing else needs them yet.

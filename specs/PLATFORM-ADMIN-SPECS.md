@@ -213,15 +213,17 @@ The `platform_admins` table (migration `0008_platform_admins.sql`):
   Safe or other contract account cannot be a platform admin (§4.3).
 - `added_by` is `bootstrap:<environment>` or `platform-admin:<id>:<address>`.
 
-Platform admins manage platform admins through four routes, behind the same guard and rate limit as the tenant
+Platform admins manage platform admins, and their own sessions, through six routes, behind the same guard and rate limit as the tenant
 routes (`src/routes/platform-admins.ts`, `src/services/platform-admins.ts`):
 
 | Route | Does |
 | --- | --- |
-| `GET /v1/platform/admins` | the platform admins, oldest first |
+| `GET /v1/platform/admins` | the platform admins, oldest first, each with `lastSignInAt` (the newest session's start, or `null`) and `activeSessions` (neither expired nor revoked) |
 | `POST /v1/platform/admins` | `{ id, address }`; the new platform admin can sign in at once. `201` |
 | `DELETE /v1/platform/admins/:id` | removes the platform admin and revokes their open sessions. `409 self-removal` for your own row, `409 last-admin` for the only one. `204` |
 | `GET /v1/platform/admins/history` | the latest 100 entries of `platform_admin_history` (`bootstrap`, `add`, `remove`), newest first |
+| `GET /v1/platform/admins/:id/sessions` | that admin's sessions from the last 30 days, newest first: start, end, revocation, chain, and `current` for the caller's own; the user agent only for the caller's own sessions (`null` for another admin's), and no IP, which is the proxy's (§3). Never a token or its hash. `404` for an unknown admin |
+| `DELETE /v1/platform/admins/:id/sessions/:sessionId` | ends one of the caller's **own** sessions; its next request is `401`. `403 not-your-session` for another admin's: removing the admin is the recorded way to end all of theirs. `204`, also for one already ended |
 
 Writes to the table are serialised by a Postgres advisory lock, so the last-admin check cannot
 race.
