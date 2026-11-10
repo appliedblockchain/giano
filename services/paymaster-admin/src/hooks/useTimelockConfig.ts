@@ -20,6 +20,8 @@ export type TimelockAccess = {
 	/** The longest delay any timelocked function waits: how far back the operations list must read. */
 	longestDelay: bigint | undefined;
 	error: string | undefined;
+	/** The last config read failed: `config`, if any, is from an earlier read. */
+	configError: string | undefined;
 	reload: () => Promise<void>;
 };
 
@@ -46,6 +48,7 @@ export function useTimelockAccess(
 	const [config, setConfig] = useState<TimelockConfig>();
 	const [held, setHeld] = useState<Held>(UNKNOWN);
 	const [error, setError] = useState<string>();
+	const [configError, setConfigError] = useState<string>();
 	// A read for the previous timelock or wallet can land after a newer one: only the latest counts.
 	const generation = useRef(0);
 
@@ -66,6 +69,9 @@ export function useTimelockAccess(
 		if (generation.current !== current) return;
 		const [next, propose, cancel, execute] = results;
 		if (next.status === "fulfilled") setConfig(next.value);
+		setConfigError(
+			next.status === "rejected" ? describeError(next.reason) : undefined,
+		);
 		const value = (result: PromiseSettledResult<boolean>) =>
 			result.status === "fulfilled" ? result.value : undefined;
 		setHeld({
@@ -81,6 +87,7 @@ export function useTimelockAccess(
 
 	useEffect(() => {
 		setConfig(undefined);
+		setConfigError(undefined);
 		setHeld(UNKNOWN);
 		void reload();
 	}, [reload]);
@@ -105,6 +112,7 @@ export function useTimelockAccess(
 		mayExecute,
 		longestDelay,
 		error,
+		configError,
 		reload,
 	};
 }

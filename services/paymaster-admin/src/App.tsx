@@ -146,6 +146,7 @@ function Console({
 		deployment,
 		timelockConfig: timelockAccess.config,
 		timelockError: timelockAccess.error,
+		timelockConfigError: timelockAccess.configError,
 	});
 	const timelockOperations = usePendingOperations(
 		timelock,

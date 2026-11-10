@@ -31,6 +31,7 @@ export function useHealth({
 	deployment,
 	timelockConfig,
 	timelockError,
+	timelockConfigError,
 }: {
 	client: GianoPaymasterClient | undefined;
 	overview: PaymasterOverview | undefined;
@@ -38,6 +39,8 @@ export function useHealth({
 	deployment: Deployment;
 	timelockConfig: TimelockConfig | undefined;
 	timelockError: string | undefined;
+	/** The last config read failed (useTimelockAccess's configError). */
+	timelockConfigError?: string;
 }): ConsoleHealth | undefined {
 	const [implementation, setImplementation] = useState<Implementation>();
 	const [implementationError, setImplementationError] = useState<string>();
@@ -99,8 +102,10 @@ export function useHealth({
 			timelockConfigured: timelockAddress !== undefined,
 			timelockRead: timelockConfig !== undefined,
 			timelockError,
+			timelockStaleError: timelockConfigError,
 		});
 	}, [
+		timelockConfigError,
 		overview,
 		deployment,
 		timelockConfig,

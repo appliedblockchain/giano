@@ -495,6 +495,10 @@ const commands: Record<string, Command> = {
 			const published =
 				args.flags["timelock-delays"] ??
 				process.env.GIANO_PAYMASTER_TIMELOCK_DELAYS;
+			if (published && !timelock)
+				warn(
+					"--timelock-delays is ignored without --timelock: there is no timelock to compare them with",
+				);
 			const report = await paymaster.getHealth(
 				timelock
 					? {
