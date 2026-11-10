@@ -21,12 +21,14 @@
  * Flags fall back to env: RPC_URL, CHAIN_ID, FACTORY_ADDRESS, ENTRYPOINT_ADDRESS,
  * SPONSORSHIP_PAYMASTER_ADDRESS, PAYMASTER_TENANT_IDS, PAYMASTER_ROLE_ADMIN, SPONSORSHIP_SIGNERS,
  * GIANO_REQUIRE_PAYMASTER, PAYMASTER_TIMELOCK, PAYMASTER_TIMELOCK_DELAYS, PAYMASTER_TIMELOCK_PROPOSERS,
- * GIANO_REQUIRE_TIMELOCK, GIANO_WALLET_API_URL.
+ * GIANO_REQUIRE_TIMELOCK, GIANO_DOCTOR_WALLET_API_URL.
  *
- * Drift (B5): with wallet-api's URL (--wallet-api or GIANO_WALLET_API_URL) and a platform admin
+ * Drift (B5): with wallet-api's URL (--wallet-api or GIANO_DOCTOR_WALLET_API_URL, https) and a platform admin
  * session token in GIANO_PLATFORM_SESSION (environment only, never a flag, so it stays out of shell
  * history), every tenant whose registry, ledger and paymaster disagree fails the run, read from the
- * comparison wallet-api itself makes (GET /v1/platform/drift). Without them, drift is not checked.
+ * comparison wallet-api itself makes (GET /v1/platform/drift). A tenant another deployment
+ * registered on a shared paymaster warns, as does a result too old to be current or tenants not
+ * compared. Without them, drift is not checked.
  *
  * Timelock (G9 R4, B2): with --timelock, every timelocked role (timelock.ts) must be held by that
  * GianoTimelock alone and each timelocked function must wait at least its --timelock-delays value.
@@ -95,6 +97,7 @@ import {
 	type TimelockDelays,
 	timelockedRoleProblems,
 } from "../timelock";
+import { type DriftChain, driftLines, driftUrl } from "./doctor-drift";
 
 // --- well-known addresses (identical on every EVM chain) ---
 const RIP7212_PRECOMPILE = "0x0000000000000000000000000000000000000100";
@@ -817,43 +820,32 @@ async function checkTimelock(
 /**
  * B5: wallet-api's own comparison of its registry and ledger with this chain's paymaster. The doctor
  * cannot see wallet-api's database, so it reads the comparison rather than repeating it, and fails
- * on any drift.
+ * on drift in this deployment's own records (doctor-drift.ts says which).
  */
 async function checkDrift(
 	flags: Record<string, string>,
 	chainId: number,
 ): Promise<void> {
 	section("Drift: wallet-api's records against the paymaster");
-	const api = flags["wallet-api"] ?? process.env.GIANO_WALLET_API_URL;
+	// Its own variable: wallet-web's GIANO_WALLET_API_URL means something else (a relative /api).
+	const api = flags["wallet-api"] ?? process.env.GIANO_DOCTOR_WALLET_API_URL;
 	const token = process.env.GIANO_PLATFORM_SESSION;
 	if (!api || !token) {
 		report(
 			"info",
 			"drift not checked",
-			"set GIANO_WALLET_API_URL (or --wallet-api) and GIANO_PLATFORM_SESSION, a platform admin session token, to read GET /v1/platform/drift",
+			"set GIANO_DOCTOR_WALLET_API_URL (or --wallet-api) and GIANO_PLATFORM_SESSION, a platform admin session token, to read GET /v1/platform/drift",
 		);
 		return;
 	}
-	type Drift = {
-		chains: {
-			chainId: number;
-			checkedAt: string;
-			entries: ({ kind: string; tenantId: string; slug?: string } & Record<
-				string,
-				unknown
-			>)[];
-			unchecked: string[];
-		}[];
-	};
-	let body: Drift;
+	let body: { chains: DriftChain[] };
 	try {
-		const response = await fetch(
-			new URL("/v1/platform/drift", api).toString(),
-			{
-				headers: { authorization: `Bearer ${token}` },
-				signal: AbortSignal.timeout(15_000),
-			},
-		);
+		const response = await fetch(driftUrl(api), {
+			headers: { authorization: `Bearer ${token}` },
+			// A redirect would carry the token somewhere this run did not name.
+			redirect: "error",
+			signal: AbortSignal.timeout(15_000),
+		});
 		if (!response.ok) {
 			report(
 				"fail",
@@ -862,7 +854,7 @@ async function checkDrift(
 			);
 			return;
 		}
-		body = (await response.json()) as Drift;
+		body = (await response.json()) as { chains: DriftChain[] };
 	} catch (error) {
 		report("fail", "read the drift", (error as Error).message);
 		return;
@@ -876,22 +868,8 @@ async function checkDrift(
 		);
 		return;
 	}
-	if (chain.entries.length === 0)
-		report("ok", "no drift", `checked ${chain.checkedAt}`);
-	for (const entry of chain.entries) {
-		const { kind, tenantId, slug, ...detail } = entry;
-		report(
-			"fail",
-			`drift: ${kind}`,
-			`${slug ?? tenantId} ${JSON.stringify(detail)}`,
-		);
-	}
-	if (chain.unchecked.length > 0)
-		report(
-			"warn",
-			"drift: not compared",
-			`${chain.unchecked.length} tenant(s) could not be read at the ledger's block: ${chain.unchecked.join(", ")}`,
-		);
+	for (const line of driftLines(chain))
+		report(line.level, line.label, line.detail);
 }
 
 async function hasCode(
