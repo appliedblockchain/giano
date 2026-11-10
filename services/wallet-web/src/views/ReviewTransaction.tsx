@@ -7,6 +7,7 @@ import type {
 } from "@appliedblockchain/giano-wallet-kit";
 import { useEffect, useState } from "react";
 import { formatUnits, type Hex } from "viem";
+import { isSelfCallBlocked, SelfCallBlocked } from "./SelfCallBlocked";
 import { refusalCopy } from "./sponsorship-copy";
 
 type TxRequest = { to?: Hex; value?: Hex | bigint; data?: Hex };
@@ -23,6 +24,11 @@ type TxRequest = { to?: Hex; value?: Hex | bigint; data?: Hex };
  *      screen says so in so many words and shows the raw data, because raw data is the truth
  *      of last resort, not a default.
  *   2. The sponsorship pre-flight (WK-13…WK-15) — unchanged from before.
+ *
+ * A transaction that calls one of the user's own account functions is never approvable here.
+ * Such a self-call can add or remove owners or upgrade the account, and only the management
+ * view may build one. The host already refuses it before consent; this screen blocks it as a
+ * second layer. A value-only transfer to the account carries no calldata and is not blocked.
  */
 export function ReviewTransaction({
 	request,
@@ -43,11 +49,14 @@ export function ReviewTransaction({
 	const [preflight, setPreflight] = useState<SponsorshipPreflight | null>(null);
 	const [attempt, setAttempt] = useState(0);
 
+	const blocked = isSelfCallBlocked(request);
+
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the transaction never changes for one request; `attempt` is what a retry increments
 	useEffect(() => {
 		let cancelled = false;
 		setDescription(null);
 		setPreflight(null);
+		if (blocked) return;
 
 		// The runtime never rejects here, but a screen that could hang on a promise that did would
 		// leave the user with no button at all — so the fallback is spelled out anyway.
@@ -143,6 +152,15 @@ export function ReviewTransaction({
 	// G5: wallet-api refused the session. Nothing here can succeed, and closing answers the
 	// dApp 4100 (session ended), not 4001 (user rejected).
 	const sessionEnded = preflight?.state === "session-ended";
+
+	if (blocked) {
+		return (
+			<SelfCallBlocked
+				request={request}
+				bannerLabel="Transaction request from"
+			/>
+		);
+	}
 
 	return (
 		<>

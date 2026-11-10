@@ -642,6 +642,35 @@ describe("transactions & user operations", () => {
 		).rejects.toThrow("Address mismatch");
 	});
 
+	it("eth_signUserOperation signs with the account it checked when the account changes during the check", async () => {
+		const { provider } = buildProvider(mock.authenticator);
+		await connect(provider);
+		const prepared = await provider.request({
+			method: "eth_prepareUserOperation",
+			params: [[{ to: WALLET_ADDRESS, value: 0n, data: "0x" }]] as never,
+		});
+		const checked = provider.getSmartAccount();
+		if (!checked) throw new Error("not connected");
+		const getAddress = checked.getAddress.bind(checked);
+		const sign = vi.spyOn(checked, "signUserOperation");
+		// The account goes away while the provider awaits the checked address.
+		vi.spyOn(checked, "getAddress").mockImplementationOnce(async () => {
+			await provider.request({
+				method: "wallet_revokePermissions",
+				params: [{ eth_accounts: {} }],
+			} as never);
+			return getAddress();
+		});
+
+		const signature = await provider.request({
+			method: "eth_signUserOperation",
+			params: [prepared] as never,
+		});
+		expect(provider.getSmartAccount()).toBeNull();
+		expect(sign).toHaveBeenCalledOnce();
+		expect(signature).toMatch(/^0x/);
+	});
+
 	it("submits a raw signed operation unchanged without preparing or signing again", async () => {
 		const { bundler } = createMockBundler();
 		// prepareUserOperation is generic over its request, which vi.spyOn's typing collapses to never.

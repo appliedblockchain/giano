@@ -82,3 +82,6 @@ export {
 	type WalletRuntime,
 	type WalletRuntimes,
 } from "./runtimes";
+// ── requests that would make the account call itself (refused by the host; the review
+// screen blocks them too) ──
+export { checkSelfCall, type SelfCallCheck } from "./self-calls";
