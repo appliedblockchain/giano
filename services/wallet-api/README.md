@@ -74,7 +74,7 @@ Swagger UI at `/docs` outside production).
 | `GET /v1/platform/drift` | platform admin session; any `Origin` refused | where the registry and ledger disagree with each sponsoring chain's paymaster: unknown tenants, enabled state against the registry status, ledger balance and withdrawal address (checked at the block the ledger describes, so a watcher behind is not drift), a registry tenant the chain funded with no ledger row, and tenants not compared. From the watcher's last pass while fresh, or computed on request; a chain that cannot be computed is an error for that chain. Also the metrics `giano_paymaster_drifted_tenants{chain}` and `giano_paymaster_unknown_tenants{chain}`; never a health failure |
 | `GET /v1/platform/usage?chainId=&since=&until=` | platform admin session; any `Origin` refused | one chain's sponsorship decisions (allowed, refused, refusals by reason and by whose to fix: the tenant's `rules` (its own switch included) or `funds`, the `platform` (an outage), `other`) and settlements (settled, reverted, gas, fees and overhead in wei), in total and per tenant; settlements for a tenant this deployment does not know apart (`unknownTenant`), not in the total. The last 7 days unless given; at most 90 (`400 range-too-long`). From the recorded rows, never the chain; indexed by chain and time (migration 0010) |
 | `GET /healthz`, `GET /readyz` | public | liveness / readiness (DB ping) |
-| `GET /metrics` | open, or bearer when `METRICS_BEARER_TOKEN` set | Prometheus metrics, `tenant`-labelled |
+| `GET /metrics` | bearer `METRICS_BEARER_TOKEN`; open only in a `development` deployment without the token | Prometheus metrics, `tenant`-labelled |
 
 The wallet address bound to a credential is computed by calling the factory's on-chain
 `getAddress(owners, nonce)` — the same source of truth the connector uses, so client- and
@@ -97,7 +97,8 @@ example). Highlights:
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `IMPLEMENTATION_ADDRESS` | the wallet implementation `FACTORY_ADDRESS` must clone; default from the registry only when the factory also comes from the registry. Without either, the comparison is skipped with a warning (`walletApi.implementation` in `GIANO_CHAINS`) |
 | `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (tenant `policy` overrides per field) |
-| `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` / `METRICS_BEARER_TOKEN` | tuning / observability |
+| `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` | tuning |
+| `METRICS_BEARER_TOKEN` | bearer token for `GET /metrics`, at least 16 characters; required when `GIANO_DEPLOYMENT_CLASS` is `testnet` or `production` |
 | `SESSION_IDLE_TIMEOUT_SECONDS` / `SESSION_MAX_PER_USER` | wallet session idle timeout (3600; at least 300, at most `SESSION_TTL_SECONDS`), live sessions per user before the ones used longest ago are revoked (10) |
 | `PLATFORM_CHALLENGE_TTL_SECONDS` / `PLATFORM_SESSION_TTL_SECONDS` / `PLATFORM_RATE_LIMIT_PER_MINUTE` | sign-in nonce lifetime (300), absolute platform admin session lifetime (1800, at most 30 days), per-session and per-address limit (60) |
 | `PLATFORM_RPC_RATE_LIMIT_PER_MINUTE` / `PLATFORM_RPC_MAX_LOG_BLOCKS` | the platform chain read relay (`/v1/platform/rpc/:chainId`): forwarded reads per session per minute (1200, a budget separate from the one above), and the widest `eth_getLogs` range it forwards (10000; at least 9000, the paymaster SDK's log window) |

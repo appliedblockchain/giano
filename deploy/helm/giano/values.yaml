@@ -45,7 +45,9 @@ config:
 
 # secrets: reference an existing k8s Secret; never inline production keys in values
 secrets:
-  existingSecret: "" # must provide keys: DATABASE_URL, ADMIN_API_KEYS
+  existingSecret: "" # must provide keys: DATABASE_URL, ADMIN_API_KEYS, GIANO_DEPLOYMENT_CLASS
+  # and, when GIANO_DEPLOYMENT_CLASS is testnet or production, METRICS_BEARER_TOKEN (at least
+  # 16 characters). Without it wallet-api refuses to boot, because GET /metrics would be open.
   # bundler executor key(s), comma-separated (only when bundler.enabled):
   # BUNDLER_EXECUTOR_PRIVATE_KEYS. ALTO_EXECUTOR_PRIVATE_KEYS is refused at boot — rename the key.
 
