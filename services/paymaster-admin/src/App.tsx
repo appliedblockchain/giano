@@ -22,6 +22,7 @@ import {
 	rememberDeployment,
 } from "./config";
 import { HealthTab } from "./health/HealthTab";
+import { useHealth } from "./hooks/useHealth";
 import { usePaymaster } from "./hooks/usePaymaster";
 import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useTimelockAccess } from "./hooks/useTimelockConfig";
@@ -112,7 +113,6 @@ function Console({
 	const {
 		client,
 		overview,
-		health,
 		myRoles,
 		rosterOnChain,
 		loading,
@@ -138,6 +138,14 @@ function Console({
 	const [proposal, setProposal] = useState<ProposalRequest>();
 	const propose = timelock ? setProposal : undefined;
 	const timelockAccess = useTimelockAccess(timelock, wallet);
+	const health = useHealth({
+		client,
+		overview,
+		block,
+		deployment,
+		timelockConfig: timelockAccess.config,
+		timelockError: timelockAccess.error,
+	});
 	const timelockOperations = usePendingOperations(
 		timelock,
 		lastUpdated,
