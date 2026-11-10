@@ -10,6 +10,7 @@ import {
 	Text,
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isAddressEqual } from "viem";
 import { ActivityTab } from "./activity/ActivityTab";
 import { ProposalDialog } from "./components/ProposalDialog";
 import { Copyable, notifyError } from "./components/ui";
@@ -151,6 +152,30 @@ function Console({
 		lastUpdated,
 		timelockAccess.error ? null : timelockAccess.longestDelay,
 	);
+	// The timelock's config is read once (D17), and a delay change is itself a timelocked operation:
+	// when one aimed at the timelock is executed, from here or from a Safe, read the config again.
+	const executedOnTimelock = timelock
+		? timelockOperations.operations
+				.filter(
+					(operation) =>
+						operation.state === "done" &&
+						operation.calls.some((call) =>
+							isAddressEqual(call.target, timelock.address),
+						),
+				)
+				.map((operation) => operation.id)
+				.join()
+		: "";
+	const seenExecuted = useRef<string>(undefined);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only a newly executed operation re-reads
+	useEffect(() => {
+		if (
+			seenExecuted.current !== undefined &&
+			seenExecuted.current !== executedOnTimelock
+		)
+			void timelockAccess.reload();
+		seenExecuted.current = executedOnTimelock;
+	}, [executedOnTimelock]);
 	// Read for the whole console, not only the Tenants tab: the tab bar counts the same tenants the
 	// list shows.
 	const registry = useRegistry(lastUpdated);
