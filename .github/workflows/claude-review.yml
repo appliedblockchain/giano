@@ -66,10 +66,30 @@ env:
   #    position (tested).
   GIT_DENY: >-
     Bash(git diff*--no-index*),Bash(git diff*--output*),Bash(git log*--output*),Bash(git show*--output*)
-  # 3. Token formats that must never be saved or posted. Each job checks its output against
-  #    this pattern in a plain shell step that no model can change.
+  # 3. Token formats that must never be saved or posted. Each job checks its output with
+  #    CHECK_SECRETS in a plain shell step that no model can change.
+  #
+  #    No report or review ever passes through a step's `env`: GitHub prints a step's env
+  #    values in its log, and the log is public, so the content would be public before the
+  #    check runs. Each job reads its session's output from the execution file instead, and
+  #    hands it to the next job as an artifact.
   SECRET_PATTERN: >-
     sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----
+  # Run as `bash -c "$CHECK_SECRETS" check <file.json>`. Exits 1, and deletes the file, when
+  # it contains a token. It checks the decoded strings as well as the raw JSON: an escape such
+  # as `\u0073k-ant-` hides a token from the raw text, and jq decodes it before posting.
+  CHECK_SECRETS: |
+    set -euo pipefail
+    jq -r '.. | strings' "$1" > "$1.decoded"
+    if grep -Eq "$SECRET_PATTERN" "$1" "$1.decoded"; then
+      rm -f "$1" "$1.decoded"
+      exit 1
+    fi
+    rm -f "$1.decoded"
+  # The jq filter that reads a session's structured output from its execution file:
+  # `jq -c "$READ_OUTPUT" "$EXECUTION_FILE"`.
+  READ_OUTPUT: >-
+    [.[] | select(.type == "result")] | last | .structured_output // empty
   # What each review session returns. `line` is a line number in the pull request's version
   # of the file, so the post job can place an inline comment on it.
   FINDINGS_SCHEMA: >-
@@ -126,12 +146,12 @@ jobs:
       - name: Save the report
         if: steps.review.outputs.structured_output != ''
         env:
-          REPORT: ${{ steps.review.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         # Artifacts of a public repository are public too, so check before the upload.
         run: |
-          printf '%s' "$REPORT" > code-review.json
-          if grep -Eq "$SECRET_PATTERN" code-review.json; then
-            rm code-review.json
+          set -euo pipefail
+          jq -c "$READ_OUTPUT" "$EXECUTION_FILE" > code-review.json
+          if ! bash -c "$CHECK_SECRETS" check code-review.json; then
             echo "::error::The report looks like it contains a secret. It was not saved."
             exit 1
           fi
@@ -176,11 +196,11 @@ jobs:
       - name: Save the report
         if: steps.review.outputs.structured_output != ''
         env:
-          REPORT: ${{ steps.review.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
-          printf '%s' "$REPORT" > security-review.json
-          if grep -Eq "$SECRET_PATTERN" security-review.json; then
-            rm security-review.json
+          set -euo pipefail
+          jq -c "$READ_OUTPUT" "$EXECUTION_FILE" > security-review.json
+          if ! bash -c "$CHECK_SECRETS" check security-review.json; then
             echo "::error::The report looks like it contains a secret. It was not saved."
             exit 1
           fi
@@ -204,7 +224,9 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      review: ${{ steps.merge.outputs.structured_output }}
+      # Only the outcome of the save step. The review itself goes to the post job as an
+      # artifact (see SECRET_PATTERN).
+      saved: ${{ steps.save.outcome }}
     steps:
       # No checkout: this session reads only the reports, never the pull request's code.
       - uses: actions/download-artifact@v4
@@ -286,6 +308,24 @@ jobs:
             --tools Read
             --max-turns 10
             --json-schema '${{ env.REVIEW_SCHEMA }}'
+      - name: Save the review
+        id: save
+        if: steps.merge.outputs.structured_output != ''
+        env:
+          EXECUTION_FILE: ${{ steps.merge.outputs.execution_file }}
+        run: |
+          set -euo pipefail
+          jq -c "$READ_OUTPUT" "$EXECUTION_FILE" > merged.json
+          if ! bash -c "$CHECK_SECRETS" check merged.json; then
+            echo "::error::The review looks like it contains a secret. It was not saved."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.save.outcome == 'success'
+        with:
+          # Not `review-*`, so a re-run of this job does not download it with the reports.
+          name: merged-review
+          path: merged.json
 
   post:
     name: Post the review
@@ -305,16 +345,17 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      - uses: actions/download-artifact@v4
+        if: needs.merge.outputs.saved == 'success'
+        with:
+          name: merged-review
       - name: Post the review
         id: post
-        if: needs.merge.result == 'success' && needs.merge.outputs.review != ''
-        env:
-          MERGED: ${{ needs.merge.outputs.review }}
+        if: needs.merge.outputs.saved == 'success'
         run: |
           set -euo pipefail
-          printf '%s' "$MERGED" > merged.json
           # The last check before anything is public. The log names no match, only the fact.
-          if grep -Eq "$SECRET_PATTERN" merged.json; then
+          if ! bash -c "$CHECK_SECRETS" check merged.json; then
             echo "::error::The review looks like it contains a secret. It was not posted."
             exit 1
           fi
@@ -340,11 +381,9 @@ jobs:
             gh api "repos/$REPO/pulls/$PR/reviews" --method POST --input fallback.json > /dev/null
           fi
       - name: Report a failed review
-        # Also when the post step refused the review or GitHub rejected it.
-        if: >-
-          always() &&
-          (needs.merge.result != 'success' || needs.merge.outputs.review == '' ||
-          steps.post.outcome == 'failure')
+        # Every case where no review was posted: the merge job failed or saved nothing, the
+        # download failed, the post step refused the review, or GitHub rejected it.
+        if: always() && steps.post.outcome != 'success'
         run: |
           gh pr comment "$PR" --repo "$REPO" \
             --body "The Claude review did not finish. See the [workflow run]($RUN_URL).
