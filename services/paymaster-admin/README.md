@@ -63,8 +63,10 @@ all land where they point. The deployment is chosen in the header, not in the UR
   delay is below `timelockDelays`. Without a timelock, one warning says none is configured. With
   the platform API, a Chains section shows what wallet-api sees of each chain it serves: whether it
   serves it, the node's head and its age, whether the bundler lists the configured EntryPoint, the
-  ledger watcher's lag, and the sponsorship signer. The head-age and lag thresholds are in
-  `src/lib/health.ts`.
+  ledger watcher's lag, and the sponsorship signer, and each of the bundler's executor keys: its
+  balance, the submissions that pays for at the chain's gas price (under 10 fails, under 100
+  warns), whether it is submitting, and a stuck nonce. An empty or nearly empty executor also goes
+  under Needs attention on the Overview. The thresholds are in `src/lib/health.ts`.
 - **Admins** — with the platform API: who may sign in, when each last did and how many sessions
   they have open, the change history, *Add admin* and *Remove*; and your own sessions from the last
   30 days, with *End* on any open one but the one you are using.

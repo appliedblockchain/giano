@@ -343,6 +343,7 @@ The Overview SHALL list first the conditions that need an operator, each linking
 - a registry tenant not registered on the selected chain;
 - a tenant whose registry state and on-chain state disagree;
 - a timelock operation that is ready;
+- a bundler executor with no balance, or too little for 10 submissions;
 - the paymaster paused;
 - the solvency invariant failing.
 
@@ -401,7 +402,7 @@ Keys and roles SHALL include whether the implementation is a contracts release a
 
 A check whose input has not been read yet (the implementation, a configured timelock, the ledger comparison, the chains) SHALL be shown as still being read, never left out, and a failed read SHALL be a warning. The summary SHALL say every check passes only once nothing is still being read.
 
-Where wallet-api serves `GET /v1/platform/chains`, the tab SHALL show a Chains section with one row per served chain, judging head age and watcher lag against thresholds kept beside the SDK's, the watcher's from wallet-api's own limit. A local devnet that mines on demand SHALL have its head age shown, not judged. Where it serves `GET /v1/platform/drift`, the Registry and chain group SHALL use its result, including whether each tenant's on-chain state matches its registry status. Where it serves neither, those parts SHALL be absent, not placeholders.
+Where wallet-api serves `GET /v1/platform/chains`, the tab SHALL show a Chains section with one row per served chain, judging head age and watcher lag against thresholds kept beside the SDK's, the watcher's from wallet-api's own limit. A local devnet that mines on demand SHALL have its head age shown, not judged. Where it reports the bundler's executors, the section SHALL list each with its balance and the submissions that balance pays for at the chain's gas price, failing under 10 and warning under 100, and SHALL flag a stuck lane: one held past the bundler's limit, or a transaction the bundler is not working on. Where it serves `GET /v1/platform/drift`, the Registry and chain group SHALL use its result, including whether each tenant's on-chain state matches its registry status. Where it serves neither, those parts SHALL be absent, not placeholders.
 
 #### Scenario: Ledger behind the chain
 - **WHEN** wallet-api's ledger for `byo` differs from the chain
@@ -410,6 +411,10 @@ Where wallet-api serves `GET /v1/platform/chains`, the tab SHALL show a Chains s
 #### Scenario: Timelock still being read
 - **WHEN** the deployment configures a timelock and the console has not read it yet
 - **THEN** Health shows the timelock as still being read, without the no-timelock warning, and does not say every check passes
+
+#### Scenario: Executor running dry
+- **WHEN** an executor's balance pays for 40 submissions at the chain's gas price
+- **THEN** the Chains section warns for that executor, naming its address and the 40 submissions
 
 #### Scenario: Delay below the published value
 - **WHEN** the deployment publishes an hour for `upgradeToAndCall` and its timelock waits 2 seconds

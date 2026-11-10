@@ -135,7 +135,7 @@ export function TenantsList({
 						<Alert.Indicator />
 						<Alert.Content>
 							<Alert.Title>Could not read the deleted tenants</Alert.Title>
-							<Alert.Description>
+							<Alert.Description overflowWrap="anywhere">
 								{registry.deletedError} The list has the live tenants only.
 							</Alert.Description>
 						</Alert.Content>
@@ -145,7 +145,7 @@ export function TenantsList({
 					<Alert.Root status="info" size="sm">
 						<Alert.Indicator />
 						<Alert.Content>
-							<Alert.Description>
+							<Alert.Description overflowWrap="anywhere">
 								This paymaster predates the on-chain roster, so its tenants were
 								read from registration logs, one window at a time. A tenant
 								registered before that window is missing from the list.

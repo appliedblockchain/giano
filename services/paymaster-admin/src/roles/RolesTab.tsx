@@ -344,7 +344,7 @@ function DefaultAdminCard({
 			<Alert.Indicator />
 			<Alert.Content>
 				<Alert.Title>DEFAULT_ADMIN_ROLE is held</Alert.Title>
-				<Alert.Description>
+				<Alert.Description overflowWrap="anywhere">
 					<Stack gap="3" mt="1">
 						<Text>
 							It should be held by nobody. No role names it as its admin and no

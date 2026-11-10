@@ -261,6 +261,18 @@ export type PlatformAdminRow = {
 	activeSessions?: number;
 };
 
+/** One of the bundler's executor keys on a chain (B7): it signs and pays for each handleOps. */
+export type BundlerExecutor = {
+	address: string;
+	balanceWei: string;
+	/** Its lane holds a transaction in flight. */
+	busy: boolean;
+	/** When the lane took the transaction it holds; null while idle, absent from an older wallet-api. */
+	busySince?: string | null;
+	latestNonce: number;
+	pendingNonce: number;
+};
+
 /** One chain's usage, as GET /v1/platform/usage reports it (B4). */
 export type Usage = {
 	chainId: number;
@@ -373,7 +385,17 @@ export type ChainStatus = {
 		headBlock: string | null;
 		headAgeSeconds: number | null;
 	};
-	bundler: { reachable: boolean; entryPointSupported: boolean | null };
+	bundler: {
+		reachable: boolean;
+		entryPointSupported: boolean | null;
+		/** B7: null where the bundler does not report its executors. */
+		gasPriceWei?: string | null;
+		executors?: BundlerExecutor[] | null;
+		/** Why the executors are null: the bundler lacks the method, or it or its node did not answer. */
+		executorsUnknown?: "unsupported" | "unavailable" | null;
+		/** How long a lane may hold one transaction before the bundler has given up on it. */
+		laneStuckAfterSeconds?: number | null;
+	};
 	paymaster: {
 		address: string;
 		depositWei: string | null;

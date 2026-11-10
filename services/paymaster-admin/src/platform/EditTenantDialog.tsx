@@ -172,7 +172,7 @@ export function EditTenantDialog({
 											<Alert.Title>
 												Someone else changed this tenant
 											</Alert.Title>
-											<Alert.Description>
+											<Alert.Description overflowWrap="anywhere">
 												The tenant page now shows its current values. Your edits
 												are kept below — check them against what changed, then
 												save again to apply them on top.

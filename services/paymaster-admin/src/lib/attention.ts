@@ -3,6 +3,8 @@ import type {
 	PaymasterOverview,
 	TimelockOperation,
 } from "@appliedblockchain/giano-paymaster-sdk";
+import { executorStanding } from "./health";
+import type { ChainStatus } from "./platform-api";
 import { TAB_PATHS, tenantPath } from "./router";
 import type { TenantRow } from "./tenants";
 
@@ -57,6 +59,18 @@ export type AttentionSources = {
 	 * logs, so a tenant registered before it reads as not registered.
 	 */
 	rosterOnChain: boolean;
+	/**
+	 * wallet-api's chain status (B3, B7), where it serves it: the bundler's executors come from it.
+	 * Absent without the platform API, or from a wallet-api that does not serve it.
+	 */
+	chains?: {
+		/** No answer yet, and no failure either. */
+		pending: boolean;
+		/** The last read failed. What an earlier one found stays, and this is shown. */
+		error?: string;
+		/** A read has succeeded. */
+		read: boolean;
+	};
 	/** Health's checks: any that fails and is not already an item here becomes one. */
 	health?: readonly HealthCheck[];
 	/** Health checks still waiting for a read (useHealth's `pending`), by name. */
@@ -79,6 +93,7 @@ export function unreadSources(sources: AttentionSources): string[] {
 		unread.push("the tenant registry");
 	if (sources.timelock && !sources.timelock.settled)
 		unread.push("the timelock");
+	if (sources.chains?.pending) unread.push("the chains");
 	for (const label of sources.healthPending ?? [])
 		if (!unread.includes(label)) unread.push(label);
 	return unread;
@@ -93,7 +108,8 @@ const pathOf = (row: TenantRow) => tenantPath(row.registry?.slug ?? row.id);
  * the chain, the registry and the timelock, and this decides what of it is a problem.
  *
  * `rows` is the registry joined to the roster; `ready` the timelock operations ready to execute;
- * `now` is unix seconds, for the stake's unlock time.
+ * `now` is unix seconds, for the stake's unlock time. `chain` is wallet-api's status of the selected
+ * chain, where it serves one, for the bundler's executors (B7).
  */
 export function attentionItems({
 	overview,
@@ -101,14 +117,36 @@ export function attentionItems({
 	ready,
 	now,
 	sources,
+	chain,
 }: {
 	overview: PaymasterOverview;
 	rows: readonly TenantRow[];
 	ready: readonly TimelockOperation[];
 	now: number;
 	sources: AttentionSources;
+	chain?: ChainStatus;
 }): AttentionItem[] {
 	const items: AttentionItem[] = [];
+
+	// An executor out of funds fails every operation the bundler hands it on this chain.
+	for (const executor of chain?.bundler.executors ?? []) {
+		const { level, submissions } = executorStanding(
+			executor,
+			chain?.bundler.gasPriceWei,
+		);
+		if (level !== "fail") continue;
+		const short = `${executor.address.slice(0, 6)}…${executor.address.slice(-4)}`;
+		const empty = BigInt(executor.balanceWei) === 0n;
+		items.push({
+			key: `executor:${executor.address.toLowerCase()}`,
+			kind: "executor",
+			severity: "critical",
+			title: `Bundler executor ${short} ${empty ? "is empty" : "is nearly empty"}`,
+			detail: `It signs and pays for the transactions that submit user operations, and every one it takes fails until it can pay for gas.${empty || submissions === null ? "" : ` About ${submissions} submission${submissions === 1 ? "" : "s"} left at the current gas price.`} Fund ${executor.address}.`,
+			link: TAB_PATHS.health,
+			linkLabel: "Health",
+		});
+	}
 	const { solvency, config, stake } = overview;
 	const { registry, timelock } = sources;
 	// The registry rules wait for its first successful read: before it, every row lacks a registry
@@ -146,6 +184,17 @@ export function attentionItems({
 			detail: `${timelock.error}. ${timelock.read ? "What it last returned is shown." : "Operations waiting or ready are not known until it is read."}`,
 			link: TAB_PATHS.timelock,
 			linkLabel: "Timelock",
+		});
+
+	if (sources.chains?.error)
+		items.push({
+			key: "unread:chains",
+			kind: "unread",
+			severity: "warning",
+			title: "Could not read the chains' status",
+			detail: `${sources.chains.error}. ${sources.chains.read ? "What it last returned is shown." : "The bundler's executors are not checked until it is read."}`,
+			link: TAB_PATHS.health,
+			linkLabel: "Health",
 		});
 
 	if (!solvency.holds)

@@ -209,7 +209,7 @@ function SignersCard({
 					<Alert.Indicator />
 					<Alert.Content>
 						<Alert.Title>No signing keys</Alert.Title>
-						<Alert.Description>
+						<Alert.Description overflowWrap="anywhere">
 							Nothing can be sponsored until one is added.
 						</Alert.Description>
 					</Alert.Content>

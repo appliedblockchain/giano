@@ -192,7 +192,7 @@ export function CreateTenantDialog({
 												<Alert.Title>
 													Still to do outside this console
 												</Alert.Title>
-												<Alert.Description>
+												<Alert.Description overflowWrap="anywhere">
 													Serve the wallet origin {created.tenant.walletOrigin}:
 													DNS, a certificate and a wallet UI are infrastructure
 													work. And the tenant has no sponsorship rules until

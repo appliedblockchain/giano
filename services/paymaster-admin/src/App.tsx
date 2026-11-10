@@ -310,7 +310,7 @@ function Console({
 								<Alert.Title>
 									Add {notAdded.deployment.name} in your wallet
 								</Alert.Title>
-								<Alert.Description>
+								<Alert.Description overflowWrap="anywhere">
 									Your wallet would not take this network from the console. It
 									said: {notAdded.walletMessage}
 								</Alert.Description>
@@ -357,7 +357,7 @@ function Console({
 							<Alert.Indicator />
 							<Alert.Content>
 								<Alert.Title>Read-only</Alert.Title>
-								<Alert.Description>
+								<Alert.Description overflowWrap="anywhere">
 									Everything here is read straight from the chain, so no wallet
 									is needed to inspect a deployment. Connect one to act — the
 									console never sees a key, it only asks your wallet to sign.
@@ -371,7 +371,9 @@ function Console({
 							<Alert.Indicator />
 							<Alert.Content>
 								<Alert.Title>Could not read the paymaster</Alert.Title>
-								<Alert.Description>{error}</Alert.Description>
+								<Alert.Description overflowWrap="anywhere">
+									{error}
+								</Alert.Description>
 							</Alert.Content>
 						</Alert.Root>
 					)}

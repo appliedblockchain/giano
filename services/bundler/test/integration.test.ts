@@ -64,6 +64,27 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		).toBe(-32601);
 	});
 
+	it("reports its executor with the balance and nonces the chain holds", async () => {
+		const { result } = await rpc(bundler.url, "giano_executors");
+		const [lane] = result.executors;
+		expect(result.executors).toHaveLength(1);
+		expect(lane.address).toBe(executor.address);
+		expect(BigInt(lane.balanceWei)).toBe(
+			await devnet.client.getBalance({ address: executor.address }),
+		);
+		expect(Number(lane.latestNonce)).toBe(
+			await devnet.client.getTransactionCount({ address: executor.address }),
+		);
+		expect(lane.busy).toBe(false);
+		expect(lane.busySince).toBeNull();
+		expect(Number(result.laneStuckAfterSeconds)).toBeGreaterThan(0);
+		expect(BigInt(result.gasPriceWei)).toBeGreaterThan(0n);
+		// the real executor's key is not in the answer
+		expect(JSON.stringify(result).toLowerCase()).not.toContain(
+			KEYS.executor.slice(2).toLowerCase(),
+		);
+	});
+
 	it("matches v0.9 EIP-712 hashing on chain and rejects a v0.7 signature", async () => {
 		const { op, hash } = await prepare(900n, "0x", true);
 		const userOperation = ops().toOp(op);

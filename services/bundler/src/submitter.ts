@@ -68,8 +68,52 @@ const REPLACEMENT_BUMP_PERCENT = 115n;
 const SEND_ATTEMPTS = 3;
 /** A cancellation is re-priced this many times at most; past that the lane waits, and says so. */
 const MAX_CANCEL_BUMPS = 3;
+/** How long one executor status read is shared by the callers that ask for it. */
+const EXECUTOR_STATUS_REUSE_MS = 5_000;
+
+/**
+ * A lane's state across a status read, from before and after its nonces are read: busy if it was
+ * either time, since the transaction it held. A transaction mined during the read would otherwise
+ * pair the pending nonce read before with an idle lane, which reads as stuck.
+ */
+export function laneAcrossRead(
+	before: { busy: boolean; since: number | undefined },
+	after: { busy: boolean; since: number | undefined },
+): { busy: boolean; busySince: number | undefined } {
+	return {
+		busy: before.busy || after.busy,
+		busySince: after.busy ? after.since : before.since,
+	};
+}
+
+/**
+ * The longest a lane can hold one transaction while the submitter still works on it: the first
+ * send, each re-priced replacement, the cancellation and its bumps, each given the resubmit
+ * timeout, with one more for the last receipt. A lane held longer is stuck, waiting on the node.
+ */
+export function laneStuckAfterMs(options: {
+	resubmitTimeoutMs: number;
+	maxReplacements: number;
+}): number {
+	return (
+		(options.maxReplacements + MAX_CANCEL_BUMPS + 3) * options.resubmitTimeoutMs
+	);
+}
 
 export type Submitter = ReturnType<typeof createSubmitter>;
+
+/** One executor lane, as `giano_executors` reports it. */
+export type ExecutorStatus = {
+	address: Address;
+	balance: bigint;
+	/** The lane holds a transaction in flight. */
+	busy: boolean;
+	/** When (ms since the epoch) the lane took the transaction it holds; undefined while idle. */
+	busySince: number | undefined;
+	latestNonce: number;
+	/** Ahead of `latestNonce` while a transaction is in the node's mempool. */
+	pendingNonce: number;
+};
 
 export function createSubmitter(options: SubmitterOptions) {
 	const { client, chainId, entryPoint, executors, log, metrics } = options;
@@ -81,16 +125,75 @@ export function createSubmitter(options: SubmitterOptions) {
 	// ── executor lanes ──────────────────────────────────────────────────────────────────────
 	const idle: PrivateKeyAccount[] = [...executors];
 	const waiting: Array<(executor: PrivateKeyAccount) => void> = [];
+	/** When each busy lane took the transaction it holds: a lane held far longer is stuck (B7). */
+	const busySince = new Map<Address, number>();
 	const acquire = () =>
 		new Promise<PrivateKeyAccount>((resolve) => {
 			const executor = idle.shift();
-			if (executor) resolve(executor);
-			else waiting.push(resolve);
+			if (executor) {
+				busySince.set(executor.address, Date.now());
+				resolve(executor);
+			} else
+				waiting.push((handed) => {
+					busySince.set(handed.address, Date.now());
+					resolve(handed);
+				});
 		});
 	const release = (executor: PrivateKeyAccount) => {
 		const next = waiting.shift();
 		if (next) next(executor);
-		else idle.push(executor);
+		else {
+			busySince.delete(executor.address);
+			idle.push(executor);
+		}
+	};
+	/** The executors' status, shared for a few seconds: each read is 1 + 3N node calls. */
+	let recentStatus:
+		| {
+				at: number;
+				status: Promise<{ gasPrice: bigint; executors: ExecutorStatus[] }>;
+		  }
+		| undefined;
+
+	const readExecutorStatus = async (): Promise<{
+		gasPrice: bigint;
+		executors: ExecutorStatus[];
+	}> => {
+		const [gasPrice, rows] = await Promise.all([
+			client.getGasPrice(),
+			Promise.all(
+				executors.map(async (executor) => {
+					const { address } = executor;
+					// Read the lane before and after the nonces: a transaction mined during the reads
+					// would otherwise pair the old pending nonce with an idle lane, a false "stuck".
+					const busyBefore = !idle.includes(executor);
+					const sinceBefore = busySince.get(address);
+					const [balance, latestNonce, pendingNonce] = await Promise.all([
+						client.getBalance({ address }),
+						client.getTransactionCount({ address, blockTag: "latest" }),
+						client.getTransactionCount({ address, blockTag: "pending" }),
+					]);
+					metrics.executorBalance.set(
+						{ chain, executor: address },
+						Number(balance),
+					);
+					return {
+						address,
+						balance,
+						...laneAcrossRead(
+							{ busy: busyBefore, since: sinceBefore },
+							{
+								busy: !idle.includes(executor),
+								since: busySince.get(address),
+							},
+						),
+						latestNonce,
+						pendingNonce,
+					};
+				}),
+			),
+		]);
+		return { gasPrice, executors: rows };
 	};
 
 	const handleOpsData = (op: UserOp, beneficiary: Address) =>
@@ -555,6 +658,29 @@ export function createSubmitter(options: SubmitterOptions) {
 
 	return {
 		executors: executors.map((executor) => executor.address),
+		/**
+		 * Every executor's balance and nonces, read now, and whether its lane holds a transaction, with
+		 * the chain's gas price: what an operator needs to keep submission funded (B7). Addresses only.
+		 */
+		/** A lane held longer than this is stuck: see laneStuckAfterMs. */
+		laneStuckAfterMs: laneStuckAfterMs(options),
+		executorStatus(): Promise<{
+			gasPrice: bigint;
+			executors: ExecutorStatus[];
+		}> {
+			if (
+				recentStatus &&
+				Date.now() - recentStatus.at < EXECUTOR_STATUS_REUSE_MS
+			)
+				return recentStatus.status;
+			const status = readExecutorStatus();
+			recentStatus = { at: Date.now(), status };
+			// A failed read is not reused.
+			status.catch(() => {
+				if (recentStatus?.status === status) recentStatus = undefined;
+			});
+			return status;
+		},
 		refreshBalances: () =>
 			Promise.all(
 				executors.map((executor) => refreshBalance(executor.address)),

@@ -114,7 +114,9 @@ export function SignIn({
 					<Alert.Root status="info" size="sm">
 						<Alert.Indicator />
 						<Alert.Content>
-							<Alert.Description>{endedNotice}</Alert.Description>
+							<Alert.Description overflowWrap="anywhere">
+								{endedNotice}
+							</Alert.Description>
 						</Alert.Content>
 					</Alert.Root>
 				)}
@@ -123,7 +125,7 @@ export function SignIn({
 						<Alert.Indicator />
 						<Alert.Content>
 							<Alert.Title>{FAILURE_TEXT.disabled.title}</Alert.Title>
-							<Alert.Description>
+							<Alert.Description overflowWrap="anywhere">
 								{FAILURE_TEXT.disabled.description}
 							</Alert.Description>
 						</Alert.Content>
@@ -134,7 +136,9 @@ export function SignIn({
 						<Alert.Indicator />
 						<Alert.Content>
 							<Alert.Title>{failure.title}</Alert.Title>
-							<Alert.Description>{failure.description}</Alert.Description>
+							<Alert.Description overflowWrap="anywhere">
+								{failure.description}
+							</Alert.Description>
 						</Alert.Content>
 					</Alert.Root>
 				)}

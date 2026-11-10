@@ -29,6 +29,7 @@ endpoint per chain: `POST /<chainId>`.
 | `eth_sendUserOperation` `[op, entryPoint]` | Checks, simulates against the real EntryPoint, broadcasts, then returns the hash. |
 | `eth_getUserOperationReceipt` `[hash]` | Alto's receipt shape. `null` while pending. |
 | `eth_getUserOperationByHash` `[hash]` | Alto's shape, decoded from the `handleOps` input. `null` while pending. |
+| `giano_executors` | Not ERC-4337: for wallet-api's chain status (`GET /v1/platform/chains`). The chain's gas price and, for each executor key, its address, balance (read when asked), whether its lane holds a transaction, and its latest and pending nonces, all as hex. Addresses only; a key never leaves the bundler. |
 
 Receipts come from the chain: an operation this process submitted is found by its transaction,
 any other by its `UserOperationEvent` in the last `maxBlockRange` blocks. Lookups therefore survive

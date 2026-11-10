@@ -19,6 +19,7 @@ import { SectionCard } from "../components/ui";
 import { UsageCard, useUsage } from "../components/usage";
 import { AddressLabel, Amount } from "../components/values";
 import { getAdminConfig } from "../config";
+import { useChains } from "../hooks/useChains";
 import { useImplementation } from "../hooks/useImplementation";
 import {
 	type AttentionItem,
@@ -55,10 +56,12 @@ export function OverviewTab({
 	rosterOnChain: boolean;
 	health: ConsoleHealth | undefined;
 }) {
-	const { timelock, timelockOperations } = useConsole();
+	const { timelock, timelockOperations, deployment } = useConsole();
+	const { platformApi } = getAdminConfig();
+	const chains = useChains(platformApi);
 	const now = useNow(30_000) / 1000;
 	const sources: AttentionSources = {
-		registry: getAdminConfig().platformApi
+		registry: platformApi
 			? {
 					known: registry.tenants !== undefined,
 					error: registry.error,
@@ -75,6 +78,14 @@ export function OverviewTab({
 		rosterOnChain,
 		health: health?.checks,
 		healthPending: health?.pending.map((entry) => entry.label),
+		// The executors come from wallet-api's chain status: until it is read, all is not known well.
+		chains: platformApi
+			? {
+					pending: chains.pending,
+					error: chains.error,
+					read: chains.status !== undefined,
+				}
+			: undefined,
 	};
 	const items = groupAttention(
 		attentionItems({
@@ -85,6 +96,9 @@ export function OverviewTab({
 			),
 			now,
 			sources,
+			chain: chains.status?.chains.find(
+				(entry) => entry.chainId === deployment.chainId,
+			),
 		}),
 	);
 	const { solvency, stake } = overview;

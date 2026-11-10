@@ -51,6 +51,34 @@ const chainSchema = z.object({
 		reachable: z.boolean(),
 		/** Whether the bundler itself lists the configured EntryPoint (eth_supportedEntryPoints). */
 		entryPointSupported: z.boolean().nullable(),
+		/** The chain's gas price as the bundler sees it; null where executors are unknown. */
+		gasPriceWei: z.string().nullable(),
+		/**
+		 * Why the executors are null: `unsupported`, the bundler does not have the method (Alto, or a
+		 * giano-bundler older than B7); `unavailable`, it did not answer in time or its node failed,
+		 * or the answer was not the expected shape. Null where they are known.
+		 */
+		executorsUnknown: z.enum(["unsupported", "unavailable"]).nullable(),
+		/** How long a lane may hold one transaction before it is stuck; null where unknown. */
+		laneStuckAfterSeconds: z.number().int().nullable(),
+		/**
+		 * The keys that sign and pay for each handleOps transaction (B7); null where the bundler does
+		 * not report them. An executor out of funds stops submission through it.
+		 */
+		executors: z
+			.array(
+				z.object({
+					address: z.string(),
+					balanceWei: z.string(),
+					/** Its lane holds a transaction in flight. */
+					busy: z.boolean(),
+					/** When the lane took the transaction it holds; null while idle. */
+					busySince: z.string().nullable(),
+					latestNonce: z.number().int(),
+					pendingNonce: z.number().int(),
+				}),
+			)
+			.nullable(),
 	}),
 	/** Null where this chain does not sponsor. */
 	paymaster: z
@@ -69,6 +97,67 @@ const chainSchema = z.object({
 });
 
 export type ChainStatus = z.infer<typeof chainSchema>;
+
+/**
+ * The bundler's executor lanes in decimal, or unknown: an answer that is not the expected shape is
+ * reported as unknown rather than failing every chain's status.
+ */
+const quantity = z.string().regex(/^0x[0-9a-fA-F]+$/);
+/** giano-bundler's `giano_executors` answer, checked: anything else is not used. */
+const lanesSchema = z.object({
+	gasPriceWei: quantity,
+	laneStuckAfterSeconds: quantity.optional(),
+	executors: z.array(
+		z.object({
+			address: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+			balanceWei: quantity,
+			busy: z.boolean(),
+			busySince: quantity.nullable().optional(),
+			latestNonce: quantity,
+			pendingNonce: quantity,
+		}),
+	),
+});
+
+type Lanes = { answer: unknown } | { unknown: "unsupported" | "unavailable" };
+
+function executorsOf(
+	lanes: Lanes | undefined,
+): Pick<
+	ChainStatus["bundler"],
+	"gasPriceWei" | "executors" | "executorsUnknown" | "laneStuckAfterSeconds"
+> {
+	const unknown = (why: "unsupported" | "unavailable") => ({
+		gasPriceWei: null,
+		executors: null,
+		executorsUnknown: why,
+		laneStuckAfterSeconds: null,
+	});
+	if (!lanes) return unknown("unavailable");
+	if ("unknown" in lanes) return unknown(lanes.unknown);
+	// A wrong shape is unknown for this chain, never a response that fails for every chain.
+	const parsed = lanesSchema.safeParse(lanes.answer);
+	if (!parsed.success) return unknown("unavailable");
+	const { data } = parsed;
+	return {
+		gasPriceWei: BigInt(data.gasPriceWei).toString(),
+		executorsUnknown: null,
+		laneStuckAfterSeconds:
+			data.laneStuckAfterSeconds === undefined
+				? null
+				: Number(BigInt(data.laneStuckAfterSeconds)),
+		executors: data.executors.map((lane) => ({
+			address: lane.address,
+			balanceWei: BigInt(lane.balanceWei).toString(),
+			busy: lane.busy,
+			busySince: lane.busySince
+				? new Date(Number(BigInt(lane.busySince)) * 1000).toISOString()
+				: null,
+			latestNonce: Number(BigInt(lane.latestNonce)),
+			pendingNonce: Number(BigInt(lane.pendingNonce)),
+		})),
+	};
+}
 
 /** `promise`, or `undefined` once `ms` has passed: a slow part is reported, never waited out. */
 function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
@@ -109,7 +198,7 @@ export default async function platformChainRoutes(
 		chain: ChainServices,
 		ledgers: Promise<Map<number, typeof paymasterState.$inferSelect>>,
 	): Promise<ChainStatus> {
-		const [head, entryPoints, byChain] = await Promise.all([
+		const [head, entryPoints, lanes, byChain] = await Promise.all([
 			// One attempt, no retries: `within` bounds the wait, this bounds the request (viem's
 			// transport would otherwise retry a dead node for some 30 s, per admin with Health open).
 			within(
@@ -138,6 +227,20 @@ export default async function platformChainRoutes(
 							? ("refused" as const)
 							: Promise.reject(error),
 					),
+				timeout,
+			),
+			// Unknown, not a failure, where the bundler cannot say: method-not-found is a bundler
+			// without it (Alto, or one older than B7); anything else, its node or the time budget.
+			within(
+				chain.bundler.executors(AbortSignal.timeout(timeout)).then(
+					(answer): Lanes => ({ answer }),
+					(error: unknown): Lanes => ({
+						unknown:
+							error instanceof BundlerRpcError && error.code === -32601
+								? "unsupported"
+								: "unavailable",
+					}),
+				),
 				timeout,
 			),
 			ledgers,
@@ -181,6 +284,7 @@ export default async function platformChainRoutes(
 								address.toLowerCase() === chain.entryPoint.toLowerCase(),
 						)
 					: null,
+				...executorsOf(lanes),
 			},
 			paymaster: chain.paymaster
 				? {

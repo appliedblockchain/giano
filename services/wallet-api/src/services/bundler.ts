@@ -58,6 +58,12 @@ export function createBundlerService(
 		 */
 		supportedEntryPoints: (signal?: AbortSignal) =>
 			rpc<Address[]>("eth_supportedEntryPoints", [], signal),
+		/**
+		 * giano-bundler's executor lanes on this chain and the chain's gas price, as hex (B7). Not
+		 * ERC-4337: a bundler without it (Alto) answers method-not-found.
+		 */
+		executors: (signal?: AbortSignal) =>
+			rpc<unknown>("giano_executors", [], signal),
 	};
 }
 

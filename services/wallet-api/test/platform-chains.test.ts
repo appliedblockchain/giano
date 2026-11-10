@@ -7,6 +7,7 @@ import {
 } from "viem";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { paymasterState } from "../src/db/schema.js";
+import { BundlerRpcError } from "../src/services/bundler.js";
 import {
 	probeChain,
 	probeFailureCategory,
@@ -140,7 +141,31 @@ describe("two chains, one of them down", () => {
 			name: "Devnet A",
 			registryStatus: "ready",
 			node: { reachable: true, headBlock: "100" },
-			bundler: { reachable: true, entryPointSupported: true },
+			bundler: {
+				reachable: true,
+				entryPointSupported: true,
+				gasPriceWei: "1000000000",
+				executorsUnknown: null,
+				laneStuckAfterSeconds: 270,
+				executors: [
+					{
+						address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+						balanceWei: "1000000000000000000",
+						busy: true,
+						busySince: "2027-01-15T08:00:00.000Z",
+						latestNonce: 41,
+						pendingNonce: 42,
+					},
+					{
+						address: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+						balanceWei: "0",
+						busy: false,
+						busySince: null,
+						latestNonce: 0,
+						pendingNonce: 0,
+					},
+				],
+			},
 			paymaster: null,
 		});
 		expect(chains[0].node.headAgeSeconds).toBeLessThan(10);
@@ -153,6 +178,64 @@ describe("two chains, one of them down", () => {
 		// no node or bundler URL, internal or keyed, ever leaves the API
 		expect(response.body).not.toMatch(/127\.0\.0\.1|internal|http:/);
 	}, 10_000);
+
+	it("reports executors as unknown, not a failure, where the bundler will not say", async () => {
+		const token = await platformSignIn(ctx.app, ADMIN);
+		const chain = ctx.app.chains.get(31337);
+		const refused = vi
+			.spyOn(chain.bundler, "executors")
+			.mockRejectedValue(new BundlerRpcError(-32601, "Method not found"));
+		try {
+			const [live] = (await get(ctx, token)).json().chains;
+			expect(live.bundler).toMatchObject({
+				reachable: true,
+				gasPriceWei: null,
+				executors: null,
+				executorsUnknown: "unsupported",
+			});
+		} finally {
+			refused.mockRestore();
+		}
+		// its node failing is not the bundler lacking the method
+		const failing = vi
+			.spyOn(chain.bundler, "executors")
+			.mockRejectedValue(new BundlerRpcError(-32603, "internal error"));
+		try {
+			const [live] = (await get(ctx, token)).json().chains;
+			expect(live.bundler.executorsUnknown).toBe("unavailable");
+		} finally {
+			failing.mockRestore();
+		}
+		// a wrong shape (no address, a string for busy) is unknown for this chain, not a failed response
+		for (const answer of [
+			{ gasPriceWei: "nonsense", executors: [] },
+			{
+				gasPriceWei: "0x1",
+				executors: [
+					{
+						balanceWei: "0x1",
+						busy: "false",
+						latestNonce: "0x0",
+						pendingNonce: "0x0",
+					},
+				],
+			},
+		]) {
+			const garbled = vi
+				.spyOn(chain.bundler, "executors")
+				.mockResolvedValue(answer);
+			try {
+				const response = await get(ctx, token);
+				expect(response.statusCode).toBe(200);
+				expect(response.json().chains[0].bundler).toMatchObject({
+					executors: null,
+					executorsUnknown: "unavailable",
+				});
+			} finally {
+				garbled.mockRestore();
+			}
+		}
+	}, 20_000);
 
 	it("reports when the prober last looked, not the boot time", async () => {
 		const token = await platformSignIn(ctx.app, ADMIN);

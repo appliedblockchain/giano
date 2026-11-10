@@ -105,7 +105,7 @@ export function ApiErrorAlert({
 				<Alert.Title>
 					{title ?? EXPLAIN[error.error] ?? error.error}
 				</Alert.Title>
-				<Alert.Description>
+				<Alert.Description overflowWrap="anywhere">
 					<Stack gap="1">
 						<Text>{error.message}</Text>
 						{typeof error.slug === "string" &&

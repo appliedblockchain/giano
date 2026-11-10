@@ -59,6 +59,23 @@ export const exactAmount = (wei: bigint, currency: NativeCurrency): string =>
  */
 export function describeError(error: unknown): string {
 	if (typeof error === "string") return error;
+	// viem's message runs to the request body, the arguments and a docs link; its short message and
+	// the node's own words are what an operator reads, and fit a phone.
+	const { shortMessage, details } = (error ?? {}) as {
+		shortMessage?: unknown;
+		details?: unknown;
+	};
+	if (typeof shortMessage === "string" && shortMessage) {
+		// A contract's own error is what the operator needs: viem keeps the decoded name only on the
+		// ContractFunctionRevertedError in the cause chain, not in the short message.
+		const reverted = revertReason(error);
+		const why =
+			reverted ??
+			(typeof details === "string" && details && !shortMessage.includes(details)
+				? details
+				: undefined);
+		return why ? `${shortMessage.replace(/\.$/, "")}: ${why}` : shortMessage;
+	}
 	if (error instanceof Error && error.message) return error.message;
 
 	if (error && typeof error === "object") {
@@ -76,4 +93,41 @@ export function describeError(error: unknown): string {
 	}
 
 	return "Unknown error";
+}
+
+/** The longest decoded revert arguments shown; past it, only the error's name. */
+const MAX_REVERT_ARGS = 200;
+
+/**
+ * The decoded revert of the first ContractFunctionRevertedError in `error`'s cause chain: the
+ * custom error's name and its arguments when short (`AccessControlUnauthorizedAccount(0x…, 0x…)`),
+ * or the revert string. Undefined when the chain holds none.
+ */
+function revertReason(error: unknown): string | undefined {
+	let current: unknown = error;
+	for (
+		let depth = 0;
+		current && typeof current === "object" && depth < 8;
+		depth++
+	) {
+		const { name, data, reason, cause } = current as {
+			name?: unknown;
+			data?: { errorName?: unknown; args?: readonly unknown[] };
+			reason?: unknown;
+			cause?: unknown;
+		};
+		if (name === "ContractFunctionRevertedError") {
+			if (typeof data?.errorName === "string") {
+				const args = (data.args ?? []).map((arg) =>
+					typeof arg === "bigint" ? arg.toString() : String(arg),
+				);
+				const shown = `${data.errorName}(${args.join(", ")})`;
+				return shown.length <= MAX_REVERT_ARGS ? shown : data.errorName;
+			}
+			if (typeof reason === "string" && reason) return reason;
+			return undefined;
+		}
+		current = cause;
+	}
+	return undefined;
 }
