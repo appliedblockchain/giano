@@ -1,14 +1,17 @@
 import {
 	assessHealth,
 	type GianoPaymasterClient,
-	type HealthReport,
 	type PaymasterOverview,
 	type TimelockConfig,
 	timelockDelays,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Address, Hex } from "viem";
+import { type Address, type Hex, zeroAddress } from "viem";
 import type { Deployment } from "../config";
+import { describeError } from "../lib/format";
+import { type ConsoleHealth, withReads } from "../lib/health";
+
+type Implementation = { address: Address; code: Hex | undefined };
 
 /**
  * The deployment's health: `assessHealth` over the overview on screen, with what an overview
@@ -17,6 +20,9 @@ import type { Deployment } from "../config";
  *
  * The implementation's address is re-read with every refresh, as an executed upgrade changes it
  * and nothing announces that; its code, the size of a contract, only when the address changes.
+ *
+ * A check whose input has not been read is `pending`, and one whose read failed is a warning: never
+ * left out, so Health cannot say "every check passes" about something it did not check.
  */
 export function useHealth({
 	client,
@@ -32,17 +38,16 @@ export function useHealth({
 	deployment: Deployment;
 	timelockConfig: TimelockConfig | undefined;
 	timelockError: string | undefined;
-}): HealthReport | undefined {
-	const [implementation, setImplementation] = useState<{
-		address: Address;
-		code: Hex | undefined;
-	}>();
+}): ConsoleHealth | undefined {
+	const [implementation, setImplementation] = useState<Implementation>();
+	const [implementationError, setImplementationError] = useState<string>();
 	const known = useRef<Address>(undefined);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `client` is a trigger: another deployment's implementation is not this one's
 	useEffect(() => {
 		known.current = undefined;
 		setImplementation(undefined);
+		setImplementationError(undefined);
 	}, [client]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: re-read with every console refresh
@@ -51,14 +56,22 @@ export function useHealth({
 		let live = true;
 		void (async () => {
 			try {
-				const address = await client.getImplementation();
-				if (address === known.current) return;
-				const code = await client.publicClient.getCode({ address });
+				// The slot as it is: an empty one is a finding (not a UUPS proxy), not a failed read.
+				const address = await client.readImplementationSlot();
+				if (address === known.current) {
+					if (live) setImplementationError(undefined);
+					return;
+				}
+				const code =
+					address === zeroAddress
+						? undefined
+						: await client.publicClient.getCode({ address });
 				if (!live) return;
 				known.current = address;
 				setImplementation({ address, code });
-			} catch {
-				// The Overview's configuration card reports a failed read; Health keeps what it had.
+				setImplementationError(undefined);
+			} catch (cause) {
+				if (live) setImplementationError(describeError(cause));
 			}
 		})();
 		return () => {
@@ -80,23 +93,19 @@ export function useHealth({
 					: undefined,
 			implementation,
 		});
-		// A configured timelock not read yet is not "no timelock": until it is, there is no verdict.
-		if (!timelockAddress || timelockConfig) return report;
-		const checks = report.checks.filter((check) => check.id !== "timelock");
-		if (timelockError)
-			checks.push({
-				id: "timelock-read",
-				level: "warn",
-				label: "could not read the timelock",
-				detail: timelockError,
-				remedy:
-					"The timelocked roles and delays are not checked until it is read. Reload it on the Timelock tab.",
-			});
-		const level = checks.some((check) => check.level === "fail")
-			? "fail"
-			: checks.some((check) => check.level === "warn")
-				? "warn"
-				: "ok";
-		return { level, checks };
-	}, [overview, deployment, timelockConfig, timelockError, implementation]);
+		return withReads(report, {
+			implementationRead: implementation !== undefined,
+			implementationError,
+			timelockConfigured: timelockAddress !== undefined,
+			timelockRead: timelockConfig !== undefined,
+			timelockError,
+		});
+	}, [
+		overview,
+		deployment,
+		timelockConfig,
+		timelockError,
+		implementation,
+		implementationError,
+	]);
 }

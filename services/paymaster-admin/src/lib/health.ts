@@ -1,5 +1,87 @@
-import type { HealthCheck } from "@appliedblockchain/giano-paymaster-sdk";
+import type {
+	HealthCheck,
+	HealthReport,
+} from "@appliedblockchain/giano-paymaster-sdk";
 import { TAB_PATHS } from "./router";
+
+/** A check the console has not been able to make yet: shown as being read, never as a pass. */
+export type PendingCheck = { id: string; label: string };
+
+/**
+ * The report, and the checks still waiting for a read. Until `pending` is empty, `level` "ok" says
+ * only that every check made so far passes.
+ */
+export type ConsoleHealth = HealthReport & { pending: PendingCheck[] };
+
+/** "the implementation and the timelock": what Health is still reading, for a summary line. */
+export function pendingText(pending: readonly { label: string }[]): string {
+	const labels = pending.map((entry) => entry.label);
+	return labels.length <= 1
+		? (labels[0] ?? "")
+		: `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+}
+
+/** What the console has read of the inputs `assessHealth` takes beyond the overview. */
+export type HealthReads = {
+	implementationRead: boolean;
+	implementationError: string | undefined;
+	timelockConfigured: boolean;
+	timelockRead: boolean;
+	timelockError: string | undefined;
+};
+
+/**
+ * The report as the console shows it: a check whose input has not been read is `pending`, and one
+ * whose read failed is a warning. Never left out, so Health cannot say "every check passes" about
+ * something it did not check (B2).
+ */
+export function withReads(
+	report: HealthReport,
+	reads: HealthReads,
+): ConsoleHealth {
+	const pending: PendingCheck[] = [];
+	let checks: HealthCheck[] = [...report.checks];
+
+	if (reads.implementationError)
+		checks = [
+			...checks.filter((check) => check.id !== "implementation"),
+			{
+				id: "implementation",
+				level: "warn",
+				label: "could not read the implementation",
+				detail: reads.implementationError,
+				remedy:
+					"Whether the paymaster runs a release is not checked until it is read. Refresh, and check the RPC endpoint if it keeps failing.",
+			},
+		];
+	else if (!reads.implementationRead)
+		pending.push({ id: "implementation", label: "the implementation" });
+
+	// A configured timelock not read yet is not "no timelock": until it is, there is no verdict,
+	// neither the no-timelock warning nor its "exactly one holder" role checks.
+	if (reads.timelockConfigured && !reads.timelockRead) {
+		checks = checks.filter(
+			(check) => check.id !== "timelock" && !check.id.startsWith("role-"),
+		);
+		if (reads.timelockError)
+			checks.push({
+				id: "timelock-read",
+				level: "warn",
+				label: "could not read the timelock",
+				detail: reads.timelockError,
+				remedy:
+					"The timelocked roles and delays are not checked until it is read. Reload it on the Timelock tab.",
+			});
+		else pending.push({ id: "timelock", label: "the timelock" });
+	}
+
+	const level = checks.some((check) => check.level === "fail")
+		? "fail"
+		: checks.some((check) => check.level === "warn")
+			? "warn"
+			: "ok";
+	return { level, checks, pending };
+}
 
 export type HealthGroup = "funds" | "keys" | "registry";
 

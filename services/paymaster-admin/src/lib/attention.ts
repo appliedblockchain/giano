@@ -59,6 +59,8 @@ export type AttentionSources = {
 	rosterOnChain: boolean;
 	/** Health's checks: any that fails and is not already an item here becomes one. */
 	health?: readonly HealthCheck[];
+	/** Health checks still waiting for a read (useHealth's `pending`), by name. */
+	healthPending?: readonly string[];
 };
 
 /** Health checks the Overview already states in its own words. */
@@ -77,6 +79,8 @@ export function unreadSources(sources: AttentionSources): string[] {
 		unread.push("the tenant registry");
 	if (sources.timelock && !sources.timelock.settled)
 		unread.push("the timelock");
+	for (const label of sources.healthPending ?? [])
+		if (!unread.includes(label)) unread.push(label);
 	return unread;
 }
 

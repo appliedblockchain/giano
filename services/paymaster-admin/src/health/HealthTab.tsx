@@ -1,7 +1,6 @@
 import type {
 	HealthCheck,
 	HealthLevel,
-	HealthReport,
 } from "@appliedblockchain/giano-paymaster-sdk";
 import { Button, HStack, Stack, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
@@ -10,7 +9,15 @@ import { StatusText } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { getAdminConfig } from "../config";
 import { amount, describeError } from "../lib/format";
-import { checkLink, groupChecks, HEALTH_GROUPS } from "../lib/health";
+import {
+	type ConsoleHealth,
+	checkGroup,
+	checkLink,
+	groupChecks,
+	HEALTH_GROUPS,
+	type PendingCheck,
+	pendingText,
+} from "../lib/health";
 import { usePlatform } from "../lib/platform-session";
 import { Link, tenantPath } from "../lib/router";
 import { compareLedger, type TenantRow } from "../lib/tenants";
@@ -40,7 +47,7 @@ export function HealthTab({
 	rows,
 	registry,
 }: {
-	health: HealthReport;
+	health: ConsoleHealth;
 	rows: readonly TenantRow[];
 	registry: Registry;
 }) {
@@ -65,9 +72,16 @@ export function HealthTab({
 				...(ledger.check ? [ledger.check] : []),
 			]
 		: [];
-	// The ledger comparison runs on its own: until it has, "every check passes" is not yet true.
-	// With no tenant to compare it never starts, so there is nothing to wait for.
-	const comparing = platformApi && !ledger.check && !ledger.idle;
+	// A check still waiting for its read is not a pass: until none is, "every check passes" is not
+	// yet true. The ledger comparison runs on its own; with no tenant to compare it never starts, so
+	// there is nothing to wait for.
+	const pending: PendingCheck[] = [
+		...health.pending,
+		...(platformApi && !ledger.check && !ledger.idle
+			? [{ id: "ledger", label: "the ledger" }]
+			: []),
+	];
+	const comparing = pending.length > 0;
 	const groups = groupChecks([...health.checks, ...extra]);
 	const all = [...health.checks, ...extra];
 	const worst: HealthLevel = all.some((check) => check.level === "fail")
@@ -98,7 +112,7 @@ export function HealthTab({
 				>
 					{worst === "ok"
 						? comparing
-							? "Every check so far passes; still comparing the ledger"
+							? `Every check so far passes; still reading ${pendingText(pending)}`
 							: "Every check passes"
 						: [
 								counts.fail && `${counts.fail} failing`,
@@ -136,6 +150,18 @@ export function HealthTab({
 						{groups[group].map((check, index) => (
 							<CheckRow key={check.id} check={check} first={index === 0} />
 						))}
+						{pending
+							.filter(
+								(entry) =>
+									checkGroup(entry.id) === group && entry.id !== "ledger",
+							)
+							.map((entry, index) => (
+								<PendingRow
+									key={entry.id}
+									entry={entry}
+									first={index === 0 && groups[group].length === 0}
+								/>
+							))}
 						{group === "registry" &&
 							platformApi &&
 							ledger.loading &&
@@ -148,6 +174,23 @@ export function HealthTab({
 				</SectionCard>
 			))}
 		</Stack>
+	);
+}
+
+/** A check whose input is still being read: neither a pass nor a problem yet. */
+function PendingRow({ entry, first }: { entry: PendingCheck; first: boolean }) {
+	return (
+		<HStack
+			gap="3"
+			py="3"
+			borderTopWidth={first ? "0" : "1px"}
+			data-testid={`check-${entry.id}`}
+		>
+			<Text fontWeight="medium" fontSize="sm">
+				Reading {entry.label}
+			</Text>
+			<StatusText tone="gray">not checked yet</StatusText>
+		</HStack>
 	);
 }
 

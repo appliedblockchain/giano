@@ -1,7 +1,4 @@
-import type {
-	HealthReport,
-	PaymasterOverview,
-} from "@appliedblockchain/giano-paymaster-sdk";
+import type { PaymasterOverview } from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Badge,
 	Box,
@@ -30,6 +27,7 @@ import { Copyable } from "../components/ui";
 import { type Deployment, deploymentKey, getAdminConfig } from "../config";
 import type { ConnectedWallet } from "../lib/chain";
 import { useColorMode } from "../lib/color-mode";
+import type { ConsoleHealth } from "../lib/health";
 import { usePlatform } from "../lib/platform-session";
 import { Link, TAB_PATHS } from "../lib/router";
 import { useConsole } from "./ConsoleContext";
@@ -38,7 +36,7 @@ type HeaderProps = {
 	deployment: Deployment;
 	selectDeployment: (next: Deployment) => void;
 	overview: PaymasterOverview | undefined;
-	health: HealthReport | undefined;
+	health: ConsoleHealth | undefined;
 	lastUpdated: Date | undefined;
 	block: bigint | undefined;
 	loading: boolean;
@@ -168,13 +166,18 @@ function StatusLine({
 	const problems = health?.checks.filter((check) => check.level !== "ok") ?? [];
 	const failures = problems.filter((check) => check.level === "fail").length;
 	const warnings = problems.length - failures;
+	// A check still reading is not a pass (see useHealth).
+	const reading = (health?.pending.length ?? 0) > 0;
 	const healthText =
 		failures > 0
 			? `${failures} failing check${failures === 1 ? "" : "s"}`
 			: warnings > 0
 				? `${warnings} warning${warnings === 1 ? "" : "s"}`
-				: "all checks pass";
-	const healthTone = failures > 0 ? "red" : warnings > 0 ? "orange" : "green";
+				: reading
+					? "checks still reading"
+					: "all checks pass";
+	const healthTone =
+		failures > 0 ? "red" : warnings > 0 ? "orange" : reading ? "gray" : "green";
 
 	return (
 		<HStack

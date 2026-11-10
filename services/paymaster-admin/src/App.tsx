@@ -1,4 +1,3 @@
-import type { HealthReport } from "@appliedblockchain/giano-paymaster-sdk";
 import {
 	Alert,
 	Box,
@@ -35,6 +34,7 @@ import {
 	isUserRejection,
 	networkDetails,
 } from "./lib/chain";
+import type { ConsoleHealth } from "./lib/health";
 import { PlatformSessionProvider, usePlatform } from "./lib/platform-session";
 import type { ProposalRequest } from "./lib/proposals";
 import { Link, type Route, TAB_PATHS, useRoute } from "./lib/router";
@@ -422,7 +422,7 @@ function RouteView({
 }: {
 	route: Route;
 	platformProps: PlatformAreaProps;
-	health: HealthReport | undefined;
+	health: ConsoleHealth | undefined;
 	lastUpdated: Date | undefined;
 	rosterOnChain: boolean;
 	loading: boolean;
