@@ -6,9 +6,9 @@
 
 ## 2. Release fingerprints (PR 2, design D1 and D7)
 
-- [ ] 2.1 Extend the release tooling so that compiling a release's `standard-input.json` yields, per deployable contract, the runtime bytecode and `immutableReferences`. Verify with a unit test that the factory's `implementation` immutable and both UUPS `__self` immutables are reported.
-- [ ] 2.2 Add a generator (`pnpm gen:releases`) that writes `releases.ts` with `{ contract, release, immutables, fingerprint }` for every release, plus a `releaseOf(kind, runtimeCode)` helper. Verify that running it twice gives no diff, and that `releaseOf` recognises code deployed by `local:deploy` for every core contract.
-- [ ] 2.3 Add a test that fails when any release contract has an immutable reference without a registered semantic check (design risk 1). Verify it passes for `v1` and `v2`, and fails when a check is removed.
+- [x] 2.1 Extend the release tooling so that compiling a release's `standard-input.json` yields, per deployable contract, the runtime bytecode and `immutableReferences`. Verify with a unit test that the factory's `implementation` immutable and both UUPS `__self` immutables are reported.
+- [x] 2.2 Add a generator (`pnpm gen:releases`) that writes `releases.ts` with `{ contract, release, immutables, fingerprint }` for every release, plus a `releaseOf(kind, runtimeCode)` helper. Verify that running it twice gives no diff, and that `releaseOf` recognises code deployed by `local:deploy` for every core contract.
+- [x] 2.3 Add a test that fails when any release contract has an immutable reference without a registered semantic check (design risk 1). Verify it passes for `v1` and `v2`, and fails when a check is removed.
 - [ ] 2.4 CI: in `determinism.yml`, regenerate `releases.ts` and fail on drift. Verify by pushing the layer and checking that the job is green.
 
 ## 3. Network classes, overrides and the deployment guard (PR 3, design D2–D5)
@@ -48,7 +48,7 @@
 
 ## 6. Review fixes (PR 196)
 
-- [ ] 6.1 `releaseOf(contract, code, address?)`: refuse code whose ranges of one immutable differ, and, with an address, code whose `__self` ranges are not that address. Verify with unit tests for a modified `__self` and for diverging factory `implementation` ranges.
+- [x] 6.1 `releaseOf(contract, code, address?)`: refuse code whose ranges of one immutable differ, and, with an address, code whose `__self` ranges are not that address. Verify with unit tests for a modified `__self` and for diverging factory `implementation` ranges.
 - [ ] 6.2 Planner and preflight: pass the address to `releaseOf`; require release `ERC1967Proxy` code at the proxy and bind the proxy's implementation slot to the planned implementation, overrides included; drop `timelock` from the override keys. Verify with `plan.test.ts` cases for a proxy pointing elsewhere and a timelock override key refused.
 - [ ] 6.3 `deploy:cli core`: remove `--allow-deviation`, and always refuse a mainnet deviation, pointing at the wizard. Verify with a `deviationGate` test.
 - [ ] 6.4 Refuse a deployer (the signer, or a configured class deployer) as `ROLE_ADMIN` on non-local chains, and an existing proxy on which one holds it. Verify with tests.

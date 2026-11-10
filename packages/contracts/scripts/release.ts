@@ -23,6 +23,7 @@ import {
 	type Release,
 	type ReleaseContract,
 } from "../deploy/release";
+import { compileRelease, solcFor } from "../deploy/release-compile";
 
 const pkgRoot = path.resolve(import.meta.dirname, "..");
 
@@ -155,63 +156,15 @@ function cut(version: string | undefined): void {
 	);
 }
 
-function solcFor(longVersion: string): string {
-	if (process.env.SOLC) return process.env.SOLC;
-	const short = longVersion.split("+")[0];
-	// Where Foundry's svm keeps compilers: ~/.svm if it exists, otherwise the OS data directory.
-	const roots = [
-		path.join(os.homedir(), ".svm"),
-		path.join(
-			process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"),
-			"svm",
-		),
-		path.join(os.homedir(), "Library", "Application Support", "svm"),
-	];
-	const candidates = roots.map((root) =>
-		path.join(root, short, `solc-${short}`),
-	);
-	const bin = candidates.find((candidate) => fs.existsSync(candidate));
-	if (!bin)
-		throw new Error(
-			`solc ${short} not found (looked in ${candidates.join(", ")}); run \`forge build\` once, or set SOLC`,
-		);
-	return bin;
-}
-
 function verify(): void {
 	const versions = listReleases();
 	if (versions.length === 0) throw new Error("no releases to verify");
 	for (const version of versions) {
 		const release = loadRelease(version);
-		const input = fs.readFileSync(
-			path.join(RELEASES_DIR, version, "standard-input.json"),
-		);
-		const solc = solcFor(release.compiler.solc);
-		const reported = execFileSync(solc, ["--version"]).toString();
-		if (!reported.includes(release.compiler.solc.replace(/^v/, "")))
-			throw new Error(
-				`${solc} is not solc ${release.compiler.solc}:\n${reported}`,
-			);
-		// solc resolves nothing from disk here: every source is inlined in the input.
-		const output = JSON.parse(
-			execFileSync(solc, ["--standard-json"], {
-				input,
-				maxBuffer: 1 << 30,
-				cwd: os.tmpdir(),
-			}).toString(),
-		);
-		const errors = (output.errors ?? []).filter(
-			(e: { severity: string }) => e.severity === "error",
-		);
-		if (errors.length)
-			throw new Error(
-				`${version}: solc reported errors:\n${errors.map((e: { formattedMessage: string }) => e.formattedMessage).join("\n")}`,
-			);
-		const names = Object.keys(release.contracts) as ReleaseContract[];
-		const codes = creationCodes(output, names);
-		for (const name of names) {
+		const compiled = compileRelease(version);
+		for (const name of Object.keys(release.contracts) as ReleaseContract[]) {
 			if (
-				codes[name].toLowerCase() !==
+				compiled[name]?.creationCode.toLowerCase() !==
 				release.contracts[name].creationCode.toLowerCase()
 			) {
 				throw new Error(
@@ -220,7 +173,7 @@ function verify(): void {
 			}
 		}
 		console.log(
-			`OK ${version}: every contract reproduces from its standard-JSON input with ${path.basename(solc)}`,
+			`OK ${version}: every contract reproduces from its standard-JSON input with ${path.basename(solcFor(release.compiler.solc))}`,
 		);
 	}
 }
