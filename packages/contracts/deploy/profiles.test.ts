@@ -123,3 +123,67 @@ test("save public choices preserves chain identity and RPC reference, never runt
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a profile declares its network class, and only mainnet or testnet", () => {
+	assert.equal(base.profile.network, "testnet");
+	const { network: _network, ...withoutClass } = base.profile;
+	assert.equal(profileSchema.safeParse(withoutClass).success, false);
+	for (const network of ["local", "Mainnet", "devnet", ""])
+		assert.equal(
+			profileSchema.safeParse({ ...base.profile, network }).success,
+			false,
+			network,
+		);
+	assert.equal(
+		profileSchema.safeParse({ ...base.profile, network: "mainnet" }).success,
+		true,
+	);
+});
+
+test("a missing or unknown class is refused with the accepted classes named", () => {
+	const dir = mkdtempSync(join(tmpdir(), "giano-profile-class-"));
+	try {
+		const file = join(dir, "no-class.json");
+		const { network: _network, ...withoutClass } = base.profile;
+		writeFileSync(file, JSON.stringify(withoutClass));
+		assert.throws(
+			() => loadProfile({ config: file }),
+			/network \(mainnet or testnet\)/,
+		);
+		writeFileSync(file, JSON.stringify({ ...base.profile, network: "beta" }));
+		assert.throws(
+			() => loadProfile({ config: file }),
+			/network \(mainnet or testnet\)/,
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("address overrides accept the overridable contracts only, as nonzero addresses", () => {
+	const valid = profileSchema.safeParse({
+		...base.profile,
+		addresses: {
+			paymasterProxy: "0x2222222222222222222222222222222222222222",
+			walletImplementation: "0x3333333333333333333333333333333333333333",
+		},
+	});
+	assert.equal(valid.success, true);
+	assert.equal(
+		valid.data?.addresses?.paymasterProxy,
+		"0x2222222222222222222222222222222222222222",
+	);
+	for (const addresses of [
+		{ testErc20: "0x2222222222222222222222222222222222222222" },
+		// The timelock's address lives in `timelock.address` only.
+		{ timelock: "0x4444444444444444444444444444444444444444" },
+		{ paymaster: "0x2222222222222222222222222222222222222222" },
+		{ factory: "0x0000000000000000000000000000000000000000" },
+		{ factory: "not an address" },
+	])
+		assert.equal(
+			profileSchema.safeParse({ ...base.profile, addresses }).success,
+			false,
+			JSON.stringify(addresses),
+		);
+});

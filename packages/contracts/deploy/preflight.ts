@@ -1,4 +1,4 @@
-/** Read-only gates shared by the interactive testnet deployer and its regression tests. */
+/** Read-only gates shared by the guided deployer, the operator workflows and their regression tests. */
 import {
 	type Address,
 	getAddress,
@@ -7,29 +7,26 @@ import {
 	parseEther,
 	zeroAddress,
 } from "viem";
-import { CANONICAL_CODE } from "../canonical";
 import { isCanonicalEntryPointCode } from "../entrypoint";
-import { gianoPaymasterAbi, gianoSmartWalletFactoryAbi } from "../generated";
+import { gianoPaymasterAbi } from "../generated";
+import { DEPLOYERS, ENTRY_POINT_V09, isClassDeployer } from "./config";
+import { CREATEX_ADDRESS } from "./create3";
+import type { PaymasterParams } from "./deploy";
 import {
-	CANONICAL_DEPLOYER,
-	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V09,
-	LABELS,
-} from "./config";
-import { CREATEX_ADDRESS, create3Address } from "./create3";
+	CORE_KEYS,
+	formatPlan,
+	IMPLEMENTATION_SLOT,
+	type Plan,
+	planCore,
+} from "./plan";
 import { type ChainProfile, paymasterParams } from "./profiles";
+import type { DeploymentRecord } from "./records";
 
-export const CORE_KEYS = [
-	"walletImplementation",
-	"factory",
-	"paymasterImplementation",
-	"paymasterProxy",
-] as const;
+export { CORE_KEYS, IMPLEMENTATION_SLOT };
+
 // CreateX upstream README, Security Considerations (pinned runtime hash).
 export const CREATEX_CODEHASH =
 	"0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f";
-export const IMPLEMENTATION_SLOT =
-	"0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 export function roleAdmin(value: string): Address {
 	const address = getAddress(value);
@@ -38,57 +35,77 @@ export function roleAdmin(value: string): Address {
 	return address;
 }
 
-export function expectedCodehash(
-	key: (typeof CORE_KEYS)[number],
-	release: string,
-): string {
-	const address = create3Address(CANONICAL_DEPLOYER, LABELS[key]);
-	const entry = CANONICAL_CODE[address]?.find(
-		(entry) => entry.label === LABELS[key] && entry.release === release,
-	);
-	if (!entry)
-		throw new Error(
-			`Regenerate canonical.ts for ${release} and the selected canonical deployer: pnpm -F @appliedblockchain/giano-contracts gen:canonical`,
+/**
+ * Refuses a deployer as the paymaster's ROLE_ADMIN on a non-local chain: the signing key or a
+ * configured class deployer. A deployer key is a development-team key outside ABIP-8 only because it
+ * holds no role on what it deploys (docs/key-ceremony.md).
+ */
+export function assertRoleAdminNotDeployer(
+	admin: Address,
+	signer: Address | null,
+	local: boolean,
+): void {
+	if (local) return;
+	if (
+		isClassDeployer(admin) ||
+		(signer !== null && getAddress(signer) === getAddress(admin))
+	)
+		throw new GateError(
+			`ROLE_ADMIN ${admin} is a deployer key. The paymaster's role admin must be a timelock or Safe, never a deployer.`,
 		);
-	return entry.codehash;
 }
 
-/** Existing proxies need storage checks too: their runtime hash does not identify the implementation. */
+const planned = (plan: Plan, key: (typeof CORE_KEYS)[number]) =>
+	plan.contracts.find((c) => c.key === key);
+
+/** What an existing paymaster proxy must be configured with, besides its ROLE_ADMIN. */
+export type CoreConfig = Omit<PaymasterParams, "roleAdmin">;
+
+/** The configuration a profile publishes: the canonical EntryPoint and the profile's fees. */
+export function profileCoreConfig(profile: ChainProfile): CoreConfig {
+	const { defaultFeeWei, postOpGasAllowance, penaltyBps } =
+		paymasterParams(profile);
+	return {
+		entryPoint: ENTRY_POINT_V09,
+		defaultFeeWei,
+		postOpGasAllowance,
+		penaltyBps,
+	};
+}
+
+/**
+ * An existing paymaster proxy, overridden or not, must be configured as this plan says: pointing at
+ * the planned implementation, with `admin` holding ROLE_ADMIN, the EntryPoint of `config`, and (on
+ * a non-local chain) no deployer holding ROLE_ADMIN. Those throw. The fees are operational
+ * parameters that FEE_ADMIN_ROLE / PARAM_ADMIN_ROLE change on purpose (setDefaultFee,
+ * setPostOpGasAllowance, setPenaltyBps), so a fee that differs from `config` is returned as a
+ * warning instead of refusing the run. Shared by the guided wizard and `deploy:cli core`, which both
+ * run it before deployCore records anything.
+ */
 export async function verifyCoreState(
 	client: PublicClient,
 	admin: Address,
-	profile: ChainProfile,
-): Promise<void> {
-	const factory = create3Address(CANONICAL_DEPLOYER, LABELS.factory);
-	const proxy = create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy);
-	const factoryCode = await client.getCode({ address: factory });
-	if (factoryCode && factoryCode !== "0x") {
-		const implementation = await client.readContract({
-			address: factory,
-			abi: gianoSmartWalletFactoryAbi,
-			functionName: "implementation",
-		});
-		if (
-			getAddress(implementation) !==
-			create3Address(CANONICAL_DEPLOYER, LABELS.walletImplementation)
-		)
-			throw new Error("Factory points to a different wallet implementation.");
-	}
-	const code = await client.getCode({ address: proxy });
-	if (!code || code === "0x") return;
+	config: CoreConfig,
+	plan: Plan,
+): Promise<string[]> {
+	const proxy = planned(plan, "paymasterProxy");
+	if (!proxy?.actual) return [];
+	const code = await client.getCode({ address: proxy.actual });
+	if (!code || code === "0x") return [];
+	const implementation = planned(plan, "paymasterImplementation")?.actual;
 	const slot = await client.getStorageAt({
-		address: proxy,
+		address: proxy.actual,
 		slot: IMPLEMENTATION_SLOT,
 	});
 	if (
 		!slot ||
-		getAddress(`0x${slot.slice(-40)}`) !==
-			create3Address(CANONICAL_DEPLOYER, LABELS.paymasterImplementation)
+		!implementation ||
+		getAddress(`0x${slot.slice(-40)}`) !== getAddress(implementation)
 	)
-		throw new Error(
+		throw new GateError(
 			"Paymaster was upgraded or points to an unexpected implementation; use the upgrade procedure.",
 		);
-	const read = { address: proxy, abi: gianoPaymasterAbi } as const;
+	const read = { address: proxy.actual, abi: gianoPaymasterAbi } as const;
 	const role = await client.readContract({
 		...read,
 		functionName: "ROLE_ADMIN",
@@ -104,25 +121,70 @@ export async function verifyCoreState(
 		client.readContract({ ...read, functionName: "postOpGasAllowance" }),
 		client.readContract({ ...read, functionName: "penaltyBps" }),
 	]);
-	if (
-		!allowed ||
-		getAddress(entryPoint) !== getAddress(ENTRY_POINT_V09) ||
-		fee !== paymasterParams(profile).defaultFeeWei ||
-		allowance !== profile.paymaster.postOpGasAllowance ||
-		penalty !== profile.paymaster.penaltyBps
-	)
-		throw new Error(
-			"Existing paymaster admin, EntryPoint or fee parameters differ from this plan. Review its configuration before continuing.",
+	if (!allowed || getAddress(entryPoint) !== getAddress(config.entryPoint))
+		throw new GateError(
+			"Existing paymaster admin or EntryPoint differs from this plan. Review its configuration before continuing.",
 		);
+	const warnings: string[] = [];
+	for (const [name, live, planned] of [
+		["defaultFeeWei", fee, config.defaultFeeWei],
+		["postOpGasAllowance", allowance, config.postOpGasAllowance],
+		["penaltyBps", penalty, config.penaltyBps],
+	] as const)
+		if (BigInt(live) !== BigInt(planned))
+			warnings.push(
+				`paymaster ${name} is ${live} on chain, not ${planned}; fees are tuned by the fee and parameter admins, so this run leaves it as is`,
+			);
+	if (plan.network !== "local") {
+		const deployers = [
+			plan.signer,
+			plan.classDeployer,
+			DEPLOYERS.mainnet,
+			DEPLOYERS.testnet,
+		].filter((a): a is Address => a !== null);
+		for (const deployer of new Set(deployers.map((a) => getAddress(a))))
+			if (
+				await client.readContract({
+					...read,
+					functionName: "hasRole",
+					args: [role, deployer],
+				})
+			)
+				throw new GateError(
+					`Deployer ${deployer} holds ROLE_ADMIN on the paymaster at ${proxy.actual}. A deployer must hold no role.`,
+				);
+	}
+	return warnings;
 }
 
 export type Check = { ok: boolean; message: string };
+
+export type InspectOptions = {
+	/** The signing key's address; null for a plan without a key. */
+	signer: Address | null;
+	record?: DeploymentRecord;
+	/** For tests: the class deployer instead of deploy/config.ts. */
+	deployer?: Address | null;
+};
+
+export type Inspection = {
+	checks: Check[];
+	/** Absent when the RPC is not the profile's chain (nothing else is read then). */
+	plan?: Plan;
+};
+
+/**
+ * Every read-only check before a deployment: the chain, CreateX, the EntryPoint, the plan (expected
+ * and actual address per contract, overrides verified, deviations classified) and the existing
+ * configuration. Signing is safe only when every check is ok; deviations are the caller's gate.
+ */
 export async function inspectDeployment(
 	client: PublicClient,
 	profile: ChainProfile,
 	release: string,
 	admin: Address,
-): Promise<Check[]> {
+	options: InspectOptions,
+): Promise<Inspection> {
 	const checks: Check[] = [];
 	async function check(message: string, action: () => Promise<unknown>) {
 		try {
@@ -145,7 +207,7 @@ export async function inspectDeployment(
 				"Wrong chain: provide the selected network's RPC URL. No transactions sent.",
 			);
 	});
-	if (!checks[0].ok) return checks;
+	if (!checks[0].ok) return { checks };
 	await check(`CreateX exists at ${CREATEX_ADDRESS}`, async () => {
 		const code = await client.getCode({ address: CREATEX_ADDRESS });
 		if (!code || keccak256(code) !== CREATEX_CODEHASH)
@@ -160,59 +222,69 @@ export async function inspectDeployment(
 				"Missing or noncanonical EntryPoint. Do not deploy or serve this chain.",
 			);
 	});
-	let missing = false;
-	for (const key of CORE_KEYS) {
-		await check(
-			`${key} at ${create3Address(CANONICAL_DEPLOYER, LABELS[key])}`,
-			async () => {
-				let expected: string;
-				try {
-					expected = expectedCodehash(key, release);
-				} catch {
-					throw new GateError(
-						"Canonical release data is stale. Run gen:canonical and commit the regenerated output.",
-					);
-				}
-				const code = await client.getCode({
-					address: create3Address(CANONICAL_DEPLOYER, LABELS[key]),
-				});
-				if (!code || code === "0x") {
-					missing = true;
-					return "empty; will deploy";
-				}
-				if (keccak256(code) !== expected)
-					throw new GateError(
-						"Occupied by code other than the selected release. Stop and investigate; never overwrite the deployment record.",
-					);
-				return "already deployed; selected release verified";
-			},
-		);
-	}
+	await check("ROLE_ADMIN is not a deployer key", async () =>
+		assertRoleAdminNotDeployer(admin, options.signer, false),
+	);
+	let plan: Plan | undefined;
+	await check(`Deployment plan (${profile.network})`, async () => {
+		try {
+			plan = await planCore(client, {
+				network: profile.network,
+				signer: options.signer,
+				overrides: profile.addresses,
+				record: options.record,
+				release,
+				deployer: options.deployer,
+			});
+		} catch {
+			throw new GateError(
+				"Could not read the planned addresses; check endpoint access and retry.",
+			);
+		}
+		return `\n${formatPlan(plan).join("\n")}`;
+	});
+	if (!plan) return { checks };
+	for (const blocker of plan.blockers)
+		checks.push({ ok: false, message: blocker });
 	await check(
-		"Existing factory/paymaster configuration matches the plan (when present)",
+		"Existing paymaster configuration matches the plan (when present)",
 		async () => {
 			try {
-				await verifyCoreState(client, admin, profile);
-			} catch {
-				throw new GateError(
-					"Configuration could not be verified or differs from this plan. Review factory implementation, proxy implementation slot, ROLE_ADMIN, EntryPoint and fee parameters.",
+				const warnings = await verifyCoreState(
+					client,
+					admin,
+					profileCoreConfig(profile),
+					plan as Plan,
 				);
+				if (warnings.length) return `⚠ ${warnings.join("; ")}`;
+			} catch (error) {
+				throw error instanceof GateError
+					? error
+					: new GateError(
+							"Configuration could not be verified. Review the proxy implementation slot, ROLE_ADMIN and EntryPoint.",
+						);
 			}
 		},
 	);
-	if (missing && !DEPLOYER_IS_PLACEHOLDER)
+	// The key that will pay: the loaded signer, or, for a plan run without a key, the class's
+	// canonical deployer, so the plan says which address to fund before the key is ever loaded.
+	const payer = plan.signer ?? plan.classDeployer;
+	const missing = plan.contracts.some(
+		(c) => c.code.state === "empty" && c.source !== "override",
+	);
+	if (missing && payer)
 		await check(
-			`Canonical deployer has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
+			`${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
 			async () => {
 				if (
-					(await client.getBalance({ address: CANONICAL_DEPLOYER })) <
+					(await client.getBalance({ address: payer })) <
 					parseEther(profile.minDeployerBalanceEth)
 				)
 					throw new GateError(
-						`Fund ${CANONICAL_DEPLOYER} on ${profile.name}, then rerun. Reserve is not a gas quote; L1 data fees and changing gas prices need headroom.`,
+						`Fund ${payer} on ${profile.name}, then rerun. Reserve is not a gas quote; L1 data fees and changing gas prices need headroom.`,
 					);
 			},
 		);
-	return checks;
+	return { checks, plan };
 }
-class GateError extends Error {}
+export class GateError extends Error {}

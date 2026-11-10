@@ -13,17 +13,17 @@
 
 ## 3. Network classes, overrides and the deployment guard (PR 3, design D2–D5)
 
-- [ ] 3.1 `deploy/config.ts`: replace `CANONICAL_DEPLOYER` with `DEPLOYERS { mainnet, testnet, local }`, where `local` is `0x…dEaD` and the others are `null`, and reject equal mainnet and testnet values. Verify with `test:deploy` that local chains still impersonate `0x…dEaD`, and that `local:deploy` produces the same addresses as before (`e2e/devnet/addresses.json` unchanged).
-- [ ] 3.2 `deploy/profiles.ts`: add the required `network` and the optional `addresses` block (design D3). Set `"network": "testnet"` and `"release": "v2"` in both shipped profiles. Verify with `profiles.test.ts` cases: a missing class, an unknown class, an unknown override key, and a valid override.
-- [ ] 3.3 Planner: compute expected and actual addresses per contract, classify deviations (override, non-canonical signer, unexpected existing code), and verify override targets with `releaseOf` and the semantic checks before signing. Verify with `preflight.test.ts` cases for each deviation kind, and for an override with no code or foreign code.
-- [ ] 3.4 Deploy with overrides: skip the overridden contracts and wire dependants to them (the factory's implementation argument, the proxy's implementation). Verify with an `integration.test.ts` run on anvil that overrides the wallet implementation and the paymaster proxy.
-- [ ] 3.5 Mainnet guard in `deploy/guided.ts`: require the signer to be `DEPLOYERS.mainnet`, or else treat it as a deviation; show the warning block; require `deviate <profile>`; refuse non-interactive deviations. Testnet only reports. Add `--allow-deviation` to `deploy:cli core`. Verify with tests covering the scenarios in `specs/contract-deployment/spec.md`: a canonical run, a different key, non-interactive, and a testnet override.
-- [ ] 3.6 Refuse to sign for a class whose deployer is `null`, while still printing the plan. Verify with a test against a mainnet profile while `mainnet` is `null`.
-- [ ] 3.7 Records v2: add `network`, per-contract `deterministic` and `expected`, and `deviations` (design D5). Update `records.ts` and `operations.ts`. Verify with `deploy.test.ts`, which checks that a confirmed deviation is written.
-- [ ] 3.8 `generate-addresses.ts`: drop the canonical-deployer and canonical-address checks, and use `releaseOf` for code. Verify with tests for a record carrying an overridden address (accepted) and a record with foreign code (rejected), and that `pnpm gen:addresses` leaves no drift.
+- [x] 3.1 `deploy/config.ts`: replace `CANONICAL_DEPLOYER` with `DEPLOYERS { mainnet, testnet, local }`, where `local` is `0x…dEaD` and the others are `null`, and reject equal mainnet and testnet values. Verify with `test:deploy` that local chains still impersonate `0x…dEaD`, and that `local:deploy` produces the same addresses as before (`e2e/devnet/addresses.json` unchanged).
+- [x] 3.2 `deploy/profiles.ts`: add the required `network` and the optional `addresses` block (design D3). Set `"network": "testnet"` and `"release": "v2"` in both shipped profiles. Verify with `profiles.test.ts` cases: a missing class, an unknown class, an unknown override key, and a valid override.
+- [x] 3.3 Planner: compute expected and actual addresses per contract, classify deviations (override, non-canonical signer, unexpected existing code), and verify override targets with `releaseOf` and the semantic checks before signing. Verify with `preflight.test.ts` cases for each deviation kind, and for an override with no code or foreign code.
+- [x] 3.4 Deploy with overrides: skip the overridden contracts and wire dependants to them (the factory's implementation argument, the proxy's implementation). Verify with an `integration.test.ts` run on anvil that overrides the wallet implementation and the paymaster proxy.
+- [x] 3.5 Mainnet guard in `deploy/guided.ts`: require the signer to be `DEPLOYERS.mainnet`, or else treat it as a deviation; show the warning block; require `deviate <profile>`; refuse non-interactive deviations. Testnet only reports. Add `--allow-deviation` to `deploy:cli core`. Verify with tests covering the scenarios in `specs/contract-deployment/spec.md`: a canonical run, a different key, non-interactive, and a testnet override.
+- [x] 3.6 Refuse to sign for a class whose deployer is `null`, while still printing the plan. Verify with a test against a mainnet profile while `mainnet` is `null`.
+- [x] 3.7 Records v2: add `network`, per-contract `deterministic` and `expected`, and `deviations` (design D5). Update `records.ts` and `operations.ts`. Verify with `deploy.test.ts`, which checks that a confirmed deviation is written.
+- [x] 3.8 `generate-addresses.ts`: drop the canonical-deployer and canonical-address checks, and use `releaseOf` for code. Verify with tests for a record carrying an overridden address (accepted) and a record with foreign code (rejected), and that `pnpm gen:addresses` leaves no drift.
 - [ ] 3.9 Remove `canonical.ts`, `scripts/generate-canonical.ts` and the `CANONICAL_*` exports, and export `releaseOf` and the fingerprints from `index.ts`. Fix `deploy-local.ts` and every in-repo import. Add a major changeset that names the replacements. Verify with `pnpm -r typecheck` and with `grep -r CANONICAL_FACTORY`, which should match nothing outside the CHANGELOG.
 - [ ] 3.10 CI: in `determinism.yml`, assert the CREATE3 math and the `releaseOf` result for `local` and for each class deployer that is set (design D7). Verify with a green run on the layer.
-- [ ] 3.11 Rewrite the contracts README sections "Canonical addresses" and "Deploying", and `deploy/contracts/README.md`, for classes, overrides and the mainnet guard. Verify by following the `--plan` commands as written against Base Sepolia (read-only).
+- [x] 3.11 Rewrite the contracts README sections "Canonical addresses" and "Deploying", and `deploy/contracts/README.md`, for classes, overrides and the mainnet guard. Verify by following the `--plan` commands as written against Base Sepolia (read-only).
 
 ## 4. wallet-api and doctor (PR 4, design D6)
 
@@ -49,13 +49,13 @@
 ## 6. Review fixes (PR 196)
 
 - [x] 6.1 `releaseOf(contract, code, address?)`: refuse code whose ranges of one immutable differ, and, with an address, code whose `__self` ranges are not that address. Verify with unit tests for a modified `__self` and for diverging factory `implementation` ranges.
-- [ ] 6.2 Planner and preflight: pass the address to `releaseOf`; require release `ERC1967Proxy` code at the proxy and bind the proxy's implementation slot to the planned implementation, overrides included; drop `timelock` from the override keys. Verify with `plan.test.ts` cases for a proxy pointing elsewhere and a timelock override key refused.
-- [ ] 6.3 `deploy:cli core`: remove `--allow-deviation`, and always refuse a mainnet deviation, pointing at the wizard. Verify with a `deviationGate` test.
-- [ ] 6.4 Refuse a deployer (the signer, or a configured class deployer) as `ROLE_ADMIN` on non-local chains, and an existing proxy on which one holds it. Verify with tests.
-- [ ] 6.5 `gen:addresses`: refuse a Giano contract field in `address-overrides.json`; treat a record with `network: "mainnet"` as R-29 production. `deploy:cli testing` refuses a mainnet-class chain. Verify with `registry.test.ts` cases.
+- [x] 6.2 Planner and preflight: pass the address to `releaseOf`; require release `ERC1967Proxy` code at the proxy and bind the proxy's implementation slot to the planned implementation, overrides included; drop `timelock` from the override keys. Verify with `plan.test.ts` cases for a proxy pointing elsewhere and a timelock override key refused.
+- [x] 6.3 `deploy:cli core`: remove `--allow-deviation`, and always refuse a mainnet deviation, pointing at the wizard. Verify with a `deviationGate` test.
+- [x] 6.4 Refuse a deployer (the signer, or a configured class deployer) as `ROLE_ADMIN` on non-local chains, and an existing proxy on which one holds it. Verify with tests.
+- [x] 6.5 `gen:addresses`: refuse a Giano contract field in `address-overrides.json`; treat a record with `network: "mainnet"` as R-29 production. `deploy:cli testing` refuses a mainnet-class chain. Verify with `registry.test.ts` cases.
 - [ ] 6.6 wallet-api: compare a recovering chain's probe address with the served chains' before serving it; pass addresses to `releaseOf`; warn when a chain has no implementation to compare. Verify with a test where a recovering chain with another probe stays unavailable.
 - [ ] 6.7 doctor: the same `releaseOf` address check, and R-29 for a `--chain` mainnet profile.
-- [ ] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.
+- [x] 6.8 Docs: drop `--allow-deviation` and the timelock override from the READMEs and specs.
 
 ## 7. Review fixes (stack review)
 

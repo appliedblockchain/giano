@@ -11,13 +11,8 @@ import {
 	TIMELOCKED_FUNCTION_NAMES,
 	type TimelockDelays,
 } from "../timelock";
-import {
-	CANONICAL_DEPLOYER,
-	DEPLOYER_IS_PLACEHOLDER,
-	ENTRY_POINT_V09,
-	LABELS,
-} from "./config";
-import { create3Address } from "./create3";
+import { classDeployer, ENTRY_POINT_V09 } from "./config";
+import { type Plan, planCore } from "./plan";
 import { inspectDeployment } from "./preflight";
 import {
 	listProfiles,
@@ -118,10 +113,27 @@ async function main() {
 			await timelockWorkflow(command, selected, rpc, rl);
 			return;
 		}
+		// Where this chain's contracts are: the record, the profile's overrides, else the class's
+		// deterministic addresses (deploy/plan.ts).
+		let plan: Plan;
+		try {
+			plan = await planCore(createPublicClient({ transport: http(rpc) }), {
+				network: profile.network,
+				signer: null,
+				overrides: profile.addresses,
+				record: readRecord(profile.chainId),
+			});
+		} catch {
+			throw new OperatorError(
+				"Could not read the chain's planned addresses. Check RPC access and retry. No action was performed.",
+			);
+		}
+		const at = (key: "factory" | "paymasterProxy") =>
+			plan.contracts.find((c) => c.key === key)?.actual ?? "";
 		if (["provision", "sponsorship"].includes(command)) {
-			if (DEPLOYER_IS_PLACEHOLDER)
+			if (!classDeployer(profile.network))
 				throw new OperatorError(
-					"The canonical deployer is still the placeholder. Configure it and deploy core before provisioning or enabling sponsorship.",
+					`The ${profile.network} canonical deployer is not configured. Configure it and deploy core before provisioning or enabling sponsorship.`,
 				);
 			if (command === "provision") {
 				const admin = process.env.PAYMASTER_ROLE_ADMIN ?? profile.roleAdmin;
@@ -156,19 +168,21 @@ async function main() {
 					"Persist ROLE_ADMIN in the chain profile or provide PAYMASTER_ROLE_ADMIN before operator writes.",
 				);
 			const checkClient = createPublicClient({ transport: http(rpc) });
-			const checks = await inspectDeployment(
+			const { checks } = await inspectDeployment(
 				checkClient,
 				profile,
 				profile.release,
 				getAddress(admin),
+				{ signer: null, record: readRecord(profile.chainId) },
 			);
 			if (checks.some((check) => !check.ok))
 				throw new OperatorError(
 					"Core deployment verification failed; rerun contracts:deploy --plan for the selected profile and resolve its blockers before operator writes.",
 				);
-			const proxyCode = await checkClient.getCode({
-				address: create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy),
-			});
+			const proxy = at("paymasterProxy");
+			const proxyCode = proxy
+				? await checkClient.getCode({ address: proxy })
+				: undefined;
 			if (!proxyCode || proxyCode === "0x")
 				throw new OperatorError(
 					"Core paymaster is not deployed. Run contracts:deploy for this profile first.",
@@ -223,11 +237,8 @@ async function main() {
 						.join(",")
 				: "",
 			PAYMASTER_TIMELOCK_PROPOSERS: profile.timelock?.proposers.join(",") ?? "",
-			FACTORY_ADDRESS: create3Address(CANONICAL_DEPLOYER, LABELS.factory),
-			SPONSORSHIP_PAYMASTER_ADDRESS: create3Address(
-				CANONICAL_DEPLOYER,
-				LABELS.paymasterProxy,
-			),
+			FACTORY_ADDRESS: at("factory"),
+			SPONSORSHIP_PAYMASTER_ADDRESS: at("paymasterProxy"),
 			TEST_PAYMASTER_ADDRESS: "",
 			TEST_ERC20_ADDRESS: "",
 		};
@@ -326,6 +337,9 @@ async function timelockWorkflow(
 					"timelock",
 					"--rpc",
 					rpc,
+					// The selected profile, so the child resolves the same class, overrides and proxy.
+					"--chain-config",
+					selected.file,
 					"--release",
 					profile.release,
 					...timelock.proposers.flatMap((p) => ["--proposer", p]),
@@ -341,6 +355,8 @@ async function timelockWorkflow(
 					"handoff",
 					"--rpc",
 					rpc,
+					"--chain-config",
+					selected.file,
 					"--timelock",
 					timelock.address as string,
 					"--execute",
@@ -359,7 +375,7 @@ async function timelockWorkflow(
 		return;
 	}
 	if (command === "timelock") {
-		const record = readRecord(profile.chainId, CANONICAL_DEPLOYER);
+		const record = readRecord(profile.chainId);
 		if (!record.timelock)
 			throw new OperatorError("The timelock deployment was not recorded.");
 		saveTimelockAddress(selected, record.timelock.address);

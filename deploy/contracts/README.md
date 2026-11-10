@@ -6,10 +6,10 @@ with Foundry and permissioned CREATE3 through CreateX; #133–135 finish the too
 #157 publishes the breaking contracts package as 4.0.0 and #159 updates service dependencies.
 The address break comes from #132, not from the TypeScript compiler itself.
 
-**Public deployment is blocked today:** `packages/contracts/deploy/config.ts` still uses
-`0x000000000000000000000000000000000000dEaD`. No key exists for this placeholder. All generated
-canonical addresses are provisional. Do not fund them or publish them as the new public deployment.
-`addresses.ts` has no public deployment records yet. Old examples can still contain legacy addresses.
+**Public deployment is blocked today:** `packages/contracts/deploy/config.ts` has no `mainnet` or
+`testnet` canonical deployer yet (`DEPLOYERS`, both `null`). The tooling plans but refuses to sign
+for a class whose deployer is not set. `addresses.ts` has no public deployment records yet. Old
+examples can still contain legacy addresses.
 
 ## Start here
 
@@ -25,23 +25,30 @@ pnpm contracts:deploy
 The wizard loads a persisted chain profile, then asks for missing public operator inputs and the
 release to deploy. It can save the public ROLE_ADMIN and release back to that profile for the next
 run. Runtime RPC overrides and keys are never saved. `--plan` never changes a profile or signs.
-It prints the release, address plan and fee parameters, checks requirements, explains failures,
-and requires `deploy <network> <release>` before signing. Cancelling sends nothing. No key is
-requested in a prompt, printed, or saved. Export `CANONICAL_DEPLOYER_PRIVATE_KEY` from your normal
-secret-management workflow before execution. `DEPLOYER_PRIVATE_KEY` remains the **operator** key
-used by provisioning; these are separate accounts.
+It prints the release, the network class, the address plan (per contract: the expected
+deterministic address, the address this run will use, the code found there and any deviation) and
+the fee parameters, checks requirements, explains failures, and requires `deploy <network> <release>`
+before signing. On a mainnet profile with any deviation it first prints a warning and requires
+`deviate <profile>` (see [the mainnet guard](#the-mainnet-guard)). Cancelling sends nothing. No key is
+requested in a prompt, printed, or saved. Before execution, load the canonical deployer key for the
+profile's class from its 1Password item (`docs/key-ceremony.md`) into `CANONICAL_DEPLOYER_PRIVATE_KEY`
+in the deploying shell only: never into a file in the repository, a dotenv file or a client's
+configuration. A testnet run takes the testnet deployer's key, never the mainnet one.
+`DEPLOYER_PRIVATE_KEY` remains the **operator** key used by provisioning; these are separate accounts.
 
 For a read-only preflight, no deployment key is required:
 
 ```sh
-pnpm contracts:deploy --plan --chain base-sepolia --release v1 --role-admin "$PAYMASTER_ROLE_ADMIN"
-pnpm contracts:deploy --plan --chain ethereum-sepolia --release v1 --role-admin "$PAYMASTER_ROLE_ADMIN"
+pnpm contracts:deploy --plan --chain base-sepolia --release v2 --role-admin "$PAYMASTER_ROLE_ADMIN"
+pnpm contracts:deploy --plan --chain ethereum-sepolia --release v2 --role-admin "$PAYMASTER_ROLE_ADMIN"
 ```
 
 Set `PAYMASTER_ROLE_ADMIN` to the intended operator address first. Use `DEPLOY_RPC_URL` for a keyed
 endpoint without putting its credentials in shell arguments. Without it, plans use the public
 network default. RPC identity must match the selected network; failures suppress provider error
-bodies because they may contain credentials. Noninteractive runs only print a plan and never sign.
+bodies because they may contain credentials. Noninteractive runs only print a plan and never sign;
+a plan for a class whose deployer is not configured, or a mainnet plan with a deviation, exits
+nonzero.
 The checked-in bootstrap script (`bash deploy/contracts/run.sh deploy`) also explains missing Node,
 pnpm or installed dependencies before loading TypeScript. Use it if pnpm itself is unavailable.
 No Foundry installation or Solidity compilation is needed to deploy the committed release.
@@ -65,8 +72,23 @@ Network-specific data lives in `deploy/chains/base-sepolia.json` and
 that directory. Add another chain by adding JSON with the same validated shape, or select an
 external profile with `--config <file>`. No new TypeScript branch or shell wrapper is needed.
 
-A profile persists chain ID/name, a public RPC fallback and its credential environment-variable
-name, committed release, public ROLE_ADMIN, minimum deployer balance and paymaster fee parameters.
+A profile persists chain ID/name, its **network class** (`"network": "mainnet"` or `"testnet"`), a
+public RPC fallback and its credential environment-variable name, committed release, public
+ROLE_ADMIN, minimum deployer balance, paymaster fee parameters and, optionally, **address
+overrides**. The class selects the canonical deployer, so every chain of a class shares one set of
+deterministic addresses. An override names a contract that already exists on this chain at another
+address:
+
+```json
+"addresses": { "paymasterProxy": "0x…", "walletImplementation": "0x…" }
+```
+
+Overridable: `walletImplementation`, `factory`, `paymasterImplementation`, `paymasterProxy`,
+`timelock`. An overridden contract is verified (its code must match a release's fingerprint, and
+its immutables the chain's other addresses) and recorded, never deployed; contracts that depend on
+it use it (the factory is built for an overridden wallet implementation, the proxy initialised with
+an overridden paymaster implementation). An override with no code or foreign code stops the run
+before signing. Every override is a deviation.
 The shipped profiles leave ROLE_ADMIN unset until a custodian supplies it. Interactive deployment
 can persist that address and the chosen release after showing the destination file. Review/commit
 those public changes for reproducibility. For a private environment, use an ignored custom profile
@@ -101,36 +123,34 @@ The profile's `timelock` section publishes the proposer Safe and one delay per t
 policy for the configured tenant through the real API; use the admin console/API for other policies.
 The same chain-adoption/code gates apply to an added chain. A new profile is not proof of readiness.
 
-## 1. Fix the permanent address inputs once, before either network
+## 1. Set the canonical deployers once
 
-The deployment custodian chooses a permanent EOA and proves custody of its key. Never use a local
-anvil key. Set its **address only** in `packages/contracts/deploy/config.ts`. Keep the same deployer
-and labels for both networks; otherwise passkey account addresses diverge. The current signing
-adapter accepts an environment key, not a direct KMS/HSM signer. If policy forbids exporting the
-custody key, do not export it: add an appropriate signing adapter before deploying.
+There are two canonical deployers, one per network class, each an independent EOA whose key the
+development team creates and keeps in 1Password, outside ABIP-8 scope
+([`docs/key-ceremony.md`](../../docs/key-ceremony.md) names the items). Never use a local anvil key,
+and never derive the two from one seed. Set each **address only** in
+`packages/contracts/deploy/config.ts` (`DEPLOYERS.testnet`, `DEPLOYERS.mainnet`) in a PR that names
+the 1Password item; the tooling refuses equal addresses. All chains of a class get the same
+deterministic addresses, so a passkey's wallet address is the same across them; testnet and mainnet
+addresses differ by design.
 
-The release owner then installs the pinned Foundry/submodules and regenerates reviewed artifacts:
+Setting a deployer touches no generated file: local chains always use the fixed local deployer, so
+the devnet state, `e2e/devnet/addresses.json` and CI stay as they are. `pnpm -F
+@appliedblockchain/giano-contracts deploy:cli addresses` prints each class's deterministic addresses,
+and the Determinism workflow checks them for every configured class.
 
-```sh
-pnpm git:init
-pnpm -F @appliedblockchain/giano-contracts release:verify
-pnpm -F @appliedblockchain/giano-contracts gen:canonical
-pnpm -F @appliedblockchain/giano-e2e devnet:generate:all
-```
-
-Review and commit the deployer, `canonical.ts`, generated devnet artifacts and any affected
-snapshots/configuration together; run the determinism/e2e gates. Freeze a git commit and explicitly
-pin **contract release `v1`** on both networks. This release identifier is separate from npm 4.0.0.
-Do not recut or edit v1; changed Solidity requires a new committed release. Record deployer custody,
-ROLE_ADMIN and release approval in the rollout ticket. Address selection is an operational input;
-this tooling PR deliberately does not invent a custodian or select a private key.
+The current signing adapter accepts an environment key, not a direct KMS/HSM signer. Freeze a git
+commit and pin **contract release `v2`** in both testnet profiles (already set). This release
+identifier is separate from the npm version. Do not recut or edit a release; changed Solidity
+requires a new committed release.
 
 ## 2. Prepare each network
 
 Start with **Base Sepolia**, validate it end to end, then repeat on **Ethereum Sepolia** with the
 same release, deployer and admin. Keep the old service configuration intact until cutover.
 
-Provide the public ROLE_ADMIN address and canonical deployer key; the operator, sponsorship signer,
+Provide the public ROLE_ADMIN address and the class's canonical deployer key (from its 1Password item,
+in the shell environment only); the operator, sponsorship signer,
 executor, and existing tenant UUIDs will be needed for the later provisioning stage. Use separate
 local environment files per network (for example `deploy/contracts/base-sepolia.local.env` and
 `ethereum-sepolia.local.env`, gitignored). Never put keys in committed examples.
@@ -138,36 +158,65 @@ local environment files per network (for example `deploy/contracts/base-sepolia.
 The wizard gates signing on:
 
 - Validated profile with explicit chain identity and a matching RPC `eth_chainId`; no implicit chain default.
-- Real canonical deployer and a matching signing key at execution time.
-- Committed release with generated canonical hashes for all four core contracts.
+- A configured canonical deployer for the profile's class. A signing key other than it is not
+  refused but is a deviation: it deploys at its own CREATE3 addresses, never the class's.
+- Committed release, with release fingerprints for all four core contracts.
 - CreateX at `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, with the
   [upstream runtime hash](https://github.com/pcaversaccio/createx#security-considerations).
 - Canonical EntryPoint v0.9 runtime, including its SenderCreator immutable, at
   `0x433709009B8330FDa32311DF1C2AFA402eD8D009`.
-- Every target address either empty or containing the selected release's runtime code. Existing
-  factory implementation, paymaster implementation slot, ROLE_ADMIN membership, EntryPoint and fee
-  parameters must match. An upgraded proxy or unexpected bytecode stops adoption.
-- The configured gas reserve (**0.05 test ETH** in both shipped profiles) on the real canonical
-  deployer when a contract is missing. This is a conservative reserve, not an exact cost estimate. Check gas conditions and maintain headroom,
+- Every planned address either empty or containing the selected release's code (an override may
+  hold any release's). An existing factory must clone the planned wallet implementation; an existing
+  proxy's implementation slot, ROLE_ADMIN membership, EntryPoint and fee parameters must match. An
+  upgraded proxy or unexpected bytecode stops adoption.
+- The configured gas reserve (**0.05 test ETH** in both shipped profiles) on the signing key when a
+  contract is missing. This is a conservative reserve, not an exact cost estimate. Check gas conditions and maintain headroom,
   including Base's L1 data fee. A fully deployed rerun needs no deployment balance.
+
+### The mainnet guard
+
+For a `"network": "mainnet"` profile the wizard expects the mainnet canonical deployer's key and the
+deterministic addresses for every contract. A **deviation** is any of: an address override; a signing
+key that is not the mainnet canonical deployer (every contract it would deploy deviates); a contract
+the chain's record already lists away from its deterministic address. With any deviation the wizard:
+
+1. prints a warning block that names each deviation with its expected and actual address (and the
+   signer beside the canonical deployer), and states that this chain's addresses will differ from the
+   other mainnets permanently;
+2. requires typing `deviate <profile>` (the profile's file name), before the usual
+   `deploy <chainId> <release>` confirmation;
+3. records every confirmed deviation, with its reason and time, in `deployments/<chainId>.json`.
+
+Non-interactive runs that sign refuse a deviating mainnet deployment and list the deviations. The
+low-level `deploy:cli core` has no prompt, so with a key it refuses a deviating mainnet deployment;
+use the wizard. Runs that sign nothing (`deploy:cli core` without a key, as the Helm deployer Job
+runs it, or `deploy:guided --plan`) print the deviations and go on. A deviation the record already
+lists as confirmed, for the same contract at the same address, is shown but not confirmed again.
+`deploy:cli upgrade` refuses, on a mainnet, any key other than the canonical deployer: the upgrade
+target would land at that key's own CREATE3 address. On a testnet it records the deviation.
+On every non-local chain the paymaster `ROLE_ADMIN` must not be a deployer key (the signer or a class
+deployer).
+Testnet deviations are shown in the plan and recorded; the usual confirmation is the only gate.
 
 Missing public-chain prerequisites require investigation or the upstream deployment procedure;
 never use anvil impersonation, `setCode`, or local installation commands on either network.
 Neither network receives PrivateERC20 or PermissivePaymaster: both are in the repository's R-29
-protected list despite being testnets. Production GianoPaymaster provides sponsorship.
+protected list despite being testnets. Every chain whose profile declares `mainnet` is protected too. Production GianoPaymaster provides sponsorship.
 
 ## 3. Deploy and verify core contracts
 
 ```sh
-pnpm contracts:deploy --chain base-sepolia --release v1
-# After Base is validated, use --chain ethereum-sepolia --release v1.
+pnpm contracts:deploy --chain base-sepolia --release v2
+# After Base is validated, use --chain ethereum-sepolia --release v2.
 ```
 
 The four core addresses are wallet implementation, factory, paymaster implementation and paymaster
-proxy. CreateX initializes the proxy atomically. The wizard rechecks requirements after confirmation,
-uses the existing CREATE3 deployer, and checkpoints `packages/contracts/deployments/<chainId>.json`
-after each completed contract. After deployment it checks all runtime hashes and the factory/proxy
-configuration again, then runs `gen:addresses`.
+proxy. CreateX initializes the proxy atomically. The wizard rechecks requirements (and that the
+deviations are unchanged) after confirmation, and checkpoints
+`packages/contracts/deployments/<chainId>.json` after each completed contract. After deployment it
+checks every contract's code against the release fingerprints and the factory/proxy configuration
+again, then runs `gen:addresses`. The record holds the network class, the signer and, per contract,
+its expected address and whether it is deterministic, plus every deviation.
 
 Review and commit the chain record and regenerated `packages/contracts/addresses.ts`. The wizard also
 writes a gitignored, **public-address-only** `deploy/contracts/<chainId>.addresses.env`, including blank
@@ -236,7 +285,7 @@ an announced testnet reset and an account/asset migration coordinated with users
 reinterpret old database addresses as newly deployed wallets. Transfer/recover old test assets before
 retiring the legacy path where needed. Do not duplicate the same chain ID as two GIANO_CHAINS entries.
 
-After both records and the new canonical constants ship in the contracts package, build/release the
+After both records ship in the contracts package's address registry, build/release the
 dependent services and clients from the same tested revision. For the actual deployment update:
 
 - The shared `chains` secret consumed as `GIANO_CHAINS` by wallet-api, bundler and paymaster-admin:
@@ -260,7 +309,7 @@ executor reimbursement and chain readiness/watcher metrics before reopening traf
 ## Recovery and evidence
 
 If a receipt times out, stop and inspect the transaction/nonce on the selected explorer before retrying.
-Rerun the same network, release, deployer and admin: existing code is checked, completed checkpoints
+Rerun the same profile, release, signing key and admin: existing code is checked, completed checkpoints
 retain their transaction hashes, and missing contracts resume. A crash between mining and checkpointing
 can leave a recovered record without that transaction hash; recover it from the explorer for the rollout
 evidence. Do not run competing deployers, change salts, edit release bytecode, or delete a mismatching
@@ -268,7 +317,7 @@ record to force progress. Local filesystem checkpoints are not a substitute for 
 
 If cutover fails, keep sponsorship paused and restore the complete previous service/configuration
 snapshot only if that previous stack is still serviceable. Core CREATE3 contracts cannot be rolled back
-or overwritten. Do not serve old contracts with new canonical-checking binaries. Wallets or funds
+or overwritten. Do not serve old contracts with binaries that verify the new registry. Wallets or funds
 already created under the new factory remain there; do not discard their records during rollback.
 
 For each network retain: frozen git SHA, release version/compiler verification, deployer/admin public
@@ -281,7 +330,8 @@ out of this evidence.
 On 27 October 2026, the new preflight reached both default public RPCs and confirmed the expected
 chain IDs, pinned CreateX runtime and canonical EntryPoint v0.9 runtime on **both networks**. The
 four provisional target addresses were empty on each chain. Both plans correctly exited nonzero
-because the deployer is still the placeholder. The admin supplied to these checks was an illustrative
+because the deployer was still the placeholder. (Since per-class deployers, a plan exits nonzero
+because the testnet canonical deployer is not configured.) The admin supplied to these checks was an illustrative
 public address, not an operational choice. No key was used and no public transaction was sent.
 Recheck after the real deployer is configured; those will be different target addresses.
 
@@ -289,10 +339,11 @@ Recheck after the real deployer is configured; those will be different target ad
 
 | Gap found | Work in this PR / remaining closure |
 | --- | --- |
-| Placeholder deployer prevents all public deployments | Wizard reports the blocker before signing. Custodian must select the permanent address; release owner regenerates/reviews artifacts before either chain. |
+| No canonical deployer configured for either class | Wizard prints the plan and reports the blocker before signing. The development team creates the testnet and mainnet keys in 1Password and sets their addresses; no artifact or devnet regeneration follows. |
+| One deployer for every chain; addresses fixed as package constants | Per-class deployers, per-chain overrides, deviations recorded; code verified by release fingerprint wherever it sits; mainnet deviations need a typed confirmation. |
 | Noninteractive shell deployment trusted CHAIN_ID separately from RPC | Profile-driven wizard verifies RPC identity; shared commands use the selected profile and reject conflicting environment chain IDs. |
 | No guided checklist/address preview or secret-safe plan | Root `pnpm contracts:deploy`, validated JSON profiles, saved public choices, bootstrap checks, prompts, aggregated actionable checks, read-only plans, exact-text confirmation and per-chain public address output. |
-| Existing code accepted without matching selected release; proxy runtime hides state | Wizard verifies release-specific hashes, EntryPoint/CreateX code, factory linkage, implementation slot and initialization parameters before signing and after deployment. Low-level `deploy:cli` remains an expert primitive; use the wizard for these testnets. |
+| Existing code accepted without matching selected release; proxy runtime hides state | Wizard verifies release fingerprints, EntryPoint/CreateX code, factory linkage, implementation slot and initialization parameters before signing and after deployment. Low-level `deploy:cli` remains an expert primitive; use the wizard for these testnets. |
 | Partial core runs saved only after all four contracts | Optional per-contract persistence hook plus interrupted-run/retry regression tests. |
 | Stale public registry and legacy environment addresses | Generate registry after verification; explicit coordinated package/configuration cutover above. Actual records must come from actual deployments, not invented addresses. |
 | Provisioning and policy setup are separate operator tools | Shared `contracts:funding`, `contracts:provision`, `contracts:sponsorship` and `contracts:doctor` launchers use the same profiles and explicit operator dotenv files. Tenant credentials and policies remain environment/operator inputs. The timelock is deployed and handed the timelocked roles by `contracts:timelock` / `contracts:handoff` from the profile (G9). |
@@ -301,5 +352,5 @@ Recheck after the real deployer is configured; those will be different target ad
 | Live migration and readiness not demonstrated | Custody, funding, actual deployments, configuration rollout and sponsored smoke tests require the real operator inputs; no public-chain transactions are sent by this development PR. |
 
 Regression tests: `pnpm -F @appliedblockchain/giano-contracts test:deploy` (mock RPC, no credentials)
-and `test:deploy:integration` (real v1 transactions on a throwaway local anvil, interrupted checkpoint
-recovery and idempotent rerun). CI runs both in their appropriate jobs.
+and `test:deploy:integration` (real v2 transactions on a throwaway local anvil, interrupted checkpoint
+recovery, idempotent rerun, and a deployment with overridden contracts). CI runs both in their appropriate jobs.

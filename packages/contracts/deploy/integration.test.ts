@@ -26,7 +26,12 @@ import {
 	TIMELOCKED_FUNCTION_NAMES,
 	type TimelockDelays,
 } from "../timelock";
-import { CANONICAL_DEPLOYER, ENTRY_POINT_V09 } from "./config";
+import { DEPLOYERS, ENTRY_POINT_V09 } from "./config";
+
+const CANONICAL_DEPLOYER = DEPLOYERS.local;
+/** The paymaster's ROLE_ADMIN before the hand-off: never a deployer (D8). */
+const ROLE_ADMIN = getAddress("0x00000000000000000000000000000000000A0A0A");
+
 import {
 	type DeployContext,
 	deployCore,
@@ -103,6 +108,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			publicClient: client,
 			walletClient,
 			deployer: CANONICAL_DEPLOYER,
+			network: "local",
 			record,
 			log,
 			onRecord: () => {
@@ -112,7 +118,7 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		};
 		const params = {
 			entryPoint: ENTRY_POINT_V09,
-			roleAdmin: CANONICAL_DEPLOYER,
+			roleAdmin: ROLE_ADMIN,
 			...paymasterParams(profile),
 		};
 		await assert.rejects(
@@ -130,11 +136,12 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 		await deployCore(ctx, loadRelease("v2"), params);
 		assert.equal(ctx.record.contracts.factory?.transactionHash, firstHash);
 		assert.equal(Object.keys(ctx.record.contracts).length, 4);
-		const checks = await inspectDeployment(
+		const { checks } = await inspectDeployment(
 			client,
 			profile,
 			"v2",
-			CANONICAL_DEPLOYER,
+			ROLE_ADMIN,
+			{ signer: CANONICAL_DEPLOYER, deployer: CANONICAL_DEPLOYER },
 		);
 		assert.deepEqual(
 			checks.filter((check) => !check.ok),
@@ -223,27 +230,34 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			client,
 			proxy,
 			timelock.address,
-			CANONICAL_DEPLOYER,
+			ROLE_ADMIN,
 		);
+		await impersonate(testClient, ROLE_ADMIN);
+		await testClient.setBalance({ address: ROLE_ADMIN, value: 10n ** 18n });
+		const adminClient = createWalletClient({
+			chain,
+			transport,
+			account: ROLE_ADMIN,
+		});
 		assert.equal(
 			handOff.at(-1)?.description.startsWith("renounce ROLE_ADMIN"),
 			true,
 		);
 		for (const call of handOff) {
-			const hash = await walletClient.sendTransaction({
+			const hash = await adminClient.sendTransaction({
 				to: proxy,
 				data: call.data,
 			});
 			await client.waitForTransactionReceipt({ hash });
 		}
 		assert.deepEqual(
-			await planHandOff(client, proxy, timelock.address, CANONICAL_DEPLOYER),
+			await planHandOff(client, proxy, timelock.address, ROLE_ADMIN),
 			[],
 		);
 		// The old admin is out, and a fee change must wait setDefaultFee's own delay.
 		await assert.rejects(
 			client.simulateContract({
-				account: CANONICAL_DEPLOYER,
+				account: ROLE_ADMIN,
 				address: proxy,
 				abi: gianoPaymasterAbi,
 				functionName: "setDefaultFee",
