@@ -263,7 +263,7 @@ export type PlatformAdminSession = {
 	expiresAt: string;
 	revokedAt: string | null;
 	chainId: number;
-	ip: string | null;
+	/** The browser that signed in; null for another admin's session. */
 	userAgent: string | null;
 	/** The session this console is signed in with. */
 	current: boolean;

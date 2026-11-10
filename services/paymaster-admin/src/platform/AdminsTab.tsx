@@ -20,6 +20,7 @@ import {
 	notifySuccess,
 	SectionCard,
 } from "../components/ui";
+import { describeError } from "../lib/format";
 import type {
 	PlatformAdminHistoryEntry,
 	PlatformAdminRow,
@@ -45,9 +46,12 @@ export function AdminsTab() {
 	const [loadError, setLoadError] = useState<string>();
 	const [adding, setAdding] = useState(false);
 	const [removing, setRemoving] = useState<PlatformAdminRow>();
+	// Bumped by every load: Your sessions reloads with the admins, so one refresh updates both.
+	const [revision, setRevision] = useState(0);
 
 	const load = useCallback(async () => {
 		setLoading(true);
+		setRevision((current) => current + 1);
 		try {
 			const [list, changes] = await Promise.all([
 				run((api) => api.admins()),
@@ -197,7 +201,13 @@ export function AdminsTab() {
 				</Stack>
 			</SectionCard>
 
-			{session && <YourSessions adminId={session.admin.id} />}
+			{session && (
+				<YourSessions
+					adminId={session.admin.id}
+					revision={revision}
+					onChanged={() => void load()}
+				/>
+			)}
 
 			<SectionCard
 				title="Changes"
@@ -258,8 +268,17 @@ export function AdminsTab() {
 /**
  * Your own sessions from the last 30 days (B6, D15), with *End* on each open one but this. Absent
  * where wallet-api does not serve them (D11). Another admin's sessions end when they are removed.
+ * Reloads with the admins (`revision`), and ending one reloads both, so your open count follows.
  */
-function YourSessions({ adminId }: { adminId: string }) {
+function YourSessions({
+	adminId,
+	revision,
+	onChanged,
+}: {
+	adminId: string;
+	revision: number;
+	onChanged: () => void;
+}) {
 	const { run } = usePlatform();
 	const [sessions, setSessions] = useState<PlatformAdminSession[]>();
 	const [served, setServed] = useState(true);
@@ -267,18 +286,24 @@ function YourSessions({ adminId }: { adminId: string }) {
 	const [ending, setEnding] = useState<string>();
 
 	const load = useCallback(async () => {
-		const result = await run((api) => api.adminSessions(adminId));
-		if (!result) return;
-		if (result.ok) {
-			setSessions(result.value.sessions);
-			setError(undefined);
-		} else if (result.error.status === 404) setServed(false);
-		else setError(result.error.message);
+		try {
+			const result = await run((api) => api.adminSessions(adminId));
+			if (!result) return;
+			if (result.ok) {
+				setSessions(result.value.sessions);
+				setError(undefined);
+			} else if (result.error.status === 404) setServed(false);
+			else setError(result.error.message);
+		} catch (cause) {
+			// A network failure, or a proxy's non-JSON 5xx: run rethrows all but a lost session.
+			setError(describeError(cause));
+		}
 	}, [run, adminId]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `revision` is a trigger: reload with the admins
 	useEffect(() => {
 		void load();
-	}, [load]);
+	}, [load, revision]);
 
 	const end = async (session: PlatformAdminSession) => {
 		setEnding(session.id);
@@ -287,8 +312,10 @@ function YourSessions({ adminId }: { adminId: string }) {
 			if (!result) return;
 			if (result.ok) {
 				notifySuccess("Session ended", "It is refused from its next request.");
-				await load();
+				onChanged();
 			} else notifyError("Could not end the session", result.error.message);
+		} catch (cause) {
+			notifyError("Could not end the session", describeError(cause));
 		} finally {
 			setEnding(undefined);
 		}
@@ -341,7 +368,7 @@ function YourSessions({ adminId }: { adminId: string }) {
 									{session.revokedAt
 										? `ended ${new Date(session.revokedAt).toLocaleString()}`
 										: `${open ? "ends" : "ended"} ${new Date(session.expiresAt).toLocaleString()}`}{" "}
-									· chain {session.chainId} · {session.ip ?? "no IP recorded"} ·{" "}
+									· chain {session.chainId} ·{" "}
 									{session.userAgent ?? "no browser recorded"}
 								</Text>
 							</Stack>
