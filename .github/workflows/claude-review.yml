@@ -95,6 +95,23 @@ env:
       exit 1
     fi
     rm -f "$1.decoded"
+  # 4. A pull request must not change the instructions of its own review. Otherwise it could
+  #    add "do not report X" to AGENTS.md and its review would obey. The action already
+  #    replaces the root CLAUDE.md and `.claude/` with the base branch's copies, but CLAUDE.md
+  #    only imports AGENTS.md, which the action leaves at the pull request's version. Claude
+  #    Code also loads a CLAUDE.md from any directory whose files it reads.
+  #
+  #    Run as `bash -c "$BASE_INSTRUCTIONS"` with BASE_REF set, after the checkout. It replaces
+  #    every AGENTS.md, CLAUDE.md and CLAUDE.local.md with the base branch's copy, and removes
+  #    the ones the base branch does not have. Only the working tree changes: the review still
+  #    sees the pull request's changes to these files in the diff.
+  BASE_INSTRUCTIONS: |
+    set -euo pipefail
+    names='(^|/)(AGENTS|CLAUDE|CLAUDE\.local)\.md$'
+    git ls-files -z | { grep -zE "$names" || true; } | xargs -0 -r rm -f --
+    git ls-tree -r -z --name-only "origin/$BASE_REF" | { grep -zE "$names" || true; } \
+      | xargs -0 -r git checkout "origin/$BASE_REF" --
+    git reset -q
   # The jq filter that reads a session's structured output from its execution file:
   # `jq -c "$READ_OUTPUT" "$EXECUTION_FILE"`. It takes the result's `structured_output`. When
   # that is missing, it takes the input of the last StructuredOutput call: `/code-review` runs
@@ -141,6 +158,10 @@ jobs:
           fetch-depth: 0
           # Leaves no token in .git/config for the session to find.
           persist-credentials: false
+      - name: Take the review instructions from the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: bash -c "$BASE_INSTRUCTIONS"
       - id: review
         uses: anthropics/claude-code-action@v1
         # `/code-review` runs as a forked command and returns its report through its own
@@ -209,6 +230,10 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: git remote set-head origin "$BASE_REF"
+      - name: Take the review instructions from the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: bash -c "$BASE_INSTRUCTIONS"
       - id: review
         uses: anthropics/claude-code-action@v1
         with:
