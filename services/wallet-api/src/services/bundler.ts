@@ -11,11 +11,16 @@ export function createBundlerService(
 ) {
 	let rpcId = 0;
 
-	async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+	async function rpc<T>(
+		method: string,
+		params: unknown[],
+		signal?: AbortSignal,
+	): Promise<T> {
 		const response = await fetchImpl(bundlerUrl, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+			signal,
 		});
 		if (!response.ok) {
 			throw new Error(`Bundler HTTP ${response.status}`);
@@ -49,8 +54,10 @@ export function createBundlerService(
 		/**
 		 * The EntryPoints the bundler itself says it serves. The wallet relay answers
 		 * `eth_supportedEntryPoints` from configuration; this asks the bundler, for chain status (B3).
+		 * `signal` bounds the request itself, not only how long the caller waits for it.
 		 */
-		supportedEntryPoints: () => rpc<Address[]>("eth_supportedEntryPoints", []),
+		supportedEntryPoints: (signal?: AbortSignal) =>
+			rpc<Address[]>("eth_supportedEntryPoints", [], signal),
 	};
 }
 

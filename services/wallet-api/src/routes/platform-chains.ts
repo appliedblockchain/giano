@@ -1,6 +1,7 @@
 import { inArray } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { hexToBigInt } from "viem";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
@@ -20,14 +21,20 @@ const chainSchema = z.object({
 	name: z.string(),
 	/** The prober's verdict, as /v1/version reports it. */
 	registryStatus: z.enum(["ready", "unavailable"]),
-	/** The last full verification (boot or recovery); null until one has run. */
+	/**
+	 * The last full verification (boot or recovery); null until one has run. Each failure is its
+	 * kind only: a failure's detail can hold the node's URL, and a provider key in it.
+	 */
 	verification: z
 		.object({
 			checkedAt: z.string(),
-			failures: z.array(z.record(z.string(), z.unknown())),
+			failures: z.array(z.object({ kind: z.string() })),
 		})
 		.nullable(),
-	/** The prober's last reachability probe; null until one has run. */
+	/**
+	 * The prober's last reachability probe; null until one has run. `detail` is a category
+	 * (`timeout`, `http 429`, `connection refused`…), never an error's message.
+	 */
 	lastProbe: z
 		.object({
 			at: z.string(),
@@ -100,14 +107,32 @@ export default async function platformChainRoutes(
 
 	async function statusOf(
 		chain: ChainServices,
-		ledger: typeof paymasterState.$inferSelect | undefined,
+		ledgers: Promise<Map<number, typeof paymasterState.$inferSelect>>,
 	): Promise<ChainStatus> {
-		const [head, entryPoints] = await Promise.all([
-			within(chain.publicClient.getBlock({ blockTag: "latest" }), timeout),
+		const [head, entryPoints, byChain] = await Promise.all([
+			// One attempt, no retries: `within` bounds the wait, this bounds the request (viem's
+			// transport would otherwise retry a dead node for some 30 s, per admin with Health open).
+			within(
+				chain.publicClient
+					.request(
+						{ method: "eth_getBlockByNumber", params: ["latest", false] },
+						{ retryCount: 0 },
+					)
+					.then((block) =>
+						block
+							? {
+									number: hexToBigInt(block.number as `0x${string}`),
+									timestamp: hexToBigInt(block.timestamp),
+								}
+							: undefined,
+					),
+				timeout,
+			),
 			// A JSON-RPC error is an answer: the bundler is up, and cannot say what it supports.
+			// The signal ends the request itself, so a bundler that never answers holds no socket.
 			within(
 				chain.bundler
-					.supportedEntryPoints()
+					.supportedEntryPoints(AbortSignal.timeout(timeout))
 					.catch((error: unknown) =>
 						error instanceof BundlerRpcError
 							? ("refused" as const)
@@ -115,7 +140,9 @@ export default async function platformChainRoutes(
 					),
 				timeout,
 			),
+			ledgers,
 		]);
+		const ledger = byChain.get(chain.chainId);
 		const headBlock = head?.number ?? null;
 		const lastSynced = ledger?.lastSyncedBlock ?? null;
 		return {
@@ -125,7 +152,9 @@ export default async function platformChainRoutes(
 			verification: chain.verification
 				? {
 						checkedAt: chain.verification.checkedAt.toISOString(),
-						failures: chain.verification.failures,
+						failures: chain.verification.failures.map((failure) => ({
+							kind: failure.kind,
+						})),
 					}
 				: null,
 			lastProbe: chain.lastProbe
@@ -190,6 +219,11 @@ export default async function platformChainRoutes(
 				response: {
 					200: z.object({
 						signer: z.enum(["ok", "unavailable", "disabled"]),
+						/**
+						 * The ledger lag past which wallet-api stops trusting the ledger
+						 * (TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS): the console warns from it, so the two agree.
+						 */
+						maxLedgerLagBlocks: z.number().int(),
 						chains: z.array(chainSchema),
 					}),
 					401: errorSchema,
@@ -200,26 +234,29 @@ export default async function platformChainRoutes(
 			const sponsoring = opts.registry.all
 				.filter((chain) => chain.paymaster)
 				.map((chain) => chain.chainId);
-			const [signer, ledgers] = await Promise.all([
-				opts.signerHealth
-					? within(opts.signerHealth(), timeout).then(
-							(health) => health ?? "unavailable",
-						)
-					: Promise.resolve("disabled" as const),
+			// Everything at once: a slow signer and a dead node each use their timeout side by side,
+			// not one after the other. Each chain takes its ledger row when the query lands.
+			const ledgers = (
 				sponsoring.length > 0
 					? opts.db
 							.select()
 							.from(paymasterState)
 							.where(inArray(paymasterState.chainId, sponsoring))
-					: Promise.resolve([]),
+					: Promise.resolve([])
+			).then((rows) => new Map(rows.map((row) => [row.chainId, row])));
+			const [signer, chains] = await Promise.all([
+				opts.signerHealth
+					? within(opts.signerHealth(), timeout).then(
+							(health) => health ?? "unavailable",
+						)
+					: Promise.resolve("disabled" as const),
+				Promise.all(opts.registry.all.map((chain) => statusOf(chain, ledgers))),
 			]);
-			const byChain = new Map(ledgers.map((row) => [row.chainId, row]));
-			const chains = await Promise.all(
-				opts.registry.all.map((chain) =>
-					statusOf(chain, byChain.get(chain.chainId)),
-				),
-			);
-			return { signer, chains };
+			return {
+				signer,
+				maxLedgerLagBlocks: opts.config.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS,
+				chains,
+			};
 		},
 	);
 }

@@ -9734,6 +9734,11 @@
                         "disabled"
                       ]
                     },
+                    "maxLedgerLagBlocks": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
                     "chains": {
                       "type": "array",
                       "items": {
@@ -9766,10 +9771,15 @@
                                     "type": "array",
                                     "items": {
                                       "type": "object",
-                                      "propertyNames": {
-                                        "type": "string"
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string"
+                                        }
                                       },
-                                      "additionalProperties": {}
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   }
                                 },
@@ -9940,6 +9950,7 @@
                   },
                   "required": [
                     "signer",
+                    "maxLedgerLagBlocks",
                     "chains"
                   ],
                   "additionalProperties": false

@@ -1,7 +1,17 @@
 import * as http from "node:http";
+import {
+	createPublicClient,
+	HttpRequestError,
+	http as httpTransport,
+	TimeoutError,
+} from "viem";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { paymasterState } from "../src/db/schema.js";
-import { probeChain } from "../src/services/chain-probe.js";
+import {
+	probeChain,
+	probeFailureCategory,
+	recordVerification,
+} from "../src/services/chain-probe.js";
 import type { ChainVerification } from "../src/services/chain-verify.js";
 import {
 	ADMIN,
@@ -23,6 +33,27 @@ import {
 
 const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 const FACTORY = "0x2222222222222222222222222222222222222222";
+
+/** A node that answers every request 429, as a rate-limiting provider does. */
+function startRateLimitedNode(): Promise<{
+	url: string;
+	close: () => Promise<void>;
+}> {
+	const server = http.createServer((_req, res) => {
+		res.writeHead(429, { "content-type": "text/plain" });
+		res.end("slow down");
+	});
+	return new Promise((resolve) => {
+		server.listen(0, "127.0.0.1", () => {
+			const { port } = server.address() as { port: number };
+			resolve({
+				// A key in the path, as Alchemy's /v2/<key> and Infura's /v3/<key> carry one.
+				url: `http://127.0.0.1:${port}/v2/sk-provider-key`,
+				close: () => new Promise((done) => server.close(() => done())),
+			});
+		});
+	});
+}
 
 /** A node that accepts the connection and never answers. */
 function startSilentNode(): Promise<{
@@ -148,7 +179,12 @@ describe("two chains, one of them down", () => {
 		const failed: ChainVerification = {
 			chainId: 31338,
 			reachable: false,
-			failures: [{ kind: "unreachable", detail: "no answer" }],
+			failures: [
+				{
+					kind: "unreachable",
+					detail: "HTTP request failed. URL: http://node.internal/v2/sk-key",
+				},
+			],
 		};
 		await probeChain(chain, {
 			log: ctx.app.log,
@@ -156,16 +192,96 @@ describe("two chains, one of them down", () => {
 			verify: async () => failed,
 		});
 		expect(chain.status).toBe("unavailable");
-		expect(chain.verification?.failures).toEqual(failed.failures);
-		expect(chain.lastProbe).toMatchObject({ ok: false, detail: "no answer" });
+		// the failure is kept by kind, never with the message, which names the node's URL
+		expect(chain.verification?.failures).toEqual([
+			{ kind: "unreachable", detail: "unreachable" },
+		]);
+		expect(chain.lastProbe).toMatchObject({ ok: false, detail: "unreachable" });
 
 		await probeChain(chain, {
 			log: ctx.app.log,
 			onStatus: () => {},
-			verify: async () => ({ chainId: 31338, reachable: true, failures: [] }),
+			verify: async () => ({
+				chainId: 31338,
+				reachable: true,
+				failures: [],
+				probeAddress: "0x1111111111111111111111111111111111111111",
+			}),
 		});
 		expect(chain.status).toBe("ready");
 		expect(chain.verification?.failures).toEqual([]);
+	});
+});
+
+describe("what a failed read leaves on a chain", () => {
+	let ctx: TestContext;
+	let limited: Awaited<ReturnType<typeof startRateLimitedNode>>;
+
+	beforeAll(async () => {
+		limited = await startRateLimitedNode();
+		ctx = await startTestStack(PLATFORM_ENV);
+	});
+
+	afterAll(async () => {
+		await stopTestStack(ctx);
+		await limited.close();
+	});
+
+	it("keeps a category, never the node's URL, when a ready chain's probe fails, and the response has none", async () => {
+		const chain = ctx.app.chains.get(31337);
+		chain.status = "ready";
+		// The prober reads through the chain's own client: point it at a node that refuses.
+		(chain as { publicClient: unknown }).publicClient = createPublicClient({
+			transport: httpTransport(limited.url, { retryCount: 0 }),
+		});
+		await probeChain(chain, { log: ctx.app.log, onStatus: () => {} });
+		expect(chain.status).toBe("unavailable");
+		expect(chain.lastProbe).toMatchObject({ ok: false, detail: "http 429" });
+
+		// and a boot verification that failed the same way
+		recordVerification(chain, {
+			chainId: 31337,
+			reachable: false,
+			failures: [
+				{
+					kind: "unreachable",
+					detail: `HTTP request failed. URL: ${limited.url}`,
+				},
+			],
+		});
+
+		const token = await platformSignIn(ctx.app, ADMIN);
+		const response = await get(ctx, token);
+		expect(response.statusCode).toBe(200);
+		expect(response.body).not.toMatch(/sk-provider-key|127\.0\.0\.1|URL:/);
+		expect(response.json().chains[0].verification.failures).toEqual([
+			{ kind: "unreachable" },
+		]);
+	}, 10_000);
+});
+
+describe("probeFailureCategory", () => {
+	it("names the kind of failure from viem's errors and their causes, never the message", () => {
+		const url = "https://base.example/v2/sk-provider-key";
+		expect(probeFailureCategory(new TimeoutError({ body: {}, url }))).toBe(
+			"timeout",
+		);
+		expect(
+			probeFailureCategory(new HttpRequestError({ url, status: 429 })),
+		).toBe("http 429");
+		expect(
+			probeFailureCategory(
+				new HttpRequestError({
+					url,
+					cause: Object.assign(new Error("connect ECONNREFUSED"), {
+						code: "ECONNREFUSED",
+					}),
+				}),
+			),
+		).toBe("connection refused");
+		expect(probeFailureCategory(new Error(`fetch failed: ${url}`))).toBe(
+			"unreachable",
+		);
 	});
 });
 
@@ -193,13 +309,16 @@ describe("a sponsoring chain", () => {
 	it("reports the signer once, and the paymaster's ledger with the watcher's lag behind the head", async () => {
 		// this stack's node is at genesis; the watcher's lag needs a head ahead of what it synced
 		const chain = ctx.app.chains.get(31337);
-		const read = chain.publicClient.getBlock.bind(chain.publicClient);
-		vi.spyOn(chain.publicClient, "getBlock").mockImplementation(
-			async (args) => ({
-				...(await read(args)),
-				number: 100n,
-			}),
-		);
+		const request = chain.publicClient.request.bind(chain.publicClient);
+		vi.spyOn(chain.publicClient, "request").mockImplementation((async (
+			args: { method: string },
+			options?: object,
+		) => {
+			const result = await request(args as never, options as never);
+			return args.method === "eth_getBlockByNumber"
+				? { ...(result as object), number: "0x64" }
+				: result;
+		}) as never);
 		const token = await platformSignIn(ctx.app, ADMIN);
 		const response = await get(ctx, token);
 		expect(response.statusCode).toBe(200);

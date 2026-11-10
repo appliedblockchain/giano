@@ -710,12 +710,15 @@ not stall the response:
 {
   "signer": "ok",                              // sponsorship signer health, "unavailable" or "disabled";
                                                // one signer serves every chain, so it is not per chain
+  "maxLedgerLagBlocks": 50,                    // TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS, the console's lag warning
   "chains": [{
     "chainId": 84532,
     "name": "Base Sepolia",
     "registryStatus": "ready",                 // the prober's verdict, as /v1/version reports it
-    "verification": { "checkedAt": "…", "failures": [] },   // last full ChainVerification (boot or recovery)
-    "lastProbe": { "at": "…", "ok": true },    // the prober's last reachability probe
+    "verification": { "checkedAt": "…", "failures": [] },   // last full ChainVerification (boot or recovery),
+                                               // each failure as { "kind" } only
+    "lastProbe": { "at": "…", "ok": true },    // the prober's last reachability probe; when it failed,
+                                               // "detail" is a category ("timeout", "http 429"), never a message
     "node":    { "reachable": true, "headBlock": "18234411", "headAgeSeconds": 2 },
     "bundler": { "reachable": true, "entryPointSupported": true },  // new BundlerClient.supportedEntryPoints()
     "paymaster": {                             // null when this chain does not sponsor
@@ -736,6 +739,12 @@ No new background job, table or metric. What was added:
   registry entry now keeps its last full `ChainVerification` (`verification`) *and* the time and
   outcome of each reachability probe (`lastProbe`). Without that, `checkedAt` for a healthy chain
   would be the boot time. This is deployment state the registry already holds, not tenant state.
+- **No error message is kept or returned.** viem's `HttpRequestError` and `TimeoutError` messages
+  hold `URL: <the node's URL>`, and a provider key in its path (Alchemy's `/v2/<key>`, Infura's
+  `/v3/<key>`) survives viem's credential stripping. The registry keeps a category for a failed
+  probe (`timeout`, `http 429`, `connection refused`, `rpc error <code>`, `unreachable`) and an
+  `unreachable` verification failure without its message, and the response gives each failure
+  by `kind` only.
 - **The bundler client has `supportedEntryPoints()`.** The wallet relay still answers
   `eth_supportedEntryPoints` from configuration (§3); this asks the bundler itself. A bundler that
   answers with a JSON-RPC error is reachable, with `entryPointSupported: null`.

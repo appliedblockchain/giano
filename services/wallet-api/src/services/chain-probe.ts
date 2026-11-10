@@ -22,8 +22,54 @@ export type ChainVerificationRecord = {
 	failures: ChainVerificationFailure[];
 };
 
-/** The last reachability probe, every {@link CHAIN_PROBE_INTERVAL_MS} for every chain. */
+/**
+ * The last reachability probe, every {@link CHAIN_PROBE_INTERVAL_MS} for every chain. `detail` is a
+ * fixed category ({@link probeFailureCategory}), never an error's message: viem's messages carry
+ * the node's URL, and a provider key in its path with it.
+ */
 export type ChainProbeRecord = { at: Date; ok: boolean; detail?: string };
+
+/**
+ * What kind of failure `error` is, in words that can be shown to anyone: `timeout`, `http 429`,
+ * `connection refused`, `rpc error -32000` or `unreachable`. Never the message, which for viem's
+ * `HttpRequestError` and `TimeoutError` includes `URL: <the node's URL>` (keys in the path stay).
+ */
+export function probeFailureCategory(error: unknown): string {
+	for (
+		let current: unknown = error, depth = 0;
+		current && typeof current === "object" && depth < 5;
+		current = (current as { cause?: unknown }).cause, depth++
+	) {
+		const { name, status, code } = current as {
+			name?: unknown;
+			status?: unknown;
+			code?: unknown;
+		};
+		if (
+			name === "TimeoutError" ||
+			code === "ETIMEDOUT" ||
+			code === "UND_ERR_CONNECT_TIMEOUT"
+		)
+			return "timeout";
+		if (typeof status === "number") return `http ${status}`;
+		if (code === "ECONNREFUSED") return "connection refused";
+		if (code === "ENOTFOUND" || code === "EAI_AGAIN")
+			return "name not resolved";
+		if (typeof code === "number") return `rpc error ${code}`;
+	}
+	return "unreachable";
+}
+
+/** A verification's failures as the registry keeps them: `unreachable` with a category, not a message. */
+function withoutMessages(
+	failures: readonly ChainVerificationFailure[],
+): ChainVerificationFailure[] {
+	return failures.map((failure) =>
+		failure.kind === "unreachable"
+			? { kind: "unreachable", detail: "unreachable" }
+			: failure,
+	);
+}
 
 export const CHAIN_PROBE_INTERVAL_MS = 15_000;
 
@@ -33,17 +79,14 @@ export function recordVerification(
 	verification: ChainVerification,
 	at = new Date(),
 ): void {
-	chain.verification = { checkedAt: at, failures: verification.failures };
+	chain.verification = {
+		checkedAt: at,
+		failures: withoutMessages(verification.failures),
+	};
 	chain.lastProbe = {
 		at,
 		ok: verification.reachable,
-		...(verification.reachable
-			? {}
-			: {
-					detail: verification.failures.find(
-						(failure) => failure.kind === "unreachable",
-					)?.detail,
-				}),
+		...(verification.reachable ? {} : { detail: "unreachable" }),
 	};
 }
 
@@ -93,7 +136,7 @@ export async function probeChain(
 			chain.lastProbe = {
 				at: new Date(),
 				ok: false,
-				detail: (error as Error).message,
+				detail: probeFailureCategory(error),
 			};
 		}
 		onStatus(chain);
@@ -145,7 +188,7 @@ export async function probeChain(
 		chain.lastProbe = {
 			at: new Date(),
 			ok: false,
-			detail: (error as Error).message,
+			detail: probeFailureCategory(error),
 		};
 	}
 	onStatus(chain);
