@@ -3,7 +3,15 @@ import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { challenges } from "../db/schema.js";
 
-export type ChallengeKind = "registration" | "authentication";
+/**
+ * What a challenge may be redeemed for. `pending-addition` is issued only by the claim step of a
+ * cross-device owner addition and consumed only by its fill step, so a claim code can never yield
+ * a challenge that full registration (which grants a session) accepts.
+ */
+export type ChallengeKind =
+	| "registration"
+	| "authentication"
+	| "pending-addition";
 
 const base64url = (buf: Buffer) => buf.toString("base64url");
 
