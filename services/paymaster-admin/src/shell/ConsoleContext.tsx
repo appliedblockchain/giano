@@ -36,6 +36,11 @@ export type ConsoleContextValue = {
 	refresh: () => Promise<void>;
 	/** The block the last refresh read the paymaster at. */
 	block: bigint | undefined;
+	/**
+	 * When the last refresh finished: it changes with every refresh, where `block` stays the same on
+	 * an idle chain or a failed head read. What re-reads with each refresh keys on this.
+	 */
+	lastUpdated: Date | undefined;
 	timelockOperations: TimelockOperationsState;
 	/** The timelock's delays and what the connected wallet may do on it. */
 	timelockAccess: TimelockAccess;

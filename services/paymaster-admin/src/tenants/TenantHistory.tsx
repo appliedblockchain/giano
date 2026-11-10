@@ -99,8 +99,8 @@ function ChainEvents({
 	tenantId: string;
 	slug: string | undefined;
 }) {
-	const { block } = useConsole();
-	const events = useAdminEvents(client, block, tenantId);
+	const { lastUpdated } = useConsole();
+	const events = useAdminEvents(client, lastUpdated, tenantId);
 	const namer = useNamer(
 		useCallback((uuid: string) => slug ?? `tenant ${uuid}`, [slug]),
 	);
@@ -137,7 +137,7 @@ function ChainEvents({
 					retrying={events.olderLoading}
 				/>
 			)}
-			{events.older && (
+			{events.older ? (
 				<Button
 					size="xs"
 					variant="ghost"
@@ -147,6 +147,14 @@ function ChainEvents({
 				>
 					<LuChevronsDown /> Look further back
 				</Button>
+			) : (
+				// Only once a window has been read: after a failed first read it would be false.
+				events.range && (
+					<Text fontSize="xs" color="fg.muted">
+						That reaches the first block: this is every on-chain change to this
+						tenant.
+					</Text>
+				)
 			)}
 		</Stack>
 	);
