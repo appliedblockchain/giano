@@ -1,7 +1,9 @@
 import type { HealthCheck } from "@appliedblockchain/giano-paymaster-sdk";
 import { describe, expect, it } from "vitest";
 import {
+	CHAIN_THRESHOLDS,
 	chainChecks,
+	chainThresholds,
 	checkLink,
 	groupChecks,
 	pendingText,
@@ -256,5 +258,22 @@ describe("signerCheck", () => {
 		expect(signerCheck("unavailable")?.level).toBe("fail");
 		expect(signerCheck("ok")?.level).toBe("ok");
 		expect(signerCheck("disabled")).toBeUndefined();
+	});
+});
+
+describe("chainThresholds", () => {
+	it("warns at wallet-api's own ledger lag limit, and the console's default without one", () => {
+		expect(chainThresholds(undefined)).toEqual(CHAIN_THRESHOLDS);
+		const status = { signer: "ok" as const, chains: [] };
+		expect(chainThresholds(status).watcherLagWarnBlocks).toBe(50);
+		expect(
+			chainThresholds({ ...status, maxLedgerLagBlocks: 200 })
+				.watcherLagWarnBlocks,
+		).toBe(200);
+		// a limit past the failing lag moves the failing lag with it
+		expect(
+			chainThresholds({ ...status, maxLedgerLagBlocks: 5_000 })
+				.watcherLagFailBlocks,
+		).toBe(5_000);
 	});
 });

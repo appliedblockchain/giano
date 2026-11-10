@@ -260,6 +260,8 @@ export type PlatformAdminRow = {
 /** GET /v1/platform/chains (B3): what only wallet-api can see about each chain it serves. */
 export type ChainsStatus = {
 	signer: "ok" | "unavailable" | "disabled";
+	/** wallet-api's TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS. Absent from a wallet-api that predates it. */
+	maxLedgerLagBlocks?: number;
 	chains: ChainStatus[];
 };
 
@@ -269,7 +271,8 @@ export type ChainStatus = {
 	registryStatus: "ready" | "unavailable";
 	verification: {
 		checkedAt: string;
-		failures: ({ kind: string } & Record<string, unknown>)[];
+		/** By kind only: a failure's detail can hold a node URL, so wallet-api sends none. */
+		failures: { kind: string }[];
 	} | null;
 	lastProbe: { at: string; ok: boolean; detail?: string } | null;
 	node: {

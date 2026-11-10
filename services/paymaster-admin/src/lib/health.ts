@@ -177,9 +177,10 @@ export function groupChecks(
  *
  * - Head age: every chain Giano serves makes a block within seconds; a minute without one is worth a
  *   look, five minutes is a node that has stopped following the chain.
- * - Watcher lag: the watcher trails the head by its confirmations on purpose. Past 50 blocks
- *   wallet-api itself stops trusting the ledger (TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS' default);
- *   past 1,000 the ledger is not following at all.
+ * - Watcher lag: the watcher trails the head by its confirmations on purpose. Past wallet-api's
+ *   TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS (the response's `maxLedgerLagBlocks`; 50 by default, and
+ *   here when an older wallet-api does not say) it stops trusting the ledger; past 1,000 the ledger
+ *   is not following at all.
  */
 export const CHAIN_THRESHOLDS = {
 	headAgeWarnSeconds: 60,
@@ -187,6 +188,19 @@ export const CHAIN_THRESHOLDS = {
 	watcherLagWarnBlocks: 50,
 	watcherLagFailBlocks: 1_000,
 };
+
+export type ChainThresholds = typeof CHAIN_THRESHOLDS;
+
+/** The thresholds for a chains response: the watcher's warning is wallet-api's own limit. */
+export function chainThresholds(status?: ChainsStatus): ChainThresholds {
+	const warn =
+		status?.maxLedgerLagBlocks ?? CHAIN_THRESHOLDS.watcherLagWarnBlocks;
+	return {
+		...CHAIN_THRESHOLDS,
+		watcherLagWarnBlocks: warn,
+		watcherLagFailBlocks: Math.max(CHAIN_THRESHOLDS.watcherLagFailBlocks, warn),
+	};
+}
 
 /**
  * The repository's local anvil devnets (`packages/contracts/chains.ts` names them). They mine only
@@ -196,10 +210,12 @@ export const CHAIN_THRESHOLDS = {
 export const LOCAL_DEVNET_CHAIN_IDS: readonly number[] = [31337, 31338];
 
 /** The checks for one chain wallet-api serves, worst first within each part. */
-export function chainChecks(chain: ChainStatus): HealthCheck[] {
+export function chainChecks(
+	chain: ChainStatus,
+	t: ChainThresholds = CHAIN_THRESHOLDS,
+): HealthCheck[] {
 	const id = (part: string) => `chain-${chain.chainId}-${part}`;
 	const checks: HealthCheck[] = [];
-	const t = CHAIN_THRESHOLDS;
 
 	const probe = chain.lastProbe;
 	checks.push(
