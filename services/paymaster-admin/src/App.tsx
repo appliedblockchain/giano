@@ -267,6 +267,7 @@ function Console({
 		propose,
 		refresh,
 		block,
+		lastUpdated,
 		timelockOperations,
 		timelockAccess,
 		safes,

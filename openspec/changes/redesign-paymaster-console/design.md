@@ -120,7 +120,7 @@ Each layer is a PR on the one below and leaves the console working:
 Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be the same PR when it is small:
 
 12. B2: timelock-aware `assessHealth`, release codehashes, `giano-doctor`. SDK and contracts changesets. **Done** (#205).
-13. B1: `getAdminEvents` in the SDK, then the admin events in Activity.
+13. B1: `getAdminEvents` in the SDK, then the admin events in Activity and on the tenant page. **Done** (#206).
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns.
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health.
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health.
@@ -201,6 +201,18 @@ The Health tab's ledger check needs one tenant detail per registered tenant. It 
 
 ### D23. The console's published delays are configuration
 A chain's published delays are in its profile (`deploy/chains/*.json`), which the console cannot read. Each deployment gains an optional `timelockDelays`, the profile's `timelock.delays` in seconds, set flat, as `paymasterAdmin.timelockDelays` in the chain document, or as `GIANO_TIMELOCK_DELAYS` in single-chain mode. It names every delay or none, as `deploy/cli.ts` requires of a profile: a partial list would pass a delay it leaves out as "at or above the published values" (the SDK, given a partial list as the doctor's flag allows, warns and names each one). With it, Health fails a delay below its value as `giano-doctor` does; without it, Health warns that the delays were not compared, and still fails a role change that waits less than what it could bypass. A configured timelock that has not been read yet gives no timelock verdict, rather than "no timelock is configured": the check is shown as still being read, and the no-timelock role checks are left out with it. The same holds for the implementation until its first read; a failed read of either is a warning. Health says "every check passes" only once nothing is still being read, as with the ledger comparison.
+
+### D24. Admin events as built
+`getAdminEvents` asks the node for the admin events only (one `eth_getLogs` per contract with the events' topics, and one per EntryPoint stake event filtered on the paymaster as `account`), so a window busy with settlements costs no more. The paymaster emits nothing for `addStake`, `unlockStake` and `withdrawStake` (STAKE_ADMIN_ROLE, not timelocked), so its stake changes are the EntryPoint's `StakeLocked`, `StakeUnlocked` and `StakeWithdrawn` for it; not `Deposited`, which anyone can cause. Each entry carries an `actor`:
+- the account the event names (a role change's `sender`, a pause's `account`, an enable's `actor`, a funding's `from`);
+- the timelock, for a paymaster event in a transaction where the timelock executed a call to the paymaster (its `CallExecuted` is read for this even when `kinds` leaves it out), and for the timelock's own `MinDelayChange` and `FunctionDelayChange`, which only it can make after its constructor;
+- otherwise the contract the transaction was sent to when it was not the emitter (a Safe), or the sender when it was; never the EntryPoint, through which a smart wallet's change comes with no actor here.
+
+A Safe calling the timelock that calls the paymaster so shows the Safe for the timelock's `CallExecuted` and the timelock for the paymaster's event. Block times are one read per distinct block; transactions one read per distinct transaction, only for events that name no actor, so cheap events anyone can emit (a 1-wei `depositFor`) cost no transaction read. Blocks and transactions are each read five at a time, so up to ten requests at once; one that fails leaves its field empty rather than failing the list. A `FunctionDelayChange`'s selector is named as a paymaster function only when its target is the paymaster. The event lists are `PAYMASTER_ADMIN_EVENTS`, `TIMELOCK_ADMIN_EVENTS` and `ENTRYPOINT_ADMIN_EVENTS`, beside lists of the paymaster's and timelock's events that are not admin events and why (settlements, `Initialized`, `CallSalt`); the test fails on an ABI event in neither.
+
+A refresh reads the head and then every block since the newest one read, a window at a time (`readForwardPages`), so no request spans more than a window however long the gap.
+
+On the tenant page the chain's events are listed under the registry's history, not interleaved with it: the registry pages by cursor and the chain by window of blocks, and merging them would order entries wrongly wherever one page ends before the other. `tenantId` keeps the tenant's own events, the timelock calls whose arguments name it, and the `Cancelled` of those operations. The tenant page's window is the same 9,000 blocks as Activity's: the relay refuses a wider `eth_getLogs` span, so a topic filter would shrink responses but not let a page cover more.
 
 ## Risks / Trade-offs
 

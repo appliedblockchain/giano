@@ -39,6 +39,26 @@ describe("readForwardPages", () => {
 		expect(next).toBe(18_001n);
 	});
 
+	it("keeps a newest-first read newest first", async () => {
+		const events = [5n, 2_500n, 9_100n];
+		const { read } = capped(2_000n, events);
+		const newestFirst = async (range: {
+			fromBlock: bigint;
+			toBlock: bigint;
+		}) => {
+			const page = await read(range);
+			return { ...page, items: [...page.items].reverse() };
+		};
+		const result = await readForwardPages(
+			newestFirst,
+			1n,
+			10_000n,
+			9_000n,
+			true,
+		);
+		expect(result.items).toEqual([9_100n, 2_500n, 5n]);
+	});
+
 	it("reads nothing when there are no new blocks", async () => {
 		const { read, asked } = capped(9_000n, []);
 		expect(await readForwardPages(read, 101n, 100n)).toEqual({
