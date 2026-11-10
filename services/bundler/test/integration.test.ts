@@ -76,7 +76,13 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 			await devnet.client.getTransactionCount({ address: executor.address }),
 		);
 		expect(lane.busy).toBe(false);
+		expect(lane.busySince).toBeNull();
+		expect(Number(result.laneStuckAfterSeconds)).toBeGreaterThan(0);
 		expect(BigInt(result.gasPriceWei)).toBeGreaterThan(0n);
+		// the real executor's key is not in the answer
+		expect(JSON.stringify(result).toLowerCase()).not.toContain(
+			KEYS.executor.slice(2).toLowerCase(),
+		);
 	});
 
 	it("matches v0.9 EIP-712 hashing on chain and rejects a v0.7 signature", async () => {

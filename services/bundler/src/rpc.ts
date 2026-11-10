@@ -102,12 +102,20 @@ export function createMethods(context: RpcContext) {
 		 */
 		giano_executors: async () => {
 			const status = await submitter.executorStatus();
+			const laneStuckAfter = submitter.laneStuckAfterMs;
 			return {
 				gasPriceWei: hex(status.gasPrice),
+				// A lane held longer than this is stuck (the submitter has given up re-pricing).
+				laneStuckAfterSeconds: hex(BigInt(Math.ceil(laneStuckAfter / 1000))),
 				executors: status.executors.map((executor) => ({
 					address: executor.address,
 					balanceWei: hex(executor.balance),
 					busy: executor.busy,
+					// Unix seconds the lane took its transaction; null while idle.
+					busySince:
+						executor.busySince === undefined
+							? null
+							: hex(BigInt(Math.floor(executor.busySince / 1000))),
 					latestNonce: hex(BigInt(executor.latestNonce)),
 					pendingNonce: hex(BigInt(executor.pendingNonce)),
 				})),
