@@ -12,6 +12,7 @@ type Check = HealthCheck & { links?: { to: string; label: string }[] };
 export function driftChecks(
 	drift: ChainDrift,
 	money: (wei: bigint) => string,
+	now = Date.now(),
 ): Check[] {
 	const of = <K extends DriftEntry["kind"]>(kind: K) =>
 		drift.entries.filter(
@@ -22,11 +23,15 @@ export function driftChecks(
 			to: tenantPath(entry.slug ?? entry.tenantId),
 			label: entry.slug ?? entry.tenantId,
 		}));
-	const at = `as wallet-api compared at ${new Date(drift.checkedAt).toLocaleTimeString()}`;
+	const at = `as wallet-api compared at ${new Date(drift.checkedAt).toLocaleString()} (${ago(drift.checkedAt, now)})`;
 
 	const unknown = of("unknown-tenant");
 	const enabled = of("enabled-state");
-	const ledger = [...of("ledger-balance"), ...of("withdraw-address")];
+	const ledger = [
+		...of("no-ledger"),
+		...of("ledger-balance"),
+		...of("withdraw-address"),
+	];
 	return [
 		unknown.length === 0
 			? {
@@ -80,13 +85,15 @@ export function driftChecks(
 							: "wallet-api's ledger could not be compared for every tenant",
 					detail: [
 						...ledger.map((entry) =>
-							entry.kind === "ledger-balance"
-								? `${entry.slug}: ledger ${money(BigInt(entry.ledger.balanceWei))}, chain ${money(BigInt(entry.chain.balanceWei))} at block ${entry.atBlock}${entry.ledger.deficitWei !== entry.chain.deficitWei ? ` (deficit ${money(BigInt(entry.ledger.deficitWei))} against ${money(BigInt(entry.chain.deficitWei))})` : ""}`
-								: `${entry.slug}: ledger withdraws to ${entry.ledger}, the chain to ${entry.chain} at block ${entry.atBlock}`,
+							entry.kind === "no-ledger"
+								? `${entry.slug}: no ledger row, the chain holds ${money(BigInt(entry.chain.balanceWei))}${entry.chain.deficitWei !== "0" ? ` and a ${money(BigInt(entry.chain.deficitWei))} deficit` : ""}`
+								: entry.kind === "ledger-balance"
+									? `${entry.slug}: ledger ${money(BigInt(entry.ledger.balanceWei))}, chain ${money(BigInt(entry.chain.balanceWei))} at block ${entry.atBlock}${entry.ledger.deficitWei !== entry.chain.deficitWei ? ` (deficit ${money(BigInt(entry.ledger.deficitWei))} against ${money(BigInt(entry.chain.deficitWei))})` : ""}`
+									: `${entry.slug}: ledger withdraws to ${entry.ledger}, the chain to ${entry.chain} at block ${entry.atBlock}`,
 						),
 						...(drift.unchecked.length > 0
 							? [
-									`${drift.unchecked.length} tenant(s) could not be read at the ledger's block, so were not compared`,
+									`${drift.unchecked.length} tenant(s) not compared: not yet synced by the watcher, or unreadable at the ledger's block`,
 								]
 							: []),
 					].join("; "),
@@ -95,4 +102,29 @@ export function driftChecks(
 					links: links(ledger),
 				},
 	];
+}
+
+/** "3 minutes ago": how old a drift result is, beside its time, so an old one does not read as today's. */
+export function ago(iso: string, now = Date.now()): string {
+	const minutes = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000));
+	if (minutes < 1) return "just now";
+	if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+	const hours = Math.round(minutes / 60);
+	if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+	return `${Math.round(hours / 24)} days ago`;
+}
+
+/**
+ * Whether Health starts its own ledger comparison now: when it is this tab's job (wallet-api serves
+ * no drift for this chain), there are tenants to compare, and none has been made, or the last one had
+ * nothing to compare. Becoming this tab's job after the tab opened (the drift read answered 404 or
+ * failed) counts.
+ */
+export function shouldCompareLedger(args: {
+	enabled: boolean;
+	count: number;
+	compared: boolean;
+	emptyBefore: boolean;
+}): boolean {
+	return args.enabled && args.count > 0 && (!args.compared || args.emptyBefore);
 }

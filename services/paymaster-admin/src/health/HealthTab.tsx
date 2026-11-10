@@ -8,7 +8,7 @@ import { LuArrowRight, LuRefreshCw } from "react-icons/lu";
 import { StatusText } from "../components/status";
 import { SectionCard } from "../components/ui";
 import { getAdminConfig } from "../config";
-import { driftChecks } from "../lib/drift";
+import { driftChecks, shouldCompareLedger } from "../lib/drift";
 import { amount, describeError } from "../lib/format";
 import {
 	type ConsoleHealth,
@@ -332,8 +332,10 @@ function useDrift(enabled: boolean, chainId: number) {
 				const found = result.value.chains.find(
 					(entry) => entry.chainId === chainId,
 				);
-				setChain(found);
-				setState(found ? "served" : "absent");
+				// A chain wallet-api could not compute drift for: the console compares for itself.
+				const served = found && !("error" in found) ? found : undefined;
+				setChain(served);
+				setState(served ? "served" : "absent");
 			} else if (result.error.status === 404) {
 				notServed.current = true;
 				setState("absent");
@@ -633,11 +635,18 @@ function useLedgerCheck(rows: readonly TenantRow[], enabled: boolean) {
 		}
 	}, [enabled, run, deployment, block, count, cacheKey]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: once when the tab opens with tenants to compare; again only when asked
+	// biome-ignore lint/correctness/useExhaustiveDependencies: when the tab opens with tenants to compare, and when it becomes this tab's job (wallet-api serves no drift); otherwise only when asked
 	useEffect(() => {
-		// Also when the last result was an empty comparison: tenants to compare have arrived since.
-		if (count > 0 && (!check || check.label === EMPTY_LEDGER)) void runCheck();
-	}, [count]);
+		if (
+			shouldCompareLedger({
+				enabled,
+				count,
+				emptyBefore: check?.label === EMPTY_LEDGER,
+				compared: check !== undefined,
+			})
+		)
+			void runCheck();
+	}, [count, enabled]);
 
 	return { check, loading, run: runCheck, idle: count === 0 };
 }

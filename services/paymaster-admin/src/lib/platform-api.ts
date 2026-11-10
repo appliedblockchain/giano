@@ -230,7 +230,8 @@ export function platformApi(token: string) {
 		platformAdminHistory: () =>
 			call<{ entries: PlatformAdminHistoryEntry[] }>("GET", "/admins/history"),
 		chains: () => call<ChainsStatus>("GET", "/chains"),
-		drift: () => call<{ chains: ChainDrift[] }>("GET", "/drift"),
+		drift: () =>
+			call<{ chains: (ChainDrift | ChainDriftError)[] }>("GET", "/drift"),
 		adminSessions: (id: string) =>
 			call<{ sessions: PlatformAdminSession[] }>(
 				"GET",
@@ -263,8 +264,15 @@ export type ChainDrift = {
 	chainId: number;
 	checkedAt: string;
 	entries: DriftEntry[];
-	/** Tenants the chain could not be read for at the ledger's block. */
+	/** Tenants not compared: not yet synced, or the chain unreadable at the ledger's block. */
 	unchecked: string[];
+};
+
+/** A chain wallet-api could not compute drift for; the console then compares for itself. */
+export type ChainDriftError = {
+	chainId: number;
+	error: string;
+	message: string;
 };
 
 export type DriftEntry =
@@ -280,6 +288,13 @@ export type DriftEntry =
 			slug: string;
 			registryStatus: string;
 			enabledOnChain: boolean;
+	  }
+	| {
+			/** The chain holds a balance or deficit for a registry tenant; the ledger has no row. */
+			kind: "no-ledger";
+			tenantId: string;
+			slug: string;
+			chain: { balanceWei: string; deficitWei: string };
 	  }
 	| {
 			kind: "ledger-balance";

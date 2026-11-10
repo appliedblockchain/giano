@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { driftChecks } from "./drift";
+import { ago, driftChecks, shouldCompareLedger } from "./drift";
 import type { ChainDrift } from "./platform-api";
 
 const money = (wei: bigint) => `${wei} wei`;
@@ -85,5 +85,86 @@ describe("driftChecks", () => {
 		expect(ledger.label).toBe(
 			"wallet-api's ledger could not be compared for every tenant",
 		);
+	});
+});
+
+describe("a tenant the ledger has no row for", () => {
+	it("is a ledger difference, naming what the chain holds", () => {
+		const [, , ledger] = driftChecks(
+			drift({
+				entries: [
+					{
+						kind: "no-ledger",
+						tenantId: "t1",
+						slug: "acme",
+						chain: { balanceWei: "500", deficitWei: "0" },
+					},
+				],
+			}),
+			money,
+		);
+		expect(ledger.level).toBe("warn");
+		expect(ledger.detail).toContain(
+			"acme: no ledger row, the chain holds 500 wei",
+		);
+	});
+});
+
+describe("ago", () => {
+	it("says how old a result is, so yesterday's does not read as today's", () => {
+		const now = Date.parse("2026-11-10T12:00:00Z");
+		expect(ago("2026-11-10T11:59:50Z", now)).toBe("just now");
+		expect(ago("2026-11-10T11:57:00Z", now)).toBe("3 minutes ago");
+		expect(ago("2026-11-09T12:00:00Z", now)).toBe("24 hours ago");
+		expect(ago("2026-11-01T12:00:00Z", now)).toBe("9 days ago");
+	});
+});
+
+describe("shouldCompareLedger", () => {
+	it("starts the console's own comparison once wallet-api turns out to serve no drift", () => {
+		// the tab opens while the drift read is pending: not this tab's job yet
+		expect(
+			shouldCompareLedger({
+				enabled: false,
+				count: 3,
+				compared: false,
+				emptyBefore: false,
+			}),
+		).toBe(false);
+		// the drift read answers 404: it is, and nothing has been compared
+		expect(
+			shouldCompareLedger({
+				enabled: true,
+				count: 3,
+				compared: false,
+				emptyBefore: false,
+			}),
+		).toBe(true);
+		// compared already: only when asked again
+		expect(
+			shouldCompareLedger({
+				enabled: true,
+				count: 3,
+				compared: true,
+				emptyBefore: false,
+			}),
+		).toBe(false);
+		// the last comparison had nothing to compare, and tenants have arrived
+		expect(
+			shouldCompareLedger({
+				enabled: true,
+				count: 3,
+				compared: true,
+				emptyBefore: true,
+			}),
+		).toBe(true);
+		expect(
+			shouldCompareLedger({
+				enabled: true,
+				count: 0,
+				compared: false,
+				emptyBefore: false,
+			}),
+		).toBe(false);
 	});
 });
