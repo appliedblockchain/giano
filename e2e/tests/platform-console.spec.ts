@@ -267,6 +267,9 @@ test.describe("admin console", () => {
 			timeout: 30_000,
 		});
 
+		// its usage card is here, from wallet-api: a tenant this new has sponsored nothing yet
+		await expect(page.getByTestId("usage")).toContainText("Allowed");
+
 		// its history on this chain has each of those, newest first, with who did it
 		const onChain = page.getByTestId("tenant-chain-history");
 		await expect(onChain).toContainText(`set ${slug}'s fee to 0.0002 ETH`, {
@@ -380,6 +383,26 @@ test.describe("admin console", () => {
 		} finally {
 			await other.close();
 		}
+	});
+
+	test("the Overview shows the chain's usage over the last seven days, from wallet-api", async ({
+		page,
+	}) => {
+		await tab(page, /Overview/).click();
+		const usage = page.getByTestId("usage");
+		await expect(usage).toBeVisible({ timeout: 30_000 });
+		for (const label of [
+			"Allowed",
+			"Refused",
+			"Settled",
+			"Gas",
+			"Fees",
+			"Overhead",
+		])
+			await expect(usage).toContainText(label);
+		// the earlier suites sponsored real operations on this devnet. The value's own element:
+		// the card's text runs the figures together ("Allowed0Refused…"), so a regex over it cannot fail.
+		await expect(usage.getByTestId("usage-allowed")).not.toHaveText("0");
 	});
 
 	test("Health shows what wallet-api sees of each chain it serves", async ({

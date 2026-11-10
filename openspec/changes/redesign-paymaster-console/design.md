@@ -124,7 +124,7 @@ Phase 2. Each is an SDK or wallet-api PR, then the console part, which can be th
 14. B6: sign-ins and sessions on the admins endpoints, then the Admins columns and your sessions. **Done** (#207).
 15. B3: `GET /v1/platform/chains`, the prober and bundler changes, then the Chains section on Health. **Done** (#208).
 16. B5: drift detection, its endpoint, metric and doctor check, then the Registry and chain group on Health. **Done** (#209).
-17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page.
+17. B4: `GET /v1/platform/usage`, then the Usage card on the Overview and the tenant page. **Done** (#210).
 
 A bug found in a later layer is fixed on the branch of the layer that introduced it, and the layers above are restacked (`gh stack rebase --upstack`), so each PR stays correct on its own: the edit-dialog reset found by CI on #186 was fixed in #185, and an unformatted test in #187 in #187. A bug older than the redesign is fixed, as its own commit, in the layer that found it.
 
@@ -235,6 +235,12 @@ The Chains section is read with each console refresh while Health is open; each 
 - **Reported, not a health failure**, at the user's decision: the endpoint, `giano_paymaster_drifted_tenants{chain}` and the doctor say so; nothing refuses to start or deploy on it.
 - **Health shows it as warnings**, replacing the console's own registry-row and ledger checks where served, plus whether each tenant's on-chain state matches its registry status.
 
+### D27. Usage as built
+- **Refusals are split by whose they are to fix**, besides by reason: `rules` (no config, contract, function, wallet management, cost cap: the tenant's own sponsorship rules), `funds` (insufficient balance, in deficit: the tenant's), `platform` (temporarily unavailable: an outage or the platform's emergency stop) and `other` (not your wallet). `sponsorship-disabled` is the tenant's own switch (the only one recorded comes from the rules engine; the platform's "this chain sponsors nothing" returns before a decision is recorded), so it counts under `rules` (fixed in review of #210). The Overview then never blames the platform for a tenant's rules. Raised as an open question; taken as the default when layer 17 started.
+- **Indexed by chain and time.** The existing indexes lead with the tenant, which a query across every tenant of one chain cannot use. Migration 0010 adds `(chain_id, created_at)` and `(chain_id, observed_at)`, one per file with a 5-second `lock_timeout`, so each table is locked only while its own index builds and a long transaction fails the migration rather than queue every insert behind it. A test fills two years of a busy chain inside a rolled-back transaction and checks the plan of the queries `readUsage` runs uses both; on a few rows the planner was free to pick the settlements' primary key, which also leads with the chain. The runner applies each migration in a transaction, so the indexes are not built `CONCURRENTLY`; writes wait while they build.
+- **Settlements are dated by when the watcher observed them**, the only time the table has: after a catch-up, settlements are dated to it (dating them by block time is a follow-up). Tenants are never hard-deleted, so a deleted tenant keeps its usage under its slug; settlements for a tenant id the deployment does not know (another deployment's, on a shared paymaster) are `unknownTenant`, apart from the total.
+- **The console reads the last seven days** with the console's refreshes, at most once a minute, on the Overview and on the page of a tenant with a registry row, and keeps the figures it has when a read fails or throws.
+
 ## Risks / Trade-offs
 
 - **[A long stack drifts from main]** → Rebase the stack (`gh stack rebase`) whenever main moves under it. Merge bottom-up as each layer is approved, rather than holding the stack until the top is done.
@@ -252,10 +258,9 @@ The Chains section is read with each console refresh while Health is open; each 
 
 Resolved in phase 1: *Stay signed in* signs a fresh SIWE message, with no refresh endpoint, and swaps the session in place (D20).
 
-Resolved in phase 2: drift is reported (endpoint, metric, doctor), not a `/healthz` signal (D26).
+Resolved in phase 2: drift is reported (endpoint, metric, doctor), not a `/healthz` signal (D26). Usage splits refusals by whose they are to fix (D27).
 
 
-- B4: refusals are grouped by `SponsorshipRefusalReason`, plus `temporarily-unavailable`. Should a tenant's own sponsorship-rule refusals be split from platform refusals (paused, deficit), so the Overview does not blame the platform for a tenant's rules?
 - B6: is 30 days of session history enough, or does it follow `platform_admin_sessions` retention, whatever housekeeping sets?
 - B6 follow-up: ending a session only ever applies to the caller's own, so `:id` in `DELETE /v1/platform/admins/:id/sessions/:sessionId` is always the caller. `DELETE /v1/platform/sessions/:sessionId` would drop the 403 case; left for a later change so this one does not reshape the API again.
 - B6 follow-ups from review of #207: carry the admin's real IP (`trustProxy` with the hops counted, see D15); index `platform_admin_sessions` on `(address, created_at)`, as `list()` groups the whole table and `sessions()` filters by an unindexed `address` (a migration, so its own change).

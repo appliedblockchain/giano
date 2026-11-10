@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 import { LuArrowRight, LuClock } from "react-icons/lu";
 import { InlineError, StatusText } from "../components/status";
 import { SectionCard } from "../components/ui";
+import { UsageCard, useUsage } from "../components/usage";
 import { AddressLabel, Amount } from "../components/values";
 import { getAdminConfig } from "../config";
 import { useImplementation } from "../hooks/useImplementation";
@@ -131,6 +132,8 @@ export function OverviewTab({
 				<SolvencyCard overview={overview} />
 				<ConfigurationCard client={client} overview={overview} />
 			</SimpleGrid>
+
+			<OverviewUsage />
 
 			<QueuedCard />
 		</Stack>
@@ -417,6 +420,21 @@ function ConfigurationCard({
 				</Text>
 			</Stack>
 		</SectionCard>
+	);
+}
+
+/** The chain's last seven days of sponsorship (B4); absent without wallet-api's usage. */
+function OverviewUsage() {
+	const usage = useUsage();
+	const { deployment } = useConsole();
+	if (!usage) return null;
+	return (
+		<UsageCard
+			figures={usage.total}
+			unknownTenant={usage.unknownTenant}
+			title="Usage, last 7 days"
+			subtitle={`Every tenant of this deployment on ${deployment.name}, from wallet-api's sponsorship decisions and settlements. Refusals are split by whose they are to fix.`}
+		/>
 	);
 }
 

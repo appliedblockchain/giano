@@ -7,11 +7,12 @@
 - when it started and when it ends;
 - whether it was revoked, and when;
 - the chain it was signed for;
-- the user agent recorded at sign-in, for the caller's own sessions only.
+- the user agent recorded at sign-in, for the caller's own sessions only;
+- whether it is the session making the request.
 
 Another admin's sessions SHALL be returned with the user agent set to `null`: a platform admin sees when another signed in, not where from. The IP address SHALL NOT be returned: behind the console's proxy it is the proxy's address, which would read as the admin's own beside a stolen session. It SHALL never return a session token or its hash.
 
-`DELETE /v1/platform/admins/:id/sessions/:sessionId` SHALL end one of the caller's own open sessions; one already ended or expired SHALL stay as it is. Ending another admin's session SHALL return 403; removing the admin is the way to end all of them.
+`DELETE /v1/platform/admins/:id/sessions/:sessionId` SHALL end one of the caller's own open sessions; one already ended or expired SHALL stay as it is, and the request SHALL still succeed. Ending another admin's session SHALL return 403; removing the admin is the way to end all of them. Sessions SHALL be matched to an admin by the address that signed in.
 
 #### Scenario: Last sign-in
 - **WHEN** `ops-diogo` signed in yesterday and has no open session
