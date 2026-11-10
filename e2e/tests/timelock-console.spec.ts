@@ -352,8 +352,18 @@ test("a scheduled change is cancelled by the canceller and never executes", asyn
 test("Health checks the timelock: who else holds its roles, a delay below the published one, and the release", async ({
 	page,
 }) => {
-	// The timelock waits 2s for everything; the deployment publishes an hour for upgrades.
-	await openWithTimelock(page, { minDelay: 2, upgradeToAndCall: 3600 });
+	// The timelock waits 2s for everything; the deployment publishes an hour for upgrades, and 2s for
+	// the rest (the console takes every delay or none).
+	await openWithTimelock(page, {
+		minDelay: 2,
+		upgradeToAndCall: 3600,
+		grantRole: 2,
+		revokeRole: 2,
+		renounceRole: 2,
+		setTenantWithdrawAddress: 2,
+		setDefaultFee: 2,
+		setTenantFee: 2,
+	});
 	await tab(page, /Health/).click();
 
 	// admin-console keeps every role beside this file's timelock, which holds ROLE_ADMIN only.
@@ -371,7 +381,8 @@ test("Health checks the timelock: who else holds its roles, a delay below the pu
 	await expect(page.getByTestId("check-implementation")).toContainText(
 		"release v3",
 	);
-	// The timelock is configured, so nothing says there is none, or asks to verify a holder.
+	// The timelock is configured and read, so nothing says there is none, or asks to verify a holder.
+	await expect(page.getByTestId("pending-timelock")).toHaveCount(0);
 	await expect(page.getByTestId("check-timelock")).toHaveCount(0);
 	await expect(page.getByText(/verify this is the timelock/)).toHaveCount(0);
 	for (const id of ["timelocked-roles", "timelock-delays", "implementation"])

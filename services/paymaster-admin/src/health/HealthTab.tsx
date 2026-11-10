@@ -184,7 +184,7 @@ function PendingRow({ entry, first }: { entry: PendingCheck; first: boolean }) {
 			gap="3"
 			py="3"
 			borderTopWidth={first ? "0" : "1px"}
-			data-testid={`check-${entry.id}`}
+			data-testid={`pending-${entry.id}`}
 		>
 			<Text fontWeight="medium" fontSize="sm">
 				Reading {entry.label}
