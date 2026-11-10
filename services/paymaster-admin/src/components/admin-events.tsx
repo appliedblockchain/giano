@@ -33,6 +33,8 @@ export function useAdminEvents(
 				range,
 				timelock,
 				tenantId,
+				// one tenant's page: every cancellation, kept below if its operation is the tenant's
+				allCancellations: tenantId !== undefined,
 			});
 			return { ...page, items: events };
 		},
@@ -42,7 +44,29 @@ export function useAdminEvents(
 		() => client.publicClient.getBlockNumber(),
 		[client],
 	);
-	return useWindows(read, head, trigger);
+	const windows = useWindows(read, head, trigger);
+	const items = useMemo(
+		() => (tenantId ? tenantCancellations(windows.items) : windows.items),
+		[windows.items, tenantId],
+	);
+	return { ...windows, items };
+}
+
+/**
+ * On a tenant's page, a `Cancelled` carries only its operation's id: keep it when that operation
+ * (a schedule or an execution about the tenant) is among the events loaded, in any window, so a
+ * cancellation read before or after its schedule shows either way.
+ */
+export function tenantCancellations(
+	events: readonly AdminEvent[],
+): readonly AdminEvent[] {
+	const operations = new Set(
+		events.filter((event) => event.call).map((event) => String(event.args.id)),
+	);
+	return events.filter(
+		(event) =>
+			event.kind !== "Cancelled" || operations.has(String(event.args.id)),
+	);
 }
 
 /** How the console names things in an event's sentence. */

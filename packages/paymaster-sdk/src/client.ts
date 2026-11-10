@@ -709,6 +709,12 @@ export class GianoPaymasterClient {
 			kinds?: readonly AdminEventKind[];
 			timelock?: Address;
 			tenantId?: string;
+			/**
+			 * With `tenantId`: keep every `Cancelled`, not only those whose operation is in this window.
+			 * A cancellation usually lands hours after its schedule, in a later window; a caller paging
+			 * through windows keeps the ones whose operation it has seen in any of them.
+			 */
+			allCancellations?: boolean;
 		} = {},
 	): Promise<Page & { events: readonly AdminEvent[] }> {
 		const timelock = options.timelock
@@ -754,7 +760,8 @@ export class GianoPaymasterClient {
 					(event) =>
 						about(event) ||
 						(event.kind === "Cancelled" &&
-							operations.has(String(event.args.id))),
+							(options.allCancellations ||
+								operations.has(String(event.args.id)))),
 				)
 			: logs;
 		return {
