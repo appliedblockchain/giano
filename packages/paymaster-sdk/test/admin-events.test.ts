@@ -544,5 +544,17 @@ describe("getAdminEvents", () => {
 			["Cancelled", hash(8)],
 			["CallScheduled", hash(8)],
 		]);
+
+		// a caller paging through windows asks for every cancellation, and matches them itself
+		const { events: all } = await paymaster(client).getAdminEvents({
+			timelock: TIMELOCK,
+			tenantId: TENANT,
+			allCancellations: true,
+		});
+		expect(all.map((event) => [event.kind, event.args.id])).toEqual([
+			["Cancelled", hash(9)],
+			["Cancelled", hash(8)],
+			["CallScheduled", hash(8)],
+		]);
 	});
 });

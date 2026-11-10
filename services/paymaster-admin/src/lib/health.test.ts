@@ -148,6 +148,18 @@ describe("withReads", () => {
 		expect(health.level).toBe("warn");
 	});
 
+	it("warns when a later read of the timelock fails, as the delays compared may be old", () => {
+		const health = withReads(
+			{ level: "ok", checks: [check("timelock-delays")] },
+			{ ...READ, timelockStaleError: "getConfig failed" },
+		);
+		expect(health.checks.map((entry) => [entry.id, entry.level])).toEqual([
+			["timelock-delays", "ok"],
+			["timelock-read", "warn"],
+		]);
+		expect(health.level).toBe("warn");
+	});
+
 	it("keeps the no-timelock checks when no timelock is configured", () => {
 		const health = withReads(noTimelock, {
 			...READ,

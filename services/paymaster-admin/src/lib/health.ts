@@ -33,6 +33,8 @@ export type HealthReads = {
 	timelockConfigured: boolean;
 	timelockRead: boolean;
 	timelockError: string | undefined;
+	/** A later read of the timelock's config failed, after one succeeded: its delays may be old. */
+	timelockStaleError?: string;
 };
 
 /**
@@ -78,7 +80,15 @@ export function withReads(
 					"The timelocked roles and delays are not checked until it is read. Reload it on the Timelock tab.",
 			});
 		else pending.push({ id: "timelock", label: "the timelock" });
-	}
+	} else if (reads.timelockConfigured && reads.timelockStaleError)
+		checks.push({
+			id: "timelock-read",
+			level: "warn",
+			label: "could not read the timelock again",
+			detail: reads.timelockStaleError,
+			remedy:
+				"The delays are compared as they were at the last read, which may predate a change. Reload it on the Timelock tab.",
+		});
 
 	const level = checks.some((check) => check.level === "fail")
 		? "fail"

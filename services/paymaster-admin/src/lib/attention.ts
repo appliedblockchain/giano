@@ -5,8 +5,9 @@ import type {
 } from "@appliedblockchain/giano-paymaster-sdk";
 import { executorStanding } from "./health";
 import type { ChainStatus } from "./platform-api";
-import { TAB_PATHS, tenantPath } from "./router";
-import type { TenantRow } from "./tenants";
+import { callSummary } from "./proposals";
+import { TAB_PATHS } from "./router";
+import { type TenantRow, tenantName, tenantRowPath } from "./tenants";
 
 export type AttentionSeverity = "critical" | "warning" | "timelock";
 
@@ -100,8 +101,8 @@ export function unreadSources(sources: AttentionSources): string[] {
 }
 
 /** A tenant by the name an operator knows it by: its slug where the registry has one. */
-const nameOf = (row: TenantRow) => row.registry?.slug ?? row.id;
-const pathOf = (row: TenantRow) => tenantPath(row.registry?.slug ?? row.id);
+const nameOf = tenantName;
+const pathOf = tenantRowPath;
 
 /**
  * Everything on the Overview that needs an operator, most urgent first. Pure: the console reads
@@ -370,9 +371,7 @@ export function attentionItems({
 			kind: "ready",
 			severity: "timelock",
 			title: "A timelock operation is ready to execute",
-			detail: operation.calls
-				.map((call) => call.decoded?.summary ?? `a call to ${call.target}`)
-				.join("; "),
+			detail: operation.calls.map(callSummary).join("; "),
 			link: `${TAB_PATHS.timelock}#${operation.id}`,
 			linkLabel: "Execute",
 		});

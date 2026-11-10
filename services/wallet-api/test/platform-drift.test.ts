@@ -280,6 +280,44 @@ describe("the watcher's passes", () => {
 		expect(lost).toHaveBeenCalledTimes(1);
 	});
 
+	it("does not report a drift pass that finished after the watcher stopped", async () => {
+		let release: () => void = () => {};
+		const reading = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const reported = vi.fn();
+		const watcher = createPaymasterWatcher({
+			db: {
+				select: () => ({ from: () => ({ where: async () => [] }) }),
+			} as never,
+			pool: undefined as never,
+			client: {} as never,
+			paymaster: {
+				address: "0x15a2075f2407427c5dd0bde9d1966c48bd70e2f2",
+				roster: async () => {
+					await reading;
+					return [];
+				},
+				tenantAt: async () => {
+					throw new Error("not read");
+				},
+			} as never,
+			ledger: {} as never,
+			chainId: 31337,
+			pollMs: 1_000,
+			lockRetryMs: 1_000,
+			confirmations: 0,
+			reconcileIntervalMs: 1_000,
+			tenantSlug: async () => undefined,
+			onDrift: reported,
+		});
+		const pass = watcher.driftOnce();
+		await watcher.stop();
+		release();
+		await pass;
+		expect(reported).not.toHaveBeenCalled();
+	});
+
 	it("runs the poll and the reconcile one at a time, and does not queue a kind twice", async () => {
 		const serial = createSerialRunner();
 		const events: string[] = [];

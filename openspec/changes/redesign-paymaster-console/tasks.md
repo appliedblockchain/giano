@@ -110,7 +110,7 @@
 - [x] 10.2 Health: its own icon, a labelled badge, and the subtitle fixed (K7).
 - [x] 10.3 Admins: field-level errors; the shared confirm; the note that removing an admin ends their sessions (K12, G12).
 - [x] 10.4 README: the tab list, the write rules, and the proposal-builder claim corrected. `specs/PLATFORM-ADMIN-SPECS.md` §11.2 (C12).
-- [x] 10.5 Run `openspec validate redesign-paymaster-console --strict` and the full e2e suite. Strict validation passes with openspec 1.9.0, the version used here; later versions also warn that some requirements are long, which `--strict` counts as errors (a follow-up: move their detail into scenarios). Locally, against a long-lived stack: all pass except tenant-isolation V1, which registers a fixed external user id and needs a fresh database, as CI has; BYO specs need the local packages rebuilt first, since Playwright bundles the BYO wallet from them.
+- [x] 10.5 Run `openspec validate redesign-paymaster-console --strict` and the full e2e suite. Strict validation passes with openspec 1.9.0 and, since the long requirements were split, with 1.16.0 too. Locally, against a long-lived stack: all pass except tenant-isolation V1, which registers a fixed external user id and needs a fresh database, as CI has; BYO specs need the local packages rebuilt first, since Playwright bundles the BYO wallet from them.
 - [x] 10.6 Activity: outcome and account filters, the overhead column, and Export CSV of the loaded rows (G5).
 - [x] 10.7 Health: checks grouped as Funds, Keys and roles, Registry and chain; the console-side registry and ledger checks; what to do, with a link, on each warning (G7, D10).
 - [x] 10.8 Phone width: every tab at 390 px with no page-level horizontal scroll; an e2e case at that size (G10).
@@ -131,7 +131,7 @@
 
 ## 13. Phase 2: sign-ins and sessions (B6, layer 14)
 
-- [x] 13.1 wallet-api: `lastSignInAt` and `activeSessions` on `GET /v1/platform/admins`; `GET /v1/platform/admins/:id/sessions`; `DELETE /v1/platform/admins/:id/sessions/:sessionId` for your own sessions only (D15). Route tests. Also `current` on the caller's own session; OpenAPI and `PLATFORM-ADMIN-SPECS.md` §4.1 updated.
+- [x] 13.1 wallet-api: `lastSignInAt` and `activeSessions` on `GET /v1/platform/admins`; `GET /v1/platform/admins/:id/sessions`; `DELETE /v1/platform/sessions/:sessionId` for your own sessions only (D15; first built as `DELETE /v1/platform/admins/:id/sessions/:sessionId`, whose `:id` could only ever be the caller). Route tests. Also `current` on the caller's own session; OpenAPI and `PLATFORM-ADMIN-SPECS.md` §4.1 updated.
 - [x] 13.2 Console: last sign-in and active sessions on Admins; your own sessions with *End*. Absent where wallet-api lacks them (D11). e2e: a second browser's session ended from the first is signed out.
 
 ## 14. Phase 2: chains (B3, layer 15)
@@ -152,7 +152,7 @@
 
 - [x] 16.1 wallet-api: `GET /v1/platform/usage` from `sponsorship_decisions` and `sponsorship_settlements`, at most 90 days, rate limited. Add an index if the query plan needs one, in its own migration. It did: migration 0010, by chain and time, with a test of the plan at a realistic size (D27).
 - [x] 16.2 Console: the Usage card on the Overview and the tenant page, absent when the endpoint returns 404 (D11).
-- [x] 16.3 Final pass: `openspec validate redesign-paymaster-console --strict`, the full e2e suite, and the README and `PLATFORM-ADMIN-SPECS.md` updated for phase 2. Strict validation passes with openspec 1.9.0 (and `--specs --strict`); later versions also flag long requirements, as noted in 10.5. Full suite from the top of the stack, every image rebuilt: 92 of 93; the one is `tenant-isolation` V1 on this long-lived local database (a fixed external user id, see Risks), which CI runs clean. Before it, the toast that intermittently covered a dialog's *Done* was fixed in layer 4 (#183) and restacked; the test that kept failing then passed 5 of 5. The README was updated layer by layer; `PLATFORM-ADMIN-SPECS.md` §1, §7.1, §12 and §13 now say what phase 2 delivered.
+- [x] 16.3 Final pass: `openspec validate redesign-paymaster-console --strict`, the full e2e suite, and the README and `PLATFORM-ADMIN-SPECS.md` updated for phase 2. Strict validation passes with openspec 1.9.0 and 1.16.0 (and `--specs --strict` for this change's capabilities). Full suite from the top of the stack, every image rebuilt: 92 of 93; the one is `tenant-isolation` V1 on this long-lived local database (a fixed external user id, see Risks), which CI runs clean. Before it, the toast that intermittently covered a dialog's *Done* was fixed in layer 4 (#183) and restacked; the test that kept failing then passed 5 of 5. The README was updated layer by layer; `PLATFORM-ADMIN-SPECS.md` §1, §7.1, §12 and §13 now say what phase 2 delivered.
 
 ## 17. Phase 2: bundler executors (B7, layer 18)
 

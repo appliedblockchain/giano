@@ -213,7 +213,7 @@ function Entry({ entry }: { entry: HistoryEntry }) {
 				? `${entry.detail.hashPrefix}…`
 				: undefined;
 	return (
-		<Box borderBottomWidth="1px" pb="3">
+		<Box borderBottomWidth="1px" pb="3" data-testid={`history-${entry.action}`}>
 			<HStack gap="3" align="flex-start" flexWrap="wrap">
 				<Badge variant="subtle" minW="28" justifyContent="center">
 					{entry.action}

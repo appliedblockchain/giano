@@ -508,8 +508,11 @@ export function createPaymasterWatcher(
 		},
 
 		async driftOnce() {
+			// The lock this pass started under: if it is lost while the chain is read, `demote` has
+			// already forgotten the last result, and this one must not put it (and the gauges) back.
+			const connection = lockConnection;
 			const drift = await computeDrift({ db, chainId, paymaster });
-			options.onDrift?.(drift);
+			if (connection === lockConnection && !stopping) options.onDrift?.(drift);
 			if (drift.entries.length > 0)
 				log.warn(
 					{ alert: "paymaster-drift", drift: drift.entries },

@@ -6,8 +6,10 @@ import {
 	useContext,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
+import { notifyError } from "../components/ui";
 import { type ConnectedWallet, isUserRejection } from "./chain";
 import {
 	type ApiResult,
@@ -57,7 +59,7 @@ type PlatformAdminContextValue = {
 	 * Ends the session because the API refused it — what a 401 on a chain read calls, as {@link run}
 	 * does for the platform routes.
 	 */
-	expire: () => void;
+	expire: (token?: string) => void;
 	/**
 	 * Runs a platform admin call with the session's token. Resolves to undefined when the session ended
 	 * under it, having already dropped the session — callers only ever handle a result.
@@ -75,8 +77,11 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 	const [session, setSession] = useState<PlatformSession>();
 	const [endedNotice, setEndedNotice] = useState<string>();
 	const [disabled, setDisabled] = useState(false);
+	/** The token in use now, read synchronously: a 401 for any other token is about a replaced one. */
+	const currentToken = useRef<string>(undefined);
 
 	const end = useCallback((notice?: string) => {
+		currentToken.current = undefined;
 		setSession(undefined);
 		setEndedNotice(notice);
 	}, []);
@@ -128,11 +133,19 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 						message: verified.error.message,
 					};
 				}
+				// A renewal (Stay signed in) replaces a session that is still valid: revoke it, rather
+				// than leave its token usable until it expires. Best effort, after the swap, so a failed
+				// logout never costs the new session; a request still in flight on the old token gets a
+				// 401 that names it, which `expire` ignores.
+				const replaced = currentToken.current;
+				currentToken.current = verified.value.token;
 				setSession({
 					token: verified.value.token,
 					admin: verified.value.admin,
 					expiresAt: new Date(verified.value.expiresAt),
 				});
+				const revoke = tokenToRevoke(replaced, verified.value.token);
+				if (revoke) void revokeReplaced(revoke);
 				return { ok: true };
 			} catch (cause) {
 				if (isUserRejection(cause)) return { ok: false, reason: "rejected" };
@@ -154,21 +167,37 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 	}, [session, end]);
 
 	const expire = useCallback(
-		() => end("Your platform admin session ended. Sign in again to continue."),
+		(token?: string) => {
+			// A refusal of a token no longer in use (one Stay signed in replaced) ends nothing.
+			if (refusalOutcome(token, currentToken.current) !== "end") return;
+			end("Your platform admin session ended. Sign in again to continue.");
+		},
 		[end],
 	);
 
 	const run = useCallback<PlatformAdminContextValue["run"]>(
 		async (call) => {
 			if (!session) return undefined;
+			// The token in use now, not the one this render saw: a renewal may have replaced it.
+			const token = currentToken.current ?? session.token;
 			try {
-				return await call(platformApi(session.token));
+				return await call(platformApi(token));
 			} catch (cause) {
-				if (cause instanceof PlatformUnauthorized) {
-					expire();
-					return undefined;
+				if (!(cause instanceof PlatformUnauthorized)) throw cause;
+				// Refused because a renewal replaced (and revoked) the token mid-call: once more with the
+				// new one. Every platform route refuses before its handler runs, so a write is not doubled.
+				const current = currentToken.current;
+				if (refusalOutcome(token, current) === "retry" && current) {
+					try {
+						return await call(platformApi(current));
+					} catch (again) {
+						if (!(again instanceof PlatformUnauthorized)) throw again;
+						expire(current);
+						return undefined;
+					}
 				}
-				throw cause;
+				expire(token);
+				return undefined;
 			}
 		},
 		[session, expire],
@@ -179,6 +208,48 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 		[session, endedNotice, disabled, signIn, signOut, expire, run],
 	);
 	return createElement(PlatformAdminContext.Provider, { value }, children);
+}
+
+/**
+ * What a 401 for `refused` means, given the token in use now: the session ended (`end`), or a
+ * renewal replaced that token and the call can go again with the new one (`retry`). A 401 that
+ * names no token is the session in use.
+ */
+export function refusalOutcome(
+	refused: string | undefined,
+	current: string | undefined,
+): "end" | "retry" {
+	return refused !== undefined && current !== undefined && refused !== current
+		? "retry"
+		: "end";
+}
+
+/** The token a sign-in replaces, to revoke: the previous one, never the new one. */
+export function tokenToRevoke(
+	previous: string | undefined,
+	next: string,
+): string | undefined {
+	return previous && previous !== next ? previous : undefined;
+}
+
+/**
+ * Revokes the token a renewal replaced: once more after a short wait if it fails, then says so,
+ * as it stays valid until it expires (in memory only, so the exposure is small).
+ */
+async function revokeReplaced(token: string): Promise<void> {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			await platformAuth.logout(token);
+			return;
+		} catch {
+			if (attempt === 0)
+				await new Promise((resolve) => setTimeout(resolve, 2_000));
+		}
+	}
+	notifyError(
+		"Could not end the session Stay signed in replaced",
+		"It stays valid until it expires. End it from Admins, under Your sessions.",
+	);
 }
 
 export function usePlatform(): PlatformAdminContextValue {

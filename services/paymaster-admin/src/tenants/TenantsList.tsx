@@ -18,12 +18,13 @@ import { SectionCard } from "../components/ui";
 import { Amount } from "../components/values";
 import { getAdminConfig } from "../config";
 import { queuedKeys } from "../lib/queued";
-import { Link, navigate, tenantPath } from "../lib/router";
+import { Link, navigate } from "../lib/router";
 import {
 	filterTenants,
 	nextStep,
 	type TenantFilter,
 	type TenantRow,
+	tenantRowPath,
 	tenantTotals,
 } from "../lib/tenants";
 import { LifecycleBadge, OnChainBadge } from "../platform/shared";
@@ -42,8 +43,7 @@ const FILTERS: {
 ];
 
 /** Where a row links: the slug when the registry has one, else the on-chain id. */
-export const rowPath = (row: TenantRow) =>
-	tenantPath(row.registry?.slug ?? row.id);
+export const rowPath = tenantRowPath;
 
 /**
  * One list of tenants (openspec platform-console-tenants): wallet-api's registry joined by id to

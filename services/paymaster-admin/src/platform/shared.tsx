@@ -178,11 +178,7 @@ export const parseJsonObject = (
 	}
 };
 
-export const linesToList = (text: string) =>
-	text
-		.split(/[\n,]/)
-		.map((line) => line.trim())
-		.filter(Boolean);
+export { linesToList } from "../lib/format";
 
 /**
  * An on-chain follow-up to a platform admin action that already succeeded: offered, never required, and

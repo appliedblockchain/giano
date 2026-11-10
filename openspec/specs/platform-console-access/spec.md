@@ -9,11 +9,12 @@ Defines how the paymaster console reaches `wallet-api`'s platform tier and who m
 ### Requirement: The console proxies the platform API on its own origin
 When `GIANO_WALLET_API_UPSTREAM` is set, the console's container SHALL serve `/api/<path>` by forwarding it to `<upstream>/<path>`, keeping the query string. It SHALL NOT forward the request's `Origin` header. The upstream SHALL be re-resolved at request time through the nameserver the container is given, so an upstream that is unreachable at boot does not stop the container.
 
-When the variable is unset, no `/api/` location SHALL exist, and the container SHALL start exactly as before. The entrypoint SHALL use only `sh`, `envsubst` and `jq`.
-
 #### Scenario: Platform admin call through the console
 - **WHEN** the console page posts to `/api/v1/platform/auth/challenge` on its own origin
 - **THEN** `wallet-api` receives the request with no `Origin` header and answers it, rather than refusing it with `403 platform-origin-refused`
+
+### Requirement: Without an upstream the console starts as before
+When `GIANO_WALLET_API_UPSTREAM` is unset, no `/api/` location SHALL exist, and the container SHALL start exactly as before. The entrypoint SHALL use only `sh`, `envsubst` and `jq`.
 
 #### Scenario: No upstream configured
 - **WHEN** the console runs without `GIANO_WALLET_API_UPSTREAM`
@@ -34,11 +35,12 @@ When it is `true`:
 
 There is no separate Platform area and no area switch.
 
-If the upstream is configured but answers `404` on platform admin sign-in, the console SHALL say that the platform API is disabled on this deployment, so it can neither manage tenants nor read the chain. It SHALL offer no sign-in. That is the case where the environment has no platform sign-in domain.
-
 #### Scenario: Console without platform API
 - **WHEN** `platformApi` is false
 - **THEN** the tab bar shows no Admins tab, and the Tenants tab lists the on-chain roster by id
+
+### Requirement: The console says when the platform API is disabled on the backend
+If the upstream is configured but answers `404` on platform admin sign-in, the console SHALL say that the platform API is disabled on this deployment, so it can neither manage tenants nor read the chain. It SHALL offer no sign-in. That is the case where the environment has no platform sign-in domain.
 
 #### Scenario: Platform API disabled on the backend
 - **WHEN** `platformApi` is true and the challenge request returns 404
@@ -51,19 +53,12 @@ When `platformApi` is `true` and there is no session, the console SHALL show onl
 3. ask the wallet to `personal_sign` the returned message exactly as received;
 4. exchange the message and signature for a session.
 
-The console SHALL never build, edit or display-and-reconstruct the message itself. A refused signature in the wallet SHALL return the platform admin to the sign-in page with no error beyond the refusal. A `401` from verify SHALL say that the connected address is not on this deployment's platform admin list.
-
-Once signed in:
-- The console SHALL open the path that was asked for.
-- The header SHALL show the platform admin id, the address, and how long the session has left.
-
 #### Scenario: Successful sign-in
 - **WHEN** a listed platform admin opens `/tenants`, clicks *Sign in with wallet* and approves the signature
 - **THEN** the Tenants tab opens and the header shows the platform admin id, the address and the time left in the session
 
-#### Scenario: Successful sign-in from the Paymaster area
-- **WHEN** a listed platform admin opens `/`, signs in and approves the signature
-- **THEN** the Overview loads and the header shows the platform admin id, the address and the time left in the session
+### Requirement: The console never builds the sign-in message and names why sign-in failed
+The console SHALL never build, edit or display-and-reconstruct the message itself. A refused signature in the wallet SHALL return the platform admin to the sign-in page with no error beyond the refusal. A `401` from verify SHALL say that the connected address is not on this deployment's platform admin list.
 
 #### Scenario: Address not on the list
 - **WHEN** the connected address is not on this deployment's platform admin list and signs the message
@@ -73,20 +68,17 @@ Once signed in:
 - **WHEN** the platform admin rejects the signature request in the wallet
 - **THEN** the console stays on the sign-in page and reports nothing as a failure
 
+### Requirement: Sign-in opens the path that was asked for
+Once signed in:
+- The console SHALL open the path that was asked for.
+- The header SHALL show the platform admin id, the address, and how long the session has left.
+
+#### Scenario: Successful sign-in from the Paymaster area
+- **WHEN** a listed platform admin opens `/`, signs in and approves the signature
+- **THEN** the Overview loads and the header shows the platform admin id, the address and the time left in the session
+
 ### Requirement: The platform admin session lives only in the page
 The console SHALL hold the session token in memory only, never in `localStorage`, `sessionStorage`, cookies or the URL. It SHALL send the token as a bearer credential on every platform admin call, chain reads through the platform relay included, and on nothing else. One session SHALL serve every tab, and moving between tabs SHALL NOT end it.
-
-Two minutes before the session expires, the console SHALL say so. It SHALL offer:
-- *Stay signed in*, which signs a fresh challenge and replaces the session without leaving the page;
-- *Sign out*.
-
-The session SHALL end in the console, returning it to the sign-in page, on any of these:
-- a reload;
-- a wallet account or chain change;
-- disconnecting the wallet, since the session was signed by it;
-- switching deployment;
-- *Sign out*, which also calls logout on the API;
-- any platform admin call answered `401`, a chain read included.
 
 #### Scenario: Reload
 - **WHEN** a signed-in platform admin reloads the page
@@ -96,13 +88,39 @@ The session SHALL end in the console, returning it to the sign-in page, on any o
 - **WHEN** a signed-in platform admin moves from the Overview to the Tenants tab and back
 - **THEN** no new signature is requested and both tabs keep working
 
-#### Scenario: Deployment switch
-- **WHEN** a signed-in platform admin switches deployment in the header
-- **THEN** the console returns to the sign-in page
+### Requirement: The console offers to stay signed in before the session expires
+Two minutes before the session expires, the console SHALL say so. It SHALL offer:
+- *Stay signed in*, which signs a fresh challenge and replaces the session without leaving the page;
+- *Sign out*.
+
+*Stay signed in* SHALL revoke the session it replaces on the API, after the new one is held, so the old token is not usable until it expires. A failed revocation SHALL NOT end the new session, and SHALL be said, pointing to where the old session can be ended.
 
 #### Scenario: Session about to end
 - **WHEN** a session has two minutes left and the platform admin chooses *Stay signed in* and signs
 - **THEN** the console holds a new session, the page and any unsaved input stay as they were, and the old token is no longer sent
+
+#### Scenario: Old token revoked
+- **WHEN** *Stay signed in* replaces a session
+- **THEN** the replaced token is refused by the API from then on, and the new session continues
+
+### Requirement: The session ends with the page, the wallet, the deployment or a 401
+The session SHALL end in the console, returning it to the sign-in page, on any of these:
+- a reload;
+- a wallet account or chain change;
+- disconnecting the wallet, since the session was signed by it;
+- switching deployment;
+- *Sign out*, which also calls logout on the API;
+- any platform admin call answered `401` for the token in use, a chain read included.
+
+A `401` for a token *Stay signed in* has replaced SHALL NOT end the session: a call made with it SHALL be sent once more with the token in use.
+
+#### Scenario: A call crosses a renewal
+- **WHEN** a platform admin saves a tenant edit while *Stay signed in* replaces the session, and the edit is refused for the replaced token
+- **THEN** the edit is sent again with the new token, and the console stays signed in
+
+#### Scenario: Deployment switch
+- **WHEN** a signed-in platform admin switches deployment in the header
+- **THEN** the console returns to the sign-in page
 
 #### Scenario: Expired session
 - **WHEN** a platform admin call returns 401 because the session expired
@@ -113,11 +131,9 @@ The session SHALL end in the console, returning it to the sign-in page, on any o
 - **THEN** the console calls logout, forgets the token, and later use of that token is refused by the API
 
 ### Requirement: Chain reads need a platform admin session where the platform API is configured
-When `platformApi` is `true`, the console SHALL read the chain only through the platform chain read relay on its own origin, `/api/v1/platform/rpc/<chainId>`, sending the session token as a bearer credential. It SHALL make no chain read before a session exists. When the session ends, it SHALL stop polling and clear every chain value it displays before showing the sign-in page.
+When `platformApi` is `true`, the console SHALL read the chain only through the platform chain read relay on its own origin, `/api/v1/platform/rpc/<chainId>`, sending the session token as a bearer credential. It SHALL make no chain read before a session exists.
 
 Writes are unchanged. They are signed and sent by the connected wallet through the wallet's own network, and authorised on chain by the paymaster's roles.
-
-When `platformApi` is `false`, the console SHALL read through each deployment's `rpcUrl` with no sign-in, as before.
 
 #### Scenario: Anonymous visitor on a hosted console
 - **WHEN** someone opens a console whose `platformApi` is true and does not sign in
@@ -127,9 +143,15 @@ When `platformApi` is `false`, the console SHALL read through each deployment's 
 - **WHEN** a listed platform admin signs in from `/`
 - **THEN** the Overview loads, and every chain read the page makes goes to `/api/v1/platform/rpc/<chainId>` with the bearer token
 
+### Requirement: Chain data is cleared when the session ends
+When the platform admin session ends, the console SHALL stop polling and clear every chain value it displays before showing the sign-in page.
+
 #### Scenario: Session ends while the Overview is open
 - **WHEN** a chain read returns 401 because the session expired
 - **THEN** polling stops, the displayed chain data is cleared, and the console shows the sign-in page saying the session ended
+
+### Requirement: A standalone console reads the chain with no sign-in
+When `platformApi` is `false`, the console SHALL read through each deployment's `rpcUrl` with no sign-in, as before.
 
 #### Scenario: Standalone console
 - **WHEN** `platformApi` is false

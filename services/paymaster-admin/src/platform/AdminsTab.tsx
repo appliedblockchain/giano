@@ -310,7 +310,7 @@ function YourSessions({
 	const end = async (session: PlatformAdminSession) => {
 		setEnding(session.id);
 		try {
-			const result = await run((api) => api.endSession(adminId, session.id));
+			const result = await run((api) => api.endSession(session.id));
 			if (!result) return;
 			if (result.ok) {
 				notifySuccess("Session ended", "It is refused from its next request.");

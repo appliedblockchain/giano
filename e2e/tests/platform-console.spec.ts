@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import { CHAINS } from "../origins.mjs";
 import {
@@ -7,6 +7,16 @@ import {
 	openConsole,
 	tab,
 } from "./console-wallet";
+import { platformCall, platformSignIn } from "./platform-api";
+
+/** Waits for the console's next refresh: the header's "updated" time moves on. */
+async function nextRefresh(page: Page) {
+	const updated = page.getByText(/^updated \d/).first();
+	const before = await updated.textContent();
+	await expect
+		.poll(() => updated.textContent(), { timeout: 30_000 })
+		.not.toBe(before);
+}
 
 /**
  * The console's tenant registry and platform admins against the real stack (specs/PLATFORM-ADMIN-SPECS.md §14.2 step 3):
@@ -174,8 +184,8 @@ test.describe("admin console", () => {
 		await edit
 			.getByRole("textbox", { name: "Display name" })
 			.fill("Renamed in the console");
-		// longer than the console's 5 s poll: a refresh while the dialog is open must not wipe the edit
-		await page.waitForTimeout(6_000);
+		// across the console's next poll: a refresh while the dialog is open must not wipe the edit
+		await nextRefresh(page);
 		await expect(
 			edit.getByRole("textbox", { name: "Display name" }),
 		).toHaveValue("Renamed in the console");
@@ -258,6 +268,10 @@ test.describe("admin console", () => {
 		await expect(page.getByText("Fund confirmed")).toBeVisible({
 			timeout: 30_000,
 		});
+		// the balance the paymaster now holds for it, as read back from the chain
+		await expect(page.getByTestId("onchain-balance")).toContainText("0.01", {
+			timeout: 30_000,
+		});
 		await page.getByRole("textbox", { name: "Fee override" }).fill("0.0002");
 		await page.getByRole("button", { name: "Set fee override" }).click();
 		await expect(page.getByText("Set fee override confirmed")).toBeVisible({
@@ -266,6 +280,7 @@ test.describe("admin console", () => {
 		await expect(page.getByText("override", { exact: true })).toBeVisible({
 			timeout: 30_000,
 		});
+		await expect(page.getByTestId("onchain-fee")).toContainText("0.0002");
 
 		// its usage card is here, from wallet-api: a tenant this new has sponsored nothing yet
 		await expect(page.getByTestId("usage")).toContainText("Allowed");
@@ -292,6 +307,65 @@ test.describe("admin console", () => {
 			"admin-event-TenantFunded",
 			"admin-event-TenantRegistered",
 		]);
+	});
+
+	test("a tenant's older history stays loaded across the console's refreshes", async ({
+		page,
+	}) => {
+		// more history than one page (50) holds, written through wallet-api in sessions of its own:
+		// two, so each stays well under the 60-a-minute limit per session
+		const tokens = [await platformSignIn(), await platformSignIn()];
+		let sent = 0;
+		const as = (
+			method: string,
+			path: string,
+			body?: unknown,
+			headers: Record<string, string> = {},
+		) =>
+			platformCall(method, path, {
+				body,
+				headers: {
+					authorization: `Bearer ${tokens[sent++ % tokens.length]}`,
+					...headers,
+				},
+			});
+		const slug = `history-${Date.now()}`;
+		const created = await as("POST", "/v1/platform/tenants", {
+			slug,
+			walletOrigin: `http://wallet-${slug}.localhost`,
+			rpName: "History 0",
+			openRegistration: true,
+		});
+		expect(created.status).toBe(201);
+		let version: number = created.json().tenant.version;
+		for (let edit = 1; edit <= 51; edit++) {
+			const patched = await as(
+				"PATCH",
+				`/v1/platform/tenants/${slug}`,
+				{ rpName: `History ${edit}` },
+				{ "if-match": `"${version}"` },
+			);
+			expect(patched.status).toBe(200);
+			version = patched.json().version;
+		}
+
+		// opened from the list, not by URL: a reload signs the console out (its session is in memory)
+		const row = page.getByTestId(`tenant-row-${slug}`);
+		await expect(row).toBeVisible({ timeout: 30_000 });
+		await row.getByRole("link", { name: slug }).click();
+		const history = page.getByTestId("tenant-history");
+		await expect(history).toContainText("History 51", { timeout: 30_000 });
+		// the creation is on the second page: not shown until it is asked for
+		await expect(history.getByTestId("history-create")).toHaveCount(0);
+		await page.getByRole("button", { name: /Older entries/ }).click();
+		await expect(history.getByTestId("history-create")).toHaveCount(1);
+		await expect(history).toContainText("History 0");
+
+		// a poll re-reads page 1 and must not drop the older page loaded
+		await nextRefresh(page);
+		await nextRefresh(page);
+		await expect(history.getByTestId("history-create")).toHaveCount(1);
+		await expect(history).toContainText("History 51");
 	});
 
 	test("the Overview lists a tenant not registered on this chain by slug, linking to its page", async ({

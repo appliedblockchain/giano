@@ -179,29 +179,22 @@ export function createPlatformAdminService(db: Db) {
 		},
 
 		/**
-		 * Ends one of the caller's own sessions (D15). Another admin's is refused: removing them is the
+		 * Ends one of the caller's own sessions (D15), found by the address that signed in. Another
+		 * admin's session is not one of the caller's, so it is not found: removing an admin is the
 		 * recorded way to end all of theirs. Ending one already ended or expired is a no-op: an
 		 * expired session stays "expired", not "ended".
 		 */
 		async endSession(
-			id: string,
 			sessionId: string,
 			by: PlatformAdminContext,
 		): Promise<void> {
-			const admin = await adminById(id);
-			if (admin.address !== by.address)
-				throw new TenantWriteError(
-					403,
-					"not-your-session",
-					"you can end only your own sessions; removing an admin ends all of theirs",
-				);
 			const [session] = await db
 				.select({ id: platformAdminSessions.id })
 				.from(platformAdminSessions)
 				.where(
 					and(
 						eq(platformAdminSessions.id, sessionId),
-						eq(platformAdminSessions.address, admin.address),
+						eq(platformAdminSessions.address, by.address),
 					),
 				);
 			if (!session)

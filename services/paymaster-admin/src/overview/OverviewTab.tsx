@@ -29,7 +29,7 @@ import {
 	unreadSources,
 } from "../lib/attention";
 import type { ConsoleHealth } from "../lib/health";
-import { relativeTime } from "../lib/proposals";
+import { callSummary, relativeTime } from "../lib/proposals";
 import { Link, TAB_PATHS } from "../lib/router";
 import type { TenantRow } from "../lib/tenants";
 import { useConsole } from "../shell/ConsoleContext";
@@ -501,7 +501,7 @@ function QueuedCard() {
 										key={position}
 										fontSize="sm"
 									>
-										{call.decoded?.summary ?? `a call to ${call.target}`}
+										{callSummary(call)}
 									</Text>
 								))}
 								<Text fontSize="xs" color="fg.muted">
