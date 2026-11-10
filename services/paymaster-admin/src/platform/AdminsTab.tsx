@@ -109,7 +109,9 @@ export function AdminsTab() {
 							<Alert.Indicator />
 							<Alert.Content>
 								<Alert.Title>Could not read the admins</Alert.Title>
-								<Alert.Description>{loadError}</Alert.Description>
+								<Alert.Description overflowWrap="anywhere">
+									{loadError}
+								</Alert.Description>
 							</Alert.Content>
 						</Alert.Root>
 					)}

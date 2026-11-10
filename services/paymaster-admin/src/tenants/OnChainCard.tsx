@@ -375,7 +375,7 @@ function LedgerAgreement({
 			<Alert.Indicator />
 			<Alert.Content>
 				<Alert.Title>wallet-api's ledger differs from the chain</Alert.Title>
-				<Alert.Description>
+				<Alert.Description overflowWrap="anywhere">
 					<Stack gap="1">
 						<Text>
 							Ledger: balance <Amount wei={comparison.ledgerBalance} />, deficit{" "}

@@ -222,7 +222,7 @@ export function ProposalDialog({
 								{!timelock && (
 									<Alert.Root status="warning">
 										<Alert.Indicator />
-										<Alert.Description>
+										<Alert.Description overflowWrap="anywhere">
 											This deployment has no timelock configured
 											(timelockAddress in the console config).
 										</Alert.Description>
@@ -381,7 +381,9 @@ export function ProposalDialog({
 										<Alert.Indicator />
 										<Alert.Content>
 											<Alert.Title>Could not build the proposal</Alert.Title>
-											<Alert.Description>{error}</Alert.Description>
+											<Alert.Description overflowWrap="anywhere">
+												{error}
+											</Alert.Description>
 										</Alert.Content>
 									</Alert.Root>
 								)}

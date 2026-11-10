@@ -377,7 +377,7 @@ function DeleteBody({
 			<Alert.Root status="warning" size="sm">
 				<Alert.Indicator />
 				<Alert.Content>
-					<Alert.Description>
+					<Alert.Description overflowWrap="anywhere">
 						Deleting cannot be undone. The slug <b>{tenant.slug}</b>, the wallet
 						origin <b>{tenant.walletOrigin}</b> and the RP ID{" "}
 						<b>{tenant.rpId}</b> can never be used again: passkeys users still
@@ -510,7 +510,7 @@ export function ShownOnce({
 				<Alert.Indicator />
 				<Alert.Content>
 					<Alert.Title>These are shown once</Alert.Title>
-					<Alert.Description>
+					<Alert.Description overflowWrap="anywhere">
 						Copy each key now and hand it to the tenant. Only a hash is stored,
 						so they cannot be shown again.
 					</Alert.Description>
