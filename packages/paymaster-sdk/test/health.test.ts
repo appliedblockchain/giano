@@ -1,3 +1,4 @@
+import { RELEASE_FINGERPRINTS } from "@appliedblockchain/giano-contracts";
 import { keccak256, parseEther, zeroAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { assessHealth, type HealthTimelock } from "../src/health";
@@ -396,6 +397,22 @@ describe("assessHealth with a timelock (B2)", () => {
 
 		expect(check(report, "timelock-delays")?.level).toBe("warn");
 	});
+
+	it("warns, naming each, about delays with no published value rather than passing them", () => {
+		// Only minDelay is published, and upgradeToAndCall is lowered to it: nothing it can compare
+		// is short, and grantRole still waits longest, so only the missing names can say so.
+		const report = assessHealth(overview(), {
+			timelock: timelock({
+				delays: { ...DELAYS, upgradeToAndCall: DELAYS.minDelay },
+				expected: { minDelay: DELAYS.minDelay },
+			}),
+		});
+
+		expect(check(report, "timelock-delays")?.level).toBe("warn");
+		expect(check(report, "timelock-delays")?.detail).toBe(
+			"no published value for upgradeToAndCall, grantRole, revokeRole, renounceRole, setTenantWithdrawAddress, setDefaultFee, setTenantFee; the others are at or above theirs",
+		);
+	});
 });
 
 describe("assessHealth and the implementation (B2)", () => {
@@ -420,6 +437,10 @@ describe("assessHealth and the implementation (B2)", () => {
 		expect(check(report, "implementation")?.level).toBe("fail");
 		expect(check(report, "implementation")?.detail).toBe(
 			`${IMPLEMENTATION}, codehash ${keccak256(code)}`,
+		);
+		// A newer release than this SDK knows reads the same, so the label says how far it knows.
+		expect(check(report, "implementation")?.label).toBe(
+			`implementation matches none of the releases this SDK knows (up to ${RELEASE_FINGERPRINTS.filter((entry) => entry.contract === "GianoPaymaster").at(-1)?.release})`,
 		);
 	});
 

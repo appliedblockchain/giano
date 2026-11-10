@@ -1,8 +1,11 @@
 import {
+	type DelayShortfall,
 	delayPolicyProblems,
 	delayShortfalls,
 	formatDuration,
+	RELEASE_FINGERPRINTS,
 	releaseOf,
+	TIMELOCKED_FUNCTION_NAMES,
 	TIMELOCKED_ROLES,
 	type TimelockDelays,
 	type TimelockedRoleProblem,
@@ -42,7 +45,8 @@ export type HealthTimelock = {
 	delays: TimelockDelays;
 	/**
 	 * The published delays, from the deployment's profile. Without them the delays are checked only
-	 * against each other (a role change waits as long as what it could bypass).
+	 * against each other (a role change waits as long as what it could bypass). A name left out has
+	 * no published value: the report warns that it was not compared, as `giano-doctor` does.
 	 */
 	expected?: Partial<TimelockDelays>;
 };
@@ -305,6 +309,12 @@ function timelockChecks(
 	);
 	const shortfalls = expected ? delayShortfalls(delays, expected) : [];
 	const policy = delayPolicyProblems(delays);
+	// A delay with no published value is not "at or above" it: name each one, as the doctor does.
+	const uncompared = expected
+		? (["minDelay", ...TIMELOCKED_FUNCTION_NAMES] as const).filter(
+				(name) => expected[name] === undefined,
+			)
+		: [];
 	return [
 		problems.length === 0
 			? {
@@ -321,37 +331,60 @@ function timelockChecks(
 					remedy:
 						"Any other holder can make a timelocked change without waiting. Revoke it, through the timelock (ROLE_ADMIN).",
 				},
-		shortfalls.length > 0 || policy.length > 0
-			? {
-					id: "timelock-delays",
-					level: "fail",
-					label: "timelock delays",
-					detail: [
-						...shortfalls.map(
-							({ name, actual, expected: want }) =>
-								`${name} waits ${formatDuration(actual)}, below the published ${formatDuration(want)}`,
-						),
-						...policy,
-					].join("; "),
-					remedy:
-						"The published delays are a promise to tenants. Propose the delay back up (setFunctionDelay or updateDelay, through the timelock).",
-				}
-			: expected
-				? {
-						id: "timelock-delays",
-						level: "ok",
-						label: "timelock delays at or above the published values",
-						detail: `minimum ${formatDuration(delays.minDelay)}, upgrades ${formatDuration(delays.upgradeToAndCall)}`,
-					}
-				: {
-						id: "timelock-delays",
-						level: "warn",
-						label: "timelock delays not compared",
-						detail: `no published delays to compare with; minimum ${formatDuration(delays.minDelay)}, upgrades ${formatDuration(delays.upgradeToAndCall)}`,
-						remedy:
-							"Give the deployment its profile's delays so a shortened delay is caught.",
-					},
+		delaysCheck(delays, expected, shortfalls, policy, uncompared),
 	];
+}
+
+function delaysCheck(
+	delays: TimelockDelays,
+	expected: Partial<TimelockDelays> | undefined,
+	shortfalls: readonly DelayShortfall[],
+	policy: readonly string[],
+	uncompared: readonly string[],
+): HealthCheck {
+	const summary = `minimum ${formatDuration(delays.minDelay)}, upgrades ${formatDuration(delays.upgradeToAndCall)}`;
+	if (shortfalls.length > 0 || policy.length > 0)
+		return {
+			id: "timelock-delays",
+			level: "fail",
+			label: "timelock delays",
+			detail: [
+				...shortfalls.map(
+					({ name, actual, expected: want }) =>
+						`${name} waits ${formatDuration(actual)}, below the published ${formatDuration(want)}`,
+				),
+				...policy,
+				...(uncompared.length > 0
+					? [`no published value for ${uncompared.join(", ")}`]
+					: []),
+			].join("; "),
+			remedy:
+				"The published delays are a promise to tenants. Propose the delay back up (setFunctionDelay or updateDelay, through the timelock).",
+		};
+	if (!expected)
+		return {
+			id: "timelock-delays",
+			level: "warn",
+			label: "timelock delays not compared",
+			detail: `no published delays to compare with; ${summary}`,
+			remedy:
+				"Give the deployment its profile's delays so a shortened delay is caught.",
+		};
+	if (uncompared.length > 0)
+		return {
+			id: "timelock-delays",
+			level: "warn",
+			label: "timelock delays not all compared",
+			detail: `no published value for ${uncompared.join(", ")}; the others are at or above theirs`,
+			remedy:
+				"Give every delay the chain's profile publishes, so a shortened one is caught.",
+		};
+	return {
+		id: "timelock-delays",
+		level: "ok",
+		label: "timelock delays at or above the published values",
+		detail: summary,
+	};
 }
 
 /**
@@ -379,6 +412,12 @@ function describeRoleProblems(
 	].join("; ");
 }
 
+/** The newest release this SDK's giano-contracts knows: a later one reads as no release here. */
+const NEWEST_RELEASE =
+	RELEASE_FINGERPRINTS.filter(
+		(entry) => entry.contract === "GianoPaymaster",
+	).at(-1)?.release ?? "none";
+
 /** The implementation runs a contracts release (D13), whatever address it was deployed at. */
 function implementationCheck({
 	address,
@@ -399,13 +438,12 @@ function implementationCheck({
 		: {
 				id: "implementation",
 				level: "fail",
-				label: "implementation matches no release",
+				label: `implementation matches none of the releases this SDK knows (up to ${NEWEST_RELEASE})`,
 				detail: present
 					? `${address}, codehash ${keccak256(code)}`
 					: address === zeroAddress
 						? "no ERC-1967 implementation: the paymaster is not a UUPS proxy"
 						: `no code at ${address}`,
-				remedy:
-					"The paymaster runs code that is no release, so nobody reviewed it as one. Find out who upgraded it, and upgrade to a release (UPGRADER_ROLE, through the timelock).",
+				remedy: `If a release newer than ${NEWEST_RELEASE} has been cut, update the SDK (giano-contracts) and check again. Otherwise the paymaster runs code that is no release, so nobody reviewed it as one: find out who upgraded it, and upgrade to a release (UPGRADER_ROLE, through the timelock).`,
 			};
 }

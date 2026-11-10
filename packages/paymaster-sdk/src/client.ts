@@ -263,7 +263,12 @@ export class GianoPaymasterClient {
 		return { address, code: await this.publicClient.getCode({ address }) };
 	}
 
-	private async readImplementationSlot(): Promise<Address> {
+	/**
+	 * The ERC-1967 implementation slot as it is: the zero address when it is empty, where
+	 * {@link getImplementation} throws. For a caller that re-reads the address often and fetches the
+	 * code, the size of a contract, only when it changes.
+	 */
+	async readImplementationSlot(): Promise<Address> {
 		const word = await this.publicClient.getStorageAt({
 			address: this.address,
 			slot: ERC1967_IMPLEMENTATION_SLOT,

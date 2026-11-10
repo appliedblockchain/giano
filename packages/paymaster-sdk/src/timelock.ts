@@ -76,6 +76,7 @@ import type { WriteResult } from "./types";
 export {
 	encodeTimelockProposal,
 	formatDuration,
+	parseDelayList,
 	parseDuration,
 	type SafeTransactionBatch,
 	safeTransactionBatch,

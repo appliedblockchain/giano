@@ -28,6 +28,8 @@
  *   --paymaster <0x..>    SPONSORSHIP_PAYMASTER_ADDRESS, else the contracts registry for the chain
  *   --private-key <0x..>  PAYMASTER_PRIVATE_KEY / DEPLOYER_PRIVATE_KEY, else anvil key 0 on 31337
  *   --timelock <0x..>     GIANO_PAYMASTER_TIMELOCK; timelocked commands propose instead of sending
+ *   --timelock-delays     GIANO_PAYMASTER_TIMELOCK_DELAYS; the published delays `health` checks the
+ *                         timelock against: minDelay=5m,upgradeToAndCall=1h,… (every name)
  *   --json                machine-readable output (implies --yes for reads)
  *   --yes                 skip the confirmation prompt on state-changing commands
  *
@@ -56,6 +58,7 @@ import {
 	type PaymasterRoleName,
 	PaymasterSdkError,
 	type ProposeOptions,
+	parseDelayList,
 	parseDuration,
 	ROLE_DESCRIPTIONS,
 	type SponsorshipRecord,
@@ -63,6 +66,7 @@ import {
 	type TimelockedFunctionName,
 	type TimelockOperation,
 	type TimelockProposalDraft,
+	timelockDelays,
 	toTenantId,
 	type WriteResult,
 } from "../src/index";
@@ -483,9 +487,27 @@ const commands: Record<string, Command> = {
 
 	health: {
 		usage: "health",
-		summary: "run the deployment checks; exits non-zero on any failure",
-		run: async ({ paymaster }) => {
-			const report = await paymaster.getHealth();
+		summary:
+			"run the deployment checks; with --timelock, the timelock's too; exits non-zero on any failure",
+		run: async ({ paymaster, timelock, args }) => {
+			// With --timelock, the timelocked roles and delays are checked as the console and the doctor
+			// check them; without it the report says no timelock is configured.
+			const published =
+				args.flags["timelock-delays"] ??
+				process.env.GIANO_PAYMASTER_TIMELOCK_DELAYS;
+			const report = await paymaster.getHealth(
+				timelock
+					? {
+							timelock: {
+								address: timelock.address,
+								delays: timelockDelays(await timelock.getConfig()),
+								expected: published
+									? parseDelayList(published, "--timelock-delays")
+									: undefined,
+							},
+						}
+					: {},
+			);
 			emit(report);
 
 			heading("Health");
@@ -1181,6 +1203,9 @@ const commands: Record<string, Command> = {
 			);
 			out(
 				"  --timelock <0x..>     GIANO_PAYMASTER_TIMELOCK: the paymaster's GianoTimelock",
+			);
+			out(
+				"  --timelock-delays     GIANO_PAYMASTER_TIMELOCK_DELAYS: published delays for health, minDelay=5m,…",
 			);
 			out("  --json                machine-readable output");
 			out("  --yes                 skip the confirmation prompt");
