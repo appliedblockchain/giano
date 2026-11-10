@@ -489,7 +489,8 @@ Full schema in `services/wallet-api/src/config.ts`. Required and notable vars:
 | `ENTRYPOINT_ADDRESS`, `FACTORY_ADDRESS` | conditional | default from the registry; **required when `CHAIN_ID` is not in the registry** |
 | `IMPLEMENTATION_ADDRESS` | optional | the wallet implementation the factory must clone; default from the registry. Unset outside the registry: the comparison is skipped with a warning |
 | `USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | — | relay policy **defaults** — each tenant's `policy` jsonb overrides per field (gas as integers, fees in wei) |
-| `CHALLENGE_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `CEREMONY_RATE_LIMIT_PER_MINUTE`, `METRICS_BEARER_TOKEN` | — | TTLs / rate limit / metrics auth |
+| `CHALLENGE_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `CEREMONY_RATE_LIMIT_PER_MINUTE` | — | TTLs / rate limit |
+| `METRICS_BEARER_TOKEN` | conditional | bearer token for `GET /metrics`, at least 16 characters; **required when `GIANO_DEPLOYMENT_CLASS` is `testnet` or `production`** |
 | `SESSION_IDLE_TIMEOUT_SECONDS`, `SESSION_MAX_PER_USER` | — | wallet session idle timeout (default 3600, 300 to `SESSION_TTL_SECONDS`) and live sessions per user (default 10) |
 | `GIANO_ENVIRONMENT` | ✓ | which environment this is: `dev`, `stg`, `prd`, `reference`, `e2e`, `local-infra`, `local-dev`, `local-sepolia` or `test`. Selects, from `services/wallet-api/src/environments.ts`, the console host platform admins sign in for and the init step's bootstrap platform admins. An environment with no console host (`reference`, `local-dev`, `local-sepolia`) registers no platform route, and so has no way to create a tenant |
 | `PLATFORM_CHALLENGE_TTL_SECONDS`, `PLATFORM_SESSION_TTL_SECONDS`, `PLATFORM_RATE_LIMIT_PER_MINUTE` | — | platform admin sign-in tuning. The platform admins themselves are rows in the `platform_admins` table, managed by platform admins in the console's Admins tab |
@@ -961,8 +962,9 @@ P-256 passkey).
   wallet-web `GET /`; bundler `GET /health` (per chain; 200 while any chain is ready).
 - **UserOp status:** `GET /v1/userops/:hash` (authenticated, DB status + policy audit) and public
   `GET /v1/userops/:hash/receipt` (on-chain receipt — this is what the SDK polls).
-- **Metrics:** wallet-api `GET /metrics` (Prometheus; bearer-gated when `METRICS_BEARER_TOKEN` is
-  set — recommended, since per-tenant volumes are not public data). Every metric carries a
+- **Metrics:** wallet-api `GET /metrics` (Prometheus; bearer-gated by `METRICS_BEARER_TOKEN`). The
+  token is required when `GIANO_DEPLOYMENT_CLASS` is `testnet` or `production`, because per-tenant
+  volumes are not public data; only a `development` deployment may leave it unset. Every metric carries a
   `tenant` label (the slug): `giano_userop_relayed_total{status,tenant}`,
   `giano_userop_policy_rejections_total{rule,tenant}`, `giano_ceremony_failures_total{kind,tenant}`,
   `giano_userop_relay_seconds{tenant}`, and **`giano_cross_tenant_rejections_total{kind,tenant}`**
@@ -995,6 +997,8 @@ P-256 passkey).
 - [ ] **`GIANO_DEPLOYMENT_CLASS=production`** set explicitly. It has no default on purpose: it is what
       refuses an environment-variable signing key, and a default that happened to be permissive is
       exactly how such a key reaches production.
+- [ ] **`METRICS_BEARER_TOKEN`** set (at least 16 characters) and given to your Prometheus scraper.
+      wallet-api refuses to boot without it outside `development`.
 - [ ] **Gas sponsorship** (if enabled): `SPONSORSHIP_SIGNER_KIND=hsm`, backed by an AWS HSM key through
       [`evm-hsm-signer`](https://github.com/appliedblockchain/evm-hsm-signer) — a local key is refused
       for a production deployment class, and this key authorises spending against customer funds.
