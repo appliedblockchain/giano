@@ -112,7 +112,7 @@ The session SHALL end in the console, returning it to the sign-in page, on any o
 - *Sign out*, which also calls logout on the API;
 - any platform admin call answered `401` for the token in use, a chain read included.
 
-A `401` for a token *Stay signed in* has replaced SHALL NOT end the session: a call made with it SHALL be sent once more with the token in use.
+A `401` for a token *Stay signed in* has replaced SHALL NOT end the session: a call made with it SHALL be sent once more with the token in use. A `401` that arrives once no session is in use (after *Sign out*, or after the session already ended) SHALL change nothing, and SHALL NOT replace the sign-in page's message.
 
 #### Scenario: A call crosses a renewal
 - **WHEN** a platform admin saves a tenant edit while *Stay signed in* replaces the session, and the edit is refused for the replaced token

@@ -168,7 +168,8 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 
 	const expire = useCallback(
 		(token?: string) => {
-			// A refusal of a token no longer in use (one Stay signed in replaced) ends nothing.
+			// A refusal of a token no longer in use (one Stay signed in replaced), or once no session is
+			// in use (signed out, or already expired), ends nothing.
 			if (refusalOutcome(token, currentToken.current) !== "end") return;
 			end("Your platform admin session ended. Sign in again to continue.");
 		},
@@ -211,17 +212,18 @@ export function PlatformSessionProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * What a 401 for `refused` means, given the token in use now: the session ended (`end`), or a
- * renewal replaced that token and the call can go again with the new one (`retry`). A 401 that
- * names no token is the session in use.
+ * What a 401 for `refused` means, given the token in use now: the session ended (`end`); a renewal
+ * replaced that token and the call can go again with the new one (`retry`); or no session is in
+ * use any more (`ignore`): a call still in flight when the operator signed out, or after the
+ * session already expired, must not replace the sign-in page's message with one they did not cause.
+ * A 401 that names no token is the session in use.
  */
 export function refusalOutcome(
 	refused: string | undefined,
 	current: string | undefined,
-): "end" | "retry" {
-	return refused !== undefined && current !== undefined && refused !== current
-		? "retry"
-		: "end";
+): "end" | "retry" | "ignore" {
+	if (current === undefined) return "ignore";
+	return refused !== undefined && refused !== current ? "retry" : "end";
 }
 
 /** The token a sign-in replaces, to revoke: the previous one, never the new one. */

@@ -12,8 +12,9 @@ describe("refusalOutcome", () => {
 		expect(refusalOutcome("gps_old", "gps_new")).toBe("retry");
 	});
 
-	it("ends a session that is already gone", () => {
-		expect(refusalOutcome("gps_old", undefined)).toBe("end");
+	it("ignores a 401 once no session is in use: a poll still in flight after Sign out says nothing", () => {
+		expect(refusalOutcome("gps_old", undefined)).toBe("ignore");
+		expect(refusalOutcome(undefined, undefined)).toBe("ignore");
 	});
 });
 
