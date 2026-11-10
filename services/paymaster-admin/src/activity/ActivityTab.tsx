@@ -502,7 +502,11 @@ function useSettlements(
 		},
 		[client],
 	);
-	const windows = useWindows(read, lastUpdated);
+	const head = useCallback(
+		() => client.publicClient.getBlockNumber(),
+		[client],
+	);
+	const windows = useWindows(read, head, lastUpdated);
 	return { ...windows, records: windows.items };
 }
 
