@@ -246,6 +246,32 @@ export function parseDuration(value: string): number {
 	return Number(match[1]) * UNITS[match[2] || "s"];
 }
 
+/**
+ * `minDelay=2d,upgradeToAndCall=7d,…` → a policy in seconds, for a command-line flag. A name left
+ * out has no published value: the caller says it was not compared rather than passing it.
+ */
+export function parseDelayList(
+	value: string,
+	label: string,
+): Partial<TimelockDelays> {
+	const delays: Partial<TimelockDelays> = {};
+	for (const entry of value
+		.split(",")
+		.map((e) => e.trim())
+		.filter(Boolean)) {
+		const [name, duration] = entry.split("=");
+		if (
+			name !== "minDelay" &&
+			!TIMELOCKED_FUNCTION_NAMES.includes(name as TimelockedFunctionName)
+		)
+			throw new Error(
+				`${label}: unknown "${name}"; use minDelay or ${TIMELOCKED_FUNCTION_NAMES.join(", ")}`,
+			);
+		delays[name as keyof TimelockDelays] = parseDuration(duration ?? "");
+	}
+	return delays;
+}
+
 /** Seconds → the largest whole unit up to days, e.g. 604800 → `7d`. */
 export function formatDuration(seconds: number | bigint): string {
 	const value = Number(seconds);

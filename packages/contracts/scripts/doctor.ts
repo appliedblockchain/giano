@@ -82,12 +82,11 @@ import {
 	delayPolicyProblems,
 	delayShortfalls,
 	formatDuration,
-	parseDuration,
+	parseDelayList,
 	paymasterSelector,
 	TIMELOCKED_FUNCTION_NAMES,
 	TIMELOCKED_ROLES,
 	type TimelockDelays,
-	type TimelockedFunctionName,
 	timelockedRoleProblems,
 } from "../timelock";
 
@@ -751,7 +750,7 @@ async function checkTimelock(
 			);
 
 		const published: Partial<TimelockDelays> | undefined = delaysFlag
-			? parseDelayList(delaysFlag)
+			? parseDelayList(delaysFlag, "--timelock-delays")
 			: undefined;
 		const short = published ? delayShortfalls(actual, published) : [];
 		for (const name of ["minDelay", ...TIMELOCKED_FUNCTION_NAMES] as const) {
@@ -807,26 +806,6 @@ async function checkTimelock(
 	} catch (error) {
 		report("fail", "read the timelock topology", (error as Error).message);
 	}
-}
-
-/** `minDelay=2d,upgradeToAndCall=7d,…` → a partial policy in seconds. */
-function parseDelayList(value: string): Partial<TimelockDelays> {
-	const delays: Partial<TimelockDelays> = {};
-	for (const entry of value
-		.split(",")
-		.map((e) => e.trim())
-		.filter(Boolean)) {
-		const [name, duration] = entry.split("=");
-		if (
-			name !== "minDelay" &&
-			!TIMELOCKED_FUNCTION_NAMES.includes(name as TimelockedFunctionName)
-		)
-			throw new Error(
-				`--timelock-delays: unknown "${name}"; use minDelay or ${TIMELOCKED_FUNCTION_NAMES.join(", ")}`,
-			);
-		delays[name as keyof TimelockDelays] = parseDuration(duration ?? "");
-	}
-	return delays;
 }
 
 async function hasCode(
