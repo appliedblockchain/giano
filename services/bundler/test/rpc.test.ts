@@ -6,6 +6,8 @@ import { createMetrics } from "../src/metrics.js";
 import { createMethods, handleJsonRpc, type RpcContext } from "../src/rpc.js";
 
 const entryPoint = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
+/** The busy lane took its transaction 90 s ago: the bundler reports that, by its own clock. */
+const HELD_SINCE = Date.now() - 90_000;
 const sent: unknown[] = [];
 const context = {
 	chainId: 84532,
@@ -30,7 +32,7 @@ const context = {
 					address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
 					balance: 10n ** 18n,
 					busy: true,
-					busySince: 1_800_000_000_000,
+					busySince: HELD_SINCE,
 					latestNonce: 41,
 					pendingNonce: 42,
 				},
@@ -98,7 +100,8 @@ describe("JSON-RPC", () => {
 						address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
 						balanceWei: "0xde0b6b3a7640000",
 						busy: true,
-						busySince: "0x6b49d200",
+						busySince: `0x${Math.floor(HELD_SINCE / 1000).toString(16)}`,
+						heldSeconds: expect.stringMatching(/^0x5[ab]$/),
 						latestNonce: "0x29",
 						pendingNonce: "0x2a",
 					},
@@ -107,6 +110,7 @@ describe("JSON-RPC", () => {
 						balanceWei: "0x0",
 						busy: false,
 						busySince: null,
+						heldSeconds: null,
 						latestNonce: "0x0",
 						pendingNonce: "0x0",
 					},

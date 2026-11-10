@@ -116,6 +116,18 @@ export function createMethods(context: RpcContext) {
 						executor.busySince === undefined
 							? null
 							: hex(BigInt(Math.floor(executor.busySince / 1000))),
+					// How long it has held it, by this process's clock: a reader need not trust its own.
+					heldSeconds:
+						executor.busySince === undefined
+							? null
+							: hex(
+									BigInt(
+										Math.max(
+											0,
+											Math.floor((Date.now() - executor.busySince) / 1000),
+										),
+									),
+								),
 					latestNonce: hex(BigInt(executor.latestNonce)),
 					pendingNonce: hex(BigInt(executor.pendingNonce)),
 				})),

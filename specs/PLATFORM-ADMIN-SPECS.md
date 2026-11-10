@@ -731,6 +731,7 @@ not stall the response:
       "executors": [{                                  // B7, giano-bundler's giano_executors
         "address": "0x…", "balanceWei": "…",
         "busy": true, "busySince": "…",                // when the lane took its transaction
+        "heldSeconds": 90,                             // how long, by the bundler's own clock
         "latestNonce": 41, "pendingNonce": 42
       }]
     },

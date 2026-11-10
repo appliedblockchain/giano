@@ -10459,6 +10459,18 @@
                                             "null"
                                           ]
                                         },
+                                        "heldSeconds": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
                                         "latestNonce": {
                                           "type": "integer",
                                           "minimum": -9007199254740991,
@@ -10475,6 +10487,7 @@
                                         "balanceWei",
                                         "busy",
                                         "busySince",
+                                        "heldSeconds",
                                         "latestNonce",
                                         "pendingNonce"
                                       ],
