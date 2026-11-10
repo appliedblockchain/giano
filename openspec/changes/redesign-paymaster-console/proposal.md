@@ -98,7 +98,7 @@ Building and testing the layers found these, each fixed in the layer that introd
 - **B4 · Usage.** `GET /v1/platform/usage`: sponsored and refused operations, refusals by reason, gas sponsored and fees, across tenants and per tenant, for a time range. A Usage card on the Overview and the tenant page.
 - **B5 · Drift.** wallet-api compares its ledger and registry with each paymaster's roster, reports the result at `GET /v1/platform/drift` and as a metric, and `giano-doctor` checks it. The Health tab's registry-and-chain group reads it.
 - **B6 · Sign-ins.** `GET /v1/platform/admins` gains each admin's last sign-in and active session count. `GET /v1/platform/admins/:id/sessions` lists recent sessions, and an admin can end any of their own.
-- **B7 · Bundler executors.** The bundler signs and submits the transaction that wraps each user operation from its executor keys, one lane per key; an executor that runs out of funds stops submission on that chain. The bundler reports each executor's address, balance, lane and nonces (`giano_executors`), `GET /v1/platform/chains` carries them, and Health shows each one with how many submissions its balance pays for, with an empty or low executor under Needs attention.
+- **B7 · Bundler executors.** The bundler signs and submits the transaction that wraps each user operation from its executor keys, one lane per key; an executor that runs out of funds stops submission on that chain. The bundler reports each executor's address, balance, lane and nonces (`giano_executors`), `GET /v1/platform/chains` carries them, and Health shows each one with how many submissions its balance pays for, with an executor out of funds (fewer than 10 submissions) under Needs attention.
 
 ### Non-goals
 
