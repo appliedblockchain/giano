@@ -7,17 +7,26 @@
 | --- | --- |
 | Paymaster | `RoleGranted`, `RoleRevoked`, `FeeChanged`, `TenantFeeChanged`, `ParamChanged`, `Paused`, `Unpaused`, `SignerAdded`, `SignerRemoved`, `Upgraded`, `TenantRegistered`, `TenantEnabledChanged`, `TenantFunded`, `TenantWithdrawn`, `TenantWithdrawAddressChanged`, `FeesWithdrawn` |
 | Timelock | `CallScheduled`, `CallExecuted`, `Cancelled`, `MinDelayChange`, `FunctionDelayChange`, `RoleGranted`, `RoleRevoked` |
+| EntryPoint, for the paymaster's stake | `StakeLocked`, `StakeUnlocked`, `StakeWithdrawn` |
 
 Each entry SHALL carry:
 - its kind and decoded arguments, with role names rather than role hashes;
 - the block, the block time and the transaction hash;
-- the transaction's sender.
+- who made the change: the account the event names, the timelock for a change it executed, or the account that called the contract.
 
 The read SHALL be a window with an `older` range to continue from, like `getSponsorships`, and SHALL stay within the platform relay's log-query bounds. `kinds` SHALL narrow the list.
 
 #### Scenario: Role granted through the timelock
 - **WHEN** an executed timelock operation granted `FEE_COLLECTOR_ROLE`
 - **THEN** the list holds a `RoleGranted` entry naming `FEE_COLLECTOR_ROLE`, the grantee and the timelock as sender, and a `CallExecuted` entry for the operation
+
+#### Scenario: Fee changed through the timelock from a Safe
+- **WHEN** a Safe sends the timelock's `execute`, which changes the default fee
+- **THEN** the `FeeChanged` entry names the timelock as who made the change, not the Safe
+
+#### Scenario: Stake withdrawn
+- **WHEN** a STAKE_ADMIN_ROLE holder withdraws the paymaster's stake
+- **THEN** the list holds a `StakeWithdrawn` entry naming the holder, the amount and where it went
 
 #### Scenario: Paging back
 - **WHEN** the caller passes the returned `older` range
