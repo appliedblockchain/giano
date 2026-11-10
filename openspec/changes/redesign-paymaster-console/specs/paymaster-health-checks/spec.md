@@ -31,12 +31,12 @@ Without a timelock context, these checks SHALL report that no timelock is config
 - **THEN** the delay check warns, naming every other delay as having no published value
 
 ### Requirement: The implementation is matched to a release
-Each release in `packages/contracts/releases/` SHALL record the runtime codehash of `GianoPaymaster`. Given the implementation's runtime codehash, `assessHealth` SHALL report which release it matches. An implementation that matches no release SHALL fail the check, naming the newest release the SDK knows, so code from a newer release reads as an SDK to update rather than as unreviewed code.
+Given the code at the implementation, `assessHealth` SHALL report which release's `GianoPaymaster` it is, by the release fingerprints (`releaseOf`). An implementation that matches no release SHALL fail the check, naming the newest release the SDK knows, so code from a newer release reads as an SDK to update rather than as unreviewed code.
 
 #### Scenario: Current release
-- **WHEN** the implementation's codehash equals release v2's
+- **WHEN** the implementation's code matches release v2's fingerprint
 - **THEN** the check passes and reads *release v2*
 
 #### Scenario: Unknown code
-- **WHEN** the implementation's codehash matches no release
+- **WHEN** the implementation's code matches no release's fingerprint
 - **THEN** the check fails, giving the implementation address and its codehash
