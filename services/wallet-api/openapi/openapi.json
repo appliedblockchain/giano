@@ -10084,16 +10084,10 @@
                             "type": "string"
                           },
                           "tenantId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": "string"
                           },
                           "slug": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -10108,6 +10102,104 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "unknownTenant": {
+                      "type": "object",
+                      "properties": {
+                        "decisions": {
+                          "type": "object",
+                          "properties": {
+                            "allowed": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "refused": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "refusedBy": {
+                              "type": "object",
+                              "properties": {
+                                "rules": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "funds": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "platform": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "other": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "rules",
+                                "funds",
+                                "platform",
+                                "other"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "byReason": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            }
+                          },
+                          "required": [
+                            "allowed",
+                            "refused",
+                            "refusedBy",
+                            "byReason"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "settled": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "reverted": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "gasWei": {
+                          "type": "string"
+                        },
+                        "feeWei": {
+                          "type": "string"
+                        },
+                        "overheadWei": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "decisions",
+                        "settled",
+                        "reverted",
+                        "gasWei",
+                        "feeWei",
+                        "overheadWei"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -10115,7 +10207,8 @@
                     "since",
                     "until",
                     "total",
-                    "tenants"
+                    "tenants",
+                    "unknownTenant"
                   ],
                   "additionalProperties": false
                 }

@@ -802,16 +802,26 @@ last 7 days unless given, at most 90 (`400 range-too-long`, naming the limit). I
 tenant by slug:
 
 - decisions allowed and refused, refusals by reason, and refusals by whose they are to fix:
-  `rules` (the tenant's own sponsorship rules), `funds` (its balance or deficit), `platform`
-  (sponsorship switched off, or temporarily unavailable) and `other`. Split so the Overview does not
-  blame the platform for a tenant's rules;
+  `rules` (the tenant's own sponsorship rules, and its own switch, `sponsorship-disabled`), `funds`
+  (its balance or deficit), `platform` (`temporarily-unavailable`: an outage, or the platform's
+  emergency stop) and `other`. Split so the Overview does not blame the platform for a tenant's
+  rules. The platform's "this chain sponsors nothing" refusal is never recorded as a decision;
 - operations settled and, of those, reverted;
 - gas sponsored, platform fees and overhead, in wei as decimal strings.
 
 It reads `sponsorship_decisions` and `sponsorship_settlements` and never the chain. Migration 0010
-indexes both by chain and time, which is what a range across every tenant of one chain filters on;
-a test checks the plan uses them at a realistic size. Settlements are dated by when the watcher
-observed them. A deleted tenant's settlements stay, under a `null` tenant.
+indexes both by chain and time, one index per file with a `lock_timeout`, which is what a range
+across every tenant of one chain filters on; a test checks the plan of the queries `readUsage` runs
+at a realistic size.
+
+Tenants are never hard-deleted, so a deleted tenant keeps its slug and its usage. Settlements for a
+tenant id this deployment does not know (recorded with no tenant: on a shared paymaster, another
+deployment's) are reported apart as `unknownTenant` and are not in `total`.
+
+Settlements are dated by when the watcher observed them (`observed_at`), decisions by when they
+were made. After a watcher catches up on an outage, or on a new database for an existing chain,
+the settlements it ingests are dated to the catch-up, so for that week the settled half of the card
+counts more than the decisions half. Dating them by their block's time is a follow-up.
 
 ---
 
@@ -935,7 +945,7 @@ intended behaviour. The platform admin who suspends is expected to tell the tena
 | D2 ✅ | `migrations/0007_tenant_lifecycle.sql`, `migrations/0008_platform_admins.sql`, `migrations/0009_drop_tenant_managed_by.sql`, `src/db/schema.ts`, the new challenge expiry sweep (`src/services/housekeeping.ts`, scheduled in `src/index.ts`) |
 | D3 ✅ | `src/services/tenants.ts` (schema split, `checkTenantInvariants`, `checkOriginClaims`); `src/services/tenant-fixtures.ts` and `src/init.ts` (the init step, which loads local-stack fixtures) replace the seed (§9) |
 | D4 ✅ | `src/routes/platform-tenants.ts`, `src/services/tenant-admin.ts` (the writes), `src/services/tenants.ts` (lifecycle-aware resolvers), `src/plugins/auth.ts` (`requireSession` change), `src/app.ts` (registration when the environment has a sign-in domain), `openapi/` |
-| D5 ✅ (as B3, with B4 and B5) | `src/routes/platform-chains.ts`, `src/services/chain-probe.ts` (the prober keeps its last verification and probe), `src/services/chains.ts`, `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts`; drift: `src/services/drift.ts`, `src/routes/platform-drift.ts`, the watcher (`src/services/paymaster-watcher.ts`); usage: `src/services/usage.ts`, `src/routes/platform-usage.ts`, `migrations/0010_usage_indexes.sql` |
+| D5 ✅ (as B3, with B4 and B5) | `src/routes/platform-chains.ts`, `src/services/chain-probe.ts` (the prober keeps its last verification and probe), `src/services/chains.ts`, `src/services/bundler.ts` (`supportedEntryPoints`), `src/index.ts`; drift: `src/services/drift.ts`, `src/routes/platform-drift.ts`, the watcher (`src/services/paymaster-watcher.ts`); usage: `src/services/usage.ts`, `src/routes/platform-usage.ts`, `migrations/0010_usage_decisions_index.sql`, `migrations/0010_usage_settlements_index.sql` |
 | D6 ✅ | `services/paymaster-admin/docker/{nginx.conf.template,entrypoint.sh,config.json}`, `src/config.ts`, `src/lib/platform-api.ts`, `src/lib/platform-session.ts`, `src/platform/{SignIn,AdminsTab}.tsx`, `src/tenants/`, `src/shell/`, `src/App.tsx`, `deploy/docker-compose.e2e.yml`. The chain half is the Chains section on Health (`src/health/HealthTab.tsx`, `src/lib/health.ts`), and usage the Usage card (`src/components/usage.tsx`). |
 
 ---

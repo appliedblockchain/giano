@@ -217,7 +217,10 @@ describe("migration 0007_tenant_lifecycle", () => {
 	it("0010 adds the usage indexes, leading with the chain and the time", async () => {
 		expect(
 			await runMigrations(container.getConnectionUri(), upTo("0010")),
-		).toEqual(["0010_usage_indexes.sql"]);
+		).toEqual([
+			"0010_usage_decisions_index.sql",
+			"0010_usage_settlements_index.sql",
+		]);
 		const { rows } = await client.query(
 			`SELECT indexname, indexdef FROM pg_indexes WHERE indexname IN ('sponsorship_decisions_chain_created_idx', 'sponsorship_settlements_chain_observed_idx') ORDER BY 1`,
 		);

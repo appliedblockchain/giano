@@ -5,7 +5,7 @@ import {
 	sponsorshipSettlements,
 	tenants,
 } from "../src/db/schema.js";
-import { refusalCategory } from "../src/services/usage.js";
+import { refusalCategory, usageQueries } from "../src/services/usage.js";
 import {
 	ADMIN,
 	PLATFORM_ENV,
@@ -86,7 +86,8 @@ beforeAll(async () => {
 		settlement(idA, true, 1),
 		settlement(idA, false, 2),
 		settlement(idB, true, 1),
-		// a tenant since deleted keeps its settlement, without a tenant
+		// a tenant id this deployment does not know (another deployment's, on a shared paymaster):
+		// recorded with no tenant, and kept out of this deployment's figures
 		settlement(null, true, 1),
 		settlement(idA, true, 40),
 	]);
@@ -119,7 +120,8 @@ describe("GET /v1/platform/usage", () => {
 			decisions: {
 				allowed: 2,
 				refused: 4,
-				refusedBy: { rules: 1, funds: 1, platform: 2, other: 0 },
+				// sponsorship-disabled is the tenant's own switch
+				refusedBy: { rules: 2, funds: 1, platform: 1, other: 0 },
 				byReason: {
 					"contract-not-allowed": 1,
 					"insufficient-balance": 1,
@@ -127,18 +129,21 @@ describe("GET /v1/platform/usage", () => {
 					"sponsorship-disabled": 1,
 				},
 			},
-			settled: 4,
+			settled: 3,
 			reverted: 1,
-			gasWei: "4000",
-			feeWei: "40",
-			overheadWei: "20",
+			gasWei: "3000",
+			feeWei: "30",
+			overheadWei: "15",
+		});
+		expect(body.unknownTenant).toMatchObject({
+			settled: 1,
+			gasWei: "1000",
+			decisions: { allowed: 0, refused: 0 },
 		});
 		const bySlug = Object.fromEntries(
-			body.tenants.map((tenant: { slug: string | null }) => [
-				tenant.slug ?? "deleted",
-				tenant,
-			]),
+			body.tenants.map((tenant: { slug: string }) => [tenant.slug, tenant]),
 		);
+		expect(body.tenants).toHaveLength(2);
 		expect(bySlug[TENANT_A.slug]).toMatchObject({
 			tenantId: idA,
 			decisions: { allowed: 2, refused: 2, refusedBy: { rules: 1, funds: 1 } },
@@ -146,8 +151,10 @@ describe("GET /v1/platform/usage", () => {
 			reverted: 1,
 			gasWei: "2000",
 		});
-		expect(bySlug[TENANT_B.slug].decisions.refusedBy.platform).toBe(2);
-		expect(bySlug.deleted).toMatchObject({ tenantId: null, settled: 1 });
+		expect(bySlug[TENANT_B.slug].decisions.refusedBy).toMatchObject({
+			platform: 1,
+			rules: 1,
+		});
 	});
 
 	it("takes a range, up to 90 days", async () => {
@@ -159,7 +166,30 @@ describe("GET /v1/platform/usage", () => {
 			)
 		).json();
 		expect(body.total.decisions.allowed).toBe(3);
-		expect(body.total.settled).toBe(5);
+		expect(body.total.settled).toBe(4);
+	});
+
+	it("takes only one end of the range: until defaults to now, since to seven days before until", async () => {
+		const until = new Date(Date.now() - 2 * DAY);
+		const onlyUntil = (
+			await get(`?chainId=31337&until=${until.toISOString()}`)
+		).json();
+		expect(Date.parse(onlyUntil.since)).toBe(until.getTime() - 7 * DAY);
+		const since = new Date(Date.now() - 30 * DAY);
+		const onlySince = (
+			await get(`?chainId=31337&since=${since.toISOString()}`)
+		).json();
+		expect(onlySince.since).toBe(since.toISOString());
+		expect(Date.parse(onlySince.until)).toBeGreaterThan(Date.now() - 60_000);
+	});
+
+	it("refuses a range that ends before it starts", async () => {
+		const since = new Date();
+		const response = await get(
+			`?chainId=31337&since=${since.toISOString()}&until=${new Date(since.getTime() - DAY).toISOString()}`,
+		);
+		expect(response.statusCode).toBe(400);
+		expect(response.json().error).toBe("invalid-range");
 	});
 
 	it("refuses a range longer than 90 days, naming the limit", async () => {
@@ -196,9 +226,15 @@ describe("GET /v1/platform/usage", () => {
           FROM generate_series(1, 20000) AS n`);
 				await tx.execute(sql`ANALYZE sponsorship_decisions`);
 				await tx.execute(sql`ANALYZE sponsorship_settlements`);
+				// The queries readUsage itself runs, so a change to their predicates is caught here.
+				const queries = usageQueries(tx as never, {
+					chainId: 31337,
+					since: new Date(Date.now() - 90 * DAY),
+					until: new Date(),
+				});
 				for (const query of [
-					sql`EXPLAIN SELECT tenant_id, outcome, reason, count(*) FROM sponsorship_decisions WHERE chain_id = 31337 AND created_at >= now() - interval '90 days' AND created_at < now() GROUP BY 1, 2, 3`,
-					sql`EXPLAIN SELECT tenant_id, count(*) FROM sponsorship_settlements WHERE chain_id = 31337 AND observed_at >= now() - interval '90 days' AND observed_at < now() GROUP BY 1`,
+					sql`EXPLAIN ${queries.decisions}`,
+					sql`EXPLAIN ${queries.settlements}`,
 				]) {
 					const result = await tx.execute(query);
 					plans.push(
@@ -216,10 +252,11 @@ describe("GET /v1/platform/usage", () => {
 });
 
 describe("refusalCategory", () => {
-	it("puts a tenant's rules and funds apart from the platform's switch and outages", () => {
+	it("puts a tenant's rules, its own switch and its funds apart from the platform's outages", () => {
 		expect(refusalCategory("function-not-allowed")).toBe("rules");
+		expect(refusalCategory("sponsorship-disabled")).toBe("rules");
 		expect(refusalCategory("tenant-in-deficit")).toBe("funds");
-		expect(refusalCategory("sponsorship-disabled")).toBe("platform");
+		expect(refusalCategory("temporarily-unavailable")).toBe("platform");
 		expect(refusalCategory("not-your-wallet")).toBe("other");
 		expect(refusalCategory(null)).toBe("other");
 	});

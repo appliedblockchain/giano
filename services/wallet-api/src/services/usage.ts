@@ -18,8 +18,12 @@ export const USAGE_DEFAULT_DAYS = 7;
 
 /**
  * Who a refusal is about. A tenant's own sponsorship rules and its own balance are the tenant's to
- * fix; the platform's switch and its outages are the platform's. Split, so the Overview does not
- * blame the platform for a tenant's rules.
+ * fix; the platform's outages and its emergency stop (both recorded as `temporarily-unavailable`)
+ * are the platform's. Split, so the Overview does not blame the platform for a tenant's rules.
+ *
+ * `sponsorship-disabled` is the tenant's own switch: the only one recorded comes from the rules
+ * engine (`enabled: false`, which the tenant sets, and which a tenant with no configuration gets).
+ * The platform-level "this chain sponsors nothing" refusal returns before a decision is recorded.
  */
 export type RefusalCategory = "rules" | "funds" | "platform" | "other";
 
@@ -31,7 +35,7 @@ const CATEGORY: Record<string, RefusalCategory> = {
 	"cost-exceeds-cap": "rules",
 	"insufficient-balance": "funds",
 	"tenant-in-deficit": "funds",
-	"sponsorship-disabled": "platform",
+	"sponsorship-disabled": "rules",
 	"temporarily-unavailable": "platform",
 };
 
@@ -56,9 +60,18 @@ export type Usage = {
 	chainId: number;
 	since: Date;
 	until: Date;
+	/** This deployment's tenants only: what `unknownTenant` holds is not in it. */
 	total: UsageFigures;
-	/** One per tenant that had a decision or a settlement in the range; `slug` null once deleted. */
-	tenants: (UsageFigures & { tenantId: string | null; slug: string | null })[];
+	/**
+	 * One per tenant of this deployment that had a decision or a settlement in the range. Tenants
+	 * are never hard-deleted, so a deleted tenant keeps its id and slug.
+	 */
+	tenants: (UsageFigures & { tenantId: string; slug: string })[];
+	/**
+	 * Settlements for a tenant id this deployment does not know (recorded with no tenant): on a shared
+	 * paymaster, another deployment's operations. Reported apart, never added to `total`.
+	 */
+	unknownTenant: UsageFigures;
 };
 
 const empty = (): UsageFigures => ({
@@ -75,13 +88,17 @@ const empty = (): UsageFigures => ({
 	overheadWei: "0",
 });
 
-export async function readUsage(
+/**
+ * The two aggregate queries, built apart so a test can EXPLAIN exactly what readUsage runs and see
+ * that each stays on its (chain, time) index.
+ */
+export function usageQueries(
 	db: Db,
 	query: { chainId: number; since: Date; until: Date },
-): Promise<Usage> {
+) {
 	const { chainId, since, until } = query;
-	const [decisions, settlements] = await Promise.all([
-		db
+	return {
+		decisions: db
 			.select({
 				tenantId: sponsorshipDecisions.tenantId,
 				outcome: sponsorshipDecisions.outcome,
@@ -101,7 +118,7 @@ export async function readUsage(
 				sponsorshipDecisions.outcome,
 				sponsorshipDecisions.reason,
 			),
-		db
+		settlements: db
 			.select({
 				tenantId: sponsorshipSettlements.tenantId,
 				settled: sql<number>`count(*)::int`,
@@ -119,6 +136,18 @@ export async function readUsage(
 				),
 			)
 			.groupBy(sponsorshipSettlements.tenantId),
+	};
+}
+
+export async function readUsage(
+	db: Db,
+	query: { chainId: number; since: Date; until: Date },
+): Promise<Usage> {
+	const { chainId, since, until } = query;
+	const queries = usageQueries(db, query);
+	const [decisions, settlements] = await Promise.all([
+		queries.decisions,
+		queries.settlements,
 	]);
 
 	const ids = [
@@ -139,18 +168,23 @@ export async function readUsage(
 	);
 
 	const total = empty();
-	const perTenant = new Map<string | null, UsageFigures>();
-	const of = (tenantId: string | null) => {
+	const unknownTenant = empty();
+	const perTenant = new Map<string, UsageFigures>();
+	// A row with no tenant, or one the registry does not have, is not this deployment's usage.
+	const known = (tenantId: string | null): tenantId is string =>
+		tenantId !== null && slugs.has(tenantId);
+	const targets = (tenantId: string | null): UsageFigures[] => {
+		if (!known(tenantId)) return [unknownTenant];
 		let figures = perTenant.get(tenantId);
 		if (!figures) {
 			figures = empty();
 			perTenant.set(tenantId, figures);
 		}
-		return figures;
+		return [total, figures];
 	};
 
 	for (const row of decisions) {
-		for (const figures of [total, of(row.tenantId)]) {
+		for (const figures of targets(row.tenantId)) {
 			if (row.outcome === "allowed") figures.decisions.allowed += row.count;
 			else {
 				const reason = row.reason ?? "unknown";
@@ -163,7 +197,7 @@ export async function readUsage(
 	}
 	const add = (a: string, b: string) => (BigInt(a) + BigInt(b)).toString();
 	for (const row of settlements) {
-		for (const figures of [total, of(row.tenantId)]) {
+		for (const figures of targets(row.tenantId)) {
 			figures.settled += row.settled;
 			figures.reverted += row.reverted;
 			figures.gasWei = add(figures.gasWei, row.gasWei);
@@ -180,9 +214,10 @@ export async function readUsage(
 		tenants: [...perTenant.entries()]
 			.map(([tenantId, figures]) => ({
 				tenantId,
-				slug: tenantId ? (slugs.get(tenantId) ?? null) : null,
+				slug: slugs.get(tenantId) as string,
 				...figures,
 			}))
-			.sort((a, b) => (a.slug ?? "~").localeCompare(b.slug ?? "~")),
+			.sort((a, b) => a.slug.localeCompare(b.slug)),
+		unknownTenant,
 	};
 }

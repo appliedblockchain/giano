@@ -76,10 +76,12 @@ export default async function platformUsageRoutes(
 						total: figuresSchema,
 						tenants: z.array(
 							figuresSchema.extend({
-								tenantId: z.string().nullable(),
-								slug: z.string().nullable(),
+								tenantId: z.string(),
+								slug: z.string(),
 							}),
 						),
+						/** Settlements for a tenant id this deployment does not know; not in `total`. */
+						unknownTenant: figuresSchema,
 					}),
 					400: errorSchema,
 					401: errorSchema,
@@ -118,6 +120,7 @@ export default async function platformUsageRoutes(
 				until: until.toISOString(),
 				total: usage.total,
 				tenants: usage.tenants,
+				unknownTenant: usage.unknownTenant,
 			};
 		},
 	);
