@@ -375,4 +375,38 @@ contract ValidationTest is PaymasterTestBase {
         op = _sponsoredOp(_defaultOpParams(wallet), TENANT_A, uint48(block.timestamp + 120), 0, overrideFee);
         _validate(op, 0.001 ether);
     }
+
+    /// @dev The tenant pays only in `postOp`. A limit too small for it to finish would let the
+    ///      EntryPoint take the gas from the deposit with the tenant never charged, so a correctly
+    ///      signed authorisation must still be refused.
+    function test_validate_rejectsAPostOpGasLimitBelowTheFloor() public {
+        uint256 floor = paymaster.MIN_POST_OP_GAS_LIMIT();
+        OpParams memory p = _defaultOpParams(wallet);
+        p.pmPostOpGasLimit = uint128(floor - 1);
+        PackedUserOperation memory op = _sponsoredOp(p, TENANT_A, uint48(block.timestamp + 120), 0, DEFAULT_FEE_WEI);
+
+        vm.expectRevert(abi.encodeWithSelector(GianoPaymaster.PostOpGasLimitTooLow.selector, floor - 1, floor));
+        _validate(op, 0.001 ether);
+    }
+
+    function test_validate_rejectsAPostOpGasLimitOfOne() public {
+        OpParams memory p = _defaultOpParams(wallet);
+        p.pmPostOpGasLimit = 1;
+        PackedUserOperation memory op = _sponsoredOp(p, TENANT_A, uint48(block.timestamp + 120), 0, DEFAULT_FEE_WEI);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(GianoPaymaster.PostOpGasLimitTooLow.selector, 1, paymaster.MIN_POST_OP_GAS_LIMIT())
+        );
+        _validate(op, 0.001 ether);
+    }
+
+    function test_validate_acceptsAPostOpGasLimitAtTheFloor() public {
+        OpParams memory p = _defaultOpParams(wallet);
+        p.pmPostOpGasLimit = uint128(paymaster.MIN_POST_OP_GAS_LIMIT());
+        PackedUserOperation memory op = _sponsoredOp(p, TENANT_A, uint48(block.timestamp + 120), 0, DEFAULT_FEE_WEI);
+
+        (bytes memory ctx, uint256 vd) = _validate(op, 0.001 ether);
+        assertTrue(vd != SIG_FAILED);
+        assertGt(ctx.length, 0);
+    }
 }
