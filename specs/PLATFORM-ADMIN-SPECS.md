@@ -725,9 +725,13 @@ not stall the response:
     "bundler": {
       "reachable": true, "entryPointSupported": true,  // BundlerClient.supportedEntryPoints()
       "gasPriceWei": "1000000000",                     // null where executors are unknown
-      "executors": [{                                  // B7, giano-bundler's giano_executors;
-        "address": "0x…", "balanceWei": "…",           // null from a bundler without it (Alto)
-        "busy": false, "latestNonce": 41, "pendingNonce": 41
+      "executorsUnknown": null,                        // "unsupported" (no giano_executors: Alto)
+                                                       // or "unavailable" (timeout, node, bad shape)
+      "laneStuckAfterSeconds": 270,                    // past this a held lane is stuck
+      "executors": [{                                  // B7, giano-bundler's giano_executors
+        "address": "0x…", "balanceWei": "…",
+        "busy": true, "busySince": "…",                // when the lane took its transaction
+        "latestNonce": 41, "pendingNonce": 42
       }]
     },
     "paymaster": {                             // null when this chain does not sponsor
@@ -760,11 +764,18 @@ No new background job, table or metric. What was added:
 - **The bundler reports its executors** (B7). The keys that sign and pay for every `handleOps`
   transaction live only in the bundler's environment, so it answers `giano_executors` on each
   chain's endpoint: each executor's address (never the key), balance, whether its lane holds a
-  transaction, and its latest and pending nonces, with the gas price. An executor out of funds
-  stops submission through it; the console judges each by the submissions its balance pays for.
+  transaction and since when, and its latest and pending nonces, with the gas price and how long a
+  lane may hold one transaction before the bundler has run out of replacements and cancel bumps.
+  It reads each lane before and after the nonces, so a transaction mined mid-read is not a false
+  stuck lane, and shares one read for 5 seconds. An executor out of funds stops submission
+  through it; the console judges each by the submissions its balance pays for (approximate: an
+  operation's own gas limit and fee cap, and an L2's data fee, can need more), and a lane held
+  past the bundler's limit as stuck. wallet-api checks the answer's shape and says why executors
+  are unknown: `unsupported` for method-not-found, `unavailable` otherwise.
 - **Each part is bounded.** The node's head, the bundler and the signer each get 3 seconds, every
-  chain at once, so the response takes about 3 seconds however many chains are down. A part that
-  times out is reported unreachable.
+  chain at once, so the response takes about 3 seconds however many chains are down. A node or a
+  bundler that times out is reported unreachable; executors that time out are `null`
+  (`executorsUnknown: "unavailable"`), with the bundler still reachable.
 - **The signer stays deployment-wide.** `SponsorshipSigner.health()` already answers for every chain
   (`app.ts`, MC-72), so `signer` sits at the top of the response.
 

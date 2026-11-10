@@ -145,11 +145,14 @@ describe("two chains, one of them down", () => {
 				reachable: true,
 				entryPointSupported: true,
 				gasPriceWei: "1000000000",
+				executorsUnknown: null,
+				laneStuckAfterSeconds: 270,
 				executors: [
 					{
 						address: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
 						balanceWei: "1000000000000000000",
 						busy: true,
+						busySince: "2027-01-15T08:00:00.000Z",
 						latestNonce: 41,
 						pendingNonce: 42,
 					},
@@ -157,6 +160,7 @@ describe("two chains, one of them down", () => {
 						address: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
 						balanceWei: "0",
 						busy: false,
+						busySince: null,
 						latestNonce: 0,
 						pendingNonce: 0,
 					},
@@ -187,21 +191,51 @@ describe("two chains, one of them down", () => {
 				reachable: true,
 				gasPriceWei: null,
 				executors: null,
+				executorsUnknown: "unsupported",
 			});
 		} finally {
 			refused.mockRestore();
 		}
-		const garbled = vi
+		// its node failing is not the bundler lacking the method
+		const failing = vi
 			.spyOn(chain.bundler, "executors")
-			.mockResolvedValue({ gasPriceWei: "nonsense", executors: [] });
+			.mockRejectedValue(new BundlerRpcError(-32603, "internal error"));
 		try {
-			const response = await get(ctx, token);
-			expect(response.statusCode).toBe(200);
-			expect(response.json().chains[0].bundler.executors).toBeNull();
+			const [live] = (await get(ctx, token)).json().chains;
+			expect(live.bundler.executorsUnknown).toBe("unavailable");
 		} finally {
-			garbled.mockRestore();
+			failing.mockRestore();
 		}
-	}, 10_000);
+		// a wrong shape (no address, a string for busy) is unknown for this chain, not a failed response
+		for (const answer of [
+			{ gasPriceWei: "nonsense", executors: [] },
+			{
+				gasPriceWei: "0x1",
+				executors: [
+					{
+						balanceWei: "0x1",
+						busy: "false",
+						latestNonce: "0x0",
+						pendingNonce: "0x0",
+					},
+				],
+			},
+		]) {
+			const garbled = vi
+				.spyOn(chain.bundler, "executors")
+				.mockResolvedValue(answer);
+			try {
+				const response = await get(ctx, token);
+				expect(response.statusCode).toBe(200);
+				expect(response.json().chains[0].bundler).toMatchObject({
+					executors: null,
+					executorsUnknown: "unavailable",
+				});
+			} finally {
+				garbled.mockRestore();
+			}
+		}
+	}, 20_000);
 
 	it("reports when the prober last looked, not the boot time", async () => {
 		const token = await platformSignIn(ctx.app, ADMIN);

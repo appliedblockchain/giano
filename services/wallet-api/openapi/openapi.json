@@ -10444,6 +10444,32 @@
                                   "null"
                                 ]
                               },
+                              "executorsUnknown": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "unsupported",
+                                      "unavailable"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "laneStuckAfterSeconds": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "executors": {
                                 "anyOf": [
                                   {
@@ -10460,6 +10486,12 @@
                                         "busy": {
                                           "type": "boolean"
                                         },
+                                        "busySince": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
                                         "latestNonce": {
                                           "type": "integer",
                                           "minimum": -9007199254740991,
@@ -10475,6 +10507,7 @@
                                         "address",
                                         "balanceWei",
                                         "busy",
+                                        "busySince",
                                         "latestNonce",
                                         "pendingNonce"
                                       ],
@@ -10491,6 +10524,8 @@
                               "reachable",
                               "entryPointSupported",
                               "gasPriceWei",
+                              "executorsUnknown",
+                              "laneStuckAfterSeconds",
                               "executors"
                             ],
                             "additionalProperties": false

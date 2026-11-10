@@ -63,16 +63,7 @@ export function createBundlerService(
 		 * ERC-4337: a bundler without it (Alto) answers method-not-found.
 		 */
 		executors: (signal?: AbortSignal) =>
-			rpc<{
-				gasPriceWei: string;
-				executors: {
-					address: Address;
-					balanceWei: string;
-					busy: boolean;
-					latestNonce: string;
-					pendingNonce: string;
-				}[];
-			}>("giano_executors", [], signal),
+			rpc<unknown>("giano_executors", [], signal),
 	};
 }
 
