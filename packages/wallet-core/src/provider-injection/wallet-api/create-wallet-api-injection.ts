@@ -14,6 +14,10 @@ import {
 	serializeUserOperation,
 	toBase64Url,
 } from "./serialization";
+import {
+	SessionEndedError,
+	type SessionEndReason,
+} from "./session-ended-error";
 
 export type CreateWalletApiInjectionOptions = {
 	passkeyDevicePreference?: PasskeyDevicePreference;
@@ -52,6 +56,34 @@ export type WalletApiInjection = GianoProviderInjection & {
 	/** The external user id currently in force (may have been adopted at sign-in). */
 	getExternalUserId(): string;
 	logout(): Promise<void>;
+	/**
+	 * Signs out of every device (G5 R2): asks wallet-api to revoke every session of this user,
+	 * then ends the session here whatever the answer. Resolves `false` when wallet-api could not
+	 * confirm it, so the UI can say that other devices may still be signed in.
+	 */
+	logoutAll(): Promise<boolean>;
+	/**
+	 * Ends the session because wallet-api refused it (401). The other clients that send the
+	 * session on their own (management API, paymaster client, bundler transport) call this, so a
+	 * refused session ends in one place whichever request found out. Given the token the refused
+	 * request carried, it ends the session only if that is still the current one: a late 401 for
+	 * a token a new sign-in has replaced ends nothing.
+	 */
+	onUnauthorized(token?: string): void;
+	/**
+	 * Whether `url` is this wallet-api's: the only place the session token is sent, and the only
+	 * place whose 401 ends the session (G5). A bundler, paymaster service or RPC node configured
+	 * elsewhere gets neither the token nor the power to sign the user out.
+	 */
+	isWalletApiUrl(url: string): boolean;
+	/**
+	 * A fetch that carries the session to wallet-api URLs and nothing else, and ends the session
+	 * when wallet-api refuses the current token. For the clients that call wallet-api on their own
+	 * (the bundler transport): one place decides where the token goes and what a 401 means.
+	 */
+	sessionFetch: typeof fetch;
+	/** Subscribes to the session ending, for any reason. Returns the unsubscribe function. */
+	onSessionEnded(listener: (reason: SessionEndReason) => void): () => void;
 	/**
 	 * Signs in with a DISCOVERABLE passkey — no allowCredentials, so the authenticator
 	 * offers whatever resident credentials it holds for this RP. This is how a device that
@@ -102,6 +134,51 @@ export function createWalletApiInjection(
 		onSessionChanged?.(token);
 	};
 
+	const endedListeners = new Set<(reason: SessionEndReason) => void>();
+	/** The one way a session ends here: the token goes from memory and storage, then listeners hear why. */
+	const endSession = (reason: SessionEndReason) => {
+		if (sessionToken === null) return;
+		setSession(null);
+		for (const listener of endedListeners) listener(reason);
+	};
+
+	/** A 401 for `token`: the session ends only if that token is still the one in use. */
+	const unauthorized = (token?: string) => {
+		if (token !== undefined && token !== sessionToken) return;
+		endSession("unauthorized");
+	};
+
+	const isWalletApiUrl = (url: string): boolean => {
+		try {
+			// A relative apiUrl ('/api', proxied same-origin) resolves against the page.
+			const origin = globalThis.location?.origin ?? "http://localhost";
+			const root = new URL(`${base}/`, origin);
+			const target = new URL(url, origin);
+			return (
+				target.origin === root.origin &&
+				target.pathname.startsWith(root.pathname)
+			);
+		} catch {
+			return false;
+		}
+	};
+
+	const sessionFetch: typeof fetch = async (input, init) => {
+		const url =
+			typeof input === "string"
+				? input
+				: input instanceof URL
+					? input.href
+					: input.url;
+		if (!isWalletApiUrl(url)) return fetchImpl(input, init);
+		const sent = sessionToken;
+		const headers = new Headers(init?.headers);
+		if (sent) headers.set("authorization", `Bearer ${sent}`);
+		const response = await fetchImpl(input, { ...init, headers });
+		if (response.status === 401 && sent !== null) unauthorized(sent);
+		return response;
+	};
+
 	const adoptExternalUserId = (id: string | undefined) => {
 		if (id && id !== externalUserId) {
 			externalUserId = id;
@@ -113,18 +190,35 @@ export function createWalletApiInjection(
 		path: string,
 		init: RequestInit & { auth?: boolean } = {},
 	): Promise<T> {
+		// Only declare JSON when there IS a body: Fastify refuses an empty body that claims to be
+		// JSON (400), which is how the bodyless logout calls used to fail without anyone noticing.
 		const headers: Record<string, string> = {
-			"content-type": "application/json",
+			...(init.body !== undefined
+				? { "content-type": "application/json" }
+				: {}),
 			...(init.headers as Record<string, string> | undefined),
 		};
+		const sent = sessionToken;
 		if (init.auth) {
-			if (!sessionToken)
+			if (!sent)
 				throw new Error(
 					`wallet-api: ${path} requires a session — sign in first`,
 				);
-			headers.authorization = `Bearer ${sessionToken}`;
+			headers.authorization = `Bearer ${sent}`;
 		}
 		const response = await fetchImpl(`${base}${path}`, { ...init, headers });
+		if (response.status === 401 && init.auth) {
+			// A sign-in replaced the session while this was in flight: the old token's refusal says
+			// nothing about the new one, which carries on.
+			if (sent !== sessionToken)
+				throw new Error(
+					`wallet-api: ${path} was sent with a session that has since been replaced; try again`,
+				);
+			// wallet-api refused the session: it is idle, expired, capped out or revoked, and no
+			// retry brings it back. Drop it so the next request asks for a sign-in (G5).
+			endSession("unauthorized");
+			throw new SessionEndedError();
+		}
 		if (!response.ok) {
 			let message = `${response.status}`;
 			try {
@@ -198,7 +292,29 @@ export function createWalletApiInjection(
 					() => undefined,
 				);
 			}
-			setSession(null);
+			endSession("logout");
+		},
+
+		logoutAll: async () => {
+			if (!sessionToken) return false;
+			const confirmed = await api<{ ok: true }>("/v1/sessions/logout-all", {
+				method: "POST",
+				auth: true,
+			}).then(
+				() => true,
+				() => false,
+			);
+			endSession("logout-all");
+			return confirmed;
+		},
+
+		onUnauthorized: unauthorized,
+		isWalletApiUrl,
+		sessionFetch,
+
+		onSessionEnded: (listener) => {
+			endedListeners.add(listener);
+			return () => endedListeners.delete(listener);
 		},
 
 		getNameForCredential: () => credentialName,

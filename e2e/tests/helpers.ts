@@ -1,3 +1,4 @@
+import * as nodeHttp from "node:http";
 import type { CDPSession, Page } from "@playwright/test";
 import {
 	type Address,
@@ -8,7 +9,8 @@ import {
 	slice,
 } from "viem";
 
-import { CHAINS, ORIGINS } from "../origins.mjs";
+import { privateKeyToAccount } from "viem/accounts";
+import { CHAINS, loopbackOf, ORIGINS } from "../origins.mjs";
 
 /** The two MultiOwnable views this suite reads — inlined to avoid a build-order dependency. */
 const OWNER_SET_ABI = [
@@ -281,4 +283,65 @@ export async function openManagePopup(
 	const { cdp, authenticatorId } = await addVirtualAuthenticator(popup);
 	await seedCredentials(cdp, authenticatorId, credentials);
 	return popup;
+}
+
+/**
+ * A raw call to wallet-api's loopback port, server to server: no Origin, so platform admin
+ * routes accept it, and `headers` can name a tenant by Host the way a browser on its origin would.
+ */
+export function apiCall(
+	method: string,
+	path: string,
+	{
+		body,
+		headers = {},
+	}: { body?: unknown; headers?: Record<string, string> } = {},
+): Promise<{ status: number; json: () => any }> {
+	const url = new URL(path, loopbackOf("api"));
+	const payload = body === undefined ? undefined : JSON.stringify(body);
+	return new Promise((resolve, reject) => {
+		const request = nodeHttp.request(
+			url,
+			{
+				method,
+				headers: {
+					...(payload ? { "content-type": "application/json" } : {}),
+					...headers,
+				},
+			},
+			(response) => {
+				let text = "";
+				response.on("data", (chunk) => {
+					text += chunk;
+				});
+				response.on("end", () =>
+					resolve({
+						status: response.statusCode ?? 0,
+						json: () => JSON.parse(text),
+					}),
+				);
+			},
+		);
+		request.on("error", reject);
+		request.end(payload);
+	});
+}
+
+/** Signs in as the e2e environment's bootstrap platform admin (anvil account 3, admin-e2e). */
+export async function platformSignIn(): Promise<string> {
+	const admin = privateKeyToAccount(
+		"0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+	);
+	const challenge = await apiCall("POST", "/v1/platform/auth/challenge", {
+		body: { address: admin.address, chainId: 31337 },
+	});
+	if (challenge.status !== 200)
+		throw new Error(`platform challenge failed: ${challenge.status}`);
+	const { message } = challenge.json();
+	const verify = await apiCall("POST", "/v1/platform/auth/verify", {
+		body: { message, signature: await admin.signMessage({ message }) },
+	});
+	if (verify.status !== 200)
+		throw new Error(`platform sign-in failed: ${verify.status}`);
+	return verify.json().token;
 }

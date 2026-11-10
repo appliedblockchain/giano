@@ -3,6 +3,7 @@ import {
 	ownerFingerprint,
 	publicKeyOwnerBytes,
 	type RegistryCredential,
+	SessionEndedError,
 	type WalletManagementApi,
 } from "@appliedblockchain/giano-wallet-core";
 import { getAddress, type Hex, pad } from "viem";
@@ -62,6 +63,14 @@ function harness({
 	/** Ordered record of everything consequential, for ordering assertions. */
 	const events: string[] = [];
 	let sessionToken = session;
+	const sessionEndedListeners = new Set<(reason: string) => void>();
+	/** Plays wallet-api refusing the session, as the injection reports it (G5). */
+	const endSession = (reason: string) => {
+		sessionToken = null;
+		for (const listener of sessionEndedListeners) listener(reason);
+	};
+	let logoutAllConfirmed = true;
+	let logoutAllRefused = false;
 
 	const runtimeCache = new Map<number, WalletRuntime>();
 	const runtimeFor = (chainId: number): WalletRuntime => {
@@ -82,6 +91,18 @@ function harness({
 				signInWithExistingPasskey: vi.fn(async () => ({
 					walletAddress: WALLET,
 				})),
+				logoutAll: vi.fn(async () => {
+					events.push("logout-all");
+					// as the injection plays it: wallet-api's 401 ends the session as refused first
+					if (logoutAllRefused) endSession("unauthorized");
+					endSession("logout-all");
+					return logoutAllConfirmed && !logoutAllRefused;
+				}),
+				onUnauthorized: vi.fn(() => endSession("unauthorized")),
+				onSessionEnded: (listener: (reason: string) => void) => {
+					sessionEndedListeners.add(listener);
+					return () => sessionEndedListeners.delete(listener);
+				},
 			},
 			provider: {
 				getSmartAccount: () => ({}),
@@ -198,7 +219,27 @@ function harness({
 		internals: { api, depositPasskey },
 	});
 
-	return { controller, api, events, depositPasskey, runtimeFor, chains };
+	return {
+		controller,
+		api,
+		events,
+		depositPasskey,
+		runtimeFor,
+		chains,
+		endSession,
+		failLogoutAll: () => {
+			logoutAllConfirmed = false;
+		},
+		/** wallet-api had already ended the session the sign-out everywhere carried. */
+		refuseLogoutAll: () => {
+			logoutAllRefused = true;
+		},
+		/** Plays a passkey sign-in issuing a fresh session. */
+		issueSession: () => {
+			sessionToken = "token-2";
+		},
+		watchers: () => sessionEndedListeners.size,
+	};
 }
 
 async function settle(h: Harness, predicate: () => boolean) {
@@ -732,5 +773,112 @@ describe("renaming and lifecycle", () => {
 			expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1"),
 		);
 		expect(h.controller.flow).toBeNull();
+	});
+});
+
+describe("the session ends (G5)", () => {
+	it("a session wallet-api refused moves the user to sign-in with a reason, not an error", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		expect(h.controller.state.view).toBe("set");
+
+		h.endSession("unauthorized");
+		expect(h.controller.state).toMatchObject({
+			view: "signed-out",
+			notice: "session-ended",
+			error: null,
+			walletAddress: null,
+		});
+	});
+
+	it("an action refused with SessionEndedError shows the notice, never the error text", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		vi.mocked(h.api.renameCredential).mockImplementationOnce(async () => {
+			h.endSession("unauthorized");
+			throw new SessionEndedError();
+		});
+		await h.controller.rename("cred-a", "laptop");
+		expect(h.controller.state).toMatchObject({
+			view: "signed-out",
+			notice: "session-ended",
+			error: null,
+		});
+	});
+
+	it("drops an open flow when the session ends", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		h.controller.startAddSecondDevice();
+		await settle(h, () => h.controller.flow !== null);
+		h.endSession("unauthorized");
+		expect(h.controller.flow).toBeNull();
+		expect(h.controller.state.view).toBe("signed-out");
+	});
+
+	it("signing out of this device or everywhere says nothing about a refused session", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		await h.controller.logout();
+		expect(h.controller.state).toMatchObject({
+			view: "signed-out",
+			notice: null,
+		});
+	});
+
+	it("sign out everywhere confirms it, or says other devices may still be signed in", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		await h.controller.logoutAll();
+		expect(h.events).toContain("logout-all");
+		expect(h.controller.state).toMatchObject({
+			view: "signed-out",
+			notice: "signed-out-everywhere",
+		});
+
+		const offline = harness();
+		offline.controller.subscribe(() => undefined);
+		await offline.controller.load();
+		offline.failLogoutAll();
+		await offline.controller.logoutAll();
+		expect(offline.controller.state.notice).toBe(
+			"signed-out-everywhere-unconfirmed",
+		);
+	});
+
+	it("sign out everywhere with a session wallet-api had already ended says the session ended, not that it is offline", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		h.refuseLogoutAll();
+		await h.controller.logoutAll();
+		expect(h.controller.state).toMatchObject({
+			view: "signed-out",
+			notice: "session-ended",
+		});
+	});
+
+	it("a sign-in clears the notice", async () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		await h.controller.load();
+		h.endSession("unauthorized");
+		expect(h.controller.state.notice).toBe("session-ended");
+		h.issueSession();
+		await h.controller.signIn();
+		expect(h.controller.state.notice).toBeNull();
+	});
+
+	it("destroy stops watching the session", () => {
+		const h = harness();
+		h.controller.subscribe(() => undefined);
+		expect(h.watchers()).toBe(1);
+		h.controller.destroy();
+		expect(h.watchers()).toBe(0);
 	});
 });

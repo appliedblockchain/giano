@@ -1,3 +1,4 @@
+import { SessionEndedError } from "@appliedblockchain/giano-wallet-core";
 import {
 	RPC_ERRORS,
 	TransportRpcError,
@@ -52,6 +53,16 @@ describe("the single-slot consent queue (WK-10)", () => {
 		});
 	});
 
+	it("answers a request whose session ended with 4100, not 4001 (G5)", async () => {
+		const store = createRequestStore();
+		const consent = store.requestConsent(input({ kind: "transaction" }));
+		store.current!.sessionEnded();
+		await expect(consent).rejects.toMatchObject({
+			code: RPC_ERRORS.UNAUTHORIZED,
+		});
+		expect(store.current).toBeNull();
+	});
+
 	it("refuses a second request while one is pending, rather than queueing silently", async () => {
 		const store = createRequestStore();
 		const first = store.requestConsent(input());
@@ -68,6 +79,46 @@ describe("the single-slot consent queue (WK-10)", () => {
 });
 
 describe("toRpcError", () => {
+	it("maps a refused session to 4100 Unauthorized, never 4001 (G5)", () => {
+		// as viem wraps what a paymaster hook threw
+		const wrapped = new Error("prepare failed", {
+			cause: new Error("hook failed", { cause: new SessionEndedError() }),
+		});
+		expect(toRpcError(wrapped).code).toBe(RPC_ERRORS.UNAUTHORIZED);
+		// as viem reports the bundler relay's 401: a status and the URL it came from
+		const relay = "https://wallet.test/api/v1/bundler/31337";
+		const isWalletApiUrl = (url: string) =>
+			url.startsWith("https://wallet.test/api/");
+		const http401 = Object.assign(new Error("HTTP request failed"), {
+			status: 401,
+			url: relay,
+		});
+		expect(
+			toRpcError(new Error("send failed", { cause: http401 }), isWalletApiUrl)
+				.code,
+		).toBe(RPC_ERRORS.UNAUTHORIZED);
+		const http503 = Object.assign(new Error("HTTP request failed"), {
+			status: 503,
+			url: relay,
+		});
+		expect(toRpcError(http503, isWalletApiUrl).code).toBe(RPC_ERRORS.INTERNAL);
+	});
+
+	it("leaves another service's 401 as that service's error, not the end of the session (G5)", () => {
+		// a bundler dialled directly, refusing a missing API key
+		const http401 = Object.assign(new Error("HTTP request failed"), {
+			status: 401,
+			url: "https://bundler.example/rpc?apikey=",
+		});
+		const isWalletApiUrl = (url: string) =>
+			url.startsWith("https://wallet.test/api/");
+		expect(toRpcError(http401, isWalletApiUrl).code).toBe(RPC_ERRORS.INTERNAL);
+		// and without a way to tell, a bare 401 is not taken as the session's end either
+		expect(
+			toRpcError(Object.assign(new Error("x"), { status: 401 })).code,
+		).toBe(RPC_ERRORS.INTERNAL);
+	});
+
 	it("passes a TransportRpcError through", () => {
 		const error = new TransportRpcError(RPC_ERRORS.UNSUPPORTED_METHOD, "nope");
 		expect(toRpcError(error)).toBe(error);

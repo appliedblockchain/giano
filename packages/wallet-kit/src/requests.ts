@@ -1,3 +1,4 @@
+import { isSessionEndedError } from "@appliedblockchain/giano-wallet-core";
 import {
 	RPC_ERRORS,
 	TransportRpcError,
@@ -18,6 +19,11 @@ export type PendingRequest = {
 	runtime: WalletRuntime;
 	approve: () => void;
 	reject: () => void;
+	/**
+	 * Answers the dApp that the wallet session ended (EIP-1193 4100), not that the user refused
+	 * (4001): wallet-api refused the session while the request was on screen (G5).
+	 */
+	sessionEnded: () => void;
 };
 
 type Listener = (pending: PendingRequest | null) => void;
@@ -46,7 +52,7 @@ export function createRequestStore() {
 		},
 		/** Resolves with the user's decision; the caller performs the actual request. */
 		requestConsent(
-			input: Omit<PendingRequest, "approve" | "reject">,
+			input: Omit<PendingRequest, "approve" | "reject" | "sessionEnded">,
 		): Promise<void> {
 			if (current) {
 				return Promise.reject(
@@ -75,6 +81,16 @@ export function createRequestStore() {
 							),
 						);
 					},
+					sessionEnded: () => {
+						current = null;
+						notify();
+						reject(
+							new TransportRpcError(
+								RPC_ERRORS.UNAUTHORIZED,
+								"Wallet session ended — sign in again",
+							),
+						);
+					},
 				};
 				notify();
 			});
@@ -84,9 +100,46 @@ export function createRequestStore() {
 
 export type RequestStore = ReturnType<typeof createRequestStore>;
 
-/** Maps WebAuthn/user-abort failures to 4001; everything else to an internal RPC error. */
-export function toRpcError(error: unknown): TransportRpcError {
+/**
+ * True when wallet-api refused the session somewhere under `error`: wallet-core's
+ * SessionEndedError, or an HTTP 401 that viem reports from the bundler transport (as a status
+ * and a URL, rather than rethrowing what the transport saw), when that URL is wallet-api's. A
+ * 401 from anywhere else (a bundler dialled directly, refusing a missing API key) is that
+ * service's error, not the end of the session.
+ */
+function isSessionRefusal(
+	error: unknown,
+	isWalletApiUrl: (url: string) => boolean,
+): boolean {
+	if (isSessionEndedError(error)) return true;
+	let current: unknown = error;
+	for (let depth = 0; current && depth < 10; depth++) {
+		const { status, url } = current as { status?: unknown; url?: unknown };
+		if (status === 401 && typeof url === "string" && isWalletApiUrl(url))
+			return true;
+		current = (current as { cause?: unknown }).cause;
+	}
+	return false;
+}
+
+/**
+ * Maps WebAuthn/user-abort failures to 4001, a refused session to 4100, and everything else
+ * to an internal RPC error. `isWalletApiUrl` (the injection's) tells wallet-api's own 401s
+ * from anyone else's; without it, only a SessionEndedError reads as a refused session.
+ */
+export function toRpcError(
+	error: unknown,
+	isWalletApiUrl: (url: string) => boolean = () => false,
+): TransportRpcError {
 	if (error instanceof TransportRpcError) return error;
+	// G5: the session ended (idle, expired or revoked). 4100, not 4001: the user did not refuse
+	// anything, and the dApp should send them back through connect.
+	if (isSessionRefusal(error, isWalletApiUrl)) {
+		return new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"Wallet session ended — sign in again",
+		);
+	}
 	const name = (error as { name?: string })?.name;
 	const message = error instanceof Error ? error.message : "request failed";
 	if (name === "NotAllowedError" || name === "AbortError") {

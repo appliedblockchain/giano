@@ -192,12 +192,31 @@ change:
 const paymaster = createErc7677PaymasterClient({
   url: '/api/v1/paymaster',
   chainId,
-  getSessionToken: () => localStorage.getItem('giano:session-token'),
+  getSessionToken: injection.getSessionToken,
+  // wallet-api's 401 means the session ended: drop it in one place, the injection
+  onUnauthorized: injection.onUnauthorized,
 });
+// the relay (/api/v1/bundler/:chainId) is behind the session too; sessionFetch carries it there
+const transport = http(bundlerUrl, { fetchFn: injection.sessionFetch });
 const bundler = createBundlerClient({ chain, transport, paymaster });
 ```
 
-Requests carry the wallet session bearer. The tenant is taken from the session, never from the
+Requests carry the wallet session bearer, as an `Authorization` header only. wallet-api's CORS
+allows no credentials, so never send these requests with `credentials: 'include'`. A `401` means
+the session ended (idle, expired, capped out or revoked) and will not come back: the client throws
+`SessionEndedError` (code 4100), and your wallet should ask the user to sign in again rather than
+retry. Send the token to wallet-api and nowhere else: if your sponsorship service or bundler is
+not wallet-api's, pass `sessionEndpoint: false` to the paymaster client (`injection.isWalletApiUrl`
+tells you which), and give the bundler transport `injection.sessionFetch`, which attaches the
+token to wallet-api URLs only.
+
+Where your wallet keeps the token is your choice, and its exposure is the same as the stock
+wallet's: anything that can run script on your wallet origin can read it, so a strict Content
+Security Policy is the defence. A stolen token cannot move funds (every operation still needs a
+passkey signature), but until it expires it can read the user's credentials and spend the
+tenant's relay and sponsorship budgets. The trade-offs, and why the stock wallet keeps it in
+`localStorage` rather than a cookie, are in [`ARCHITECTURE.md`](./ARCHITECTURE.md), "Wallet
+sessions, and what a stolen one is worth". The tenant is taken from the session, never from the
 request — so a session cannot be used to spend another tenant's balance — and the sender must be
 that session's own wallet.
 

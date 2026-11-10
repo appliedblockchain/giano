@@ -20,26 +20,28 @@
 
 ## 3. Client: wallet-core and wallet-kit (PR 3)
 
-- [ ] 3.1 wallet-core: add `SessionEndedError` (a `GianoError` with code 4100) and export it. In `create-wallet-api-injection.ts`, add `endSession()`, end the session on a 401 to an authenticated `api()` call, and expose `onUnauthorized()` and `logoutAll()` (D7). The interface and any test doubles of the injection gain both.
-- [ ] 3.2 wallet-core: `management/api.ts` and `paymaster/erc7677-client.ts` take an optional `onUnauthorized`, call it on a 401 to a request that carried the token, and throw `SessionEndedError`. A 401 without a token, and other statuses, keep today's behavior.
-- [ ] 3.3 wallet-kit: `sessionHttp` calls `onUnauthorized` on a 401 when it attached a token. Wire `onUnauthorized` into the management API and paymaster client. The management controller resets to signed-out on any session change to none, with a `sessionEnded` flag, and gains `logoutAll()`, which reports whether the server call succeeded.
-- [ ] 3.4 Unit tests for every scenario in `specs/wallet-session-client/spec.md` that the libraries cover: a 401 on each of the four clients ends the session and clears storage; 429 and 503 keep it; a 401 without a token does not end it; `logoutAll` clears the session locally when the call fails; the provider surfaces 4100 to a dApp.
-- [ ] 3.5 Add a changeset for `@appliedblockchain/giano-wallet-core` and `@appliedblockchain/giano-wallet-kit` (minor: new API; note the new 401 behavior). Run their tests, typecheck and lint.
+- [x] 3.1 wallet-core: add `SessionEndedError` (a `GianoError` with code 4100) and export it. In `create-wallet-api-injection.ts`, add `endSession()`, end the session on a 401 to an authenticated `api()` call, and expose `onUnauthorized()` and `logoutAll()` (D7). The interface and any test doubles of the injection gain both.
+- [x] 3.2 wallet-core: `management/api.ts` and `paymaster/erc7677-client.ts` take an optional `onUnauthorized`, call it on a 401 to a request that carried the token, and throw `SessionEndedError`. A 401 without a token, and other statuses, keep today's behavior.
+- [x] 3.3 wallet-kit: `sessionHttp` calls `onUnauthorized` on a 401 when it attached a token (superseded by 3.4a: it now hands viem the injection's `sessionFetch`, which sends the token only to wallet-api and ends the session only on wallet-api's 401 for the current token). Wire `onUnauthorized` into the management API and paymaster client. The management controller resets to signed-out on any session change to none, with a `sessionEnded` flag, and gains `logoutAll()`, which reports whether the server call succeeded.
+- [x] 3.4 Unit tests for every scenario in `specs/wallet-session-client/spec.md` that the libraries cover: a 401 on each of the four clients ends the session and clears storage; 429 and 503 keep it; a 401 without a token does not end it; `logoutAll` clears the session locally when the call fails; the provider surfaces 4100 to a dApp.
+- [x] 3.6 wallet-kit: a pending request gains `sessionEnded()`, which answers the dApp 4100 instead of 4001, for a review screen whose pre-flight reports the session ended. Test it in the request store. (Found while building 4.2: approve and reject alone could only answer 4001.)
+- [x] 3.4a Only wallet-api gets the token, and only its 401 for the current token ends the session (review of #235): `isWalletApiUrl` and `sessionFetch` on the injection, `onUnauthorized(token)` everywhere, `sessionEndpoint` on the paymaster client, `toRpcError(error, isWalletApiUrl)`, and sign out everywhere keeping "session ended" when wallet-api had already refused the session. Tests for a third-party bundler's and paymaster's 401, and for a sign-in during a refused request.
+- [x] 3.5 Add a changeset for `@appliedblockchain/giano-wallet-core` and `@appliedblockchain/giano-wallet-kit` (minor: new API; note the new 401 behavior). Run their tests, typecheck and lint.
 
 ## 4. wallet-web (PR 3)
 
-- [ ] 4.1 `views/Manage.tsx`: add "Sign out everywhere" next to the existing sign-out, with a line explaining that it signs out every device. If the server call failed, say that other devices may still be signed in.
-- [ ] 4.2 When the controller reports `sessionEnded`, show the sign-in state with a "Your session ended. Sign in again." message instead of an error, in Manage and in the review views.
-- [ ] 4.3 Typecheck, lint and build wallet-web.
+- [x] 4.1 `views/Manage.tsx`: add "Sign out everywhere" next to the existing sign-out, with a line explaining that it signs out every device. If the server call failed, say that other devices may still be signed in.
+- [x] 4.2 When the controller reports `sessionEnded`, show the sign-in state with a "Your session ended. Sign in again." message instead of an error, in Manage and in the review views.
+- [x] 4.3 Typecheck, lint and build wallet-web.
 
 ## 5. e2e
 
-- [ ] 5.1 Sign out everywhere: sign in on two browser contexts as the same user, pick "Sign out everywhere" in one, and check that the other's next management action shows the session-ended state.
-- [ ] 5.2 Admin revocation: with the e2e tenant admin key, revoke the signed-in user by `externalUserId` through `/v1/admin/sessions/revoke`, and check that the wallet returns to sign-in on its next action. Check the history entry through the platform route.
-- [ ] 5.3 Re-run `wallet-flow`, `wallet-management`, `byo-wallet` and `tenant-isolation`, then the full suite.
+- [x] 5.1 Sign out everywhere: sign in on two browser contexts as the same user, pick "Sign out everywhere" in one, and check that the other's next management action shows the session-ended state.
+- [x] 5.2 Admin revocation: with the e2e tenant admin key, revoke the signed-in user by `externalUserId` through `/v1/admin/sessions/revoke`, and check that the wallet returns to sign-in on its next action. Check the history entry through the platform route.
+- [x] 5.3 Re-run `wallet-flow`, `wallet-management`, `byo-wallet` and `tenant-isolation`, then the full suite.
 
 ## 6. Docs and wrap-up
 
-- [ ] 6.1 `specs/ARCHITECTURE.md`: describe the session model (absolute and idle expiry, cap, sign-out everywhere, admin revocation) and record the R5 decision and its XSS trade-off from design D6.
-- [ ] 6.2 BYO-wallet guidance (`specs/INTEGRATION.md` or `specs/DEVELOPER-GUIDE.md`, wherever the injection contract is documented): treat a 401 as the end of the session, and know that CORS carries no credentials.
-- [ ] 6.3 Run `openspec validate session-lifecycle --strict`. Open the PRs as a `gh stack` (PR 1 → PR 2 → PR 3) with titles ending `(G5)`, and update the G5 Notion ticket with the PR links.
+- [x] 6.1 `specs/ARCHITECTURE.md`: describe the session model (absolute and idle expiry, cap, sign-out everywhere, admin revocation) and record the R5 decision and its XSS trade-off from design D6.
+- [x] 6.2 BYO-wallet guidance (`specs/INTEGRATION.md` or `specs/DEVELOPER-GUIDE.md`, wherever the injection contract is documented): treat a 401 as the end of the session, and know that CORS carries no credentials.
+- [x] 6.3 Run `openspec validate session-lifecycle --strict`. Open the PRs as a `gh stack` (PR 1 → PR 2 → PR 3) with titles ending `(G5)`, and update the G5 Notion ticket with the PR links.

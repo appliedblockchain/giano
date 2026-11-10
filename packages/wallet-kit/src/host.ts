@@ -144,7 +144,7 @@ export function createHostRequestHandler({
 		try {
 			return await runtime.provider.request({ method, params } as never);
 		} catch (error) {
-			throw toRpcError(error);
+			throw toRpcError(error, runtime.injection.isWalletApiUrl);
 		}
 	};
 }

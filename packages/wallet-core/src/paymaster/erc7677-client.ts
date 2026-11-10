@@ -2,6 +2,7 @@ import type { Address, Hex } from "viem";
 import { GianoEntryPointAddress } from "../giano-entry-point";
 import { GianoError } from "../giano-error";
 import { defaultGianoLogger, type GianoLogger } from "../logger";
+import { SessionEndedError } from "../provider-injection/wallet-api/session-ended-error";
 import {
 	isSponsorshipRefusalReason,
 	REFUSAL_CODE_TO_REASON,
@@ -30,6 +31,17 @@ export type Erc7677PaymasterClientOptions = {
 	chainId: number;
 	/** Current wallet session bearer, or null when signed out. */
 	getSessionToken: () => string | null;
+	/**
+	 * Ends the session when the service refuses it (401); the injection's `onUnauthorized` (G5),
+	 * given the token the refused request carried. Only for a service that is wallet-api's.
+	 */
+	onUnauthorized?: (token: string) => void;
+	/**
+	 * Whether `url` is wallet-api's own sponsorship endpoint (default true). Only then is the
+	 * session token sent, and a 401 the end of the session. A tenant's own ERC-7677 service gets
+	 * no token, and its 401 or 403 is a refusal, as before G5.
+	 */
+	sessionEndpoint?: boolean;
 	/** EntryPoint address; defaults to the v0.9 canonical address. */
 	entryPointAddress?: Address;
 	logger?: GianoLogger;
@@ -171,6 +183,7 @@ export function createErc7677PaymasterClient(
 	const logger = options.logger ?? defaultGianoLogger;
 	const doFetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
 	const entryPoint = options.entryPointAddress ?? GianoEntryPointAddress;
+	const sessionEndpoint = options.sessionEndpoint ?? true;
 	let nextId = 1;
 
 	async function call(
@@ -210,7 +223,7 @@ export function createErc7677PaymasterClient(
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
-					authorization: `Bearer ${token}`,
+					...(sessionEndpoint ? { authorization: `Bearer ${token}` } : {}),
 				},
 				body: requestBody,
 			});
@@ -223,6 +236,20 @@ export function createErc7677PaymasterClient(
 			);
 		}
 
+		if (response.status === 401 && sessionEndpoint) {
+			// wallet-api refused the session: idle, expired or revoked, and no retry brings it back,
+			// so it ends here rather than reading as a refusal the user could act on (G5).
+			if (options.getSessionToken() === token) {
+				options.onUnauthorized?.(token);
+				throw new SessionEndedError();
+			}
+			// A sign-in replaced it while this was in flight: the new session carries on, and a
+			// retry sends it. Retryable, as the management API's `session-replaced` is.
+			throw new SponsorshipRefusedError(
+				"the request was sent with a session that has since been replaced; try again",
+				{ reason: "temporarily-unavailable", code: -32011 },
+			);
+		}
 		if (response.status === 401 || response.status === 403) {
 			throw new SponsorshipRefusedError(
 				"the wallet session was rejected by the sponsorship service",

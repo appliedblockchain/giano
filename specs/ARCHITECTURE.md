@@ -245,9 +245,42 @@ neither can detect is an authenticator that sets UV without verifying anyone (so
 extensions do). Evidence and threat model: [`docs/G4-WEBAUTHN-USER-VERIFICATION.md`](../docs/G4-WEBAUTHN-USER-VERIFICATION.md)
 and the [G4 report](https://claude.ai/artifact/KDXpKqiifSnZTCpjA3ecEa).
 
+**Wallet sessions, and what a stolen one is worth.** A passkey ceremony issues an opaque bearer
+token. wallet-api stores only its hash, bound to the user, the credential and the wallet. A session
+is not a signing key: every operation that moves funds still needs a fresh passkey signature. A
+stolen token exposes the user's identity and credential list and can spend the tenant's relay and
+sponsorship budgets, but cannot take assets. Its lifecycle bounds that exposure (G5,
+[`openspec/changes/session-lifecycle`](../openspec/changes/session-lifecycle/design.md)):
+
+- a session stops working after `SESSION_IDLE_TIMEOUT_SECONDS` unused (one hour by default) or
+  `SESSION_TTL_SECONDS` after issue (24 hours), whichever comes first, and use never extends the
+  second;
+- a user holds at most `SESSION_MAX_PER_USER` live sessions (10). A new sign-in over the cap ends
+  the ones used longest ago;
+- a user can sign out of one device or every device (`/v1/sessions/logout-all`);
+- the tenant's admin key, or a Giano platform admin, can end a user's sessions by user id or by
+  wallet, and each revocation is recorded in the tenant history;
+- the wallet treats wallet-api's 401 as the end of the session: it drops the token and asks for a
+  passkey sign-in, and a dApp waiting on a request gets EIP-1193 4100, not 4001. The token goes
+  only to wallet-api, so a bundler or paymaster service configured elsewhere neither sees it nor
+  can sign the user out with a 401 of its own.
+
+The idle timeout limits a token nobody uses, not one in use: a stolen token presented at least
+once an hour stays live until its absolute expiry (24 hours) or a revocation. Signing out
+everywhere, or the tenant revoking the user's sessions, is what ends it sooner.
+
+*Where the token lives (decided for 1.0).* The token stays a bearer token in the wallet origin's
+`localStorage`, sent only as an `Authorization` header, so wallet-api's CORS allows no credentials.
+An HttpOnly cookie would stop script on the wallet origin from *reading* the token, but an XSS
+there could still make same-origin requests that carry the cookie while the page is open. Cookies
+also work only same-origin, so every bring-your-own wallet and every cross-origin `walletApiUrl`
+would need an `/api` proxy, and the published injection contract would change. The mitigation for
+XSS is the wallet origin's Content Security Policy. The lifecycle above is what makes a stolen
+token expire.
+
 **What is not isolated, by design.** Every tenant sees every configured chain, and shares the
-EntryPoint, the factory, the bundler and the paymaster contract. Session and challenge TTLs and the
-ceremony rate limit are deployment-wide. The relay rate limit is per tenant but shared across that
+EntryPoint, the factory, the bundler and the paymaster contract. Session TTLs (absolute and idle),
+the per-user session cap, challenge TTLs and the ceremony rate limit are deployment-wide. The relay rate limit is per tenant but shared across that
 tenant's chains.
 
 ---

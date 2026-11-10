@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
 import { serializeRegistrationCredential } from "../provider-injection/wallet-api/serialization";
+import { SessionEndedError } from "../provider-injection/wallet-api/session-ended-error";
 
 /**
  * Client for the wallet-api's wallet-management surface: the pending-addition lifecycle
@@ -53,6 +54,11 @@ export type CreateWalletManagementApiOptions = {
 	apiUrl: string;
 	/** Session bearer for the authenticated endpoints; claim/fill need none by design (WM-19). */
 	getSessionToken?: () => string | null;
+	/**
+	 * Ends the session when wallet-api refuses it (401); the injection's `onUnauthorized` (G5),
+	 * given the token the refused request carried.
+	 */
+	onUnauthorized?: (token: string) => void;
 	fetch?: typeof fetch;
 };
 
@@ -117,8 +123,8 @@ export function createWalletManagementApi(
 				: {}),
 			...(init.headers as Record<string, string> | undefined),
 		};
+		const token = init.auth ? options.getSessionToken?.() : undefined;
 		if (init.auth) {
-			const token = options.getSessionToken?.();
 			if (!token)
 				throw new WalletManagementApiError(
 					"no-session",
@@ -128,6 +134,17 @@ export function createWalletManagementApi(
 			headers.authorization = `Bearer ${token}`;
 		}
 		const response = await fetchImpl(`${base}${path}`, { ...init, headers });
+		if (response.status === 401 && token) {
+			// A sign-in replaced the session while this was in flight: not the end of the new one.
+			if (options.getSessionToken?.() !== token)
+				throw new WalletManagementApiError(
+					"session-replaced",
+					`${path} was sent with a session that has since been replaced; try again`,
+					401,
+				);
+			options.onUnauthorized?.(token);
+			throw new SessionEndedError();
+		}
 		if (!response.ok) {
 			let code = String(response.status);
 			let message = `${path} failed with ${response.status}`;

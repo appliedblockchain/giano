@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createErc7677PaymasterClient, SponsorshipRefusedError } from "../src";
+import {
+	createErc7677PaymasterClient,
+	SessionEndedError,
+	SponsorshipRefusedError,
+} from "../src";
 import type { PaymasterUserOperation } from "../src/paymaster/erc7677-client";
 
 const PAYMASTER = "0x1111111111111111111111111111111111111111" as const;
@@ -251,12 +255,87 @@ describe("ERC-7677 paymaster client", () => {
 			expect(error.reason).toBe("temporarily-unavailable");
 		});
 
-		it("reports a rejected session distinguishably", async () => {
+		it("ends the session when the service refuses it (401), instead of reporting a refusal", async () => {
 			const fetchImpl = vi.fn(async () => new Response("", { status: 401 }));
-			const error = (await makeClient(fetchImpl as unknown as typeof fetch)
+			const onUnauthorized = vi.fn();
+			const client = createErc7677PaymasterClient({
+				url: "/api/v1/paymaster",
+				chainId: 31337,
+				getSessionToken: () => "session-token",
+				onUnauthorized,
+				fetchImpl: fetchImpl as unknown as typeof fetch,
+			});
+			const error = await client
+				.getPaymasterData({ userOperation })
+				.catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(SessionEndedError);
+			expect((error as SessionEndedError).code).toBe(4100);
+			expect(onUnauthorized).toHaveBeenCalledExactlyOnceWith("session-token");
+			// the review screen's pre-flight sees it too, not a refusal value
+			await expect(
+				client.checkSponsorship({ userOperation }),
+			).rejects.toBeInstanceOf(SessionEndedError);
+		});
+
+		it("does not end a session a sign-in replaced while the refused request was in flight", async () => {
+			let token = "old-token";
+			const fetchImpl = vi.fn(async () => {
+				token = "new-token";
+				return new Response("", { status: 401 });
+			});
+			const onUnauthorized = vi.fn();
+			const error = (await createErc7677PaymasterClient({
+				url: "/api/v1/paymaster",
+				chainId: 31337,
+				getSessionToken: () => token,
+				onUnauthorized,
+				fetchImpl: fetchImpl as unknown as typeof fetch,
+			})
+				.getPaymasterData({ userOperation })
+				.catch((e: unknown) => e)) as SponsorshipRefusedError;
+			expect(error).toBeInstanceOf(SponsorshipRefusedError);
+			// a retry sends the new session: retryable, like the management API's session-replaced
+			expect(error.reason).toBe("temporarily-unavailable");
+			expect(error.retryable).toBe(true);
+			expect(error.message).toMatch(/replaced; try again/);
+			expect(onUnauthorized).not.toHaveBeenCalled();
+		});
+
+		it("sends a tenant's own sponsorship service no token, and reads its 401 as a refusal", async () => {
+			const fetchImpl = vi.fn(async () => new Response("", { status: 401 }));
+			const onUnauthorized = vi.fn();
+			const error = (await createErc7677PaymasterClient({
+				url: "https://paymaster.tenant.example/rpc",
+				chainId: 31337,
+				getSessionToken: () => "session-token",
+				onUnauthorized,
+				sessionEndpoint: false,
+				fetchImpl: fetchImpl as unknown as typeof fetch,
+			})
+				.getPaymasterData({ userOperation })
+				.catch((e: unknown) => e)) as SponsorshipRefusedError;
+			const init = (fetchImpl.mock.calls[0] as unknown[])[1] as RequestInit;
+			expect(
+				(init.headers as Record<string, string>).authorization,
+			).toBeUndefined();
+			expect(error.reason).toBe("not-your-wallet");
+			expect(onUnauthorized).not.toHaveBeenCalled();
+		});
+
+		it("reports a forbidden wallet (403) as a refusal and keeps the session", async () => {
+			const fetchImpl = vi.fn(async () => new Response("", { status: 403 }));
+			const onUnauthorized = vi.fn();
+			const error = (await createErc7677PaymasterClient({
+				url: "/api/v1/paymaster",
+				chainId: 31337,
+				getSessionToken: () => "session-token",
+				onUnauthorized,
+				fetchImpl: fetchImpl as unknown as typeof fetch,
+			})
 				.getPaymasterData({ userOperation })
 				.catch((e: unknown) => e)) as SponsorshipRefusedError;
 			expect(error.reason).toBe("not-your-wallet");
+			expect(onUnauthorized).not.toHaveBeenCalled();
 		});
 	});
 
