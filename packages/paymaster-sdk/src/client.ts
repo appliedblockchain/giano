@@ -695,8 +695,9 @@ export class GianoPaymasterClient {
 	/**
 	 * The privileged changes to the paymaster and, given its address, its timelock, in one window of
 	 * blocks: role changes, fees, parameters, signers, pause, upgrades, tenant registration, state
-	 * and funds, and the timelock's schedule, execute, cancel, delay and role events (B1). Newest
-	 * first, each with its block time, transaction sender and actor.
+	 * and funds, the paymaster's stake (the EntryPoint's stake events for it), and the timelock's
+	 * schedule, execute, cancel, delay and role events (B1). Newest first, each with its block time
+	 * and actor.
 	 *
 	 * A window like {@link getSponsorships}: pass `older` back as `range` to read the one before.
 	 * `kinds` narrows the list by event name; `tenantId` to one tenant's events, including timelock
@@ -713,17 +714,17 @@ export class GianoPaymasterClient {
 		const timelock = options.timelock
 			? this.timelock(options.timelock)
 			: undefined;
-		const resolved = await resolveWindow(
-			this.publicClient,
-			options.range,
-			this.logWindow,
-		);
+		const [resolved, entryPoint] = await Promise.all([
+			resolveWindow(this.publicClient, options.range, this.logWindow),
+			this.getEntryPoint(),
+		]);
 		const { logs, ...page } = await readWindow(
 			resolved,
 			(range) =>
 				readAdminEvents(this.publicClient, range, {
 					paymaster: this.address,
 					timelock: timelock?.address,
+					entryPoint,
 					kinds: options.kinds,
 					decodeCall: timelock
 						? (target, data) => timelock.decodeCall(target, data)
@@ -736,13 +737,24 @@ export class GianoPaymasterClient {
 		const tenant = options.tenantId
 			? toTenantId(options.tenantId).toLowerCase()
 			: undefined;
+		const about = (event: (typeof logs)[number]) =>
+			event.tenant?.id.toLowerCase() === tenant ||
+			event.call?.decoded?.args.some(
+				(arg) => typeof arg === "string" && arg.toLowerCase() === tenant,
+			);
+		// `Cancelled` carries only the operation's id: it is the tenant's when the operation is, or a
+		// cancelled change would read as still pending.
+		const operations = new Set(
+			logs
+				.filter((event) => event.call && about(event))
+				.map((event) => String(event.args.id)),
+		);
 		const kept = tenant
 			? logs.filter(
 					(event) =>
-						event.tenant?.id.toLowerCase() === tenant ||
-						event.call?.decoded?.args.some(
-							(arg) => typeof arg === "string" && arg.toLowerCase() === tenant,
-						),
+						about(event) ||
+						(event.kind === "Cancelled" &&
+							operations.has(String(event.args.id))),
 				)
 			: logs;
 		return {
@@ -750,6 +762,7 @@ export class GianoPaymasterClient {
 			events: await enrichAdminEvents(this.publicClient, kept, {
 				paymaster: this.address,
 				timelock: timelock?.address,
+				entryPoint,
 			}),
 		};
 	}
