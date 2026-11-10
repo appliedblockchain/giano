@@ -431,8 +431,9 @@ function OverviewUsage() {
 	return (
 		<UsageCard
 			figures={usage.total}
+			unknownTenant={usage.unknownTenant}
 			title="Usage, last 7 days"
-			subtitle={`Every tenant on ${deployment.name}, from wallet-api's sponsorship decisions and settlements. Refusals are split by whose they are to fix.`}
+			subtitle={`Every tenant of this deployment on ${deployment.name}, from wallet-api's sponsorship decisions and settlements. Refusals are split by whose they are to fix.`}
 		/>
 	);
 }

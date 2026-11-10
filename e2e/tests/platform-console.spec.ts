@@ -400,8 +400,9 @@ test.describe("admin console", () => {
 			"Overhead",
 		])
 			await expect(usage).toContainText(label);
-		// the earlier suites sponsored real operations on this devnet
-		await expect(usage).not.toContainText(/Allowed\s*0\b/);
+		// the earlier suites sponsored real operations on this devnet. The value's own element:
+		// the card's text runs the figures together ("Allowed0Refused…"), so a regex over it cannot fail.
+		await expect(usage.getByTestId("usage-allowed")).not.toHaveText("0");
 	});
 
 	test("Health shows what wallet-api sees of each chain it serves", async ({

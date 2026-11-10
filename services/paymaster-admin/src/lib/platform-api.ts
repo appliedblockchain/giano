@@ -266,8 +266,14 @@ export type Usage = {
 	chainId: number;
 	since: string;
 	until: string;
+	/** This deployment's tenants only. */
 	total: UsageFigures;
-	tenants: (UsageFigures & { tenantId: string | null; slug: string | null })[];
+	tenants: (UsageFigures & { tenantId: string; slug: string })[];
+	/**
+	 * Settlements for a tenant id this deployment does not know: on a shared paymaster, another
+	 * deployment's. Not in `total`. Absent from a wallet-api that predates it.
+	 */
+	unknownTenant?: UsageFigures;
 };
 
 export type UsageFigures = {

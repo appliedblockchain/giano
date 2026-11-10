@@ -247,7 +247,8 @@ export function TenantPage({
 			)}
 
 			<OtherDeployments others={others} ledger={record.detail?.ledger} />
-			<TenantUsage tenantId={row.id} />
+			{/* Usage is per registry tenant: one with no row has its settlements recorded as unknown. */}
+			{row.registry && <TenantUsage tenantId={row.id} />}
 			{client && <TenantActivity client={client} tenantId={row.id} />}
 
 			<TenantHistory
@@ -578,7 +579,7 @@ function TenantUsage({ tenantId }: { tenantId: string }) {
 	const usage = useUsage();
 	if (!usage) return null;
 	const mine = usage.tenants.find(
-		(tenant) => tenant.tenantId?.toLowerCase() === tenantId,
+		(tenant) => tenant.tenantId.toLowerCase() === tenantId,
 	);
 	return (
 		<UsageCard
