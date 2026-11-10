@@ -214,7 +214,24 @@ const envSchema = z
 		IMPLEMENTATION_ADDRESS: addressSchema.optional(),
 
 		CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+		/** Absolute wallet session lifetime: activity never extends it (G5). */
 		SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
+		/**
+		 * A wallet session unused for this long stops resolving (G5 R1), before its absolute expiry.
+		 * At least 300 s, at most SESSION_TTL_SECONDS. An expired session costs the user one passkey
+		 * sign-in; any operation that moves funds needs a passkey signature regardless.
+		 */
+		SESSION_IDLE_TIMEOUT_SECONDS: z.coerce
+			.number()
+			.int()
+			.min(300, "must be at least 300 seconds")
+			.default(3600),
+		/**
+		 * Live wallet sessions one user may hold (G5 R4). A sign-in over the cap revokes the user's
+		 * sessions used longest ago, so a script cannot pile up valid tokens and the user is never
+		 * locked out.
+		 */
+		SESSION_MAX_PER_USER: z.coerce.number().int().min(1).default(10),
 
 		/**
 		 * Lifetime of a pending addition (WM-19): the cross-device handoff slot expires in
@@ -401,6 +418,14 @@ const envSchema = z
 			),
 	})
 	.superRefine((env, ctx) => {
+		if (env.SESSION_IDLE_TIMEOUT_SECONDS > env.SESSION_TTL_SECONDS) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["SESSION_IDLE_TIMEOUT_SECONDS"],
+				message: `must not exceed SESSION_TTL_SECONDS (${env.SESSION_TTL_SECONDS})`,
+			});
+		}
+
 		const scalarsPresent =
 			env.CHAIN_ID !== undefined ||
 			env.RPC_URL !== undefined ||

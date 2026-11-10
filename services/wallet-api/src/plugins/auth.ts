@@ -105,13 +105,14 @@ export default fp(
 						message: "bearer session token required",
 					});
 				}
-				const session = await opts.sessions.resolve(token);
-				if (!session) {
+				const resolved = await opts.sessions.resolve(token);
+				if (!resolved) {
 					return reply.code(401).send({
 						error: "unauthorized",
 						message: "invalid or expired session",
 					});
 				}
+				const { touchDue, ...session } = resolved;
 				// G2.3: a session is scoped to its tenant. When the request carries a resolvable
 				// Origin, the two must agree — same generic body as an invalid token (no oracle).
 				if (request.tenant && request.tenant.id !== session.tenantId) {
@@ -142,6 +143,9 @@ export default fp(
 					request.tenant = tenant;
 					request.log = request.log.child({ tenant: tenant.slug });
 				}
+				// Only now is the session used: a request refused above (a foreign origin, a suspended
+				// tenant) does not reset its idle timer (design D1).
+				if (touchDue) await opts.sessions.touch(session.sessionId);
 				request.session = session;
 			},
 		);

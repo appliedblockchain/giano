@@ -86,6 +86,8 @@ services:
       # --- sessions / challenges / observability ---
       CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-300}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
+      SESSION_IDLE_TIMEOUT_SECONDS: ${SESSION_IDLE_TIMEOUT_SECONDS:-3600}
+      SESSION_MAX_PER_USER: ${SESSION_MAX_PER_USER:-10}
       # when set, GET /metrics requires this bearer token (recommended in production)
       METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
