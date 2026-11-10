@@ -551,6 +551,18 @@ export function createTenantAdminService(db: Db) {
 			});
 		},
 
+		/**
+		 * Locks the tenant a platform admin revokes user sessions on (G5 R3), inside the revocation's
+		 * transaction, as every other tenant write does. A deleted tenant has no sessions left, so it
+		 * is refused like any other action its state does not allow, and nothing is recorded.
+		 */
+		async lockForSessionRevocation(tx: Tx, slug: string): Promise<Tenant> {
+			const tenant = await lockBySlug(tx, slug);
+			if (tenant.status === "deleted")
+				throw invalidTransition(tenant, "revoke sessions of");
+			return tenant;
+		},
+
 		/** Newest first. `before` is the id of the last entry of the previous page. */
 		async history(
 			slug: string,

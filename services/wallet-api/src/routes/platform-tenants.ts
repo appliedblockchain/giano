@@ -4,7 +4,11 @@ import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
 import type { ChainRegistry } from "../services/chains.js";
-import { createTenantAdminService } from "../services/tenant-admin.js";
+import {
+	adminRevocationSchema,
+	type SessionService,
+} from "../services/sessions.js";
+import { actorOf, createTenantAdminService } from "../services/tenant-admin.js";
 import {
 	IMMUTABLE_TENANT_FIELDS,
 	type Tenant,
@@ -106,7 +110,12 @@ function sendWriteError(reply: FastifyReply, error: unknown) {
  */
 export default async function platformTenantRoutes(
 	instance: FastifyInstance,
-	opts: { db: Db; config: AppConfig; registry: ChainRegistry },
+	opts: {
+		db: Db;
+		config: AppConfig;
+		registry: ChainRegistry;
+		sessions: SessionService;
+	},
 ) {
 	const app = instance.withTypeProvider<ZodTypeProvider>();
 	const admin = createTenantAdminService(opts.db);
@@ -479,6 +488,40 @@ export default async function platformTenantRoutes(
 					request.platformAdmin!,
 				);
 				return reply.code(204).send(null);
+			} catch (error) {
+				return sendWriteError(reply, error);
+			}
+		},
+	);
+
+	app.post(
+		"/v1/platform/tenants/:slug/sessions/revoke",
+		{
+			...route,
+			schema: {
+				...docs,
+				summary:
+					"Revoke the live sessions of one of the tenant's users, by externalUserId or wallet address (G5)",
+				params: slugParams,
+				body: adminRevocationSchema,
+				response: { 200: z.object({ revoked: z.number().int() }), ...errors },
+			},
+		},
+		async (request, reply) => {
+			try {
+				// suspended tenants are allowed: revoking is still worth doing before a resume. The
+				// tenant is locked and checked in the revocation's transaction, so a delete cannot slip in.
+				const platformAdmin = request.platformAdmin!;
+				const revoked = await opts.sessions.revokeAndRecord(
+					async (tx) =>
+						(await admin.lockForSessionRevocation(tx, request.params.slug)).id,
+					request.body,
+					{
+						actor: actorOf(platformAdmin),
+						platformAdminSessionId: platformAdmin.sessionId,
+					},
+				);
+				return { revoked };
 			} catch (error) {
 				return sendWriteError(reply, error);
 			}

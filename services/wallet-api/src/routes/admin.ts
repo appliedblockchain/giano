@@ -4,6 +4,10 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { rorOrigins } from "../db/schema.js";
+import {
+	adminRevocationSchema,
+	type SessionService,
+} from "../services/sessions.js";
 
 const originSchema = z
 	.string()
@@ -20,7 +24,7 @@ const originSchema = z
  */
 export default async function adminRoutes(
 	instance: FastifyInstance,
-	opts: { db: Db },
+	opts: { db: Db; sessions: SessionService },
 ) {
 	const app = instance.withTypeProvider<ZodTypeProvider>();
 	app.addHook("preHandler", app.requireAdmin);
@@ -103,6 +107,29 @@ export default async function adminRoutes(
 					.send({ error: "not-found", message: "origin not found" });
 			}
 			return reply.code(204).send(null);
+		},
+	);
+
+	app.post(
+		"/v1/admin/sessions/revoke",
+		{
+			schema: {
+				tags: ["admin"],
+				summary:
+					"Revoke the live sessions of one of this tenant's users, by externalUserId or wallet address (G5)",
+				security: [{ adminKey: [] }],
+				body: adminRevocationSchema,
+				response: { 200: z.object({ revoked: z.number().int() }) },
+			},
+		},
+		async (request) => {
+			// scoped to the key's tenant: a user or wallet of another tenant revokes nothing
+			const revoked = await opts.sessions.revokeAndRecord(
+				request.adminTenant!.id,
+				request.body,
+				{ actor: `tenant-admin-key:${request.adminKeyId!}` },
+			);
+			return { revoked };
 		},
 	);
 }
