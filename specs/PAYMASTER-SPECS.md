@@ -353,7 +353,10 @@ Its only write is the transient reservation in step 6:
 
 1. caller is the configured EntryPoint;
 2. not paused (`whenNotPaused`);
-3. `version` recognised and `paymasterData` length exact;
+3. `version` recognised and `paymasterData` length exact, and `paymasterPostOpGasLimit` is at least
+   `MIN_POST_OP_GAS_LIMIT` (100,000 gas, §3.8). The tenant is charged only in `postOp`, so a limit
+   too small for settlement would let the EntryPoint take the gas from the deposit with the tenant
+   never charged (§3.6);
 4. tenant registered and enabled;
 5. `signers.contains(signer)` and `SignatureChecker.isValidSignatureNow(signer, digest, sig)` —
    an unlisted or revoked key fails on the cheap set lookup before any cryptography runs;
@@ -431,11 +434,16 @@ non-zero `deficit` fails validation step 6 until `depositFor` clears it, which s
 growing while the alert is being handled.
 
 The fee is charged for `PostOpMode.opSucceeded` and `opReverted` alike (R-40). `postOpReverted` is
-not delivered to us by the EntryPoint at all; the deposit is still debited, so it appears as slack
-and is caught by reconciliation rather than by the ledger. The reverted `postOp` also never released
-its reservation, so the reservation stays held until the transaction ends. No funds are at risk, but
-later withdrawals and validations for that tenant in the same transaction see a smaller available
-balance.
+not delivered to us by the EntryPoint at all. The EntryPoint still debits the deposit for the gas,
+plus its penalty on the whole unused `paymasterPostOpGasLimit`, and pays it to the bundler. The
+tenant's balance, its deficit and the treasury do not move. The loss therefore falls on the other
+tenants and the treasury, and it breaks the invariant (§8.4). `handleOps` is permissionless, so an
+attacker who could make `postOp` revert at will could repeat this indefinitely and collect the
+penalty as their own bundler. Validation step 3 closes the one way a client controls this: it
+refuses a `paymasterPostOpGasLimit` below `MIN_POST_OP_GAS_LIMIT`, and the sponsorship service
+refuses to sign one (§5.2). The reverted `postOp` also never released its reservation, so the
+reservation stays held until the transaction ends, and later withdrawals and validations for that
+tenant in the same transaction see a smaller available balance.
 
 ### 3.7 Events and errors
 
@@ -457,8 +465,8 @@ a tenant's own reconciliation need — R-43's separate visibility of gas, fee an
 | Role grants/revocations | inherited from OZ `AccessControl` (R-47) |
 
 Custom errors mirror the validation steps (`NotEntryPoint`, `PaymasterPaused`, `UnknownTenant`,
-`TenantDisabled`, `BadPaymasterData`, `UnauthorisedSigner`, `InsufficientTenantBalance`,
-`TenantInDeficit`, `NotWithdrawAddress`, `ExceedsTreasury`) so that a refusal reason is legible
+`TenantDisabled`, `BadPaymasterData`, `PostOpGasLimitTooLow`, `UnauthorisedSigner`,
+`InsufficientTenantBalance`, `TenantInDeficit`, `NotWithdrawAddress`, `ExceedsTreasury`) so that a refusal reason is legible
 from a trace.
 
 ### 3.8 Gas expectations
@@ -471,6 +479,7 @@ fails CI rather than surfacing as a `postOp` that ran out of gas:
 | `validatePaymasterUserOp` | ~37.3k | < 60k |
 | `postOp`, cold treasury slot | ~49.9k | < 80k |
 | `postOp`, warm treasury slot | ~10.2k | < 80k |
+| `postOp`, worst case (cold, empty treasury credited, deficit opened) | ~54.7k | < `MIN_POST_OP_GAS_LIMIT` (100k) |
 
 > **Corrected during implementation.** This section originally budgeted 15–20k for validation and
 > 25–35k for settlement. Validation is about twice the original figure: the EIP-712 digest covers
@@ -484,7 +493,11 @@ withdrawal. The default of 40,000 sits deliberately between the two.
 
 This is D4's accepted consequence: it must be pre-funded, it raises the floor on a workable
 per-transaction cost cap, and `paymasterPostOpGasLimit` must be set high enough that `postOp` cannot
-run out of gas — a `postOp` revert is a `PostOpReverted` for the whole operation.
+run out of gas — a `postOp` revert is a `PostOpReverted` for the whole operation, and the tenant is
+not charged for it (§3.6). The contract therefore refuses any limit below `MIN_POST_OP_GAS_LIMIT`
+(100,000 gas). It is a constant, not a parameter, because settlement's gas depends on the code and
+not on the deployment. The worst-case row above must stay below it, and `Gas.t.sol` asserts that.
+The sponsorship service's default for an omitted limit is the same 100,000.
 
 ---
 
@@ -659,6 +672,12 @@ The split matters, because the two methods are called a different number of time
 | Reserves | **No** | **Yes** (§7.3) |
 | Signs | No — returns a correctly-sized dummy signature so gas estimation is accurate | Yes |
 | Returns | `paymaster`, stub `paymasterData`, `paymasterVerificationGasLimit`, `paymasterPostOpGasLimit` | The same fields with real `paymasterData` |
+
+Both methods refuse a `paymasterPostOpGasLimit` below 100,000 gas with JSON-RPC invalid params
+(`-32602`), and use 100,000 when the field is absent. The value matches the contract's
+`MIN_POST_OP_GAS_LIMIT` (§3.8). The authorisation signs the limit, so this refusal also protects a
+paymaster deployed before the contract enforced it. The service refuses rather than raises the
+limit, because the client must submit the exact value that was signed.
 
 Reserving in `getPaymasterData` and not in the stub call is what keeps the reservation ledger from
 filling with estimation noise, and still puts the reservation strictly before the moment the user
