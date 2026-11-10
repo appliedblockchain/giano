@@ -41,7 +41,7 @@ Why 60 minutes: an operation that moves funds needs a passkey signature anyway, 
 2. Insert the new session.
 3. Revoke the live sessions beyond the newest `SESSION_MAX_PER_USER`, ordered by `last_used_at DESC, created_at DESC`.
 
-"Live" uses the same predicate as `resolve()`, so idle and expired sessions never count and are never touched. A partial index `sessions_user_live_idx ON sessions (user_id, last_used_at) WHERE revoked_at IS NULL` keeps step 3 and the revocations by user cheap, and `sessions_wallet_live_idx ON sessions (lower(wallet_address)) WHERE revoked_at IS NULL` does the same for an admin revoking by wallet, which matches ignoring case: dead rows stay until retention (G34), so neither path scans them.
+"Live" uses the same predicate as `resolve()`, so idle and expired sessions never count and are never touched. A partial index `sessions_user_live_idx ON sessions (user_id, last_used_at) WHERE revoked_at IS NULL` keeps step 3 and the revocations by user cheap, and `sessions_wallet_live_idx ON sessions (lower(wallet_address)) WHERE revoked_at IS NULL` does the same for an admin revoking by wallet, which matches ignoring case. Both indexes leave out revoked rows only. An expired or idle session stays in them until retention (G34) deletes it, and the query's `live()` predicate filters it out: a small cost, bounded by one user's or one wallet's sessions.
 - *Alternative:* refuse the new sign-in at the cap. Rejected: it locks out the legitimate user, which is exactly what a script holding 10 tokens would want.
 
 ### D4. Revocation is one service method with two selectors
@@ -81,7 +81,7 @@ wallet-kit's management controller already has `resetToSignedOut()`. It subscrib
 - [The migration ages existing sessions: they idle out an hour after issue] → Intended. Users sign in again at most once. Called out in the release notes.
 - [The `FOR UPDATE` on `users` serialises a user's concurrent sign-ins] → Sign-ins are human-paced and the lock lasts one short transaction.
 - [Clients built before this change keep a dead token after a 401 and show a generic error] → Unchanged from today's behavior after expiry. The fix ships in the wallet-core and wallet-kit release, and the BYO-wallet docs say to treat a 401 as the end of the session.
-- [Expired and revoked rows still accumulate] → Retention is G34. The partial index keeps the hot paths independent of the dead rows.
+- [Expired and revoked rows still accumulate] → Retention is G34. The partial indexes leave out revoked rows; expired and idle rows stay in them until G34, filtered by the query.
 - [Migration number clash with the A1 stack's `0010_usage_indexes`] → This change uses `0011` and keeps it, whichever merges first. The runner applies every unapplied file in filename order, so a `0010` that arrives later is still applied, and the two are independent (an index on another table). The migration test checks the list.
 
 ## Migration Plan

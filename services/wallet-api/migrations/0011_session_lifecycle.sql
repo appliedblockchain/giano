@@ -7,8 +7,9 @@
 --
 -- The partial indexes serve the paths that only care about sessions not yet revoked: the per-user
 -- cap at issue and revocation by user, and an admin revoking every session acting for a wallet,
--- matched ignoring case. Dead rows stay in the table until retention (G34), so the emergency route
--- must not scan them.
+-- matched ignoring case. They leave out revoked rows only: an expired or idle session is still
+-- indexed until retention (G34) deletes it, and the query filters it out. Revoked rows are the
+-- ones that pile up under an emergency revocation, which is when this route runs.
 --
 -- tenant_history gains 'user-sessions-revoke': a tenant admin key or a platform admin revoking a
 -- user's sessions is recorded there, with the tenant left unchanged (before/after null).
