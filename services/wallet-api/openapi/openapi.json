@@ -404,18 +404,35 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "externalUserId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "externalUserId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    },
+                    "required": [
+                      "externalUserId"
+                    ],
+                    "additionalProperties": false
                   },
-                  "walletAddress": {
-                    "type": "string",
-                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "walletAddress": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]{40}$"
+                      }
+                    },
+                    "required": [
+                      "walletAddress"
+                    ],
+                    "additionalProperties": false
                   }
-                }
+                ]
               }
             }
           }
@@ -7985,18 +8002,35 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "externalUserId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "externalUserId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    },
+                    "required": [
+                      "externalUserId"
+                    ],
+                    "additionalProperties": false
                   },
-                  "walletAddress": {
-                    "type": "string",
-                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "walletAddress": {
+                        "type": "string",
+                        "pattern": "^0x[0-9a-fA-F]{40}$"
+                      }
+                    },
+                    "required": [
+                      "walletAddress"
+                    ],
+                    "additionalProperties": false
                   }
-                }
+                ]
               }
             }
           }

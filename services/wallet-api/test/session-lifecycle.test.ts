@@ -617,6 +617,7 @@ describe("a tenant admin key revokes its users' sessions", () => {
 			{},
 			{ externalUserId: "x", walletAddress: `0x${"a".repeat(40)}` },
 			{ walletAddress: "0x1234" },
+			{ externalUserId: "x", reason: "unexpected" },
 		]) {
 			expect((await tenantRevoke(payload)).statusCode).toBe(400);
 		}

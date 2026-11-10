@@ -48,22 +48,18 @@ export type SessionSelector =
 
 /**
  * The body of an admin revocation (G5 R3): exactly one of the user's id in the tenant, or a
- * wallet address, which reaches every session acting for that wallet whoever opened it.
+ * wallet address, which reaches every session acting for that wallet whoever opened it. Each
+ * shape is strict, so a body naming both, or neither, matches no shape; and the type is a union
+ * the compiler narrows, with no field left to assert present.
  */
-export const adminRevocationSchema = z
-	.object({
-		externalUserId: z.string().min(1).max(256).optional(),
+export const adminRevocationSchema = z.union([
+	z.strictObject({ externalUserId: z.string().min(1).max(256) }),
+	z.strictObject({
 		walletAddress: z
 			.string()
-			.regex(/^0x[0-9a-fA-F]{40}$/, "must be a 20-byte hex address")
-			.optional(),
-	})
-	.refine(
-		(body) =>
-			(body.externalUserId === undefined) !==
-			(body.walletAddress === undefined),
-		"name exactly one of externalUserId or walletAddress",
-	);
+			.regex(/^0x[0-9a-fA-F]{40}$/, "must be a 20-byte hex address"),
+	}),
+]);
 
 export type AdminRevocation = z.infer<typeof adminRevocationSchema>;
 
@@ -266,9 +262,9 @@ export function createSessionService(db: Db, options: SessionServiceOptions) {
 			// A wallet is matched ignoring case, so it is recorded in one case too: 0xABC… and 0xabc…
 			// are the same revocation in the history.
 			const selector: SessionSelector =
-				body.externalUserId !== undefined
+				"externalUserId" in body
 					? { externalUserId: body.externalUserId }
-					: { walletAddress: String(body.walletAddress).toLowerCase() };
+					: { walletAddress: body.walletAddress.toLowerCase() };
 			const [kind, value] = Object.entries(selector)[0];
 			return db.transaction(async (tx) => {
 				const tenantId = typeof tenant === "string" ? tenant : await tenant(tx);
