@@ -1,9 +1,13 @@
 import { expect, test } from "@playwright/test";
 import {
+	type Address,
 	createPublicClient,
+	createWalletClient,
+	defineChain,
 	formatEther,
 	getAddress,
 	http,
+	parseAbi,
 	parseEther,
 } from "viem";
 
@@ -20,6 +24,55 @@ import {
 	walletCalls,
 	walletChain,
 } from "./console-wallet";
+
+/**
+ * Puts the shared stack back whatever a test did: the anvil account the console's wallet uses is
+ * unlocked on the devnet, so these send as it directly, without the console.
+ */
+const devnet = defineChain({
+	id: CHAINS.a.chainId,
+	name: CHAINS.a.name,
+	nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+	rpcUrls: { default: { http: [CHAINS.a.rpc] } },
+});
+const devnetReader = createPublicClient({
+	chain: devnet,
+	transport: http(CHAINS.a.rpc),
+});
+const devnetOperator = createWalletClient({
+	account: OPERATOR,
+	chain: devnet,
+	transport: http(CHAINS.a.rpc),
+});
+const RESTORE_ABI = parseAbi([
+	"function PAUSER_ROLE() view returns (bytes32)",
+	"function hasRole(bytes32 role, address account) view returns (bool)",
+	"function grantRole(bytes32 role, address account)",
+	"function isSigner(address signer) view returns (bool)",
+	"function removeSigner(address signer)",
+	"function entryPoint() view returns (address)",
+]);
+async function restore(
+	paymaster: Address,
+	call: {
+		functionName: "grantRole" | "removeSigner";
+		args: readonly unknown[];
+	},
+) {
+	const hash = await devnetOperator.writeContract({
+		address: paymaster,
+		abi: RESTORE_ABI,
+		...(call as { functionName: "grantRole"; args: [`0x${string}`, Address] }),
+	});
+	await devnetReader.waitForTransactionReceipt({ hash });
+}
+const configuredPaymaster = async (page: import("@playwright/test").Page) =>
+	(await page.evaluate(
+		async () =>
+			(
+				await (await fetch("/config.json")).json()
+			).deployments[0].sponsorshipPaymaster,
+	)) as Address;
 
 /**
  * The paymaster console's wallet path, against the real console and the real devnets.
@@ -313,23 +366,36 @@ test("the Paymaster tab adds and removes a signing key, sets each parameter, wit
 	const key = getAddress(
 		`0x${"5e".padEnd(40 - 12, "0")}${Date.now().toString(16).padStart(12, "0")}`,
 	);
-	await page.getByRole("textbox", { name: "Add a signing key" }).fill(key);
-	await page.getByRole("button", { name: "Add signing key" }).click();
-	await confirmed("Add signing key");
-	const keyRow = page.getByText(key).first();
-	await expect(keyRow).toBeVisible({ timeout: 30_000 });
-	await page
-		.locator("div", { has: page.getByText(key, { exact: true }) })
-		.getByRole("button", { name: "Remove" })
-		.last()
-		.click();
-	const removeKey = page.getByRole("alertdialog", {
-		name: "Remove a signing key",
-	});
-	await expect(removeKey).toContainText(key);
-	await removeKey.getByRole("button", { name: "Remove key" }).click();
-	await confirmed("Remove");
-	await expect(page.getByText(key)).toHaveCount(0, { timeout: 30_000 });
+	try {
+		await page.getByRole("textbox", { name: "Add a signing key" }).fill(key);
+		await page.getByRole("button", { name: "Add signing key" }).click();
+		await confirmed("Add signing key");
+		const keyRow = page.getByText(key).first();
+		await expect(keyRow).toBeVisible({ timeout: 30_000 });
+		await page
+			.locator("div", { has: page.getByText(key, { exact: true }) })
+			.getByRole("button", { name: "Remove" })
+			.last()
+			.click();
+		const removeKey = page.getByRole("alertdialog", {
+			name: "Remove a signing key",
+		});
+		await expect(removeKey).toContainText(key);
+		await removeKey.getByRole("button", { name: "Remove key" }).click();
+		await confirmed("Remove");
+		await expect(page.getByText(key)).toHaveCount(0, { timeout: 30_000 });
+	} finally {
+		// a step that failed must not leave a stray signer for the sponsorship specs
+		if (
+			await devnetReader.readContract({
+				address: paymaster,
+				abi: RESTORE_ABI,
+				functionName: "isSigner",
+				args: [key],
+			})
+		)
+			await restore(paymaster, { functionName: "removeSigner", args: [key] });
+	}
 
 	// each parameter moved by one and put back, read from the chain each time
 	const gas = await read<number>("postOpGasAllowance", "uint32");
@@ -385,13 +451,35 @@ test("the Paymaster tab adds and removes a signing key, sets each parameter, wit
 			.toBe(treasury - 1n);
 	}
 
-	// Add stake with 0 re-locks with the delay shown, which is the on-chain one: no funds move
+	// Add stake with 0 re-locks with the delay shown, which is the on-chain one: no funds move, and
+	// the EntryPoint records a new StakeLocked for the paymaster
 	const locked = page.getByText("Staked and locked");
 	await expect(locked).toBeVisible();
+	const entryPoint = await devnetReader.readContract({
+		address: paymaster,
+		abi: RESTORE_ABI,
+		functionName: "entryPoint",
+	});
+	const before = await devnetReader.getBlockNumber();
 	await page.getByRole("textbox", { name: "Add stake" }).fill("0");
 	await page.getByRole("button", { name: "Add stake", exact: true }).click();
 	await confirmed("Add stake");
 	await expect(locked).toBeVisible();
+	await expect
+		.poll(
+			async () =>
+				(
+					await devnetReader.getLogs({
+						address: entryPoint,
+						event: parseAbi([
+							"event StakeLocked(address indexed account, uint256 totalStaked, uint256 unstakeDelaySec)",
+						])[0],
+						args: { account: paymaster },
+						fromBlock: before + 1n,
+					})
+				).length,
+		)
+		.toBe(1);
 });
 
 test("the Roles tab grants, rotates and revokes a role, each change landing on chain", async ({
@@ -470,6 +558,32 @@ test("the Roles tab renounces the wallet's own role, says when it is the last ho
 	await tab(page, /Roles/).click();
 
 	// the console's wallet holds every paymaster role, ROLE_ADMIN among them, so it can grant back
+	const paymaster = await configuredPaymaster(page);
+	try {
+		await renounceAndGrantBack(page);
+	} finally {
+		// whatever failed in between, the wallet holds PAUSER_ROLE again for the specs after this
+		const pauser = await devnetReader.readContract({
+			address: paymaster,
+			abi: RESTORE_ABI,
+			functionName: "PAUSER_ROLE",
+		});
+		if (
+			!(await devnetReader.readContract({
+				address: paymaster,
+				abi: RESTORE_ABI,
+				functionName: "hasRole",
+				args: [pauser, OPERATOR],
+			}))
+		)
+			await restore(paymaster, {
+				functionName: "grantRole",
+				args: [pauser, OPERATOR],
+			});
+	}
+});
+
+async function renounceAndGrantBack(page: import("@playwright/test").Page) {
 	const row = page.getByTestId("role-PAUSER_ROLE");
 	const mine = row.getByTestId(`holder-${OPERATOR.toLowerCase()}`);
 	await expect(mine).toBeVisible({ timeout: 30_000 });
@@ -494,7 +608,7 @@ test("the Roles tab renounces the wallet's own role, says when it is the last ho
 	await page.getByRole("textbox", { name: "Grant to" }).fill(OPERATOR);
 	await page.getByRole("button", { name: "Grant", exact: true }).click();
 	await expect(mine).toBeVisible({ timeout: 30_000 });
-});
+}
 
 test("Health says once that no timelock is configured, and names the implementation's release", async ({
 	page,

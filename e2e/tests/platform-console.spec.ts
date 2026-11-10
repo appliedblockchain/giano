@@ -312,8 +312,10 @@ test.describe("admin console", () => {
 	test("a tenant's older history stays loaded across the console's refreshes", async ({
 		page,
 	}) => {
-		// more history than one page (50) holds, written through wallet-api in its own session
-		const token = await platformSignIn();
+		// more history than one page (50) holds, written through wallet-api in sessions of its own:
+		// two, so each stays well under the 60-a-minute limit per session
+		const tokens = [await platformSignIn(), await platformSignIn()];
+		let sent = 0;
 		const as = (
 			method: string,
 			path: string,
@@ -322,7 +324,10 @@ test.describe("admin console", () => {
 		) =>
 			platformCall(method, path, {
 				body,
-				headers: { authorization: `Bearer ${token}`, ...headers },
+				headers: {
+					authorization: `Bearer ${tokens[sent++ % tokens.length]}`,
+					...headers,
+				},
 			});
 		const slug = `history-${Date.now()}`;
 		const created = await as("POST", "/v1/platform/tenants", {
@@ -350,14 +355,16 @@ test.describe("admin console", () => {
 		await row.getByRole("link", { name: slug }).click();
 		const history = page.getByTestId("tenant-history");
 		await expect(history).toContainText("History 51", { timeout: 30_000 });
+		// the creation is on the second page: not shown until it is asked for
+		await expect(history.getByTestId("history-create")).toHaveCount(0);
 		await page.getByRole("button", { name: /Older entries/ }).click();
-		// the creation is on the second page
+		await expect(history.getByTestId("history-create")).toHaveCount(1);
 		await expect(history).toContainText("History 0");
 
 		// a poll re-reads page 1 and must not drop the older page loaded
 		await nextRefresh(page);
 		await nextRefresh(page);
-		await expect(history).toContainText("History 0");
+		await expect(history.getByTestId("history-create")).toHaveCount(1);
 		await expect(history).toContainText("History 51");
 	});
 
