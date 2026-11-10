@@ -312,7 +312,8 @@ function PendingRow({ entry, first }: { entry: PendingCheck; first: boolean }) {
  */
 function useDrift(enabled: boolean, chainId: number) {
 	const { run } = usePlatform();
-	const { block } = useConsole();
+	// Not `block`, which stays the same on an idle chain: drift is read with every refresh.
+	const { lastUpdated } = useConsole();
 	const [state, setState] = useState<"pending" | "served" | "absent">(
 		enabled ? "pending" : "absent",
 	);
@@ -346,10 +347,10 @@ function useDrift(enabled: boolean, chainId: number) {
 		}
 	}, [enabled, run, chainId]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `block` is a trigger: read again with every console refresh
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `lastUpdated` is a trigger: read again with every console refresh
 	useEffect(() => {
 		void read();
-	}, [read, block]);
+	}, [read, lastUpdated]);
 
 	return {
 		state,
