@@ -65,10 +65,11 @@ Giano is a wallet, so it takes the ABIP's 7-day tier for projects that handle fi
   excluded. The entry carries a comment with the advisory and the removal date, and the PR description gives the
   reason. List every active exclusion in the table above, and remove it once the version has aged past the window.
 - **Lockfiles.** Both lockfiles are committed, and every install in CI and in the Dockerfiles uses
-  `--frozen-lockfile`. pnpm 11 checks every lockfile entry against the policy on a frozen install ("Lockfile passes
+  `--frozen-lockfile`. pnpm checks every lockfile entry against the policy on a frozen install ("Lockfile passes
   supply-chain policies"), so the window also covers versions that are already locked.
-- **Package manager.** pnpm 11.15.1, pinned through `packageManager`. ABIP-6 requires at least pnpm 10.16, and 10.19
-  for version-specific exclusions.
+- **Package manager.** pnpm 12.17.0, pinned through `packageManager` with its sha256 in both workspaces. ABIP-6
+  requires at least pnpm 10.16, and 10.19 for version-specific exclusions. The pnpm version itself also respects the
+  window: pick a release published at least 7 days before the PR that moves the pin.
 
 ### Enforcement
 

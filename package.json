@@ -30,5 +30,5 @@
 		"@changesets/cli": "2.31.1",
 		"typescript": "7.0.2"
 	},
-	"packageManager": "pnpm@11.15.1+sha256.27460629b10111604e7f98882753b53398986820c20e0a065f3a4a5e9e7db71f"
+	"packageManager": "pnpm@12.17.0+sha256.6d776e285187f9e334d8826cc5a88e82e41606345f196a5a93f4403bd332553e"
 }
