@@ -1,7 +1,7 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import { and, eq, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { tenants, users } from "../src/db/schema.js";
 import { createChallengeService } from "../src/services/challenges.js";
@@ -1109,6 +1109,53 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 		expect(again.statusCode).toBe(502);
 		expect(again.json()).toMatchObject({ error: "bundler", code: -32602 });
 		expect(await statusOf(userOperationHash)).toBe("accepted");
+	});
+
+	it("a late transport error on the first send does not turn a resend's confirmed submission into failed", async () => {
+		// The first send fails with a transport error only after a concurrent resend was accepted.
+		// Its own app has a long send limit, so the first send cannot end on its deadline instead.
+		const firstSend: { fail?: (error: Error) => void } = {};
+		const mock = createMockBundlerFetch();
+		const raceFetch: typeof fetch = async (url, init) => {
+			const { method } = JSON.parse(String(init?.body)) as { method: string };
+			if (method === "eth_sendUserOperation" && !firstSend.fail)
+				return new Promise((_, reject) => {
+					firstSend.fail = reject;
+				});
+			return mock.fetchImpl(url, init);
+		};
+		const raceApp = await buildApp({
+			config: { ...ctx.config, UPSTREAM_SEND_TIMEOUT_MS: 10_000 },
+			db: ctx.db,
+			fetchImpl: raceFetch,
+		});
+		try {
+			const op = makeOp(0x104);
+			const post = () =>
+				raceApp.inject({
+					method: "POST",
+					url: "/v1/userops",
+					headers: { authorization: `Bearer ${sessionToken}` },
+					payload: { userOperation: op },
+				});
+			const first = post();
+			await vi.waitFor(() => expect(firstSend.fail).toBeDefined());
+
+			const resend = await post();
+			expect(resend.statusCode).toBe(200);
+			const { userOperationHash, duplicate } = resend.json() as {
+				userOperationHash: string;
+				duplicate?: boolean;
+			};
+			expect(duplicate).toBe(true);
+			expect(await statusOf(userOperationHash)).toBe("submitted");
+
+			firstSend.fail?.(new TypeError("fetch failed"));
+			expect((await first).statusCode).toBeGreaterThanOrEqual(500);
+			expect(await statusOf(userOperationHash)).toBe("submitted");
+		} finally {
+			await raceApp.close();
+		}
 	});
 
 	it("JSON-RPC: answers -32023 with the hash in data, and does not record the op as failed", async () => {

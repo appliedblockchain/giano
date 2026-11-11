@@ -431,13 +431,17 @@ export function createUseropRelay({
 					});
 					throw error;
 				}
+				// A concurrent resend may already have had the operation accepted. A late failure of this
+				// send must not turn that confirmed `submitted` row into `failed`.
 				await db
 					.update(useropLog)
 					.set({
 						status: "failed",
 						bundlerResponse: { error: (error as Error).message },
 					})
-					.where(eq(useropLog.id, rowId));
+					.where(
+						and(eq(useropLog.id, rowId), eq(useropLog.status, "accepted")),
+					);
 				metrics.useropRelayed.inc({
 					status: "failed",
 					tenant: tenantSlug,
