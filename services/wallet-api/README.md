@@ -54,8 +54,8 @@ Swagger UI at `/docs` outside production).
 
 | Endpoint | Auth / tenant resolution | Purpose |
 | --- | --- | --- |
-| `POST /v1/webauthn/options` | `Origin` → tenant; tenant admin key when registration closed | challenge + known credential ids for a user |
-| `POST /v1/webauthn/registration/verify` | `Origin` → tenant (consumes tenant-bound challenge) | verify attestation, derive P-256 key, compute counterfactual wallet, issue session |
+| `POST /v1/webauthn/options` | `Origin` → tenant; tenant admin key when registration closed | challenge + known credential ids for a user; `409 already-registered` for a registration the verify step would refuse |
+| `POST /v1/webauthn/registration/verify` | `Origin` → tenant (consumes tenant-bound challenge) | verify attestation, derive P-256 key, compute counterfactual wallet, issue session; `409 already-registered` for an existing user who holds an active passkey, and on an open-registration tenant for any existing user |
 | `POST /v1/webauthn/authentication/verify` | `Origin` → tenant (consumes tenant-bound challenge) | verify assertion, issue session |
 | `GET /v1/me`, `/v1/me/credentials`, `/v1/me/credentials/:id/public-key` | session (tenant-scoped) | current identity/credentials |
 | `POST /v1/sessions/logout` | session | revoke session |

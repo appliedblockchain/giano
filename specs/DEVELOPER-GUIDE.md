@@ -987,6 +987,10 @@ P-256 passkey).
       irreversible; passkeys bind to it forever.
 - [ ] **Registration closed** (tenant `openRegistration: false`) with the tenant's `adminKeys`
       set; your backend calls `/v1/webauthn/options` server-to-server with the tenant's key.
+      Your backend asks for `kind: "registration"` only for a new user, or for one whose passkeys
+      were all removed. For a user who holds an active passkey, wallet-api returns
+      `409 already-registered`: that user adds a device through a pending addition
+      ([`INTEGRATION.md` §6](./INTEGRATION.md#6-tenants)).
 - [ ] **UserOp policy** tuned: deployment defaults (`USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`,
       `USEROP_ALLOWED_PAYMASTERS`) plus per-tenant `policy` overrides; paymasters pinned per tenant.
 - [ ] **Origins locked down:** each tenant's `expectedOrigins`, `allowedDappOrigins` /

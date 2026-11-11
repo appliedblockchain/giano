@@ -108,6 +108,37 @@ export function coseToXY(cosePublicKey: Uint8Array<ArrayBuffer>): {
 	return { x: hex(x), y: hex(y) };
 }
 
+/**
+ * Why a registration for a user who already exists is refused, or null when it may go ahead.
+ * Registration must never let a caller who cannot prove they are that user add a passkey to
+ * them: the new passkey would give the caller a session as that user. A device is added through
+ * a pending addition, which an existing owner approves.
+ * - Open registration: the request carries only the tenant Origin, so every existing user is
+ *   refused, including one whose passkeys were all removed.
+ * - Closed registration: the tenant's backend vouches for the request with its admin key, so a
+ *   user whose passkeys were all removed may register again. One who holds an active passkey may not.
+ */
+function registrationRefusal(
+	tenant: { openRegistration: boolean },
+	hasActivePasskey: boolean,
+): ApiError | null {
+	if (hasActivePasskey) {
+		return new ApiError(
+			409,
+			"already-registered",
+			"this user already has a passkey — sign in with it, or add a device through a pending addition",
+		);
+	}
+	if (tenant.openRegistration) {
+		return new ApiError(
+			409,
+			"already-registered",
+			"this user already exists — with open registration, a passkey is added to an existing user only through a pending addition",
+		);
+	}
+	return null;
+}
+
 export default async function webauthnRoutes(
 	instance: FastifyInstance,
 	opts: {
@@ -165,6 +196,7 @@ export default async function webauthnRoutes(
 					}),
 					401: errorResponseSchema,
 					403: errorResponseSchema,
+					409: errorResponseSchema,
 				},
 			},
 		},
@@ -206,6 +238,12 @@ export default async function webauthnRoutes(
 						? "authentication"
 						: "registration"
 					: kind;
+			// Refuse here, before the client creates a passkey that registration/verify would
+			// refuse anyway (see registrationRefusal).
+			if (resolvedKind === "registration" && user) {
+				const refusal = registrationRefusal(tenant, creds.length > 0);
+				if (refusal) throw refusal;
+			}
 			const challenge = await challenges.issue(
 				resolvedKind,
 				user?.id ?? null,
@@ -242,6 +280,7 @@ export default async function webauthnRoutes(
 						session: sessionResponseSchema,
 					}),
 					403: errorResponseSchema,
+					409: errorResponseSchema,
 				},
 			},
 		},
@@ -357,10 +396,16 @@ export default async function webauthnRoutes(
 				// user did not exist only creates it: if the user appeared since (a concurrent
 				// registration), refuse rather than attach this credential to a user the challenge
 				// was never bound to.
+				// The bound user's row is locked, so two registrations for the same user run one
+				// after the other and the second sees the first one's credential.
 				const user = consumed.userId
-					? await tx.query.users.findFirst({
-							where: eq(users.id, consumed.userId),
-						})
+					? (
+							await tx
+								.select()
+								.from(users)
+								.where(eq(users.id, consumed.userId))
+								.for("update")
+						)[0]
 					: (
 							await tx
 								.insert(users)
@@ -376,6 +421,22 @@ export default async function webauthnRoutes(
 						"challenge-user-mismatch",
 						"challenge no longer matches this user — request new options",
 					);
+				}
+				// See registrationRefusal. The tenant's registration mode is read on this request, so
+				// a tenant that opened registration after /options was called is checked as open.
+				if (consumed.userId) {
+					const active = await tx
+						.select({ id: credentials.id })
+						.from(credentials)
+						.where(
+							and(
+								eq(credentials.userId, user.id),
+								isNull(credentials.removedAt),
+							),
+						)
+						.limit(1);
+					const refusal = registrationRefusal(tenant, active.length > 0);
+					if (refusal) throw refusal;
 				}
 				const [credential] = await tx
 					.insert(credentials)

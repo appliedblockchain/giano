@@ -1,7 +1,9 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { tenants, users } from "../src/db/schema.js";
+import { createChallengeService } from "../src/services/challenges.js";
 import {
 	loadTenantFixtures,
 	parseTenantFixtures,
@@ -93,6 +95,17 @@ const register = async (
 		credentialId: string;
 		session: { token: string };
 	};
+};
+
+/** Marks every passkey of a tenant user as removed, as the registry does once the chain confirms it. */
+const removeCredentials = async (
+	externalUserId: string,
+	tenant: Tenant = TENANT_A,
+) => {
+	await ctx.db.execute(sql`
+		UPDATE credentials SET removed_at = now()
+		 WHERE user_id = (SELECT u.id FROM users u JOIN tenants t ON t.id = u.tenant_id
+		                   WHERE t.slug = ${tenant.slug} AND u.external_id = ${externalUserId})`);
 };
 
 describe("health", () => {
@@ -316,18 +329,32 @@ describe("registration ceremony", () => {
 	});
 
 	it("rejects a challenge bound to a different user (challenge-user-mismatch)", async () => {
-		// 'user-1' exists, so a registration challenge for them is user-bound
-		const options = await getOptions("user-1", "registration");
+		// 'mismatch-user' exists with no active passkey on closed tenant B, so a registration
+		// challenge for them is user-bound
+		await register(
+			"mismatch-user",
+			createAuthenticator(),
+			TENANT_B,
+			TENANT_B.adminKey,
+		);
+		await removeCredentials("mismatch-user", TENANT_B);
+		const options = await getOptions(
+			"mismatch-user",
+			"registration",
+			TENANT_B,
+			TENANT_B.adminKey,
+		);
+		expect(options.userExists).toBe(true);
 		const res = await ctx.app.inject({
 			method: "POST",
 			url: "/v1/webauthn/registration/verify",
-			headers: { origin: TEST_ORIGIN },
+			headers: { origin: TENANT_B.walletOrigin },
 			payload: {
 				externalUserId: "someone-else-entirely",
 				response: makeRegistrationResponse(createAuthenticator(), {
 					challenge: options.challenge,
-					origin: TEST_ORIGIN,
-					rpId: TEST_RP_ID,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
 				}),
 			},
 		});
@@ -394,6 +421,162 @@ describe("registration ceremony", () => {
 		expect((await getOptions("race-user")).credentialIds).toEqual([
 			(created.json() as { credentialId: string }).credentialId,
 		]);
+	});
+
+	it("refuses registration options for a user who already holds an active passkey", async () => {
+		const victim = await register("victim-bound", createAuthenticator());
+		// Tenant A has open registration: this call carries no credential of any kind.
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/options",
+			headers: { origin: TEST_ORIGIN },
+			payload: { externalUserId: "victim-bound", kind: "registration" },
+		});
+		expect(res.statusCode).toBe(409);
+		expect((res.json() as { error: string }).error).toBe("already-registered");
+		// 'auto' still resolves to sign-in for that user.
+		const auto = await getOptions("victim-bound");
+		expect(auto.kind).toBe("authentication");
+		expect(auto.credentialIds).toEqual([victim.credentialId]);
+	});
+
+	it("on a closed tenant, refuses to add a passkey to a user who holds an active one, and lets a user with none register", async () => {
+		const options = () =>
+			getOptions(
+				"re-register-user",
+				"registration",
+				TENANT_B,
+				TENANT_B.adminKey,
+			);
+		await register(
+			"re-register-user",
+			createAuthenticator(),
+			TENANT_B,
+			TENANT_B.adminKey,
+		);
+		await removeCredentials("re-register-user", TENANT_B);
+		// Both challenges are bound to the user, issued while they had no active passkey.
+		const first = await options();
+		const second = await options();
+		const verify = (challenge: string) =>
+			ctx.app.inject({
+				method: "POST",
+				url: "/v1/webauthn/registration/verify",
+				headers: { origin: TENANT_B.walletOrigin },
+				payload: {
+					externalUserId: "re-register-user",
+					response: makeRegistrationResponse(createAuthenticator(), {
+						challenge,
+						origin: TENANT_B.walletOrigin,
+						rpId: TENANT_B.rpId,
+					}),
+				},
+			});
+		const created = await verify(first.challenge);
+		expect(created.statusCode).toBe(200);
+		const res = await verify(second.challenge);
+		expect(res.statusCode).toBe(409);
+		expect((res.json() as { error: string }).error).toBe("already-registered");
+		expect(
+			(
+				await getOptions(
+					"re-register-user",
+					undefined,
+					TENANT_B,
+					TENANT_B.adminKey,
+				)
+			).credentialIds,
+		).toEqual([(created.json() as { credentialId: string }).credentialId]);
+	});
+
+	it("registers only one of two concurrent registrations for the same user", async () => {
+		const options = (kind?: string) =>
+			getOptions("concurrent-user", kind, TENANT_B, TENANT_B.adminKey);
+		await register(
+			"concurrent-user",
+			createAuthenticator(),
+			TENANT_B,
+			TENANT_B.adminKey,
+		);
+		await removeCredentials("concurrent-user", TENANT_B);
+		const challenges = await Promise.all([
+			options("registration"),
+			options("registration"),
+		]);
+		const results = await Promise.all(
+			challenges.map(({ challenge }) =>
+				ctx.app.inject({
+					method: "POST",
+					url: "/v1/webauthn/registration/verify",
+					headers: { origin: TENANT_B.walletOrigin },
+					payload: {
+						externalUserId: "concurrent-user",
+						response: makeRegistrationResponse(createAuthenticator(), {
+							challenge,
+							origin: TENANT_B.walletOrigin,
+							rpId: TENANT_B.rpId,
+						}),
+					},
+				}),
+			),
+		);
+		expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+		expect((await options()).credentialIds).toHaveLength(1);
+	});
+
+	it("on an open tenant, refuses registration for a user whose passkeys were all removed", async () => {
+		await register("removed-open-user", createAuthenticator());
+		await removeCredentials("removed-open-user");
+		// Tenant A has open registration: neither an explicit request nor 'auto' gets a challenge.
+		for (const kind of ["registration", "auto"]) {
+			const res = await ctx.app.inject({
+				method: "POST",
+				url: "/v1/webauthn/options",
+				headers: { origin: TEST_ORIGIN },
+				payload: { externalUserId: "removed-open-user", kind },
+			});
+			expect(res.statusCode).toBe(409);
+			expect((res.json() as { error: string }).error).toBe(
+				"already-registered",
+			);
+		}
+		// registration/verify refuses too, even with a challenge bound to the user that /options
+		// would not issue (for example, one issued before the tenant opened registration).
+		const tenantA = await ctx.db.query.tenants.findFirst({
+			where: eq(tenants.slug, TENANT_A.slug),
+		});
+		if (!tenantA) throw new Error("tenant A is missing");
+		const user = await ctx.db.query.users.findFirst({
+			where: and(
+				eq(users.tenantId, tenantA.id),
+				eq(users.externalId, "removed-open-user"),
+			),
+		});
+		if (!user) throw new Error("removed-open-user was not registered");
+		const challenge = await createChallengeService(ctx.db, 300).issue(
+			"registration",
+			user.id,
+			user.tenantId,
+			"removed-open-user",
+		);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TEST_ORIGIN },
+			payload: {
+				externalUserId: "removed-open-user",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: TEST_ORIGIN,
+					rpId: TEST_RP_ID,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(409);
+		expect((res.json() as { error: string }).error).toBe("already-registered");
+		const active = await ctx.db.execute(sql`
+			SELECT 1 FROM credentials WHERE user_id = ${user.id} AND removed_at IS NULL`);
+		expect(active.rows).toHaveLength(0);
 	});
 
 	it("requires the tenant's own admin key for options when open_registration is false", async () => {
