@@ -205,6 +205,15 @@ port.
 
 CI runs Node 24, because portless requires it.
 
+### Why CI installs Chromium without `--with-deps`
+
+`.github/workflows/e2e.yml` runs `playwright install chromium`, not
+`playwright install --with-deps chromium`. `--with-deps` also runs `apt-get install` for the system
+packages Chromium uses. The `ubuntu-26.04` runner image already has the libraries Chromium needs to
+start. What `--with-deps` added on top was nine font packages (CJK, Thai, Cyrillic and Unicode
+coverage, such as `fonts-ipafont-gothic` and `fonts-wqy-zenhei`). The suite does not use them: it
+has no screenshot or visual assertions, so a missing glyph cannot fail a test.
+
 ### Every test must pass on its own
 
 CI runs the suite as three jobs, each on its own stack: the main suite in two halves

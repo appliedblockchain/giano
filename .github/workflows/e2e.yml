@@ -111,7 +111,7 @@ jobs:
           pnpm --filter @appliedblockchain/giano-connector build
       - name: Install Playwright browsers
         working-directory: e2e
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
       - name: Wait for the stack
         run: |
           # the compose step's own budget is 300s of --wait on top of the build
