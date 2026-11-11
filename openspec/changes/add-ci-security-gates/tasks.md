@@ -5,7 +5,7 @@
 - [x] 1.1 Add `scripts/check-accepted-findings.mjs` in register mode (D1, D2): validate fields, `AF-NNN` IDs, dates, the 180-day limit, expiry and duplicates; reject `slither-disable` and `aderyn-ignore` comments under `packages/contracts/src`; check that every suppression in `.gitleaks.toml`, `packages/contracts/slither.config.json` and `packages/contracts/aderyn.toml` (each when present) names an existing entry. Verify with `node scripts/check-accepted-findings.mjs` exiting 0 on the committed register.
 - [x] 1.2 Add report mode for `slither`, `aderyn`, `pnpm-audit`, `trivy` and `gitleaks` with the match keys in D2. It fails on a missing, empty or invalid report, including a pnpm error object, and prints the entry ID of each accepted finding. Verify with the unit tests in 1.3.
 - [x] 1.3 Add `scripts/check-accepted-findings.test.mjs` (`node --test`) covering each scenario of the register requirements in `specs/ci-security-gates/spec.md`: missing owner, expiry over 180 days, expired entry, duplicate ID, suppression without an entry, in-source Solidity suppression, and for each tool a matched, an unmatched, an expired-match and an invalid report. Verify all pass.
-- [x] 1.4 Create `security/accepted-findings.json` with AF-006 and AF-007 (`minimatch`, `glob`), owner and expiry set. Verify the register check passes.
+- [x] 1.4 Create `security/accepted-findings.json` with AF-006 and AF-007 (`minimatch`, `glob`), owner and expiry set. Verify the register check passes. (Both entries were removed in 1.17.)
 - [x] 1.5 Add job `accepted-findings` ("Accepted-findings register") to `ci.yml`: unit tests, then register mode. No `paths` filter. Verify it is green on the PR.
 - [x] 1.6 Add job `ci-passed` ("CI passed") to `ci.yml` as in D12: `needs` every other job in the file, runs with `if: always()`, and fails unless every needed job succeeded. `scripts/check-ci-gate.mjs` (with tests) parses `ci.yml` and fails on a job missing from `needs`, a missing `if: always()` or any `continue-on-error`. Verify it is green on the PR, and red on a scratch run where one needed job is made to fail. Scratch run: https://github.com/appliedblockchain/giano/actions/runs/43050281214 (#267).
 - [x] 1.7 Add `packages/contracts/requirements-ci.in` (`slither-analyzer==0.11.6`) and the hash-locked `requirements-ci.txt` generated with `uv pip compile … --generate-hashes`. Confirm 0.11.6 was released at least 7 days ago. Verify `pip install --require-hashes -r requirements-ci.txt` succeeds in a clean Python 3.12 venv.
@@ -18,10 +18,11 @@
 - [x] 1.14 Add the pinning rule in D11 to `docs/abip-compliance.md`, with a table of each tool, its version, release date and where its hash is recorded. Start the table with Slither and Aderyn. Verify both appear with the versions used in `ci.yml`.
 - [x] 1.15 Pin every action that the new jobs use to a full commit SHA, with the release as a comment, as #246 does. Extend `scripts/check-ci-gate.mjs` (with tests) to fail on any `uses` in `.github/workflows` that is not a local path, a commit SHA or an image digest (D12). Verify the check passes on every workflow and fails on `actions/checkout@v7`.
 - [x] 1.16 Replace the parsing of `slither.config.json` and `aderyn.toml` with a comparison against a fixed copy, apart from the reasons (D3). Verify the committed configs pass, and every changed value, added setting and other TOML or JSON form in the tests fails.
+- [x] 1.17 Remove AF-006 and AF-007 from the register, because #260 fixed both advisories by lifting `glob` to 14.0.3 (with `minimatch` 11.0.4). Verify `pnpm audit` reports no advisory in the root workspace and the register check passes.
 
 ## 2. Dependencies, secrets and source (PR 2)
 
-- [ ] 2.1 Add job `dependency-audit` ("Dependency audit (pnpm audit)") to `ci.yml` as in D5, for the root and `services/custom-example`, and add it to the `needs` of `ci-passed`. Verify it is green on the PR and that the log lists AF-006 and AF-007 as accepted below the gate.
+- [ ] 2.1 Add job `dependency-audit` ("Dependency audit (pnpm audit)") to `ci.yml` as in D5, for the root and `services/custom-example`, and add it to the `needs` of `ci-passed`. Verify it is green on the PR and that the log shows the audit result of both workspaces.
 - [ ] 2.2 Extend `.github/dependabot.yml`, which #246 added, with the two npm entries in D6. Verify GitHub reports no configuration error for it in the PR's checks.
 - [ ] 2.3 Update the ABIP-6 section of `docs/abip-compliance.md`: the audit runs in CI, and accepted residuals live in the register. Verify the doc links resolve.
 - [ ] 2.4 Add `.gitleaks.toml` that extends the default rules, with one allowlist for the public Anvil keys, and register entry AF-008 for it. Verify the register check passes.
@@ -41,7 +42,7 @@
 
 ## 4. Reassess current advisories before the first production release (R4)
 
-- [ ] 4.1 Re-run `pnpm audit` on both workspaces and compare with the open Dependabot alerts. For `minimatch` and `glob`, fix them if a patched version passes the regression gates and is at least 7 days old; otherwise renew AF-006 and AF-007 with a new reason. Verify the audit output and the register agree.
+- [ ] 4.1 Re-run `pnpm audit` on both workspaces and compare with the open Dependabot alerts. For each open advisory, fix it if a patched version passes the regression gates and is at least 7 days old; otherwise add a register entry for it, or renew its entry with a new reason. Verify the audit output and the register agree.
 - [ ] 4.2 Confirm `braces` and `sprintf-js`, recorded as residuals in the archived change `2026-10-26-fix-dependency-vulnerabilities`, are no longer reported, and say so in the PR description. Verify with the audit output.
 - [ ] 4.3 Review every register entry with its owner and record the review date in the PR description. Verify no entry expires before the planned release date.
 

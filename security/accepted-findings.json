@@ -78,30 +78,6 @@
 			"owner": "Rui Sereno",
 			"reason": "By design. The contract is never deployed. Clients run its constructor in an eth_call to get the replay-safe hash of an account that may not exist yet (the ERC-6492 pattern), and the assembly return is how the constructor hands that hash back.",
 			"followUp": "G22 (independent contract review)."
-		},
-		{
-			"id": "AF-006",
-			"tool": "pnpm-audit",
-			"match": { "workspace": ".", "ghsa": "GHSA-g3hv-75wg-m249" },
-			"severity": "moderate",
-			"location": "pnpm-lock.yaml: minimatch 10.2.5 via services/wallet-api > @fastify/swagger-ui > @fastify/static > glob; minimatch 9.0.9 via @testcontainers/postgresql (dev only)",
-			"accepted": "2026-11-09",
-			"expires": "2027-02-07",
-			"owner": "Rui Sereno",
-			"reason": "Denial of service through globparts amplification. The fix is minimatch 11.0.1 or later, a new major version that glob 13.0.6 and 9.x do not accept, and no override forces it because that is untested. Moderate, below the CI gate. The dependency-security spec requires every open moderate advisory to be recorded.",
-			"followUp": "Reassess before the first production release (task group 4 of openspec/changes/add-ci-security-gates): upgrade when a patched version passes the regression gates and is at least 7 days old."
-		},
-		{
-			"id": "AF-007",
-			"tool": "pnpm-audit",
-			"match": { "workspace": ".", "ghsa": "GHSA-3g3m-2fjr-6pw4" },
-			"severity": "moderate",
-			"location": "pnpm-lock.yaml: glob 13.0.6 via services/wallet-api > @fastify/swagger-ui > @fastify/static; glob 10.5.0 via @testcontainers/postgresql (dev only)",
-			"accepted": "2026-11-09",
-			"expires": "2027-02-07",
-			"owner": "Rui Sereno",
-			"reason": "AbortSignal cancellation bypass allows filesystem traversal after a timeout. The fix is glob 14.0.2 or later, a new major version that @fastify/static 10.1.6 and archiver-utils 5.0.2 do not accept, and no override forces it because that is untested. Moderate, below the CI gate. The dependency-security spec requires every open moderate advisory to be recorded.",
-			"followUp": "Reassess before the first production release (task group 4 of openspec/changes/add-ci-security-gates): upgrade when a patched version passes the regression gates and is at least 7 days old."
 		}
 	]
 }

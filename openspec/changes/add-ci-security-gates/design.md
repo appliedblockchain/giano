@@ -17,7 +17,8 @@ See `proposal.md` for the motivation. The current state that shapes the design:
   outside this change.
 - **Current audit.** `pnpm audit` reports 0 high or critical advisories in both workspaces, and the 2 moderate ones
   above. The residuals that the archived change `2026-10-26-fix-dependency-vulnerabilities` recorded (`braces`,
-  `sprintf-js`) are no longer reported.
+  `sprintf-js`) are no longer reported. #260 later fixed both moderate advisories by lifting `glob` to 14.0.3,
+  which brings `minimatch` 11.0.4. Since then `pnpm audit` reports none in the root workspace.
 - **Trial run of Slither and Aderyn (2026-11-09).** Slither 0.11.6 reported 1 High, 2 Medium, 6 Low and 18
   Informational. Aderyn v0.6.8 reported 3 High detectors (4 instances) and 15 Low detectors. All Highs look like false
   positives or deliberate design (table in D9). Slither's Foundry integration runs `forge clean`, which deletes `out/`.
@@ -195,11 +196,10 @@ Scanning the full history is out of scope. Credentials already in history are G3
 | AF-003 | aderyn | `contract-locks-ether`, `GianoPaymaster.sol:50` | False positive. `receive()` reverts, and `depositFor` and `addStake` (L540) forward all of `msg.value` to the EntryPoint. Aderyn 0.6.8 counts only `.call{value: …}`, `transfer`, `send` and `sendValue` as sends, so it misses calls with value to a named function. |
 | AF-004 | aderyn | `unprotected-initializer`, `GianoSmartWalletFactory.sol:81` | False positive. The flagged function is the view `initCodeHash()`, matched by name only. |
 | AF-005 | aderyn | `yul-return`, `ERC1271InputGenerator.sol:48` | By design. The constructor returns the hash for the ERC-6492 `eth_call` pattern; the contract is never deployed. |
-| AF-006 | pnpm-audit | `minimatch` GHSA-g3hv-75wg-m249 (moderate, root) | Reassessed in task group 4 (R4). Recorded because `dependency-security` requires open moderates to be listed. |
-| AF-007 | pnpm-audit | `glob` GHSA-3g3m-2fjr-6pw4 (moderate, root) | Same as AF-006. |
 
-Rui Sereno owns every initial entry. G22 (independent contract review) is the
-follow-up for the contract entries. The 2 Slither Mediums (`unused-return` in `registerTenant` and
+Rui Sereno owns every initial entry. The register first also held AF-006 and AF-007 for the `minimatch` and `glob`
+advisories. #260 fixed both, so the entries were removed. Their IDs are not reused. G22 (independent contract
+review) is the follow-up for the contract entries. The 2 Slither Mediums (`unused-return` in `registerTenant` and
 `validatePaymasterUserOp`) are below the gate. Both are safe, and they stay visible in the uploaded report.
 
 ### D10. Trivy in `docker.yml`, before the push
