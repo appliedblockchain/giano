@@ -65,7 +65,7 @@ Giano has two verifiers:
 | Create passkey (connect) | `'required'`: `wallet-core/src/provider.ts:560-577`, default from `provider-injection/types/credential-info/defaults.ts:14` | No: `wallet-api/src/routes/webauthn.ts:304` | n/a |
 | Sign in with existing passkey | `'required'`: `wallet-core/src/provider-injection/wallet-api/create-wallet-api-injection.ts:157` | No: `webauthn.ts:504` | n/a |
 | Credential lookup (`getCredential`) | `'required'` default: `wallet-core/src/account/get-credential.ts:28-29` | (same as sign-in) | n/a |
-| Add a passkey (wallet-management claim) | `'required'`: `wallet-core/src/management/create-passkey.ts:47` | No: `wallet-api/src/routes/wallet-management.ts:607` | The owner is then added on chain by an existing owner's signature (below). |
+| Add a passkey (wallet-management claim) | `'required'`: `wallet-core/src/management/create-passkey.ts:56` | No: `wallet-api/src/routes/wallet-management.ts:607` | The owner is then added on chain by an existing owner's signature (below). |
 | Sign UserOperation / message / typed data / `signed_eth_call` | `'required'`: viem `toWebAuthnAccount` passes no `userVerification`, so ox `WebAuthnP256.sign` defaults to `'required'` (ox 0.14.57 `webauthn/Authentication.ts:168`) | Not verified by wallet-api at all; the relay forwards the operation | No: `packages/contracts/src/GianoSmartWallet.sol:343` passes `requireUV: false` |
 | Platform-admin sign-in | n/a: EOA SIWE (`services/platform-sessions.ts`) | n/a | n/a |
 
