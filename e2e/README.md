@@ -205,6 +205,21 @@ port.
 
 CI runs Node 24, because portless requires it.
 
+### Every test must pass on its own
+
+CI runs the suite as three jobs, each on its own stack: the main suite in two halves
+(`pnpm test --fully-parallel --shard=1/2` and `2/2`), and `pnpm test:demo`. `--fully-parallel`
+makes `--shard` split by single test, not by spec file. So the point where the suite splits moves
+every time someone adds a test, and two tests in the same file can run in different jobs.
+
+A test must therefore pass without data that an earlier test in its file created. If a test does
+need an earlier one, put them in a serial block, as `timelock-console.spec.ts` does with
+`test.describe.configure({ mode: "serial" })`. Playwright always keeps a serial block in one job.
+
+To run one half locally as CI does, start from a fresh stack (`docker compose … down -v`, then up
+again) and run `pnpm test --fully-parallel --shard=2/2`. A test that fails there but passes in a
+full run depends on a test from the first half.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -229,8 +244,9 @@ pnpm -F @appliedblockchain/giano-e2e exec playwright install chromium
 pnpm -F @appliedblockchain/giano-e2e test
 ```
 
-63 tests across eight files: the stock and BYO wallet flows, tenant isolation (distinct
+98 tests across 12 spec files: the stock and BYO wallet flows, tenant isolation (distinct
 RP IDs, cross-tenant token rejection, Host-scoped `/.well-known/webauthn`), gas sponsorship
 (accounting, pre-approval refusals, invariants), multichain identity, passkey and owner management,
-and account claims. The opt-in demo project adds six tests. WebAuthn uses the CDP virtual authenticator on the
+and account claims. The opt-in demo project adds six tests. Each test must pass on its own: see
+[Every test must pass on its own](#every-test-must-pass-on-its-own). WebAuthn uses the CDP virtual authenticator on the
 popup page, so the suite is Chromium-only and never prompts for a real passkey.

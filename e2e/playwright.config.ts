@@ -22,6 +22,8 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,
 	workers: 1, // one shared backend + stateful wallet popups — serialize
+	// CI splits the suite by single test across two jobs, so each test must pass without data an
+	// earlier test created, unless both are in a serial block. See README "Every test must pass on its own".
 	// Registers the demo's names with portless and refuses to start until they answer.
 	globalSetup: "./portless-setup.mjs",
 	use: {
