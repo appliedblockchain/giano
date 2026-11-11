@@ -14,12 +14,13 @@ export default async function useropRoutes(
 		db: Db;
 		registry: ChainRegistry;
 		relay: UseropRelay;
+		receiptRatePerMinute: number;
 	},
 ) {
 	const app = instance.withTypeProvider<ZodTypeProvider>();
 	// request.tenant is backfilled from the session by requireSession, so no tenant
 	// service is needed here — the merged policy reads straight off the request.
-	const { db, registry, relay } = opts;
+	const { db, registry, relay, receiptRatePerMinute } = opts;
 
 	const relayLimit = async (request: FastifyRequest, reply: FastifyReply) => {
 		const session = request.session;
@@ -166,10 +167,19 @@ export default async function useropRoutes(
 	 * Public, read-only receipt lookup (on-chain public data). Deliberately tenant-free
 	 * and unauthenticated (D3.7): the receipt is public chain state, and thin-SDK dApps
 	 * await inclusion here without ever needing a bundler URL of their own (P3.4).
+	 * Because anyone can call it, it is rate-limited per client IP and only reaches the
+	 * bundler for operations this deployment relayed.
 	 */
 	app.get(
 		"/v1/userops/:hash/receipt",
 		{
+			config: {
+				rateLimit: {
+					max: receiptRatePerMinute,
+					timeWindow: "1 minute",
+					keyGenerator: (request: FastifyRequest) => `receipt:${request.ip}`,
+				},
+			},
 			schema: {
 				tags: ["userops"],
 				params: z.object({ hash: z.string().regex(/^0x[0-9a-fA-F]{64}$/) }),
@@ -177,20 +187,19 @@ export default async function useropRoutes(
 			},
 		},
 		async (request) => {
-			// No chainId parameter: the operation hash commits to the chain, and userop_log now
+			// No chainId parameter: the operation hash commits to the chain, and userop_log
 			// records it (MC-59) — so the chain is resolved from the logged row and the SDK's
 			// receipt polling keeps working untouched (§9.3). An op this deployment never relayed
-			// falls back to the sole chain when one is configured, and is unknown otherwise.
+			// is unknown: answering it would let any caller turn random hashes into bundler calls.
+			// userop_log stores the server-computed hash in lowercase, and the text comparison is
+			// case-sensitive, so any hex casing the schema accepts is folded to that form first.
+			const hash = request.params.hash.toLowerCase();
 			const row = await db.query.useropLog.findFirst({
-				where: eq(useropLog.useropHash, request.params.hash),
+				where: eq(useropLog.useropHash, hash),
 			});
-			const chain =
-				(row && registry.tryGet(row.chainId)) ||
-				(registry.size === 1 ? registry.sole : undefined);
+			const chain = row && registry.tryGet(row.chainId);
 			if (!chain) return { receipt: null };
-			const receipt = await chain.bundler.getUserOperationReceipt(
-				request.params.hash,
-			);
+			const receipt = await chain.bundler.getUserOperationReceipt(hash);
 			return { receipt };
 		},
 	);
