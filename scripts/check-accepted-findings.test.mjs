@@ -305,68 +305,106 @@ describe("check-accepted-findings: suppressions", () => {
 	it("allows exactly the fixed scope in slither.config.json", () => {
 		const scope = { "//": ["reason"], ...SLITHER_SCOPE };
 		assert.deepEqual(checkSlitherConfig(JSON.stringify(scope)), []);
-		for (const [config, expected] of [
-			[
-				{ ...scope, detectors_to_exclude: "arbitrary-send-eth" },
-				["config-suppression"],
-			],
-			[{ ...scope, exclude_high: true }, ["config-suppression"]],
-			[{ ...scope, exclude_dependencies: true }, ["config-suppression"]],
-			[
-				{ ...scope, filter_paths: "packages/contracts/src/" },
-				["config-suppression"],
-			],
-			[
-				{ ...scope, include_paths: "packages/contracts/src/,.*" },
-				["config-scope"],
-			],
-			[{ ...scope, show_ignored_findings: false }, ["config-scope"]],
-			[{ ...scope, exclude_optimization: undefined }, ["config-scope"]],
+		assert.deepEqual(checkSlitherConfig(JSON.stringify(SLITHER_SCOPE)), []);
+		for (const config of [
+			{ ...scope, detectors_to_exclude: "arbitrary-send-eth" },
+			{ ...scope, exclude_high: true },
+			{ ...scope, exclude_dependencies: true },
+			{ ...scope, filter_paths: "packages/contracts/src/" },
+			{ ...scope, include_paths: "packages/contracts/src/,.*" },
+			{ ...scope, show_ignored_findings: false },
+			{ ...scope, exclude_optimization: 1 },
+			{ ...scope, exclude_optimization: undefined },
 		])
 			assert.deepEqual(
 				rules(checkSlitherConfig(JSON.stringify(config))),
-				expected,
+				["config-scope"],
 				JSON.stringify(config),
 			);
-		assert.deepEqual(rules(checkSlitherConfig("{")), ["invalid-config"]);
+		assert.match(
+			checkSlitherConfig(JSON.stringify({ ...scope, exclude_high: true }))[0]
+				.message,
+			/differs from the fixed scope in: exclude_high\./,
+		);
 	});
 
-	it("allows exactly the fixed scope in aderyn.toml", () => {
-		const scope =
-			'# reason\nversion = 1\nroot = "." # comment\nsrc = "src"\nexclude = [ "src/testing/" ]\n';
+	it("reads slither.config.json key forms as Slither does", () => {
+		const body = JSON.stringify(SLITHER_SCOPE).slice(1, -1);
+		for (const text of [
+			// An escaped key name is still that key.
+			`{${body},"exclude\\u005fhigh":true}`,
+			// The last of two duplicate keys wins, in JSON.parse and in Python's json.
+			`{${body},"show_ignored_findings":false}`,
+			`{"__proto__":{"exclude_high":true},${body}}`,
+		])
+			assert.deepEqual(rules(checkSlitherConfig(text)), ["config-scope"], text);
+		for (const text of ["{", "[]", "NaN", `{${body},"x":NaN}`])
+			assert.deepEqual(
+				rules(checkSlitherConfig(text)),
+				["invalid-config"],
+				text,
+			);
+	});
+
+	it("allows exactly the fixed lines in aderyn.toml, apart from blank lines and comments", () => {
+		const scope = `# reason\n\n  # indented reason\n${ADERYN_TOML}\n# end\n`;
 		assert.deepEqual(checkAderynConfig(scope), []);
+		assert.deepEqual(
+			checkAderynConfig(ADERYN_TOML.replaceAll("\n", "\r\n")),
+			[],
+		);
 		const errs = checkAderynConfig(
 			`${scope}[detectors]\nexclude = ["yul-return"]\n`,
 		);
 		assert.deepEqual(
 			errs.map((e) => [e.line, e.rule]),
-			[
-				[6, "config-suppression"],
-				[7, "config-suppression"],
-			],
+			[[10, "config-scope"]],
 		);
-		for (const [toml, expected] of [
-			[scope.replace('src = "src"', 'src = "src/testing"'), ["config-scope"]],
-			[scope.replace('"src/testing/"', '"src/"'), ["config-scope"]],
-			[`${scope}include = ["src/utils/"]\n`, ["config-suppression"]],
-			[scope.replace('root = "."', 'root = "lib"'), ["config-scope"]],
-			[scope.replace('src = "src"\n', ""), ["config-scope"]],
-		])
-			assert.deepEqual(rules(checkAderynConfig(toml)), expected, toml);
+		assert.match(
+			errs[0].message,
+			/^has '\[detectors\]' where it must have nothing more\./,
+		);
+		const missing = checkAderynConfig(ADERYN_TOML.replace('src = "src"\n', ""));
+		assert.deepEqual(
+			missing.map((e) => e.line),
+			[3],
+		);
+		assert.match(
+			missing[0].message,
+			/^has 'exclude = \["src\/testing\/"\]' where it must have 'src = "src"'\./,
+		);
+		assert.match(
+			checkAderynConfig("version = 1\n")[0].message,
+			/^ends where it must have 'root = "\."'\./,
+		);
 	});
 
-	it("rejects every other TOML form in aderyn.toml that could set detectors", () => {
-		for (const [toml, rule] of [
-			["[detectors]\n", "config-suppression"],
-			['["detectors"]\n', "unsupported-config"],
-			["detectors.yul-return = false\n", "config-suppression"],
-			["detectors = { yul-return = false }\n", "config-suppression"],
-			['"src" = "src"\n', "unsupported-config"],
-			['src = { path = "src" }\n', "config-scope"],
-			['exclude = [\n  "src/testing/",\n]\n', "unsupported-config"],
-			["src = '''\nsrc'''\n", "unsupported-config"],
+	it("rejects any other line in aderyn.toml, whatever TOML form it takes", () => {
+		for (const toml of [
+			ADERYN_TOML.replace('src = "src"', 'src = "src/testing"'),
+			ADERYN_TOML.replace('"src/testing/"', '"src/"'),
+			ADERYN_TOML.replace('root = "."', 'root = "lib"'),
+			ADERYN_TOML.replace('src = "src"\n', ""),
+			`${ADERYN_TOML}include = ["src/utils/"]\n`,
+			// The same values in another form, or with a trailing comment, are not the fixed lines.
+			ADERYN_TOML.replace('root = "."', 'root = "." # comment'),
+			ADERYN_TOML.replace('["src/testing/"]', '[ "src/testing/" ]'),
+			ADERYN_TOML.replace('src = "src"', "src = 'src'"),
+			ADERYN_TOML.replace(
+				'exclude = ["src/testing/"]',
+				'exclude = [\n"src/testing/",\n]',
+			),
+			// Every form that sets detectors.
+			`${ADERYN_TOML}[detectors]\n`,
+			`${ADERYN_TOML}["detectors"]\n`,
+			`${ADERYN_TOML}detectors.yul-return = false\n`,
+			`${ADERYN_TOML}detectors = { yul-return = false }\n`,
+			`${ADERYN_TOML}"src" = "src"\n`,
+			`${ADERYN_TOML}x = '''\n# not a comment\n'''\n`,
+			`﻿${ADERYN_TOML}`,
+			"",
 		])
-			assert.ok(rules(checkAderynConfig(toml)).includes(rule), toml);
+			assert.deepEqual(rules(checkAderynConfig(toml)), ["config-scope"], toml);
 	});
 
 	it("lets each gitleaks entry accept exactly one allowlist, named first in its description", () => {

@@ -17,6 +17,7 @@
 - [x] 1.13 Write `security/README.md`: entry fields, the 180-day limit, how to renew, how each tool's finding ID is found. Verify the README example entry passes the register check.
 - [x] 1.14 Add the pinning rule in D11 to `docs/abip-compliance.md`, with a table of each tool, its version, release date and where its hash is recorded. Start the table with Slither and Aderyn. Verify both appear with the versions used in `ci.yml`.
 - [x] 1.15 Pin every action that the new jobs use to a full commit SHA, with the release as a comment, as #246 does. Extend `scripts/check-ci-gate.mjs` (with tests) to fail on any `uses` in `.github/workflows` that is not a local path, a commit SHA or an image digest (D12). Verify the check passes on every workflow and fails on `actions/checkout@v7`.
+- [x] 1.16 Replace the parsing of `slither.config.json` and `aderyn.toml` with a comparison against a fixed copy, apart from the reasons (D3). Verify the committed configs pass, and every changed value, added setting and other TOML or JSON form in the tests fails.
 
 ## 2. Dependencies, secrets and source (PR 2)
 
