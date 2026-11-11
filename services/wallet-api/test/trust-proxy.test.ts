@@ -54,7 +54,7 @@ describe("TRUST_PROXY", () => {
 	});
 });
 
-describe("ceremony rate limit behind a trusted proxy", () => {
+describe("per-IP rate limits behind a trusted proxy", () => {
 	const LIMIT = 2;
 	const PROXY = "10.40.1.5";
 	let ctx: TestContext;
@@ -62,9 +62,33 @@ describe("ceremony rate limit behind a trusted proxy", () => {
 	beforeAll(async () => {
 		ctx = await startTestStack({
 			CEREMONY_RATE_LIMIT_PER_MINUTE: String(LIMIT),
+			USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE: String(LIMIT),
 			TRUST_PROXY: "10.40.0.0/16",
 		});
 	}, 120_000);
+
+	// The public receipt lookup is keyed on request.ip alone (it has no tenant). Without a trusted
+	// proxy, one client polling hard would use the budget of every dApp's receipt wait.
+	it("gives each client its own receipt-lookup budget", async () => {
+		const receipt = (forwardedFor: string) =>
+			ctx.app
+				.inject({
+					method: "GET",
+					url: `/v1/userops/0x${"ab".repeat(32)}/receipt`,
+					remoteAddress: PROXY,
+					headers: { "x-forwarded-for": forwardedFor },
+				})
+				.then((res) => res.statusCode);
+
+		const flooder = [];
+		for (let i = 0; i <= LIMIT; i++) {
+			flooder.push(await receipt("198.51.100.20"));
+		}
+		expect(flooder).toEqual([200, 200, 429]);
+
+		// Same proxy, another client: its receipt wait is unaffected.
+		expect(await receipt("198.51.100.21")).toBe(200);
+	});
 
 	afterAll(async () => {
 		if (ctx) await stopTestStack(ctx);

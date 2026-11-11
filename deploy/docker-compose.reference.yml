@@ -56,6 +56,12 @@ services:
       # default: it is what refuses an environment-variable sponsorship signing key, and a default
       # that happened to be permissive is exactly how such a key reaches production.
       GIANO_DEPLOYMENT_CLASS: ${GIANO_DEPLOYMENT_CLASS:-production}
+      # The peers allowed to set X-Forwarded-For: IPs, CIDRs, loopback, linklocal or uniquelocal,
+      # never `true`. Name your TLS proxy and this project's Docker network (wallet-web's nginx
+      # forwards /api from it). Unset, request.ip is the proxy's address, so every per-IP rate
+      # limit (ceremonies, receipt lookup) is one budget for all clients. No default: port 8080
+      # is also published, and a peer inside a trusted range can choose its own address.
+      TRUST_PROXY: ${TRUST_PROXY:-}
 
       # --- chain ---
       CHAIN_ID: ${CHAIN_ID:?e.g. 8453}
@@ -82,8 +88,9 @@ services:
       USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-}
       # per-tenant relay rate limit default (tenant policy.relayRateLimitPerMinute overrides)
       USEROP_RATE_LIMIT_PER_MINUTE: ${USEROP_RATE_LIMIT_PER_MINUTE:-60}
-      # public receipt lookup, per client IP per minute. Behind a proxy every client shares the
-      # proxy's IP, so this is one budget for all users: raise it if receipt polling gets 429s
+      # public receipt lookup, per client IP per minute (see TRUST_PROXY below). The thin SDK
+      # polls every 2 s per pending op and waits after a 429, but gives up after 120 s: 429s that
+      # last that long fail the dApp's receipt wait, not only delay it. Raise this if they occur.
       USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE: ${USEROP_RECEIPT_RATE_LIMIT_PER_MINUTE:-1200}
 
       # --- sessions / challenges / observability ---
