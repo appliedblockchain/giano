@@ -10,3 +10,12 @@
 **/*.tsbuildinfo
 .git
 .DS_Store
+
+# Local env files can hold secrets: deployer private keys, RPC keys, wallet-api tokens. A Dockerfile
+# that copies a package directory whole would carry them into the image, and a Vite build would read
+# `.env.production.local` into the public bundle. CI builds from a clean checkout, but an image built
+# on a developer's machine would not be. The committed `.env.example` templates hold no secrets.
+# `services/custom-example/.env.development` is excluded too: it serves `pnpm dev` only.
+**/.env
+**/.env.*
+!**/.env.example
