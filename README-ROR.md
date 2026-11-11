@@ -257,7 +257,8 @@ With the dedicated wallet origin, the ROR document is served by the wallet stack
 
 - `giano-wallet-web`'s nginx proxies `GET /.well-known/webauthn` to the wallet-api, which
   serves it from the `ror_origins` table.
-- Manage entries with the admin API (bearer key from `ADMIN_API_KEYS`):
+- Manage entries with the admin API. The bearer is one of the tenant's admin keys, issued in the
+  paymaster console's Platform area. It manages only that tenant's origins:
 
 ```bash
 curl -X POST https://wallet.clientapp.com/api/v1/admin/ror-origins \
