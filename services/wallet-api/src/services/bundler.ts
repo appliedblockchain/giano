@@ -6,27 +6,38 @@ import { postJsonRpc, type UpstreamLimits } from "./upstream-fetch.js";
  * the server-configured one — never anything from a request body.
  *
  * Every call is bounded in time and response size (`limits`, G37). A call that hits a limit
- * throws `UpstreamLimitError`.
+ * throws `UpstreamLimitError`. `eth_sendUserOperation` has its own, longer deadline
+ * (`sendTimeoutMs`): giano-bundler holds a send until an executor lane is free.
  */
 export function createBundlerService(
 	bundlerUrl: string,
 	entryPoint: Address,
 	{
 		limits,
+		sendTimeoutMs,
 		fetchImpl = fetch,
-	}: { limits: UpstreamLimits; fetchImpl?: typeof fetch },
+	}: {
+		limits: UpstreamLimits;
+		sendTimeoutMs: number;
+		fetchImpl?: typeof fetch;
+	},
 ) {
 	let rpcId = 0;
+
+	const sendLimits: UpstreamLimits = { ...limits, timeoutMs: sendTimeoutMs };
 
 	async function rpc<T>(
 		method: string,
 		params: unknown[],
-		signal?: AbortSignal,
+		{
+			signal,
+			callLimits = limits,
+		}: { signal?: AbortSignal; callLimits?: UpstreamLimits } = {},
 	): Promise<T> {
 		const body = (await postJsonRpc(
 			bundlerUrl,
 			{ jsonrpc: "2.0", id: ++rpcId, method, params },
-			{ upstream: "bundler", limits, fetchImpl, signal },
+			{ upstream: "bundler", limits: callLimits, fetchImpl, signal },
 		)) as {
 			result?: T;
 			error?: { code: number; message: string };
@@ -39,9 +50,14 @@ export function createBundlerService(
 
 	return {
 		entryPoint,
-		/** rpcUserOp fields must already be hex-encoded (RpcUserOperation shape). */
+		/**
+		 * rpcUserOp fields must already be hex-encoded (RpcUserOperation shape). Bounded by
+		 * `sendTimeoutMs`, not the read deadline: the bundler may hold it until a lane is free.
+		 */
 		sendUserOperation: (rpcUserOp: Record<string, unknown>) =>
-			rpc<string>("eth_sendUserOperation", [rpcUserOp, entryPoint]),
+			rpc<string>("eth_sendUserOperation", [rpcUserOp, entryPoint], {
+				callLimits: sendLimits,
+			}),
 		estimateUserOperationGas: (rpcUserOp: Record<string, unknown>) =>
 			rpc<Record<string, unknown>>("eth_estimateUserOperationGas", [
 				rpcUserOp,
@@ -59,13 +75,13 @@ export function createBundlerService(
 		 * `signal` bounds the request itself, not only how long the caller waits for it.
 		 */
 		supportedEntryPoints: (signal?: AbortSignal) =>
-			rpc<Address[]>("eth_supportedEntryPoints", [], signal),
+			rpc<Address[]>("eth_supportedEntryPoints", [], { signal }),
 		/**
 		 * giano-bundler's executor lanes on this chain and the chain's gas price, as hex (B7). Not
 		 * ERC-4337: a bundler without it (Alto) answers method-not-found.
 		 */
 		executors: (signal?: AbortSignal) =>
-			rpc<unknown>("giano_executors", [], signal),
+			rpc<unknown>("giano_executors", [], { signal }),
 	};
 }
 

@@ -20,6 +20,8 @@ import {
  */
 
 const LIMITS: UpstreamLimits = { timeoutMs: 200, maxBytes: 64 * 1024 };
+/** The bundler's send deadline: longer than the read deadline, as in production. */
+const SEND_TIMEOUT_MS = LIMITS.timeoutMs * 10;
 /** Far more than LIMITS.maxBytes: what an upstream would send if nothing stopped reading. */
 const FLOOD_BYTES = 64 * 1024 * 1024;
 const CHUNK = Buffer.alloc(64 * 1024, "a");
@@ -28,6 +30,7 @@ type Behaviour =
 	| "ok"
 	| "slow-ok"
 	| "slow-headers"
+	| "very-slow-headers"
 	| "no-answer"
 	| "stalled-body"
 	| "declared-large"
@@ -57,6 +60,8 @@ function startUpstream() {
 					return setTimeout(() => res.end(answer), LIMITS.timeoutMs / 4);
 				case "slow-headers":
 					return setTimeout(() => res.end(answer), LIMITS.timeoutMs * 5);
+				case "very-slow-headers":
+					return setTimeout(() => res.end(answer), SEND_TIMEOUT_MS * 3);
 				case "no-answer":
 					return; // never writes a byte
 				case "stalled-body":
@@ -130,6 +135,7 @@ const clients = {
 		call: (url: string, fetchImpl?: typeof fetch) =>
 			createBundlerService(url, ENTRY_POINT, {
 				limits: LIMITS,
+				sendTimeoutMs: SEND_TIMEOUT_MS,
 				fetchImpl,
 			}).getUserOperationReceipt(HASH),
 		rpcError: BundlerRpcError,
@@ -243,5 +249,48 @@ describe.each(Object.entries(clients))("%s client", (upstreamName, client) => {
 			// The connection was dropped long before the upstream finished sending.
 			expect(exchange.written()).toBeLessThan(FLOOD_BYTES / 4);
 		});
+	});
+});
+
+describe("bundler client: eth_sendUserOperation and caller signals", () => {
+	const bundlerAt = (url: string) =>
+		createBundlerService(url, ENTRY_POINT, {
+			limits: LIMITS,
+			sendTimeoutMs: SEND_TIMEOUT_MS,
+		});
+
+	it("waits past the read deadline for a send: the bundler may hold it until a lane is free", async () => {
+		const bundler = bundlerAt(upstream.url("slow-headers"));
+		expect(await bundler.sendUserOperation({})).toBe("0x2a");
+	});
+
+	it("still gives up on a send at the send deadline", async () => {
+		const bundler = bundlerAt(upstream.url("very-slow-headers"));
+		const { error, elapsed } = await failure(() =>
+			bundler.sendUserOperation({}),
+		);
+		expect(error).toMatchObject({ reason: "timeout", upstream: "bundler" });
+		expect(elapsed).toBeGreaterThanOrEqual(SEND_TIMEOUT_MS - 20);
+		expect(elapsed).toBeLessThan(SEND_TIMEOUT_MS * 2);
+		await upstream.last().closed;
+	});
+
+	it("cancels the request when the caller's own signal ends first", async () => {
+		const bundler = bundlerAt(upstream.url("no-answer"));
+		const { error, elapsed } = await failure(() =>
+			bundler.supportedEntryPoints(AbortSignal.timeout(LIMITS.timeoutMs / 4)),
+		);
+		expect(error).not.toBeInstanceOf(UpstreamLimitError);
+		expect((error as Error).name).toBe("TimeoutError");
+		expect(elapsed).toBeLessThan(LIMITS.timeoutMs);
+		await upstream.last().closed;
+	});
+
+	it("keeps its own limits when the caller passes a signal", async () => {
+		const bundler = bundlerAt(upstream.url("streamed-large"));
+		const { error } = await failure(() =>
+			bundler.executors(AbortSignal.timeout(SEND_TIMEOUT_MS)),
+		);
+		expect(error).toMatchObject({ reason: "too-large" });
 	});
 });

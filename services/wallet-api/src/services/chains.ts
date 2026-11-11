@@ -128,7 +128,7 @@ export function buildChainRegistry(
 		const bundler = createBundlerService(
 			descriptor.bundlerUrl,
 			descriptor.entryPoint,
-			{ limits, fetchImpl },
+			{ limits, sendTimeoutMs: config.UPSTREAM_SEND_TIMEOUT_MS, fetchImpl },
 		);
 		// Not `fetchImpl`: that override stands in for the bundler in tests; the node is a real endpoint there.
 		const nodeRpc = createNodeRpcService(descriptor.rpcUrl, { limits });

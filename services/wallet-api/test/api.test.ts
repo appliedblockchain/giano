@@ -2,6 +2,7 @@ import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import { and, eq, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildApp } from "../src/app.js";
 import { tenants, users } from "../src/db/schema.js";
 import { createChallengeService } from "../src/services/challenges.js";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../src/services/tenant-fixtures.js";
 import {
 	ADMIN_KEY,
+	createMockBundlerFetch,
 	startTestStack,
 	stopTestStack,
 	TENANT_A,
@@ -913,6 +915,165 @@ describe("userop relay", () => {
  * bundler client at instead of a bundler. Same pipeline as the REST relay behind a second
  * door, so every assertion here is about the two doors being the same door.
  */
+describe("a send the bundler does not confirm in time (G37)", () => {
+	const SEND_TIMEOUT_MS = 200;
+	const target = "0x3333333333333333333333333333333333333333";
+	let sessionToken: string;
+	let walletAddress: string;
+	let app: Awaited<ReturnType<typeof buildApp>>;
+	/** What the bundler answers to eth_getUserOperationByHash: null until the op is on chain. */
+	let onChain = false;
+	let sends = 0;
+
+	const makeOp = (nonce: number) => ({
+		sender: walletAddress,
+		nonce: `0x${nonce.toString(16)}`,
+		callData: encodeFunctionData({
+			abi: gianoSmartWalletAbi,
+			functionName: "execute",
+			args: [target, 0n, "0x"],
+		}),
+		callGasLimit: "0x30000",
+		verificationGasLimit: "0x30000",
+		preVerificationGas: "0x10000",
+		maxFeePerGas: "0x3b9aca00",
+		maxPriorityFeePerGas: "0x3b9aca00",
+		signature: "0x1234",
+	});
+
+	beforeAll(async () => {
+		const registered = await register(
+			"send-timeout-user",
+			createAuthenticator(),
+		);
+		sessionToken = registered.session.token;
+		walletAddress = registered.walletAddress;
+
+		// A bundler that holds every send, as giano-bundler does while all its lanes are busy.
+		const mock = createMockBundlerFetch();
+		const fetchImpl: typeof fetch = async (url, init) => {
+			const { id, method } = JSON.parse(String(init?.body)) as {
+				id: number;
+				method: string;
+			};
+			if (method === "eth_sendUserOperation") {
+				sends++;
+				return new Promise(() => {});
+			}
+			if (method === "eth_getUserOperationByHash")
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						result: onChain
+							? { transactionHash: `0x${"12".repeat(32)}` }
+							: null,
+					}),
+				);
+			return mock.fetchImpl(url, init);
+		};
+		app = await buildApp({
+			config: { ...ctx.config, UPSTREAM_SEND_TIMEOUT_MS: SEND_TIMEOUT_MS },
+			db: ctx.db,
+			fetchImpl,
+		});
+	});
+
+	afterAll(async () => {
+		await app?.close();
+	});
+
+	const statusOf = async (hash: string) => {
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/userops/${hash}`,
+			headers: { authorization: `Bearer ${sessionToken}` },
+		});
+		expect(res.statusCode).toBe(200);
+		return (res.json() as { status: string }).status;
+	};
+
+	it("REST: answers 504 with the hash to poll, and does not record the op as failed", async () => {
+		onChain = false;
+		const op = makeOp(0x100);
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(res.statusCode).toBe(504);
+		const body = res.json() as {
+			error: string;
+			message: string;
+			userOperationHash: string;
+		};
+		expect(body).toMatchObject({ error: "send-outcome-unknown" });
+		expect(body.message).toContain("may still be included");
+		expect(body.userOperationHash).toMatch(/^0x[0-9a-f]{64}$/);
+
+		// Not on chain yet: still unconfirmed, never failed.
+		expect(await statusOf(body.userOperationHash)).toBe("accepted");
+
+		// Sending the same op again is the idempotent duplicate, not a second send.
+		const sendsBefore = sends;
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(again.statusCode).toBe(200);
+		expect(again.json()).toEqual({
+			userOperationHash: body.userOperationHash,
+			duplicate: true,
+		});
+		expect(sends).toBe(sendsBefore);
+
+		// The bundler lands it later: the status route settles it from the chain.
+		onChain = true;
+		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+		onChain = false;
+		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+	});
+
+	it("JSON-RPC: answers -32023 with the hash in data, and does not record the op as failed", async () => {
+		onChain = false;
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/bundler/31337",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: {
+				jsonrpc: "2.0",
+				id: 9,
+				method: "eth_sendUserOperation",
+				params: [makeOp(0x101), "0x433709009B8330FDa32311DF1C2AFA402eD8D009"],
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		const { error } = res.json() as {
+			error: {
+				code: number;
+				message: string;
+				data: { reason: string; userOperationHash: string };
+			};
+		};
+		expect(error.code).toBe(-32023);
+		expect(error.data.reason).toBe("send-outcome-unknown");
+		expect(await statusOf(error.data.userOperationHash)).toBe("accepted");
+	});
+
+	it("counts the unknown outcome on its own", async () => {
+		const metrics = await app.inject({ method: "GET", url: "/metrics" });
+		expect(metrics.body).toMatch(
+			/giano_userop_relayed_total\{[^}]*status="unknown"[^}]*\} \d+/,
+		);
+		expect(metrics.body).toMatch(
+			/giano_bundler_relay_requests_total\{[^}]*outcome="send-outcome-unknown"[^}]*\} \d+/,
+		);
+	});
+});
+
 describe("bundler relay (JSON-RPC)", () => {
 	const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 	const target = "0x4444444444444444444444444444444444444444";

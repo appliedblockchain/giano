@@ -6,7 +6,11 @@ import type { AppConfig } from "../config.js";
 import { BundlerRpcError } from "../services/bundler.js";
 import type { ChainServices } from "../services/chains.js";
 import { UpstreamLimitError } from "../services/upstream-fetch.js";
-import { rpcUserOpSchema, type UseropRelay } from "../services/userop-relay.js";
+import {
+	rpcUserOpSchema,
+	SEND_OUTCOME_UNKNOWN,
+	type UseropRelay,
+} from "../services/userop-relay.js";
 
 /**
  * The JSON-RPC bundler facade: what a wallet origin points its bundler client at.
@@ -80,6 +84,8 @@ export const RELAY_ERROR_CODES = {
 	// own message and counted outcome.
 	"bundler-timeout": -32023,
 	"bundler-response-too-large": -32023,
+	// A send the bundler did not confirm in time. It may still land: `data` carries the hash to poll.
+	"send-outcome-unknown": -32023,
 } as const;
 
 type RelayErrorReason = keyof typeof RELAY_ERROR_CODES;
@@ -312,6 +318,11 @@ export default async function bundlerRelayRoutes(
 						outcome.userOperationHash,
 						outcome.duplicate ? "duplicate" : "submitted",
 					);
+				case "unknown":
+					return fail("send-outcome-unknown", SEND_OUTCOME_UNKNOWN, {
+						reason: "send-outcome-unknown",
+						userOperationHash: outcome.userOperationHash,
+					});
 			}
 		}
 

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -6,7 +6,11 @@ import type { Db } from "../db/index.js";
 import { useropLog } from "../db/schema.js";
 import { ApiError } from "../plugins/error-handler.js";
 import type { ChainRegistry } from "../services/chains.js";
-import { rpcUserOpSchema, type UseropRelay } from "../services/userop-relay.js";
+import {
+	rpcUserOpSchema,
+	SEND_OUTCOME_UNKNOWN,
+	type UseropRelay,
+} from "../services/userop-relay.js";
 
 export default async function useropRoutes(
 	instance: FastifyInstance,
@@ -79,6 +83,15 @@ export default async function useropRoutes(
 					}),
 					429: z.object({ error: z.string(), message: z.string() }),
 					503: z.object({ error: z.string(), message: z.string() }),
+					/**
+					 * The bundler did not confirm the send in time (G37). The operation may still be
+					 * included: poll the receipt or the status route with `userOperationHash`.
+					 */
+					504: z.object({
+						error: z.string(),
+						message: z.string(),
+						userOperationHash: z.string().optional(),
+					}),
 				},
 			},
 		},
@@ -109,6 +122,12 @@ export default async function useropRoutes(
 					return outcome.duplicate
 						? { userOperationHash: outcome.userOperationHash, duplicate: true }
 						: { userOperationHash: outcome.userOperationHash };
+				case "unknown":
+					return reply.code(504).send({
+						error: "send-outcome-unknown",
+						message: SEND_OUTCOME_UNKNOWN,
+						userOperationHash: outcome.userOperationHash,
+					});
 			}
 		},
 	);
@@ -151,11 +170,37 @@ export default async function useropRoutes(
 			) {
 				throw new ApiError(404, "not-found", "user operation not found");
 			}
+			let status = row.status;
+			// An `accepted` row was never confirmed by the bundler: a send whose outcome is unknown
+			// (G37), or one still in flight. Once the bundler finds it on chain it was submitted.
+			if (status === "accepted") {
+				const chain = registry.tryGet(row.chainId);
+				try {
+					const found =
+						chain &&
+						(await chain.bundler.getUserOperationByHash(row.useropHash));
+					if (found) {
+						await db
+							.update(useropLog)
+							.set({ status: "submitted" })
+							.where(
+								and(eq(useropLog.id, row.id), eq(useropLog.status, "accepted")),
+							);
+						status = "submitted";
+					}
+				} catch (error) {
+					// The stored status is still a true answer: not yet confirmed.
+					request.log.warn(
+						{ err: error, useropHash: row.useropHash },
+						"userop status: could not ask the bundler about an unconfirmed operation",
+					);
+				}
+			}
 			return {
 				userOperationHash: row.useropHash,
 				chainId: row.chainId,
 				sender: row.sender,
-				status: row.status,
+				status,
 				policyResults: row.policyResults as never,
 				rejectReason: row.rejectReason,
 				createdAt: row.createdAt.toISOString(),

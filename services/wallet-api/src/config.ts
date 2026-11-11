@@ -477,6 +477,18 @@ const envSchema = z
 		 */
 		UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 		/**
+		 * The longest one eth_sendUserOperation to the bundler may take (G37). Longer than
+		 * UPSTREAM_TIMEOUT_MS on purpose: giano-bundler holds a send until an executor lane is free,
+		 * and a lane stays busy until its transaction is mined. The default is above the bundler's
+		 * own stuck-lane bound (`laneStuckAfterSeconds`, 270 s with its defaults), so a send is cut
+		 * off only when a lane is stuck. A send past it is recorded as unknown, never as failed.
+		 */
+		UPSTREAM_SEND_TIMEOUT_MS: z.coerce
+			.number()
+			.int()
+			.positive()
+			.default(300_000),
+		/**
 		 * The largest response body wallet-api accepts from the bundler or a chain's node, in bytes
 		 * (G37). A larger body is cancelled while it is read, never held in memory whole. 10 MiB
 		 * leaves room for a full block or a bounded eth_getLogs range.

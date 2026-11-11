@@ -9,6 +9,7 @@ import { sponsorshipDecisions, useropLog } from "../db/schema.js";
 import type { ChainServices } from "./chains.js";
 import type { SessionContext } from "./sessions.js";
 import { mergePolicy, type Tenant } from "./tenants.js";
+import { UpstreamLimitError } from "./upstream-fetch.js";
 import { evaluatePolicy, type PolicyRuleResult } from "./userop-policy.js";
 
 const hexData = z.string().regex(/^0x[0-9a-fA-F]*$/) as z.ZodType<Hex>;
@@ -81,11 +82,21 @@ function toBigIntUserOp(op: RpcUserOp) {
 	};
 }
 
+/** What a caller is told when the send's outcome is unknown. Both relay doors use it. */
+export const SEND_OUTCOME_UNKNOWN =
+	"the bundler did not confirm the submission in time; the operation may still be included, so poll its receipt before you send it again";
+
 export type RelayOutcome =
 	| { kind: "submitted"; userOperationHash: Hex; duplicate?: true }
 	| { kind: "rejected"; reason: string; policy: PolicyRuleResult[] }
 	/** The hash is already logged for someone else — never say more than that (V9). */
-	| { kind: "conflict" };
+	| { kind: "conflict" }
+	/**
+	 * The bundler gave no usable answer to the send in time (G37). It may still hold the operation
+	 * and land it, so this is not a failure: the row stays `accepted` until the status route sees
+	 * it on chain. The caller gets the hash to poll.
+	 */
+	| { kind: "unknown"; userOperationHash: Hex };
 
 export type RelayCaller = {
 	session: SessionContext;
@@ -349,6 +360,30 @@ export function createUseropRelay({
 				// the server-computed hash is the canonical id (log key, status endpoint, idempotency)
 				return { kind: "submitted", userOperationHash: useropHash };
 			} catch (error) {
+				// A send that hit its time or size limit may still be in the bundler's queue. Recording
+				// it as failed would tell the user it did not happen while it lands on chain, and a
+				// fresh retry could then run the same transfer twice.
+				if (error instanceof UpstreamLimitError) {
+					log.warn(
+						{ useropHash, reason: error.reason, chainId: chain.chainId },
+						"bundler gave no usable answer to the send; its outcome is unknown",
+					);
+					await db
+						.update(useropLog)
+						.set({
+							bundlerResponse: {
+								error: error.message,
+								outcome: "unknown",
+							},
+						})
+						.where(eq(useropLog.id, inserted[0].id));
+					metrics.useropRelayed.inc({
+						status: "unknown",
+						tenant: tenantSlug,
+						chain: chainLabel,
+					});
+					return { kind: "unknown", userOperationHash: useropHash };
+				}
 				await db
 					.update(useropLog)
 					.set({
