@@ -433,7 +433,7 @@ copy and the framework choice stay yours. The full API contract with usage examp
 |---|---|
 | `loadWalletConfig()` / `resolveWalletConfig({ raw })` | Validated `WalletConfig` — fatal, field-named errors; the single-chain shorthand and the `chains` list both accepted; the permissive test paymaster refused in production builds unless opted in (WK-05, WK-06) |
 | `createWalletRuntimes(config)` | Per-chain runtimes (read client, bundler, fee estimation, paymaster hooks, provider, `checkSponsorship` pre-flight, `describeTransaction` human-readable summary), built lazily, memoised, over **one** shared wallet-api session (WK-01…WK-05) |
-| `createWalletHost({ runtimes, config, walletVersion })` | The popup transport wired with origin pinning, chain negotiation and the consent gate; the pending request is subscribable state with `approve()`/`reject()` — a rejection becomes EIP-1193 `4001` (WK-08…WK-12) |
+| `createWalletHost({ runtimes, config, walletVersion })` | The popup transport wired with origin pinning, chain negotiation and the consent gate; the pending request is subscribable state with `approve()`/`reject()` — a rejection becomes EIP-1193 `4001`; only an origin the user connected can read or use the account, others get `[]` / `4100` (WK-08…WK-12, WK-34) |
 | `createManagementController({ runtimes, config })` | The whole of wallet management as a headless state machine: the owner set read from the chain, rename, add (this device / second device / EOA), remove, claim — every ordering invariant held inside (WK-16…WK-21) |
 | `@appliedblockchain/giano-wallet-kit/react` | `WalletHostProvider`, `usePendingRequest()`, `useManagement()` — the same core as hooks; optional, the core is framework-free (WK-22, WK-23) |
 

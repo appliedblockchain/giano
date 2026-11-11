@@ -259,6 +259,28 @@ The client decides what a consent screen looks like; the kit decides *when* one 
 it is about. A `manage` request resolves — `pending.approve()` — when the user closes the management
 view, which is what returns nothing to the calling application (WM-40).
 
+**Connection grants (WK-34).** The host keeps the dApp origins the user connected in the wallet
+origin's `localStorage`, one key per origin (`giano:connection-grant:<origin>`). A grant and a
+revoke each write only their own key, so two popups cannot overwrite each other's change. A grant is
+recorded when the user approves a `connect` request and the provider returns an account. If the
+storage refuses that write, the host answers `-32603` and records nothing: a grant kept only in the
+popup's memory would outlive a revoke made in another popup. `wallet_revokePermissions` from that
+origin removes the grant; if the storage refuses that write, the host answers `-32603`, and the popup
+stops serving the origin. An origin with no grant gets `[]` from
+`eth_accounts` and EIP-1193 `4100` from every account method: the signing and transaction methods,
+`eth_prepareUserOperation` and `eth_sendSignedUserOperation`. That `4100` carries
+`data: { reason: "not-connected" }` (`NOT_CONNECTED_REASON` in `giano-wallet-transport`), because the
+host also answers `4100` to a refused self-call and to an ended wallet session. The connector drops
+its cached connection only on the marked one (`isNotConnectedError`). The host checks the grant before it
+restores the account (WK-12), so a refused origin never receives an `accountsChanged` event. Another
+popup can revoke the grant while a request waits, so the host checks it again after the restore and
+again after consent, with no await between that last check and the provider call. A revoke that
+arrives while the provider itself waits, during the passkey ceremony, does not stop that request. The
+event relay also checks the grant each time `accountsChanged` fires, because the management view can
+sign in for an origin with no grant. A first connect emits before its grant exists, so the dApp
+reads the accounts from the `eth_requestAccounts` result. `giano_restoreAccount` is the host's own
+call and is refused (`4200`) when an application sends it.
+
 ---
 
 ## 5. The wallet-management controller

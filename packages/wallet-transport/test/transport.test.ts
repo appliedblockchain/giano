@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TransportClient } from "../src/client";
-import { TransportRpcError } from "../src/errors";
+import { isNotConnectedError, TransportRpcError } from "../src/errors";
 import { TransportHost } from "../src/host";
 import { PopupManager } from "../src/popup-manager";
-import { PROTOCOL_VERSION, RPC_ERRORS } from "../src/protocol";
+import {
+	NOT_CONNECTED_REASON,
+	PROTOCOL_VERSION,
+	RPC_ERRORS,
+} from "../src/protocol";
 import { createWindowPair, FakeWindow, flush } from "./fake-windows";
 
 const DAPP = "https://dapp.example.com";
@@ -271,6 +275,57 @@ describe("rpc", () => {
 			code: 4001,
 			message: "User rejected the request",
 		});
+	});
+
+	it("relays a 4100 with its not-connected marker, and tells it apart from other 4100s (WK-34)", async () => {
+		const refusals = [
+			new TransportRpcError(RPC_ERRORS.UNAUTHORIZED, "not connected", {
+				reason: NOT_CONNECTED_REASON,
+			}),
+			new TransportRpcError(RPC_ERRORS.UNAUTHORIZED, "self-call refused"),
+			new TransportRpcError(RPC_ERRORS.UNAUTHORIZED, "session ended", {
+				reason: "idle",
+			}),
+		];
+		const { client, connect } = setup({
+			onRequest: async () => {
+				throw refusals.shift();
+			},
+		});
+		await connect();
+		const errors: unknown[] = [];
+		for (let i = 0; i < 3; i++) {
+			errors.push(
+				await client
+					.request("eth_sendTransaction", [{}])
+					.catch((error: unknown) => error),
+			);
+		}
+		expect(errors).toMatchObject([
+			{ code: 4100 },
+			{ code: 4100 },
+			{ code: 4100 },
+		]);
+		expect(errors.map(isNotConnectedError)).toEqual([true, false, false]);
+	});
+
+	it("does not take a 4900 or a non-RPC error for a not-connected refusal", () => {
+		expect(
+			isNotConnectedError(
+				new TransportRpcError(RPC_ERRORS.DISCONNECTED, "gone", {
+					reason: NOT_CONNECTED_REASON,
+				}),
+			),
+		).toBe(false);
+		expect(
+			isNotConnectedError(
+				Object.assign(new Error("x"), {
+					code: 4100,
+					data: { reason: NOT_CONNECTED_REASON },
+				}),
+			),
+		).toBe(false);
+		expect(isNotConnectedError(null)).toBe(false);
 	});
 
 	it("maps unexpected handler failures to internal errors", async () => {

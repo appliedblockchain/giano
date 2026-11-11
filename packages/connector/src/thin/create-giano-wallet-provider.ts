@@ -1,4 +1,5 @@
 import {
+	isNotConnectedError,
 	RPC_ERRORS,
 	TransportClient,
 	TransportError,
@@ -181,12 +182,15 @@ export function createGianoWalletProvider(
 		try {
 			return await transportClient.request<T>(method, requestParams);
 		} catch (error) {
-			// The wallet couldn't restore the account (e.g. the persisted session expired):
-			// our cached session is stale, so drop it and surface a clean disconnect. The dApp
-			// should reconnect via eth_requestAccounts.
+			// The wallet couldn't restore the account (e.g. the persisted session expired), or
+			// it holds no connection grant for this origin (WK-34): our cached session is stale,
+			// so drop it and surface a clean disconnect. The dApp should reconnect via
+			// eth_requestAccounts. Any other 4100 (a refused self-call, an ended wallet session)
+			// is a refusal of this one request, so the dApp stays connected.
 			if (
-				error instanceof TransportRpcError &&
-				error.code === RPC_ERRORS.DISCONNECTED
+				(error instanceof TransportRpcError &&
+					error.code === RPC_ERRORS.DISCONNECTED) ||
+				isNotConnectedError(error)
 			) {
 				clearSession(error);
 			}
