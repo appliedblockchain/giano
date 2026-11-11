@@ -919,7 +919,7 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 	/** What the bundler answers to eth_getUserOperationByHash: null until the op is on chain. */
 	let onChain = false;
 	/** How the bundler answers eth_sendUserOperation: hold it forever, accept it, or refuse it. */
-	let sendAnswer: "hold" | "accept" | "refuse" = "hold";
+	let sendAnswer: "hold" | "accept" | "refuse" | "drop" | "http502" = "hold";
 	let sends = 0;
 
 	const makeOp = (nonce: number) => ({
@@ -956,6 +956,9 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 			if (method === "eth_sendUserOperation") {
 				sends++;
 				if (sendAnswer === "hold") return new Promise(() => {});
+				if (sendAnswer === "drop") throw new TypeError("fetch failed");
+				if (sendAnswer === "http502")
+					return new Response("bad gateway", { status: 502 });
 				if (sendAnswer === "refuse")
 					return new Response(
 						JSON.stringify({
@@ -1111,16 +1114,16 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 		expect(await statusOf(userOperationHash)).toBe("accepted");
 	});
 
-	it("a late transport error on the first send does not turn a resend's confirmed submission into failed", async () => {
-		// The first send fails with a transport error only after a concurrent resend was accepted.
-		// Its own app has a long send limit, so the first send cannot end on its deadline instead.
-		const firstSend: { fail?: (error: Error) => void } = {};
+	it("a late refusal of the first send does not turn a resend's confirmed submission into failed", async () => {
+		// The bundler refuses the first send only after a concurrent resend was accepted. Its own
+		// app has a long send limit, so the first send cannot end on its deadline instead.
+		const firstSend: { answer?: (response: Response) => void } = {};
 		const mock = createMockBundlerFetch();
 		const raceFetch: typeof fetch = async (url, init) => {
 			const { method } = JSON.parse(String(init?.body)) as { method: string };
-			if (method === "eth_sendUserOperation" && !firstSend.fail)
-				return new Promise((_, reject) => {
-					firstSend.fail = reject;
+			if (method === "eth_sendUserOperation" && !firstSend.answer)
+				return new Promise((resolve) => {
+					firstSend.answer = resolve;
 				});
 			return mock.fetchImpl(url, init);
 		};
@@ -1139,7 +1142,7 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 					payload: { userOperation: op },
 				});
 			const first = post();
-			await vi.waitFor(() => expect(firstSend.fail).toBeDefined());
+			await vi.waitFor(() => expect(firstSend.answer).toBeDefined());
 
 			const resend = await post();
 			expect(resend.statusCode).toBe(200);
@@ -1150,12 +1153,76 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 			expect(duplicate).toBe(true);
 			expect(await statusOf(userOperationHash)).toBe("submitted");
 
-			firstSend.fail?.(new TypeError("fetch failed"));
-			expect((await first).statusCode).toBeGreaterThanOrEqual(500);
+			firstSend.answer?.(
+				new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						error: { code: -32602, message: "AA25 invalid account nonce" },
+					}),
+				),
+			);
+			expect((await first).statusCode).toBe(502);
 			expect(await statusOf(userOperationHash)).toBe("submitted");
 		} finally {
 			await raceApp.close();
 		}
+	});
+
+	it("treats a dropped connection on send as an unknown outcome, not a failure", async () => {
+		onChain = false;
+		sendAnswer = "drop";
+		const op = makeOp(0x105);
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		// The connection may have dropped after the bundler took the operation.
+		expect(res.statusCode).toBe(504);
+		const body = res.json() as { error: string; userOperationHash: string };
+		expect(body.error).toBe("send-outcome-unknown");
+		expect(await statusOf(body.userOperationHash)).toBe("accepted");
+
+		// So a resend still reaches the bundler, and settles it once the bundler accepts it.
+		sendAnswer = "accept";
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		expect(again.statusCode).toBe(200);
+		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+	});
+
+	it("JSON-RPC: treats a non-2xx HTTP status on send as an unknown outcome, not a failure", async () => {
+		onChain = false;
+		sendAnswer = "http502";
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/bundler/31337",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: {
+				jsonrpc: "2.0",
+				id: 10,
+				method: "eth_sendUserOperation",
+				params: [makeOp(0x106), "0x433709009B8330FDa32311DF1C2AFA402eD8D009"],
+			},
+		});
+		sendAnswer = "hold";
+		const { error } = res.json() as {
+			error: {
+				code: number;
+				data: { reason: string; userOperationHash: string };
+			};
+		};
+		expect(error.code).toBe(-32023);
+		expect(error.data.reason).toBe("send-outcome-unknown");
+		expect(await statusOf(error.data.userOperationHash)).toBe("accepted");
 	});
 
 	it("JSON-RPC: answers -32023 with the hash in data, and does not record the op as failed", async () => {

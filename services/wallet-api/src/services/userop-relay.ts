@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
 import { sponsorshipDecisions, useropLog } from "../db/schema.js";
+import { BundlerRpcError } from "./bundler.js";
 import type { ChainServices } from "./chains.js";
 import type { SessionContext } from "./sessions.js";
 import { mergePolicy, type Tenant } from "./tenants.js";
@@ -84,7 +85,7 @@ function toBigIntUserOp(op: RpcUserOp) {
 
 /** What a caller is told when the send's outcome is unknown. Both relay doors use it. */
 export const SEND_OUTCOME_UNKNOWN =
-	"the bundler did not confirm the submission in time; the operation may still be included, so poll its receipt before you send it again";
+	"the bundler did not confirm the submission; the operation may still be included, so poll its receipt before you send it again";
 
 export type RelayOutcome =
 	| { kind: "submitted"; userOperationHash: Hex; duplicate?: true }
@@ -92,9 +93,10 @@ export type RelayOutcome =
 	/** The hash is already logged for someone else — never say more than that (V9). */
 	| { kind: "conflict" }
 	/**
-	 * The bundler gave no usable answer to the send in time (G37). It may still hold the operation
-	 * and land it, so this is not a failure: the row stays `accepted` until the status route sees
-	 * it on chain. The caller gets the hash to poll.
+	 * The bundler gave no usable answer to the send (G37): a time or size limit, a transport error,
+	 * or a non-2xx HTTP status. It may still hold the operation and land it, so this is not a
+	 * failure: the row stays `accepted` until the status route sees it on chain. The caller gets
+	 * the hash to poll.
 	 */
 	| { kind: "unknown"; userOperationHash: Hex };
 
@@ -198,7 +200,7 @@ export function createUseropRelay({
 		return { ok: true };
 	};
 
-	/** Throws only on a bundler failure (`BundlerRpcError` or a transport error), after logging it. */
+	/** Throws only when the bundler refuses the operation (`BundlerRpcError`), after logging it. */
 	const relay = async (
 		caller: RelayCaller,
 		rpcOp: RpcUserOp,
@@ -386,14 +388,20 @@ export function createUseropRelay({
 						}
 					: { kind: "submitted", userOperationHash: useropHash };
 			} catch (error) {
-				// A send that hit its time or size limit may still be in the bundler's queue. Recording
-				// it as failed would tell the user it did not happen while it lands on chain, and a
-				// fresh retry could then run the same transfer twice.
-				if (error instanceof UpstreamLimitError) {
+				// Only the bundler's own JSON-RPC error is a definite refusal. Any other error (a time or
+				// size limit, a dropped connection, a proxy's 5xx) can come after the bundler took the
+				// operation, so it may still be in the bundler's queue. Recording it as failed would tell
+				// the user it did not happen while it lands on chain, and a fresh retry could then run
+				// the same transfer twice.
+				if (!(error instanceof BundlerRpcError)) {
 					log.warn(
 						{
 							useropHash,
-							reason: error.reason,
+							reason:
+								error instanceof UpstreamLimitError
+									? error.reason
+									: "transport",
+							err: error instanceof UpstreamLimitError ? undefined : error,
 							chainId: chain.chainId,
 							resend,
 						},
@@ -403,7 +411,7 @@ export function createUseropRelay({
 						.update(useropLog)
 						.set({
 							bundlerResponse: {
-								error: error.message,
+								error: (error as Error).message,
 								outcome: "unknown",
 							},
 						})
@@ -431,7 +439,7 @@ export function createUseropRelay({
 					});
 					throw error;
 				}
-				// A concurrent resend may already have had the operation accepted. A late failure of this
+				// A concurrent resend may already have had the operation accepted. A late refusal of this
 				// send must not turn that confirmed `submitted` row into `failed`.
 				await db
 					.update(useropLog)
