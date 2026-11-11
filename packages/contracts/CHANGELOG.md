@@ -1,5 +1,47 @@
 # @appliedblockchain/giano-contracts
 
+## 7.0.0
+
+### Major Changes
+
+- 8f28872: Remove the fixed contract addresses. `canonical.ts` is gone, and with it `CANONICAL_FACTORY`, `CANONICAL_IMPLEMENTATION`, `CANONICAL_SPONSORSHIP_PAYMASTER`, `CANONICAL_SPONSORSHIP_PAYMASTER_IMPLEMENTATION`, `CANONICAL_DEPLOYER`, `CANONICAL_LABELS`, `CANONICAL_ACCOUNT_NONCE`, `CANONICAL_CODE` and `canonicalCodeAt`. Contract addresses are per chain: testnets and mainnets have different canonical deployers, and a chain may override single contracts.
+
+  Replacements:
+
+  - addresses: `getGianoDeployment(chainId)` (or `gianoAddresses[chainId]`), which now also gives `implementation`;
+  - code verification: `releaseOf(contract, runtimeCode)` with `RELEASE_FINGERPRINTS`, which matches code against a release wherever it sits;
+  - the account nonce: always `0n`;
+  - a paymaster proxy's implementation: `proxyImplementation(client, proxy)`, or `implementationFromSlot(word)` with `IMPLEMENTATION_SLOT` for a non-viem client.
+
+  The `walletApi` section of the backend chain document (`walletApiChainSchema`) accepts an optional `implementation`.
+
+- 08bd62d: Bind the `signedStaticCall` signature to the call it authorises. Before, the owner signed only the function selector and `signedAt`. Anyone who saw one signature could make any read as the wallet for 30 minutes, for example a view that answers only `msg.sender == wallet`.
+
+  `AuthenticatedStaticCaller` now hashes the selector, `signedAt`, the target and `keccak256(data)`. The new `staticCallHash(target, data, signedAt)` pure function returns this hash. `signedStaticCall` also rejects a `signedAt` later than `block.timestamp`, with the new `StaticCallSignatureNotYetValid` error. Before, a future `signedAt` made a signature last longer than the 30-minute lifetime. The other two errors are renamed: `SignatureExpired` is now `StaticCallSignatureExpired`, and `InvalidSignature` is now `StaticCallInvalidSignature`. `signedStaticCall` returns a target's revert data unchanged, so the new names let a client tell the wallet's errors from a target's. Deploy this as a new wallet implementation; the storage layout does not change. Contract release `v3` contains this change, and the two e2e devnet states are rebuilt from `v3`.
+
+  In `giano-wallet-core`, `signStaticCallPermission` now takes `{ target, data, signedAt? }`. `signedAt` defaults to 30 seconds before the latest block timestamp. The contract rejects a future `signedAt`, so the SDK does not use the local clock, and the margin covers an RPC node that is a block or two behind. The new `staticCallHash` export returns the same hash as the contract. `signed_eth_call` keeps one signature per (account, target, calldata) instead of one signature for every read, and checks `to` and `data` before it asks for a signature. It renews a signature on the local clock, counted from when it was signed, so a local clock that differs from the chain's does not affect it. If the wallet rejects a cached signature, the provider removes it and signs again once. If the wallet also rejects the new signature, the provider removes that one too. Identical concurrent reads share one signature, and the provider asks for one passkey signature at a time. A read whose session ends (disconnect, chain switch or new account) before it finishes does not sign, cache or send anything, and fails with an error that asks the dApp to send it again.
+
+  The signed message changes. This SDK works only with wallets that run the new implementation, and older SDKs fail against it.
+
+### Minor Changes
+
+- fd2ef19: `timelockedRoleProblems` and `delayShortfalls` judge a timelock's role topology and delays against the published policy, for `giano-doctor` and the SDK's `assessHealth` alike.
+
+  `parseDelayList` parses a `minDelay=2d,upgradeToAndCall=7d,…` flag, as `giano-doctor` and the SDK's CLI take it.
+
+- af3fd88: `GianoPaymaster.validatePaymasterUserOp` now rejects an operation whose `paymasterPostOpGasLimit` is below the new `MIN_POST_OP_GAS_LIMIT` constant (100,000 gas), with the new `PostOpGasLimitTooLow` error. The tenant is charged only in `postOp`. Before, a client could ask for a postOp gas limit too small for settlement. `postOp` then ran out of gas, and the EntryPoint took the gas from the shared deposit without charging the tenant. The loss fell on the other tenants and the treasury. Deploy this as a new paymaster implementation; the storage layout does not change.
+
+  The package also exports `PAYMASTER_MIN_POST_OP_GAS_LIMIT` (`100_000n`), the same floor for off-chain code. A sponsorship service must not sign a smaller `paymasterPostOpGasLimit`. The authorisation covers that limit, so the check also protects paymasters deployed before this release. A forge test fails if the exported value and the contract constant differ.
+
+- a8ceffb: The deploy tooling now has one canonical deployer per network class (`mainnet`, `testnet`, and a fixed `local` one), per-chain address overrides in chain profiles, a mainnet deviation guard, and deployment records that state how each address was obtained. `deploy:cli core` checks an existing paymaster proxy's configuration as the guided wizard does, takes its fees from the chain profile unless flags are given, and refuses a record that states another network class. The deployer image and Helm Job accept the chain's profile and committed record (`CHAIN_PROFILE_JSON`, `DEPLOYMENT_RECORD_JSON`; `deployer.chainProfile`, `deployer.deploymentRecord`).
+- 68eadca: Generate per-release code fingerprints (`release-fingerprints.ts`, `pnpm gen:releases`): the runtime code hash of every release contract with its immutables masked, so release code can be recognised at any address. The package now exports `releasesOf(contract, runtimeCode, address?)` (every release the code is, since a release can leave a contract unchanged), `releaseOf(contract, runtimeCode, address?, release?)` (the expected release when it is one of them, else the newest) and `RELEASE_FINGERPRINTS`. `release:verify` now shares the compiler used to produce them.
+
+### Patch Changes
+
+- 7938cef: `GianoPaymaster.validatePaymasterUserOp` now rejects a sponsorship authorisation whose `feeWei` is above `feeFor(tenantId)`, with the new `FeeAboveConfigured` error. The timelocked fee setting is now the maximum fee. Before, the contract charged any fee the signing key put in the authorisation. A lower fee is still accepted. Deploy this as a new paymaster implementation; the storage layout does not change.
+- 43a6ddc: `GianoPaymaster` now reserves each sponsored operation's maximum charge from validation until settlement, in transient storage. `withdrawTenant` cannot take a reserved amount. Validation checks each operation against the balance minus the earlier reservations in the same bundle. Before, a tenant's withdrawal address could withdraw the whole balance while a sponsored operation was executing. The gas then came out of the other tenants' share of the deposit. Deploy this as a new paymaster implementation; the storage layout and the ABI do not change.
+- 75a6c17: `getSignatureLifetime()` in `AuthenticatedStaticCaller` is now `pure` instead of `view`. It returns a constant and reads no state. The ABI in `generated.ts` now says `stateMutability: 'pure'`. Calls to it work as before. The wallet and factory bytecode differs from contract release `v3`, so a later release must include this change before it is deployed. Contract addresses do not change.
+
 ## 6.0.1
 
 ## 6.0.0

@@ -1,6 +1,6 @@
 {
 	"name": "@appliedblockchain/giano-tx-describe",
-	"version": "6.0.1",
+	"version": "7.0.0",
 	"description": "Human-readable transaction descriptions from ERC-7730 clear-signing mappings — depends on nothing else in Giano",
 	"license": "MIT",
 	"repository": {

@@ -1,5 +1,72 @@
 # @appliedblockchain/giano-wallet-kit
 
+## 7.0.0
+
+### Minor Changes
+
+- 1bc3447: Fix `personal_sign` and `eth_sign` so the signature covers the message the dApp sent. A 0x-prefixed hex message with whole bytes is now signed as its raw bytes, and any other message (including odd-length hex) as UTF-8 text. Before, the provider passed the hex spelling to `signMessage` as text, so signatures failed standard EIP-191 / ERC-1271 verification. Every Giano `personal_sign` and `eth_sign` signature changes with this release; a verifier written for the old output must switch to standard verification.
+
+  New export `toPersonalMessageBytes` (from `giano-wallet-core`, re-exported by `giano-wallet-kit`) returns the exact bytes these methods sign, so a consent screen can show the same payload.
+
+  New `giano-wallet-kit` export `describePersonalMessage` returns what a consent screen should show for these methods. It returns the signed bytes as text only when they are valid UTF-8 with no hidden character (control, bidi, zero-width or other default-ignorable characters, or a leading BOM). Otherwise it returns hex, with `rawHex: true` so the screen can warn the user.
+
+- 0d5331e: The wallet host now refuses any dApp request that would make the user's account call one of its own functions. Such a self-call can add or remove owners or upgrade the account, so only the wallet's own management view may build one. The check covers `eth_sendTransaction`, `eth_prepareUserOperation`, `eth_signUserOperation` and `eth_sendSignedUserOperation`, including calls inside `execute` and `executeBatch` callData. A value-only transfer to the account (no calldata) is still allowed, and so is a deploy-only user operation (callData `0x`). A dApp that wants the user to manage the wallet calls `giano_openWalletManagement`.
+
+  The host also refuses, with error code 4100, a request it cannot check: `params` that is not an array, a transaction, call or user operation that is missing, null or not an object, a `to` or `data` that is not a string, or a user operation whose callData is not an `execute` or `executeBatch` call.
+
+  The host runs the check before consent and again after consent, just before the provider runs the request. If no account exists at either point, the host refuses the request with error code 4900, the same code the provider gives. For `eth_signUserOperation`, the host refuses with 4100 a `sender` that is not the connected account, and fills in a missing one. The provider then refuses the request if its account changes before it signs.
+
+  New export `checkSelfCall` returns whether a request is a self-call or cannot be checked, so a consent screen can block it as a second layer.
+
+- ce6e605: Require a connection before a dApp can read or use the wallet account. Before, any origin in `allowedDappOrigins` could open the popup and call `giano_restoreAccount`, `eth_accounts` or `eth_prepareUserOperation` with no consent screen. It got the user's address, and `eth_prepareUserOperation` made the paymaster issue a signed authorisation and reserve tenant balance until the reservation expired.
+
+  The `giano-wallet-kit` host now keeps a connection grant for each dApp origin in the wallet origin's `localStorage`, under its own key, so two popups cannot overwrite each other's change. It records the grant when the user approves `eth_requestAccounts` and the provider returns an account. If the storage refuses that write, the connect answers `-32603` and grants nothing. `wallet_revokePermissions` from that origin removes the grant, and answers `-32603` if the storage refuses the write. The host checks the grant again after the silent restore and after consent, so a revoke from another popup also stops a request that is already waiting. An origin with no grant gets `[]` from `eth_accounts` and EIP-1193 `4100`, with `data: { reason: "not-connected" }`, from every method that uses the account: `eth_sendTransaction`, `personal_sign`, `eth_sign`, `eth_signTypedData_v4`, `eth_signUserOperation`, `signed_eth_call`, `eth_prepareUserOperation` and `eth_sendSignedUserOperation`. The host checks the grant before it restores the account, so a refused origin never receives an `accountsChanged` event. The host also relays `accountsChanged` only to an origin that holds a grant, so signing in from the management view no longer sends the address to an origin that never connected. The event that a first connect emits is no longer relayed; the dApp reads the accounts from the `eth_requestAccounts` result. The host refuses `giano_restoreAccount` from an application with `4200`.
+
+  A dApp that already connected before this release has no grant yet. Its next account request gets `4100`, and it must call `eth_requestAccounts` again once. The `giano-connector` provider now treats that marked `4100` like `4900`: it drops its cached session and emits `accountsChanged` with `[]` and `disconnect`, so the dApp shows the user as disconnected instead of connected with every action failing. Any other `4100`, such as a refused self-call or an ended wallet session, refuses only that request and leaves the dApp connected. `giano-wallet-transport` exports the marker as `NOT_CONNECTED_REASON` and the check as `isNotConnectedError`.
+
+- 0ef6cf7: A wallet-api session that wallet-api refuses now ends on the client (G5). Before, the client kept the dead token and threw a generic error.
+
+  wallet-core:
+
+  - A 401 from wallet-api to a request that carried the current session clears the token, calls `onSessionChanged(null)` and throws the new `SessionEndedError` (`code` 4100). This applies to the wallet-api injection, the management API and the ERC-7677 paymaster client. A 401 for a token a new sign-in replaced while the request was in flight ends nothing, and says to try again: the management API throws `session-replaced`, and the paymaster client a retryable `temporarily-unavailable` refusal. A 401 from wallet-api's paymaster endpoint is no longer reported as a `not-your-wallet` refusal. A 403 still is.
+  - `WalletApiInjection` gains `logoutAll()` (sign out everywhere; resolves `false` when wallet-api could not confirm it), `onUnauthorized(token?)`, `onSessionEnded(listener)`, `isWalletApiUrl(url)` and `sessionFetch`, a fetch that attaches the session to wallet-api URLs only and ends it on wallet-api's 401. `isSessionEndedError()` finds the error inside viem's wrapped errors.
+  - `createWalletManagementApi` and `createErc7677PaymasterClient` take an optional `onUnauthorized(token)`. The paymaster client also takes `sessionEndpoint` (default `true`): set it to `false` for a sponsorship service that is not wallet-api's, which then gets no token, and whose 401 stays a `not-your-wallet` refusal.
+  - Fix: `logout()` now actually revokes the session on wallet-api. Its bodyless request used to declare a JSON content type, which wallet-api refused with 400, so only the local token was cleared. The injection now sends that header only when a request has a body.
+
+  wallet-kit:
+
+  - The bundler transport, the paymaster client and the management API all end the session through the injection. The paymaster client now reads the session from the injection instead of `localStorage`. The token goes only to wallet-api: a bundler or sponsorship service configured elsewhere no longer receives it, and its own 401 no longer signs the user out. `sessionHttp(url, sessionFetch)` and the last parameter of `bundlerOptions` now take the injection's `sessionFetch`.
+  - A dApp request that fails because wallet-api ended the session is answered with EIP-1193 4100 "Unauthorized", not 4001 or an internal error. `toRpcError(error, isWalletApiUrl)` reads an HTTP 401 as that only when it came from wallet-api.
+  - `SessionEndedError` and `isSessionEndedError` are re-exported.
+  - The sponsorship pre-flight has a new `{ state: "session-ended" }`, and a `PendingRequest` gains `sessionEnded()`, which answers the dApp 4100. A review screen calls it to close a request whose session ended.
+  - The management controller gains `logoutAll()` and a `notice` on its state (`session-ended`, `signed-out-everywhere`, `signed-out-everywhere-unconfirmed`). A refused session moves it to `signed-out` with that notice, instead of an error, and sign out everywhere with an already-refused session keeps `session-ended`.
+
+  A custom wallet built on the injection should treat `SessionEndedError` as "sign in again". wallet-api also no longer sends `Access-Control-Allow-Credentials`, so the client must not send credentialed requests. The bearer header is all it needs.
+
+### Patch Changes
+
+- Updated dependencies [fd2ef19]
+- Updated dependencies [802f12f]
+- Updated dependencies [2ab5e9b]
+- Updated dependencies [7938cef]
+- Updated dependencies [43a6ddc]
+- Updated dependencies [af3fd88]
+- Updated dependencies [8f28872]
+- Updated dependencies [a8ceffb]
+- Updated dependencies [1bc3447]
+- Updated dependencies [68eadca]
+- Updated dependencies [0d5331e]
+- Updated dependencies [75a6c17]
+- Updated dependencies [08bd62d]
+- Updated dependencies [c59d890]
+- Updated dependencies [4f5edcf]
+- Updated dependencies [ce6e605]
+- Updated dependencies [0ef6cf7]
+  - @appliedblockchain/giano-contracts@7.0.0
+  - @appliedblockchain/giano-wallet-core@7.0.0
+  - @appliedblockchain/giano-wallet-transport@7.0.0
+  - @appliedblockchain/giano-tx-describe@7.0.0
+
 ## 6.0.1
 
 ### Patch Changes

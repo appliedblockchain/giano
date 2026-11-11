@@ -1,5 +1,79 @@
 # @appliedblockchain/giano-wallet-core
 
+## 7.0.0
+
+### Major Changes
+
+- 802f12f: Lengthen the owner fingerprint from 30 bits to 80 bits. `ownerFingerprint` now returns sixteen Crockford base32 characters in four groups, `XXXX-XXXX-XXXX-XXXX`, instead of six characters as `XXX-XXX`.
+
+  Both devices show this fingerprint when a passkey is added from a second device (WM-20). The comparison is the only check that stops the wallet-api operator from replacing the new device's key with its own. The operator receives the genuine key first and decides when the authorising device sees it, so it has unlimited time to search for a key with the same fingerprint. With 30 bits that search takes minutes on a GPU. With 80 bits it is not feasible.
+
+  Every fingerprint changes, including the ones shown for existing owners. A client that parses or checks the old `XXX-XXX` format must accept the new one. Both devices must run this version: an older SDK on one device shows a different fingerprint, so the user sees a mismatch and declines the addition.
+
+- 08bd62d: Bind the `signedStaticCall` signature to the call it authorises. Before, the owner signed only the function selector and `signedAt`. Anyone who saw one signature could make any read as the wallet for 30 minutes, for example a view that answers only `msg.sender == wallet`.
+
+  `AuthenticatedStaticCaller` now hashes the selector, `signedAt`, the target and `keccak256(data)`. The new `staticCallHash(target, data, signedAt)` pure function returns this hash. `signedStaticCall` also rejects a `signedAt` later than `block.timestamp`, with the new `StaticCallSignatureNotYetValid` error. Before, a future `signedAt` made a signature last longer than the 30-minute lifetime. The other two errors are renamed: `SignatureExpired` is now `StaticCallSignatureExpired`, and `InvalidSignature` is now `StaticCallInvalidSignature`. `signedStaticCall` returns a target's revert data unchanged, so the new names let a client tell the wallet's errors from a target's. Deploy this as a new wallet implementation; the storage layout does not change. Contract release `v3` contains this change, and the two e2e devnet states are rebuilt from `v3`.
+
+  In `giano-wallet-core`, `signStaticCallPermission` now takes `{ target, data, signedAt? }`. `signedAt` defaults to 30 seconds before the latest block timestamp. The contract rejects a future `signedAt`, so the SDK does not use the local clock, and the margin covers an RPC node that is a block or two behind. The new `staticCallHash` export returns the same hash as the contract. `signed_eth_call` keeps one signature per (account, target, calldata) instead of one signature for every read, and checks `to` and `data` before it asks for a signature. It renews a signature on the local clock, counted from when it was signed, so a local clock that differs from the chain's does not affect it. If the wallet rejects a cached signature, the provider removes it and signs again once. If the wallet also rejects the new signature, the provider removes that one too. Identical concurrent reads share one signature, and the provider asks for one passkey signature at a time. A read whose session ends (disconnect, chain switch or new account) before it finishes does not sign, cache or send anything, and fails with an error that asks the dApp to send it again.
+
+  The signed message changes. This SDK works only with wallets that run the new implementation, and older SDKs fail against it.
+
+### Minor Changes
+
+- 2ab5e9b: New export `parseP256PublicKey` turns a passkey's public key into the `(x, y)` coordinates that `encodeAddOwnerPublicKey` and `publicKeyOwnerBytes` take. It accepts the SPKI key from `AuthenticatorAttestationResponse.getPublicKey()`, an uncompressed point (`0x04 ‖ x ‖ y`) or the bare `x ‖ y` coordinates, each as hex, a `Uint8Array` or an `ArrayBuffer`. It throws the new `InvalidP256PublicKeyError` for any other shape, for another algorithm or curve, for a compressed point, and for a point that is not on the P-256 curve.
+
+  The provider now uses this helper when it registers a new passkey. Before, it took the last 64 bytes of the key without checks. Now it checks the key right after the passkey is created: a malformed key fails the connect request before the provider sends the credential to the wallet-api or connects an account.
+
+  `depositPasskeyIntoPendingAddition` now returns the key this device created as `publicKey`, and computes `fingerprint` from it. Before, it returned the key that wallet-api echoed back. In the same-device flow the add-owner call is signed with that `publicKey`, so a wallet-api that echoed another key could have that key added while the screen showed the fingerprint of the device's own key. The function now parses the key with `parseP256PublicKey` before it deposits it, and throws the new `PendingAdditionKeyMismatchError` when wallet-api reports a different key.
+
+- 1bc3447: Fix `personal_sign` and `eth_sign` so the signature covers the message the dApp sent. A 0x-prefixed hex message with whole bytes is now signed as its raw bytes, and any other message (including odd-length hex) as UTF-8 text. Before, the provider passed the hex spelling to `signMessage` as text, so signatures failed standard EIP-191 / ERC-1271 verification. Every Giano `personal_sign` and `eth_sign` signature changes with this release; a verifier written for the old output must switch to standard verification.
+
+  New export `toPersonalMessageBytes` (from `giano-wallet-core`, re-exported by `giano-wallet-kit`) returns the exact bytes these methods sign, so a consent screen can show the same payload.
+
+  New `giano-wallet-kit` export `describePersonalMessage` returns what a consent screen should show for these methods. It returns the signed bytes as text only when they are valid UTF-8 with no hidden character (control, bidi, zero-width or other default-ignorable characters, or a leading BOM). Otherwise it returns hex, with `rawHex: true` so the screen can warn the user.
+
+- c59d890: A secondary owner can now connect to the shared smart account when the injection sets the new `address`. Before, a passkey added with `addOwnerPublicKey` always connected to the address derived from that passkey, which is a different, empty account, because the passkey was never part of the factory salt. The default wallet-api injection (`createWalletApiInjection`) does not set `address` yet, so a secondary owner who connects through the stock wallet-web or connector still lands on the derived account. A later wallet-api change will fix that.
+
+  `CredentialInfo` has a new optional `address`: the smart account to connect to. `eth_requestAccounts` and `giano_restoreAccount` connect to it when the injection sets it, after a check that the passkey can sign for it. A deployed account must list the passkey as an owner (`isOwnerBytes`). An account that is not deployed yet must be the passkey's own derived address. When the check fails, the provider throws `GianoAccountOwnerError` and stays disconnected. It never falls back to the derived address. `giano_restoreAccount` throws this error too, where it otherwise returns `[]`. Without `address`, nothing changes.
+
+  `address` applies only to an existing credential. Validation rejects it with `credentialId: null`, before the passkey prompt.
+
+  New exports: `connectGianoSmartAccount`, which builds the account and runs the same check, and `GianoAccountOwnerError`.
+
+- 0ef6cf7: A wallet-api session that wallet-api refuses now ends on the client (G5). Before, the client kept the dead token and threw a generic error.
+
+  wallet-core:
+
+  - A 401 from wallet-api to a request that carried the current session clears the token, calls `onSessionChanged(null)` and throws the new `SessionEndedError` (`code` 4100). This applies to the wallet-api injection, the management API and the ERC-7677 paymaster client. A 401 for a token a new sign-in replaced while the request was in flight ends nothing, and says to try again: the management API throws `session-replaced`, and the paymaster client a retryable `temporarily-unavailable` refusal. A 401 from wallet-api's paymaster endpoint is no longer reported as a `not-your-wallet` refusal. A 403 still is.
+  - `WalletApiInjection` gains `logoutAll()` (sign out everywhere; resolves `false` when wallet-api could not confirm it), `onUnauthorized(token?)`, `onSessionEnded(listener)`, `isWalletApiUrl(url)` and `sessionFetch`, a fetch that attaches the session to wallet-api URLs only and ends it on wallet-api's 401. `isSessionEndedError()` finds the error inside viem's wrapped errors.
+  - `createWalletManagementApi` and `createErc7677PaymasterClient` take an optional `onUnauthorized(token)`. The paymaster client also takes `sessionEndpoint` (default `true`): set it to `false` for a sponsorship service that is not wallet-api's, which then gets no token, and whose 401 stays a `not-your-wallet` refusal.
+  - Fix: `logout()` now actually revokes the session on wallet-api. Its bodyless request used to declare a JSON content type, which wallet-api refused with 400, so only the local token was cleared. The injection now sends that header only when a request has a body.
+
+  wallet-kit:
+
+  - The bundler transport, the paymaster client and the management API all end the session through the injection. The paymaster client now reads the session from the injection instead of `localStorage`. The token goes only to wallet-api: a bundler or sponsorship service configured elsewhere no longer receives it, and its own 401 no longer signs the user out. `sessionHttp(url, sessionFetch)` and the last parameter of `bundlerOptions` now take the injection's `sessionFetch`.
+  - A dApp request that fails because wallet-api ended the session is answered with EIP-1193 4100 "Unauthorized", not 4001 or an internal error. `toRpcError(error, isWalletApiUrl)` reads an HTTP 401 as that only when it came from wallet-api.
+  - `SessionEndedError` and `isSessionEndedError` are re-exported.
+  - The sponsorship pre-flight has a new `{ state: "session-ended" }`, and a `PendingRequest` gains `sessionEnded()`, which answers the dApp 4100. A review screen calls it to close a request whose session ended.
+  - The management controller gains `logoutAll()` and a `notice` on its state (`session-ended`, `signed-out-everywhere`, `signed-out-everywhere-unconfirmed`). A refused session moves it to `signed-out` with that notice, instead of an error, and sign out everywhere with an already-refused session keeps `session-ended`.
+
+  A custom wallet built on the injection should treat `SessionEndedError` as "sign in again". wallet-api also no longer sends `Access-Control-Allow-Credentials`, so the client must not send credentialed requests. The bearer header is all it needs.
+
+### Patch Changes
+
+- 0d5331e: `eth_signUserOperation` now checks the sender and signs with the same account instance. Before, a restore or login that replaced the account during the sender check made the new account sign the operation as itself.
+- 4f5edcf: Document `giano-wallet-core` as the headless entrypoint for backends. The README now shows how to use the account and management exports in plain Node, and which passkey functions still need a browser. A new test keeps this true: it fails when a browser, React or RainbowKit package enters the dependency tree, or when the built package cannot load and sign a UserOperation in Node with no DOM globals.
+- Updated dependencies [fd2ef19]
+- Updated dependencies [7938cef]
+- Updated dependencies [43a6ddc]
+- Updated dependencies [af3fd88]
+- Updated dependencies [8f28872]
+- Updated dependencies [a8ceffb]
+- Updated dependencies [68eadca]
+- Updated dependencies [75a6c17]
+- Updated dependencies [08bd62d]
+  - @appliedblockchain/giano-contracts@7.0.0
+
 ## 6.0.1
 
 ### Patch Changes
