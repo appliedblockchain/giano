@@ -6,3 +6,4 @@ sponsorship.spec.ts
 paymaster-admin.spec.ts
 platform-admin.spec.ts
 session-lifecycle.spec.ts
+platform-console.spec.ts
