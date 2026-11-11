@@ -7,6 +7,7 @@ import {
 	type Chain,
 	createPublicClient,
 	custom,
+	decodeFunctionData,
 	encodeFunctionResult,
 	getAbiItem,
 	type Hex,
@@ -50,6 +51,7 @@ const WALLET_SIGNED_STATIC_CALL = selectorOf(
 	gianoSmartWalletAbi,
 	"signedStaticCall",
 );
+const WALLET_IS_OWNER_BYTES = selectorOf(gianoSmartWalletAbi, "isOwnerBytes");
 
 export type MockClientOptions = {
 	/** Address the factory's `getAddress` returns (the counterfactual wallet address). */
@@ -70,6 +72,11 @@ export type MockClientOptions = {
 	staticCallRevert?: (
 		callIndex: number,
 	) => Hex | undefined | Promise<Hex | undefined>;
+	/**
+	 * Answers `isOwnerBytes` on the wallet at `wallet`. Defaults to "not an owner", so a test that
+	 * connects to an explicit address must say which passkeys own it.
+	 */
+	isOwner?: (wallet: Address, ownerBytes: Hex) => boolean;
 	/** Timestamp (seconds) of the latest block, returned by `eth_getBlockByNumber`. */
 	blockTimestamp?: bigint;
 	/** Observe every JSON-RPC request the client makes. A returned promise delays the answer. */
@@ -89,6 +96,7 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		staticCallResult = "0x",
 		staticCallRevert,
 		blockTimestamp = 1_800_000_000n,
+		isOwner = () => false,
 		onRequest,
 	} = options;
 
@@ -120,7 +128,7 @@ export function createMockTransport(options: MockClientOptions = {}) {
 				return value;
 			}
 			case "eth_call": {
-				const data = (params as [{ data: Hex }])[0].data;
+				const { data, to } = (params as [{ data: Hex; to: Address }])[0];
 				const selector = data.slice(0, 10) as Hex;
 				if (selector === FACTORY_GET_ADDRESS)
 					return encodeFunctionResult({
@@ -134,6 +142,17 @@ export function createMockTransport(options: MockClientOptions = {}) {
 						functionName: "getSignatureLifetime",
 						result: signatureLifetime,
 					});
+				if (selector === WALLET_IS_OWNER_BYTES) {
+					const { args } = decodeFunctionData({
+						abi: gianoSmartWalletAbi,
+						data,
+					});
+					return encodeFunctionResult({
+						abi: gianoSmartWalletAbi,
+						functionName: "isOwnerBytes",
+						result: isOwner(to, (args as readonly [Hex])[0]),
+					});
+				}
 				if (selector === WALLET_SIGNED_STATIC_CALL) {
 					const callIndex = staticCalls;
 					staticCalls += 1;

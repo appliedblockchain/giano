@@ -1,3 +1,4 @@
+import { type Address, isAddress } from "viem";
 import { assertNonEmptyBufferSource } from "../buffer-source";
 import { assertCredentialMediationRequirement } from "./credential-mediation-requirement";
 // JSDocs links
@@ -19,6 +20,17 @@ export type BaseCredentialInfo = {
 	 */
 	mediation?: CredentialMediationRequirement;
 	challenge: BufferSource;
+	/**
+	 * The smart account to connect to. Set it when the credential may be a secondary owner, added
+	 * with `addOwnerPublicKey`: that owner was never part of the factory salt, so the address
+	 * derived from its passkey is a different, empty account. Before it connects, the provider
+	 * checks that the credential owns this account, and fails if it does not. It never falls back
+	 * to the derived address.
+	 *
+	 * When not provided, the provider uses the address derived from the credential, as before.
+	 * Only for an existing credential: a credential that is being created owns no account yet.
+	 */
+	address?: Address;
 };
 
 export function assertBaseCredentialInfo(
@@ -28,7 +40,8 @@ export function assertBaseCredentialInfo(
 		throw new Error("Credential info must be an object");
 	}
 
-	const { userVerification, mediation, challenge } = info as BaseCredentialInfo;
+	const { userVerification, mediation, challenge, address } =
+		info as BaseCredentialInfo;
 
 	if (userVerification !== undefined) {
 		assertUserVerificationRequirement(userVerification, {
@@ -43,4 +56,13 @@ export function assertBaseCredentialInfo(
 	}
 
 	assertNonEmptyBufferSource(challenge, { descriptor: "challenge" });
+
+	// An all-lowercase address is valid. A mixed-case address must carry a correct EIP-55
+	// checksum (viem's default strict mode), so a mistyped address fails here rather than later.
+	if (
+		address !== undefined &&
+		(typeof address !== "string" || !isAddress(address))
+	) {
+		throw new Error("`address` must be a 20-byte hex address");
+	}
 }

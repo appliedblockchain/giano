@@ -14,6 +14,8 @@ export type CredentialInfoUse = BaseCredentialInfo & {
 };
 export type CredentialInfoCreate = BaseCredentialInfo & {
 	credentialId: null;
+	/** A new credential owns no account yet, so it cannot connect to a given one. */
+	address?: undefined;
 	/**
 	 * When not provided, defaults to {@link DEFAULT_RESIDENT_KEY_REQUIREMENT}
 	 */
@@ -40,6 +42,13 @@ export function assertCredentialInfo(
 	const { credentialId } = info;
 
 	if (credentialId === null) {
+		// Refused before the passkey ceremony: the new credential could never pass the ownership
+		// check, and by then the user would have a registered passkey and no connection.
+		if ((info as BaseCredentialInfo).address !== undefined) {
+			throw new Error(
+				"`address` applies only to an existing credential: a credential that is being created (`credentialId: null`) owns no account yet",
+			);
+		}
 		if (info.residentKey !== undefined) {
 			assertResidentKeyRequirement(info.residentKey, {
 				descriptor: "residentKey",

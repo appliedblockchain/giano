@@ -41,6 +41,8 @@ import {
 } from "viem/account-abstraction";
 import type { GianoSmartAccountImplementation } from "./account";
 import {
+	connectGianoSmartAccount,
+	GianoAccountOwnerError,
 	getWebAuthnAccount,
 	STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS,
 	toGianoSmartAccount,
@@ -440,18 +442,17 @@ export const createGianoProvider = (
 					return [];
 				}
 
-				smartAccount = await toGianoSmartAccount({
+				smartAccount = await connectGianoSmartAccount({
 					client: client!,
-					owners: [
-						toWebAuthnAccount({
-							getFn,
-							credential: {
-								id: toBase64Url(rawId as ArrayBuffer),
-								publicKey: concatHex([x, y]),
-							},
-						}),
-					],
+					owner: toWebAuthnAccount({
+						getFn,
+						credential: {
+							id: toBase64Url(rawId as ArrayBuffer),
+							publicKey: concatHex([x, y]),
+						},
+					}),
 					factoryAddress: factoryAddress!,
+					address: credentialInfo.address,
 				});
 
 				const smartAccountAddress = await smartAccount.getAddress();
@@ -459,6 +460,11 @@ export const createGianoProvider = (
 				emit("accountsChanged", [smartAccountAddress]);
 				return [smartAccountAddress];
 			} catch (error) {
+				// A passkey that does not own the requested account is a wrong address from the
+				// integrator, not a session that needs a sign-in, so it is reported, not swallowed.
+				if (error instanceof GianoAccountOwnerError) {
+					throw error;
+				}
 				// Best-effort: any failure (expired session, network, unknown credential) just
 				// means "not restorable silently" — the caller should fall back to a sign-in.
 				logger.warn("giano_restoreAccount: silent restore failed", error);
@@ -723,10 +729,11 @@ export const createGianoProvider = (
 				if (!webAuthnAccount) {
 					throw new Error("Invalid credential");
 				}
-				smartAccount = await toGianoSmartAccount({
+				smartAccount = await connectGianoSmartAccount({
 					client: client!,
-					owners: [webAuthnAccount],
+					owner: webAuthnAccount,
 					factoryAddress: factoryAddress!,
+					address: credentialInfo.address,
 				});
 				const smartAccountAddress = await smartAccount.getAddress();
 
