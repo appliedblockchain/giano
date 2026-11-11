@@ -66,7 +66,11 @@ walletApi:
   # TRUST_PROXY: the peers allowed to set X-Forwarded-For (IPs, CIDRs, loopback, linklocal,
   # uniquelocal). The ingress controller and the wallet-web nginx must fall inside it, or
   # request.ip is the proxy and the per-IP ceremony rate limit applies to the whole tenant.
-  # Narrow it to the cluster's pod CIDR where you know it. Never "true".
+  # The default, uniquelocal, trusts every private address (10/8, 172.16/12, 192.168/16, fc00::/7).
+  # So a client whose own address is private can choose its rate-limit key by sending
+  # X-Forwarded-For: for example a VPN user, a client behind an internal load balancer, or a pod
+  # in this cluster. That is fine when only a public ingress reaches wallet-api. Otherwise narrow
+  # it to the ingress controller's and wallet-web's pod CIDR. Never "true".
   trustProxy: uniquelocal
   resources: {}
 
