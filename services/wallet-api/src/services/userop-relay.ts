@@ -6,9 +6,11 @@ import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
 import { sponsorshipDecisions, useropLog } from "../db/schema.js";
+import { BundlerRpcError } from "./bundler.js";
 import type { ChainServices } from "./chains.js";
 import type { SessionContext } from "./sessions.js";
 import { mergePolicy, type Tenant } from "./tenants.js";
+import { UpstreamLimitError } from "./upstream-fetch.js";
 import { evaluatePolicy, type PolicyRuleResult } from "./userop-policy.js";
 
 const hexData = z.string().regex(/^0x[0-9a-fA-F]*$/) as z.ZodType<Hex>;
@@ -81,11 +83,22 @@ function toBigIntUserOp(op: RpcUserOp) {
 	};
 }
 
+/** What a caller is told when the send's outcome is unknown. Both relay doors use it. */
+export const SEND_OUTCOME_UNKNOWN =
+	"the bundler did not confirm the submission; the operation may still be included, so poll its receipt before you send it again";
+
 export type RelayOutcome =
 	| { kind: "submitted"; userOperationHash: Hex; duplicate?: true }
 	| { kind: "rejected"; reason: string; policy: PolicyRuleResult[] }
 	/** The hash is already logged for someone else — never say more than that (V9). */
-	| { kind: "conflict" };
+	| { kind: "conflict" }
+	/**
+	 * The bundler gave no usable answer to the send (G37): a time or size limit, a transport error,
+	 * or a non-2xx HTTP status. It may still hold the operation and land it, so this is not a
+	 * failure: the row stays `accepted` until the status route sees it on chain. The caller gets
+	 * the hash to poll.
+	 */
+	| { kind: "unknown"; userOperationHash: Hex };
 
 export type RelayCaller = {
 	session: SessionContext;
@@ -187,7 +200,7 @@ export function createUseropRelay({
 		return { ok: true };
 	};
 
-	/** Throws only on a bundler failure (`BundlerRpcError` or a transport error), after logging it. */
+	/** Throws only when the bundler refuses the operation (`BundlerRpcError`), after logging it. */
 	const relay = async (
 		caller: RelayCaller,
 		rpcOp: RpcUserOp,
@@ -312,19 +325,39 @@ export function createUseropRelay({
 					existing &&
 					existing.tenantId === session.tenantId &&
 					existing.userId === session.userId;
-				if (
-					ownDuplicate &&
-					(existing.status === "submitted" || existing.status === "accepted")
-				) {
+				if (ownDuplicate && existing.status === "submitted") {
 					return {
 						kind: "submitted",
 						userOperationHash: useropHash,
 						duplicate: true,
 					};
 				}
+				// An `accepted` row was never confirmed by the bundler: its send had an unknown outcome,
+				// or is still in flight. The bundler may have lost it (a restart drops its in-memory
+				// queue), so answering `duplicate: true` here could report a send that never happens.
+				// Send it again instead. That is safe: the bundler returns the hash of an operation it
+				// already holds, and the EntryPoint nonce stops a second execution.
+				if (ownDuplicate && existing.status === "accepted") {
+					return await send(existing.id, useropHash, { resend: true });
+				}
 				return { kind: "conflict" };
 			}
 
+			return await send(inserted[0].id, useropHash, { resend: false });
+		} finally {
+			// rejected and failed ops observe the histogram too (was success-path only)
+			stopTimer({ tenant: tenantSlug, chain: chainLabel });
+		}
+
+		/**
+		 * Sends the operation to the bundler and records the answer on its `accepted` row. A resend
+		 * answers `duplicate: true` once the bundler accepts it, and never marks the row `failed`.
+		 */
+		async function send(
+			rowId: string,
+			useropHash: Hex,
+			{ resend }: { resend: boolean },
+		): Promise<RelayOutcome> {
 			try {
 				// Submitted to the submission endpoint configured for the RESOLVED chain, and to
 				// no other (MC-58).
@@ -340,22 +373,83 @@ export function createUseropRelay({
 				await db
 					.update(useropLog)
 					.set({ status: "submitted", bundlerResponse: { bundlerHash } })
-					.where(eq(useropLog.id, inserted[0].id));
+					.where(eq(useropLog.id, rowId));
 				metrics.useropRelayed.inc({
 					status: "submitted",
 					tenant: tenantSlug,
 					chain: chainLabel,
 				});
 				// the server-computed hash is the canonical id (log key, status endpoint, idempotency)
-				return { kind: "submitted", userOperationHash: useropHash };
+				return resend
+					? {
+							kind: "submitted",
+							userOperationHash: useropHash,
+							duplicate: true,
+						}
+					: { kind: "submitted", userOperationHash: useropHash };
 			} catch (error) {
+				// Only the bundler's own JSON-RPC error is a definite refusal. Any other error (a time or
+				// size limit, a dropped connection, a proxy's 5xx) can come after the bundler took the
+				// operation, so it may still be in the bundler's queue. Recording it as failed would tell
+				// the user it did not happen while it lands on chain, and a fresh retry could then run
+				// the same transfer twice.
+				if (!(error instanceof BundlerRpcError)) {
+					log.warn(
+						{
+							useropHash,
+							reason:
+								error instanceof UpstreamLimitError
+									? error.reason
+									: "transport",
+							err: error instanceof UpstreamLimitError ? undefined : error,
+							chainId: chain.chainId,
+							resend,
+						},
+						"bundler gave no usable answer to the send; its outcome is unknown",
+					);
+					await db
+						.update(useropLog)
+						.set({
+							bundlerResponse: {
+								error: (error as Error).message,
+								outcome: "unknown",
+							},
+						})
+						.where(
+							and(eq(useropLog.id, rowId), eq(useropLog.status, "accepted")),
+						);
+					metrics.useropRelayed.inc({
+						status: "unknown",
+						tenant: tenantSlug,
+						chain: chainLabel,
+					});
+					return { kind: "unknown", userOperationHash: useropHash };
+				}
+				// An earlier send of this operation may still land, so a refused resend proves nothing
+				// about it: the row stays `accepted`, and the status route settles it from the chain.
+				if (resend) {
+					log.warn(
+						{ useropHash, chainId: chain.chainId, err: error },
+						"bundler refused the resend of an unconfirmed operation",
+					);
+					metrics.useropRelayed.inc({
+						status: "failed",
+						tenant: tenantSlug,
+						chain: chainLabel,
+					});
+					throw error;
+				}
+				// A concurrent resend may already have had the operation accepted. A late refusal of this
+				// send must not turn that confirmed `submitted` row into `failed`.
 				await db
 					.update(useropLog)
 					.set({
 						status: "failed",
 						bundlerResponse: { error: (error as Error).message },
 					})
-					.where(eq(useropLog.id, inserted[0].id));
+					.where(
+						and(eq(useropLog.id, rowId), eq(useropLog.status, "accepted")),
+					);
 				metrics.useropRelayed.inc({
 					status: "failed",
 					tenant: tenantSlug,
@@ -363,9 +457,6 @@ export function createUseropRelay({
 				});
 				throw error;
 			}
-		} finally {
-			// rejected and failed ops observe the histogram too (was success-path only)
-			stopTimer({ tenant: tenantSlug, chain: chainLabel });
 		}
 	};
 

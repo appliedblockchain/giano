@@ -1,25 +1,29 @@
+import { postJsonRpc, type UpstreamLimits } from "./upstream-fetch.js";
+
 /**
  * Minimal JSON-RPC client for a chain's node, used by the read relay. Kept separate from the
  * viem `publicClient` so that a wallet's request is forwarded verbatim — method, params and
  * the node's own error — rather than re-encoded.
+ *
+ * Every call is bounded in time and response size (`limits`, G37). A call that hits a limit
+ * throws `UpstreamLimitError`.
  */
 export function createNodeRpcService(
 	rpcUrl: string,
-	fetchImpl: typeof fetch = fetch,
+	{
+		limits,
+		fetchImpl = fetch,
+	}: { limits: UpstreamLimits; fetchImpl?: typeof fetch },
 ) {
 	let rpcId = 0;
 
 	return {
 		async call(method: string, params: unknown[]): Promise<unknown> {
-			const response = await fetchImpl(rpcUrl, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-			});
-			if (!response.ok) {
-				throw new Error(`Node HTTP ${response.status}`);
-			}
-			const body = (await response.json()) as {
+			const body = (await postJsonRpc(
+				rpcUrl,
+				{ jsonrpc: "2.0", id: ++rpcId, method, params },
+				{ upstream: "node", limits, fetchImpl },
+			)) as {
 				result?: unknown;
 				error?: { code: number; message: string; data?: unknown };
 			};

@@ -5,7 +5,12 @@ import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import { BundlerRpcError } from "../services/bundler.js";
 import type { ChainServices } from "../services/chains.js";
-import { rpcUserOpSchema, type UseropRelay } from "../services/userop-relay.js";
+import { UpstreamLimitError } from "../services/upstream-fetch.js";
+import {
+	rpcUserOpSchema,
+	SEND_OUTCOME_UNKNOWN,
+	type UseropRelay,
+} from "../services/userop-relay.js";
 
 /**
  * The JSON-RPC bundler facade: what a wallet origin points its bundler client at.
@@ -75,6 +80,12 @@ export const RELAY_ERROR_CODES = {
 	"rate-limited": -32021,
 	duplicate: -32022,
 	"bundler-unavailable": -32023,
+	// A bundler past the time or size limit (G37) gave no usable answer: the same code, with its
+	// own message and counted outcome.
+	"bundler-timeout": -32023,
+	"bundler-response-too-large": -32023,
+	// A send the bundler did not confirm in time. It may still land: `data` carries the hash to poll.
+	"send-outcome-unknown": -32023,
 } as const;
 
 type RelayErrorReason = keyof typeof RELAY_ERROR_CODES;
@@ -177,6 +188,18 @@ export default async function bundlerRelayRoutes(
 					id,
 					error: { code: error.code, message: error.message },
 				};
+			}
+			if (error instanceof UpstreamLimitError) {
+				request.log.warn(
+					{ reason: error.reason, method, chainId: chain.chainId },
+					"bundler relay: bundler call hit its limit",
+				);
+				return error.reason === "timeout"
+					? fail("bundler-timeout", "the bundler did not answer in time")
+					: fail(
+							"bundler-response-too-large",
+							"the bundler response is too large to relay",
+						);
 			}
 			request.log.error(
 				{ err: error, method, chainId: chain.chainId },
@@ -295,6 +318,11 @@ export default async function bundlerRelayRoutes(
 						outcome.userOperationHash,
 						outcome.duplicate ? "duplicate" : "submitted",
 					);
+				case "unknown":
+					return fail("send-outcome-unknown", SEND_OUTCOME_UNKNOWN, {
+						reason: "send-outcome-unknown",
+						userOperationHash: outcome.userOperationHash,
+					});
 			}
 		}
 

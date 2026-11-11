@@ -1,7 +1,8 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import { and, eq, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { buildApp } from "../src/app.js";
 import { tenants, users } from "../src/db/schema.js";
 import { createChallengeService } from "../src/services/challenges.js";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../src/services/tenant-fixtures.js";
 import {
 	ADMIN_KEY,
+	createMockBundlerFetch,
 	startTestStack,
 	stopTestStack,
 	TENANT_A,
@@ -905,6 +907,358 @@ describe("userop relay", () => {
 		expect((await lookup("198.51.100.7")).statusCode).toBe(429);
 		// another client keeps its own budget
 		expect((await lookup("198.51.100.8")).statusCode).toBe(200);
+	});
+});
+
+describe("a send the bundler does not confirm in time (G37)", () => {
+	const SEND_TIMEOUT_MS = 200;
+	const target = "0x3333333333333333333333333333333333333333";
+	let sessionToken: string;
+	let walletAddress: string;
+	let app: Awaited<ReturnType<typeof buildApp>>;
+	/** What the bundler answers to eth_getUserOperationByHash: null until the op is on chain. */
+	let onChain = false;
+	/** How the bundler answers eth_sendUserOperation: hold it forever, accept it, or refuse it. */
+	let sendAnswer: "hold" | "accept" | "refuse" | "drop" | "http502" = "hold";
+	let sends = 0;
+
+	const makeOp = (nonce: number) => ({
+		sender: walletAddress,
+		nonce: `0x${nonce.toString(16)}`,
+		callData: encodeFunctionData({
+			abi: gianoSmartWalletAbi,
+			functionName: "execute",
+			args: [target, 0n, "0x"],
+		}),
+		callGasLimit: "0x30000",
+		verificationGasLimit: "0x30000",
+		preVerificationGas: "0x10000",
+		maxFeePerGas: "0x3b9aca00",
+		maxPriorityFeePerGas: "0x3b9aca00",
+		signature: "0x1234",
+	});
+
+	beforeAll(async () => {
+		const registered = await register(
+			"send-timeout-user",
+			createAuthenticator(),
+		);
+		sessionToken = registered.session.token;
+		walletAddress = registered.walletAddress;
+
+		// A bundler that holds every send, as giano-bundler does while all its lanes are busy.
+		const mock = createMockBundlerFetch();
+		const fetchImpl: typeof fetch = async (url, init) => {
+			const { id, method } = JSON.parse(String(init?.body)) as {
+				id: number;
+				method: string;
+			};
+			if (method === "eth_sendUserOperation") {
+				sends++;
+				if (sendAnswer === "hold") return new Promise(() => {});
+				if (sendAnswer === "drop") throw new TypeError("fetch failed");
+				if (sendAnswer === "http502")
+					return new Response("bad gateway", { status: 502 });
+				if (sendAnswer === "refuse")
+					return new Response(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: { code: -32602, message: "AA25 invalid account nonce" },
+						}),
+					);
+			}
+			if (method === "eth_getUserOperationByHash")
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						result: onChain
+							? { transactionHash: `0x${"12".repeat(32)}` }
+							: null,
+					}),
+				);
+			return mock.fetchImpl(url, init);
+		};
+		app = await buildApp({
+			config: { ...ctx.config, UPSTREAM_SEND_TIMEOUT_MS: SEND_TIMEOUT_MS },
+			db: ctx.db,
+			fetchImpl,
+		});
+	});
+
+	afterAll(async () => {
+		await app?.close();
+	});
+
+	const statusOf = async (hash: string) => {
+		const res = await app.inject({
+			method: "GET",
+			url: `/v1/userops/${hash}`,
+			headers: { authorization: `Bearer ${sessionToken}` },
+		});
+		expect(res.statusCode).toBe(200);
+		return (res.json() as { status: string }).status;
+	};
+
+	it("REST: answers 504 with the hash to poll, and does not record the op as failed", async () => {
+		onChain = false;
+		const op = makeOp(0x100);
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(res.statusCode).toBe(504);
+		const body = res.json() as {
+			error: string;
+			message: string;
+			userOperationHash: string;
+		};
+		expect(body).toMatchObject({ error: "send-outcome-unknown" });
+		expect(body.message).toContain("may still be included");
+		expect(body.userOperationHash).toMatch(/^0x[0-9a-f]{64}$/);
+
+		// Not on chain yet: still unconfirmed, never failed.
+		expect(await statusOf(body.userOperationHash)).toBe("accepted");
+
+		// Sending the same op again reaches the bundler again. While it still holds the send, the
+		// outcome stays unknown: never a `duplicate: true` that no bundler confirmed.
+		const sendsBefore = sends;
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(again.statusCode).toBe(504);
+		expect(again.json()).toMatchObject({
+			error: "send-outcome-unknown",
+			userOperationHash: body.userOperationHash,
+		});
+		expect(sends).toBe(sendsBefore + 1);
+		expect(await statusOf(body.userOperationHash)).toBe("accepted");
+
+		// The bundler lands it later: the status route settles it from the chain.
+		onChain = true;
+		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+		onChain = false;
+		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+	});
+
+	it("resends an unconfirmed op the bundler lost, and answers duplicate once it accepts it", async () => {
+		onChain = false;
+		sendAnswer = "hold";
+		const op = makeOp(0x102);
+		const first = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(first.statusCode).toBe(504);
+		const { userOperationHash } = first.json() as { userOperationHash: string };
+
+		// The bundler restarted and lost its queue; it now accepts the resend.
+		sendAnswer = "accept";
+		const sendsBefore = sends;
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		expect(again.statusCode).toBe(200);
+		expect(again.json()).toEqual({ userOperationHash, duplicate: true });
+		expect(sends).toBe(sendsBefore + 1);
+		expect(await statusOf(userOperationHash)).toBe("submitted");
+
+		// Once the bundler has accepted it, a further resend is the plain duplicate, with no send.
+		const third = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(third.statusCode).toBe(200);
+		expect(third.json()).toEqual({ userOperationHash, duplicate: true });
+		expect(sends).toBe(sendsBefore + 1);
+	});
+
+	it("keeps an unconfirmed op accepted when the bundler refuses its resend", async () => {
+		onChain = false;
+		sendAnswer = "hold";
+		const op = makeOp(0x103);
+		const first = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(first.statusCode).toBe(504);
+		const { userOperationHash } = first.json() as { userOperationHash: string };
+
+		// The first send may still land, so a refused resend says nothing about it.
+		sendAnswer = "refuse";
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		expect(again.statusCode).toBe(502);
+		expect(again.json()).toMatchObject({ error: "bundler", code: -32602 });
+		expect(await statusOf(userOperationHash)).toBe("accepted");
+	});
+
+	it("a late refusal of the first send does not turn a resend's confirmed submission into failed", async () => {
+		// The bundler refuses the first send only after a concurrent resend was accepted. Its own
+		// app has a long send limit, so the first send cannot end on its deadline instead.
+		const firstSend: { answer?: (response: Response) => void } = {};
+		const mock = createMockBundlerFetch();
+		const raceFetch: typeof fetch = async (url, init) => {
+			const { method } = JSON.parse(String(init?.body)) as { method: string };
+			if (method === "eth_sendUserOperation" && !firstSend.answer)
+				return new Promise((resolve) => {
+					firstSend.answer = resolve;
+				});
+			return mock.fetchImpl(url, init);
+		};
+		const raceApp = await buildApp({
+			config: { ...ctx.config, UPSTREAM_SEND_TIMEOUT_MS: 10_000 },
+			db: ctx.db,
+			fetchImpl: raceFetch,
+		});
+		try {
+			const op = makeOp(0x104);
+			const post = () =>
+				raceApp.inject({
+					method: "POST",
+					url: "/v1/userops",
+					headers: { authorization: `Bearer ${sessionToken}` },
+					payload: { userOperation: op },
+				});
+			const first = post();
+			await vi.waitFor(() => expect(firstSend.answer).toBeDefined());
+
+			const resend = await post();
+			expect(resend.statusCode).toBe(200);
+			const { userOperationHash, duplicate } = resend.json() as {
+				userOperationHash: string;
+				duplicate?: boolean;
+			};
+			expect(duplicate).toBe(true);
+			expect(await statusOf(userOperationHash)).toBe("submitted");
+
+			firstSend.answer?.(
+				new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						error: { code: -32602, message: "AA25 invalid account nonce" },
+					}),
+				),
+			);
+			expect((await first).statusCode).toBe(502);
+			expect(await statusOf(userOperationHash)).toBe("submitted");
+		} finally {
+			await raceApp.close();
+		}
+	});
+
+	it("treats a dropped connection on send as an unknown outcome, not a failure", async () => {
+		onChain = false;
+		sendAnswer = "drop";
+		const op = makeOp(0x105);
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		// The connection may have dropped after the bundler took the operation.
+		expect(res.statusCode).toBe(504);
+		const body = res.json() as { error: string; userOperationHash: string };
+		expect(body.error).toBe("send-outcome-unknown");
+		expect(await statusOf(body.userOperationHash)).toBe("accepted");
+
+		// So a resend still reaches the bundler, and settles it once the bundler accepts it.
+		sendAnswer = "accept";
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		expect(again.statusCode).toBe(200);
+		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+	});
+
+	it("JSON-RPC: treats a non-2xx HTTP status on send as an unknown outcome, not a failure", async () => {
+		onChain = false;
+		sendAnswer = "http502";
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/bundler/31337",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: {
+				jsonrpc: "2.0",
+				id: 10,
+				method: "eth_sendUserOperation",
+				params: [makeOp(0x106), "0x433709009B8330FDa32311DF1C2AFA402eD8D009"],
+			},
+		});
+		sendAnswer = "hold";
+		const { error } = res.json() as {
+			error: {
+				code: number;
+				data: { reason: string; userOperationHash: string };
+			};
+		};
+		expect(error.code).toBe(-32023);
+		expect(error.data.reason).toBe("send-outcome-unknown");
+		expect(await statusOf(error.data.userOperationHash)).toBe("accepted");
+	});
+
+	it("JSON-RPC: answers -32023 with the hash in data, and does not record the op as failed", async () => {
+		onChain = false;
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/bundler/31337",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: {
+				jsonrpc: "2.0",
+				id: 9,
+				method: "eth_sendUserOperation",
+				params: [makeOp(0x101), "0x433709009B8330FDa32311DF1C2AFA402eD8D009"],
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		const { error } = res.json() as {
+			error: {
+				code: number;
+				message: string;
+				data: { reason: string; userOperationHash: string };
+			};
+		};
+		expect(error.code).toBe(-32023);
+		expect(error.data.reason).toBe("send-outcome-unknown");
+		expect(await statusOf(error.data.userOperationHash)).toBe("accepted");
+	});
+
+	it("counts the unknown outcome on its own", async () => {
+		const metrics = await app.inject({ method: "GET", url: "/metrics" });
+		expect(metrics.body).toMatch(
+			/giano_userop_relayed_total\{[^}]*status="unknown"[^}]*\} \d+/,
+		);
+		expect(metrics.body).toMatch(
+			/giano_bundler_relay_requests_total\{[^}]*outcome="send-outcome-unknown"[^}]*\} \d+/,
+		);
 	});
 });
 

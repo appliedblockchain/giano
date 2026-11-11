@@ -470,6 +470,34 @@ const envSchema = z
 			.default(3000),
 		/** The widest eth_getLogs range the tenant RPC read relay forwards. The Origin check is spoofable, so this bounds what one request can cost. */
 		RPC_RELAY_MAX_LOG_BLOCKS: z.coerce.number().int().positive().default(10000),
+		/**
+		 * The longest one call to the bundler or a chain's node may take, headers and body together
+		 * (G37). A call past it is aborted and answered with a defined error, so a slow or hanging
+		 * upstream cannot hold wallet-api's connections for minutes. Also the viem public client's timeout.
+		 */
+		UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+		/**
+		 * The longest one eth_sendUserOperation to the bundler may take (G37). Longer than
+		 * UPSTREAM_TIMEOUT_MS on purpose: giano-bundler holds a send until an executor lane is free,
+		 * and a lane stays busy until its transaction is mined. The default is above the bundler's
+		 * own stuck-lane bound (`laneStuckAfterSeconds`, 270 s with its defaults), so a send is cut
+		 * off only when a lane is stuck. A send past it is recorded as unknown, never as failed.
+		 */
+		UPSTREAM_SEND_TIMEOUT_MS: z.coerce
+			.number()
+			.int()
+			.positive()
+			.default(300_000),
+		/**
+		 * The largest response body wallet-api accepts from the bundler or a chain's node, in bytes
+		 * (G37). A larger body is cancelled while it is read, never held in memory whole. 10 MiB
+		 * leaves room for a full block or a bounded eth_getLogs range.
+		 */
+		UPSTREAM_MAX_RESPONSE_BYTES: z.coerce
+			.number()
+			.int()
+			.positive()
+			.default(10 * 1024 * 1024),
 
 		/** When set (non-empty), GET /metrics requires this bearer token. Unset leaves it open, which only a development deployment accepts. */
 		METRICS_BEARER_TOKEN: z

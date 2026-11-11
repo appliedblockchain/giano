@@ -115,17 +115,23 @@ export function buildChainRegistry(
 
 	const entries = new Map<number, ChainServices>();
 
+	// One bound for every call to an upstream we do not control (G37).
+	const limits = {
+		timeoutMs: config.UPSTREAM_TIMEOUT_MS,
+		maxBytes: config.UPSTREAM_MAX_RESPONSE_BYTES,
+	};
+
 	for (const descriptor of config.CHAINS) {
 		const publicClient = createPublicClient({
-			transport: http(descriptor.rpcUrl),
+			transport: http(descriptor.rpcUrl, { timeout: limits.timeoutMs }),
 		});
 		const bundler = createBundlerService(
 			descriptor.bundlerUrl,
 			descriptor.entryPoint,
-			fetchImpl,
+			{ limits, sendTimeoutMs: config.UPSTREAM_SEND_TIMEOUT_MS, fetchImpl },
 		);
 		// Not `fetchImpl`: that override stands in for the bundler in tests; the node is a real endpoint there.
-		const nodeRpc = createNodeRpcService(descriptor.rpcUrl);
+		const nodeRpc = createNodeRpcService(descriptor.rpcUrl, { limits });
 
 		let paymaster: PaymasterReader | undefined;
 		let sponsorship: SponsorshipService | undefined;
