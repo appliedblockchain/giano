@@ -4645,7 +4645,7 @@
         "tags": [
           "rpc"
         ],
-        "description": "Forwards read-only JSON-RPC methods to the chain node wallet-api is configured with, so a wallet origin needs no RPC URL of its own and a keyed provider URL never reaches a browser. Tenant-bound by Origin, rate-limited per tenant; eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601.",
+        "description": "Forwards read-only JSON-RPC methods to the chain node wallet-api is configured with, so a wallet origin needs no RPC URL of its own and a keyed provider URL never reaches a browser. Tenant-bound by Origin, rate-limited per tenant; eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601. Bodies over 262144 bytes are refused with 413.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4828,7 +4828,7 @@
         "tags": [
           "rpc"
         ],
-        "description": "Forwards read-only JSON-RPC methods to the chain node wallet-api is configured with, so a wallet origin needs no RPC URL of its own and a keyed provider URL never reaches a browser. Tenant-bound by Origin, rate-limited per tenant; eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601.",
+        "description": "Forwards read-only JSON-RPC methods to the chain node wallet-api is configured with, so a wallet origin needs no RPC URL of its own and a keyed provider URL never reaches a browser. Tenant-bound by Origin, rate-limited per tenant; eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601. Bodies over 262144 bytes are refused with 413.",
         "requestBody": {
           "required": true,
           "content": {
