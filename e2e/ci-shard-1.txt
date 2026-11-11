@@ -1,9 +1,0 @@
-# The spec files the first main-suite leg of .github/workflows/e2e.yml runs (`--test-list`).
-# The second leg runs every other spec file (`--test-list-invert`), so a new file always runs
-# there. Paths are relative to tests/. Move a file across to rebalance the two legs: the
-# `list` reporter prints each test's duration in the job log.
-sponsorship.spec.ts
-paymaster-admin.spec.ts
-platform-admin.spec.ts
-session-lifecycle.spec.ts
-platform-console.spec.ts

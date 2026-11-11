@@ -14,28 +14,24 @@ jobs:
   # The suite runs one test at a time (workers: 1 — one shared backend, stateful wallet popups), so a
   # single runner spends most of the job waiting on tests in series. Each leg below brings up its own
   # stack on its own runner and runs one slice: the main suite in two halves, and the reference-dApp
-  # demo on its own. The halves split by whole spec file, so a file's tests (and a `serial` block in
-  # it) always share one stack. e2e/ci-shard-1.txt names the first half's files; the second half
-  # runs every other file, so a new spec file can never fall outside both. Not `--shard`: it cuts
-  # at file boundaries by test count and left one half with 69 of 98 tests. Each leg repeats the
-  # ~2 min of setup; the wall clock drops by more.
+  # demo on its own. Each leg repeats the ~2 min of setup; the wall clock drops by more.
+  #
+  # `--fully-parallel` here changes only how `--shard` splits the suite: by single test, so the halves
+  # stay even as tests are added, rather than by whole spec file, which left one half with 69 of 98
+  # tests. Each leg still runs one test at a time (workers: 1). A `serial` block, as in
+  # timelock-console.spec.ts, always stays together on one leg. Every other test must pass on its
+  # own, without data an earlier test in its file created, since that test may run on the other leg.
   playwright:
     name: E2E (${{ matrix.leg.name }})
     runs-on: ubuntu-26.04
-    # TEMPORARY, to compare with the list-file split above: the `experiment` legs never fail the
-    # workflow or the `result` check. Remove them, and this line, before merging.
-    continue-on-error: ${{ matrix.leg.experiment }}
     strategy:
       # Let every leg finish: one failing shard should not hide the other's failures.
       fail-fast: false
       matrix:
         leg:
-          - { id: main-1, name: 'main 1/2', test: 'pnpm test --test-list ci-shard-1.txt', experiment: false }
-          - { id: main-2, name: 'main 2/2', test: 'pnpm test --test-list-invert ci-shard-1.txt', experiment: false }
-          - { id: demo, name: 'reference demo', test: 'pnpm test:demo', experiment: false }
-          # TEMPORARY experiment: split by single test (49 / 49) instead of by spec file.
-          - { id: fp-1, name: 'fully parallel 1/2', test: 'pnpm test --fully-parallel --shard=1/2', experiment: true }
-          - { id: fp-2, name: 'fully parallel 2/2', test: 'pnpm test --fully-parallel --shard=2/2', experiment: true }
+          - { id: main-1, name: 'main 1/2', test: 'pnpm test --fully-parallel --shard=1/2' }
+          - { id: main-2, name: 'main 2/2', test: 'pnpm test --fully-parallel --shard=2/2' }
+          - { id: demo, name: 'reference demo', test: 'pnpm test:demo' }
     steps:
       # The stack builds wallet-api, wallet-web, paymaster-admin and the bundler from their
       # Dockerfiles, which build on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous
