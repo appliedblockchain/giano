@@ -11,9 +11,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The suite runs one test at a time (workers: 1 — one shared backend, stateful wallet popups), so a
+  # single runner spends most of the job waiting on tests in series. Each leg below brings up its own
+  # stack on its own runner and runs one slice: the main suite in two halves, and the reference-dApp
+  # demo on its own. Each leg repeats the ~2 min of setup; the wall clock drops by more.
+  #
+  # `--fully-parallel` here changes only how `--shard` splits the suite: by single test, so the halves
+  # stay even as tests are added, rather than by whole spec file, which left one half with 69 of 98
+  # tests. Each leg still runs one test at a time (workers: 1). A `serial` block, as in
+  # timelock-console.spec.ts, always stays together on one leg. Every other test must pass on its
+  # own, without data an earlier test in its file created, since that test may run on the other leg.
   playwright:
-    name: Two-tenant Playwright suite (Chromium + virtual authenticator)
+    name: E2E (${{ matrix.leg.name }})
     runs-on: ubuntu-26.04
+    strategy:
+      # Let every leg finish: one failing shard should not hide the other's failures.
+      fail-fast: false
+      matrix:
+        leg:
+          - { id: main-1, name: 'main 1/2', test: 'pnpm test --fully-parallel --shard=1/2' }
+          - { id: main-2, name: 'main 2/2', test: 'pnpm test --fully-parallel --shard=2/2' }
+          - { id: demo, name: 'reference demo', test: 'pnpm test:demo' }
     steps:
       # The stack builds wallet-api, wallet-web, paymaster-admin and the bundler from their
       # Dockerfiles, which build on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous
@@ -144,10 +162,8 @@ jobs:
           wait_for 'sponsorship ready' bash -c "curl -fsS http://api.localhost/readyz | grep -q '\"sponsorship\":\"ok\"'"
           curl -fsS http://wallet.localhost/config.json
           curl -fsS http://api.localhost/readyz
-      - name: Run E2E
-        working-directory: e2e
-        run: pnpm test
       - name: Install the reference dApp
+        if: matrix.leg.id == 'demo'
         # Its own pnpm workspace: it installs the published connector from GitHub Packages, which
         # refuses anonymous reads.
         working-directory: services/custom-example
@@ -156,14 +172,15 @@ jobs:
           pnpm install --frozen-lockfile
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run reference demo operations
+      # `list`, not CI's default `dot`: it prints each test's duration, so a slow test shows in the log.
+      - name: Run E2E (${{ matrix.leg.name }})
         working-directory: e2e
-        run: pnpm test:demo
+        run: ${{ matrix.leg.test }} --reporter=list
       - name: Upload traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-traces
+          name: playwright-traces-${{ matrix.leg.id }}
           path: e2e/test-results
       - name: portless state on failure
         if: failure()
@@ -193,3 +210,20 @@ jobs:
             echo "--- $key recent decisions ---"
             curl -fsS -H "Authorization: Bearer $key" 'http://api.localhost/v1/admin/sponsorship/decisions?limit=20' || true
           done
+
+  # The single check that branch rules and reviewers look at, under the name the job had before it
+  # was split. It passes only when every leg above passed; a skipped or cancelled leg fails it.
+  result:
+    name: Two-tenant Playwright suite (Chromium + virtual authenticator)
+    needs: playwright
+    if: always()
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Every leg passed
+        env:
+          RESULT: ${{ needs.playwright.result }}
+        run: |
+          if [ "$RESULT" != success ]; then
+            echo "::error::the E2E legs finished with '$RESULT'"
+            exit 1
+          fi
