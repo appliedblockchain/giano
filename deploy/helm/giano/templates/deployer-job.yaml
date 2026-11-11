@@ -41,7 +41,5 @@ spec:
             - name: DEPLOYMENT_RECORD_JSON
               value: {{ . | quote }}
             {{- end }}
-          envFrom:
-            - secretRef:
-                name: {{ required "secrets.existingSecret is required" .Values.secrets.existingSecret }}
+          # No Secret: without DEPLOYER_PRIVATE_KEY the Job only verifies (see deployer in values.yaml).
 {{- end }}

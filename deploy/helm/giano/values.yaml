@@ -1,4 +1,4 @@
-# Giano Helm values. External Postgres by default; secrets come from existingSecret refs.
+# Giano Helm values. External Postgres by default; each workload's secrets come from its own existingSecret.
 global:
   imageRegistry: ghcr.io/appliedblockchain
   # image tags default to .Chart.AppVersion when empty
@@ -43,21 +43,25 @@ config:
   paymasterAddress: ""
   openRegistration: false
 
-# secrets: reference an existing k8s Secret; never inline production keys in values
-secrets:
-  existingSecret: "" # must provide keys: DATABASE_URL, ADMIN_API_KEYS, GIANO_DEPLOYMENT_CLASS
-  # and, when GIANO_DEPLOYMENT_CLASS is testnet or production, METRICS_BEARER_TOKEN (at least
-  # 16 characters). Without it wallet-api refuses to boot, because GET /metrics would be open.
-  # bundler executor key(s), comma-separated (only when bundler.enabled):
-  # BUNDLER_EXECUTOR_PRIVATE_KEYS. ALTO_EXECUTOR_PRIVATE_KEYS is refused at boot — rename the key.
+# --- secrets ---
+# Each workload reads only its own existing k8s Secret (walletApi.existingSecret,
+# bundler.existingSecret), so a compromised pod exposes only its own keys. The contracts deployer
+# Job gets no Secret. Never inline production keys in values.
 
 postgres:
-  # external by default — set the DSN in the existingSecret's DATABASE_URL
+  # external by default — set the DSN in walletApi.existingSecret's DATABASE_URL
   external: true
 
 walletApi:
   replicas: 2
   image: giano-wallet-api
+  # k8s Secret that wallet-api loads whole. It must provide DATABASE_URL and GIANO_DEPLOYMENT_CLASS,
+  # and, when GIANO_DEPLOYMENT_CLASS is testnet or production, METRICS_BEARER_TOKEN (at least
+  # 16 characters). Without that token wallet-api refuses to boot, because GET /metrics would be
+  # open. It may also hold wallet-api's optional secrets. The migrations Job reads only its
+  # DATABASE_URL. Never put BUNDLER_EXECUTOR_PRIVATE_KEYS or DEPLOYER_PRIVATE_KEY in it:
+  # wallet-api faces the internet.
+  existingSecret: ""
   runMigrationsJob: true # run a pre-install/upgrade Job instead of RUN_MIGRATIONS on the pod
   resources: {}
 
@@ -73,11 +77,18 @@ walletWeb:
 bundler:
   enabled: false
   image: giano-bundler
+  # k8s Secret with BUNDLER_EXECUTOR_PRIVATE_KEYS (comma-separated), the only key the bundler
+  # reads from it. Required when enabled. It must be a different Secret from
+  # walletApi.existingSecret: the executor keys are funded. ALTO_EXECUTOR_PRIVATE_KEYS is refused
+  # at boot — rename the key.
+  # GIANO_DEV_MODE is deliberately not exposed: the chart targets real chains, so the bundler's
+  # Anvil-key guard stays armed. Local devnets use docker compose, which sets it.
+  existingSecret: ""
 
 deployer:
   # one-shot pre-install hook Job: verifies that the Giano contracts are on config.chainId's chain,
   # with a release's code (by release fingerprint), and writes the chain's address registry entry.
-  # It needs no key and sends nothing. NEVER put DEPLOYER_PRIVATE_KEY in secrets.existingSecret: the
+  # It needs no key, loads no Secret and sends nothing. NEVER give it DEPLOYER_PRIVATE_KEY: the
   # canonical deployer keys (one per network class) are Applied Blockchain development-team keys kept
   # in 1Password (docs/key-ceremony.md) and never leave the deploying shell. If a contract is missing,
   # the Job fails: adopting a chain is Applied Blockchain's operation, not part of a client install.

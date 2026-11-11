@@ -24,7 +24,6 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 | **Bundler executor** (`BUNDLER_EXECUTOR_PRIVATE_KEYS`) | Submits and **pays gas for** every `handleOps` transaction; funded on each chain. | Production: in scope. `dev` (Base Sepolia, Ethereum Sepolia): out of scope. | 1Password `secrets-<env>` field `alto-executor-key` (Alto-era name), mirrored to Secrets Manager; `prd` uses the `Giano prd` vault | giano-bundler |
 | **Paymaster `ROLE_ADMIN`**, and the TimelockController's **proposer/executor** keys | Grants every other paymaster role (`SIGNER_ADMIN`, `FEE_ADMIN`, `FEE_COLLECTOR`, `STAKE_ADMIN`, `TENANT_ADMIN`, `PARAM_ADMIN`, `PAUSER`, `UPGRADER`). In production it is a TimelockController, whose proposer and executor keys are the real signers. | Production: in scope (every key that can propose or execute). `dev`: a developer-held EOA on testnets, out of scope. | Production: DevOps secret store, one ceremony per key | the timelock; `provision:paymaster` and `upgrade --execute` (`UPGRADER_PRIVATE_KEY`) only on a devnet or a first-run testnet |
 | **Paymaster operator** (`DEPLOYER_PRIVATE_KEY` in `provision:paymaster` and the paymaster-sdk CLI) | Stakes the paymaster and funds tenants' sponsorship balances. The same variable name as the canonical deployer's, but a different account. | Production: in scope (moves mainnet value). Testnets and devnets: out of scope. | Production: DevOps secret store | `provision:paymaster`, the paymaster-sdk CLI |
-| Platform-admin API keys (`ADMIN_API_KEYS`) | Bearer tokens for the wallet-api admin routes. Not private keys. | Out of scope for ABIP-8; still secrets, kept in the secret store. | 1Password → Secrets Manager | wallet-api |
 | Anvil dev keys ([`E2E-DEV-KEYS.md`](E2E-DEV-KEYS.md)) | Local chains 31337/31338 and CI only; recoverable from anvil's public mnemonic. | Out of scope: local and CI keys. They must never be used on a public chain. | committed / anvil defaults | e2e, devnet |
 
 Giano has no production environment yet (`infra/versions.json` `prd` is empty), and neither canonical
@@ -99,7 +98,7 @@ For every in-scope key, DevOps:
   already be in place with a release's code, and a missing one fails: adopting a chain needs the
   class's canonical deployer, which the development team operates. The `giano-contracts-deployer`
   image and the Helm pre-install Job run that way, and never ask for the key.
-  The chart's `values.yaml` says never to put the key in `secrets.existingSecret`.
+  The Helm Job loads no Secret, and the chart's `values.yaml` says never to give it the key.
 - The developer-facing docs mark `DEPLOYER_PRIVATE_KEY=…` commands as local/testnet operator commands,
   or as canonical-deployer runs that take the key from 1Password: `packages/contracts/README.md`,
   `specs/INFRASTRUCTURE.md` §13.1, `specs/INTEGRATION.md`, `specs/DEVELOPER-GUIDE.md` and
