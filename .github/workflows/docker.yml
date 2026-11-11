@@ -154,7 +154,7 @@ jobs:
       # Docker's signature on every DHI base the Dockerfile pins, checked before a layer is built
       # (scripts/verify-dhi-bases.mjs; the ABIP-2 migration guide requires it). Same parser as the
       # policy check, so what is verified is exactly what is pinned.
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: v3.1.3
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -265,7 +265,7 @@ jobs:
 
       # Keyless Sigstore signature on the published list, bound to this workflow's GitHub OIDC
       # identity (id-token: write, above). Signed by digest, so it covers exactly what was built.
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: v3.1.3
       - name: Sign the GHCR manifest list
