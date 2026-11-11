@@ -108,6 +108,37 @@ export function coseToXY(cosePublicKey: Uint8Array<ArrayBuffer>): {
 	return { x: hex(x), y: hex(y) };
 }
 
+/**
+ * Why a registration for a user who already exists is refused, or null when it may go ahead.
+ * Registration must never let a caller who cannot prove they are that user add a passkey to
+ * them: the new passkey would give the caller a session as that user. A device is added through
+ * a pending addition, which an existing owner approves.
+ * - Open registration: the request carries only the tenant Origin, so every existing user is
+ *   refused, including one whose passkeys were all removed.
+ * - Closed registration: the tenant's backend vouches for the request with its admin key, so a
+ *   user whose passkeys were all removed may register again. One who holds an active passkey may not.
+ */
+function registrationRefusal(
+	tenant: { openRegistration: boolean },
+	hasActivePasskey: boolean,
+): ApiError | null {
+	if (hasActivePasskey) {
+		return new ApiError(
+			409,
+			"already-registered",
+			"this user already has a passkey — sign in with it, or add a device through a pending addition",
+		);
+	}
+	if (tenant.openRegistration) {
+		return new ApiError(
+			409,
+			"already-registered",
+			"this user already exists — with open registration, a passkey is added to an existing user only through a pending addition",
+		);
+	}
+	return null;
+}
+
 export default async function webauthnRoutes(
 	instance: FastifyInstance,
 	opts: {
@@ -201,22 +232,18 @@ export default async function webauthnRoutes(
 							),
 						)
 				: [];
-			// A user who already holds an active passkey adds a device through a pending addition,
-			// which an existing owner approves. Refuse here, before the client creates a passkey
-			// that registration/verify would refuse anyway.
-			if (kind === "registration" && creds.length > 0) {
-				throw new ApiError(
-					409,
-					"already-registered",
-					"this user already has a passkey — sign in with it, or add a device through a pending addition",
-				);
-			}
 			const resolvedKind =
 				kind === "auto"
 					? creds.length > 0
 						? "authentication"
 						: "registration"
 					: kind;
+			// Refuse here, before the client creates a passkey that registration/verify would
+			// refuse anyway (see registrationRefusal).
+			if (resolvedKind === "registration" && user) {
+				const refusal = registrationRefusal(tenant, creds.length > 0);
+				if (refusal) throw refusal;
+			}
 			const challenge = await challenges.issue(
 				resolvedKind,
 				user?.id ?? null,
@@ -395,10 +422,8 @@ export default async function webauthnRoutes(
 						"challenge no longer matches this user — request new options",
 					);
 				}
-				// Registration needs only the tenant Origin when open_registration is true, so it
-				// must never add a passkey to a user who already holds an active one: that would give
-				// the caller a session as that user. A device is added through a pending addition,
-				// which an existing owner approves. A user whose passkeys were all removed may register.
+				// See registrationRefusal. The tenant's registration mode is read on this request, so
+				// a tenant that opened registration after /options was called is checked as open.
 				if (consumed.userId) {
 					const active = await tx
 						.select({ id: credentials.id })
@@ -410,13 +435,8 @@ export default async function webauthnRoutes(
 							),
 						)
 						.limit(1);
-					if (active.length > 0) {
-						throw new ApiError(
-							409,
-							"already-registered",
-							"this user already has a passkey — sign in with it, or add a device through a pending addition",
-						);
-					}
+					const refusal = registrationRefusal(tenant, active.length > 0);
+					if (refusal) throw refusal;
 				}
 				const [credential] = await tx
 					.insert(credentials)
