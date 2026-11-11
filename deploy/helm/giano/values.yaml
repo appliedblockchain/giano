@@ -81,6 +81,8 @@ bundler:
   # reads from it. Required when enabled. It must be a different Secret from
   # walletApi.existingSecret: the executor keys are funded. ALTO_EXECUTOR_PRIVATE_KEYS is refused
   # at boot — rename the key.
+  # GIANO_DEV_MODE is deliberately not exposed: the chart targets real chains, so the bundler's
+  # Anvil-key guard stays armed. Local devnets use docker compose, which sets it.
   existingSecret: ""
 
 deployer:
