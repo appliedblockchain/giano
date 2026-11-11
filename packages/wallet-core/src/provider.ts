@@ -56,6 +56,7 @@ import {
 import { GianoError } from "./giano-error";
 import type { GianoLogger } from "./logger";
 import { defaultGianoLogger } from "./logger";
+import { parseP256PublicKey } from "./management/p256-public-key";
 import {
 	type PasskeyDevicePreference,
 	passkeyCredentialCreate,
@@ -96,13 +97,6 @@ type PrepareUserOperationOptions = Partial<
 export const isChainType = (x: unknown): x is ChainType => {
 	return typeof x === "number" && Object.values(ChainType).includes(x);
 };
-
-function extractXYCoords(key: Uint8Array | Hex): { x: Hex; y: Hex } {
-	if (key instanceof Uint8Array) {
-		key = toHex(key.slice(-64), { size: 64 });
-	}
-	return { x: `0x${key.slice(-128, -64)}`, y: `0x${key.slice(-64)}` };
-}
 
 export type CreateGianoProviderParams = {
 	passkeyDevicePreference?: PasskeyDevicePreference;
@@ -770,6 +764,10 @@ export const createGianoProvider = (
 				},
 			});
 
+			// Validate the key before anything uses the credential: a rejected key must not reach
+			// wallet-api (onCredentialCreated) or be cached as the connected account.
+			const xyVector = parseP256PublicKey(credential.publicKey);
+
 			const handlerCreatedAddress = await injection.onCredentialCreated(
 				credentialName,
 				credentialInfo.challenge,
@@ -794,8 +792,6 @@ export const createGianoProvider = (
 				owners: [toWebAuthnAccount({ getFn, credential })],
 				factoryAddress: factoryAddress!,
 			});
-
-			const xyVector = extractXYCoords(credential.publicKey);
 
 			// NOTE: it is needed to deploy the smart account if we want to
 			// use it for read calls or to receive funds right away, if not,

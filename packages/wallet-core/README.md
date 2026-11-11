@@ -42,3 +42,39 @@ claim-device credential additions remain unhinted so the enrollment target
 stays clear; existing owner signatures still use the preference.
 
 The hint is sent whatever device the user is on, because detecting a phone would mean UA sniffing. On a phone, the browser may offer another device first; the phone's own passkey stays selectable. If most of your users are on phones, keep `browser-default`.
+
+## Manage the owners of an account
+
+wallet-core exports the building blocks for reading and changing the owner set of a
+Giano smart account:
+
+- `readOwnerSet(client, wallet)` reads the owners from the account contract on one chain.
+- `encodeAddOwnerPublicKey(x, y)`, `encodeAddOwnerAddress(address)` and
+  `encodeRemoveOwnerAtIndex(index, ownerBytes)` build the calldata of an owner change.
+  The account sends it to itself, as an ordinary user operation.
+- `publicKeyOwnerBytes(x, y)` and `addressOwnerBytes(address)` return an owner's
+  on-chain encoding, which `encodeRemoveOwnerAtIndex` and `ownerFingerprint` take.
+- `parseP256PublicKey(key)` turns a passkey's public key into the `(x, y)` coordinates
+  that `encodeAddOwnerPublicKey` takes.
+
+`parseP256PublicKey` accepts the shapes a key usually arrives in, as hex, a `Uint8Array`
+or an `ArrayBuffer`:
+
+- the SPKI key from `AuthenticatorAttestationResponse.getPublicKey()`
+- an uncompressed point (`0x04 ‖ x ‖ y`, WebCrypto's `raw` export)
+- the bare coordinates (`x ‖ y`, viem's `createWebAuthnCredential().publicKey`)
+
+It throws `InvalidP256PublicKeyError` for any other shape, for another algorithm or
+curve, for a compressed point, and for a point that is not on the P-256 curve.
+
+```ts
+import {
+	encodeAddOwnerPublicKey,
+	parseP256PublicKey,
+} from "@appliedblockchain/giano-wallet-core";
+
+const response = credential.response as AuthenticatorAttestationResponse;
+const { x, y } = parseP256PublicKey(response.getPublicKey()!);
+const data = encodeAddOwnerPublicKey(x, y);
+// send { to: accountAddress, data } as a call of a user operation
+```

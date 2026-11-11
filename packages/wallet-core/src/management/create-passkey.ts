@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
 import { createWebAuthnCredential } from "viem/account-abstraction";
+import { GianoError } from "../giano-error";
 import {
 	DEFAULT_RESIDENT_KEY_REQUIREMENT,
 	DEFAULT_USER_VERIFICATION_REQUIREMENT,
@@ -8,6 +9,13 @@ import { fromBase64Url } from "../provider-injection/wallet-api/serialization";
 import type { WalletManagementApi } from "./api";
 import { ownerFingerprint } from "./fingerprint";
 import { publicKeyOwnerBytes } from "./owners";
+import { parseP256PublicKey } from "./p256-public-key";
+
+/**
+ * Thrown when wallet-api reports a different key for the deposited passkey than the one this
+ * device created. Nothing is returned, so no add-owner call can be built from that key.
+ */
+export class PendingAdditionKeyMismatchError extends GianoError {}
 
 export type DepositPasskeyParameters = {
 	api: WalletManagementApi;
@@ -19,6 +27,7 @@ export type DepositPasskeyParameters = {
 };
 
 export type DepositedPasskey = {
+	/** The key AS CREATED on this device. wallet-api's copy must match it, or the deposit throws. */
 	publicKey: { x: Hex; y: Hex };
 	/**
 	 * Computed from the key AS CREATED on this device — what this device displays for the
@@ -52,21 +61,23 @@ export async function depositPasskeyIntoPendingAddition(
 			requireResidentKey: DEFAULT_RESIDENT_KEY_REQUIREMENT === "required",
 		},
 	});
+	// Parse the key before it is deposited: a malformed key fails here and never reaches the slot.
+	const local = parseP256PublicKey(credential.publicKey);
 	const filled = await api.fillPendingAddition(claimCode, credential.raw);
+	// The same-device flow (WM-14) signs the add-owner call with the key returned here, and its
+	// screen shows the fingerprint returned here. Both come from the key this device created, so
+	// the user approves the key that is added. wallet-api's copy must be the same key: if it is
+	// not, the backend stored a different key, and the deposit stops (WM-20).
+	if (
+		BigInt(filled.publicKey.x) !== BigInt(local.x) ||
+		BigInt(filled.publicKey.y) !== BigInt(local.y)
+	) {
+		throw new PendingAdditionKeyMismatchError(
+			"wallet-api reported a different key for the deposited passkey than the one this device created",
+		);
+	}
 	return {
-		publicKey: filled.publicKey,
-		// From the LOCAL credential, not the server's echo: the point of the fingerprint is
-		// that this device vouches for the key it created, not for what the backend stored.
-		fingerprint: ownerFingerprint(
-			localOwnerBytes(credential.publicKey) ??
-				publicKeyOwnerBytes(filled.publicKey.x, filled.publicKey.y),
-		),
+		publicKey: local,
+		fingerprint: ownerFingerprint(publicKeyOwnerBytes(local.x, local.y)),
 	};
-}
-
-/** The 64-byte x‖y from viem's credential publicKey (which may carry a prefix). */
-function localOwnerBytes(publicKey: Hex): Hex | null {
-	const hex = publicKey.replace(/^0x/, "");
-	if (hex.length < 128) return null;
-	return `0x${hex.slice(-128)}` as Hex;
 }
