@@ -44,7 +44,7 @@
 			"accepted": "2026-11-09",
 			"expires": "2027-05-08",
 			"owner": "Rui Sereno",
-			"reason": "False positive. The only payable functions, depositFor and addStake, forward all of msg.value to the EntryPoint (depositTo{value: ...} and addStake{value: ...}), and receive() reverts with DirectTransferNotAllowed. Aderyn 0.6.8 counts only .call{value: ...}, transfer, send and sendValue as sends, so it misses calls with value to a named function. The deposit leaves through withdrawTo and the stake through unlockStake and withdrawStake.",
+			"reason": "False positive. depositFor and addStake forward all of msg.value to the EntryPoint (depositTo{value: ...} and addStake{value: ...}), and receive() reverts with DirectTransferNotAllowed. The inherited upgradeToAndCall is also payable, but only UPGRADER_ROLE can call it, and that role also chooses the code that receives the value. Aderyn 0.6.8 counts only .call{value: ...}, transfer, send and sendValue as sends, so it misses calls with value to a named function. The deposit leaves through withdrawTo and the stake through unlockStake and withdrawStake.",
 			"followUp": "G22 (independent contract review). Remove this entry if a later Aderyn version recognises calls with value to a named function."
 		},
 		{
