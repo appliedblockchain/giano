@@ -434,16 +434,18 @@ non-zero `deficit` fails validation step 6 until `depositFor` clears it, which s
 growing while the alert is being handled.
 
 The fee is charged for `PostOpMode.opSucceeded` and `opReverted` alike (R-40). `postOpReverted` is
-not delivered to us by the EntryPoint at all. The EntryPoint still debits the deposit for the gas,
-plus its penalty on the whole unused `paymasterPostOpGasLimit`, and pays it to the bundler. The
-tenant's balance, its deficit and the treasury do not move. The loss therefore falls on the other
-tenants and the treasury, and it breaks the invariant (§8.4). `handleOps` is permissionless, so an
-attacker who could make `postOp` revert at will could repeat this indefinitely and collect the
-penalty as their own bundler. Validation step 3 closes the one way a client controls this: it
-refuses a `paymasterPostOpGasLimit` below `MIN_POST_OP_GAS_LIMIT`, and the sponsorship service
-refuses to sign one (§5.2). The reverted `postOp` also never released its reservation, so the
-reservation stays held until the transaction ends, and later withdrawals and validations for that
-tenant in the same transaction see a smaller available balance.
+not delivered to us by the EntryPoint at all. The EntryPoint still debits the deposit for the gas
+and pays it to the bundler. That debit includes the EntryPoint's 10% penalty on unused gas, which
+it charges separately on `callGasLimit` and on `paymasterPostOpGasLimit`, each only when more than
+40,000 gas of that limit is unused. A tiny postOp limit therefore adds no postOp penalty, but the
+execution penalty still applies. The tenant's balance, its deficit and the treasury do not move.
+The loss therefore falls on the other tenants and the treasury, and it breaks the invariant (§8.4).
+`handleOps` is permissionless, so an attacker who could make `postOp` revert at will could repeat
+this indefinitely as their own bundler. Validation step 3 closes the one way a client controls
+this: it refuses a `paymasterPostOpGasLimit` below `MIN_POST_OP_GAS_LIMIT`, and the sponsorship
+service refuses to sign one (§5.2). The reverted `postOp` also never released its reservation, so
+the reservation stays held until the transaction ends, and later withdrawals and validations for
+that tenant in the same transaction see a smaller available balance.
 
 ### 3.7 Events and errors
 
