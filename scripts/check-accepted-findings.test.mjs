@@ -1265,3 +1265,10 @@ describe("check-accepted-findings: CLI", () => {
 		);
 	});
 });
+
+// SCRATCH (G25 task 1.6), never merged: make one needed job fail, to prove "CI passed" goes red.
+describe("scratch", () => {
+	it("fails on purpose", () => {
+		assert.fail("G25 task 1.6: this job fails on purpose");
+	});
+});
