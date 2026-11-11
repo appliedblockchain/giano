@@ -7,7 +7,8 @@ See `proposal.md` for the motivation. The current state that shapes the design:
 - **Workflows.** `ci.yml` runs on `pull_request` and `workflow_call`. `release.yml` calls it and publishes only when it
   passes (`needs: [ci, determinism]`). `docker.yml` builds 8 images on 2 native architectures. On `main` and `v*` tags
   the build step pushes each image by digest to GHCR. The `merge` job then tags, copies to ECR and signs with cosign.
-  Actions are pinned to tags, not SHAs.
+  Since #246, every third-party action is pinned to a full commit SHA, and `.github/dependabot.yml` keeps the pins
+  current.
 - **Existing policy checks.** `scripts/check-dockerfiles.mjs`, `check-release-age.mjs` and `check-pinned-versions.mjs`
   are dependency-free Node scripts with `node --test` unit tests. Each has its own CI job.
 - **GitHub state on 2026-11-09.** The repository is public. Dependabot alerts are on, with 2 open medium alerts
@@ -34,7 +35,8 @@ See `proposal.md` for the motivation. The current state that shapes the design:
 **Non-Goals:**
 - Gating deploys on CI (G23). This design gates merge, npm release, image publishing and promotion only.
 - Fixing the findings themselves, beyond recording them in the register.
-- Pinning Actions to commit SHAs. That is a separate ticket for every workflow.
+- Pinning the existing Actions to commit SHAs. #246 did that for every workflow. This change pins the actions that its
+  own jobs add, and the CI gate check keeps every pin in place (D12).
 - Changing any contract source.
 
 ## Decisions
@@ -140,7 +142,8 @@ missing, empty or carries an error object, so a registry outage fails the job in
 ### D6. Dependabot configuration
 
 `.github/dependabot.yml` holds three entries: npm at `/`, npm at `/services/custom-example`, and `github-actions` at
-`/`. All are weekly with `cooldown: default-days: 7`. npm uses `versioning-strategy: increase`, so pins stay exact
+`/`. #246 added the file with the `github-actions` entry, so PR 2 adds only the two npm entries. All are weekly with
+`cooldown: default-days: 7`. npm uses `versioning-strategy: increase`, so pins stay exact
 (ABIP-7), and an open PR limit of 5 per entry. Dependabot puts the manifest and lockfile change in one PR, as
 `AGENTS.md` requires.
 
@@ -245,6 +248,11 @@ tagged, anchored or merged. It fails when a job is missing from `needs`, when `c
 any job or step has `continue-on-error`. Without `if: always()`, a failed job would skip `ci-passed`, and GitHub counts
 a skipped required check as passed. `continue-on-error` lets a failed job or step count as success. A text scan with
 `grep` missed some of these key forms, so the check does not use one.
+
+The same script reads every workflow in `.github/workflows`. It fails on any `uses` that is not a local `./` path, an
+action or reusable workflow pinned to a full 40-character commit SHA, or a `docker://` image pinned by digest. #246
+pinned every action. This check stops a later PR from moving one back to a tag, which its owner can move to other
+code.
 
 With this job, `ci.yml` needs only one required check. A new job joins the gate when its PR adds it to the `needs`
 list, with no settings change. The two checks outside `ci.yml` keep their own names:

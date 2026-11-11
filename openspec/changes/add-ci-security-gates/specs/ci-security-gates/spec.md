@@ -181,3 +181,12 @@ release binaries by a sha256 recorded in the workflow. A hash mismatch SHALL fai
 #### Scenario: Floating version
 - **WHEN** a workflow installs a security tool as `latest` or without a version
 - **THEN** the change does not meet this requirement and is not merged
+
+### Requirement: Workflow actions stay pinned
+Every action and reusable workflow that a workflow in `.github/workflows` uses SHALL be a local path or SHALL be
+pinned to a full commit SHA. A container image SHALL be pinned by digest. The CI summary check SHALL fail on any
+other reference.
+
+#### Scenario: Action moved back to a tag
+- **WHEN** a PR changes a workflow step to `uses: actions/checkout@v7`
+- **THEN** the CI gate check fails, and so does the summary check

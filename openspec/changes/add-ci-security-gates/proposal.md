@@ -24,7 +24,7 @@ G25 sets four requirements:
   recorded sha256, and both reports uploaded as artifacts. The job fails on any High finding that is not in the
   register. The four High findings from the trial run on 2026-11-09 go into the register with their reasons.
 - **Dependency audit.** Run `pnpm audit` on both pnpm workspaces in `ci.yml`. It fails on a high or critical advisory
-  that is not in the register. Add `.github/dependabot.yml` for npm (both workspaces) and GitHub Actions, with a 7-day
+  that is not in the register. Extend `.github/dependabot.yml`, which #246 added for GitHub Actions, to npm (both workspaces), with a 7-day
   `cooldown` to match ABIP-6.
 - **Source analysis.** Add a CodeQL workflow for JavaScript/TypeScript and GitHub Actions workflows.
 - **Secret scanning.** Run gitleaks on the commits of each pull request.
@@ -52,7 +52,7 @@ G25 sets four requirements:
 - **Workflows.** `ci.yml` gains jobs for Solidity static analysis, the dependency audit, the secret scan and the
   register check. It also gains one summary job, "CI passed", that fails when any other `ci.yml` job fails. These run
   on every pull request and in the CI run that `release.yml` calls, so they also gate npm publishing. `docker.yml` gains an image scan before the push. New workflows: `codeql.yml` and `security-scan.yml`.
-  New file: `.github/dependabot.yml`.
+  Changed file: `.github/dependabot.yml`.
 - **New files.** `security/accepted-findings.json`, `scripts/check-accepted-findings.mjs` and its test,
   `packages/contracts/slither.config.json`, `packages/contracts/aderyn.toml`,
   `packages/contracts/requirements-ci.in` and `requirements-ci.txt`, and `.gitleaks.toml`.
@@ -60,4 +60,5 @@ G25 sets four requirements:
   the canonical CREATE2 addresses, so in-source suppressions are not used.
 - **Docs.** `docs/abip-compliance.md` (tool pinning rule) and a short `security/README.md` on how to add an entry.
 - **Out of scope.** G22 (independent contract review), G23 (deploys require CI success), G30 (rotate credentials in git
-  history), G35 (sidecar images on moving tags), pinning GitHub Actions to commit SHAs, and a CI fuzz/invariant profile.
+  history), G35 (sidecar images on moving tags), and a CI fuzz/invariant profile. #246 pinned the existing GitHub Actions
+  to commit SHAs; this change pins the actions it adds and checks that every pin stays.
