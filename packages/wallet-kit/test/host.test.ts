@@ -5,7 +5,7 @@ import {
 	RPC_ERRORS,
 } from "@appliedblockchain/giano-wallet-transport";
 import { type Address, encodeFunctionData, type Hex } from "viem";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, type Mock, vi } from "vitest";
 import { createConnectionGrants } from "../src/grants";
 import { createHostRequestHandler } from "../src/host";
 import { createRequestStore } from "../src/requests";
@@ -748,6 +748,76 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			await expect(
 				handler("eth_prepareUserOperation", DAPP_CALL, context),
 			).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+		});
+
+		it.each([
+			["eth_prepareUserOperation", DAPP_CALL],
+			["personal_sign", ["0x68690a", ACCOUNT]],
+		])(
+			"refuses %s with the marked 4100 when another popup revokes the origin during the restore",
+			async (method, params) => {
+				const { handler, requests, context, runtime, grants, setAccount } =
+					harness(31337, { account: false });
+				const request = runtime.provider.request as unknown as Mock;
+				request.mockImplementationOnce(async () => {
+					// giano_restoreAccount: the revoke lands while it runs.
+					grants.revoke(DAPP);
+					setAccount(ACCOUNT);
+					return undefined;
+				});
+				const error = await handler(method, params, context).catch(
+					(caught: unknown) => caught,
+				);
+				expect(isNotConnectedError(error)).toBe(true);
+				expect(request).toHaveBeenCalledTimes(1); // the restore only
+				expect(requests.current).toBeNull(); // no consent shown
+			},
+		);
+
+		it("refuses the request with the marked 4100 when another popup revokes the origin during consent", async () => {
+			const { handler, requests, calls, context, grants } = harness();
+			const call = handler("personal_sign", ["0x68690a", ACCOUNT], context);
+			await vi.waitFor(() => expect(requests.current).not.toBeNull());
+			grants.revoke(DAPP);
+			requests.current!.approve();
+			const error = await call.catch((caught: unknown) => caught);
+			expect(isNotConnectedError(error)).toBe(true);
+			expect(calls.map((entry) => entry.method)).not.toContain("personal_sign");
+		});
+
+		it("answers -32603 and records no grant when the storage refuses the connect", async () => {
+			const storage = {
+				getItem: () => null,
+				setItem: () => {
+					throw new Error("QuotaExceededError");
+				},
+				removeItem: () => undefined,
+			};
+			const { runtime, emit } = fakeRuntime(31337);
+			const requests = createRequestStore();
+			const grants = createConnectionGrants(storage);
+			const sendEvent = vi.fn();
+			const handler = createHostRequestHandler({
+				runtimes: {
+					servedChainIds: [31337],
+					runtimeFor: () => runtime,
+					descriptorFor: () => ({}) as never,
+				},
+				requests,
+				grants,
+				sendEvent,
+			});
+			const context = { dappOrigin: DAPP, chainId: 31337 };
+			const call = handler("eth_requestAccounts", [], context);
+			await vi.waitFor(() => expect(requests.current).not.toBeNull());
+			requests.current!.approve();
+			await expect(call).rejects.toMatchObject({ code: RPC_ERRORS.INTERNAL });
+			expect(grants.has(DAPP)).toBe(false);
+			emit("accountsChanged", ["0xabc"]);
+			expect(sendEvent).not.toHaveBeenCalledWith(
+				"accountsChanged",
+				expect.anything(),
+			);
 		});
 
 		it("does not relay accountsChanged to an origin with no grant that signs in from the management view", async () => {

@@ -79,13 +79,25 @@ describe("connection grants (WK-34)", () => {
 		expect(grants.has("https://app.test")).toBe(false);
 	});
 
-	it("keeps the grant in memory when storage refuses the write", () => {
+	it("throws and grants nothing when storage refuses the write", () => {
 		const grants = createConnectionGrants({
 			...memoryStorage(),
 			setItem: refuse,
 		});
-		grants.grant("https://app.test");
-		expect(grants.has("https://app.test")).toBe(true);
+		expect(() => grants.grant("https://app.test")).toThrow(
+			"QuotaExceededError",
+		);
+		expect(grants.has("https://app.test")).toBe(false);
+	});
+
+	it("ends a grant in every open popup when one popup revokes it", () => {
+		const storage = memoryStorage();
+		const popupA = createConnectionGrants(storage);
+		const popupB = createConnectionGrants(storage);
+		popupA.grant("https://app.test");
+		expect(popupB.has("https://app.test")).toBe(true);
+		popupB.revoke("https://app.test");
+		expect(popupA.has("https://app.test")).toBe(false);
 	});
 
 	it("throws on revoke when storage refuses the write, and stops granting in this popup", () => {
@@ -96,14 +108,6 @@ describe("connection grants (WK-34)", () => {
 		);
 		expect(grants.has("https://app.test")).toBe(false);
 		expect(storage.data.has(KEY)).toBe(true);
-	});
-
-	it("drops a grant kept in memory when the revoke reaches storage", () => {
-		const storage = memoryStorage();
-		const grants = createConnectionGrants({ ...storage, setItem: refuse });
-		grants.grant("https://app.test"); // kept in memory only
-		grants.revoke("https://app.test");
-		expect(grants.has("https://app.test")).toBe(false);
 	});
 
 	describe("the default storage", () => {
@@ -122,7 +126,7 @@ describe("connection grants (WK-34)", () => {
 			expect(globalThis.localStorage.getItem(KEY)).not.toBeNull();
 		});
 
-		it("fails a revoke when the localStorage getter throws, and grants nothing", () => {
+		it("fails a grant and a revoke when the localStorage getter throws, and grants nothing", () => {
 			globalThis.localStorage.setItem(KEY, "x"); // granted before site data was blocked
 			Object.defineProperty(globalThis, "localStorage", {
 				configurable: true,
@@ -133,8 +137,8 @@ describe("connection grants (WK-34)", () => {
 			const grants = createConnectionGrants();
 			expect(grants.has("https://app.test")).toBe(false);
 			expect(() => grants.revoke("https://app.test")).toThrow("SecurityError");
-			grants.grant("https://other.test"); // kept in memory for this popup
-			expect(grants.has("https://other.test")).toBe(true);
+			expect(() => grants.grant("https://other.test")).toThrow("SecurityError");
+			expect(grants.has("https://other.test")).toBe(false);
 		});
 	});
 

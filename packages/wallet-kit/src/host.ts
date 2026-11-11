@@ -103,6 +103,18 @@ export function createHostRequestHandler({
 		return runtime;
 	};
 
+	// WK-34: refuses an account method from an origin with no grant. The 4100 carries a marker
+	// that sets it apart from the others (a refused self-call, an ended session): only this one
+	// makes the connector drop its cached connection.
+	const requireGrant = (dappOrigin: string) => {
+		if (grants.has(dappOrigin)) return;
+		throw new TransportRpcError(
+			RPC_ERRORS.UNAUTHORIZED,
+			"This application is not connected to the wallet; request eth_requestAccounts first",
+			{ reason: NOT_CONNECTED_REASON },
+		);
+	};
+
 	return async (
 		method: string,
 		params: unknown,
@@ -133,19 +145,10 @@ export function createHostRequestHandler({
 		// WK-34: the account is visible and usable only to an origin the user connected. These
 		// checks run BEFORE the runtime is touched: a silent restore emits accountsChanged, and the
 		// event relay would hand the address to the very origin being refused.
-		const connected = grants.has(context.dappOrigin);
-		if (!connected && method === "eth_accounts") {
+		if (method === "eth_accounts" && !grants.has(context.dappOrigin)) {
 			return [];
 		}
-		if (!connected && ACCOUNT_METHODS.has(method)) {
-			throw new TransportRpcError(
-				RPC_ERRORS.UNAUTHORIZED,
-				"This application is not connected to the wallet; request eth_requestAccounts first",
-				// Marks this 4100 apart from the others (a refused self-call, an ended session):
-				// only this one makes the connector drop its cached connection.
-				{ reason: NOT_CONNECTED_REASON },
-			);
-		}
+		if (ACCOUNT_METHODS.has(method)) requireGrant(context.dappOrigin);
 		if (method === "wallet_revokePermissions") {
 			try {
 				grants.revoke(context.dappOrigin);
@@ -201,6 +204,10 @@ export function createHostRequestHandler({
 				.request({ method: "giano_restoreAccount" } as never)
 				.catch(() => undefined);
 		}
+		// Another popup can revoke the origin while the restore runs. Checked again here, so the
+		// user is never asked to approve a request from an origin that is no longer connected.
+		// For a method with no consent, nothing awaits between this check and the provider call.
+		if (ACCOUNT_METHODS.has(method)) requireGrant(context.dappOrigin);
 		// A dApp must never get the account to call one of its own functions: that is how owners
 		// are added or removed and how the account is upgraded. Refused before consent, so the
 		// user is never shown an Approve button for one, and checked again after consent, because
@@ -227,6 +234,10 @@ export function createHostRequestHandler({
 		}
 		let forwarded = params;
 		if (needsConsent) {
+			// The origin can be revoked while the user decides. Checked again with no await before
+			// the provider call. A revoke that arrives while the provider itself awaits (during the
+			// passkey ceremony) is not seen: the request has already started.
+			if (ACCOUNT_METHODS.has(method)) requireGrant(context.dappOrigin);
 			const account = assertNoSelfCall(runtime, method, params);
 			if (account) forwarded = pinSender(method, params, account);
 		}
@@ -246,7 +257,15 @@ export function createHostRequestHandler({
 			Array.isArray(result) &&
 			result.length > 0
 		) {
-			grants.grant(context.dappOrigin);
+			try {
+				grants.grant(context.dappOrigin);
+			} catch {
+				// Never report a connection the storage did not keep (WK-34).
+				throw new TransportRpcError(
+					RPC_ERRORS.INTERNAL,
+					"The wallet could not save the connection; try again",
+				);
+			}
 		}
 		return result;
 	};
