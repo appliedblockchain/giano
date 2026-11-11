@@ -910,11 +910,6 @@ describe("userop relay", () => {
 	});
 });
 
-/**
- * The JSON-RPC bundler facade (POST /v1/bundler/:chainId): what a wallet origin points its
- * bundler client at instead of a bundler. Same pipeline as the REST relay behind a second
- * door, so every assertion here is about the two doors being the same door.
- */
 describe("a send the bundler does not confirm in time (G37)", () => {
 	const SEND_TIMEOUT_MS = 200;
 	const target = "0x3333333333333333333333333333333333333333";
@@ -923,6 +918,8 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 	let app: Awaited<ReturnType<typeof buildApp>>;
 	/** What the bundler answers to eth_getUserOperationByHash: null until the op is on chain. */
 	let onChain = false;
+	/** How the bundler answers eth_sendUserOperation: hold it forever, accept it, or refuse it. */
+	let sendAnswer: "hold" | "accept" | "refuse" = "hold";
 	let sends = 0;
 
 	const makeOp = (nonce: number) => ({
@@ -958,7 +955,15 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 			};
 			if (method === "eth_sendUserOperation") {
 				sends++;
-				return new Promise(() => {});
+				if (sendAnswer === "hold") return new Promise(() => {});
+				if (sendAnswer === "refuse")
+					return new Response(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: { code: -32602, message: "AA25 invalid account nonce" },
+						}),
+					);
 			}
 			if (method === "eth_getUserOperationByHash")
 				return new Response(
@@ -1015,7 +1020,8 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 		// Not on chain yet: still unconfirmed, never failed.
 		expect(await statusOf(body.userOperationHash)).toBe("accepted");
 
-		// Sending the same op again is the idempotent duplicate, not a second send.
+		// Sending the same op again reaches the bundler again. While it still holds the send, the
+		// outcome stays unknown: never a `duplicate: true` that no bundler confirmed.
 		const sendsBefore = sends;
 		const again = await app.inject({
 			method: "POST",
@@ -1023,18 +1029,86 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 			headers: { authorization: `Bearer ${sessionToken}` },
 			payload: { userOperation: op },
 		});
-		expect(again.statusCode).toBe(200);
-		expect(again.json()).toEqual({
+		expect(again.statusCode).toBe(504);
+		expect(again.json()).toMatchObject({
+			error: "send-outcome-unknown",
 			userOperationHash: body.userOperationHash,
-			duplicate: true,
 		});
-		expect(sends).toBe(sendsBefore);
+		expect(sends).toBe(sendsBefore + 1);
+		expect(await statusOf(body.userOperationHash)).toBe("accepted");
 
 		// The bundler lands it later: the status route settles it from the chain.
 		onChain = true;
 		expect(await statusOf(body.userOperationHash)).toBe("submitted");
 		onChain = false;
 		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+	});
+
+	it("resends an unconfirmed op the bundler lost, and answers duplicate once it accepts it", async () => {
+		onChain = false;
+		sendAnswer = "hold";
+		const op = makeOp(0x102);
+		const first = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(first.statusCode).toBe(504);
+		const { userOperationHash } = first.json() as { userOperationHash: string };
+
+		// The bundler restarted and lost its queue; it now accepts the resend.
+		sendAnswer = "accept";
+		const sendsBefore = sends;
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		expect(again.statusCode).toBe(200);
+		expect(again.json()).toEqual({ userOperationHash, duplicate: true });
+		expect(sends).toBe(sendsBefore + 1);
+		expect(await statusOf(userOperationHash)).toBe("submitted");
+
+		// Once the bundler has accepted it, a further resend is the plain duplicate, with no send.
+		const third = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(third.statusCode).toBe(200);
+		expect(third.json()).toEqual({ userOperationHash, duplicate: true });
+		expect(sends).toBe(sendsBefore + 1);
+	});
+
+	it("keeps an unconfirmed op accepted when the bundler refuses its resend", async () => {
+		onChain = false;
+		sendAnswer = "hold";
+		const op = makeOp(0x103);
+		const first = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		expect(first.statusCode).toBe(504);
+		const { userOperationHash } = first.json() as { userOperationHash: string };
+
+		// The first send may still land, so a refused resend says nothing about it.
+		sendAnswer = "refuse";
+		const again = await app.inject({
+			method: "POST",
+			url: "/v1/userops",
+			headers: { authorization: `Bearer ${sessionToken}` },
+			payload: { userOperation: op },
+		});
+		sendAnswer = "hold";
+		expect(again.statusCode).toBe(502);
+		expect(again.json()).toMatchObject({ error: "bundler", code: -32602 });
+		expect(await statusOf(userOperationHash)).toBe("accepted");
 	});
 
 	it("JSON-RPC: answers -32023 with the hash in data, and does not record the op as failed", async () => {
@@ -1074,6 +1148,11 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 	});
 });
 
+/**
+ * The JSON-RPC bundler facade (POST /v1/bundler/:chainId): what a wallet origin points its
+ * bundler client at instead of a bundler. Same pipeline as the REST relay behind a second
+ * door, so every assertion here is about the two doors being the same door.
+ */
 describe("bundler relay (JSON-RPC)", () => {
 	const ENTRY_POINT = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";
 	const target = "0x4444444444444444444444444444444444444444";

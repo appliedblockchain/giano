@@ -323,19 +323,39 @@ export function createUseropRelay({
 					existing &&
 					existing.tenantId === session.tenantId &&
 					existing.userId === session.userId;
-				if (
-					ownDuplicate &&
-					(existing.status === "submitted" || existing.status === "accepted")
-				) {
+				if (ownDuplicate && existing.status === "submitted") {
 					return {
 						kind: "submitted",
 						userOperationHash: useropHash,
 						duplicate: true,
 					};
 				}
+				// An `accepted` row was never confirmed by the bundler: its send had an unknown outcome,
+				// or is still in flight. The bundler may have lost it (a restart drops its in-memory
+				// queue), so answering `duplicate: true` here could report a send that never happens.
+				// Send it again instead. That is safe: the bundler returns the hash of an operation it
+				// already holds, and the EntryPoint nonce stops a second execution.
+				if (ownDuplicate && existing.status === "accepted") {
+					return await send(existing.id, useropHash, { resend: true });
+				}
 				return { kind: "conflict" };
 			}
 
+			return await send(inserted[0].id, useropHash, { resend: false });
+		} finally {
+			// rejected and failed ops observe the histogram too (was success-path only)
+			stopTimer({ tenant: tenantSlug, chain: chainLabel });
+		}
+
+		/**
+		 * Sends the operation to the bundler and records the answer on its `accepted` row. A resend
+		 * answers `duplicate: true` once the bundler accepts it, and never marks the row `failed`.
+		 */
+		async function send(
+			rowId: string,
+			useropHash: Hex,
+			{ resend }: { resend: boolean },
+		): Promise<RelayOutcome> {
 			try {
 				// Submitted to the submission endpoint configured for the RESOLVED chain, and to
 				// no other (MC-58).
@@ -351,21 +371,32 @@ export function createUseropRelay({
 				await db
 					.update(useropLog)
 					.set({ status: "submitted", bundlerResponse: { bundlerHash } })
-					.where(eq(useropLog.id, inserted[0].id));
+					.where(eq(useropLog.id, rowId));
 				metrics.useropRelayed.inc({
 					status: "submitted",
 					tenant: tenantSlug,
 					chain: chainLabel,
 				});
 				// the server-computed hash is the canonical id (log key, status endpoint, idempotency)
-				return { kind: "submitted", userOperationHash: useropHash };
+				return resend
+					? {
+							kind: "submitted",
+							userOperationHash: useropHash,
+							duplicate: true,
+						}
+					: { kind: "submitted", userOperationHash: useropHash };
 			} catch (error) {
 				// A send that hit its time or size limit may still be in the bundler's queue. Recording
 				// it as failed would tell the user it did not happen while it lands on chain, and a
 				// fresh retry could then run the same transfer twice.
 				if (error instanceof UpstreamLimitError) {
 					log.warn(
-						{ useropHash, reason: error.reason, chainId: chain.chainId },
+						{
+							useropHash,
+							reason: error.reason,
+							chainId: chain.chainId,
+							resend,
+						},
 						"bundler gave no usable answer to the send; its outcome is unknown",
 					);
 					await db
@@ -376,7 +407,9 @@ export function createUseropRelay({
 								outcome: "unknown",
 							},
 						})
-						.where(eq(useropLog.id, inserted[0].id));
+						.where(
+							and(eq(useropLog.id, rowId), eq(useropLog.status, "accepted")),
+						);
 					metrics.useropRelayed.inc({
 						status: "unknown",
 						tenant: tenantSlug,
@@ -384,13 +417,27 @@ export function createUseropRelay({
 					});
 					return { kind: "unknown", userOperationHash: useropHash };
 				}
+				// An earlier send of this operation may still land, so a refused resend proves nothing
+				// about it: the row stays `accepted`, and the status route settles it from the chain.
+				if (resend) {
+					log.warn(
+						{ useropHash, chainId: chain.chainId, err: error },
+						"bundler refused the resend of an unconfirmed operation",
+					);
+					metrics.useropRelayed.inc({
+						status: "failed",
+						tenant: tenantSlug,
+						chain: chainLabel,
+					});
+					throw error;
+				}
 				await db
 					.update(useropLog)
 					.set({
 						status: "failed",
 						bundlerResponse: { error: (error as Error).message },
 					})
-					.where(eq(useropLog.id, inserted[0].id));
+					.where(eq(useropLog.id, rowId));
 				metrics.useropRelayed.inc({
 					status: "failed",
 					tenant: tenantSlug,
@@ -398,9 +445,6 @@ export function createUseropRelay({
 				});
 				throw error;
 			}
-		} finally {
-			// rejected and failed ops observe the histogram too (was success-path only)
-			stopTimer({ tenant: tenantSlug, chain: chainLabel });
 		}
 	};
 
