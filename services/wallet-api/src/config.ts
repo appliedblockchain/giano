@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import {
 	type ChainPolicy,
 	defaultChainName,
@@ -17,6 +18,21 @@ const csv = (value: string) =>
 		.split(",")
 		.map((entry) => entry.trim())
 		.filter(Boolean);
+
+/** The named address ranges Fastify's trustProxy (proxy-addr) accepts in place of a CIDR. */
+const TRUST_PROXY_RANGES = new Set(["loopback", "linklocal", "uniquelocal"]);
+
+/** One trustProxy entry: a named range, an IP address, or a CIDR. */
+const isTrustProxyEntry = (entry: string) => {
+	if (TRUST_PROXY_RANGES.has(entry)) return true;
+	const [address, prefix, ...rest] = entry.split("/");
+	if (rest.length > 0 || !address) return false;
+	const family = isIP(address);
+	if (family === 0) return false;
+	if (prefix === undefined) return true;
+	if (!/^\d{1,3}$/.test(prefix)) return false;
+	return Number(prefix) <= (family === 4 ? 32 : 128);
+};
 
 /**
  * A chain the deployment serves, with every address resolved. This is what the chain
@@ -377,7 +393,40 @@ const envSchema = z
 			.nonnegative()
 			.default(10_000_000_000_000_000n),
 
-		/** Rate limit for ceremony endpoints, requests per minute per tenant+IP. */
+		/**
+		 * Which peers may tell wallet-api the client's address in X-Forwarded-For. Fastify's
+		 * trustProxy: a comma-separated list of IPs, CIDRs and the named ranges loopback, linklocal
+		 * and uniquelocal. Unset trusts no one, and request.ip is then the address of whatever
+		 * connected, which behind the ALB or the wallet UI's nginx is the proxy for every user.
+		 *
+		 * The proxies' own networks (the VPC CIDR in AWS), not a hop count: a request reaches
+		 * wallet-api through one proxy (the ALB) or two (the ALB, then the wallet UI's nginx), so
+		 * no single hop count is right for both paths. Never `true`: that trusts every peer, and
+		 * any client could then choose its own address by sending the header.
+		 */
+		TRUST_PROXY: z
+			.string()
+			.optional()
+			.transform((raw, ctx): string[] | false => {
+				const value = raw?.trim();
+				if (!value) return false;
+				const entries = csv(value);
+				const invalid = entries.filter((entry) => !isTrustProxyEntry(entry));
+				if (invalid.length > 0) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message:
+							`not an IP, a CIDR or one of loopback, linklocal, uniquelocal: ${invalid.join(", ")}` +
+							(invalid.includes("true")
+								? " — `true` would trust every peer, so any client could set its own address"
+								: ""),
+					});
+					return z.NEVER;
+				}
+				return entries;
+			}),
+
+		/** Rate limit for ceremony endpoints, requests per minute per tenant + client IP (see TRUST_PROXY). */
 		CEREMONY_RATE_LIMIT_PER_MINUTE: z.coerce
 			.number()
 			.int()

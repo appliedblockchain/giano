@@ -85,6 +85,9 @@ export async function buildApp({
 	paymasterReader,
 }: BuildAppOptions) {
 	const app = Fastify({
+		// request.ip is the client, not the ALB or nginx in front of it, only when this names
+		// those proxies. The per-IP ceremony rate limits depend on it (config.ts TRUST_PROXY).
+		trustProxy: config.TRUST_PROXY,
 		logger: {
 			level: config.LOG_LEVEL,
 			...(config.NODE_ENV === "development"
