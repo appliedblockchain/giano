@@ -136,9 +136,9 @@ jobs:
           - arch: arm64
             runner: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         # no registry credentials on PRs — nothing is pushed, and a fork PR has none
         if: github.event_name != 'pull_request'
         with:
@@ -146,7 +146,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # Pull access to the hardened bases, on every event: a PR build pulls them too.
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -154,16 +154,16 @@ jobs:
       # Docker's signature on every DHI base the Dockerfile pins, checked before a layer is built
       # (scripts/verify-dhi-bases.mjs; the ABIP-2 migration guide requires it). Same parser as the
       # policy check, so what is verified is exactly what is pinned.
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       - name: Verify the DHI base signatures
         run: node scripts/verify-dhi-bases.mjs '${{ matrix.image.dockerfile }}'
 
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: build
         with:
           context: .
@@ -203,7 +203,7 @@ jobs:
           mkdir -p /tmp/digests
           digest='${{ steps.build.outputs.digest }}'
           touch "/tmp/digests/${digest#sha256:}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: github.event_name != 'pull_request'
         with:
           name: digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}
@@ -221,19 +221,19 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.setup.outputs.images) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: /tmp/digests
           pattern: digest-${{ matrix.image.name }}-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
           images: ${{ env.GHCR_NAMESPACE }}/${{ matrix.image.name }}
@@ -265,7 +265,7 @@ jobs:
 
       # Keyless Sigstore signature on the published list, bound to this workflow's GitHub OIDC
       # identity (id-token: write, above). Signed by digest, so it covers exactly what was built.
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
       - name: Sign the GHCR manifest list
@@ -289,13 +289,13 @@ jobs:
       - name: Assume the deploy role
         id: aws
         if: matrix.image.ecr != '' && github.ref == 'refs/heads/main'
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Log in to ECR
         if: steps.aws.outcome == 'success'
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
       - name: Skip the ECR tag if this commit is already published
         id: ecr
         if: steps.aws.outcome == 'success'

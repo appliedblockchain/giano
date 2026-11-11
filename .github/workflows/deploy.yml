@@ -56,7 +56,7 @@ jobs:
     outputs:
       include: ${{ steps.plan.outputs.include }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history: a push event needs the PREVIOUS commit's copy of
           # versions.json to tell which environment's tag actually moved, and a
@@ -173,7 +173,7 @@ jobs:
       AWS_ROLE_ARN: arn:aws:iam::379937780633:role/giano-${{ matrix.environment }}-gha-deploy
     steps:
       - name: Assume the deploy role
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -190,7 +190,7 @@ jobs:
 
       - name: Render the application container
         id: render-app
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
         with:
           task-definition: taskdef.json
           # The app container is named after the service (module `_locals.tf`).
@@ -203,7 +203,7 @@ jobs:
       - name: Render the init container
         id: render-init
         if: matrix.init_container != ''
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
         with:
           task-definition: ${{ steps.render-app.outputs.task-definition }}
           container-name: ${{ matrix.init_container }}
@@ -234,7 +234,7 @@ jobs:
       # fails this workflow instead of passing it. The deployment circuit breaker
       # rolls the service back; the reason is in Datadog, not in this log. R21.
       - name: Deploy
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2.6.4
         with:
           task-definition: ${{ steps.patch.outputs.task-definition }}
           service: ${{ env.NAME_PREFIX }}-${{ matrix.service }}

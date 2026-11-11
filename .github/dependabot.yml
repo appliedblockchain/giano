@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Workflows pin every third-party action to a full commit SHA, with the release as a trailing
+  # comment. Dependabot keeps both up to date. The cooldown matches the 7-day minimum release age
+  # that ABIP-6 sets for this project's dependencies.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    # Major versions are bumped by hand. Some actions must change major version together, for
+    # example actions/upload-artifact and actions/download-artifact in the docker.yml merge job.
+    # The cooldown counts from each action's own release, so a grouped PR could move one to a new
+    # major and leave the other behind. That job runs only on main, so PR CI would not catch it.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: ci
+      include: scope
