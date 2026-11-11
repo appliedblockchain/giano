@@ -126,6 +126,20 @@ longer read. Registration model per tenant: `openRegistration: true` for
 demos, or `false` + the tenant's backend calling `POST /v1/webauthn/options`
 server-to-server with one of its admin keys as bearer.
 
+Registration creates a user; it never adds a passkey to a user who already holds an active one.
+For such a user, `POST /v1/webauthn/options` with `kind: "registration"` and
+`POST /v1/webauthn/registration/verify` both return `409 already-registered`, and `kind: "auto"`
+resolves to `authentication`. A user adds a device through a pending addition, which they start
+from a session ([Wallet management](#wallet-management-opening-it-from-your-app)). A user whose
+passkeys were all removed is handled by registration mode:
+
+- `openRegistration: true`: refused with the same `409`, because the request proves nothing about
+  who the caller is. `kind: "auto"` returns the `409` too. Giano cannot give that user a new
+  passkey; their wallet stays under its remaining on-chain owners.
+- `openRegistration: false`: your backend vouches for the request with its admin key, so it may
+  register a new passkey for that user. The new passkey derives a new wallet address; it is not an
+  owner of the user's existing wallet.
+
 ## 7. Gas sponsorship
 
 Optional, and off unless `SPONSORSHIP_ENABLED=true`. When it is on, a tenant funds **its own** gas
