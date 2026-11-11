@@ -12,9 +12,10 @@ import {
 } from "../services/rpc-read-relay.js";
 
 /**
- * One JSON-RPC read object. The largest legitimate one is an eth_call or eth_estimateGas that
- * simulates a contract creation: EIP-3860 caps init code at 48 KiB, which is 96 KiB as hex.
- * This leaves room for that and its envelope, well below Fastify's 1 MiB default.
+ * One JSON-RPC read object. The large ones are eth_call and eth_estimateGas, whose size is mostly
+ * calldata. Calldata has no protocol cap, so this is a chosen bound, not a derived one: it fits a
+ * contract-creation simulation at the EIP-3860 init code cap (48 KiB, 96 KiB as hex) more than
+ * twice over, and stays well below Fastify's 1 MiB default.
  */
 const BODY_LIMIT_BYTES = 256 * 1024;
 
@@ -73,6 +74,7 @@ export default async function rpcRelayRoutes(
 				servedChainIds: z.array(z.number()).optional(),
 			}),
 			403: z.object({ error: z.string(), message: z.string() }),
+			413: z.object({ error: z.string(), message: z.string() }),
 			503: z.object({ error: z.string(), message: z.string() }),
 		},
 	};

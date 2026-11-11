@@ -71,7 +71,7 @@ declare module "fastify" {
 }
 
 /** The label value for every JSON-RPC method a route does not serve. */
-export const OTHER_METHOD = "other";
+const OTHER_METHOD = "other";
 
 /**
  * A JSON-RPC method as a metric label value. The method is text the caller chose, and

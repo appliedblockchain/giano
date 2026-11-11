@@ -6,6 +6,7 @@ import type { AppConfig } from "../config.js";
 import { methodLabel } from "../plugins/metrics.js";
 import { BundlerRpcError } from "../services/bundler.js";
 import type { ChainServices } from "../services/chains.js";
+import { jsonRpcMethodSchema } from "../services/rpc-read-relay.js";
 import { UpstreamLimitError } from "../services/upstream-fetch.js";
 import {
 	rpcUserOpSchema,
@@ -63,7 +64,7 @@ const jsonRpcId = z.union([z.string(), z.number(), z.null()]);
 const jsonRpcRequestSchema = z.object({
 	jsonrpc: z.literal("2.0"),
 	id: jsonRpcId,
-	method: z.string(),
+	method: jsonRpcMethodSchema,
 	params: z.array(z.unknown()).optional(),
 });
 

@@ -42,11 +42,18 @@ const LABELLED_METHODS: ReadonlySet<string> = new Set([
 
 const jsonRpcId = z.union([z.string(), z.number(), z.null()]);
 
+/**
+ * The longest JSON-RPC method name either relay serves is under 40 characters. A refusal echoes the
+ * method back and takes no rate-limit slot, so a longer name is refused by the schema (400) instead.
+ */
+const MAX_METHOD_LENGTH = 64;
+export const jsonRpcMethodSchema = z.string().max(MAX_METHOD_LENGTH);
+
 /** One request object. A batch array fails this, which is the point: one call, one slot. */
 export const jsonRpcRequestSchema = z.object({
 	jsonrpc: z.literal("2.0"),
 	id: jsonRpcId,
-	method: z.string(),
+	method: jsonRpcMethodSchema,
 	params: z.array(z.unknown()).optional(),
 });
 

@@ -1500,7 +1500,7 @@ describe("bundler relay (JSON-RPC)", () => {
 	});
 
 	it('counts a method it does not serve as method="other", never under the caller\'s text', async () => {
-		const probe = `probe_${"x".repeat(4096)}`;
+		const probe = `probe_${"x".repeat(50)}`;
 		expect((await rpc(probe)).body.error?.code).toBe(-32601);
 		expect((await rpc("eth_chainId")).body.result).toBe("0x7a69");
 
@@ -1513,6 +1513,13 @@ describe("bundler relay (JSON-RPC)", () => {
 		expect(metrics).toMatch(
 			/giano_bundler_relay_requests_total\{(?=[^}]*method="eth_chainId")(?=[^}]*outcome="ok")[^}]*\} [1-9]/,
 		);
+	});
+
+	it("refuses a method name over 64 characters with 400, without echoing it", async () => {
+		const method = `longprobe_${"x".repeat(55)}`;
+		const res = await rpc(method);
+		expect(res.status).toBe(400);
+		expect(JSON.stringify(res.body)).not.toContain("longprobe_");
 	});
 });
 
@@ -1592,7 +1599,7 @@ describe("rpc relay (JSON-RPC reads)", () => {
 		// refusal takes no rate-limit slot: a caller-chosen label would let anyone grow the heap.
 		const probes = Array.from(
 			{ length: 5 },
-			(_, i) => `probe${i}_${"x".repeat(4096)}`,
+			(_, i) => `probe${i}_${"x".repeat(50)}`,
 		);
 		for (const method of probes) {
 			expect((await rpc(method)).body.error?.code).toBe(-32601);
@@ -1610,6 +1617,12 @@ describe("rpc relay (JSON-RPC reads)", () => {
 		expect(metrics).toMatch(
 			/giano_rpc_relay_requests_total\{(?=[^}]*method="eth_getCode")(?=[^}]*outcome="ok")[^}]*\} [1-9]/,
 		);
+	});
+
+	it("refuses a method name over 64 characters with 400, without echoing it", async () => {
+		const { status, body } = await rpc(`longprobe_${"x".repeat(55)}`);
+		expect(status).toBe(400);
+		expect(JSON.stringify(body)).not.toContain("longprobe_");
 	});
 
 	it("refuses a body over 256 KiB with 413, before it is parsed", async () => {

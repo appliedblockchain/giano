@@ -393,6 +393,20 @@ describe("node answers", () => {
 			/giano_platform_rpc_relay_requests_total\{method="eth_blockNumber",chain="31337",outcome="ok"\} \d+/,
 		);
 	});
+
+	it('counts a refused method as method="other", never under the caller\'s text', async () => {
+		for (let i = 0; i < 3; i++) {
+			expect((await rpc(`probe${i}_unserved`)).body.error).toMatchObject({
+				code: -32601,
+			});
+		}
+		const metrics = (await ctx.app.inject({ method: "GET", url: "/metrics" }))
+			.body;
+		expect(metrics).not.toMatch(/probe\d_/);
+		expect(metrics).toMatch(
+			/giano_platform_rpc_relay_requests_total\{method="other",chain="31337",outcome="method-not-found"\} [1-9]/,
+		);
+	});
 });
 
 describe("configuration", () => {
