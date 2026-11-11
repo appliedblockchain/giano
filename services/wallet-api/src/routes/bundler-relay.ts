@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Address, Hex } from "viem";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { methodLabel } from "../plugins/metrics.js";
 import { BundlerRpcError } from "../services/bundler.js";
 import type { ChainServices } from "../services/chains.js";
 import { UpstreamLimitError } from "../services/upstream-fetch.js";
@@ -99,6 +100,14 @@ const READ_METHODS = new Set([
 	"eth_getUserOperationByHash",
 ]);
 
+/** The methods counted under their own name; any other method is counted as "other". */
+const LABELLED_METHODS: ReadonlySet<string> = new Set([
+	...LOCAL_METHODS,
+	...READ_METHODS,
+	"eth_estimateUserOperationGas",
+	"eth_sendUserOperation",
+]);
+
 type JsonRpcResponse = {
 	jsonrpc: "2.0";
 	id: z.infer<typeof jsonRpcId>;
@@ -143,10 +152,13 @@ export default async function bundlerRelayRoutes(
 		} = request.body as z.infer<typeof jsonRpcRequestSchema>;
 		const tenantSlug = request.tenant?.slug ?? "unknown";
 		const chainLabel = String(chain.chainId);
+		// The caller chooses `method`, and the final method-not-found refusal takes no rate-limit
+		// slot: only a method this route serves may become a label value.
+		const methodValue = methodLabel(method, LABELLED_METHODS);
 
 		const ok = (result: unknown, outcome = "ok"): JsonRpcResponse => {
 			app.metrics.bundlerRelay.inc({
-				method,
+				method: methodValue,
 				outcome,
 				tenant: tenantSlug,
 				chain: chainLabel,
@@ -159,7 +171,7 @@ export default async function bundlerRelayRoutes(
 			data?: unknown,
 		): JsonRpcResponse => {
 			app.metrics.bundlerRelay.inc({
-				method,
+				method: methodValue,
 				outcome: reason,
 				tenant: tenantSlug,
 				chain: chainLabel,
@@ -178,7 +190,7 @@ export default async function bundlerRelayRoutes(
 		const bundlerFailure = (error: unknown): JsonRpcResponse => {
 			if (error instanceof BundlerRpcError) {
 				app.metrics.bundlerRelay.inc({
-					method,
+					method: methodValue,
 					outcome: "bundler-error",
 					tenant: tenantSlug,
 					chain: chainLabel,

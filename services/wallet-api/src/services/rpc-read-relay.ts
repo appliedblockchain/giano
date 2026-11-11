@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
+import { methodLabel } from "../plugins/metrics.js";
 import type { ChainServices } from "./chains.js";
 import { NodeRpcError } from "./node-rpc.js";
 import { UpstreamLimitError } from "./upstream-fetch.js";
@@ -31,6 +32,12 @@ export const READ_METHODS = new Set([
 	"eth_getTransactionReceipt",
 	"eth_getLogs",
 	"net_version",
+]);
+
+/** The methods counted under their own name; any other method is counted as "other". */
+const LABELLED_METHODS: ReadonlySet<string> = new Set([
+	...READ_METHODS,
+	"eth_chainId",
 ]);
 
 const jsonRpcId = z.union([z.string(), z.number(), z.null()]);
@@ -135,7 +142,13 @@ export function createReadRelay<Extra extends object = object>(
 			labels: Extra;
 		}): Promise<JsonRpcResponse> {
 			const { id, method, params = [] } = body;
-			const labels = { ...extra, method, chain: String(chain.chainId) };
+			// The method-not-found refusal below is counted but takes no rate-limit slot, so the
+			// method label must never be the caller's own text: each new value is a series kept forever.
+			const labels = {
+				...extra,
+				method: methodLabel(method, LABELLED_METHODS),
+				chain: String(chain.chainId),
+			};
 
 			const ok = (result: unknown): JsonRpcResponse => {
 				opts.count({ ...labels, outcome: "ok" });

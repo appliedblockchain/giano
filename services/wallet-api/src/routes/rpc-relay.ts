@@ -12,6 +12,13 @@ import {
 } from "../services/rpc-read-relay.js";
 
 /**
+ * One JSON-RPC read object. The largest legitimate one is an eth_call or eth_estimateGas that
+ * simulates a contract creation: EIP-3860 caps init code at 48 KiB, which is 96 KiB as hex.
+ * This leaves room for that and its envelope, well below Fastify's 1 MiB default.
+ */
+const BODY_LIMIT_BYTES = 256 * 1024;
+
+/**
  * The node read relay: what a wallet origin points its chain RPC client at.
  *
  * Reads are public chain state, so this is tenant-bound (by Origin) rather than session-bound —
@@ -55,7 +62,8 @@ export default async function rpcRelayRoutes(
 		description:
 			"Forwards read-only JSON-RPC methods to the chain node wallet-api is configured with, so a wallet origin needs no RPC " +
 			"URL of its own and a keyed provider URL never reaches a browser. Tenant-bound by Origin, rate-limited per tenant; " +
-			"eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601.",
+			"eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601. " +
+			`Bodies over ${BODY_LIMIT_BYTES} bytes are refused with 413.`,
 		body: jsonRpcRequestSchema,
 		response: {
 			200: jsonRpcResponseSchema,
@@ -72,6 +80,7 @@ export default async function rpcRelayRoutes(
 	app.post(
 		"/v1/rpc/:chainId",
 		{
+			bodyLimit: BODY_LIMIT_BYTES,
 			preHandler: [app.requireTenant, app.requireChain],
 			schema: {
 				...schema,
@@ -83,7 +92,11 @@ export default async function rpcRelayRoutes(
 
 	app.post(
 		"/v1/rpc",
-		{ preHandler: [app.requireTenant, app.requireChain], schema },
+		{
+			bodyLimit: BODY_LIMIT_BYTES,
+			preHandler: [app.requireTenant, app.requireChain],
+			schema,
+		},
 		handle,
 	);
 }

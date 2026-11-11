@@ -70,6 +70,19 @@ declare module "fastify" {
 	}
 }
 
+/** The label value for every JSON-RPC method a route does not serve. */
+export const OTHER_METHOD = "other";
+
+/**
+ * A JSON-RPC method as a metric label value. The method is text the caller chose, and
+ * prom-client keeps one series per distinct label value for the life of the process, so a
+ * method outside `known` is counted as {@link OTHER_METHOD}. The number of series then stays
+ * bounded by the methods the route serves, whatever a caller sends.
+ */
+export function methodLabel(method: string, known: ReadonlySet<string>) {
+	return known.has(method) ? method : OTHER_METHOD;
+}
+
 /**
  * Prometheus metrics for the userop relay and ceremonies, exposed at GET /metrics.
  * Every metric carries a `tenant` label (the slug — human-readable, bounded
