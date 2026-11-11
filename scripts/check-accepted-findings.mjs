@@ -16,6 +16,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -53,26 +54,31 @@ const PNPM_AUDIT_SETTING =
 // A source comment changes the contract metadata hash, and so the CREATE2 addresses.
 const IN_SOURCE_SUPPRESSION = /slither-disable|aderyn-ignore|aderyn-fp/;
 
-// The exact scope of each Solidity tool. Any other key (detectors_to_exclude, exclude_high, …)
-// would hide findings without a register entry, and a changed value could drop production code
-// from the analysis. So the register check compares every key and value: changing the scope means
-// changing this script, in review. In slither.config.json, `//` holds the reasons.
+// The fixed content of each Solidity tool config. Any other setting (detectors_to_exclude,
+// exclude_high, a [detectors] table, …) would hide findings without a register entry, and a changed
+// value could drop production code from the analysis. So the register check does not read what a
+// config sets. It compares the whole file with the content below, apart from the reasons, and
+// changing the scope means changing this script, in review.
 // - include_paths keeps a Slither finding when any of its code is in packages/contracts/src outside
 //   src/testing/. (filter_paths would drop a finding in src/ that also touches lib/.)
 // - show_ignored_findings makes Slither ignore slither-disable comments and triage files in every
 //   file, including imported dependencies.
+// slither.config.json is this object plus a `//` member with the reasons, which Slither ignores.
 export const SLITHER_SCOPE = {
 	include_paths: "packages/contracts/src/(?!testing/)",
 	exclude_informational: true,
 	exclude_optimization: true,
 	show_ignored_findings: true,
 };
-export const ADERYN_SCOPE = {
-	version: 1,
-	root: ".",
-	src: "src",
-	exclude: ["src/testing/"],
-};
+// aderyn.toml is these lines, in this order, plus blank lines and whole-line `#` comments with the
+// reasons. A line that starts with `#` is a comment in TOML unless an earlier line opened a
+// multi-line string or array, and none of these lines opens one.
+export const ADERYN_LINES = [
+	"version = 1",
+	'root = "."',
+	'src = "src"',
+	'exclude = ["src/testing/"]',
+];
 
 const REQUIRED_FIELDS = [
 	"id",
@@ -333,7 +339,7 @@ export function findInSourceSuppressions(files) {
 	return errs;
 }
 
-/** slither.config.json may set scope and output only (design D3). */
+/** slither.config.json is exactly SLITHER_SCOPE plus the `//` reasons (design D3). */
 export function checkSlitherConfig(text, file = SLITHER_CONFIG) {
 	let config;
 	try {
@@ -357,28 +363,56 @@ export function checkSlitherConfig(text, file = SLITHER_CONFIG) {
 				message: "is not a JSON object",
 			},
 		];
-	const errs = Object.keys(config)
-		.filter((key) => key !== "//" && !Object.hasOwn(SLITHER_SCOPE, key))
-		.map((key) => ({
+	// JSON.parse and Slither's Python reader read the same values, and both keep the last of two
+	// duplicate keys. Object.fromEntries keeps a `__proto__` key as an ordinary key.
+	const scope = Object.fromEntries(
+		Object.entries(config).filter(([key]) => key !== "//"),
+	);
+	if (isDeepStrictEqual(scope, SLITHER_SCOPE)) return [];
+	const differs = [
+		...new Set([...Object.keys(scope), ...Object.keys(SLITHER_SCOPE)]),
+	].filter(
+		(key) =>
+			!Object.hasOwn(scope, key) ||
+			!Object.hasOwn(SLITHER_SCOPE, key) ||
+			!isDeepStrictEqual(scope[key], SLITHER_SCOPE[key]),
+	);
+	return [
+		{
 			file,
 			line: 1,
-			rule: "config-suppression",
-			message: `'${key}' is not a scope setting. A JSON config cannot name a register entry, so record each accepted finding in ${REGISTER_PATH} instead`,
-		}));
-	for (const [key, value] of Object.entries(SLITHER_SCOPE))
-		if (JSON.stringify(config[key]) !== JSON.stringify(value))
-			errs.push({
-				file,
-				line: 1,
-				rule: "config-scope",
-				message: `'${key}' must be ${JSON.stringify(value)}, not ${JSON.stringify(config[key]) ?? "missing"}. The scope is fixed in scripts/check-accepted-findings.mjs`,
-			});
-	return errs;
+			rule: "config-scope",
+			message: `differs from the fixed scope in: ${differs.join(", ")}. Apart from "//" with the reasons, it must be exactly ${JSON.stringify(SLITHER_SCOPE)}. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
+		},
+	];
 }
 
-// The register check reads aderyn.toml and .gitleaks.toml without a TOML library. It reads a plain
-// subset of TOML and reports every line outside that subset, so no TOML form (a quoted name, a
-// dotted key, an inline table, a multi-line string) can hide a setting from the check.
+/** aderyn.toml is exactly ADERYN_LINES plus blank lines and whole-line comments (design D3). */
+export function checkAderynConfig(text, file = ADERYN_CONFIG) {
+	const raw = text.split(/\r?\n/);
+	const lines = raw
+		.map((code, i) => ({ code, line: i + 1 }))
+		.filter(({ code }) => !/^[ \t]*(#.*)?$/.test(code));
+	for (let i = 0; i < Math.max(lines.length, ADERYN_LINES.length); i++) {
+		if (lines[i]?.code === ADERYN_LINES[i]) continue;
+		const found = lines[i] ? `has '${lines[i].code}'` : "ends";
+		const expected =
+			i < ADERYN_LINES.length ? `'${ADERYN_LINES[i]}'` : "nothing more";
+		return [
+			{
+				file,
+				line: lines[i]?.line ?? raw.length,
+				rule: "config-scope",
+				message: `${found} where it must have ${expected}. Apart from blank lines and whole-line # comments, it must be exactly these lines: ${ADERYN_LINES.join(" | ")}. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
+			},
+		];
+	}
+	return [];
+}
+
+// The register check reads .gitleaks.toml without a TOML library. It reads a plain subset of TOML
+// and reports every line outside that subset, so no TOML form (a quoted name, a dotted key, an
+// inline table, a multi-line string) can hide a setting from the check.
 
 /** One line with string contents blanked and the comment removed. `open` is true when a string does not close on the line. */
 function scanTomlLine(raw) {
@@ -463,64 +497,6 @@ function tomlLines(text) {
 		lines.push({ line, kind: "other", code: trimmed });
 	});
 	return lines;
-}
-
-/** aderyn.toml holds exactly the scope in ADERYN_SCOPE, one top-level key per line. Anything else could turn detectors off or drop code. */
-export function checkAderynConfig(text, file = ADERYN_CONFIG) {
-	const errs = [];
-	// A key after any table header belongs to that table, so it is not a top-level key.
-	let inTable = false;
-	const seen = new Set();
-	for (const l of tomlLines(text)) {
-		if (l.kind === "header") inTable = true;
-		if (
-			l.kind === "key" &&
-			!inTable &&
-			l.path.length === 1 &&
-			Object.hasOwn(ADERYN_SCOPE, l.path[0])
-		) {
-			const key = l.path[0];
-			seen.add(key);
-			let value;
-			try {
-				value = JSON.parse(l.value);
-			} catch {}
-			if (JSON.stringify(value) !== JSON.stringify(ADERYN_SCOPE[key]))
-				errs.push({
-					file,
-					line: l.line,
-					rule: "config-scope",
-					message: `'${key}' must be ${JSON.stringify(ADERYN_SCOPE[key])}, not ${l.value}. The scope is fixed in scripts/check-accepted-findings.mjs`,
-				});
-			continue;
-		}
-		const what =
-			l.kind === "header"
-				? `Table [${l.path.join(".")}]`
-				: l.kind === "key"
-					? `Key '${l.path.join(".")}'${inTable ? " inside a table" : ""}`
-					: l.kind === "other"
-						? "A value that continues across lines"
-						: l.why;
-		errs.push({
-			file,
-			line: l.line,
-			rule:
-				l.kind === "header" || l.kind === "key"
-					? "config-suppression"
-					: "unsupported-config",
-			message: `${what} is not allowed. This file sets scope only: the top-level keys ${Object.keys(ADERYN_SCOPE).join(", ")}, each on one line. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
-		});
-	}
-	for (const key of Object.keys(ADERYN_SCOPE))
-		if (!seen.has(key))
-			errs.push({
-				file,
-				line: 1,
-				rule: "config-scope",
-				message: `has no '${key}'. It must be ${JSON.stringify(ADERYN_SCOPE[key])}`,
-			});
-	return errs;
 }
 
 const ALLOWLIST_NAME = /^allowlists?$/;

@@ -76,9 +76,10 @@ Contract sources and Solidity tool configs:
   the contract metadata hash, and so the bytecode and the CREATE2 addresses.
 - A symlink under `packages/contracts/src`, or `src` or a folder above it as a symlink.
 - A missing `packages/contracts/slither.config.json` or `packages/contracts/aderyn.toml`, or any change to them other
-  than the reasons. They set the scope only: `packages/contracts/src` without `src/testing`. The script fixes every key
-  and value, so a scope change is a change to `scripts/check-accepted-findings.mjs`. `aderyn.toml` holds one top-level
-  key per line.
+  than the reasons. They set the scope only: `packages/contracts/src` without `src/testing`. The script compares each
+  file with a fixed copy, so a scope change is a change to `scripts/check-accepted-findings.mjs`. The reasons are the
+  `//` member of `slither.config.json` and the whole-line `#` comments of `aderyn.toml`. A trailing comment on a
+  setting line of `aderyn.toml` fails the check.
 
 gitleaks:
 - A `.gitleaks.toml` that does not keep every default rule. It must have `[extend]` with `useDefault = true`, and may

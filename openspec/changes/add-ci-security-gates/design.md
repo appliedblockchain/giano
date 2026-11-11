@@ -111,8 +111,10 @@ never falls back to `slither.conf.json`.
 Tool configs hold only the scope: production contracts in `packages/contracts/src` without `src/testing/`, which holds
 test-only contracts (`PermissivePaymaster`, `PrivateERC20`) that production never deploys. Slither uses `include_paths`,
 which keeps a finding when any of its code is in that scope; `filter_paths` would drop a finding in `src/` that also
-touches `lib/`. The script fixes every key and value of both configs, and fails if either is missing, so a scope
-change is a change to the script.
+touches `lib/`. The script does not read what the configs set. It compares each file with a fixed copy, apart from
+the reasons: `slither.config.json` must be exactly the fixed object plus a `//` member, and `aderyn.toml` exactly the
+fixed lines plus blank lines and whole-line comments. It fails if either file is missing. So a scope change is a
+change to the script, and no JSON or TOML form can add a setting that the check does not see.
 Slither keeps its informational and optimization detectors off. Severity filters are not suppressions.
 
 ### D4. Solidity analysis is its own job in `ci.yml`
