@@ -75,11 +75,12 @@ export function ClaimFlow({
 				<p>
 					This device created a passkey with the fingerprint below. Your other
 					device will show the fingerprint of the key it is being asked to add —
-					approve there <b>only if the two match</b>.
+					approve there <b>only if all four groups match</b>, character by
+					character.
 				</p>
 				<div
 					className="data-box"
-					style={{ fontSize: 26, textAlign: "center", letterSpacing: 3 }}
+					style={{ fontSize: 20, textAlign: "center", letterSpacing: 2 }}
 					data-testid="manage-claim-fingerprint"
 				>
 					{flow.fingerprint}
