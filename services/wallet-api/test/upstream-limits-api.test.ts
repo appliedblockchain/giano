@@ -1,6 +1,8 @@
 import http from "node:http";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import { tenants, useropLog } from "../src/db/schema.js";
 import {
 	startTestStack,
 	stopTestStack,
@@ -159,12 +161,29 @@ describe("chain RPC read relay", () => {
 });
 
 describe("receipt route (bundler)", () => {
+	const hash = `0x${"ef".repeat(32)}`;
+
+	// The receipt route asks the bundler only about an operation this deployment relayed.
+	beforeAll(async () => {
+		const tenant = await ctx.db.query.tenants.findFirst({
+			where: eq(tenants.slug, TENANT_A.slug),
+		});
+		if (!tenant) throw new Error(`tenant ${TENANT_A.slug} is not seeded`);
+		await ctx.db.insert(useropLog).values({
+			useropHash: hash,
+			chainId: 31337,
+			sender: "0x000000000000000000000000000000000000beef",
+			tenantId: tenant.id,
+			status: "submitted",
+		});
+	});
+
 	const receiptVia = async (fetchImpl: typeof fetch) => {
 		const app = await buildApp({ config: ctx.config, db: ctx.db, fetchImpl });
 		try {
 			const res = await app.inject({
 				method: "GET",
-				url: `/v1/userops/0x${"ef".repeat(32)}/receipt`,
+				url: `/v1/userops/${hash}/receipt`,
 			});
 			return { status: res.statusCode, body: res.json() };
 		} finally {
