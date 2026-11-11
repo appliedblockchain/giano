@@ -409,4 +409,15 @@ contract ValidationTest is PaymasterTestBase {
         assertTrue(vd != SIG_FAILED);
         assertGt(ctx.length, 0);
     }
+
+    /// @dev wallet-api refuses to sign a limit below `PAYMASTER_MIN_POST_OP_GAS_LIMIT` from the
+    ///      package's `paymaster.ts`. If that value drifted from the contract's, wallet-api would sign
+    ///      operations the contract refuses, or sign limits too small for settlement.
+    function test_validate_postOpFloorMatchesTheOffChainValue() public view {
+        string memory source = vm.readFile('paymaster.ts');
+        string[] memory parts = vm.split(source, 'export const PAYMASTER_MIN_POST_OP_GAS_LIMIT = ');
+        assertEq(parts.length, 2, 'paymaster.ts must declare PAYMASTER_MIN_POST_OP_GAS_LIMIT exactly once');
+        string memory literal = vm.replace(vm.split(parts[1], 'n;')[0], '_', '');
+        assertEq(vm.parseUint(literal), paymaster.MIN_POST_OP_GAS_LIMIT());
+    }
 }

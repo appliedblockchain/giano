@@ -1,3 +1,4 @@
+import { PAYMASTER_MIN_POST_OP_GAS_LIMIT } from "@appliedblockchain/giano-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Address, Hex } from "viem";
@@ -97,17 +98,6 @@ const REASON_CODES: Record<RefusalReason, number> = {
 const JSON_RPC_INVALID_PARAMS = -32602;
 
 /**
- * The smallest `paymasterPostOpGasLimit` this service authorises. It matches
- * `GianoPaymaster.MIN_POST_OP_GAS_LIMIT`.
- *
- * The tenant is charged only in the paymaster's `postOp`. If `postOp` runs out of gas, the
- * EntryPoint still takes the gas from the shared deposit, and the tenant pays nothing. The contract
- * refuses such an operation at validation from its next release. This check also protects every
- * paymaster already deployed, because the authorisation signs the postOp gas limit.
- */
-export const MIN_PAYMASTER_POST_OP_GAS_LIMIT = 100_000n;
-
-/**
  * When gas limits are absent — which they are during estimation — the service has to assume
  * something to evaluate the cost cap and the balance at all. Assuming *generously* is the only
  * safe direction: a stub that under-assumed would tell the user their transaction is sponsorable
@@ -118,7 +108,7 @@ const ESTIMATION_DEFAULTS = {
 	verificationGasLimit: 1_000_000n,
 	preVerificationGas: 100_000n,
 	paymasterVerificationGasLimit: 150_000n,
-	paymasterPostOpGasLimit: MIN_PAYMASTER_POST_OP_GAS_LIMIT,
+	paymasterPostOpGasLimit: PAYMASTER_MIN_POST_OP_GAS_LIMIT,
 } as const;
 
 export default async function paymasterRoutes(
@@ -329,10 +319,10 @@ export default async function paymasterRoutes(
 
 			// Refused rather than raised: the authorisation signs this limit, so the client must send the
 			// value it will submit. Refusing the stub as well tells the wallet before the user approves.
-			if (paymasterPostOpGasLimit < MIN_PAYMASTER_POST_OP_GAS_LIMIT) {
+			if (paymasterPostOpGasLimit < PAYMASTER_MIN_POST_OP_GAS_LIMIT) {
 				return rpcError(
 					JSON_RPC_INVALID_PARAMS,
-					`paymasterPostOpGasLimit must be at least ${MIN_PAYMASTER_POST_OP_GAS_LIMIT}, so the paymaster can settle the charge`,
+					`paymasterPostOpGasLimit must be at least ${PAYMASTER_MIN_POST_OP_GAS_LIMIT}, so the paymaster can settle the charge`,
 				);
 			}
 

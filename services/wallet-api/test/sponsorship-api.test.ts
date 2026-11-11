@@ -1,4 +1,7 @@
-import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
+import {
+	gianoSmartWalletAbi,
+	PAYMASTER_MIN_POST_OP_GAS_LIMIT,
+} from "@appliedblockchain/giano-contracts";
 import { eq } from "drizzle-orm";
 import type { Address, Hex } from "viem";
 import { encodeFunctionData } from "viem";
@@ -10,7 +13,6 @@ import {
 	tenantSponsorship,
 	tenants,
 } from "../src/db/schema.js";
-import { MIN_PAYMASTER_POST_OP_GAS_LIMIT } from "../src/routes/paymaster.js";
 import {
 	ADMIN_KEY,
 	type SponsorshipTestContext,
@@ -324,7 +326,7 @@ describe("request validation", () => {
 			await fund(tenantAId, 10n ** 18n);
 			const session = await newSession(`postop-${method}`);
 
-			for (const limit of [1n, MIN_PAYMASTER_POST_OP_GAS_LIMIT - 1n]) {
+			for (const limit of [1n, PAYMASTER_MIN_POST_OP_GAS_LIMIT - 1n]) {
 				const body = await rpc(
 					session.token,
 					method,
@@ -347,12 +349,12 @@ describe("request validation", () => {
 			session.token,
 			"pm_getPaymasterData",
 			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER), {
-				paymasterPostOpGasLimit: `0x${MIN_PAYMASTER_POST_OP_GAS_LIMIT.toString(16)}`,
+				paymasterPostOpGasLimit: `0x${PAYMASTER_MIN_POST_OP_GAS_LIMIT.toString(16)}`,
 			}),
 		);
 		expect(body.error).toBeUndefined();
 		expect(BigInt(body.result!.paymasterPostOpGasLimit)).toBe(
-			MIN_PAYMASTER_POST_OP_GAS_LIMIT,
+			PAYMASTER_MIN_POST_OP_GAS_LIMIT,
 		);
 	});
 
