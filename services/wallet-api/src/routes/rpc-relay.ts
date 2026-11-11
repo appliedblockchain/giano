@@ -12,6 +12,14 @@ import {
 } from "../services/rpc-read-relay.js";
 
 /**
+ * One JSON-RPC read object. The large ones are eth_call and eth_estimateGas, whose size is mostly
+ * calldata. Calldata has no protocol cap, so this is a chosen bound, not a derived one: it fits a
+ * contract-creation simulation at the EIP-3860 init code cap (48 KiB, 96 KiB as hex) more than
+ * twice over, and stays well below Fastify's 1 MiB default.
+ */
+const BODY_LIMIT_BYTES = 256 * 1024;
+
+/**
  * The node read relay: what a wallet origin points its chain RPC client at.
  *
  * Reads are public chain state, so this is tenant-bound (by Origin) rather than session-bound —
@@ -55,7 +63,8 @@ export default async function rpcRelayRoutes(
 		description:
 			"Forwards read-only JSON-RPC methods to the chain node wallet-api is configured with, so a wallet origin needs no RPC " +
 			"URL of its own and a keyed provider URL never reaches a browser. Tenant-bound by Origin, rate-limited per tenant; " +
-			"eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601.",
+			"eth_chainId is answered from configuration; anything outside the read allowlist is refused with -32601. " +
+			`Bodies over ${BODY_LIMIT_BYTES} bytes are refused with 413.`,
 		body: jsonRpcRequestSchema,
 		response: {
 			200: jsonRpcResponseSchema,
@@ -65,6 +74,7 @@ export default async function rpcRelayRoutes(
 				servedChainIds: z.array(z.number()).optional(),
 			}),
 			403: z.object({ error: z.string(), message: z.string() }),
+			413: z.object({ error: z.string(), message: z.string() }),
 			503: z.object({ error: z.string(), message: z.string() }),
 		},
 	};
@@ -72,6 +82,7 @@ export default async function rpcRelayRoutes(
 	app.post(
 		"/v1/rpc/:chainId",
 		{
+			bodyLimit: BODY_LIMIT_BYTES,
 			preHandler: [app.requireTenant, app.requireChain],
 			schema: {
 				...schema,
@@ -83,7 +94,11 @@ export default async function rpcRelayRoutes(
 
 	app.post(
 		"/v1/rpc",
-		{ preHandler: [app.requireTenant, app.requireChain], schema },
+		{
+			bodyLimit: BODY_LIMIT_BYTES,
+			preHandler: [app.requireTenant, app.requireChain],
+			schema,
+		},
 		handle,
 	);
 }

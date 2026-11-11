@@ -1498,6 +1498,29 @@ describe("bundler relay (JSON-RPC)", () => {
 			(await rpc("pimlico_getUserOperationGasPrice")).body.error?.code,
 		).toBe(-32601);
 	});
+
+	it('counts a method it does not serve as method="other", never under the caller\'s text', async () => {
+		const probe = `probe_${"x".repeat(50)}`;
+		expect((await rpc(probe)).body.error?.code).toBe(-32601);
+		expect((await rpc("eth_chainId")).body.result).toBe("0x7a69");
+
+		const metrics = (await ctx.app.inject({ method: "GET", url: "/metrics" }))
+			.body;
+		expect(metrics).not.toContain("probe_");
+		expect(metrics).toMatch(
+			/giano_bundler_relay_requests_total\{(?=[^}]*method="other")(?=[^}]*outcome="method-not-found")[^}]*\} [1-9]/,
+		);
+		expect(metrics).toMatch(
+			/giano_bundler_relay_requests_total\{(?=[^}]*method="eth_chainId")(?=[^}]*outcome="ok")[^}]*\} [1-9]/,
+		);
+	});
+
+	it("refuses a method name over 64 characters with 400, without echoing it", async () => {
+		const method = `longprobe_${"x".repeat(55)}`;
+		const res = await rpc(method);
+		expect(res.status).toBe(400);
+		expect(JSON.stringify(res.body)).not.toContain("longprobe_");
+	});
 });
 
 /**
@@ -1569,6 +1592,52 @@ describe("rpc relay (JSON-RPC reads)", () => {
 		]) {
 			expect((await rpc(method, [])).body.error?.code).toBe(-32601);
 		}
+	});
+
+	it('counts a refused method as method="other", so caller text never becomes a metric series', async () => {
+		// Each distinct label value is a series prom-client keeps for the life of the process, and a
+		// refusal takes no rate-limit slot: a caller-chosen label would let anyone grow the heap.
+		const probes = Array.from(
+			{ length: 5 },
+			(_, i) => `probe${i}_${"x".repeat(50)}`,
+		);
+		for (const method of probes) {
+			expect((await rpc(method)).body.error?.code).toBe(-32601);
+		}
+		expect(
+			(await rpc("eth_getCode", [`0x${"22".repeat(20)}`, "latest"])).body.error,
+		).toBeUndefined();
+
+		const metrics = (await ctx.app.inject({ method: "GET", url: "/metrics" }))
+			.body;
+		expect(metrics).not.toMatch(/probe\d_/);
+		expect(metrics).toMatch(
+			/giano_rpc_relay_requests_total\{(?=[^}]*method="other")(?=[^}]*outcome="method-not-found")[^}]*\} [1-9]/,
+		);
+		expect(metrics).toMatch(
+			/giano_rpc_relay_requests_total\{(?=[^}]*method="eth_getCode")(?=[^}]*outcome="ok")[^}]*\} [1-9]/,
+		);
+	});
+
+	it("refuses a method name over 64 characters with 400, without echoing it", async () => {
+		const { status, body } = await rpc(`longprobe_${"x".repeat(55)}`);
+		expect(status).toBe(400);
+		expect(JSON.stringify(body)).not.toContain("longprobe_");
+	});
+
+	it("refuses a body over 256 KiB with 413, before it is parsed", async () => {
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/rpc/31337",
+			headers: { origin: TENANT_A.walletOrigin },
+			payload: {
+				jsonrpc: "2.0",
+				id: 3,
+				method: "eth_call",
+				params: [{ data: `0x${"00".repeat(128 * 1024)}` }, "latest"],
+			},
+		});
+		expect(res.statusCode).toBe(413);
 	});
 
 	it("bounds eth_getLogs to RPC_RELAY_MAX_LOG_BLOCKS", async () => {

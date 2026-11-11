@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
+import { methodLabel } from "../plugins/metrics.js";
 import type { ChainServices } from "./chains.js";
 import { NodeRpcError } from "./node-rpc.js";
 import { UpstreamLimitError } from "./upstream-fetch.js";
@@ -33,13 +34,26 @@ export const READ_METHODS = new Set([
 	"net_version",
 ]);
 
+/** The methods counted under their own name; any other method is counted as "other". */
+const LABELLED_METHODS: ReadonlySet<string> = new Set([
+	...READ_METHODS,
+	"eth_chainId",
+]);
+
 const jsonRpcId = z.union([z.string(), z.number(), z.null()]);
+
+/**
+ * The longest JSON-RPC method name either relay serves is under 40 characters. A refusal echoes the
+ * method back and takes no rate-limit slot, so a longer name is refused by the schema (400) instead.
+ */
+const MAX_METHOD_LENGTH = 64;
+export const jsonRpcMethodSchema = z.string().max(MAX_METHOD_LENGTH);
 
 /** One request object. A batch array fails this, which is the point: one call, one slot. */
 export const jsonRpcRequestSchema = z.object({
 	jsonrpc: z.literal("2.0"),
 	id: jsonRpcId,
-	method: z.string(),
+	method: jsonRpcMethodSchema,
 	params: z.array(z.unknown()).optional(),
 });
 
@@ -135,7 +149,13 @@ export function createReadRelay<Extra extends object = object>(
 			labels: Extra;
 		}): Promise<JsonRpcResponse> {
 			const { id, method, params = [] } = body;
-			const labels = { ...extra, method, chain: String(chain.chainId) };
+			// The method-not-found refusal below is counted but takes no rate-limit slot, so the
+			// method label must never be the caller's own text: each new value is a series kept forever.
+			const labels = {
+				...extra,
+				method: methodLabel(method, LABELLED_METHODS),
+				chain: String(chain.chainId),
+			};
 
 			const ok = (result: unknown): JsonRpcResponse => {
 				opts.count({ ...labels, outcome: "ok" });
