@@ -811,8 +811,9 @@ the upgrade controls. Anything stronger would be a claim the architecture does n
   wallet-web from published images) with a fully commented env matrix.
 - `deploy/helm/giano` — Helm chart: wallet-api (+ migrations hook), wallet-web, optional bundler,
   contracts-deployer pre-install Job, ingress. Each workload reads only its own k8s Secret:
-  `walletApi.existingSecret` holds `DATABASE_URL` and wallet-api's optional secrets (the migrations
-  Job reads only its `DATABASE_URL`); `bundler.existingSecret`, a separate Secret, holds
+  `walletApi.existingSecret` holds `DATABASE_URL`, `GIANO_DEPLOYMENT_CLASS` and, when the class is
+  `testnet` or `production`, `METRICS_BEARER_TOKEN` (at least 16 characters), plus wallet-api's
+  optional secrets (the migrations Job reads only its `DATABASE_URL`); `bundler.existingSecret`, a separate Secret, holds
   `BUNDLER_EXECUTOR_PRIVATE_KEYS` if the bundler is enabled (`ALTO_EXECUTOR_PRIVATE_KEYS` is refused
   at boot). The deployer Job gets no Secret. The in-chart bundler reads the same chain list as
   wallet-api (`config.chains`, or the single-chain scalars as a one-entry document). `serviceMonitor.enabled=true` for Prometheus scraping.
@@ -985,7 +986,7 @@ P-256 passkey).
 
 - [ ] **Secrets** in a secret manager, referenced via Helm `walletApi.existingSecret` and
       `bundler.existingSecret` (two separate Secrets) — never inline.
-      Deployer key is ephemeral (one-shot Job only).
+      The deployer Job gets no Secret and never the deployer key.
 - [ ] **Each tenant's `walletOrigin` chosen deliberately** — its host is the RP ID, which is
       irreversible; passkeys bind to it forever.
 - [ ] **Registration closed** (tenant `openRegistration: false`) with the tenant's `adminKeys`

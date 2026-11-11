@@ -23,7 +23,7 @@ Secrets: each workload reads only its own k8s Secret (see values.yaml), so a com
 exposes only its own keys.
 */}}
 {{- define "giano.walletApiSecret" -}}
-{{- required "walletApi.existingSecret is required (a k8s Secret with DATABASE_URL)" .Values.walletApi.existingSecret -}}
+{{- required "walletApi.existingSecret is required (a k8s Secret with DATABASE_URL, GIANO_DEPLOYMENT_CLASS and, on testnet or production, METRICS_BEARER_TOKEN)" .Values.walletApi.existingSecret -}}
 {{- end -}}
 
 {{- define "giano.bundlerSecret" -}}
