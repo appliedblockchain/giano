@@ -919,6 +919,7 @@ export const gianoPaymasterAbi = [
   { type: 'function', inputs: [], name: 'DEFAULT_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'FEE_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'FEE_COLLECTOR_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'MIN_POST_OP_GAS_LIMIT', outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'PARAM_ADMIN_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'PAUSER_ROLE', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
   { type: 'function', inputs: [], name: 'ROLE_ADMIN', outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }], stateMutability: 'view' },
@@ -1506,6 +1507,14 @@ export const gianoPaymasterAbi = [
   },
   { type: 'error', inputs: [], name: 'PaymasterPaused' },
   { type: 'error', inputs: [{ name: 'penaltyBps', internalType: 'uint16', type: 'uint16' }], name: 'PenaltyBpsTooHigh' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'postOpGasLimit', internalType: 'uint256', type: 'uint256' },
+      { name: 'minimum', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'PostOpGasLimitTooLow',
+  },
   {
     type: 'error',
     inputs: [

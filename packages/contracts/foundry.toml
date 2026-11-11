@@ -27,7 +27,11 @@ auto_detect_remappings = false
 deny = 'warnings'
 
 # Tests install CreateX at its canonical address from the vendored artifact (test/utils/CreateXFixture.sol).
-fs_permissions = [{ access = 'read', path = './vendor/createx' }]
+# Validation.t.sol reads paymaster.ts, to check that the off-chain MIN_POST_OP_GAS_LIMIT matches the contract.
+fs_permissions = [
+    { access = 'read', path = './vendor/createx' },
+    { access = 'read', path = './paymaster.ts' },
+]
 
 # `deny` also applies to forge-lint, and the linter's current findings are deliberate (selector and
 # bit-flag casts). Keep the linter out of the build; run `forge lint` to see its findings.

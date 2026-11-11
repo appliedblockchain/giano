@@ -120,6 +120,16 @@ contract GianoPaymaster is
     ///      value that would let a mis-set parameter drain a tenant.
     uint16 internal constant MAX_PENALTY_BPS = 5000;
 
+    /// @notice The smallest `paymasterPostOpGasLimit` validation accepts.
+    ///
+    /// @dev    The tenant is charged only in `postOp`. If `postOp` runs out of gas, the EntryPoint
+    ///         reverts it with `PostOpReverted` and still takes the gas from the deposit, so the
+    ///         charge falls on the other tenants and the treasury. This floor stops a client from
+    ///         asking for a limit too small for settlement to finish. It is a constant rather than a
+    ///         parameter because settlement's gas is a property of this code, not of a deployment;
+    ///         `Gas.t.sol` asserts that the worst case stays below it.
+    uint256 public constant MIN_POST_OP_GAS_LIMIT = 100_000;
+
     // ---------------------------------------------------------------------------------------
     // Storage
     // ---------------------------------------------------------------------------------------
@@ -201,9 +211,11 @@ contract GianoPaymaster is
     ///      storage layout.
     ///
     ///      If `postOp` reverts, the EntryPoint reverts its frame, release included, and does not
-    ///      call it again. That reservation then stays held until the transaction ends. No funds
-    ///      are at risk, but later `withdrawTenant` calls and validations for the tenant in the
-    ///      same transaction see a smaller available balance.
+    ///      call it again. That reservation then stays held until the transaction ends, so later
+    ///      `withdrawTenant` calls and validations for the tenant in the same transaction see a
+    ///      smaller available balance. A reverted `postOp` also leaves the tenant uncharged while
+    ///      the deposit still pays, which is why validation refuses a `paymasterPostOpGasLimit`
+    ///      below `MIN_POST_OP_GAS_LIMIT`.
     ///
     ///      keccak256(abi.encode(uint256(keccak256("giano.transient.Paymaster.inFlight")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant IN_FLIGHT_TRANSIENT_LOCATION =
@@ -260,6 +272,7 @@ contract GianoPaymaster is
     error InsufficientTenantBalance(bytes16 tenantId, uint256 required, uint256 available);
     error TenantInDeficit(bytes16 tenantId, uint256 deficit);
     error FeeAboveConfigured(bytes16 tenantId, uint128 authorisedFee, uint128 configuredFee);
+    error PostOpGasLimitTooLow(uint256 postOpGasLimit, uint256 minimum);
     error NotWithdrawAddress(bytes16 tenantId, address caller);
     error ExceedsTreasury(uint256 requested, uint256 available);
     error ZeroAddress();
@@ -619,6 +632,11 @@ contract GianoPaymaster is
         bytes calldata pmData = userOp.paymasterAndData[UserOperationLib.PAYMASTER_DATA_OFFSET:];
         Authorisation memory auth = _decodeAuthorisation(pmData);
 
+        // Settlement is where the tenant pays. Too little gas for it, and the EntryPoint takes the
+        // gas from the deposit without the tenant being charged (see MIN_POST_OP_GAS_LIMIT).
+        uint256 postOpGasLimit = userOp.unpackPostOpGasLimit();
+        if (postOpGasLimit < MIN_POST_OP_GAS_LIMIT) revert PostOpGasLimitTooLow(postOpGasLimit, MIN_POST_OP_GAS_LIMIT);
+
         Tenant storage t = $.tenants[auth.tenantId];
         if (!t.registered) revert UnknownTenant(auth.tenantId);
         if (!t.enabled) revert TenantDisabled(auth.tenantId);
@@ -645,7 +663,7 @@ contract GianoPaymaster is
         uint128 configuredFee = feeFor(auth.tenantId);
         if (auth.feeWei > configuredFee) revert FeeAboveConfigured(auth.tenantId, auth.feeWei, configuredFee);
 
-        uint256 executionGasLimit = userOp.unpackCallGasLimit() + userOp.unpackPostOpGasLimit();
+        uint256 executionGasLimit = userOp.unpackCallGasLimit() + postOpGasLimit;
         uint256 requiredCharge = maxCost + auth.feeWei + _overheadWei(userOp.unpackMaxFeePerGas(), executionGasLimit);
 
         // Earlier operations of this tenant in the same bundle are validated but not yet settled.

@@ -1,3 +1,4 @@
+import { PAYMASTER_MIN_POST_OP_GAS_LIMIT } from "@appliedblockchain/giano-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Address, Hex } from "viem";
@@ -107,7 +108,7 @@ const ESTIMATION_DEFAULTS = {
 	verificationGasLimit: 1_000_000n,
 	preVerificationGas: 100_000n,
 	paymasterVerificationGasLimit: 150_000n,
-	paymasterPostOpGasLimit: 100_000n,
+	paymasterPostOpGasLimit: PAYMASTER_MIN_POST_OP_GAS_LIMIT,
 } as const;
 
 export default async function paymasterRoutes(
@@ -315,6 +316,15 @@ export default async function paymasterRoutes(
 				op.paymasterPostOpGasLimit,
 				ESTIMATION_DEFAULTS.paymasterPostOpGasLimit,
 			);
+
+			// Refused rather than raised: the authorisation signs this limit, so the client must send the
+			// value it will submit. Refusing the stub as well tells the wallet before the user approves.
+			if (paymasterPostOpGasLimit < PAYMASTER_MIN_POST_OP_GAS_LIMIT) {
+				return rpcError(
+					JSON_RPC_INVALID_PARAMS,
+					`paymasterPostOpGasLimit must be at least ${PAYMASTER_MIN_POST_OP_GAS_LIMIT}, so the paymaster can settle the charge`,
+				);
+			}
 
 			// A zero fee would make every cost check pass trivially and every reservation zero, so it is
 			// refused rather than defaulted: the wallet is expected to estimate fees from the chain.

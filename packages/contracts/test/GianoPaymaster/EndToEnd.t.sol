@@ -111,6 +111,48 @@ contract EndToEndTest is PaymasterTestBase {
         _assertInvariant();
     }
 
+    /// @dev The attack the floor closes: a validly signed operation whose postOp gas limit is too
+    ///      small for settlement. Without the floor, `postOp` runs out of gas, the EntryPoint takes
+    ///      the gas from the deposit, and the tenant is never charged. With it, the operation is
+    ///      refused at validation, so no bundler can land it.
+    function test_anOperationWhoseSettlementCannotFinishIsRefusedAtValidation() public {
+        OpParams memory p = _defaultOpParams(address(account));
+        p.pmPostOpGasLimit = 1;
+        PackedUserOperation memory op = _signedSponsoredOp(p, TENANT_A, uint48(block.timestamp + 300), 0, DEFAULT_FEE_WEI);
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = op;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEntryPoint.FailedOpWithRevert.selector,
+                0,
+                'AA33 reverted',
+                abi.encodeWithSelector(GianoPaymaster.PostOpGasLimitTooLow.selector, 1, paymaster.MIN_POST_OP_GAS_LIMIT())
+            )
+        );
+        vm.prank(beneficiary, beneficiary);
+        ENTRY_POINT.handleOps(ops, beneficiary);
+    }
+
+    /// @dev The floor must be enough in practice, not only on paper: an operation at exactly the
+    ///      floor settles and the tenant pays, on the first fee to reach an empty treasury, which
+    ///      is settlement's most expensive storage write.
+    function test_anOperationAtThePostOpFloorSettlesAndTheTenantPays() public {
+        OpParams memory p = _defaultOpParams(address(account));
+        p.pmPostOpGasLimit = uint128(paymaster.MIN_POST_OP_GAS_LIMIT());
+        uint256 balanceBefore = paymaster.getTenant(TENANT_A).balance;
+        assertEq(paymaster.treasury(), 0);
+
+        vm.recordLogs();
+        _runSponsoredOp(p);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        (uint256 gasCostWei, uint256 feeWei, uint256 overheadWei, uint256 newBalance, ) = _sponsoredEvent(logs);
+        assertEq(newBalance, balanceBefore - gasCostWei - feeWei - overheadWei, 'the tenant was charged');
+        assertEq(paymaster.treasury(), DEFAULT_FEE_WEI, 'the fee reached the treasury');
+        _assertInvariant();
+    }
+
     function test_theSameAuthorisationCannotBeUsedTwice() public {
         OpParams memory p = _defaultOpParams(address(account));
         _runSponsoredOp(p);
