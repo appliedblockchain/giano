@@ -1,5 +1,5 @@
 import type { HandshakeNackReason, RpcError } from "./protocol";
-import { RPC_ERRORS } from "./protocol";
+import { NOT_CONNECTED_REASON, RPC_ERRORS } from "./protocol";
 
 export type TransportErrorCode =
 	| "POPUP_BLOCKED"
@@ -41,6 +41,21 @@ export class TransportRpcError extends Error {
 	static from(error: RpcError): TransportRpcError {
 		return new TransportRpcError(error.code, error.message, error.data);
 	}
+}
+
+/**
+ * Whether the wallet refused the request because this origin holds no connection grant (WK-34):
+ * a 4100 whose `data.reason` is {@link NOT_CONNECTED_REASON}. Any other 4100 leaves the dApp
+ * connected.
+ */
+export function isNotConnectedError(error: unknown): boolean {
+	return (
+		error instanceof TransportRpcError &&
+		error.code === RPC_ERRORS.UNAUTHORIZED &&
+		typeof error.data === "object" &&
+		error.data !== null &&
+		(error.data as { reason?: unknown }).reason === NOT_CONNECTED_REASON
+	);
 }
 
 /**

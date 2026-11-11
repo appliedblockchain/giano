@@ -274,3 +274,10 @@ export const RPC_ERRORS = {
 	UNSUPPORTED_CHAIN: 4902,
 	INTERNAL: -32603,
 } as const;
+
+/**
+ * `data.reason` on the 4100 a wallet host answers to an origin that holds no connection grant
+ * (WK-34). 4100 has other causes, such as a refused self-call or an ended wallet session. Only
+ * this one means the dApp's cached connection is stale.
+ */
+export const NOT_CONNECTED_REASON = "not-connected";

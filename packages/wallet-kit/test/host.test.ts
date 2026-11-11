@@ -1,5 +1,9 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
-import { RPC_ERRORS } from "@appliedblockchain/giano-wallet-transport";
+import {
+	isNotConnectedError,
+	NOT_CONNECTED_REASON,
+	RPC_ERRORS,
+} from "@appliedblockchain/giano-wallet-transport";
 import { type Address, encodeFunctionData, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { createConnectionGrants } from "../src/grants";
@@ -631,7 +635,10 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				});
 				await expect(
 					handler(method, [{}], { dappOrigin: DAPP, chainId: 31337 }),
-				).rejects.toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+				).rejects.toMatchObject({
+					code: RPC_ERRORS.UNAUTHORIZED,
+					data: { reason: NOT_CONNECTED_REASON },
+				});
 				expect(calls).toEqual([]);
 				expect(requests.current).toBeNull();
 				// The event relay is not even wired, so no accountsChanged can reach the origin.
@@ -639,6 +646,23 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				expect(sendEvent).not.toHaveBeenCalled();
 			},
 		);
+
+		it("marks only the no-grant 4100, so a refused self-call does not disconnect the dApp", async () => {
+			const selfCall = [{ to: ACCOUNT, data: ADD_OWNER }];
+			const refusal = (connected: boolean) =>
+				harness(31337, { connected })
+					.handler("eth_sendTransaction", selfCall, {
+						dappOrigin: DAPP,
+						chainId: 31337,
+					})
+					.catch((error: unknown) => error);
+			const notConnected = await refusal(false);
+			const refusedSelfCall = await refusal(true);
+			expect(notConnected).toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+			expect(refusedSelfCall).toMatchObject({ code: RPC_ERRORS.UNAUTHORIZED });
+			expect(isNotConnectedError(notConnected)).toBe(true);
+			expect(isNotConnectedError(refusedSelfCall)).toBe(false);
+		});
 
 		it("records the grant when the user approves eth_requestAccounts, for that origin only", async () => {
 			const { handler, requests, grants, context } = harness(31337, {

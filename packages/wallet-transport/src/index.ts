@@ -1,6 +1,7 @@
 export { TransportClient, type TransportClientOptions } from "./client";
 export {
 	HandshakeRefusedError,
+	isNotConnectedError,
 	TransportError,
 	type TransportErrorCode,
 	TransportRpcError,
@@ -16,6 +17,7 @@ export { PopupManager, type PopupManagerOptions } from "./popup-manager";
 export {
 	type HandshakeNackMessage,
 	type HandshakeNackReason,
+	NOT_CONNECTED_REASON,
 	PROTOCOL_VERSION,
 	parseTransportMessage,
 	RPC_ERRORS,

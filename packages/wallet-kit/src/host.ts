@@ -1,4 +1,5 @@
 import {
+	NOT_CONNECTED_REASON,
 	RPC_ERRORS,
 	TransportHost,
 	TransportRpcError,
@@ -140,6 +141,9 @@ export function createHostRequestHandler({
 			throw new TransportRpcError(
 				RPC_ERRORS.UNAUTHORIZED,
 				"This application is not connected to the wallet; request eth_requestAccounts first",
+				// Marks this 4100 apart from the others (a refused self-call, an ended session):
+				// only this one makes the connector drop its cached connection.
+				{ reason: NOT_CONNECTED_REASON },
 			);
 		}
 		if (method === "wallet_revokePermissions") {

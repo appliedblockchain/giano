@@ -298,7 +298,10 @@ connected. It MUST record a connection grant for an origin when the user approve
 `eth_requestAccounts` and an account is established, and keep it in the wallet origin's storage so
 it outlives the ephemeral popup. For an origin with no grant, the host MUST answer `eth_accounts`
 with `[]` and MUST refuse every method that uses the account with EIP-1193 `4100`, before any
-silent restore, consent request or provider call. The host MUST refuse `giano_restoreAccount` from
+silent restore, consent request or provider call. That refusal MUST carry
+`data: { reason: "not-connected" }`, and a connector MUST drop its cached connection only on a `4100`
+that carries it: other `4100` refusals, such as a refused self-call or an ended wallet session,
+refuse one request and leave the dApp connected. The host MUST refuse `giano_restoreAccount` from
 an application, and MUST remove the origin's grant on `wallet_revokePermissions`; if the storage
 refuses that removal, the host MUST answer with an error, not report success. The host MUST relay
 `accountsChanged` only to an origin that holds a grant when the event fires.
