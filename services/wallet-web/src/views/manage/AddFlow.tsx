@@ -150,8 +150,9 @@ export function AddFlow({
 			<FlowShell title="Compare the fingerprints">
 				<p>
 					Your other device is showing a fingerprint for the passkey it just
-					created. Approve <b>only if it matches</b> this one — the match is
-					what stops anyone in the middle substituting their own key.
+					created. Approve <b>only if all four groups match</b> this one,
+					character by character — the match is what stops anyone in the middle
+					substituting their own key.
 				</p>
 				<div
 					className="data-box"
