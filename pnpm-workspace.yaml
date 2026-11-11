@@ -70,6 +70,7 @@ overrides:
   # GHSA-3g3m-2fjr-6pw4 (glob), GHSA-g3hv-75wg-m249 (minimatch via glob) — archiver-utils 5.0.2
   # (testcontainers) asks for glob 10, @fastify/static 10.1.6 for glob 13; only 14.0.2+ is fixed.
   # glob 14 keeps the glob() and sync() exports both parents call, and brings minimatch 11.
+  # Remove once @fastify/static is 10.1.9+ (glob ^14) and testcontainers no longer uses archiver 7.
   "glob@>=9.0.0 <14.0.2": "14.0.3"
   # High-severity lines (lowest advisory on each is high).
   # @grpc/grpc-js — dockerode via testcontainers (wallet-api tests)
