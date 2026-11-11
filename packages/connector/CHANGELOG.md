@@ -1,5 +1,20 @@
 # @appliedblockchain/giano-connector
 
+## 7.0.0
+
+### Minor Changes
+
+- ce6e605: Require a connection before a dApp can read or use the wallet account. Before, any origin in `allowedDappOrigins` could open the popup and call `giano_restoreAccount`, `eth_accounts` or `eth_prepareUserOperation` with no consent screen. It got the user's address, and `eth_prepareUserOperation` made the paymaster issue a signed authorisation and reserve tenant balance until the reservation expired.
+
+  The `giano-wallet-kit` host now keeps a connection grant for each dApp origin in the wallet origin's `localStorage`, under its own key, so two popups cannot overwrite each other's change. It records the grant when the user approves `eth_requestAccounts` and the provider returns an account. If the storage refuses that write, the connect answers `-32603` and grants nothing. `wallet_revokePermissions` from that origin removes the grant, and answers `-32603` if the storage refuses the write. The host checks the grant again after the silent restore and after consent, so a revoke from another popup also stops a request that is already waiting. An origin with no grant gets `[]` from `eth_accounts` and EIP-1193 `4100`, with `data: { reason: "not-connected" }`, from every method that uses the account: `eth_sendTransaction`, `personal_sign`, `eth_sign`, `eth_signTypedData_v4`, `eth_signUserOperation`, `signed_eth_call`, `eth_prepareUserOperation` and `eth_sendSignedUserOperation`. The host checks the grant before it restores the account, so a refused origin never receives an `accountsChanged` event. The host also relays `accountsChanged` only to an origin that holds a grant, so signing in from the management view no longer sends the address to an origin that never connected. The event that a first connect emits is no longer relayed; the dApp reads the accounts from the `eth_requestAccounts` result. The host refuses `giano_restoreAccount` from an application with `4200`.
+
+  A dApp that already connected before this release has no grant yet. Its next account request gets `4100`, and it must call `eth_requestAccounts` again once. The `giano-connector` provider now treats that marked `4100` like `4900`: it drops its cached session and emits `accountsChanged` with `[]` and `disconnect`, so the dApp shows the user as disconnected instead of connected with every action failing. Any other `4100`, such as a refused self-call or an ended wallet session, refuses only that request and leaves the dApp connected. `giano-wallet-transport` exports the marker as `NOT_CONNECTED_REASON` and the check as `isNotConnectedError`.
+
+### Patch Changes
+
+- Updated dependencies [ce6e605]
+  - @appliedblockchain/giano-wallet-transport@7.0.0
+
 ## 6.0.1
 
 ### Patch Changes

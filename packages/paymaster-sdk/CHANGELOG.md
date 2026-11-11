@@ -1,5 +1,37 @@
 # @appliedblockchain/giano-paymaster-sdk
 
+## 7.0.0
+
+### Minor Changes
+
+- 1add735: `GianoPaymasterClient.getAdminEvents({ range, kinds, timelock, tenantId })` reads the privileged changes to the paymaster and, given its address, its timelock, in one window of blocks: role changes, fees, parameters, signers, pause, upgrades, tenant registration, state and funds, and the timelock's schedule, execute, cancel, delay and role events. Each comes decoded (roles by name, timelock calls decoded), newest first, with its block time, transaction sender and actor, and the window returns `older` to page back like `getSponsorships`. `PAYMASTER_ADMIN_EVENTS` and `TIMELOCK_ADMIN_EVENTS` list what is read; a test fails when the contracts gain an event in neither list nor the excluded ones.
+
+  The list includes the paymaster's stake changes (the EntryPoint's `StakeLocked`, `StakeUnlocked` and `StakeWithdrawn` for it). The actor is the timelock for a paymaster change it executed and for its own delay changes, a funding's `from`, and never the EntryPoint. On a tenant's page, a `Cancelled` of an operation that changed the tenant is kept. A `FunctionDelayChange` names its function only when its target is the paymaster.
+
+- 1ad28db: `getAdminEvents({ tenantId, allCancellations: true })` keeps every `Cancelled`, for a caller that pages through windows and matches a cancellation to its operation in another window. The CLI's `health` warns when `--timelock-delays` is given without `--timelock`.
+- dcc60d8: `GianoPaymasterClient.renounceRole(role, account)` gives up a role the connected wallet holds. `revokeRole` also accepts `"DEFAULT_ADMIN_ROLE"`, so a deployment where somebody holds it anyway can have it revoked by another holder.
+- 6285a54: `GianoTimelockClient` proposes changes to the timelock itself: `proposeUpdateDelay`, `proposeSetFunctionDelay`, `proposeGrantTimelockRole` and `proposeRevokeTimelockRole`, built on a new public `timelockCall`. `cancelCalldata(id)` encodes a cancel from the id alone, for an operation whose scheduling is older than the blocks read.
+- bac9b42: `assessHealth(overview, context)` takes the paymaster's timelock and the code at its implementation. With a timelock, it checks that the timelock alone holds the four timelocked roles and that no delay is below its published value; without one, a single warning says no timelock is configured, in place of the "verify this is the timelock" warning on each role. The implementation is matched to a contracts release, and code that is no release fails. `getHealth()` passes the implementation itself and takes the timelock; `getImplementationCode()` and `timelockDelays(config)` supply the rest.
+
+  Given expected delays that leave a name out, the delay check warns and names each one rather than passing it. An implementation that matches no release names the newest release the SDK knows, so a newer release reads as an SDK to update. `readImplementationSlot()` reads the ERC-1967 slot without throwing on an empty one. The CLI's `health` checks the timelock with `--timelock`, against `--timelock-delays` when given.
+
+- 59d2fd8: `GianoPaymasterClient.getImplementation()` reads the implementation behind the proxy from the ERC-1967 slot, and `upgradeToAndCall(implementation, data?)` sends an upgrade from a wallet that holds `UPGRADER_ROLE`, as on a devnet. `ERC1967_IMPLEMENTATION_SLOT` is exported. On a handed-off deployment, keep proposing upgrades through `timelock(...).proposeUpgrade`.
+
+### Patch Changes
+
+- 6285a54: Writes from `GianoPaymasterClient` and `GianoTimelockClient` are sent with a fifth more gas than the node estimates. A bare estimate can be exactly the gas a call is charged after refunds, and a call that clears storage (cancelling a timelock operation, revoking a role) then runs out of gas and reverts.
+- 101aabe: Log reads narrow their window when wallet-api's platform read relay refuses the span ("… spanning at most 10000 blocks"), as they already do for the hosted RPCs' refusals, instead of failing on every read.
+- Updated dependencies [fd2ef19]
+- Updated dependencies [7938cef]
+- Updated dependencies [43a6ddc]
+- Updated dependencies [af3fd88]
+- Updated dependencies [8f28872]
+- Updated dependencies [a8ceffb]
+- Updated dependencies [68eadca]
+- Updated dependencies [75a6c17]
+- Updated dependencies [08bd62d]
+  - @appliedblockchain/giano-contracts@7.0.0
+
 ## 6.0.1
 
 ### Patch Changes
