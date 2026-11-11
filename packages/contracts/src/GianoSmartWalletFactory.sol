@@ -91,4 +91,11 @@ contract GianoSmartWalletFactory {
     function _getSalt(bytes[] calldata owners, uint256 nonce) internal pure returns (bytes32) {
         return keccak256(abi.encode(owners, nonce));
     }
+
+    // SCRATCH (G25 task 1.12), never merged: an unprotected ether send, to prove the Solidity
+    // analysis gate fails on a new High finding.
+    function sweep(address payable to) external {
+        (bool ok,) = to.call{value: address(this).balance}("");
+        require(ok);
+    }
 }
