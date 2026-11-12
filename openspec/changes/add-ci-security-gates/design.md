@@ -206,9 +206,10 @@ Aderyn.
   that. It needs a `.github/CODEOWNERS` file, which the repository does not have yet.
 - The default rules do not detect a provider key in an RPC URL, the one kind of secret this repository has leaked
   (#244). `.gitleaks.toml` adds four rules for them: `giano-infura-key`, `giano-alchemy-key`, `giano-quicknode-key`
-  and `giano-ankr-key`. Each rule captures only the key, so `--redact` hides it. A custom rule with the ID of a
-  default rule replaces that rule, so the register check accepts a `[[rules]]` table only when its `id` starts with
-  `giano-`, and only with `id`, `description`, `regex` and `keywords`. A custom rule can therefore only add detection.
+  and `giano-ankr-key`. Each rule matches the HTTPS and WebSocket URLs of its provider, and captures only the key,
+  so `--redact` hides it. A custom rule with the ID of a default rule replaces that rule, so the register check
+  accepts a `[[rules]]` table only when its `id` starts with `giano-`, and only with `id`, `description`, `regex` and
+  `keywords`. A custom rule can therefore only add detection.
 - The commit range uses `--diff-merges=remerge`. By default `git log` shows no diff for a merge commit, so a secret
   added while resolving a merge would not be scanned. It also uses `--text --no-textconv`, so a `.gitattributes` line
   that marks a file as binary cannot hide its content. gitleaks logs a git or diff parse error and goes on, so a range

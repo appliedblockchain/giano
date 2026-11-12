@@ -39,6 +39,7 @@
 - [x] 2.12 Clear `https-proxy` and `proxy` on the `pnpm audit` command line (D5). Verify locally that a proxy in `.npmrc` or `pnpm-workspace.yaml` makes the audit fail without the flags and has no effect with them.
 - [x] 2.13 Make the secret scan fail on an error line in the gitleaks log, and when gitleaks reports fewer scanned commits than the range has commits that add a line (D8). Verify the count on this branch and on a range of `main` with a clean merge.
 - [ ] 2.14 Give the `services/custom-example` Dependabot entry the `github-packages` registry, and exclude `@appliedblockchain/*` from its cooldown (D6). A repository admin creates the Dependabot secret `GH_PACKAGES_READ_TOKEN` (classic token, `read:packages` only). Verify Dependabot's first update job for that workspace succeeds.
+- [x] 2.15 Let `giano-ankr-key` match the Ankr WebSocket URL, which has `/ws/` before the key (D8). Verify with unit tests that `wss://rpc.ankr.com/eth/ws/<key>` matches and captures only the key, and that the URL without a key does not match.
 
 ## 3. Images (PR 3)
 

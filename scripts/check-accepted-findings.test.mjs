@@ -646,6 +646,7 @@ describe("check-accepted-findings: suppressions", () => {
 				hex(40),
 			],
 			[`'https://rpc.ankr.com/base/${hex(64)}'`, "giano-ankr-key", hex(64)],
+			[`wss://rpc.ankr.com/eth/ws/${hex(64)}`, "giano-ankr-key", hex(64)],
 		]) {
 			const found = [...regexes].filter(([, r]) => r.test(text));
 			assert.deepEqual(
@@ -662,6 +663,7 @@ describe("check-accepted-findings: suppressions", () => {
 			"https://eth-mainnet.g.alchemy.com/nft/v3/docs-demo/getNFTsForOwner",
 			`https://eth-mainnet.g.alchemy.com/v2/\${ALCHEMY_KEY}`,
 			"https://rpc.ankr.com/base",
+			"wss://rpc.ankr.com/eth/ws",
 		])
 			for (const [id, r] of regexes)
 				assert.equal(r.test(text), false, `${id}: ${text}`);

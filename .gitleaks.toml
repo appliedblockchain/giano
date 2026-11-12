@@ -63,5 +63,5 @@ keywords = ["quiknode.pro"]
 [[rules]]
 id = "giano-ankr-key"
 description = "Ankr API key in an RPC URL"
-regex = '(?i)\brpc\.ankr\.com/[a-z0-9_]+/([0-9a-f]{64})\b'
+regex = '(?i)\brpc\.ankr\.com/[a-z0-9_]+/(?:ws/)?([0-9a-f]{64})\b'
 keywords = ["rpc.ankr.com"]
