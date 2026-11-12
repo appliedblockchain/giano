@@ -68,6 +68,31 @@ describe("caller-supplied mappings", () => {
 		expect(r.warnings).toEqual([]);
 	});
 
+	it.each([-2, 1.5, 256, 1e9])(
+		"treats a token with %s decimals as unresolved",
+		async (decimals) => {
+			const tx = {
+				chainId: CHAIN,
+				to: USDC,
+				data: transferData(RECIPIENT, 10_500_000n),
+			};
+			const invalid = described(
+				await describeTransaction(tx, {
+					mappings: [usdcMapping()],
+					resolveToken: async () => ({ symbol: "USDC", decimals }),
+				}),
+			);
+			const unresolved = described(
+				await describeTransaction(tx, {
+					mappings: [usdcMapping()],
+					resolveToken: async () => null,
+				}),
+			);
+			expect(invalid).toEqual(unresolved);
+			expect(invalid.warnings.map((w) => w.code)).toContain("token-unresolved");
+		},
+	);
+
 	it("covers every call of the same kind with one mapping", async () => {
 		const opts = { mappings: [usdcMapping()], resolveToken: resolveUsdc };
 		const a = described(

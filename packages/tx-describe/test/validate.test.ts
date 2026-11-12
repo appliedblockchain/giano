@@ -165,12 +165,17 @@ describe("helpers", () => {
 		expect(formatUnits(12345n, 0)).toBe("12345");
 		expect(formatUnits(1_000_000n, 6)).toBe("1");
 		expect(formatUnits(-1_200_000n, 6)).toBe("-1.2");
-		// A long run of zeros: the trim must stay linear (CodeQL js/polynomial-redos).
-		const start = performance.now();
-		expect(formatUnits(1n, 100_000)).toBe(`0.${"0".repeat(99_999)}1`);
-		// The old regex took about 14 s; the bound leaves room for a busy CI runner.
-		expect(performance.now() - start).toBeLessThan(1000);
+		expect(formatUnits(1n, 255)).toBe(`0.${"0".repeat(254)}1`);
 	});
+
+	it.each([-2, 1.5, 256, 1e9, Number.NaN])(
+		"rejects %s decimals",
+		(decimals) => {
+			expect(() => formatUnits(100n, decimals)).toThrow(
+				"decimals must be an integer from 0 to 255",
+			);
+		},
+	);
 
 	it("reads deployments and coverage", () => {
 		expect(deploymentsOf(usdcMapping())).toEqual([
