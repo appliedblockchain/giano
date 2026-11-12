@@ -394,19 +394,22 @@ jobs:
       # pnpm audit exits non-zero whenever it lists an advisory, so its exit code is ignored and the
       # register check decides. The check fails on a missing, empty or error report, so an audit
       # that could not run fails the job. No --audit-level: it drops advisories from the list but
-      # not from the counts, and the check rejects such a report. --registry on the command line
-      # overrides every config file, so no file can send the audit to another server.
+      # not from the counts, and the check rejects such a report. --registry, --config.https-proxy=
+      # and --config.proxy= on the command line override every config file. So no .npmrc or
+      # pnpm-workspace.yaml can send the audit to another server or through a proxy that answers
+      # for the registry. Without a proxy, TLS goes straight to registry.npmjs.org, and a CA or
+      # strict-ssl setting can only make the request fail.
       # --ignore-pnpmfile: a .pnpmfile.cjs runs code inside pnpm, and its updateConfig hook can hide
       # advisories or change the output.
       - name: Audit the root workspace
         run: |
           mkdir -p "$RUNNER_TEMP/reports"
-          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-root.json" || true
+          pnpm audit --json --registry https://registry.npmjs.org/ --config.https-proxy= --config.proxy= --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-root.json" || true
       - name: Audit services/custom-example
         if: ${{ !cancelled() }}
         working-directory: services/custom-example
         run: |
-          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-custom-example.json" || true
+          pnpm audit --json --registry https://registry.npmjs.org/ --config.https-proxy= --config.proxy= --ignore-pnpmfile > "$RUNNER_TEMP/reports/audit-custom-example.json" || true
       - name: Root workspace advisories are fixed or accepted
         if: ${{ !cancelled() }}
         run: node scripts/check-accepted-findings.mjs --tool pnpm-audit --workspace . --report "$RUNNER_TEMP/reports/audit-root.json"
@@ -460,10 +463,12 @@ jobs:
         # `file -diff` or `file binary` would otherwise hide the file's content from the diff.
         # --redact keeps the secret out of the log and the report. --exit-code 0: the register check
         # decides.
-        # gitleaks ignores a git error: a range or option git rejects scans 0 commits and passes. So
-        # git rev-list checks the range, and git log runs with the same options gitleaks gets. If the
-        # range adds any line, gitleaks must report at least one scanned commit. gitleaks counts
-        # only commits with a patch, so empty commits and clean merges are not compared.
+        # gitleaks logs a git or diff parse error and goes on: a range or option git rejects scans 0
+        # commits and passes, and a commit it cannot parse is skipped. So git rev-list checks the
+        # range, the step fails on any error line in the gitleaks log, and git log runs with the
+        # same options gitleaks gets. gitleaks counts every commit with a text hunk in a file that
+        # is not deleted, so it must report at least as many scanned commits as the range has
+        # commits that add a line. Empty commits and clean merges add no line.
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -475,7 +480,8 @@ jobs:
           # gitleaks splits --log-opts on single spaces, as the shell splits this unquoted variable.
           LOG_OPTS="--text --no-textconv --diff-merges=remerge $BASE_SHA..$HEAD_SHA"
           # shellcheck disable=SC2086
-          added=$(git log $LOG_OPTS --format= --numstat | awk '$1 ~ /^[0-9]+$/ { n += $1 } END { print n + 0 }')
+          adding=$(git log $LOG_OPTS --format='commit %H' --numstat |
+            awk '$1 == "commit" { c = $2; next } $1 ~ /^[0-9]+$/ && $1 > 0 && !(c in seen) { seen[c] = 1; n++ } END { print n + 0 }')
           if ! gitleaks git . --config .gitleaks.toml --log-opts="$LOG_OPTS" \
               --redact --ignore-gitleaks-allow --no-banner --no-color \
               --report-format json --report-path "$RUNNER_TEMP/reports/gitleaks.json" \
@@ -485,8 +491,12 @@ jobs:
           fi
           cat "$RUNNER_TEMP/gitleaks.log"
           scanned=$(grep -oE '[0-9]+ commits scanned' "$RUNNER_TEMP/gitleaks.log" | cut -d' ' -f1 || true)
-          if [ -z "$scanned" ] || { [ "$added" -gt 0 ] && [ "$scanned" -eq 0 ]; }; then
-            echo "::error::gitleaks scanned ${scanned:-no} commits, but the pull request adds $added lines"
+          if grep -qE '^[^ ]+ (ERR|FTL) ' "$RUNNER_TEMP/gitleaks.log"; then
+            echo "::error::gitleaks logged an error, so it may not have scanned every commit"
+            exit 1
+          fi
+          if [ -z "$scanned" ] || [ "$scanned" -lt "$adding" ]; then
+            echo "::error::gitleaks scanned ${scanned:-no} commits, but $adding commits of the pull request add lines"
             exit 1
           fi
       - name: Secrets are fixed or accepted

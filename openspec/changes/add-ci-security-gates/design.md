@@ -144,7 +144,9 @@ Job `solidity-analysis`, named "Solidity static analysis (Slither, Aderyn)". It 
 Job `dependency-audit`, named "Dependency audit (pnpm audit)". It needs only pnpm, not an install. For each workspace:
 `pnpm audit --json > audit-<workspace>.json`, then the script in report mode. `pnpm audit` exits non-zero when it
 finds any advisory, so the job ignores that exit code and relies on the script. The script fails when the JSON is
-missing, empty or carries an error object, so a registry outage fails the job instead of passing it.
+missing, empty or carries an error object, so a registry outage fails the job instead of passing it. The command
+line sets `--registry` and clears `https-proxy` and `proxy`, which override every config file. So a PR cannot send
+the audit to another server, or through a proxy that answers for the registry.
 
 ### D6. Dependabot configuration
 
@@ -208,10 +210,12 @@ Aderyn.
   `giano-`, and only with `id`, `description`, `regex` and `keywords`. A custom rule can therefore only add detection.
 - The commit range uses `--diff-merges=remerge`. By default `git log` shows no diff for a merge commit, so a secret
   added while resolving a merge would not be scanned. It also uses `--text --no-textconv`, so a `.gitattributes` line
-  that marks a file as binary cannot hide its content. gitleaks ignores a git error, so a range or option git rejects
-  scans 0 commits and passes. The job therefore checks the range with `git rev-list`, runs `git log` with the same
-  options, and fails if the range adds any line but gitleaks reports no scanned commit. gitleaks counts only commits
-  with a patch, so the job does not compare exact counts: empty commits and clean merges would not match.
+  that marks a file as binary cannot hide its content. gitleaks logs a git or diff parse error and goes on, so a range
+  or option git rejects scans 0 commits and passes, and a commit it cannot parse is skipped. The job therefore checks
+  the range with `git rev-list` and fails on any error line in the gitleaks log. It also runs `git log` with the same
+  options and counts the commits that add a line. gitleaks counts every commit with a text hunk in a file that is not
+  deleted, so the job fails if gitleaks reports fewer scanned commits than that. Empty commits and clean merges add no
+  line, so they are not counted.
 
 Scanning the full history is out of scope. Credentials already in history are G30.
 

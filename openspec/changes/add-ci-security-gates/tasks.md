@@ -35,6 +35,8 @@
 - [ ] 2.8 After the first CodeQL run on `main`, triage the baseline alerts: fix each one, or dismiss it in GitHub and add a register entry with tool `codeql`. Verify no open high or critical alert remains without an entry.
 - [x] 2.9 Add gitleaks rules for RPC provider keys (Infura, Alchemy, QuickNode, Ankr) to `.gitleaks.toml`, and let the register check accept a `[[rules]]` table only with a `giano-` ID and only `id`, `description`, `regex` and `keywords` (D8). Add allowlist AF-010 for the public forge-std Infura key. Verify with unit tests that each rule matches a fake key and captures only the key, and that a rule with a default rule's ID fails.
 - [x] 2.10 Pin the actions of `dependency-audit`, `secret-scan` and `codeql.yml` to commit SHAs, as #246 does (D12). Verify `node scripts/check-ci-gate.mjs` passes.
+- [x] 2.12 Clear `https-proxy` and `proxy` on the `pnpm audit` command line (D5). Verify locally that a proxy in `.npmrc` or `pnpm-workspace.yaml` makes the audit fail without the flags and has no effect with them.
+- [x] 2.13 Make the secret scan fail on an error line in the gitleaks log, and when gitleaks reports fewer scanned commits than the range has commits that add a line (D8). Verify the count on this branch and on a range of `main` with a clean merge.
 - [ ] 2.14 Give the `services/custom-example` Dependabot entry the `github-packages` registry, and exclude `@appliedblockchain/*` from its cooldown (D6). A repository admin creates the Dependabot secret `GH_PACKAGES_READ_TOKEN` (classic token, `read:packages` only). Verify Dependabot's first update job for that workspace succeeds.
 
 ## 3. Images (PR 3)
