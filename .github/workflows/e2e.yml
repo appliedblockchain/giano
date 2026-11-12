@@ -6,9 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Nothing in this workflow writes with the token. Each job sets its own permissions.
-permissions:
-  contents: read
+# Nothing in this workflow writes with the token. No permissions by default; each job grants its own.
+permissions: {}
 
 concurrency:
   group: e2e-${{ github.ref }}
