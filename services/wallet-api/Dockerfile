@@ -28,7 +28,8 @@ ENV GIANO_RELEASE_PACKAGE_JSON=/release/package.json
 # TypeScript is a type-only optional peer of viem, ox and abitype. pnpm links it to them because
 # the workspace has it as a devDependency, so it would reach the runtime. Nothing loads it at
 # runtime, and its native compiler (a Go binary) carries Go stdlib advisories that fail the image
-# scan (G25), so it is removed once the build no longer needs it.
+# scan (G25), so it is removed once the build no longer needs it. The links to it then point to
+# nothing, so code that imports typescript at runtime fails with ENOENT.
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-api build \

@@ -71,8 +71,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/results"
-          pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/results/audit-root.json" || true
-          (cd services/custom-example && pnpm audit --json --registry https://registry.npmjs.org/ --ignore-pnpmfile > "$RUNNER_TEMP/results/audit-custom-example.json") || true
+          pnpm audit --json --registry https://registry.npmjs.org/ --config.https-proxy= --config.proxy= --ignore-pnpmfile > "$RUNNER_TEMP/results/audit-root.json" || true
+          (cd services/custom-example && pnpm audit --json --registry https://registry.npmjs.org/ --config.https-proxy= --config.proxy= --ignore-pnpmfile > "$RUNNER_TEMP/results/audit-custom-example.json") || true
           status=0
           for ws in . services/custom-example; do
             report=audit-root.json
@@ -230,8 +230,9 @@ jobs:
   report:
     name: Report in the tracking issue
     needs: [register, dependency-audit, setup, images, codeql-dismissed]
-    # Runs after a failure too: a failure is what the issue reports.
-    if: always()
+    # Runs after a failure too: a failure is what the issue reports. Not on a cancelled run, which
+    # would replace the last report with "cancelled" rows.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     permissions:
       # Open, edit and close the tracking issue, and create its label.
