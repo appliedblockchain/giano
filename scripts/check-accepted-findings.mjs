@@ -504,11 +504,17 @@ const ALLOWLIST_NAME = /^allowlists?$/;
 // stopwords, regexTarget, condition) could widen it with no change to the register entry that
 // assessed it.
 const ALLOWLIST_KEYS = ["description", "regexes"];
+// A custom rule with the ID of a default rule replaces that rule. The reserved prefix keeps every
+// custom rule apart from the default rules, so a custom rule can only add detection.
+const RULE_ID = /^giano-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Every other key (path, entropy, secretGroup, allowlists, …) could narrow or reshape the rule.
+const RULE_KEYS = ["id", "description", "regex", "keywords"];
 
 /**
  * .gitleaks.toml keeps every default rule and hides findings only through register entries:
  * - it extends the default rules (`[extend]` with `useDefault = true`), with no other base config;
- * - it has no custom rules, which could replace or weaken a default rule;
+ * - a custom rule (`[[rules]]`) has an ID that starts with `giano-`, so it cannot replace a default
+ *   rule, and holds only an id, a description, a regex and keywords;
  * - every allowlist is a table whose description names a gitleaks register entry for this file
  *   (`allowlistIds`), and that holds only a description and regexes;
  * - no rule is disabled.
@@ -531,11 +537,13 @@ export function checkGitleaksConfig(
 			file,
 			line,
 			rule: "config-suppression",
-			message: `${what} is not allowed. This file may contain only a top-level title, [extend] with useDefault = true, and allowlist tables, so every default rule stays on`,
+			message: `${what} is not allowed. This file may contain only a top-level title, [extend] with useDefault = true, allowlist tables and [[rules]] whose id starts with giano-, so every default rule stays on`,
 		});
 	const blocks = [];
+	const customRules = [];
 	let current = null;
-	// "top" before any table, then "extend", "allowlist" or "other".
+	let rule = null;
+	// "top" before any table, then "extend", "allowlist", "rule" or "other".
 	let section = "top";
 	let usesDefault = false;
 	for (const l of tomlLines(text)) {
@@ -546,9 +554,14 @@ export function checkGitleaksConfig(
 		if (l.kind === "header") {
 			const name = l.path.join(".");
 			current = null;
+			rule = null;
 			section = "other";
 			if (name === "extend") section = "extend";
-			else if (l.path.length === 1 && ALLOWLIST_NAME.test(name)) {
+			else if (name === "rules") {
+				section = "rule";
+				rule = { line: l.line, id: null, regex: false };
+				customRules.push(rule);
+			} else if (l.path.length === 1 && ALLOWLIST_NAME.test(name)) {
 				section = "allowlist";
 				current = { header: name, line: l.line, description: null };
 				blocks.push(current);
@@ -585,6 +598,19 @@ export function checkGitleaksConfig(
 			else notAllowed(l.line, `'${key} = ${l.value}' in [extend]`);
 			continue;
 		}
+		if (section === "rule") {
+			if (!RULE_KEYS.includes(key))
+				errs.push({
+					file,
+					line: l.line,
+					rule: "config-suppression",
+					message: `'${key}' in a custom rule is not allowed. A custom rule may hold only ${RULE_KEYS.join(", ")}, so it can only add detection`,
+				});
+			else if (key === "id")
+				rule.id = l.value.match(/^(["'])(.*)\1$/)?.[2] ?? l.value;
+			else if (key === "regex") rule.regex = true;
+			continue;
+		}
 		if (section === "allowlist" && !ALLOWLIST_KEYS.includes(key)) {
 			errs.push({
 				file,
@@ -606,6 +632,31 @@ export function checkGitleaksConfig(
 			message:
 				"has no [extend] table with useDefault = true. Without it, gitleaks does not run its default rules",
 		});
+	const ruleIds = new Map();
+	for (const r of customRules) {
+		if (!RULE_ID.test(r.id ?? ""))
+			errs.push({
+				file,
+				line: r.line,
+				rule: "config-suppression",
+				message: `[[rules]] block needs an id that starts with giano- (found ${r.id === null ? "no id" : `'${r.id}'`}). A custom rule with the id of a default rule replaces that rule`,
+			});
+		else if (ruleIds.has(r.id))
+			errs.push({
+				file,
+				line: r.line,
+				rule: "config-suppression",
+				message: `[[rules]] block reuses id '${r.id}' from the rule on line ${ruleIds.get(r.id)}. The later rule replaces the earlier one`,
+			});
+		else ruleIds.set(r.id, r.line);
+		if (!r.regex)
+			errs.push({
+				file,
+				line: r.line,
+				rule: "unsupported-config",
+				message: "[[rules]] block has no regex, so it detects nothing",
+			});
+	}
 	// Each allowlist starts its description with the one entry that accepts it, and each entry
 	// accepts one allowlist, so one assessment cannot cover other allowlists.
 	const used = new Map();

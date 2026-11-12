@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -507,7 +508,7 @@ describe("check-accepted-findings: suppressions", () => {
 				["config-suppression"],
 			],
 			[
-				`${DEFAULT_RULES}[[rules]]\nid = "custom"\n[[rules.allowlists]]\npaths = ["x"]\n`,
+				`${DEFAULT_RULES}[[rules]]\nid = "custom"\nregex = 'x'\n[[rules.allowlists]]\npaths = ["x"]\n`,
 				["config-suppression", "unsupported-config"],
 			],
 			[`useDefault = true\n${DEFAULT_RULES}`, ["config-suppression"]],
@@ -517,6 +518,132 @@ describe("check-accepted-findings: suppressions", () => {
 				expected.sort(),
 				toml,
 			);
+	});
+
+	it("allows a custom gitleaks rule only with a giano- id, so it cannot replace a default rule", () => {
+		const ids = new Set();
+		const rule = (id, extra = "") =>
+			`[[rules]]\n${id === null ? "" : `id = "${id}"\n`}description = "Infura key"\nregex = '(?i)infura\\.io/v3/([0-9a-f]{32})'\nkeywords = ["infura.io"]\n${extra}`;
+		assert.deepEqual(
+			checkGitleaksConfig(
+				`${DEFAULT_RULES}${rule("giano-infura-key")}${rule("giano-alchemy-key")}`,
+				ids,
+			),
+			[],
+		);
+		for (const id of [
+			"generic-api-key",
+			"giano-",
+			"giano",
+			"Giano-x",
+			"x-giano-key",
+			null,
+		]) {
+			const errs = checkGitleaksConfig(`${DEFAULT_RULES}${rule(id)}`, ids);
+			assert.deepEqual(rules(errs), ["config-suppression"], String(id));
+			assert.equal(errs[0].line, 4, String(id));
+			assert.match(errs[0].message, /starts with giano-/, String(id));
+		}
+		const twice = checkGitleaksConfig(
+			`${DEFAULT_RULES}${rule("giano-x")}${rule("giano-x")}`,
+			ids,
+		);
+		assert.deepEqual(rules(twice), ["config-suppression"]);
+		assert.match(
+			twice[0].message,
+			/reuses id 'giano-x' from the rule on line 4/,
+		);
+		assert.deepEqual(
+			rules(
+				checkGitleaksConfig(
+					`${DEFAULT_RULES}[[rules]]\nid = "giano-x"\ndescription = "no regex"\n`,
+					ids,
+				),
+			),
+			["unsupported-config"],
+		);
+	});
+
+	it("lets a custom gitleaks rule hold only an id, a description, a regex and keywords", () => {
+		const head = `${DEFAULT_RULES}[[rules]]\nid = "giano-x"\nregex = 'x'\n`;
+		for (const extra of [
+			"path = '''.*\\.md'''",
+			"entropy = 4.5",
+			"secretGroup = 2",
+			'tags = ["x"]',
+			"regexTarget = 'line'",
+			'keywords.x = "y"',
+		]) {
+			const errs = checkGitleaksConfig(`${head}${extra}\n`, new Set());
+			assert.deepEqual(rules(errs), ["config-suppression"], extra);
+			assert.equal(errs[0].line, 7, extra);
+		}
+	});
+
+	it("detects RPC provider keys with the rules in .gitleaks.toml, and captures only the key", () => {
+		const toml = readFileSync(
+			new URL("../.gitleaks.toml", import.meta.url),
+			"utf8",
+		);
+		// RE2 writes case-insensitivity as a (?i) prefix, JavaScript as the i flag.
+		const regexes = new Map(
+			[
+				...toml.matchAll(
+					/^id = "(giano-[a-z-]+)"\nd[^\n]*\nregex = '\(\?i\)([^']+)'$/gm,
+				),
+			].map((m) => [m[1], new RegExp(m[2], "i")]),
+		);
+		assert.deepEqual(
+			[...regexes.keys()],
+			[
+				"giano-infura-key",
+				"giano-alchemy-key",
+				"giano-quicknode-key",
+				"giano-ankr-key",
+			],
+		);
+		const hex = (n) => "0123456789abcdef".repeat(4).slice(0, n);
+		const alchemy = "AbCdEfGhIjKlMnOpQrStUvWxYz012_-9";
+		for (const [text, id, key] of [
+			[
+				`RPC=https://base-sepolia.infura.io/v3/${hex(32)}`,
+				"giano-infura-key",
+				hex(32),
+			],
+			[
+				`"wss://mainnet.infura.io/ws/v3/${hex(32)}"`,
+				"giano-infura-key",
+				hex(32),
+			],
+			[
+				`url: "https://eth-mainnet.g.alchemy.com/v2/${alchemy}"`,
+				"giano-alchemy-key",
+				alchemy,
+			],
+			[
+				`https://x.base-mainnet.quiknode.pro/${hex(40)}/`,
+				"giano-quicknode-key",
+				hex(40),
+			],
+			[`'https://rpc.ankr.com/base/${hex(64)}'`, "giano-ankr-key", hex(64)],
+		]) {
+			const found = [...regexes].filter(([, r]) => r.test(text));
+			assert.deepEqual(
+				found.map(([i]) => i),
+				[id],
+				text,
+			);
+			assert.equal(found[0][1].exec(text)[1], key, text);
+		}
+		for (const text of [
+			"BASE_RPC_URL=https://base-mainnet.infura.io/v3/<infura-token>",
+			"RPC_ORIGIN=https://base-sepolia.g.alchemy.com",
+			"https://eth-mainnet.g.alchemy.com/v2/docs-demo",
+			`https://eth-mainnet.g.alchemy.com/v2/\${ALCHEMY_KEY}`,
+			"https://rpc.ankr.com/base",
+		])
+			for (const [id, r] of regexes)
+				assert.equal(r.test(text), false, `${id}: ${text}`);
 	});
 
 	it("rejects every other TOML form in .gitleaks.toml that could hide a finding", () => {

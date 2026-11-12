@@ -33,6 +33,7 @@
 - [ ] 2.6 Verify the secret gate fails: on a scratch branch that is never merged, commit a fake key that matches a gitleaks rule and confirm the job fails with the secret redacted. Record the run link in the PR description.
 - [ ] 2.7 Add `.github/workflows/codeql.yml` as in D7. Verify both matrix legs succeed on the PR and the "CodeQL" check appears.
 - [ ] 2.8 After the first CodeQL run on `main`, triage the baseline alerts: fix each one, or dismiss it in GitHub and add a register entry with tool `codeql`. Verify no open high or critical alert remains without an entry.
+- [x] 2.9 Add gitleaks rules for RPC provider keys (Infura, Alchemy, QuickNode, Ankr) to `.gitleaks.toml`, and let the register check accept a `[[rules]]` table only with a `giano-` ID and only `id`, `description`, `regex` and `keywords` (D8). Add allowlist AF-010 for the public forge-std Infura key. Verify with unit tests that each rule matches a fake key and captures only the key, and that a rule with a default rule's ID fails.
 - [x] 2.10 Pin the actions of `dependency-audit`, `secret-scan` and `codeql.yml` to commit SHAs, as #246 does (D12). Verify `node scripts/check-ci-gate.mjs` passes.
 
 ## 3. Images (PR 3)

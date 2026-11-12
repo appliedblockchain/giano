@@ -102,6 +102,18 @@
 			"owner": "Rui Sereno",
 			"reason": "False positive. gitleaks rule generic-api-key flags a value assigned to a key whose name contains token or key. These values are Ethereum addresses (0x and exactly 40 hex characters), which are public by design. A private key has 64 hex characters, so it does not match and still fails the scan. A real secret with the exact shape of an address is unlikely.",
 			"followUp": "Renew while configs hold contract addresses under such key names."
+		},
+		{
+			"id": "AF-010",
+			"tool": "gitleaks",
+			"match": { "allowlist": ".gitleaks.toml" },
+			"severity": "informational",
+			"location": ".gitleaks.toml (allowlist AF-010). Today: the Sepolia RPC URL in forge-std's src/StdChains.sol, copied into packages/contracts/releases/v1, v2 and v3/standard-input.json.",
+			"accepted": "2026-11-12",
+			"expires": "2027-05-11",
+			"owner": "Rui Sereno",
+			"reason": "Public by design. forge-std ships this Infura project ID in its default chain list, so every Foundry project that builds with forge-std holds it. It is not our key, and it gives access to nothing of ours. The release standard-input.json files embed the forge-std source, so each new release adds the key again. The regex matches only this exact key, so any other Infura key still fails giano-infura-key.",
+			"followUp": "Renew while forge-std ships this key. Remove the entry when a forge-std update drops it and no release file holds it."
 		}
 	]
 }

@@ -2,8 +2,9 @@
 # the commits of each pull request (ci.yml, job "Secret scan (gitleaks)").
 #
 # Every default rule stays on. scripts/check-accepted-findings.mjs rejects anything here except
-# the title, [extend] with useDefault = true, and allowlist tables. Each allowlist's description
-# starts with the ID of the gitleaks entry in security/accepted-findings.json that accepts it.
+# the title, [extend] with useDefault = true, allowlist tables, and [[rules]] whose id starts with
+# giano-. Each allowlist's description starts with the ID of the gitleaks entry in
+# security/accepted-findings.json that accepts it.
 title = "Giano gitleaks configuration"
 
 [extend]
@@ -31,3 +32,36 @@ description = "AF-009: Ethereum addresses, which are public"
 regexes = [
   '(?i)^0x[0-9a-f]{40}$',
 ]
+
+[[allowlists]]
+description = "AF-010: the public Infura key that forge-std ships in StdChains.sol"
+# Only this exact key. Any other Infura key still fails giano-infura-key.
+regexes = [
+  '(?i)^b9794ad1ddf84dfb8c34d6bb5dca2001$',
+]
+
+# RPC provider keys. The default rules do not detect a key in an RPC URL, and this repository has
+# leaked one before (#244). Each rule captures only the key, so --redact hides it in the report.
+[[rules]]
+id = "giano-infura-key"
+description = "Infura project ID in an RPC URL"
+regex = '(?i)\binfura\.io/(?:ws/)?v3/([0-9a-f]{32})\b'
+keywords = ["infura.io"]
+
+[[rules]]
+id = "giano-alchemy-key"
+description = "Alchemy API key in an RPC URL"
+regex = '(?i)\balchemy(?:api)?\.(?:com|io)/v2/([a-z0-9_-]{32})(?:[^a-z0-9_-]|$)'
+keywords = ["alchemy"]
+
+[[rules]]
+id = "giano-quicknode-key"
+description = "QuickNode token in an RPC URL"
+regex = '(?i)\.quiknode\.pro/([a-z0-9]{32,64})(?:[^a-z0-9]|$)'
+keywords = ["quiknode.pro"]
+
+[[rules]]
+id = "giano-ankr-key"
+description = "Ankr API key in an RPC URL"
+regex = '(?i)\brpc\.ankr\.com/[a-z0-9_]+/([0-9a-f]{64})\b'
+keywords = ["rpc.ankr.com"]

@@ -88,8 +88,12 @@ Contract sources and Solidity tool configs:
 
 gitleaks:
 - A `.gitleaks.toml` that does not keep every default rule. It must have `[extend]` with `useDefault = true`, and may
-  contain only that, allowlist tables and a top-level `title`. Another base config (`path` or `url`) and custom
-  `[[rules]]` are rejected, because they can replace or weaken a default rule. `disabledRules` is rejected anywhere.
+  contain only that, allowlist tables, custom rules and a top-level `title`. Another base config (`path` or `url`) is
+  rejected. `disabledRules` is rejected anywhere.
+- A `[[rules]]` table whose `id` does not start with `giano-`, appears twice or is missing, or that has no `regex`. A
+  custom rule with the ID of a default rule replaces that rule, so the prefix keeps custom rules apart. A custom rule
+  may hold only `id`, `description`, `regex` and `keywords`, so it can only add detection. No register entry is needed
+  for a rule, because a rule hides nothing.
 - An allowlist whose `description` does not start with the ID of a valid, unexpired `gitleaks` entry with
   `{ "allowlist": ".gitleaks.toml" }`, names another ID too, or uses an entry that already accepts another allowlist.
 - An allowlist key other than `description` and `regexes`. Keys such as `paths`, `commits`, `stopwords`,

@@ -188,12 +188,18 @@ Aderyn.
   mode.
 - On `workflow_call` (the release run): every commit on `main` arrived through a PR that ran the scan, so the job
   checks the register only and passes. It still reports the same check name.
-- `.gitleaks.toml` extends the default rules and adds no rule of its own. One allowlist covers the public Anvil
+- `.gitleaks.toml` extends the default rules. One allowlist covers the public Anvil
   development keys that the devnet and tests use (AF-008). A second covers Ethereum addresses (AF-009), which
-  `generic-api-key` flags under key names such as `defaultToken`. Each allowlist description starts with its register
-  entry ID. An
+  `generic-api-key` flags under key names such as `defaultToken`. A third covers the one public Infura key that
+  forge-std ships in `StdChains.sol` and that the release `standard-input.json` files embed (AF-010). Each allowlist
+  description starts with its register entry ID. An
   allowlist holds only `description` and `regexes`, so it matches the secret only and cannot grow without a change to
   its entry.
+- The default rules do not detect a provider key in an RPC URL, the one kind of secret this repository has leaked
+  (#244). `.gitleaks.toml` adds four rules for them: `giano-infura-key`, `giano-alchemy-key`, `giano-quicknode-key`
+  and `giano-ankr-key`. Each rule captures only the key, so `--redact` hides it. A custom rule with the ID of a
+  default rule replaces that rule, so the register check accepts a `[[rules]]` table only when its `id` starts with
+  `giano-`, and only with `id`, `description`, `regex` and `keywords`. A custom rule can therefore only add detection.
 - The commit range uses `--diff-merges=remerge`. By default `git log` shows no diff for a merge commit, so a secret
   added while resolving a merge would not be scanned. It also uses `--text --no-textconv`, so a `.gitattributes` line
   that marks a file as binary cannot hide its content. gitleaks ignores a git error, so a range or option git rejects
