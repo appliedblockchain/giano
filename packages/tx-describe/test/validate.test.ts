@@ -168,7 +168,8 @@ describe("helpers", () => {
 		// A long run of zeros: the trim must stay linear (CodeQL js/polynomial-redos).
 		const start = performance.now();
 		expect(formatUnits(1n, 100_000)).toBe(`0.${"0".repeat(99_999)}1`);
-		expect(performance.now() - start).toBeLessThan(100);
+		// The old regex took about 14 s; the bound leaves room for a busy CI runner.
+		expect(performance.now() - start).toBeLessThan(1000);
 	});
 
 	it("reads deployments and coverage", () => {

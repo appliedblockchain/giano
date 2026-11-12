@@ -400,6 +400,20 @@ describe("base64url", () => {
 		expect(encoded).not.toMatch(/[+/=]/);
 		expect([...fromBase64Url(encoded)]).toEqual([...bytes]);
 	});
+
+	it.each([0, 1, 2, 3, 4, 5, 32, 65])(
+		"round-trips %i bytes, covering each padding length",
+		(length) => {
+			const bytes = Uint8Array.from({ length }, (_, i) => (i * 37 + 251) % 256);
+			const encoded = toBase64Url(bytes);
+			expect(encoded).toMatch(/^[A-Za-z0-9_-]*$/);
+			expect([...fromBase64Url(encoded)]).toEqual([...bytes]);
+		},
+	);
+
+	it("uses the URL-safe alphabet", () => {
+		expect(toBase64Url(Uint8Array.of(0xfb, 0xff))).toBe("-_8");
+	});
 });
 
 describe("credential serialization (real mock credentials)", () => {

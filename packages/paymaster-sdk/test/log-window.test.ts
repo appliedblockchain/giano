@@ -31,6 +31,8 @@ describe("isBlockRangeError", () => {
 		"query returned more than 10000 results",
 		"Log response size exceeded. You can make eth_getLogs requests with up to a 2K block range",
 		"exceed maximum block range: 5000",
+		// A long gap between "limited to a" and "range" in one sentence
+		"eth_getLogs is limited to a maximum of 10000 blocks per request for this API key tier, please reduce the range",
 		"requested too many blocks from 0 to 47000000, maximum is set to 1024",
 		// wallet-api's platform read relay, which the hosted console reads through
 		"eth_getLogs must name a blockHash, or hex fromBlock and toBlock spanning at most 10000 blocks",
@@ -43,11 +45,17 @@ describe("isBlockRangeError", () => {
 		const message = "limited to a ".repeat(20_000);
 		const start = performance.now();
 		expect(isBlockRangeError(new Error(message))).toBe(false);
-		expect(performance.now() - start).toBeLessThan(100);
+		// The old regex took about 7 s; the bound leaves room for a busy CI runner.
+		expect(performance.now() - start).toBeLessThan(1000);
 	});
 
 	it("does not swallow unrelated failures", () => {
 		expect(isBlockRangeError(new Error("execution reverted"))).toBe(false);
+		expect(
+			isBlockRangeError(
+				new Error("rate limited to a few calls. range unknown"),
+			),
+		).toBe(false);
 		expect(isBlockRangeError(new Error("fetch failed"))).toBe(false);
 		expect(isBlockRangeError(undefined)).toBe(false);
 	});

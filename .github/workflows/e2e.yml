@@ -6,11 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
-# contents: read for the checkout. packages: read for the reference dApp, which installs the published
-# connector from GitHub Packages. Nothing in this workflow writes with the token.
+# Nothing in this workflow writes with the token. Each job sets its own permissions.
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -30,6 +28,11 @@ jobs:
   playwright:
     name: E2E (${{ matrix.leg.name }})
     runs-on: ubuntu-26.04
+    # contents: read for the checkout. packages: read for the reference dApp, which installs the
+    # published connector from GitHub Packages.
+    permissions:
+      contents: read
+      packages: read
     strategy:
       # Let every leg finish: one failing shard should not hide the other's failures.
       fail-fast: false
@@ -224,6 +227,8 @@ jobs:
     needs: playwright
     if: always()
     runs-on: ubuntu-26.04
+    # Reads only the result of the other job.
+    permissions: {}
     steps:
       - name: Every leg passed
         env:

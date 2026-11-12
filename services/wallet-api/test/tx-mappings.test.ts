@@ -129,6 +129,15 @@ describe("admin: write and read back", () => {
 		});
 		expect(put.statusCode, put.body).toBe(200);
 		expect((put.json() as { contract: string }).contract).toBe(lower);
+
+		// Stored under the lowercase address, so a read with it finds the mapping.
+		const get = await ctx.app.inject({
+			method: "GET",
+			url: `/v1/admin/tx-mappings/${lower}`,
+			headers: admin(TENANT_A.adminKey),
+		});
+		expect(get.statusCode, get.body).toBe(200);
+		expect((get.json() as { contract: string }).contract).toBe(lower);
 	});
 
 	it("refuses a descriptor that does not bind the requested contract, storing nothing", async () => {

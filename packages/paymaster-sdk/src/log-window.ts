@@ -56,11 +56,13 @@ export type Windowed<T> = Page & { logs: readonly T[] };
 export function isBlockRangeError(error: unknown): boolean {
 	const message = flatten(error).toLowerCase();
 	if (!message) return false;
+	// "limited to a 10,000 range": "range" later in the same sentence. Found with indexOf and an
+	// anchored regex, so the time stays linear; `/limited to a[^.]*range/` backtracks quadratically
+	// on a long message (CodeQL js/polynomial-redos).
+	const limited = message.indexOf("limited to a");
 	return (
-		// Bounded gap: an unbounded `[^.]*` backtracks quadratically on a long message (CodeQL
-		// js/polynomial-redos). Real messages put a short number between the two, as in "limited to a
-		// 10,000 range".
-		/limited to a[^.]{0,64}range/.test(message) ||
+		(limited >= 0 &&
+			/^[^.]*range/.test(message.slice(limited + "limited to a".length))) ||
 		/block range/.test(message) ||
 		/range is too large|range too large|too wide|too many blocks|exceeds? the maximum|max(imum)? (block )?range/.test(
 			message,
