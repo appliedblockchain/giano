@@ -46,9 +46,11 @@
 - [ ] 3.1 Change the `build` job of `docker.yml` as in D10: build to a tar, Trivy binary per architecture with recorded sha256, scan, report mode, then the existing push step only off PRs. Add Trivy to the pinning table. Verify all 16 build jobs are green on the PR.
 - [ ] 3.2 Add the `diff_ids` comparison step after the push. Verify it with a `workflow_dispatch` run on the branch: the step passes and the logs show the cached build.
 - [ ] 3.3 Triage the first scan results: fix by refreshing a DHI digest where a fix exists, or add a register entry. Verify every image scan passes.
-- [ ] 3.4 Update the ABIP-2 section of `docs/abip-compliance.md` with the scan step. Verify the doc matches the workflow.
-- [ ] 3.5 Add `.github/workflows/security-scan.yml` (Monday schedule and `workflow_dispatch`) as in the weekly-scan requirement: audit both workspaces, scan the `latest` tag of each of the 8 images, list entries expiring within 14 days, list dismissed CodeQL alerts without an entry. Least permissions per job (`packages: read`, `security-events: read`, `issues: write` on the report job only).
+- [x] 3.4 Update the ABIP-2 section of `docs/abip-compliance.md` with the scan step. Verify the doc matches the workflow.
+- [x] 3.5 Add `.github/workflows/security-scan.yml` (Monday schedule and `workflow_dispatch`) as in the weekly-scan requirement: audit both workspaces, scan the `latest` tag of each of the 8 images, list entries expiring within 14 days, list dismissed CodeQL alerts without an entry. Least permissions per job (`packages: read`, `security-events: read`, `issues: write` on the report job only).
 - [ ] 3.6 Make the report job open or update one issue labelled `security-scan`, and close it on a clean run. Verify with two `workflow_dispatch` runs: one with a test entry that expires within 14 days (issue opened), one without (issue closed).
+- [x] 3.7 Pin the actions of the scan steps in `docker.yml` and of `security-scan.yml` to commit SHAs, as #246 does (D12). Verify `node scripts/check-ci-gate.mjs` passes.
+- [x] 3.8 Say in `security/README.md` what to do when a new advisory fails every open PR: fix it in one PR, or add a short-lived entry with an owner and a `followUp`. Verify the README links resolve.
 
 ## 4. Reassess current advisories before the first production release (R4)
 

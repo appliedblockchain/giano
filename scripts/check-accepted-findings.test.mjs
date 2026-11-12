@@ -18,6 +18,7 @@ import {
 	checkRepository,
 	checkSlitherConfig,
 	evaluateReport,
+	expiringEntries,
 	findInSourceSuppressions,
 	main,
 	ReportError,
@@ -909,11 +910,20 @@ const auditEntry = entry({
 	severity: "high",
 	match: { workspace: ".", ghsa: "GHSA-g3hv-75wg-m249" },
 });
-const trivyReport = (vulns) =>
+const trivyReport = (vulns, overrides = {}) =>
 	JSON.stringify({
 		SchemaVersion: 2,
 		ArtifactName: "image.tar",
-		Results: [{ Target: "debian", Vulnerabilities: vulns }],
+		Metadata: { OS: { Family: "debian", Name: "13.4" } },
+		Results: [
+			{
+				Target: "image.tar (debian 13.4)",
+				Class: "os-pkgs",
+				Type: "debian",
+				Vulnerabilities: vulns,
+			},
+		],
+		...overrides,
 	});
 const trivyVuln = (overrides = {}) => ({
 	VulnerabilityID: "CVE-2026-0001",
@@ -932,6 +942,22 @@ const trivyEntry = entry({
 		package: "openssl",
 		vulnerability: "CVE-2026-0001",
 	},
+});
+const codeqlAlert = (overrides = {}) => ({
+	number: 7,
+	state: "dismissed",
+	dismissed_reason: "false positive",
+	rule: { id: "js/path-injection", security_severity_level: "high" },
+	most_recent_instance: {
+		location: { path: "services/wallet-api/src/app.ts", start_line: 12 },
+	},
+	...overrides,
+});
+const codeqlEntry = entry({
+	id: "AF-012",
+	tool: "codeql",
+	severity: "high",
+	match: { rule: "js/path-injection", alert: 7 },
 });
 const leak = {
 	RuleID: "private-key",
@@ -979,6 +1005,11 @@ const CASES = {
 		entry: trivyEntry,
 		invalid: JSON.stringify({ Results: [] }),
 		options: { image: "giano-wallet-api" },
+	},
+	codeql: {
+		report: JSON.stringify([codeqlAlert()]),
+		entry: codeqlEntry,
+		invalid: JSON.stringify({ message: "no analysis found" }),
 	},
 	gitleaks: {
 		report: JSON.stringify([leak]),
@@ -1368,6 +1399,90 @@ describe("check-accepted-findings: report details", () => {
 		assert.equal(otherImage.failures.length, 1);
 	});
 
+	it("fails a Trivy report with no OS, an end-of-life OS or no OS package result", () => {
+		const run = (overrides) => () =>
+			evaluateReport(
+				"trivy",
+				trivyReport([trivyVuln()], overrides),
+				register(trivyEntry),
+				TODAY,
+				{ image: "giano-wallet-api" },
+			);
+		const node = { Target: "app", Class: "lang-pkgs", Type: "node-pkg" };
+		for (const [overrides, message] of [
+			[{ Metadata: {} }, /detected no operating system in giano-wallet-api/],
+			[{ Metadata: { OS: null } }, /detected no operating system/],
+			[{ Metadata: { OS: { Family: "" } } }, /detected no operating system/],
+			[
+				{ Metadata: { OS: { Family: "alpine", Name: "3.20", EOSL: true } } },
+				/alpine 3\.20, which Trivy reports as end of life/,
+			],
+			[
+				{ Metadata: { OS: { Family: "alpine", Name: "3.20", EOSL: "yes" } } },
+				/end of life/,
+			],
+			[{ Results: [node] }, /no OS package result/],
+			[{ Results: null }, /Results is not an array/],
+			[{ Results: undefined }, /Results is not an array/],
+		])
+			assert.throws(run(overrides), message, JSON.stringify(overrides));
+		assert.doesNotThrow(
+			run({ Metadata: { OS: { Family: "debian", EOSL: false } } }),
+		);
+	});
+
+	it("fails a CodeQL input that is not the list of dismissed alerts", () => {
+		const run = (alerts) => () =>
+			evaluateReport("codeql", JSON.stringify(alerts), register(), TODAY);
+		assert.throws(
+			run([codeqlAlert({ state: "open" })]),
+			/is open, not dismissed/,
+		);
+		assert.throws(run([codeqlAlert({ number: "7" })]), /no number or rule ID/);
+		assert.throws(run([codeqlAlert({ rule: {} })]), /no number or rule ID/);
+		assert.deepEqual(run([])().failures, []);
+	});
+
+	it("gates a dismissed CodeQL alert at any severity and scopes the entry to the alert", () => {
+		const quality = evaluateReport(
+			"codeql",
+			JSON.stringify([
+				codeqlAlert({ rule: { id: "js/unused-local-variable" } }),
+			]),
+			register(),
+			TODAY,
+		);
+		assert.equal(quality.failures.length, 1);
+		assert.match(
+			quality.failures[0].label,
+			/js\/unused-local-variable alert #7 at/,
+		);
+		const otherAlert = evaluateReport(
+			"codeql",
+			JSON.stringify([codeqlAlert({ number: 8 })]),
+			register(codeqlEntry),
+			TODAY,
+		);
+		assert.equal(otherAlert.failures.length, 1);
+		const critical = evaluateReport(
+			"codeql",
+			JSON.stringify([
+				codeqlAlert({
+					rule: {
+						id: "js/path-injection",
+						security_severity_level: "critical",
+					},
+				}),
+			]),
+			register(codeqlEntry),
+			TODAY,
+		);
+		assert.match(
+			critical.failures[0].message,
+			/accepts high and the tool now reports critical/,
+		);
+	});
+
 	it("names the gitleaks rule, file and commit but never the secret", () => {
 		const result = evaluateReport(
 			"gitleaks",
@@ -1384,6 +1499,32 @@ describe("check-accepted-findings: report details", () => {
 			evaluateReport("gitleaks", "[]", register(), TODAY).failures,
 			[],
 		);
+	});
+});
+
+describe("check-accepted-findings: expiring entries", () => {
+	const at = (id, expires, overrides = {}) =>
+		entry({ id, accepted: "2026-11-01", expires, ...overrides });
+
+	it("lists usable entries that expire within the window, soonest first", () => {
+		const reg = register(
+			at("AF-001", "2026-11-23"),
+			at("AF-002", "2026-11-24"),
+			at("AF-003", "2026-11-10"),
+			at("AF-004", "2026-11-09"),
+		);
+		assert.deepEqual(
+			expiringEntries(reg, TODAY, 14).map((e) => e.id),
+			["AF-004", "AF-003", "AF-001"],
+		);
+	});
+
+	it("leaves out expired and invalid entries, which fail the register check", () => {
+		const reg = register(
+			at("AF-001", "2026-11-08"),
+			at("AF-002", "2026-11-12", { owner: "" }),
+		);
+		assert.deepEqual(expiringEntries(reg, TODAY, 14), []);
 	});
 });
 
@@ -1456,6 +1597,34 @@ describe("check-accepted-findings: CLI", () => {
 			),
 			1,
 		);
+	});
+
+	it("lists expiring entries and exits 0, and rejects a bad --expiring-within", () => {
+		const lines = [];
+		const { log } = console;
+		console.log = (line) => lines.push(line);
+		try {
+			assert.equal(
+				main(["--expiring-within", "14"], { root, today: "2027-04-30" }),
+				0,
+			);
+		} finally {
+			console.log = log;
+		}
+		assert.match(
+			lines[0],
+			/^expiring {2}AF-001 {2}2027-05-08 {2}owner: Sarah Thompson/,
+		);
+		for (const argv of [
+			["--expiring-within", "two"],
+			["--expiring-within", "-1"],
+			["--expiring-within", "14", "--tool", "trivy"],
+		])
+			assert.equal(
+				quiet(() => main(argv, { root, today: TODAY })),
+				1,
+				argv.join(" "),
+			);
 	});
 
 	it("passes a matched report and fails an unmatched one", () => {

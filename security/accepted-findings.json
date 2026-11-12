@@ -114,6 +114,534 @@
 			"owner": "Rui Sereno",
 			"reason": "Public by design. forge-std ships this Infura project ID in its default chain list, so every Foundry project that builds with forge-std holds it. It is not our key, and it gives access to nothing of ours. The release standard-input.json files embed the forge-std source, so each new release adds the key again. The regex matches only this exact key, so any other Infura key still fails giano-infura-key.",
 			"followUp": "Renew while forge-std ships this key. Remove the entry when a forge-std update drops it and no release file holds it."
+		},
+		{
+			"id": "AF-011",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2025-61726"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.24.12, 1.25.6.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-012",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2025-61729"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.24.11, 1.25.5.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-013",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2025-68121"
+			},
+			"severity": "critical",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.24.13, 1.25.7, 1.26.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-014",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-25679"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.8, 1.26.1.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-015",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-27145"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.11, 1.26.4.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-016",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-32280"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.9, 1.26.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-017",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-32281"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.9, 1.26.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-018",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-32283"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.9, 1.26.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-019",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-33811"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.10, 1.26.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-020",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-33814"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.10, 1.26.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-021",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-33818"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-022",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-39820"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.10, 1.26.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-023",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-39821"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-024",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-39822"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.12, 1.26.5, 1.27.0-rc.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-025",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-39836"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.10, 1.26.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-026",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-42499"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.10, 1.26.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-027",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-42504"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.11, 1.26.4.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-028",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-56853"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-029",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-56858"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-030",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-56859"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-031",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-56860"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-032",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-56862"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.25.13, 1.26.6, 1.27.0-rc.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-033",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-78667"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.26.9, 1.27.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-034",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-78669"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.26.9, 1.27.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-035",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-97031"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.26.9, 1.27.2.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-036",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-wallet-byo",
+				"package": "stdlib",
+				"vulnerability": "CVE-2026-111943"
+			},
+			"severity": "high",
+			"location": "giano-wallet-byo, both arches: the esbuild 0.25.4 binary (repo/node_modules/.pnpm/@esbuild+linux-*@0.25.4), Go 1.23.8. Fixed in Go 1.26.10, 1.27.3.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerability is in the Go standard library (Go 1.23.8) compiled into the esbuild 0.25.4 binary. serve.mjs runs esbuild at container start to bundle the image's own SPA source, and tsdown, tsx and vite also install esbuild 0.25.4 in this image, so upgrading the e2e workspace's esbuild does not remove it. Newer esbuild releases are built with Go 1.26.5, which still has some of these vulnerabilities, and Trivy cannot read their Go version, so an upgrade would hide findings rather than fix them. The vulnerable code is Go's network, TLS, certificate, URL, mail, MIME, XML and HTML template handling, and os.Root, which Go 1.23 does not have. esbuild's input here is only the image's own source files: it takes no input from users or the network. giano-wallet-byo is the BYO test origin: it runs in dev and e2e only, never in a real deployment.",
+			"followUp": "Rebuild giano-wallet-byo so it ships only the esbuild that serve.mjs uses, on a release built with a fixed Go version, then remove AF-011 to AF-036."
+		},
+		{
+			"id": "AF-037",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "apt",
+				"vulnerability": "CVE-2026-109518"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: apt 2.4.14 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 2.4.15ubuntu0.1.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-038",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "libapt-pkg6.0",
+				"vulnerability": "CVE-2026-109518"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: libapt-pkg6.0 2.4.14 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 2.4.15ubuntu0.1.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-039",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "libbrotli1",
+				"vulnerability": "CVE-2026-111497"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: libbrotli1 1.0.9-2build6 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 1.0.9-2ubuntu0.1.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-040",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "libssl3",
+				"vulnerability": "CVE-2026-45447"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: libssl3 3.0.2-0ubuntu1.21 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 3.0.2-0ubuntu1.25.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-041",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "libssl3",
+				"vulnerability": "CVE-2026-84782"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: libssl3 3.0.2-0ubuntu1.21 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 3.0.2-0ubuntu1.30.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-042",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "openssl",
+				"vulnerability": "CVE-2026-45447"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: openssl 3.0.2-0ubuntu1.23 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 3.0.2-0ubuntu1.25.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-043",
+			"tool": "trivy",
+			"match": {
+				"image": "giano-devnet",
+				"package": "openssl",
+				"vulnerability": "CVE-2026-84782"
+			},
+			"severity": "high",
+			"location": "giano-devnet, both arches: openssl 3.0.2-0ubuntu1.23 in the Foundry v1.7.1 base (Ubuntu 22.04). Fixed in 3.0.2-0ubuntu1.30.",
+			"accepted": "2026-11-09",
+			"expires": "2027-02-07",
+			"owner": "Rui Sereno",
+			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
+			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
 		}
 	]
 }

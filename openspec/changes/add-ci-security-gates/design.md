@@ -244,10 +244,15 @@ with those permissions.
 
 Each `build` matrix job changes to:
 
-1. **Build for the scan.** `docker/build-push-action` with `outputs: type=docker,dest=/tmp/image.tar`, no push, and
-   no SBOM or provenance. It reads the same GHA cache scope as today.
-2. **Scan.** `trivy image --input /tmp/image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --format
-   json`, then the script in report mode with `--image <name>`. A failure stops the job here.
+1. **Build for the scan.** `docker/build-push-action` with `outputs: type=docker,dest=$RUNNER_TEMP/image.tar`, no
+   push, and no SBOM or provenance. It reads the same GHA cache scope as today.
+2. **Scan.** `trivy image --input $RUNNER_TEMP/image.tar --scanners vuln --pkg-types os,library --config ""
+   --ignorefile "" --format json`, in an empty directory, then the script in report mode with `--image <name>`. A
+   failure stops the job here. Trivy runs with no severity filter and without `--ignore-unfixed`, so the report holds
+   every finding and the script applies the gate (HIGH or CRITICAL with a fixed version). `--config ""` and
+   `--ignorefile ""` stop Trivy from reading `trivy.yaml` or `.trivyignore`, and the step fails if any `TRIVY_`
+   environment variable is set. The script also fails on a report in which Trivy detected no OS, or an OS it marks as
+   end of life: either report would be valid but pass every OS finding.
 3. **Build and push.** The existing step, unchanged, now only when not a pull request. The builder still holds every
    layer from step 1, so this step rebuilds nothing. It adds SBOM and provenance and pushes by digest.
 4. **Confirm what was pushed is what was scanned.** Compare the layer `diff_ids` of the pushed digest with those of
@@ -260,8 +265,13 @@ which is why PRs build images today.
 Alternative considered: scan the digest after the push-by-digest step, before `merge`. It is simpler, but the untagged
 digest is already pullable from GHCR when the scan fails.
 
-Trivy downloads its vulnerability database on each run. The jobs list a fallback mirror (`--db-repository` with the
-public ECR mirror before GHCR) to reduce rate-limit failures. A failed download fails the job. It never skips the scan.
+Trivy downloads its vulnerability database on each run. The jobs list fallback mirrors (`--db-repository` with
+`mirror.gcr.io`, then the public ECR mirror, then GHCR) to reduce rate-limit failures. A failed download fails the job.
+It never skips the scan.
+
+The weekly scan (`security-scan.yml`) runs the same Trivy options on the `latest` tag of each image, for both arches,
+from an amd64 runner. It reads the image list from `docker.yml`, as `scripts/check-dockerfiles.mjs` does, and fails if
+the number of images it reads differs from the number of Dockerfiles listed.
 
 ### D11. Pinning rule for tools outside npm
 
@@ -348,4 +358,4 @@ Task group 4 (R4) runs before the first production release.
 
 ## Open Questions
 
-- The exact Trivy version and its sha256 values. D11 fixes the rule that chooses it. gitleaks is 8.30.1 (PR 2).
+None. Trivy is 0.76.1 (PR 3) and gitleaks is 8.30.1 (PR 2), under the rule in D11.

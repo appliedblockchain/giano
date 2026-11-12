@@ -52,7 +52,7 @@ Each tool's CI job uploads its full report. Download it from the run's artifacts
 | `pnpm-audit` | high, critical | `workspace` (`.` or `services/custom-example`), `ghsa` | `pnpm audit --json` in that workspace: `advisories.*.github_advisory_id`. |
 | `trivy` | HIGH, CRITICAL with a fix | `image`, `package`, `vulnerability` | The image name without registry or tag (`giano-wallet-api`), and `PkgName` and `VulnerabilityID` from the Trivy JSON. |
 | `gitleaks` | any | `fingerprint`, or `allowlist` | `Fingerprint` from the gitleaks JSON. An entry for an allowlist in `.gitleaks.toml` uses `{ "allowlist": ".gitleaks.toml" }`, and the allowlist's `description` starts with the entry ID. Each entry accepts one allowlist. |
-| `codeql` | checked weekly | `rule`, `alert` | The rule ID and alert number of the dismissed alert in the repository's code scanning alerts. |
+| `codeql` | any dismissed alert, checked weekly | `rule`, `alert` | The rule ID and alert number of the dismissed alert in the repository's code scanning alerts. The weekly scan reads the dismissed alerts through the API and fails on each one without an entry. |
 
 Findings below the gate do not fail CI. They stay in the uploaded reports. An open moderate advisory must still be
 recorded here (`dependency-security` capability).
@@ -68,7 +68,24 @@ removes or updates its entry. Otherwise a stale `aderyn` entry, which matches on
 later accept a different finding that lands on the same line. The other tools' findings can change without a code
 change, for example when an advisory database changes, so their unused entries do not fail CI.
 
-The weekly security scan lists entries that expire within 14 days.
+The weekly security scan lists entries that expire within 14 days, with their owners, in its tracking issue. To see
+the list locally, run `node scripts/check-accepted-findings.mjs --expiring-within 14`.
+
+## When a new advisory fails every PR
+
+`docker.yml` builds and scans every image on every PR, with no `paths` filter. So a new HIGH or CRITICAL advisory with a
+fixed version in one base image fails that image's `Build … (…)` check on every open PR, also on PRs that change no
+image. The dependency audit does the same for a new advisory in a lockfile. Fix it in one PR of its own, then rebase
+the other PRs on `main`:
+
+1. **Fix it.** For an image, refresh the base image digest ([Refreshing a pinned
+   digest](../docs/abip-compliance.md#refreshing-a-pinned-digest)) when DHI has published the fixed package. For a
+   lockfile, upgrade the package to a fixed version that is at least 7 days old.
+2. **Otherwise, accept it for a short time.** Add an entry with one owner, a reason, an expiry of a few weeks and a
+   `followUp` that names the fix it waits for, for example the DHI rebuild or the upstream release. Remove the entry in
+   the PR that applies the fix.
+
+Do not add a `paths` filter, `continue-on-error` or a Trivy ignore file to make the other PRs pass.
 
 ## What the register check rejects
 
@@ -104,6 +121,15 @@ gitleaks:
 pnpm:
 - A setting that hides advisories (`auditConfig`, `auditLevel`, `ignore`, …) in `pnpm-workspace.yaml`, `.npmrc` or
   `package.json` of either workspace, and a backslash escape in `pnpm-workspace.yaml`, which could hide such a setting.
+
+Trivy reports:
+- A report in which Trivy detected no OS, or no OS package result. Trivy then scans no OS package, and the report would
+  pass every OS finding.
+- A report on an OS that Trivy marks as end of life. Its packages get no more fixes, so no finding would have a fixed
+  version to gate on.
+
+The Trivy steps in `docker.yml` and `security-scan.yml` also fail when a `TRIVY_` environment variable is set, and run
+Trivy with `--config ""` and `--ignorefile ""` in an empty directory, so no file can change the scan.
 
 Files a tool reads by itself to hide findings:
 - `packages/contracts/slither.db.json`, `packages/contracts/slither.conf.json`,

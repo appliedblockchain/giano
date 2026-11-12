@@ -7,6 +7,10 @@ name: Docker images
 # wallet host-side from source rather than as images — so without this a broken Dockerfile
 # first surfaces in the job that publishes it.
 #
+# Every build is scanned with Trivy before anything is pushed (G25, openspec: ci-security-gates,
+# design D10). A HIGH or CRITICAL vulnerability with a fix that security/accepted-findings.json
+# does not accept fails the build job, on PRs too, so nothing is pushed, tagged or signed.
+#
 # Each arch builds on its own NATIVE runner and is pushed by digest; a merge job then joins
 # the two digests into one manifest list. The previous shape — one job, both platforms, arm64
 # under QEMU via setup-qemu-action — cost roughly 8x on the emulated leg (wallet-web:
@@ -135,6 +139,14 @@ jobs:
             runner: ubuntu-26.04
           - arch: arm64
             runner: ubuntu-26.04-arm
+    env:
+      # G25 (openspec: ci-security-gates, design D10, D11). Trivy v0.76.1, released 2026-10-21:
+      # an exact version at least 7 days old, checked against these sha256 values before it
+      # runs (docs/abip-compliance.md, "Tools installed outside npm"). The names avoid the
+      # TRIVY_ prefix, which Trivy reads as its own settings.
+      SCAN_TRIVY_VERSION: 0.76.1
+      SCAN_TRIVY_SHA256_AMD64: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+      SCAN_TRIVY_SHA256_ARM64: e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -163,16 +175,93 @@ jobs:
       - name: Verify the DHI base signatures
         run: node scripts/verify-dhi-bases.mjs '${{ matrix.image.dockerfile }}'
 
+      # --- Scan before publishing (G25, design D10) -------------------------------------------
+      # The image is built once to a tar and scanned. Only an image that passes the scan reaches
+      # the push below; on a PR nothing is pushed at all. A binary with a known hash runs here,
+      # not a third-party action, because this job holds `packages: write` and `id-token: write`.
+      - name: Install Trivy
+        env:
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          case "$ARCH" in
+            amd64) asset=Linux-64bit; sha="$SCAN_TRIVY_SHA256_AMD64" ;;
+            arm64) asset=Linux-ARM64; sha="$SCAN_TRIVY_SHA256_ARM64" ;;
+            *) echo "::error::no Trivy binary for $ARCH"; exit 1 ;;
+          esac
+          # Outside the workspace: the workspace is the build context.
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${SCAN_TRIVY_VERSION}/trivy_${SCAN_TRIVY_VERSION}_${asset}.tar.gz"
+          echo "$sha  trivy.tar.gz" | sha256sum -c -
+          mkdir trivy trivy-run
+          tar -xzf trivy.tar.gz -C trivy trivy
+          echo "$RUNNER_TEMP/trivy" >> "$GITHUB_PATH"
+
+      # The same build as the push below, to a tar: same Dockerfile, platform, secret and cache.
+      # No SBOM or provenance: they are attestations, not image layers, and the push adds them.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        id: build
+        name: Build the image for the scan
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
           platforms: linux/${{ matrix.platform.arch }}
-          # Pushed by digest under no tag at all; `merge` is what attaches tags. On a PR the
-          # expression is empty, so the image is built and discarded — the Dockerfile is
-          # still exercised on both arches, which is the whole point of building on a PR.
-          outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.GHCR_NAMESPACE, matrix.image.name) || '' }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          provenance: false
+          sbom: false
+          # Read access to GitHub Packages for the images that install a published Giano package
+          # (giano-example's connector). A Dockerfile that never mounts it ignores it.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+
+      # Every finding goes into the report: no severity filter, no --ignore-unfixed, no ignore
+      # file and no config file (both set to "", and the step runs in an empty directory).
+      # scripts/check-accepted-findings.mjs decides: it fails on a HIGH or CRITICAL finding with
+      # a fix that no register entry accepts, and on a report with no OS or an end-of-life OS.
+      # A failed database download fails the step; it never skips the scan.
+      - name: Scan the image (Trivy)
+        working-directory: ${{ runner.temp }}/trivy-run
+        env:
+          IMAGE: ${{ matrix.image.name }}
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          if env | grep -q '^TRIVY_'; then
+            echo "::error::a TRIVY_ environment variable is set; it would change the scan"
+            exit 1
+          fi
+          trivy image --input "$RUNNER_TEMP/image.tar" \
+            --config "" --ignorefile "" \
+            --scanners vuln --pkg-types os,library \
+            --db-repository mirror.gcr.io/aquasec/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2 \
+            --java-db-repository mirror.gcr.io/aquasec/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1 \
+            --cache-dir "$RUNNER_TEMP/trivy-cache" --skip-version-check --no-progress \
+            --format json --output "$RUNNER_TEMP/trivy-$IMAGE-$ARCH.json"
+      - name: Vulnerabilities are fixed or accepted
+        env:
+          IMAGE: ${{ matrix.image.name }}
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          node scripts/check-accepted-findings.mjs --tool trivy --image "$IMAGE" \
+            --report "$RUNNER_TEMP/trivy-$IMAGE-$ARCH.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: trivy-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: ${{ runner.temp }}/trivy-${{ matrix.image.name }}-${{ matrix.platform.arch }}.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # --- Publish (not on PRs) ---------------------------------------------------------------
+      # The builder still holds every layer from the scan build, so this step rebuilds nothing.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build
+        if: github.event_name != 'pull_request'
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/${{ matrix.platform.arch }}
+          # Pushed by digest under no tag at all; `merge` is what attaches tags.
+          outputs: type=image,name=${{ env.GHCR_NAMESPACE }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
           # SBOM and minimal provenance on every published image (ABIP-2). Each adds an
           # attestation manifest to the per-arch index; `merge` carries them into the list and
           # ECR receives the same list, so the bytes stay identical in both registries. ECR's
@@ -180,8 +269,6 @@ jobs:
           # about six ECR images per commit now, against three before, while
           # var.ecr_lifecycle_image_count.dev (infra/iac/ecr.vars.tf) is 120 — about twenty
           # commits of retention. At 10 it was under two, and the pinned dev tag expired.
-          # Read access to GitHub Packages for the images that install a published Giano package
-          # (giano-example's connector). A Dockerfile that never mounts it ignores it.
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
           provenance: mode=min
@@ -190,9 +277,34 @@ jobs:
           # repository, so sixteen jobs would evict each other's layers on every run and each
           # would then read back a cache written by a different image.
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
-          # PRs read main's cache but never write: branch cache entries are invisible to main
-          # and would only evict it from the repo's shared 10GB budget
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}-{1}', matrix.image.name, matrix.platform.arch) || '' }}
+          # Only main, tags and manual runs write the cache: PRs never reach this step. Branch
+          # cache entries are invisible to main and would only evict it from the shared 10GB budget.
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+
+      # The pushed layers must be the scanned layers. If the push step rebuilt a layer (a cache
+      # miss on a build that is not reproducible), the layers differ and the job fails here. The
+      # digest is then in GHCR without a tag, but `merge` needs every build job, so nothing is
+      # tagged, copied to ECR or signed.
+      - name: Confirm the pushed image is the scanned image
+        if: github.event_name != 'pull_request'
+        env:
+          REF: ${{ env.GHCR_NAMESPACE }}/${{ matrix.image.name }}@${{ steps.build.outputs.digest }}
+          PLATFORM: linux/${{ matrix.platform.arch }}
+        run: |
+          set -o pipefail
+          config=$(tar -xOf "$RUNNER_TEMP/image.tar" manifest.json | jq -er '.[0].Config')
+          scanned=$(tar -xOf "$RUNNER_TEMP/image.tar" "$config" \
+            | jq -ce '.rootfs.diff_ids | select(length > 0)')
+          # One platform per index, so .Image is the image itself; a map by platform is read too.
+          pushed=$(docker buildx imagetools inspect "$REF" --format '{{json .Image}}' \
+            | jq -ce --arg p "$PLATFORM" \
+                'if has("rootfs") then .rootfs.diff_ids else .[$p].rootfs.diff_ids end | select(length > 0)')
+          echo "scanned: $scanned"
+          echo "pushed:  $pushed"
+          if [ "$scanned" != "$pushed" ]; then
+            echo "::error::the pushed image $REF has other layers than the scanned image"
+            exit 1
+          fi
 
       # The digest is the only thing `merge` needs, and an empty file named for it is the
       # smallest artifact that carries one. Two arches upload two artifacts per image; merge
