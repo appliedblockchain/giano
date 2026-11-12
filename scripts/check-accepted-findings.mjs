@@ -616,7 +616,7 @@ export function checkGitleaksConfig(
 				file,
 				line: l.line,
 				rule: "config-suppression",
-				message: `'${key}' in an allowlist is not allowed. An allowlist may hold only ${ALLOWLIST_KEYS.join(" and ")}, so it matches the secret only and cannot grow without a change to its register entry`,
+				message: `'${key}' in an allowlist is not allowed. An allowlist may hold only ${ALLOWLIST_KEYS.join(" and ")}, so it matches the secret only. A change to its regexes is reviewed with its register entry`,
 			});
 			continue;
 		}

@@ -201,8 +201,9 @@ Aderyn.
   `generic-api-key` flags under key names such as `defaultToken`. A third covers the one public Infura key that
   forge-std ships in `StdChains.sol` and that the release `standard-input.json` files embed (AF-010). Each allowlist
   description starts with its register entry ID. An
-  allowlist holds only `description` and `regexes`, so it matches the secret only and cannot grow without a change to
-  its entry.
+  allowlist holds only `description` and `regexes`, so it matches the secret only. The register check does not read
+  the regexes: a PR can widen an allowlist without changing its entry. Code-owner review of `.gitleaks.toml` covers
+  that. It needs a `.github/CODEOWNERS` file, which the repository does not have yet.
 - The default rules do not detect a provider key in an RPC URL, the one kind of secret this repository has leaked
   (#244). `.gitleaks.toml` adds four rules for them: `giano-infura-key`, `giano-alchemy-key`, `giano-quicknode-key`
   and `giano-ankr-key`. Each rule captures only the key, so `--redact` hides it. A custom rule with the ID of a

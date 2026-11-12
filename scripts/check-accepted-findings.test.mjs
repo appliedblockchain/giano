@@ -621,6 +621,26 @@ describe("check-accepted-findings: suppressions", () => {
 				alchemy,
 			],
 			[
+				`wss://base-mainnet.g.alchemy.com/v2/${alchemy}`,
+				"giano-alchemy-key",
+				alchemy,
+			],
+			[
+				`https://eth-mainnet.g.alchemy.com/nft/v3/${alchemy}/getNFTsForOwner`,
+				"giano-alchemy-key",
+				alchemy,
+			],
+			[
+				`https://api.g.alchemy.com/prices/v1/${alchemy}/tokens/by-symbol`,
+				"giano-alchemy-key",
+				alchemy,
+			],
+			[
+				`https://eth-mainnet.alchemyapi.io/v2/${alchemy}`,
+				"giano-alchemy-key",
+				alchemy,
+			],
+			[
 				`https://x.base-mainnet.quiknode.pro/${hex(40)}/`,
 				"giano-quicknode-key",
 				hex(40),
@@ -639,6 +659,7 @@ describe("check-accepted-findings: suppressions", () => {
 			"BASE_RPC_URL=https://base-mainnet.infura.io/v3/<infura-token>",
 			"RPC_ORIGIN=https://base-sepolia.g.alchemy.com",
 			"https://eth-mainnet.g.alchemy.com/v2/docs-demo",
+			"https://eth-mainnet.g.alchemy.com/nft/v3/docs-demo/getNFTsForOwner",
 			`https://eth-mainnet.g.alchemy.com/v2/\${ALCHEMY_KEY}`,
 			"https://rpc.ankr.com/base",
 		])

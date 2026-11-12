@@ -51,7 +51,7 @@ keywords = ["infura.io"]
 [[rules]]
 id = "giano-alchemy-key"
 description = "Alchemy API key in an RPC URL"
-regex = '(?i)\balchemy(?:api)?\.(?:com|io)/v2/([a-z0-9_-]{32})(?:[^a-z0-9_-]|$)'
+regex = '(?i)\balchemy(?:api)?\.(?:com|io)/(?:[a-z]+/)?v[0-9]+/([a-z0-9_-]{32})(?:[^a-z0-9_-]|$)'
 keywords = ["alchemy"]
 
 [[rules]]

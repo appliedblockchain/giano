@@ -4,8 +4,9 @@ name: CodeQL
 # GitHub Actions workflows. On a pull request, GitHub adds a "CodeQL" check from the results; it
 # fails on a new high or critical security alert. CodeQL does not support Solidity: ci.yml, job
 # "Solidity static analysis (Slither, Aderyn)", covers the contracts. A dismissed alert needs a
-# register entry with tool `codeql` (security/README.md); the weekly security scan reports any
-# dismissal without one. No paths filter, so the check reports on every pull request.
+# register entry with tool `codeql` (security/README.md). The weekly security scan (openspec task
+# 3.5, not added yet) will report any dismissal without one. No paths filter, so the check reports
+# on every pull request.
 
 on:
   pull_request:
