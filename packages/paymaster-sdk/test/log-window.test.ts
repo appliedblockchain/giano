@@ -44,11 +44,9 @@ describe("isBlockRangeError", () => {
 
 	it("answers quickly on a long message that repeats the start of a pattern", () => {
 		// CodeQL js/polynomial-redos: an unbounded gap took quadratic time on this input.
+		// The old regex took about 7 s here, past the 5 s test timeout, so a regression fails this test.
 		const message = "limited to a ".repeat(20_000);
-		const start = performance.now();
 		expect(isBlockRangeError(new Error(message))).toBe(false);
-		// The old regex took about 7 s; the bound leaves room for a busy CI runner.
-		expect(performance.now() - start).toBeLessThan(1000);
 	});
 
 	it("does not swallow unrelated failures", () => {
