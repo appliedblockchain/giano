@@ -150,14 +150,20 @@ missing, empty or carries an error object, so a registry outage fails the job in
 
 `.github/dependabot.yml` holds three entries: npm at `/`, npm at `/services/custom-example`, and `github-actions` at
 `/`. #246 added the file with the `github-actions` entry, so PR 2 adds only the two npm entries. All are weekly with
-`cooldown: default-days: 7`. npm uses `versioning-strategy: increase`, so pins stay exact
-(ABIP-7), and an open PR limit of 5 per entry. Dependabot puts the manifest and lockfile change in one PR, as
-`AGENTS.md` requires. Every entry ignores semver-major updates, so a major upgrade is done by hand and gets its own
+`cooldown: default-days: 7`. The `services/custom-example` entry excludes `@appliedblockchain/*` from the cooldown,
+as its `pnpm-workspace.yaml` excludes it from `minimumReleaseAge` (the recorded ABIP-6 deviation). It reads that scope
+from GitHub Packages through a `registries` entry with the Dependabot secret `GH_PACKAGES_READ_TOKEN`, because GitHub
+Packages refuses anonymous reads. npm uses `versioning-strategy: increase-if-necessary`: an exact pin always changes,
+so pins stay exact (ABIP-7), and a `peerDependencies` range of a published package that already accepts the new
+release stays as it is. Each npm entry has an open PR limit of 5 and the commit prefix `chore` with the scope.
+Dependabot puts the manifest and lockfile change in one PR, as `AGENTS.md` requires. Every entry ignores semver-major updates, so a major upgrade is done by hand and gets its own
 review. For actions, some must also change major version together (#246). The ignore may also stop a security
 update PR that needs a new major version. The Dependabot alert and the dependency audit still report that advisory.
+Dependabot cannot exempt one scope from the `*` ignore, so a new major of `@appliedblockchain/*` in the example is
+also installed by hand.
 
-Security update PRs ignore `cooldown`. A security PR that proposes a version younger than 7 days fails the frozen
-install and the release-age check. It then waits, as ABIP-6 says. This needs no new rule.
+Security update PRs ignore `cooldown`. A security PR that proposes a version younger than 7 days fails the
+`release-age-policy` job. It then waits, as ABIP-6 says. This needs no new rule.
 
 The pip requirements file and the release binaries are not covered by Dependabot. They are updated by hand under the
 pinning rule (D11).

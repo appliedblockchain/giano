@@ -1,9 +1,13 @@
 # G25 (openspec: ci-security-gates, design D6). Version update PRs for both pnpm workspaces and for
 # the GitHub Actions in .github/workflows.
 # - cooldown: no version update PR proposes a release younger than 7 days, the ABIP-6 window
-#   (docs/abip-compliance.md). Security update PRs ignore the cooldown; one that proposes a younger
-#   version fails the frozen install in CI and waits.
-# - versioning-strategy: increase keeps every pin exact (ABIP-7).
+#   (docs/abip-compliance.md). One exception: services/custom-example excludes our own
+#   @appliedblockchain/* packages, as its pnpm-workspace.yaml does (a recorded ABIP-6 deviation).
+#   Security update PRs ignore the cooldown. One that proposes a younger version fails the
+#   release-age-policy job in ci.yml and waits.
+# - versioning-strategy: increase-if-necessary changes a version only when the new release is
+#   outside it. An exact pin always changes, so it stays exact (ABIP-7). A peerDependencies range of
+#   a published package that already accepts the new release stays as it is.
 # - Each PR holds the manifest change and the lockfile change it causes, and nothing else.
 # - Major versions are bumped by hand (ignore semver-major), for npm and for actions. A major
 #   upgrade needs its own review, and its release notes, not a weekly PR. The ignore may also stop a
@@ -12,6 +16,17 @@
 # Slither (pip) and the release binaries in ci.yml are not covered. They are updated by hand under
 # "Tools installed outside npm" in docs/abip-compliance.md.
 version: 2
+
+registries:
+  # services/custom-example installs @appliedblockchain/* from GitHub Packages, which refuses
+  # anonymous reads even for public packages (services/custom-example/.npmrc). GH_PACKAGES_READ_TOKEN
+  # is a Dependabot secret (Settings > Secrets and variables > Dependabot): a personal access token
+  # (classic) with read:packages only.
+  github-packages:
+    type: npm-registry
+    url: https://npm.pkg.github.com
+    token: ${{secrets.GH_PACKAGES_READ_TOKEN}}
+
 updates:
   - package-ecosystem: npm
     directory: /
@@ -19,23 +34,35 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-    versioning-strategy: increase
+    versioning-strategy: increase-if-necessary
     open-pull-requests-limit: 5
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: chore
+      include: scope
 
   - package-ecosystem: npm
     directory: /services/custom-example
+    registries:
+      - github-packages
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
-    versioning-strategy: increase
+      exclude:
+        - "@appliedblockchain/*"
+    versioning-strategy: increase-if-necessary
     open-pull-requests-limit: 5
+    # Dependabot cannot exempt one scope from "*", so a new major of @appliedblockchain/* is also
+    # installed by hand.
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: chore
+      include: scope
 
   # Workflows pin every third-party action to a full commit SHA, with the release as a trailing
   # comment. Dependabot keeps both up to date.
