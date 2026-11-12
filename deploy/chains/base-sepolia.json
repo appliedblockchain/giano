@@ -4,7 +4,7 @@
 	"name": "Base Sepolia",
 	"rpcUrl": "https://sepolia.base.org",
 	"rpcUrlEnv": "BASE_SEPOLIA_RPC_URL",
-	"release": "v2",
+	"release": "v3",
 	"roleAdmin": null,
 	"minDeployerBalanceEth": "0.05",
 	"paymaster": {

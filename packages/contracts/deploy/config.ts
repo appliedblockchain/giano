@@ -53,8 +53,95 @@ export function checkDeployers<
 	return deployers;
 }
 
-/** The canonical deployer of `network`, or null when it is not configured yet. */
+/**
+ * Names the stand-in deployer of a rehearsal: a run on an anvil fork of a public chain that walks the
+ * real deployment path before the canonical deployer exists (deploy/contracts/README.md,
+ * "Rehearsal"). Accepted only once {@link activateRehearsal} has seen the RPC report a fork.
+ */
+export const REHEARSAL_DEPLOYER_ENV = "GIANO_REHEARSAL_DEPLOYER";
+
+let rehearsalDeployer: Address | null = null;
+
+/** Whether this process was asked to rehearse. Nothing is active until {@link activateRehearsal}. */
+export function rehearsalRequested(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return Boolean(env[REHEARSAL_DEPLOYER_ENV]?.trim());
+}
+
+/** The active rehearsal's stand-in deployer, or null outside a rehearsal. */
+export function rehearsalDeployerAddress(): Address | null {
+	return rehearsalDeployer;
+}
+
+/**
+ * Anything with an EIP-1193 `request`: a viem client, or an adapter around another library's
+ * provider. Typed loosely because viem types `request` per method and has no `anvil_nodeInfo`.
+ */
+export type RpcRequester = { request: unknown };
+
+/** The fork source an anvil node reports, or null for a node that is not a fork or not anvil. */
+export async function forkUrlOf(client: RpcRequester): Promise<string | null> {
+	try {
+		const request = client.request as (args: {
+			method: string;
+			params?: unknown;
+		}) => Promise<unknown>;
+		const info = (await request({ method: "anvil_nodeInfo" })) as {
+			forkConfig?: { forkUrl?: string | null };
+		} | null;
+		return info?.forkConfig?.forkUrl || null;
+	} catch {
+		// A public RPC has no anvil_ namespace at all.
+		return null;
+	}
+}
+
+/**
+ * Turns the rehearsal on when {@link REHEARSAL_DEPLOYER_ENV} is set, after checking that `client` is
+ * an anvil fork. From then on the stand-in answers for every non-local class's canonical deployer.
+ * Refuses the variable on any RPC that is not a fork, so it can never place contracts on a real chain.
+ * Returns the stand-in, or null when no rehearsal was asked for.
+ */
+export async function activateRehearsal(
+	client: RpcRequester,
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<Address | null> {
+	const raw = env[REHEARSAL_DEPLOYER_ENV]?.trim();
+	if (!raw) return null;
+	let deployer: Address;
+	try {
+		deployer = getAddress(raw);
+	} catch {
+		throw new Error(`${REHEARSAL_DEPLOYER_ENV} is not an address`);
+	}
+	if ((await forkUrlOf(client)) === null)
+		throw new Error(
+			`${REHEARSAL_DEPLOYER_ENV} is accepted only on an anvil fork, and this RPC is not one. Unset it for a real deployment.`,
+		);
+	if (
+		[DEPLOYERS.local, DEPLOYERS.mainnet, DEPLOYERS.testnet].some(
+			(d) => d !== null && getAddress(d) === deployer,
+		)
+	)
+		throw new Error(
+			`${REHEARSAL_DEPLOYER_ENV} must be a throwaway address, not a configured deployer`,
+		);
+	rehearsalDeployer = deployer;
+	return deployer;
+}
+
+/** Ends a rehearsal in this process. For tests. */
+export function resetRehearsal(): void {
+	rehearsalDeployer = null;
+}
+
+/**
+ * The canonical deployer of `network`, or null when it is not configured yet. During a rehearsal, the
+ * stand-in answers for every non-local class.
+ */
 export function classDeployer(network: NetworkClass): Address | null {
+	if (network !== "local" && rehearsalDeployer) return rehearsalDeployer;
 	return DEPLOYERS[network];
 }
 
@@ -89,11 +176,36 @@ export function upgradeLabel(base: string, release: string): string {
 /** Chains the deploy CLI treats as local: impersonation and installing CreateX are allowed. */
 export const LOCAL_CHAIN_IDS = [31337, 31338] as const;
 
-/** Production chains never carry the test fixtures (R-29). */
-export const PRODUCTION_CHAIN_IDS = [8453, 84532, 11155111] as const;
-
 /** Chains that hold real money: the paymaster timelock is mandatory there (G9 R4). */
 export const MAINNET_CHAIN_IDS = [1, 8453] as const;
+
+/**
+ * Production chains never carry the test fixtures (R-29). Every mainnet is one, whether or not a
+ * profile exists for it yet, plus the testnets the platform serves.
+ */
+export const PRODUCTION_CHAIN_IDS = [
+	...MAINNET_CHAIN_IDS,
+	84532,
+	11155111,
+] as const;
+
+/**
+ * Refuses a class a chain on the fixed mainnet list can never have. Without it, `--network testnet`
+ * on Ethereum mainnet would skip the R-29 fixture guard and the mainnet deviation gate, and place the
+ * testnet class's contracts on a mainnet.
+ */
+export function assertNetworkClass(
+	chainId: number,
+	network: NetworkClass,
+): void {
+	if (
+		network !== "mainnet" &&
+		(MAINNET_CHAIN_IDS as readonly number[]).includes(chainId)
+	)
+		throw new Error(
+			`chain ${chainId} is a mainnet (MAINNET_CHAIN_IDS in deploy/config.ts); it can never be treated as ${network}`,
+		);
+}
 
 /** G9 R4: a chain on the fixed mainnet list, or any chain declared `mainnet` (by its profile or record). */
 export function isMainnetChain(
@@ -125,7 +237,7 @@ export function isProductionChain(
  * never hold a role on one, which is what keeps its key outside ABIP-8 (docs/key-ceremony.md).
  */
 export function isClassDeployer(address: Address): boolean {
-	return [DEPLOYERS.mainnet, DEPLOYERS.testnet].some(
+	return [DEPLOYERS.mainnet, DEPLOYERS.testnet, rehearsalDeployer].some(
 		(d) => d !== null && getAddress(d) === getAddress(address),
 	);
 }
@@ -155,3 +267,16 @@ export const OVERRIDE_KEYS = [
 	"paymasterProxy",
 ] as const;
 export type OverrideKey = (typeof OVERRIDE_KEYS)[number];
+
+/**
+ * An RPC URL as it may be printed: scheme and host only. A provider key can sit in the path, the
+ * query or the credentials (`https://node.provider.com/<key>`), and output reaches terminals, CI and
+ * Job logs.
+ */
+export function redactRpcUrl(url: string): string {
+	try {
+		return new URL(url).origin;
+	} catch {
+		return "(unparseable RPC URL)";
+	}
+}

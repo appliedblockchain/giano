@@ -2,6 +2,7 @@
 import {
 	type Address,
 	getAddress,
+	type Hex,
 	keccak256,
 	type PublicClient,
 	parseEther,
@@ -9,8 +10,22 @@ import {
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
 import { proxyImplementation } from "../erc1967";
-import { gianoPaymasterAbi } from "../generated";
-import { DEPLOYERS, ENTRY_POINT_V09, isClassDeployer } from "./config";
+import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { releaseOf } from "../release-code";
+import {
+	delayPolicyProblems,
+	delayShortfalls,
+	formatDuration,
+	paymasterSelector,
+	TIMELOCKED_FUNCTION_NAMES,
+	type TimelockDelays,
+} from "../timelock";
+import {
+	DEPLOYERS,
+	ENTRY_POINT_V09,
+	isClassDeployer,
+	type NetworkClass,
+} from "./config";
 import { CREATEX_ADDRESS } from "./create3";
 import type { PaymasterParams } from "./deploy";
 import {
@@ -88,6 +103,13 @@ export async function verifyCoreState(
 	admin: Address,
 	config: CoreConfig,
 	plan: Plan,
+	options: {
+		/**
+		 * The profile's timelock. After the hand-off it holds ROLE_ADMIN instead of `admin` (the
+		 * bootstrap key, which renounced it), and a handed-off chain must still verify.
+		 */
+		timelock?: string | null;
+	} = {},
 ): Promise<string[]> {
 	const proxy = planned(plan, "paymasterProxy");
 	if (!proxy?.actual) return [];
@@ -104,20 +126,35 @@ export async function verifyCoreState(
 		...read,
 		functionName: "ROLE_ADMIN",
 	});
-	const [allowed, entryPoint, fee, allowance, penalty] = await Promise.all([
-		client.readContract({
-			...read,
-			functionName: "hasRole",
-			args: [role, admin],
-		}),
-		client.readContract({ ...read, functionName: "entryPoint" }),
-		client.readContract({ ...read, functionName: "defaultFeeWei" }),
-		client.readContract({ ...read, functionName: "postOpGasAllowance" }),
-		client.readContract({ ...read, functionName: "penaltyBps" }),
-	]);
-	if (!allowed || getAddress(entryPoint) !== getAddress(config.entryPoint))
+	const timelock = options.timelock ? getAddress(options.timelock) : null;
+	const [adminHolds, timelockHolds, entryPoint, fee, allowance, penalty] =
+		await Promise.all([
+			client.readContract({
+				...read,
+				functionName: "hasRole",
+				args: [role, admin],
+			}),
+			timelock
+				? client.readContract({
+						...read,
+						functionName: "hasRole",
+						args: [role, timelock],
+					})
+				: false,
+			client.readContract({ ...read, functionName: "entryPoint" }),
+			client.readContract({ ...read, functionName: "defaultFeeWei" }),
+			client.readContract({ ...read, functionName: "postOpGasAllowance" }),
+			client.readContract({ ...read, functionName: "penaltyBps" }),
+		]);
+	if (!adminHolds && !timelockHolds)
 		throw new GateError(
-			"Existing paymaster admin or EntryPoint differs from this plan. Review its configuration before continuing.",
+			timelock
+				? `Neither the profile's ROLE_ADMIN ${admin} nor its timelock ${timelock} holds ROLE_ADMIN on the paymaster. Review its configuration before continuing.`
+				: `The profile's ROLE_ADMIN ${admin} does not hold ROLE_ADMIN on the paymaster. If the roles were handed to a timelock, set the profile's timelock.address. Review its configuration before continuing.`,
+		);
+	if (getAddress(entryPoint) !== getAddress(config.entryPoint))
+		throw new GateError(
+			"Existing paymaster EntryPoint differs from this plan. Review its configuration before continuing.",
 		);
 	const warnings: string[] = [];
 	for (const [name, live, planned] of [
@@ -152,6 +189,63 @@ export async function verifyCoreState(
 }
 
 export type Check = { ok: boolean; message: string };
+
+/**
+ * Initcode that runs TLOAD and MCOPY, then stops: an `eth_call` of it succeeds only on a chain with
+ * the Cancun opcodes the contracts and EntryPoint v0.9 are compiled for (evm_version = cancun).
+ */
+const CANCUN_PROBE: Hex = "0x5f5c505f5f5f5e00";
+
+/** One requirement a chain must meet before any Giano contract is deployed or served on it. */
+export type Prerequisite = { name: string; ok: boolean; detail: string };
+
+/**
+ * What the contracts need from a chain, checked the same way by the guided wizard, `deploy:cli core`
+ * and the doctor: CreateX at its address with its upstream runtime (it places every CREATE3 address),
+ * the canonical EntryPoint v0.9 (the wallet implementation hardcodes it), and the Cancun opcodes.
+ * A P-256 precompile is not one: the wallet verifies passkeys with its own built-in fallback.
+ */
+export async function chainPrerequisites(
+	client: PublicClient,
+	chainId: number,
+): Promise<Prerequisite[]> {
+	const results: Prerequisite[] = [];
+	const createX = await client.getCode({ address: CREATEX_ADDRESS });
+	results.push({
+		name: `CreateX at ${CREATEX_ADDRESS}`,
+		ok: Boolean(createX) && keccak256(createX as Hex) === CREATEX_CODEHASH,
+		detail: !createX
+			? "no code. Follow https://github.com/pcaversaccio/createx; never install a local-chain substitute on a public chain."
+			: keccak256(createX) === CREATEX_CODEHASH
+				? "upstream runtime"
+				: `unrecognised runtime ${keccak256(createX)}, not the upstream ${CREATEX_CODEHASH}`,
+	});
+	const entryPoint = await client.getCode({ address: ENTRY_POINT_V09 });
+	const canonical = isCanonicalEntryPointCode(entryPoint, chainId);
+	results.push({
+		name: `EntryPoint v0.9 at ${ENTRY_POINT_V09}`,
+		ok: canonical,
+		detail: canonical
+			? "canonical runtime"
+			: entryPoint
+				? "noncanonical runtime. Do not deploy or serve this chain."
+				: "no code. Do not deploy or serve this chain.",
+	});
+	let cancun = true;
+	try {
+		await client.call({ data: CANCUN_PROBE });
+	} catch {
+		cancun = false;
+	}
+	results.push({
+		name: "Cancun opcodes (TLOAD, MCOPY)",
+		ok: cancun,
+		detail: cancun
+			? "available"
+			: "unavailable. The contracts are compiled for Cancun; they cannot run on this chain.",
+	});
+	return results;
+}
 
 export type InspectOptions = {
 	/** The signing key's address; null for a plan without a key. */
@@ -202,20 +296,18 @@ export async function inspectDeployment(
 			);
 	});
 	if (!checks[0].ok) return { checks };
-	await check(`CreateX exists at ${CREATEX_ADDRESS}`, async () => {
-		const code = await client.getCode({ address: CREATEX_ADDRESS });
-		if (!code || keccak256(code) !== CREATEX_CODEHASH)
-			throw new GateError(
-				"Missing or unrecognised CreateX runtime. Follow https://github.com/pcaversaccio/createx; do not install local-chain substitutes.",
-			);
-	});
-	await check("Canonical EntryPoint v0.9 runtime", async () => {
-		const code = await client.getCode({ address: ENTRY_POINT_V09 });
-		if (!isCanonicalEntryPointCode(code, profile.chainId))
-			throw new GateError(
-				"Missing or noncanonical EntryPoint. Do not deploy or serve this chain.",
-			);
-	});
+	let prerequisites: Prerequisite[] = [];
+	try {
+		prerequisites = await chainPrerequisites(client, profile.chainId);
+	} catch {
+		checks.push({
+			ok: false,
+			message:
+				"Chain prerequisites: RPC/read failed; check endpoint access and retry (provider details suppressed).",
+		});
+	}
+	for (const p of prerequisites)
+		checks.push({ ok: p.ok, message: `${p.name}: ${p.detail}` });
 	await check("ROLE_ADMIN is not a deployer key", async () =>
 		assertRoleAdminNotDeployer(admin, options.signer, false),
 	);
@@ -249,6 +341,7 @@ export async function inspectDeployment(
 					admin,
 					profileCoreConfig(profile),
 					plan as Plan,
+					{ timelock: profile.timelock?.address },
 				);
 				if (warnings.length) return `⚠ ${warnings.join("; ")}`;
 			} catch (error) {
@@ -282,3 +375,143 @@ export async function inspectDeployment(
 	return { checks, plan };
 }
 export class GateError extends Error {}
+
+/**
+ * Whether `code` is a contract account, such as a Safe. An address with no code is a key, and so is an
+ * EOA with an EIP-7702 delegation: its code is the 23-byte designator `0xef0100‖address`, but one
+ * private key still controls it. "Has code" alone takes such an EOA for a Safe.
+ */
+export function isContractAccount(code: Hex | string | undefined): boolean {
+	if (!code || code === "0x") return false;
+	const hex = code.toLowerCase();
+	return !(hex.length === 2 + 23 * 2 && hex.startsWith("0xef0100"));
+}
+
+/** The timelock configuration a hand-off is checked against: the profile's, else the recorded one. */
+export type PublishedTimelock = {
+	proposers: readonly string[];
+	executors: readonly string[];
+	delays: Partial<TimelockDelays>;
+	/** The block the timelock was deployed in, to enumerate its role grants from. */
+	fromBlock?: bigint;
+};
+
+/**
+ * Everything wrong with handing `proxy`'s timelocked roles to `timelock`, checked before anything is
+ * sent, because the hand-off renounces ROLE_ADMIN and cannot be undone. The timelock's code must be a
+ * release's GianoTimelock; its proposers and executors must be the published ones; its delays must be
+ * at least the published ones and keep role changes at least as slow as what they could bypass; and on
+ * a mainnet every proposer must be a contract account, never a key. Empty means safe to hand off.
+ */
+export async function handOffProblems(
+	client: PublicClient,
+	options: {
+		network: NetworkClass;
+		proxy: Address;
+		timelock: Address;
+		published: PublishedTimelock;
+	},
+): Promise<string[]> {
+	const { timelock, proxy, published } = options;
+	const problems: string[] = [];
+	const code = await client.getCode({ address: timelock });
+	if (!code || !releaseOf("GianoTimelock", code, timelock)) {
+		problems.push(
+			`${timelock} holds ${code ? `code ${keccak256(code)}` : "no code"}, which matches no release's GianoTimelock`,
+		);
+		return problems;
+	}
+	const read = (functionName: string, args: readonly unknown[] = []) =>
+		client.readContract({
+			address: timelock,
+			abi: gianoTimelockAbi,
+			functionName: functionName as never,
+			args: args as never,
+		}) as Promise<unknown>;
+	const [proposerRole, cancellerRole, executorRole] = (await Promise.all([
+		read("PROPOSER_ROLE"),
+		read("CANCELLER_ROLE"),
+		read("EXECUTOR_ROLE"),
+	])) as Hex[];
+	const holds = async (role: Hex, account: string) =>
+		(await read("hasRole", [role, getAddress(account)])) as boolean;
+
+	// Proposers: every published one holds the role, and nobody else was ever granted it.
+	const expected = new Set(published.proposers.map((p) => getAddress(p)));
+	for (const proposer of expected) {
+		if (!(await holds(proposerRole, proposer)))
+			problems.push(
+				`published proposer ${proposer} does not hold PROPOSER_ROLE`,
+			);
+		else if (!(await holds(cancellerRole, proposer)))
+			problems.push(
+				`published proposer ${proposer} does not hold CANCELLER_ROLE`,
+			);
+	}
+	try {
+		const grants = await client.getLogs({
+			address: timelock,
+			event: roleGranted,
+			args: { role: proposerRole },
+			fromBlock: published.fromBlock ?? 0n,
+			toBlock: "latest",
+		});
+		for (const grant of grants) {
+			const account = getAddress(grant.args.account as Address);
+			if (!expected.has(account) && (await holds(proposerRole, account)))
+				problems.push(
+					`${account} holds PROPOSER_ROLE but is not a published proposer`,
+				);
+		}
+	} catch {
+		// Some RPCs cap log ranges. The published proposers were still checked one by one.
+	}
+	if (options.network === "mainnet")
+		for (const proposer of expected)
+			if (!isContractAccount(await client.getCode({ address: proposer })))
+				problems.push(
+					`proposer ${proposer} is a key (no code, or only an EIP-7702 delegation), not a Safe or other contract: one key could queue anything`,
+				);
+
+	// Executors: open execution when none are published, else exactly the published ones may run.
+	const open = await holds(executorRole, zeroAddress);
+	if (published.executors.length === 0 && !open)
+		problems.push(
+			"the profile publishes open execution, but the timelock restricts EXECUTOR_ROLE",
+		);
+	if (published.executors.length > 0) {
+		if (open)
+			problems.push(
+				"the profile restricts execution, but the timelock lets anyone execute",
+			);
+		for (const executor of published.executors)
+			if (!(await holds(executorRole, executor)))
+				problems.push(
+					`published executor ${getAddress(executor)} does not hold EXECUTOR_ROLE`,
+				);
+	}
+
+	// Delays: what the timelock enforces against what was published.
+	const minDelay = Number(await read("getMinDelay"));
+	const actual = { minDelay } as TimelockDelays;
+	for (const name of TIMELOCKED_FUNCTION_NAMES)
+		actual[name] = Number(
+			await read("getEffectiveDelay", [proxy, paymasterSelector(name)]),
+		);
+	for (const short of delayShortfalls(actual, published.delays))
+		problems.push(
+			`${short.name} waits ${formatDuration(short.actual)}, less than the published ${formatDuration(short.expected)}`,
+		);
+	problems.push(...delayPolicyProblems(actual));
+	return problems;
+}
+
+const roleGranted = {
+	type: "event",
+	name: "RoleGranted",
+	inputs: [
+		{ name: "role", type: "bytes32", indexed: true },
+		{ name: "account", type: "address", indexed: true },
+		{ name: "sender", type: "address", indexed: true },
+	],
+} as const;

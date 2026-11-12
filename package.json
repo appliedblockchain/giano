@@ -23,7 +23,8 @@
 		"contracts:sponsorship": "bash deploy/contracts/run.sh sponsorship",
 		"contracts:doctor": "bash deploy/contracts/run.sh doctor",
 		"contracts:timelock": "bash deploy/contracts/run.sh timelock",
-		"contracts:handoff": "bash deploy/contracts/run.sh handoff"
+		"contracts:handoff": "bash deploy/contracts/run.sh handoff",
+		"contracts:rehearse": "bash deploy/contracts/run.sh rehearse"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",

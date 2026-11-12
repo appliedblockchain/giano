@@ -11,5 +11,6 @@ if [ "$#" -gt 0 ]; then shift; fi
 case "$COMMAND" in
   deploy) exec pnpm --filter @appliedblockchain/giano-contracts deploy:guided "$@" ;;
   funding|provision|sponsorship|doctor|timelock|handoff) exec pnpm --filter @appliedblockchain/giano-contracts deploy:operate "$COMMAND" "$@" ;;
-  *) echo 'Choose deploy, funding, provision, sponsorship, doctor, timelock or handoff.' >&2; exit 1 ;;
+  rehearse) exec pnpm --filter @appliedblockchain/giano-contracts rehearse "$@" ;;
+  *) echo 'Choose deploy, funding, provision, sponsorship, doctor, timelock, handoff or rehearse.' >&2; exit 1 ;;
 esac

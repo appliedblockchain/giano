@@ -59,8 +59,15 @@ not been set yet.** They need product sign-off before the first mainnet deployme
 
 ## 2. Setting up a chain
 
-After `pnpm contracts:deploy` and `pnpm contracts:provision` (which leave every role on the
-provisioning key):
+Rehearse the whole sequence on a fork first (`pnpm contracts:rehearse --chain <profile>`,
+deploy/contracts/README.md "Rehearsal"): it runs every step below and a timelocked upgrade, and
+sends nothing to the chain.
+
+After `pnpm contracts:deploy` and `pnpm contracts:provision`. Provisioning gives each immediate
+role to its holder (`ROLE_HOLDER_*` in the operator file, [key inventory](key-ceremony.md)) and
+keeps the timelocked ones, ROLE_ADMIN included, on the bootstrap key until the hand-off.
+`PAYMASTER_GRANT_ALL_TO` puts every role on one address instead; a testnet shortcut, which a
+mainnet refuses:
 
 1. Create the proposer Safe on the chain. Add it to the profile under `timelock.proposers`, and
    leave `timelock.executors` empty for open execution (anyone can run a ready operation; nobody
@@ -69,9 +76,14 @@ provisioning key):
    `GianoTimelock` with the profile's delays and saves its address in the profile. It signs with
    the current `ROLE_ADMIN` key (`ROLE_ADMIN_PRIVATE_KEY`, or `DEPLOYER_PRIVATE_KEY` as provisioning
    uses).
-3. `pnpm contracts:handoff --chain <profile> --env-file <operator-file>` grants the four timelocked
-   roles to the timelock, revokes them from everyone else and renounces the provisioning key's
-   `ROLE_ADMIN` last. **Only the timelock can undo this, after the role delay.** To review the calls
+3. `pnpm contracts:handoff --chain <profile> --env-file <operator-file>` first checks the timelock
+   against the profile, and refuses on any difference before sending anything: its code must be a
+   release's `GianoTimelock`, its proposers, executors and delays the published ones, and on a
+   mainnet every proposer a contract (a Safe), not a key or an EIP-7702-delegated EOA. It then
+   grants the four timelocked roles to the timelock, revokes them from everyone else and renounces
+   the provisioning key's `ROLE_ADMIN` last. **Only the timelock can undo this, after the role
+   delay.** From then on `contracts:provision` refuses: register and fund tenants with the
+   tenant-admin key through the console or the giano-paymaster CLI. To review the calls
    first, or if `ROLE_ADMIN` is held by a Safe, run the plan form and upload the batch to the Safe
    Transaction Builder:
    ```sh

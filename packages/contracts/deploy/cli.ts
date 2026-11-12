@@ -10,7 +10,11 @@
  *   pnpm deploy:cli timelock --rpc <url> --proposer <safe> [--proposer …] [--executor <0x…> …]
  *                            --min-delay <dur> --delay <function>=<dur> … [--release vN]
  *   pnpm deploy:cli handoff  --rpc <url> --timelock <0x…> [--execute] [--safe-json <file>]
- *   pnpm deploy:cli p256     --rpc <url>
+ *   pnpm deploy:cli p256     --rpc <url>     (optional: a gas optimisation, never a requirement)
+ *       The wallet verifies passkeys with FreshCryptoLib built into its own code, so a chain without
+ *       the RIP-7212 precompile works without this verifier. It funds the Arachnid signer with 0.1 ETH
+ *       and then broadcasts a presigned pre-EIP-155 transaction, which many public RPCs reject. Check
+ *       that the RPC accepts one before funding, or the 0.1 ETH is stranded.
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
  * Network class: local chains (31337/31338) are `local`. Any other chain takes its class, and any
@@ -79,6 +83,8 @@ import {
 	type TimelockedFunctionName,
 } from "../timelock";
 import {
+	activateRehearsal,
+	assertNetworkClass,
 	classDeployer,
 	DEPLOYERS,
 	ENTRY_POINT_V09,
@@ -89,6 +95,7 @@ import {
 	type NetworkClass,
 	type OverrideKey,
 	PROFILE_NETWORKS,
+	redactRpcUrl,
 } from "./config";
 import { create3Address } from "./create3";
 import {
@@ -112,11 +119,15 @@ import {
 	type Plan,
 	placementOf,
 	planCore,
+	reconcileRecord,
 	upgradeDeviation,
 } from "./plan";
 import {
 	assertRoleAdminNotDeployer,
 	type CoreConfig,
+	chainPrerequisites,
+	handOffProblems,
+	isContractAccount,
 	verifyCoreState,
 } from "./preflight";
 import {
@@ -329,6 +340,7 @@ function resolveNetwork(chainId: number, local: boolean): Network {
 		throw new Error(
 			`--network is ${PROFILE_NETWORKS.join(" or ")}, not ${values.network}`,
 		);
+	assertNetworkClass(chainId, values.network as NetworkClass);
 	return { network: values.network as NetworkClass, overrides: {} };
 }
 
@@ -350,6 +362,16 @@ function chainRecord(chainId: number, target: Network): DeploymentRecord {
 /** The paymaster parameters: the flags, else the chain profile's, else PAYMASTER_DEFAULTS. */
 function paymasterConfig(target: Network): CoreConfig {
 	const profile = target.profile ? paymasterParams(target.profile) : undefined;
+	// The wallet implementation hardcodes the canonical EntryPoint v0.9: a paymaster bound to another
+	// one could never sponsor a Giano account. Only a local chain may point elsewhere.
+	if (
+		target.network !== "local" &&
+		getAddress(values["entry-point"] ?? ENTRY_POINT_V09) !==
+			getAddress(ENTRY_POINT_V09)
+	)
+		throw new Error(
+			`--entry-point is for local chains only: the wallet implementation is bound to the canonical EntryPoint v0.9 (${ENTRY_POINT_V09})`,
+		);
 	return {
 		entryPoint: address("entry-point"),
 		defaultFeeWei: BigInt(
@@ -386,7 +408,14 @@ async function connect(): Promise<{
 }> {
 	const url = required("rpc");
 	const transport = http(url);
-	const chainId = await createPublicClient({ transport }).getChainId();
+	const probe = createPublicClient({ transport });
+	const chainId = await probe.getChainId();
+	// Before any address is derived: a rehearsal's stand-in deployer only ever answers on a fork.
+	const rehearsal = await activateRehearsal(probe);
+	if (rehearsal)
+		log(
+			`REHEARSAL on an anvil fork: stand-in deployer ${rehearsal}; records go to ${DEPLOYMENTS_DIR}`,
+		);
 	const chain = defineChain({
 		id: chainId,
 		name: `chain-${chainId}`,
@@ -395,7 +424,7 @@ async function connect(): Promise<{
 	});
 	const publicClient = createPublicClient({ chain, transport }) as PublicClient;
 	const local = (LOCAL_CHAIN_IDS as readonly number[]).includes(chainId);
-	log(`chain ${chainId} via ${url}${local ? " (local)" : ""}`);
+	log(`chain ${chainId} via ${redactRpcUrl(url)}${local ? " (local)" : ""}`);
 	return { chainId, chain, transport, publicClient, local };
 }
 
@@ -507,6 +536,10 @@ async function planOrRefuse(
 	if (gate.kind === "refuse") throw new Error(gate.reason);
 	if (plan.deviations.length && ctx.walletClient)
 		recordDeviations(ctx.record, plan.deviations, false);
+	// An upgrade the chain executed (through the timelock, a Safe, or directly) that the record does
+	// not show yet. Recorded before deployCore, so it verifies the upgrade target in place.
+	if (reconcileRecord(ctx.record, plan))
+		log("  recorded the paymaster implementation the proxy was upgraded to");
 	// The record names the key that deployed; a run that only finds every contract in place deploys
 	// nothing and leaves it.
 	if (ctx.walletClient && plan.contracts.some((c) => c.code.state === "empty"))
@@ -596,6 +629,21 @@ async function main(): Promise<void> {
 		}
 		case "core": {
 			const ctx = await deployerContext({ verifyOnly: true });
+			// The guided wizard's prerequisite checks, here too: this low-level command signs as well.
+			// Local chains install CreateX and the EntryPoint themselves (install-createx, install-entrypoint).
+			if (!ctx.local) {
+				const prerequisites = await chainPrerequisites(
+					ctx.publicClient,
+					ctx.chainId,
+				);
+				for (const p of prerequisites)
+					log(`  ${p.ok ? "✓" : "✗"} ${p.name}: ${p.detail}`);
+				const missing = prerequisites.filter((p) => !p.ok);
+				if (missing.length)
+					throw new Error(
+						`refusing to deploy: the chain does not meet ${missing.map((p) => p.name).join(", ")}`,
+					);
+			}
 			const admin = address("role-admin");
 			assertRoleAdminNotDeployer(
 				admin,
@@ -614,6 +662,11 @@ async function main(): Promise<void> {
 				admin,
 				config,
 				plan,
+				{
+					timelock: values.timelock
+						? address("timelock")
+						: ctx.target.profile?.timelock?.address,
+				},
 			))
 				log(`  ⚠ ${warning}`);
 			await deployCore(ctx, selected, { ...config, roleAdmin: admin }, fixed);
@@ -749,13 +802,13 @@ async function main(): Promise<void> {
 				executors: (values.executor ?? []).map((e) => getAddress(e)),
 				delays: timelockDelays(),
 			};
-			for (const proposer of params.proposers) {
-				const code = await publicClient.getCode({ address: proposer });
-				if (!code || code === "0x")
+			for (const proposer of params.proposers)
+				if (
+					!isContractAccount(await publicClient.getCode({ address: proposer }))
+				)
 					log(
-						`  ⚠ proposer ${proposer} has no code: an EOA proposer is one key that can queue anything. Use a Safe outside local testing (G9 R3).`,
+						`  ⚠ proposer ${proposer} is a key (no code, or only an EIP-7702 delegation): one key can queue anything. Use a Safe outside local testing (G9 R3); the hand-off refuses it on a mainnet.`,
 					);
-			}
 			log(
 				`timelock for ${params.paymaster}: minDelay ${formatDuration(params.delays.minDelay)}; ${TIMELOCKED_FUNCTION_NAMES.map((n) => `${n} ${formatDuration(params.delays[n])}`).join(", ")}`,
 			);
@@ -798,6 +851,43 @@ async function main(): Promise<void> {
 					`${timelock} is not a GianoTimelock on chain ${chainId}; refusing to hand it the paymaster`,
 				);
 			}
+			// The hand-off renounces ROLE_ADMIN and cannot be undone: check the timelock against what
+			// was published (the profile's timelock section, else the record's) before planning a call.
+			const published =
+				target.profile?.timelock ??
+				(record.timelock &&
+				getAddress(record.timelock.address) === getAddress(timelock)
+					? record.timelock
+					: undefined);
+			if (!published)
+				throw new Error(
+					`no published timelock configuration for chain ${chainId} (a profile's timelock section, or the record of \`deploy:cli timelock\`); refusing to hand off to an unverified timelock`,
+				);
+			const deployedIn = record.timelock?.transactionHash
+				? (
+						await publicClient
+							.getTransactionReceipt({ hash: record.timelock.transactionHash })
+							.catch(() => undefined)
+					)?.blockNumber
+				: undefined;
+			const problems = await handOffProblems(publicClient, {
+				network: target.network,
+				proxy,
+				timelock,
+				published: {
+					proposers: published.proposers,
+					executors: published.executors,
+					delays: published.delays as Partial<TimelockDelays>,
+					fromBlock: deployedIn,
+				},
+			});
+			if (problems.length)
+				throw new Error(
+					`refusing to hand ${proxy} to ${timelock}:\n  ${problems.join("\n  ")}`,
+				);
+			log(
+				`  ✓ ${timelock} is a release GianoTimelock with the published proposers, executors and delays`,
+			);
 			const walletClient =
 				values.execute || values.impersonate
 					? await roleAdminClient(chain, transport, local)
@@ -864,6 +954,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-	console.error(error instanceof Error ? error.message : error);
+	let message = error instanceof Error ? error.message : String(error);
+	// viem quotes the request URL in its errors ("URL: …"), and a provider key can sit in it.
+	if (values.rpc)
+		message = message.replaceAll(values.rpc, redactRpcUrl(values.rpc));
+	console.error(message);
 	process.exit(1);
 });

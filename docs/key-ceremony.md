@@ -19,10 +19,11 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 
 | Key | What it signs, or the role it holds | ABIP-8 scope | Where it lives | Consumed by |
 |-----|-------------------------------------|--------------|----------------|-------------|
-| **Canonical deployers**, one for **mainnet** and one for **testnet** (`DEPLOYER_PRIVATE_KEY` / `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy tooling) | Own the canonical CREATE3 salts of their network class, so they decide *where* Giano's contracts land on a chain of that class. They pay the deployment gas and nothing else: no role, no funds and no authority on any deployed contract (`ROLE_ADMIN` is a separate key). | **Out of scope.** They are not hot keys: they are never deployed to a live environment and are used only from the deploying shell for a one-off adoption. They hold only a gas float. | 1Password, provided by the development team. Two independent keys, never one key or two derived from a common seed. | the deploy tooling, run by the development team. Never a service, never a client deployment. The Helm deployer Job runs **without** them and only verifies. |
+| **Canonical deployers**, one for **mainnet** and one for **testnet** (`DEPLOYER_PRIVATE_KEY` / `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy tooling) | Own the canonical CREATE3 salts of their network class, so they decide *where* Giano's contracts land on a chain of that class. They pay the deployment gas and nothing else: no role, no funds and no authority on any deployed contract (`ROLE_ADMIN` is a separate key). | **Out of scope.** They are not hot keys: they are never deployed to a live environment and are used only from the deploying shell, for each chain adoption and for every upgrade target of their class (a mainnet upgrade target must come from the mainnet deployer). They hold only a gas float. A leak is still serious: see [Loss or leak](#canonical-deployers). | 1Password, provided by the development team. Two independent keys, never one key or two derived from a common seed. | the deploy tooling, run by the development team. Never a service, never a client deployment. The Helm deployer Job runs **without** them and only verifies. |
 | **Sponsorship signer** (`SPONSORSHIP_SIGNER_KEY_REF`) | Signs paymaster sponsorship data, i.e. authorises spending the operator's gas. Holds no funds. | Production: in scope. Testnet `dev`: out of scope. | Production: inside the HSM/KMS (`SPONSORSHIP_SIGNER_KIND=hsm`), generated there or imported there by DevOps from a ceremony, never exported. wallet-api refuses `local` in the `production` class. `dev`: 1Password `secrets-dev` field `sponsorship-signer-key`, mirrored to Secrets Manager (`SPONSORSHIP_SIGNER_KIND=local`, class `testnet`). | wallet-api |
 | **Bundler executor** (`BUNDLER_EXECUTOR_PRIVATE_KEYS`) | Submits and **pays gas for** every `handleOps` transaction; funded on each chain. | Production: in scope. `dev` (Base Sepolia, Ethereum Sepolia): out of scope. | 1Password `secrets-<env>` field `alto-executor-key` (Alto-era name), mirrored to Secrets Manager; `prd` uses the `Giano prd` vault | giano-bundler |
 | **Paymaster `ROLE_ADMIN`**, and the TimelockController's **proposer/executor** keys | Grants every other paymaster role (`SIGNER_ADMIN`, `FEE_ADMIN`, `FEE_COLLECTOR`, `STAKE_ADMIN`, `TENANT_ADMIN`, `PARAM_ADMIN`, `PAUSER`, `UPGRADER`). In production it is a TimelockController, whose proposer and executor keys are the real signers. | Production: in scope (every key that can propose or execute). `dev`: a developer-held EOA on testnets, out of scope. | Production: DevOps secret store, one ceremony per key | the timelock; `provision:paymaster` and `upgrade --execute` (`UPGRADER_PRIVATE_KEY`) only on a devnet or a first-run testnet |
+| **Immediate paymaster role holders** (`ROLE_HOLDER_SIGNER_ADMIN`, `ROLE_HOLDER_PARAM_ADMIN`, `ROLE_HOLDER_PAUSER`, `ROLE_HOLDER_STAKE_ADMIN`, `ROLE_HOLDER_TENANT_ADMIN`, `ROLE_HOLDER_FEE_COLLECTOR` name their addresses for `contracts:provision`) | One role each, sent directly rather than through the timelock: signer admin, parameter admin, pauser, stake admin, tenant admin, fee collector ([runbook §1](PAYMASTER-TIMELOCK-RUNBOOK.md#1-the-topology)). A leak is bounded to its role (runbook §5). | Production: in scope, one key or Safe per role. Testnet `dev`: out of scope (developer-held, or `PAYMASTER_GRANT_ALL_TO` on a testnet). | Production: DevOps secret store, or a Safe | the operator console and the giano-paymaster CLI |
 | **Paymaster operator** (`DEPLOYER_PRIVATE_KEY` in `provision:paymaster` and the paymaster-sdk CLI) | Stakes the paymaster and funds tenants' sponsorship balances. The same variable name as the canonical deployer's, but a different account. | Production: in scope (moves mainnet value). Testnets and devnets: out of scope. | Production: DevOps secret store | `provision:paymaster`, the paymaster-sdk CLI |
 | Anvil dev keys ([`E2E-DEV-KEYS.md`](E2E-DEV-KEYS.md)) | Local chains 31337/31338 and CI only; recoverable from anvil's public mnemonic. | Out of scope: local and CI keys. They must never be used on a public chain. | committed / anvil defaults | e2e, devnet |
 
@@ -59,10 +60,16 @@ stored in 1Password:
 - **Address.** Setting a deployer address in `deploy/config.ts` sets the deterministic addresses of
   that class; no local-chain or devnet address moves. The PR names the 1Password item that holds the
   matching key, and no ceremony record is needed.
-- **Loss or leak.** A leaked key cannot touch any deployed contract. It can, however, occupy the
-  canonical addresses of its class on chains not yet adopted. If that happens, create a new key and
-  update `deploy/config.ts`. Chains adopted afterwards then get the new key's addresses, or a per-chain
-  override.
+- **Loss or leak.** A leaked key cannot touch any contract already deployed. It is still serious,
+  because CREATE3 addresses do not depend on the code placed at them. On any chain of its class not
+  yet adopted, whoever holds the key can put their own code at the canonical wallet implementation
+  and factory addresses. Every user's wallet address on that chain, which is the same address the
+  user has everywhere else in the class, is then controlled by that code, and anything sent to it
+  there can be taken. Treat a leak as an incident:
+  1. Tell users not to receive assets on chains Giano does not serve.
+  2. Create a new key and update `deploy/config.ts`.
+  3. Accept that every chain adopted afterwards gets the new key's addresses (or a per-chain
+     override), so wallet addresses there no longer match the class's other chains.
 
 ## Runbook
 

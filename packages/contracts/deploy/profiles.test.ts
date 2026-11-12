@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,6 +16,8 @@ import {
 	profileSchema,
 	savePublicChoices,
 } from "./profiles";
+import { COMMITTED_DEPLOYMENTS_DIR, type DeploymentRecord } from "./records";
+import { latestRelease } from "./release";
 
 const base = loadProfile({ chain: "base-sepolia" });
 
@@ -186,4 +194,28 @@ test("address overrides accept the overridable contracts only, as nonzero addres
 			false,
 			JSON.stringify(addresses),
 		);
+});
+
+/**
+ * A profile's release is what every new wallet on its chain starts on, for good: the factory's
+ * implementation is immutable. Until the chain has a committed record, the profile must pin the
+ * newest release, so a stale pin cannot ship; once deployed, it stays the release the record holds.
+ */
+test("shipped profiles pin the newest release until deployed, then the release they were deployed from", () => {
+	const newest = latestRelease();
+	for (const id of listProfiles()) {
+		const { profile } = loadProfile({ chain: id });
+		const record = join(COMMITTED_DEPLOYMENTS_DIR, `${profile.chainId}.json`);
+		const deployedFrom = existsSync(record)
+			? (JSON.parse(readFileSync(record, "utf8")) as DeploymentRecord).contracts
+					.walletImplementation?.release
+			: undefined;
+		assert.equal(
+			profile.release,
+			deployedFrom ?? newest,
+			deployedFrom
+				? `${id}: chain ${profile.chainId} was deployed from ${deployedFrom}; its profile must keep that release`
+				: `${id} pins ${profile.release}, but ${newest} is the newest release and the chain is not deployed yet`,
+		);
+	}
 });

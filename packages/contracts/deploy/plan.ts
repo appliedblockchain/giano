@@ -104,6 +104,21 @@ export type Plan = {
 	deviations: Deviation[];
 	/** Reasons this plan must not be executed, whatever the operator confirms. */
 	blockers: string[];
+	/**
+	 * Upgrades the chain executed that its record does not show yet: the paymaster proxy points at a
+	 * recorded upgrade target holding release code, though the record still names the previous
+	 * implementation. The plan already uses `to`; a run that saves the record writes it back
+	 * ({@link reconcileRecord}).
+	 */
+	reconciled: Reconciliation[];
+};
+
+/** One executed upgrade the plan read from the chain rather than from the record. */
+export type Reconciliation = {
+	key: "paymasterImplementation";
+	/** What the record names; null when it names nothing. */
+	from: Address | null;
+	to: Address;
 };
 
 export type PlanInput = {
@@ -197,13 +212,20 @@ export async function planCore(
 			`The ${input.network} canonical deployer is not configured (DEPLOYERS.${input.network} in packages/contracts/deploy/config.ts). Nothing can be signed for a ${input.network} chain until it is set.`,
 		);
 
+	// An upgrade can be executed by a timelock, a Safe or anyone holding the role, so the record is not
+	// always told. The proxy's implementation slot is the truth; a recorded upgrade target there wins.
+	const reconciled = await executedUpgrades(client, input, overrides);
+
 	const contracts: PlannedContract[] = [];
 	for (const key of CORE_KEYS) {
 		const contract = CONTRACT_OF[key];
 		const override = overrides[key] ? getAddress(overrides[key]) : null;
-		const recorded = input.record?.contracts[key]?.address
-			? getAddress(input.record.contracts[key].address)
-			: null;
+		const executed = reconciled.find((r) => r.key === key)?.to;
+		const recorded = executed
+			? executed
+			: input.record?.contracts[key]?.address
+				? getAddress(input.record.contracts[key].address)
+				: null;
 		// A recorded upgrade target at its own deterministic address (`upgrade --execute` records the
 		// implementation the proxy now uses) is expected there; it may hold a newer release.
 		const upgrade =
@@ -317,7 +339,65 @@ export async function planCore(
 		contracts,
 		deviations,
 		blockers,
+		reconciled,
 	};
+}
+
+/**
+ * The paymaster upgrade the chain executed that the record does not show: the proxy points at an
+ * implementation the record lists among its upgrade targets, and that implementation holds paymaster
+ * release code. An implementation that is not a recorded target is left to the usual blocker.
+ */
+async function executedUpgrades(
+	client: PublicClient,
+	input: PlanInput,
+	overrides: Partial<Record<OverrideKey, string>>,
+): Promise<Reconciliation[]> {
+	const record = input.record;
+	if (!record || overrides.paymasterImplementation) return [];
+	const proxy =
+		overrides.paymasterProxy ?? record.contracts.paymasterProxy?.address;
+	if (!proxy) return [];
+	const proxyCode = await client.getCode({ address: getAddress(proxy) });
+	if (!proxyCode || proxyCode === "0x") return [];
+	const current = await proxyImplementation(client, getAddress(proxy));
+	if (!current) return [];
+	const named = record.contracts.paymasterImplementation?.address ?? null;
+	if (same(named, current)) return [];
+	const target = record.upgrades.find(
+		(u) => u.of === "paymasterImplementation" && same(u.address, current),
+	);
+	if (!target) return [];
+	if ((await codeAt(client, "GianoPaymaster", current)).state !== "release")
+		return [];
+	return [
+		{
+			key: "paymasterImplementation",
+			from: named ? getAddress(named) : null,
+			to: getAddress(current),
+		},
+	];
+}
+
+/**
+ * Writes the plan's reconciled upgrades into `record`, as `upgrade --execute` records its own: the
+ * upgrade target, with its placement. Returns whether anything changed.
+ */
+export function reconcileRecord(record: DeploymentRecord, plan: Plan): boolean {
+	let changed = false;
+	for (const { key, to } of plan.reconciled) {
+		const target = record.upgrades.find(
+			(u) => u.of === key && same(u.address, to),
+		);
+		if (!target) continue;
+		const { of: _of, ...deployed } = target;
+		record.contracts[key] = {
+			...deployed,
+			...placementOf(key, to, plan.classDeployer, record.upgrades),
+		};
+		changed = true;
+	}
+	return changed;
 }
 
 /**
@@ -404,6 +484,10 @@ export function formatPlan(plan: Plan): string[] {
 			`  ${c.key.padEnd(24)} expected ${c.expected ?? "(none)"}  actual ${c.actual ?? "(unknown)"}  [${c.actual ? describeCode(c.code) : "not checked: no deployer or key to derive the address from"}]${deviation}`,
 		);
 	}
+	for (const r of plan.reconciled)
+		lines.push(
+			`  ${r.key} was upgraded on chain to ${r.to} (a recorded upgrade target); the record still names ${r.from ?? "nothing"} and is updated by the next run that saves it.`,
+		);
 	return lines;
 }
 

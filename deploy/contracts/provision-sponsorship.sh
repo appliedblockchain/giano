@@ -9,7 +9,7 @@
 # stack comes up looking healthy and refuses every sponsored transaction.
 #
 # Deliberately a wrapper rather than a copy: the work is done by the same script the e2e devnet
-# uses, parameterised through SPONSOR_TENANTS / SPONSOR_ERC20 / SPONSOR_CHAIN_IDS.
+# uses, parameterised through SPONSOR_TENANTS / SPONSOR_ERC20 / SPONSOR_ALLOWLIST / SPONSOR_CHAIN_IDS.
 #
 # Usage: pnpm contracts:sponsorship --chain <profile> --env-file <file>
 set -euo pipefail
@@ -28,9 +28,25 @@ export TENANT_SLUG
 : "${ADMIN_API_KEY:?provide the tenant admin API key in the selected operator environment}"
 
 # Empty on a production chain (8453 / 84532 / 11155111): the deploy script never puts the demo
-# ERC-20 there (R-29). The allowlist is then empty, and what gets sponsored is wallet management —
-# which includes the sample dApp's "Send" self-call — since that is platform policy, not allowlist.
+# ERC-20 there (R-29).
 TEST_ERC20_ADDRESS="${TEST_ERC20_ADDRESS:-}"
+# The tenant's own contracts to sponsor, comma-separated addresses, every function allowed. The
+# wallet-api enables no sponsorship at all, wallet management included, for a tenant whose allowlist
+# is empty (services/wallet-api/src/services/sponsorship-rules.ts), so a chain without the demo
+# ERC-20 needs at least one entry here. Narrow it to specific functions in the console afterwards.
+SPONSOR_ALLOWLIST="${SPONSOR_ALLOWLIST:-}"
+for contract in ${SPONSOR_ALLOWLIST//,/ }; do
+  if ! [[ "$contract" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+    echo "SPONSOR_ALLOWLIST: '$contract' is not a contract address" >&2
+    exit 1
+  fi
+done
+if [ -z "$TEST_ERC20_ADDRESS" ] && [ -z "${SPONSOR_ALLOWLIST//[, ]/}" ]; then
+  echo "No contract to sponsor on chain $CHAIN_ID: there is no demo ERC-20 here, so set SPONSOR_ALLOWLIST" >&2
+  echo "to the tenant's contract addresses. The wallet-api sponsors nothing, not even wallet management," >&2
+  echo "for a tenant with an empty allowlist." >&2
+  exit 1
+fi
 # The wallet-api is not published on a host port by docker-compose.chain.yml — the browser
 # reaches it through wallet-web's nginx /api proxy, and so do we.
 : "${WALLET_API_URL:?provide the wallet-api base URL in the selected operator environment}"
@@ -41,13 +57,15 @@ echo "    tenant     : $TENANT_SLUG"
 echo "    chain      : $CHAIN_ID"
 if [ -n "$TEST_ERC20_ADDRESS" ]; then
   echo "    allowlisted: $TEST_ERC20_ADDRESS (the demo ERC-20, all functions)"
-else
-  echo "    allowlisted: nothing (no demo ERC-20 on this chain) — wallet management only"
 fi
+for contract in ${SPONSOR_ALLOWLIST//,/ }; do
+  echo "    allowlisted: $contract (SPONSOR_ALLOWLIST, all functions)"
+done
 echo
 
 WALLET_API_URL="$WALLET_API_URL" \
 SPONSOR_CHAIN_IDS="$CHAIN_ID" \
 SPONSOR_ERC20="$TEST_ERC20_ADDRESS" \
+SPONSOR_ALLOWLIST="$SPONSOR_ALLOWLIST" \
 SPONSOR_TENANTS="$(node -e 'console.log(JSON.stringify([{slug:process.env.TENANT_SLUG,adminKey:process.env.ADMIN_API_KEY}]))')" \
   node "$REPO_ROOT/e2e/devnet/provision-sponsorship.mjs"

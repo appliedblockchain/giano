@@ -1,0 +1,27 @@
+# An anvil fork of a public testnet, for the deployment rehearsal (pnpm contracts:rehearse;
+# deploy/contracts/README.md "Rehearsal"). It keeps the real chain id and the real CreateX and
+# EntryPoint v0.9 code, so every deploy check runs as it would on the chain itself, and nothing is
+# sent to the chain. The rehearsal deployer is accepted only by a node that reports a fork
+# (packages/contracts/deploy/config.ts activateRehearsal), which this is.
+#
+# Loopback only. The platform stack (docker-compose.chain.yml + docker-compose.rehearsal.yml) reaches
+# it through host.docker.internal.
+name: giano-fork
+
+services:
+  fork:
+    image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1, as the e2e devnets
+    entrypoint:
+      - anvil
+      - --host
+      - 0.0.0.0
+      - --fork-url
+      - ${FORK_URL:?set FORK_URL to the public RPC of the chain to fork}
+      - --fork-block-number
+      - ${FORK_BLOCK_NUMBER:?set FORK_BLOCK_NUMBER so reruns fork the same state}
+      # The rehearsal advances the clock past timelock delays; a fixed block time keeps receipts and
+      # the paymaster watcher moving between transactions.
+      - --block-time
+      - '2'
+    ports:
+      - '127.0.0.1:${FORK_PORT:-18545}:8545'
