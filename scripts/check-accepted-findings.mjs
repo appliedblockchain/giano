@@ -1017,6 +1017,13 @@ const covers = (entry, finding) =>
 const matches = (entry, key) =>
 	Object.entries(entry.match).every(([k, v]) => key[k] === v);
 
+// Tools whose findings change only when the contract source or the pinned tool version changes. For
+// these, every entry must match a finding in each report. An entry that matches nothing fails, so the
+// PR that fixes or moves a finding also removes or updates its entry. Otherwise a stale Aderyn entry,
+// which matches only a detector, a file and a line, would later accept a different finding that lands
+// on the same line.
+export const FULL_SCAN_TOOLS = ["slither", "aderyn"];
+
 /**
  * Decides one report. Returns { accepted: [{ entry, label }], failures: [{ label, message }],
  * belowGate }. Throws ReportError when the report is missing, empty or not valid.
@@ -1040,8 +1047,10 @@ export function evaluateReport(tool, text, register, today, options = {}) {
 	);
 	const usable = new Set(usableEntries(register, today));
 	const result = { accepted: [], failures: [], belowGate: 0 };
+	const matched = new Set();
 	for (const finding of findings) {
 		const candidates = own.filter((e) => matches(e, finding.key));
+		for (const c of candidates) matched.add(c);
 		const entry = candidates.find((e) => usable.has(e) && covers(e, finding));
 		const outranked = candidates.find((e) => usable.has(e));
 		if (entry) {
@@ -1062,6 +1071,12 @@ export function evaluateReport(tool, text, register, today, options = {}) {
 			});
 		}
 	}
+	if (FULL_SCAN_TOOLS.includes(tool))
+		for (const e of own.filter((e) => !matched.has(e)))
+			result.failures.push({
+				label: `${e.id ?? "an entry"} in ${REGISTER_PATH}`,
+				message: `matches no ${tool} finding in this report. Remove the entry if the finding is fixed, or update its match if the finding moved`,
+			});
 	return result;
 }
 
@@ -1121,7 +1136,7 @@ function reportMode(args, root, today) {
 		console.error(`FAIL  ${f.label}: ${f.message}`);
 	if (result.failures.length) {
 		console.error(
-			`\n${result.failures.length} open ${args.tool} finding(s). Fix each one, or record it in ${REGISTER_PATH} (see security/README.md).`,
+			`\n${result.failures.length} ${args.tool} problem(s). Fix each open finding or record it in ${REGISTER_PATH}, and remove or update each entry that matches nothing (see security/README.md).`,
 		);
 		return 1;
 	}

@@ -1075,15 +1075,73 @@ describe("check-accepted-findings: report details", () => {
 				{ contract_path: "src/utils/ERC1271InputGenerator.sol", line_no: 49 },
 			],
 		};
-		assert.equal(
-			evaluateReport(
-				"aderyn",
-				aderynReport([moved]),
-				register(aderynEntry),
-				TODAY,
-			).failures.length,
-			1,
+		const failures = evaluateReport(
+			"aderyn",
+			aderynReport([moved]),
+			register(aderynEntry),
+			TODAY,
+		).failures;
+		assert.equal(failures.length, 2);
+		assert.match(failures[0].message, /no entry in/);
+		assert.match(failures[1].label, /^AF-005 in /);
+	});
+
+	it("fails a Slither or Aderyn entry that matches no finding in the report", () => {
+		const slither = evaluateReport(
+			"slither",
+			slitherReport([]),
+			register(entry()),
+			TODAY,
 		);
+		assert.deepEqual(slither.failures, [
+			{
+				label: "AF-001 in security/accepted-findings.json",
+				message:
+					"matches no slither finding in this report. Remove the entry if the finding is fixed, or update its match if the finding moved",
+			},
+		]);
+		const aderyn = evaluateReport(
+			"aderyn",
+			aderynReport([]),
+			register(aderynEntry, entry()),
+			TODAY,
+		);
+		assert.deepEqual(
+			aderyn.failures.map((f) => f.label),
+			["AF-005 in security/accepted-findings.json"],
+		);
+		// A finding that the entry matches but no longer covers still uses the entry.
+		const raised = evaluateReport(
+			"slither",
+			slitherReport([slitherHigh]),
+			register(entry({ severity: "medium" })),
+			TODAY,
+		);
+		assert.equal(raised.failures.length, 1);
+		assert.match(raised.failures[0].message, /accepts medium/);
+		// An expired entry that still matches its finding fails once, for the expiry.
+		const expired = evaluateReport(
+			"slither",
+			slitherReport([slitherHigh]),
+			register(entry({ accepted: "2026-01-01", expires: "2026-06-30" })),
+			TODAY,
+		);
+		assert.equal(expired.failures.length, 1);
+		assert.match(expired.failures[0].message, /matches AF-001, but the entry/);
+	});
+
+	it("does not fail an unused entry of a tool whose findings change without a code change", () => {
+		for (const [tool, text, options, e] of [
+			["pnpm-audit", auditReport({}), { workspace: "." }, auditEntry],
+			["trivy", trivyReport([]), { image: "giano-wallet-api" }, null],
+			["gitleaks", "[]", {}, null],
+		])
+			assert.deepEqual(
+				evaluateReport(tool, text, register(...(e ? [e] : [])), TODAY, options)
+					.failures,
+				[],
+				tool,
+			);
 	});
 
 	it("gates pnpm high and critical, lists accepted moderates, and scopes entries to the workspace", () => {

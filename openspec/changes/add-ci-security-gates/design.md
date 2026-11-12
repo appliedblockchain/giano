@@ -85,7 +85,11 @@ decides pass or fail. The script has two modes:
   contains a `slither-disable` or `aderyn-ignore` comment.
 - **Report mode** (`--tool <tool> --report <file> […]`): reads one report, keeps findings at or above the gate
   severity, drops the ones that match a valid (not expired) register entry, and fails on the rest. It fails when the
-  report is missing or not valid JSON. It prints each accepted finding with its entry ID.
+  report is missing or not valid JSON. It prints each accepted finding with its entry ID. For `slither` and `aderyn`,
+  it also fails on each entry of that tool that matches no finding in the report. Their findings change only with the
+  contract source or the pinned tool version, so an unused entry means the finding was fixed or moved, and the same PR
+  removes or updates the entry. The other tools' findings can change without a code change, for example when an
+  advisory database changes, so their unused entries do not fail.
 
 Match keys:
 
@@ -252,7 +256,9 @@ a skipped required check as passed. `continue-on-error` lets a failed job or ste
 `grep` missed some of these key forms, so the check does not use one.
 
 The same script reads every workflow in `.github/workflows`. It fails on any `uses` that is not a local `./` path, an
-action or reusable workflow pinned to a full 40-character commit SHA, or a `docker://` image pinned by digest. #246
+action or reusable workflow pinned to a full 40-character commit SHA, or a `docker://` image pinned by digest. It
+also fails on a job `container` or a `services` image that is not pinned by digest, and it checks the `uses` of every
+local action that a workflow uses, directly or through another local action. #246
 pinned every action. This check stops a later PR from moving one back to a tag, which its owner can move to other
 code.
 
@@ -283,6 +289,10 @@ expire, so an expiry is not a surprise.
   failure message says the tool could not run, not that a finding exists.
 - [Aderyn matches by line number, so an unrelated edit above a finding breaks the match] → The job fails with the
   detector and new line, and the fix is a one-line register update. Contract source changes are rare and reviewed.
+  An entry left behind after its finding is fixed would accept a later finding of the same detector on the same line,
+  so report mode fails on a `slither` or `aderyn` entry that matches no finding. A new finding of the same detector on
+  the same line in the same PR still matches the old entry, so a reviewer checks the line when a PR changes a flagged
+  contract.
 - [A new advisory blocks unrelated PRs] → D13. A short-lived register entry unblocks the team within one PR.
 - [Building each image twice in `docker.yml` costs time] → The second build reuses the builder's cache. On PRs the
   second build does not run.

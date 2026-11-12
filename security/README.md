@@ -63,6 +63,11 @@ When an entry expires, the register check fails on every PR and release until th
 - **Renew.** Reassess the finding, then set a new `accepted` date, an updated `reason` and a new `expires`.
 - **Remove.** If the finding is fixed or no longer reported, delete the entry. Its ID is not reused.
 
+A `slither` or `aderyn` entry that matches no finding in the report fails the job. The PR that fixes or moves a finding
+removes or updates its entry. Otherwise a stale `aderyn` entry, which matches only a detector, a file and a line, would
+later accept a different finding that lands on the same line. The other tools' findings can change without a code
+change, for example when an advisory database changes, so their unused entries do not fail CI.
+
 The weekly security scan lists entries that expire within 14 days.
 
 ## What the register check rejects

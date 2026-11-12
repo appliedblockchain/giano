@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
 	CI_WORKFLOW,
 	checkActionPins,
+	checkAllPins,
 	checkCiGate,
 	WORKFLOWS_DIR,
 } from "./check-ci-gate.mjs";
@@ -190,4 +199,91 @@ test("an unpinned action fails in every key form", () => {
 		checkActionPins(`${steps("x")}  build:\n`, "x.yml")[0],
 		/not valid YAML/,
 	);
+});
+
+const IMAGE = `node@${DIGEST}`;
+const job = (body) =>
+	`on: push\njobs:\n  build:\n    runs-on: ubuntu-26.04\n${body}    steps:\n      - run: make\n`;
+
+test("job and service container images pinned to a digest pass", () => {
+	for (const body of [
+		`    container: ${IMAGE}\n`,
+		`    container:\n      image: ${IMAGE}\n      options: --cpus 1\n`,
+		`    services:\n      db:\n        image: ${IMAGE}\n`,
+	])
+		assert.deepEqual(checkActionPins(job(body), "x.yml"), [], body);
+});
+
+test("a container or service image on a tag, without a digest or from an expression fails", () => {
+	for (const [body, path] of [
+		["    container: node:24\n", "jobs.build.container"],
+		["    container:\n      image: node:24\n", "jobs.build.container.image"],
+		["    Container:\n      Image: node\n", "jobs.build.Container.Image"],
+		[
+			"    services:\n      db:\n        image: postgres:17\n",
+			"jobs.build.services.db.image",
+		],
+		["    services:\n      db: postgres:17\n", "jobs.build.services.db"],
+		[`    container: \${{ matrix.image }}\n`, "jobs.build.container"],
+	]) {
+		const errors = checkActionPins(job(body), "x.yml");
+		assert.equal(errors.length, 1, body);
+		assert.match(
+			errors[0],
+			new RegExp(
+				`^x\\.yml: ${path.replaceAll(".", "\\.")} is .*Pin the image to a digest`,
+			),
+		);
+	}
+});
+
+test("an image input of a step is not a container image", () => {
+	const text = `${steps(`aws-actions/amazon-ecs-render-task-definition@${SHA}`)}        with:\n          image: repo/app:latest\n`;
+	assert.deepEqual(checkActionPins(text, "x.yml"), []);
+});
+
+const repo = (files) => {
+	const root = mkdtempSync(join(tmpdir(), "ci-gate-"));
+	for (const [file, text] of Object.entries(files)) {
+		mkdirSync(dirname(join(root, file)), { recursive: true });
+		writeFileSync(join(root, file), text);
+	}
+	return root;
+};
+
+test("the actions a local action uses are checked, also through another local action", () => {
+	const root = repo({
+		[`${WORKFLOWS_DIR}/w.yml`]: steps(
+			"./.github/actions/setup",
+			"./.github/workflows/r.yml",
+		),
+		[`${WORKFLOWS_DIR}/r.yml`]: steps(`actions/checkout@${SHA}`),
+		".github/actions/setup/action.yml": `runs:\n  using: composite\n  steps:\n    - uses: actions/setup-node@v6\n    - uses: ./.github/actions/inner\n`,
+		".github/actions/inner/action.yaml": `runs:\n  using: composite\n  steps:\n    - uses: actions/cache@v5\n    - uses: ./.github/actions/setup\n`,
+	});
+	const { errors, workflows, actions } = checkAllPins(root);
+	assert.equal(workflows, 2);
+	assert.equal(actions, 2);
+	assert.equal(errors.length, 2);
+	assert.match(
+		errors[0],
+		/^\.github\/actions\/setup\/action\.yml: runs\.steps\.0\.uses is "actions\/setup-node@v6"/,
+	);
+	assert.match(
+		errors[1],
+		/^\.github\/actions\/inner\/action\.yaml: runs\.steps\.0\.uses is "actions\/cache@v5"/,
+	);
+});
+
+test("a local action without an action file fails", () => {
+	const root = repo({
+		[`${WORKFLOWS_DIR}/w.yml`]: steps("./.github/actions/missing"),
+	});
+	assert.deepEqual(checkAllPins(root).errors, [
+		"./.github/actions/missing is used as a local action, but it has no action.yml or action.yaml",
+	]);
+});
+
+test("the real workflows and their local actions pass", () => {
+	assert.deepEqual(checkAllPins().errors, []);
 });

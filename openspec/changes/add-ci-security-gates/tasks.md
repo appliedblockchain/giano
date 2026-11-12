@@ -19,6 +19,8 @@
 - [x] 1.15 Pin every action that the new jobs use to a full commit SHA, with the release as a comment, as #246 does. Extend `scripts/check-ci-gate.mjs` (with tests) to fail on any `uses` in `.github/workflows` that is not a local path, a commit SHA or an image digest (D12). Verify the check passes on every workflow and fails on `actions/checkout@v7`.
 - [x] 1.16 Replace the parsing of `slither.config.json` and `aderyn.toml` with a comparison against a fixed copy, apart from the reasons (D3). Verify the committed configs pass, and every changed value, added setting and other TOML or JSON form in the tests fails.
 - [x] 1.17 Remove AF-006 and AF-007 from the register, because #260 fixed both advisories by lifting `glob` to 14.0.3 (with `minimatch` 11.0.4). Verify `pnpm audit` reports no advisory in the root workspace and the register check passes.
+- [x] 1.18 Make report mode fail on a `slither` or `aderyn` entry that matches no finding in the report (D1), so a stale entry cannot accept a later finding on the same line. Verify with unit tests, that both CI reports still pass, and that the Aderyn report without the AF-004 finding fails and names AF-004.
+- [x] 1.19 Extend `scripts/check-ci-gate.mjs` (with tests) to fail on a job `container` or `services` image that is not pinned by digest, and to check the `uses` of every local action a workflow uses (D12). Verify the check passes on every workflow and fails on `container: node:24`.
 
 ## 2. Dependencies, secrets and source (PR 2)
 

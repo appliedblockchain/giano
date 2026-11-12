@@ -61,7 +61,8 @@ tool's scope are not suppressions, but each SHALL carry a reason.
 ### Requirement: Solidity static analysis fails on High findings
 On every pull request, Slither and Aderyn SHALL analyse the production contracts in `packages/contracts/src`, excluding
 `src/testing`, test code and dependencies. The check SHALL fail on any High finding from either tool that is not in the
-register. Both full reports SHALL be kept as CI artifacts, also when the check fails.
+register. It SHALL also fail on any register entry of either tool that matches no finding in the report. Both full
+reports SHALL be kept as CI artifacts, also when the check fails.
 
 #### Scenario: New High finding
 - **WHEN** a PR adds a contract change that Slither reports as High
@@ -74,6 +75,10 @@ register. Both full reports SHALL be kept as CI artifacts, also when the check f
 #### Scenario: Reports kept on failure
 - **WHEN** the check fails
 - **THEN** the Slither and Aderyn reports are still uploaded
+
+#### Scenario: Finding fixed but entry kept
+- **WHEN** a PR fixes a finding that has a Slither or Aderyn register entry, and does not remove the entry
+- **THEN** the check fails and names the entry that matches no finding
 
 ### Requirement: Dependency audit fails on high or critical advisories
 On every pull request, the dependency audit SHALL check the lockfile of each pnpm workspace (the root and
@@ -184,9 +189,13 @@ release binaries by a sha256 recorded in the workflow. A hash mismatch SHALL fai
 
 ### Requirement: Workflow actions stay pinned
 Every action and reusable workflow that a workflow in `.github/workflows` uses SHALL be a local path or SHALL be
-pinned to a full commit SHA. A container image SHALL be pinned by digest. The CI summary check SHALL fail on any
-other reference.
+pinned to a full commit SHA. A container image SHALL be pinned by digest. The same rules SHALL apply to the actions
+that a local action uses. The CI summary check SHALL fail on any other reference.
 
 #### Scenario: Action moved back to a tag
 - **WHEN** a PR changes a workflow step to `uses: actions/checkout@v7`
+- **THEN** the CI gate check fails, and so does the summary check
+
+#### Scenario: Job container on a tag
+- **WHEN** a PR adds `container: node:24` or a service with `image: postgres:17` to a job
 - **THEN** the CI gate check fails, and so does the summary check

@@ -10,12 +10,14 @@
 //     counts a skipped required check as passed);
 //   - no job or step has continue-on-error, which lets a failure count as success.
 // Every workflow in .github/workflows must also pin each action and reusable workflow it uses to a
-// full commit SHA. A tag or a branch can be moved to other code; a commit SHA cannot. Local `./`
-// paths come from the same commit as the workflow, so they need no pin.
+// full commit SHA, and each job container and service container image to a digest. A tag or a
+// branch can be moved to other code; a commit SHA or a digest cannot. Local `./` paths come from the
+// same commit as the workflow, so they need no pin, but the actions a local action uses are checked
+// the same way.
 // The check parses the YAML with a full parser, so every key form (quoted, escaped, explicit `?`,
 // tagged, anchored or merged) reads the same as GitHub reads it.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
@@ -28,6 +30,8 @@ export const GATE_JOB = "ci-passed";
 // owner/repo[/path]@<commit SHA>, or a container image by digest.
 const PINNED_ACTION = /^[^@\s]+@[0-9a-f]{40}$/;
 const PINNED_IMAGE = /^docker:\/\/[^@\s]+@sha256:[0-9a-f]{64}$/;
+// A job or service container image by digest. GitHub takes it without the docker:// prefix.
+const PINNED_CONTAINER = /^[^@\s]+@sha256:[0-9a-f]{64}$/;
 
 const isObject = (v) =>
 	v !== null && typeof v === "object" && !Array.isArray(v);
@@ -93,13 +97,50 @@ export function checkCiGate(text) {
 	return errors;
 }
 
-/** Returns an error for every `uses` in a workflow that is not a local path or pinned to a commit SHA. */
+/** The value of the key `name` in an object, in any letter case, as [key, value] pairs. */
+const entriesNamed = (name, value) =>
+	isObject(value)
+		? Object.entries(value).filter(([k]) => k.toLowerCase() === name)
+		: [];
+
+/** Every [path, image] of a job container or service container in a parsed workflow. */
+function containerImages(workflow) {
+	return entriesNamed("jobs", workflow).flatMap(([jobsKey, jobs]) =>
+		Object.entries(isObject(jobs) ? jobs : {}).flatMap(([id, job]) => {
+			const at = `${jobsKey}.${id}`;
+			// A container is an image string or a map with an `image` key.
+			const containers = entriesNamed("container", job).flatMap(([k, c]) =>
+				isObject(c)
+					? entriesNamed("image", c).map(([ik, v]) => [`${at}.${k}.${ik}`, v])
+					: [[`${at}.${k}`, c]],
+			);
+			const services = entriesNamed("services", job).flatMap(([k, map]) =>
+				isObject(map)
+					? Object.entries(map).flatMap(([name, svc]) =>
+							isObject(svc)
+								? entriesNamed("image", svc).map(([ik, v]) => [
+										`${at}.${k}.${name}.${ik}`,
+										v,
+									])
+								: [[`${at}.${k}.${name}`, svc]],
+						)
+					: [[`${at}.${k}`, map]],
+			);
+			return [...containers, ...services];
+		}),
+	);
+}
+
+/**
+ * Returns an error for every `uses` in a workflow or action file that is not a local path or pinned
+ * to a commit SHA, and for every job or service container image that is not pinned to a digest.
+ */
 export function checkActionPins(text, file) {
 	const { workflow, errors } = parseWorkflow(text, file);
 	if (errors) return errors;
 	// Every key named `uses` at any depth, so a job, a step or a key form the check does not expect
 	// cannot hide one. A `with:` input named `uses` is checked too, which fails closed.
-	return keysNamed("uses", workflow)
+	const actions = keysNamed("uses", workflow)
 		.filter(
 			([, v]) =>
 				typeof v !== "string" ||
@@ -109,19 +150,76 @@ export function checkActionPins(text, file) {
 			([p, v]) =>
 				`${file}: ${p} is ${JSON.stringify(v)}. Pin it to a full 40-character commit SHA, with the release as a trailing comment, or use a local ./ path. A tag or a branch can be moved to other code.`,
 		);
+	// An expression such as ${{ matrix.image }} cannot be checked, so it fails closed.
+	const images = containerImages(workflow)
+		.filter(([, v]) => typeof v !== "string" || !PINNED_CONTAINER.test(v))
+		.map(
+			([p, v]) =>
+				`${file}: ${p} is ${JSON.stringify(v)}. Pin the image to a digest (image@sha256:<64 hex>). A tag can be moved to another image.`,
+		);
+	return [...actions, ...images];
+}
+
+/** The local actions (`./` paths outside .github/workflows) that a workflow or action file uses. */
+export function localActions(text, file) {
+	const { workflow, errors } = parseWorkflow(text, file);
+	if (errors) return [];
+	return keysNamed("uses", workflow)
+		.map(([, v]) => v)
+		.filter(
+			(v) =>
+				typeof v === "string" &&
+				v.startsWith("./") &&
+				!v.startsWith(`./${WORKFLOWS_DIR}/`),
+		)
+		.map((v) => v.slice(2).replace(/\/+$/, ""));
+}
+
+/**
+ * Checks the pins of every workflow, and of every local action they use, directly or through
+ * another local action. A local action that has no action.yml or action.yaml fails.
+ */
+export function checkAllPins(root = ROOT) {
+	const read = (file) => readFileSync(join(root, file), "utf8");
+	const workflows = readdirSync(join(root, WORKFLOWS_DIR))
+		.filter((f) => /\.ya?ml$/.test(f))
+		.map((f) => `${WORKFLOWS_DIR}/${f}`);
+	const errors = [];
+	const seen = new Set();
+	const queue = [];
+	for (const file of workflows) {
+		const text = read(file);
+		errors.push(...checkActionPins(text, file));
+		queue.push(...localActions(text, file));
+	}
+	while (queue.length > 0) {
+		const dir = queue.shift();
+		if (seen.has(dir)) continue;
+		seen.add(dir);
+		const file = ["action.yml", "action.yaml"]
+			.map((f) => `${dir}/${f}`)
+			.find((f) => existsSync(join(root, f)));
+		if (!file) {
+			errors.push(
+				`./${dir} is used as a local action, but it has no action.yml or action.yaml`,
+			);
+			continue;
+		}
+		const text = read(file);
+		errors.push(...checkActionPins(text, file));
+		queue.push(...localActions(text, file));
+	}
+	return { errors, workflows: workflows.length, actions: seen.size };
 }
 
 if (
 	process.argv[1] &&
 	resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-	const workflows = readdirSync(join(ROOT, WORKFLOWS_DIR))
-		.filter((f) => /\.ya?ml$/.test(f))
-		.map((f) => `${WORKFLOWS_DIR}/${f}`);
-	const read = (file) => readFileSync(join(ROOT, file), "utf8");
+	const pins = checkAllPins();
 	const errors = [
-		...checkCiGate(read(CI_WORKFLOW)),
-		...workflows.flatMap((file) => checkActionPins(read(file), file)),
+		...checkCiGate(readFileSync(join(ROOT, CI_WORKFLOW), "utf8")),
+		...pins.errors,
 	];
 	for (const e of errors) console.error(e);
 	if (errors.length > 0) process.exit(1);
@@ -129,6 +227,6 @@ if (
 		`${CI_WORKFLOW}: ${GATE_JOB} needs every job, and no job can fail silently.`,
 	);
 	console.log(
-		`${WORKFLOWS_DIR}: all ${workflows.length} workflows pin every action to a commit SHA.`,
+		`${WORKFLOWS_DIR}: all ${pins.workflows} workflows and ${pins.actions} local actions pin every action to a commit SHA and every container image to a digest.`,
 	);
 }
