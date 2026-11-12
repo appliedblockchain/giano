@@ -33,6 +33,8 @@ describe("isBlockRangeError", () => {
 		"exceed maximum block range: 5000",
 		// A long gap between "limited to a" and "range" in one sentence
 		"eth_getLogs is limited to a maximum of 10000 blocks per request for this API key tier, please reduce the range",
+		// An earlier sentence has "limited to a" but no "range"
+		"rate limited to a few calls. eth_getLogs is limited to a 10,000 range",
 		"requested too many blocks from 0 to 47000000, maximum is set to 1024",
 		// wallet-api's platform read relay, which the hosted console reads through
 		"eth_getLogs must name a blockHash, or hex fromBlock and toBlock spanning at most 10000 blocks",
