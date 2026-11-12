@@ -126,7 +126,7 @@ describe("cost arithmetic", () => {
 describe("call decoding", () => {
 	it("decodes a single execute", () => {
 		expect(decodeInnerCalls(execute(TOKEN, TRANSFER))).toEqual([
-			{ target: TOKEN, selector: TRANSFER },
+			{ target: TOKEN, selector: TRANSFER, empty: false },
 		]);
 	});
 
@@ -138,14 +138,14 @@ describe("call decoding", () => {
 			]),
 		);
 		expect(calls).toEqual([
-			{ target: TOKEN, selector: TRANSFER },
-			{ target: OTHER, selector: APPROVE },
+			{ target: TOKEN, selector: TRANSFER, empty: false },
+			{ target: OTHER, selector: APPROVE, empty: false },
 		]);
 	});
 
 	it("reports a bare value transfer as having no selector rather than inventing one", () => {
 		expect(decodeInnerCalls(execute(TOKEN, "0x"))).toEqual([
-			{ target: TOKEN, selector: null },
+			{ target: TOKEN, selector: null, empty: true },
 		]);
 	});
 
@@ -293,6 +293,21 @@ describe("wallet management", () => {
 				candidate: { ...candidate, callData: selfCall },
 			}).allowed,
 		).toBe(true);
+	});
+
+	// The reference demo's default send, and a call wallet-kit allows a dApp to make. Calldata of
+	// exactly 0x reaches only the wallet's empty receive(), so it runs no payload.
+	it.each([
+		["execute(self, 0x)", execute(WALLET, "0x")],
+		[
+			"executeBatch([self, 0x])",
+			executeBatch([{ target: WALLET, data: "0x" }]),
+		],
+	])("sponsors a plain value transfer to self: %s", (_label, callData) => {
+		const decision = evaluate({ candidate: { ...candidate, callData } });
+		expect(decision.allowed).toBe(true);
+		expect(decision.isWalletManagement).toBe(true);
+		expect(decision.capSource).toBe("platform");
 	});
 
 	it("refuses only on an explicit opt-out", () => {
@@ -486,7 +501,9 @@ describe("other self-calls", () => {
 		],
 		// Any function the list does not name is refused by default, including the fallback.
 		["execute(self, unknown selector)", execute(WALLET, "0xffffffff")],
-		["execute(self, no calldata)", execute(WALLET, "0x")],
+		// 1 to 3 bytes: no selector, but not empty either, so the call reaches the fallback.
+		["execute(self, 1 byte)", execute(WALLET, "0x00")],
+		["execute(self, 3 bytes)", execute(WALLET, "0xabcdef")],
 	];
 
 	it.each(otherSelfCalls)("refuses %s", (_label, callData) => {
