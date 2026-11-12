@@ -104,7 +104,7 @@ const SEVERITIES = [
 const FIELD_TYPES = {
 	string: (v) => typeof v === "string" && v.trim() !== "",
 	line: (v) => Number.isInteger(v) && v > 0,
-	sha256: (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v),
+	sha3_256: (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v),
 	ghsa: (v) =>
 		typeof v === "string" && /^GHSA(-[23456789cfghjmpqrvwx]{4}){3}$/.test(v),
 	workspace: (v) => WORKSPACES.includes(v),
@@ -113,7 +113,7 @@ const FIELD_TYPES = {
 // The finding identifier each tool's entries use (design D2). An entry's `match` has exactly the
 // keys of one shape. A gitleaks entry can instead name the allowlist in .gitleaks.toml it covers.
 export const MATCH_SHAPES = {
-	slither: [{ check: "string", id: "sha256" }],
+	slither: [{ check: "string", id: "sha3_256" }],
 	aderyn: [
 		{ detector_name: "string", contract_path: "string", line_no: "line" },
 	],

@@ -12,8 +12,8 @@
 			"accepted": "2026-11-09",
 			"expires": "2027-05-08",
 			"owner": "Rui Sereno",
-			"reason": "False positive. Sending value to a target the owner chooses is what a wallet does. Only three functions reach _call: execute and executeBatch are onlyEntryPointOrOwner, and executeWithoutChainIdValidation is onlyEntryPoint and calls only address(this) with value 0. The EntryPoint calls in only after the owner's signature is validated, so no other caller chooses the target.",
-			"followUp": "G22 (independent contract review). Slither derives the id from the code, so a change to _call or a Slither upgrade needs this entry reviewed."
+			"reason": "False positive. Sending value to a target the owner chooses is what a wallet does. Slither checks _call on its own and ignores the access control of its callers. Only three functions call _call. execute and executeBatch are onlyEntryPointOrOwner, so the caller must be the EntryPoint, an owner address or the account itself. executeWithoutChainIdValidation is onlyEntryPoint and calls only address(this) with value 0. The EntryPoint runs a user operation only when validateUserOp accepts an owner's signature over the userOp hash. That hash covers the call data, so the signer sets the target and the value. EntryPoint.delegateAndRevert can call the account as the EntryPoint without a signature, but it always reverts, so no value leaves.",
+			"followUp": "G22 (independent contract review). Slither's id is a SHA3-256 hash of the finding text, which includes the file and line of the call (src/GianoSmartWallet.sol#300). Any edit that moves that line, or a rename of the file or function, changes the id. A Slither upgrade that changes the text format also changes it. When the id changes, review the finding again before you update the entry."
 		},
 		{
 			"id": "AF-002",
@@ -28,8 +28,8 @@
 			"accepted": "2026-11-09",
 			"expires": "2027-05-08",
 			"owner": "Rui Sereno",
-			"reason": "False positive. createAccount forwards all of msg.value to the account through Solady LibClone.createDeterministicERC1967: create2 with value for a new account, or a call with value that reverts on failure for an existing one. Aderyn does not look inside inline assembly, so it misses that send. The payable constructor receives no ether: the deploy CLI deploys through CreateX deployCreate3 without value. Removing payable would change the bytecode and the CREATE2 addresses.",
-			"followUp": "G22 (independent contract review). Remove this entry if a later Aderyn version recognises sends in assembly."
+			"reason": "False positive. createAccount passes all of msg.value to Solady LibClone.createDeterministicERC1967. For a new account, create2 sends the value to the account. For an existing account, a call sends the value and reverts if it fails. Aderyn 0.6.8 counts only Solidity .call{value: ...}, transfer, send and sendValue as sends, so it misses both sends in LibClone's inline assembly. Aderyn skips constructors in this check, so createAccount alone triggers the finding. The factory has no receive or fallback, so a plain transfer to it reverts. The payable constructor receives no ether, because the deploy code calls CreateX deployCreate3 without value.",
+			"followUp": "G22 (independent contract review). Remove this entry if a later Aderyn version recognises sends in assembly. Review it if createAccount stops being payable or stops forwarding msg.value."
 		},
 		{
 			"id": "AF-003",
@@ -44,7 +44,7 @@
 			"accepted": "2026-11-09",
 			"expires": "2027-05-08",
 			"owner": "Rui Sereno",
-			"reason": "False positive. depositFor and addStake forward all of msg.value to the EntryPoint (depositTo{value: ...} and addStake{value: ...}), and receive() reverts with DirectTransferNotAllowed. The inherited upgradeToAndCall is also payable, but only UPGRADER_ROLE can call it, and that role also chooses the code that receives the value. Aderyn 0.6.8 counts only .call{value: ...}, transfer, send and sendValue as sends, so it misses calls with value to a named function. The deposit leaves through withdrawTo and the stake through unlockStake and withdrawStake.",
+			"reason": "False positive. depositFor and addStake forward all of msg.value to the EntryPoint (depositTo{value: ...} and addStake{value: ...}), and receive() reverts with DirectTransferNotAllowed. The inherited upgradeToAndCall is also payable. Only an UPGRADER_ROLE holder can call it, through the proxy. With empty data it rejects any value. With data, the new implementation that the upgrader chooses handles the value. Aderyn 0.6.8 does not count a call with value to a named function, such as depositTo{value: ...}, as a send. The deposit leaves through withdrawTo (withdrawTenant and withdrawFees) and as gas the EntryPoint charges. The stake leaves through withdrawStake, after unlockStake and the unstake delay. A withdrawal sent to the paymaster itself reverts, because receive() reverts.",
 			"followUp": "G22 (independent contract review). Remove this entry if a later Aderyn version recognises calls with value to a named function."
 		},
 		{
@@ -60,7 +60,7 @@
 			"accepted": "2026-11-09",
 			"expires": "2027-05-08",
 			"owner": "Rui Sereno",
-			"reason": "False positive. Aderyn matches the function by its name, which starts with init. initCodeHash() is a view function that returns the ERC-1967 init code hash and changes no state.",
+			"reason": "False positive. Aderyn flags any public or external function whose name starts with init or _init, unless its call graph contains a require, a revert or an initializer modifier. It does not check whether the function changes state. initCodeHash() is a view function. It returns the init code hash of the account's ERC-1967 proxy and changes no state.",
 			"followUp": "G22 (independent contract review)."
 		},
 		{
@@ -76,8 +76,8 @@
 			"accepted": "2026-11-09",
 			"expires": "2027-05-08",
 			"owner": "Rui Sereno",
-			"reason": "By design. The contract is never deployed. Clients run its constructor in an eth_call to get the replay-safe hash of an account that may not exist yet (the ERC-6492 pattern), and the assembly return is how the constructor hands that hash back.",
-			"followUp": "G22 (independent contract review)."
+			"reason": "By design. Aderyn flags every return in inline assembly. This one ends the constructor of a helper that is meant to run only inside an eth_call. The constructor returns the account's replay-safe hash, even before the account is deployed. No deploy script or release deploys the contract; only the Foundry tests create it. No code in this repo calls it today, because the wallet SDK computes the replay-safe hash off-chain.",
+			"followUp": "G22 (independent contract review). The helper fails when the hash starts with byte 0xEF (EIP-3541), about 1 in 256 hashes. Decide in G22 whether to fix or remove the contract."
 		}
 	]
 }

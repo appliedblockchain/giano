@@ -47,7 +47,7 @@ Each tool's CI job uploads its full report. Download it from the run's artifacts
 
 | Tool | Gate | `match` | Where to find it |
 |------|------|---------|------------------|
-| `slither` | High | `check`, `id` | `slither.json`: `results.detectors[].check` and the 64-character `id`. The `id` depends on the code and the Slither version, so a change to the flagged code or a Slither upgrade needs the entry updated. |
+| `slither` | High | `check`, `id` | `slither.json`: `results.detectors[].check` and the 64-character `id`. The `id` is a SHA3-256 hash of the finding text, which includes the file and line of the flagged code. An edit that moves that line, a rename, or a Slither upgrade that changes the text format changes the `id` and needs the entry updated. |
 | `aderyn` | High | `detector_name`, `contract_path`, `line_no` | `aderyn-report.json`: `high_issues.issues[].detector_name`, and `contract_path` and `line_no` of the instance. Aderyn has no stable finding ID, so an edit above the finding that moves its line needs the entry updated. |
 | `pnpm-audit` | high, critical | `workspace` (`.` or `services/custom-example`), `ghsa` | `pnpm audit --json` in that workspace: `advisories.*.github_advisory_id`. |
 | `trivy` | HIGH, CRITICAL with a fix | `image`, `package`, `vulnerability` | The image name without registry or tag (`giano-wallet-api`), and `PkgName` and `VulnerabilityID` from the Trivy JSON. |
