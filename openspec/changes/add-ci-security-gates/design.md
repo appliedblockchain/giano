@@ -144,18 +144,28 @@ Job `solidity-analysis`, named "Solidity static analysis (Slither, Aderyn)". It 
 Job `dependency-audit`, named "Dependency audit (pnpm audit)". It needs only pnpm, not an install. For each workspace:
 `pnpm audit --json > audit-<workspace>.json`, then the script in report mode. `pnpm audit` exits non-zero when it
 finds any advisory, so the job ignores that exit code and relies on the script. The script fails when the JSON is
-missing, empty or carries an error object, so a registry outage fails the job instead of passing it.
+missing, empty or carries an error object, so a registry outage fails the job instead of passing it. The command
+line sets `--registry` and clears `https-proxy` and `proxy`, which override every config file. So a PR cannot send
+the audit to another server, or through a proxy that answers for the registry.
 
 ### D6. Dependabot configuration
 
 `.github/dependabot.yml` holds three entries: npm at `/`, npm at `/services/custom-example`, and `github-actions` at
 `/`. #246 added the file with the `github-actions` entry, so PR 2 adds only the two npm entries. All are weekly with
-`cooldown: default-days: 7`. npm uses `versioning-strategy: increase`, so pins stay exact
-(ABIP-7), and an open PR limit of 5 per entry. Dependabot puts the manifest and lockfile change in one PR, as
-`AGENTS.md` requires.
+`cooldown: default-days: 7`. The `services/custom-example` entry excludes `@appliedblockchain/*` from the cooldown,
+as its `pnpm-workspace.yaml` excludes it from `minimumReleaseAge` (the recorded ABIP-6 deviation). It reads that scope
+from GitHub Packages through a `registries` entry with the Dependabot secret `GH_PACKAGES_READ_TOKEN`, because GitHub
+Packages refuses anonymous reads. npm uses `versioning-strategy: increase-if-necessary`: an exact pin always changes,
+so pins stay exact (ABIP-7), and a `peerDependencies` range of a published package that already accepts the new
+release stays as it is. Each npm entry has an open PR limit of 5 and the commit prefix `chore` with the scope.
+Dependabot puts the manifest and lockfile change in one PR, as `AGENTS.md` requires. Every entry ignores semver-major updates, so a major upgrade is done by hand and gets its own
+review. For actions, some must also change major version together (#246). The ignore may also stop a security
+update PR that needs a new major version. The Dependabot alert and the dependency audit still report that advisory.
+Dependabot cannot exempt one scope from the `*` ignore, so a new major of `@appliedblockchain/*` in the example is
+also installed by hand.
 
-Security update PRs ignore `cooldown`. A security PR that proposes a version younger than 7 days fails the frozen
-install and the release-age check. It then waits, as ABIP-6 says. This needs no new rule.
+Security update PRs ignore `cooldown`. A security PR that proposes a version younger than 7 days fails the
+`release-age-policy` job. It then waits, as ABIP-6 says. This needs no new rule.
 
 The pip requirements file and the release binaries are not covered by Dependabot. They are updated by hand under the
 pinning rule (D11).
@@ -186,8 +196,28 @@ Aderyn.
   mode.
 - On `workflow_call` (the release run): every commit on `main` arrived through a PR that ran the scan, so the job
   checks the register only and passes. It still reports the same check name.
-- `.gitleaks.toml` extends the default rules and adds no rule of its own. Its one allowlist covers the public Anvil
-  development keys that the devnet and tests use. The allowlist description starts with its register entry ID.
+- `.gitleaks.toml` extends the default rules. One allowlist covers the public Anvil
+  development keys that the devnet and tests use (AF-008). A second covers Ethereum addresses (AF-009), which
+  `generic-api-key` flags under key names such as `defaultToken`. A third covers the one public Infura key that
+  forge-std ships in `StdChains.sol` and that the release `standard-input.json` files embed (AF-010). Each allowlist
+  description starts with its register entry ID. An
+  allowlist holds only `description` and `regexes`, so it matches the secret only. The register check does not read
+  the regexes: a PR can widen an allowlist without changing its entry. Code-owner review of `.gitleaks.toml` covers
+  that. It needs a `.github/CODEOWNERS` file, which the repository does not have yet.
+- The default rules do not detect a provider key in an RPC URL, the one kind of secret this repository has leaked
+  (#244). `.gitleaks.toml` adds four rules for them: `giano-infura-key`, `giano-alchemy-key`, `giano-quicknode-key`
+  and `giano-ankr-key`. Each rule matches the HTTPS and WebSocket URLs of its provider, and captures only the key,
+  so `--redact` hides it. A custom rule with the ID of a default rule replaces that rule, so the register check
+  accepts a `[[rules]]` table only when its `id` starts with `giano-`, and only with `id`, `description`, `regex` and
+  `keywords`. A custom rule can therefore only add detection.
+- The commit range uses `--diff-merges=remerge`. By default `git log` shows no diff for a merge commit, so a secret
+  added while resolving a merge would not be scanned. It also uses `--text --no-textconv`, so a `.gitattributes` line
+  that marks a file as binary cannot hide its content. gitleaks logs a git or diff parse error and goes on, so a range
+  or option git rejects scans 0 commits and passes, and a commit it cannot parse is skipped. The job therefore checks
+  the range with `git rev-list` and fails on any error line in the gitleaks log. It also runs `git log` with the same
+  options and counts the commits that add a line. gitleaks counts every commit with a text hunk in a file that is not
+  deleted, so the job fails if gitleaks reports fewer scanned commits than that. Empty commits and clean merges add no
+  line, so they are not counted.
 
 Scanning the full history is out of scope. Credentials already in history are G30.
 
@@ -318,4 +348,4 @@ Task group 4 (R4) runs before the first production release.
 
 ## Open Questions
 
-- The exact gitleaks and Trivy versions and their sha256 values. D11 fixes the rule that chooses them.
+- The exact Trivy version and its sha256 values. D11 fixes the rule that chooses it. gitleaks is 8.30.1 (PR 2).

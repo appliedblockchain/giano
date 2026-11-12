@@ -54,6 +54,11 @@ tool's scope are not suppressions, but each SHALL carry a reason.
 - **WHEN** a gitleaks allowlist block has no register entry ID in its description
 - **THEN** the register check fails and names the file and the block
 
+#### Scenario: Custom rule that replaces a default rule
+- **WHEN** `.gitleaks.toml` has a `[[rules]]` table whose `id` does not start with `giano-`
+- **THEN** the register check fails and names the file and the table, because a rule with a default rule's ID
+  replaces that rule
+
 #### Scenario: In-source Solidity suppression
 - **WHEN** a file under `packages/contracts/src` contains a `slither-disable` or `aderyn-ignore` comment
 - **THEN** the register check fails and names the file and line
@@ -95,11 +100,16 @@ not in the register for that workspace. It SHALL fail when it cannot obtain the 
 
 ### Requirement: Dependency updates respect the release-age window
 Automated dependency update PRs SHALL be configured for npm in both workspaces and for GitHub Actions. Version
-update PRs SHALL NOT propose a version published less than 7 days earlier.
+update PRs SHALL NOT propose a version published less than 7 days earlier. The one exception is our own
+`@appliedblockchain/*` packages in `services/custom-example`, the recorded ABIP-6 deviation.
 
 #### Scenario: New npm release
-- **WHEN** a dependency publishes a new version
+- **WHEN** a third-party dependency publishes a new version
 - **THEN** no version update PR proposes it until 7 days after its release
+
+#### Scenario: New Giano release
+- **WHEN** `@appliedblockchain/giano-connector` publishes a new minor or patch version
+- **THEN** the next version update PR for `services/custom-example` may propose it at once
 
 ### Requirement: Source analysis covers TypeScript and workflows
 On every pull request and on `main`, CodeQL SHALL analyse the JavaScript/TypeScript code and the GitHub Actions
@@ -115,12 +125,16 @@ workflows. A dismissed CodeQL alert SHALL have a register entry.
 
 ### Requirement: Secret scan covers every pull request's commits
 On every pull request, a secret scanner SHALL scan every commit the PR adds. It SHALL fail on any detected secret that
-is not in the register or in an allowlist that names a register entry. The scan SHALL need no repository secret, so it
-runs on fork PRs too.
+is not in the register or in an allowlist that names a register entry. It SHALL detect RPC provider keys in RPC URLs,
+which the scanner's default rules miss. The scan SHALL need no repository secret, so it runs on fork PRs too.
 
 #### Scenario: Key committed in a PR
 - **WHEN** a PR commit adds a string that matches a private-key rule
 - **THEN** the secret scan fails and names the commit, file and rule, without printing the full secret
+
+#### Scenario: RPC provider key
+- **WHEN** a PR commit adds an Infura, Alchemy, QuickNode or Ankr RPC URL that holds a key
+- **THEN** the secret scan fails and names the commit, file and rule, without printing the key
 
 #### Scenario: Public test key
 - **WHEN** a PR adds one of the well-known Anvil development keys

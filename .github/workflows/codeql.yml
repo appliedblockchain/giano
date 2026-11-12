@@ -1,0 +1,50 @@
+name: CodeQL
+
+# G25 (openspec: ci-security-gates, design D7): CodeQL on the JavaScript/TypeScript code and on the
+# GitHub Actions workflows. On a pull request, GitHub adds a "CodeQL" check from the results; it
+# fails on a new high or critical security alert. CodeQL does not support Solidity: ci.yml, job
+# "Solidity static analysis (Slither, Aderyn)", covers the contracts. A dismissed alert needs a
+# register entry with tool `codeql` (security/README.md). The weekly security scan (openspec task
+# 3.5, not added yet) will report any dismissal without one. No paths filter, so the check reports
+# on every pull request.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 05:00 UTC: new queries and advisories reach code that no PR touched that week.
+    - cron: "0 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: CodeQL analysis (${{ matrix.language }})
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Upload the results to code scanning. Only this job has it.
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # codeql-action v4.39.1, released 2026-10-21: an exact version at least 7 days old
+      # (docs/abip-compliance.md, "Tools installed outside npm"). Dependabot proposes updates
+      # after its 7-day cooldown.
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          # Neither language needs a build: CodeQL reads the source and the workflow files.
+          build-mode: none
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}

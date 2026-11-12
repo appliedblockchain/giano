@@ -80,6 +80,16 @@ following:
 - a `pnpm install` without `--frozen-lockfile` in a workflow or a Dockerfile;
 - with `--registry`, which CI passes: an excluded version older than the window, or one that does not exist.
 
+The dependency audit runs in CI too (`ci.yml`, job "Dependency audit (pnpm audit)"), on every pull request and in the
+CI run `release.yml` calls. It runs `pnpm audit` on both workspaces and fails on a high or critical advisory that is not
+in the accepted-findings register, [`security/accepted-findings.json`](../security/accepted-findings.json). It also
+fails when the audit cannot run. The register is the only place an advisory left open is accepted: each entry gives the
+reason, one owner and an expiry date, and moderate and low advisories left open are recorded there too
+([`security/README.md`](../security/README.md)). The `dependency-security` capability in OpenSpec sets the rule.
+
+Dependabot ([`.github/dependabot.yml`](../.github/dependabot.yml)) opens version update PRs for both workspaces with a
+7-day `cooldown`, so it proposes no version younger than the window. Its PRs keep every pin exact (ABIP-7).
+
 ## ABIP-7: Pin Exact Dependency Versions (adopted)
 
 Every manifest in the repository is in scope: the root, `packages/*`, `services/*` (including the separate
@@ -130,6 +140,8 @@ automatically: checking release dates would need network access to each project'
 |------|---------|----------|-----------------|--------------------|
 | Slither | 0.11.6 | 2026-07-28 | hash-locked pip requirements; every dependency also at least 7 days old (`uv pip compile --exclude-newer`) | `packages/contracts/requirements-ci.in` and `requirements-ci.txt` |
 | Aderyn | 0.6.8 | 2026-01-22 | sha256 of `aderyn-x86_64-unknown-linux-gnu.tar.xz` | `ci.yml`, job `solidity-analysis` (`ADERYN_VERSION`, `ADERYN_SHA256`) |
+| gitleaks | 8.30.1 | 2026-03-21 | sha256 of `gitleaks_8.30.1_linux_x64.tar.gz` | `ci.yml`, job `secret-scan` (`GITLEAKS_VERSION`, `GITLEAKS_SHA256`) |
+| CodeQL (`github/codeql-action`) | 4.39.1 | 2026-10-21 | the commit SHA of the release (`9b3254085494b55a0f7c4c2b3d2d52cc712ce370`), as #246 pins every action; the action downloads its own CodeQL bundle | `codeql.yml` (`init` and `analyze`) |
 
 ## ABIP-8: Key Generation Ceremony (adopted)
 
