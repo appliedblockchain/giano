@@ -308,6 +308,31 @@ describe("built-in generic mappings", () => {
 });
 
 describe("native transfers", () => {
+	it.each([
+		["a native transfer", "0x"],
+		["a mapped call with value", transferData(RECIPIENT, 1n)],
+	])(
+		"returns decode-failed for %s with invalid native decimals",
+		async (_, data) => {
+			for (const decimals of [-2, 1.5, 256, 1e9]) {
+				const r = unknown(
+					await describeTransaction(
+						{ chainId: CHAIN, to: USDC, data, value: "0x1" },
+						{
+							mappings: [usdcMapping()],
+							resolveToken: resolveUsdc,
+							nativeCurrency: { symbol: "ETH", decimals },
+						},
+					),
+				);
+				expect(r.reason).toBe("decode-failed");
+				expect(r.warnings[0]?.message).toContain(
+					"nativeCurrency.decimals must be an integer from 0 to 255",
+				);
+			}
+		},
+	);
+
 	it("describes a plain value transfer in the supplied currency", async () => {
 		const r = described(
 			await describeTransaction(
