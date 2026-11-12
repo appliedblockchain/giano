@@ -39,13 +39,13 @@ RUN case "$TARGETARCH" in amd64) arch=x64 ;; *) arch="$TARGETARCH" ;; esac \
 # The SPA tool allow-list, staged at its real paths with exactly the shared libraries it links
 # beyond what the runtime already has (glibc and the loader), plus the html root owned by nginx so
 # the entrypoint can render config.js into it. The final stage takes all of it in one COPY.
-FROM dhi.io/nginx:1.29-debian13-dev@sha256:069b266be81839d8cfcfef9e636a3ced9c383818511b2abbd33db53efadbbbff AS tools
+FROM dhi.io/nginx:1.30-debian13-dev@sha256:f524905d97a179b87815dc148e94a0fc5713779d2a0f5e139a6208aad331fadb AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends dash jq gettext-base \
  && rm -rf /var/lib/apt/lists/*
 COPY deploy/docker/stage-spa-tools.sh /usr/local/bin/stage-spa-tools.sh
 RUN sh /usr/local/bin/stage-spa-tools.sh /staging
 
-FROM dhi.io/nginx:1.29-debian13@sha256:d457a278247531873df03b7fdaabd96de0b530624f8e72c73d41e6b81c4487dd
+FROM dhi.io/nginx:1.30-debian13@sha256:64b41e33d5359702daa3124d7767b102f964ad57a1b425b43cabec52e5a4432a
 COPY --from=tools /staging/ /
 # The dist carries a placeholder public/config.js so `pnpm dev` and `pnpm preview` work; the
 # entrypoint overwrites it at start, which is why the html root is the nginx user's.

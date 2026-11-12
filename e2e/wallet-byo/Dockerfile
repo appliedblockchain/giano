@@ -40,6 +40,10 @@ COPY packages/tx-describe packages/tx-describe
 COPY packages/wallet-kit packages/wallet-kit
 COPY packages/connector packages/connector
 COPY e2e/wallet-byo e2e/wallet-byo
+# TypeScript is a type-only optional peer of viem, ox and abitype. pnpm links it to them because
+# the workspace has it as a devDependency, so this image would ship it. Nothing loads it at
+# runtime, and its native compiler (a Go binary) carries Go stdlib advisories that fail the image
+# scan (G25), so it is removed after the build. serve.mjs needs only esbuild.
 # Only the workspace packages need compiling — the SPA itself is bundled at container start.
 # The order is a dependency order, not alphabetical: wallet-core depends on contracts, and the
 # kit on both wallet-core and wallet-transport.
@@ -47,7 +51,8 @@ RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-wallet-transport build \
  && pnpm --filter @appliedblockchain/giano-wallet-core build \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
- && pnpm --filter @appliedblockchain/giano-wallet-kit build
+ && pnpm --filter @appliedblockchain/giano-wallet-kit build \
+ && rm -rf /repo/node_modules/.pnpm/typescript@* /repo/node_modules/.pnpm/@typescript+*
 
 FROM dhi.io/node:24-alpine3.23@sha256:ea44fbd46a8e11a9ffb9b2bd5c6e4722fa507fb86fef0ee8d92a020ce7c850a5
 # The whole tree, so pnpm's symlinks into node_modules/.pnpm stay internally consistent. The

@@ -25,10 +25,15 @@ COPY packages/connector/package.json /release/package.json
 ENV GIANO_RELEASE_PACKAGE_JSON=/release/package.json
 # contracts: committed generated.ts/addresses.ts -> tsdown only, no solc. `deploy --prod` is the prune
 # step: /out holds dist/ and production dependencies only.
+# TypeScript is a type-only optional peer of viem, ox and abitype. pnpm links it to them because
+# the workspace has it as a devDependency, so it would reach the runtime. Nothing loads it at
+# runtime, and its native compiler (a Go binary) carries Go stdlib advisories that fail the image
+# scan (G25), so it is removed once the build no longer needs it.
 RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-api build \
- && pnpm --filter @appliedblockchain/giano-wallet-api --legacy deploy --prod /out
+ && pnpm --filter @appliedblockchain/giano-wallet-api --legacy deploy --prod /out \
+ && rm -rf /out/node_modules/.pnpm/typescript@* /out/node_modules/.pnpm/@typescript+*
 
 FROM dhi.io/node:24-alpine3.23@sha256:ea44fbd46a8e11a9ffb9b2bd5c6e4722fa507fb86fef0ee8d92a020ce7c850a5
 ENV NODE_ENV=production
