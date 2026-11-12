@@ -71,6 +71,22 @@ change, for example when an advisory database changes, so their unused entries d
 The weekly security scan lists entries that expire within 14 days, with their owners, in its tracking issue. To see
 the list locally, run `node scripts/check-accepted-findings.mjs --expiring-within 14`.
 
+## When a new advisory fails every PR
+
+`docker.yml` builds and scans every image on every PR, with no `paths` filter. So a new HIGH or CRITICAL advisory with a
+fixed version in one base image fails that image's `Build … (…)` check on every open PR, also on PRs that change no
+image. The dependency audit does the same for a new advisory in a lockfile. Fix it in one PR of its own, then rebase
+the other PRs on `main`:
+
+1. **Fix it.** For an image, refresh the base image digest ([Refreshing a pinned
+   digest](../docs/abip-compliance.md#refreshing-a-pinned-digest)) when DHI has published the fixed package. For a
+   lockfile, upgrade the package to a fixed version that is at least 7 days old.
+2. **Otherwise, accept it for a short time.** Add an entry with one owner, a reason, an expiry of a few weeks and a
+   `followUp` that names the fix it waits for, for example the DHI rebuild or the upstream release. Remove the entry in
+   the PR that applies the fix.
+
+Do not add a `paths` filter, `continue-on-error` or a Trivy ignore file to make the other PRs pass.
+
 ## What the register check rejects
 
 Register entries:

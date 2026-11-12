@@ -29,8 +29,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       # Fails on an expired or invalid entry, as on every PR.
@@ -46,7 +46,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/results"
           node scripts/check-accepted-findings.mjs --expiring-within 14 2>&1 \
             | tee "$RUNNER_TEMP/results/expiring.txt"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: security-scan-register
@@ -60,9 +60,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       # The same commands as job "Dependency audit (pnpm audit)" in ci.yml; the reasons for each
@@ -83,7 +83,7 @@ jobs:
           done
           cat "$RUNNER_TEMP/results/audit.txt"
           exit "$status"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: security-scan-audit
@@ -99,7 +99,7 @@ jobs:
     outputs:
       images: ${{ steps.list.outputs.images }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The image list lives in docker.yml (job `setup`, the JSON between the JSON markers), as
       # scripts/check-dockerfiles.mjs also reads it. jq parses it, and the count must match the
       # "dockerfile" lines, so a list this step cannot read fails instead of scanning less.
@@ -133,8 +133,8 @@ jobs:
       SCAN_TRIVY_VERSION: 0.76.1
       SCAN_TRIVY_SHA256_AMD64: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       - name: Install Trivy
@@ -146,7 +146,7 @@ jobs:
           mkdir trivy trivy-run
           tar -xzf trivy.tar.gz -C trivy trivy
           echo "$RUNNER_TEMP/trivy" >> "$GITHUB_PATH"
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -185,7 +185,7 @@ jobs:
           done
           cat "$out"
           exit "$status"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: security-scan-image-${{ matrix.image }}
@@ -201,8 +201,8 @@ jobs:
       # List the code scanning alerts.
       security-events: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       # A dismissal happens in the GitHub UI, outside review, so each one needs a register entry
@@ -219,7 +219,7 @@ jobs:
             --jq '.[]' | jq -s . > "$RUNNER_TEMP/codeql-dismissed.json"
           node scripts/check-accepted-findings.mjs --tool codeql \
             --report "$RUNNER_TEMP/codeql-dismissed.json" 2>&1 | tee "$RUNNER_TEMP/results/codeql.txt"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: security-scan-codeql
@@ -237,7 +237,7 @@ jobs:
       # Open, edit and close the tracking issue, and create its label.
       issues: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: results
           pattern: security-scan-*

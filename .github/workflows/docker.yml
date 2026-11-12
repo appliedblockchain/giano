@@ -199,7 +199,7 @@ jobs:
 
       # The same build as the push below, to a tar: same Dockerfile, platform, secret and cache.
       # No SBOM or provenance: they are attestations, not image layers, and the push adds them.
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         name: Build the image for the scan
         with:
           context: .
@@ -243,7 +243,7 @@ jobs:
         run: |
           node scripts/check-accepted-findings.mjs --tool trivy --image "$IMAGE" \
             --report "$RUNNER_TEMP/trivy-$IMAGE-$ARCH.json"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: trivy-${{ matrix.image.name }}-${{ matrix.platform.arch }}
