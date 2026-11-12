@@ -21,6 +21,7 @@
 - [x] 1.17 Remove AF-006 and AF-007 from the register, because #260 fixed both advisories by lifting `glob` to 14.0.3 (with `minimatch` 11.0.4). Verify `pnpm audit` reports no advisory in the root workspace and the register check passes.
 - [x] 1.18 Make report mode fail on a `slither` or `aderyn` entry that matches no finding in the report (D1), so a stale entry cannot accept a later finding on the same line. Verify with unit tests, that both CI reports still pass, and that the Aderyn report without the AF-004 finding fails and names AF-004.
 - [x] 1.19 Extend `scripts/check-ci-gate.mjs` (with tests) to fail on a job `container` or `services` image that is not pinned by digest, and to check the `uses` of every local action a workflow uses (D12). Verify the check passes on every workflow and fails on `container: node:24`.
+- [x] 1.20 Make `scripts/check-ci-gate.mjs` (with tests) fail on a local Docker action whose `runs.image` is not a `docker://` image pinned by digest, including a Dockerfile, and check a local action in a folder of `.github/workflows` or reached through `..` (D12). Verify each of the three cases fails and every workflow still passes.
 
 ## 2. Dependencies, secrets and source (PR 2)
 

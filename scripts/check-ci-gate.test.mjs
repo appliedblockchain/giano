@@ -284,6 +284,80 @@ test("a local action without an action file fails", () => {
 	]);
 });
 
+test("a local Docker action passes only with a docker:// image pinned to a digest", () => {
+	const docker = (image) =>
+		repo({
+			[`${WORKFLOWS_DIR}/w.yml`]: steps("./.github/actions/d"),
+			".github/actions/d/action.yml": `runs:\n  using: docker\n  image: ${image}\n`,
+			".github/actions/d/Dockerfile": "FROM alpine:3.20\n",
+		});
+	assert.deepEqual(
+		checkAllPins(docker(`docker://alpine@${DIGEST}`)).errors,
+		[],
+	);
+	for (const image of [
+		"docker://alpine:3.20",
+		"docker://alpine",
+		`alpine@${DIGEST}`,
+		"Dockerfile",
+		`'\${{ inputs.image }}'`,
+		"[docker://alpine]",
+	]) {
+		const { errors } = checkAllPins(docker(image));
+		assert.equal(errors.length, 1, image);
+		assert.match(
+			errors[0],
+			/^\.github\/actions\/d\/action\.yml: runs\.image is .*not a tag or a Dockerfile/,
+		);
+	}
+	const upper = repo({
+		[`${WORKFLOWS_DIR}/w.yml`]: steps("./.github/actions/d"),
+		".github/actions/d/action.yml":
+			"Runs:\n  using: docker\n  Image: docker://alpine:3.20\n",
+	});
+	assert.match(checkAllPins(upper).errors[0], /Runs\.Image is/);
+});
+
+test("a local action in a folder of .github/workflows, or reached through .., is checked", () => {
+	const action = `runs:\n  using: composite\n  steps:\n    - uses: actions/cache@v5\n`;
+	for (const uses of [
+		"./.github/workflows/helper",
+		"./.github/workflows/helper/",
+		"./.github/workflows/../workflows/helper",
+		"./.github/workflows/../actions/../workflows/helper",
+	]) {
+		const root = repo({
+			[`${WORKFLOWS_DIR}/w.yml`]: steps(uses),
+			".github/workflows/helper/action.yml": action,
+		});
+		const { errors, actions } = checkAllPins(root);
+		assert.equal(actions, 1, uses);
+		assert.equal(errors.length, 1, uses);
+		assert.match(
+			errors[0],
+			/^\.github\/workflows\/helper\/action\.yml: runs\.steps\.0\.uses is "actions\/cache@v5"/,
+		);
+	}
+	const reusable = repo({
+		[`${WORKFLOWS_DIR}/w.yml`]: steps(
+			"./.github/workflows/r.yml",
+			"./.github/actions/../workflows/r.yml",
+		),
+		[`${WORKFLOWS_DIR}/r.yml`]: steps(`actions/checkout@${SHA}`),
+	});
+	assert.deepEqual(checkAllPins(reusable), {
+		errors: [],
+		workflows: 2,
+		actions: 0,
+	});
+	const outside = repo({
+		[`${WORKFLOWS_DIR}/w.yml`]: steps("./../other/action"),
+	});
+	assert.deepEqual(checkAllPins(outside).errors, [
+		"./../other/action is used as a local action, but it is outside the repository",
+	]);
+});
+
 test("the real workflows and their local actions pass", () => {
 	assert.deepEqual(checkAllPins().errors, []);
 });

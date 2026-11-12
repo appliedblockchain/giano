@@ -190,7 +190,8 @@ release binaries by a sha256 recorded in the workflow. A hash mismatch SHALL fai
 ### Requirement: Workflow actions stay pinned
 Every action and reusable workflow that a workflow in `.github/workflows` uses SHALL be a local path or SHALL be
 pinned to a full commit SHA. A container image SHALL be pinned by digest. The same rules SHALL apply to the actions
-that a local action uses. The CI summary check SHALL fail on any other reference.
+that a local action uses, and a local Docker action SHALL use a `docker://` image pinned by digest, not a Dockerfile.
+The CI summary check SHALL fail on any other reference.
 
 #### Scenario: Action moved back to a tag
 - **WHEN** a PR changes a workflow step to `uses: actions/checkout@v7`
@@ -198,4 +199,8 @@ that a local action uses. The CI summary check SHALL fail on any other reference
 
 #### Scenario: Job container on a tag
 - **WHEN** a PR adds `container: node:24` or a service with `image: postgres:17` to a job
+- **THEN** the CI gate check fails, and so does the summary check
+
+#### Scenario: Local Docker action on a tag
+- **WHEN** a PR adds a local Docker action with `image: docker://alpine:3.20` or `image: Dockerfile`
 - **THEN** the CI gate check fails, and so does the summary check

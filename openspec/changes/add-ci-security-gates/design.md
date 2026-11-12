@@ -258,7 +258,10 @@ a skipped required check as passed. `continue-on-error` lets a failed job or ste
 The same script reads every workflow in `.github/workflows`. It fails on any `uses` that is not a local `./` path, an
 action or reusable workflow pinned to a full 40-character commit SHA, or a `docker://` image pinned by digest. It
 also fails on a job `container` or a `services` image that is not pinned by digest, and it checks the `uses` of every
-local action that a workflow uses, directly or through another local action. #246
+local action that a workflow uses, directly or through another local action. A local action can also be a folder in
+`.github/workflows`, and the check resolves `..` in the path, so neither hides one. A local Docker action must use a
+`docker://` image pinned by digest. A Dockerfile image fails, because its `FROM` line could name a tag, and the ABIP-2
+check reads only the Dockerfiles that `docker.yml` publishes. #246
 pinned every action. This check stops a later PR from moving one back to a tag, which its owner can move to other
 code.
 

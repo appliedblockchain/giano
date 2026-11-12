@@ -13,12 +13,12 @@
 // full commit SHA, and each job container and service container image to a digest. A tag or a
 // branch can be moved to other code; a commit SHA or a digest cannot. Local `./` paths come from the
 // same commit as the workflow, so they need no pin, but the actions a local action uses are checked
-// the same way.
+// the same way, and a local Docker action must name its image by digest.
 // The check parses the YAML with a full parser, so every key form (quoted, escaped, explicit `?`,
 // tagged, anchored or merged) reads the same as GitHub reads it.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
 
@@ -160,19 +160,45 @@ export function checkActionPins(text, file) {
 	return [...actions, ...images];
 }
 
-/** The local actions (`./` paths outside .github/workflows) that a workflow or action file uses. */
+/**
+ * The folders of the local actions that a workflow or action file uses, relative to the repository
+ * root, with `.` and `..` resolved. A reusable workflow file in .github/workflows is left out, because
+ * every file there is checked anyway. A folder in .github/workflows is a local action and is kept.
+ */
 export function localActions(text, file) {
 	const { workflow, errors } = parseWorkflow(text, file);
 	if (errors) return [];
 	return keysNamed("uses", workflow)
 		.map(([, v]) => v)
+		.filter((v) => typeof v === "string" && v.startsWith("./"))
+		.map((v) => posix.normalize(v.slice(2)).replace(/\/+$/, ""))
 		.filter(
-			(v) =>
-				typeof v === "string" &&
-				v.startsWith("./") &&
-				!v.startsWith(`./${WORKFLOWS_DIR}/`),
+			(dir) =>
+				!(
+					dir.startsWith(`${WORKFLOWS_DIR}/`) &&
+					/\.ya?ml$/.test(dir) &&
+					!dir.slice(WORKFLOWS_DIR.length + 1).includes("/")
+				),
+		);
+}
+
+/**
+ * Returns an error when a local Docker action's `runs.image` is not a `docker://` image pinned by
+ * digest. An image built from a Dockerfile fails too: its FROM line could name a tag, and the
+ * ABIP-2 Dockerfile check reads only the Dockerfiles that docker.yml publishes.
+ */
+export function checkActionImage(text, file) {
+	const { workflow: action, errors } = parseWorkflow(text, file);
+	if (errors) return errors;
+	return entriesNamed("runs", action)
+		.flatMap(([rk, runs]) =>
+			entriesNamed("image", runs).map(([ik, v]) => [`${rk}.${ik}`, v]),
 		)
-		.map((v) => v.slice(2).replace(/\/+$/, ""));
+		.filter(([, v]) => typeof v !== "string" || !PINNED_IMAGE.test(v))
+		.map(
+			([p, v]) =>
+				`${file}: ${p} is ${JSON.stringify(v)}. A Docker action must use a docker:// image pinned to a digest (docker://image@sha256:<64 hex>), not a tag or a Dockerfile.`,
+		);
 }
 
 /**
@@ -196,6 +222,12 @@ export function checkAllPins(root = ROOT) {
 		const dir = queue.shift();
 		if (seen.has(dir)) continue;
 		seen.add(dir);
+		if (dir === ".." || dir.startsWith("../")) {
+			errors.push(
+				`./${dir} is used as a local action, but it is outside the repository`,
+			);
+			continue;
+		}
 		const file = ["action.yml", "action.yaml"]
 			.map((f) => `${dir}/${f}`)
 			.find((f) => existsSync(join(root, f)));
@@ -206,7 +238,10 @@ export function checkAllPins(root = ROOT) {
 			continue;
 		}
 		const text = read(file);
-		errors.push(...checkActionPins(text, file));
+		errors.push(
+			...checkActionPins(text, file),
+			...checkActionImage(text, file),
+		);
 		queue.push(...localActions(text, file));
 	}
 	return { errors, workflows: workflows.length, actions: seen.size };
