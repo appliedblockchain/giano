@@ -108,8 +108,6 @@ export type EvaluationInput = {
 	walletManagementCapWei: bigint;
 	/** The wallet address the session's credential owns. */
 	sessionWalletAddress: Address;
-	/** This chain's wallet factory. An operation that deploys the account must use it. */
-	factory: Address;
 	/** True when the stored configuration failed to parse, which is not the same as it being off. */
 	configUnparseable?: boolean;
 };
@@ -301,23 +299,6 @@ export function evaluateSponsorship(
 		);
 	} else {
 		pass("sender-binding");
-	}
-
-	// 2b. An operation that deploys the account must use this chain's wallet factory. The factory
-	//     runs during validation, and the paymaster pays for it. The canonical factory's
-	//     `createAccount` accepts any caller, so another contract can call it to deploy the right
-	//     address, then make any other calls of its own at the tenant's expense.
-	if (
-		candidate.factory !== undefined &&
-		candidate.factory.toLowerCase() !== input.factory.toLowerCase()
-	) {
-		refuse(
-			"factory",
-			"contract-not-allowed",
-			`factory ${candidate.factory} is not this chain's wallet factory ${input.factory}`,
-		);
-	} else {
-		pass("factory");
 	}
 
 	// 3. Decode, or refuse. Never guess.

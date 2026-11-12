@@ -101,8 +101,6 @@ export type SponsorshipServiceOptions = {
 	walletManagementCapWei: bigint;
 	/** The EntryPoint this service authorises for. Part of the operation's hash. */
 	entryPoint: Address;
-	/** This chain's wallet factory. An operation that deploys the account must use it. */
-	factory: Address;
 	/** Flips issuance off immediately, without a restart. The first response to a suspected compromise. */
 	isEmergencyStopped: () => boolean;
 	/**
@@ -286,7 +284,6 @@ export function createSponsorshipService(
 				overhead: onChain,
 				walletManagementCapWei: options.walletManagementCapWei,
 				sessionWalletAddress: session.walletAddress as Address,
-				factory: options.factory,
 				configUnparseable: unparseable,
 			});
 

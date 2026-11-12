@@ -310,7 +310,6 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 				"chain-test",
 			),
 			entryPoint: ENTRY_POINT,
-			factory: devnet!.factory,
 			validitySeconds: 600,
 			reservationTtlSeconds: 900,
 			// Generous: this suite's subject is the on-chain accounting, not the wallet-management cap.

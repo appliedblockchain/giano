@@ -23,7 +23,6 @@ import {
 const WALLET = "0x1111111111111111111111111111111111111234" as Address;
 const TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 const OTHER = "0x4444444444444444444444444444444444444444" as Address;
-const FACTORY = "0x5555555555555555555555555555555555abcdef" as Address;
 
 const TRANSFER = "0xa9059cbb" as Hex; // transfer(address,uint256)
 const APPROVE = "0x095ea7b3" as Hex; // approve(address,uint256)
@@ -95,7 +94,6 @@ function evaluate(overrides: Partial<EvaluationInput> = {}) {
 		overhead,
 		walletManagementCapWei: WM_CAP_WEI,
 		sessionWalletAddress: WALLET,
-		factory: FACTORY,
 		...overrides,
 	});
 }
@@ -515,49 +513,6 @@ describe("other self-calls", () => {
 	});
 });
 
-// The factory runs during validation and the paymaster pays for it. The canonical factory accepts
-// any caller, so another contract could deploy the right address through it and also make calls
-// of its own.
-describe("account deployment", () => {
-	it("sponsors a deployment through this chain's factory", () => {
-		const decision = evaluate({
-			candidate: { ...candidate, factory: FACTORY, factoryData: "0x1234" },
-		});
-		expect(decision.allowed).toBe(true);
-		expect(decision.results.find((r) => r.rule === "factory")?.passed).toBe(
-			true,
-		);
-	});
-
-	it("matches the factory address case-insensitively", () => {
-		const decision = evaluate({
-			candidate: {
-				...candidate,
-				factory: FACTORY.toUpperCase().replace("0X", "0x") as Address,
-			},
-		});
-		expect(decision.allowed).toBe(true);
-	});
-
-	it("refuses a deployment through any other factory", () => {
-		const decision = evaluate({
-			candidate: { ...candidate, factory: OTHER, factoryData: "0x1234" },
-		});
-		expect(decision.allowed).toBe(false);
-		expect(decision.reason).toBe("contract-not-allowed");
-		expect(decision.results.find((r) => r.rule === "factory")?.passed).toBe(
-			false,
-		);
-	});
-
-	it("passes when the operation deploys nothing", () => {
-		const decision = evaluate();
-		expect(decision.results.find((r) => r.rule === "factory")?.passed).toBe(
-			true,
-		);
-	});
-});
-
 describe("cost cap", () => {
 	it("counts gas, fee and overhead together, not gas alone", () => {
 		const maxCost = computeMaxCost(candidate);
@@ -633,7 +588,6 @@ describe("audit trail", () => {
 		expect(rules).toEqual([
 			"sponsorship-enabled",
 			"sender-binding",
-			"factory",
 			"decodable-calls",
 			"wallet-management",
 			"contract-allowlist",
