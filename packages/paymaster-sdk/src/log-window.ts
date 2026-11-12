@@ -57,7 +57,10 @@ export function isBlockRangeError(error: unknown): boolean {
 	const message = flatten(error).toLowerCase();
 	if (!message) return false;
 	return (
-		/limited to a[^.]*range/.test(message) ||
+		// Bounded gap: an unbounded `[^.]*` backtracks quadratically on a long message (CodeQL
+		// js/polynomial-redos). Real messages put a short number between the two, as in "limited to a
+		// 10,000 range".
+		/limited to a[^.]{0,64}range/.test(message) ||
 		/block range/.test(message) ||
 		/range is too large|range too large|too wide|too many blocks|exceeds? the maximum|max(imum)? (block )?range/.test(
 			message,

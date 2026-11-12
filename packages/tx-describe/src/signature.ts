@@ -125,8 +125,15 @@ export function formatUnits(amount: bigint, decimals: number): string {
 	const s = abs.toString().padStart(decimals + 1, "0");
 	const whole = s.slice(0, s.length - decimals) || "0";
 	const fraction =
-		decimals === 0 ? "" : s.slice(s.length - decimals).replace(/0+$/, "");
+		decimals === 0 ? "" : trimTrailingZeros(s.slice(s.length - decimals));
 	return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
+}
+
+/** Drops trailing "0" characters. A loop, not `/0+$/`, which backtracks quadratically on a long run of zeros. */
+function trimTrailingZeros(digits: string): string {
+	let end = digits.length;
+	while (end > 0 && digits[end - 1] === "0") end--;
+	return digits.slice(0, end);
 }
 
 /** Parses a bigint-ish value: bigint, number, decimal string or 0x-hex string. Throws otherwise. */

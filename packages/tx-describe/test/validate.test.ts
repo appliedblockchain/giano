@@ -163,6 +163,12 @@ describe("helpers", () => {
 		expect(formatUnits(0n, 18)).toBe("0");
 		expect(formatUnits(1n, 18)).toBe("0.000000000000000001");
 		expect(formatUnits(12345n, 0)).toBe("12345");
+		expect(formatUnits(1_000_000n, 6)).toBe("1");
+		expect(formatUnits(-1_200_000n, 6)).toBe("-1.2");
+		// A long run of zeros: the trim must stay linear (CodeQL js/polynomial-redos).
+		const start = performance.now();
+		expect(formatUnits(1n, 100_000)).toBe(`0.${"0".repeat(99_999)}1`);
+		expect(performance.now() - start).toBeLessThan(100);
 	});
 
 	it("reads deployments and coverage", () => {

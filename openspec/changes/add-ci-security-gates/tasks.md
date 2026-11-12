@@ -25,14 +25,14 @@
 
 ## 2. Dependencies, secrets and source (PR 2)
 
-- [ ] 2.1 Add job `dependency-audit` ("Dependency audit (pnpm audit)") to `ci.yml` as in D5, for the root and `services/custom-example`, and add it to the `needs` of `ci-passed`. Verify it is green on the PR and that the log shows the audit result of both workspaces.
-- [ ] 2.2 Extend `.github/dependabot.yml`, which #246 added, with the two npm entries in D6. Verify GitHub reports no configuration error for it in the PR's checks.
+- [x] 2.1 Add job `dependency-audit` ("Dependency audit (pnpm audit)") to `ci.yml` as in D5, for the root and `services/custom-example`, and add it to the `needs` of `ci-passed`. Verify it is green on the PR and that the log shows the audit result of both workspaces.
+- [x] 2.2 Extend `.github/dependabot.yml`, which #246 added, with the two npm entries in D6. Verify GitHub reports no configuration error for it in the PR's checks.
 - [x] 2.3 Update the ABIP-6 section of `docs/abip-compliance.md`: the audit runs in CI, and accepted residuals live in the register. Verify the doc links resolve.
 - [x] 2.4 Add `.gitleaks.toml` that extends the default rules, with one allowlist for the public Anvil keys, and register entry AF-008 for it. Verify the register check passes.
-- [ ] 2.5 Add job `secret-scan` ("Secret scan (gitleaks)") to `ci.yml` as in D8, and add it to the `needs` of `ci-passed`: gitleaks binary with recorded sha256, released at least 7 days ago, run with `--ignore-gitleaks-allow`. Add gitleaks to the pinning table. Verify it is green on the PR and passes on the `workflow_call` path.
+- [x] 2.5 Add job `secret-scan` ("Secret scan (gitleaks)") to `ci.yml` as in D8, and add it to the `needs` of `ci-passed`: gitleaks binary with recorded sha256, released at least 7 days ago, run with `--ignore-gitleaks-allow`. Add gitleaks to the pinning table. Verify it is green on the PR and passes on the `workflow_call` path.
 - [ ] 2.6 Verify the secret gate fails: on a scratch branch that is never merged, commit a fake key that matches a gitleaks rule and confirm the job fails with the secret redacted. Record the run link in the PR description.
-- [ ] 2.7 Add `.github/workflows/codeql.yml` as in D7. Verify both matrix legs succeed on the PR and the "CodeQL" check appears.
-- [ ] 2.8 After the first CodeQL run on `main`, triage the baseline alerts: fix each one, or dismiss it in GitHub and add a register entry with tool `codeql`. Verify no open high or critical alert remains without an entry.
+- [x] 2.7 Add `.github/workflows/codeql.yml` as in D7. Verify both matrix legs succeed on the PR and the "CodeQL" check appears.
+- [x] 2.8 After the first CodeQL run on `main`, triage the baseline alerts: fix each one, or dismiss it in GitHub and add a register entry with tool `codeql`. Verify no open high or critical alert remains without an entry. Baseline on `main` (e403275c): 8 alerts (5 high, 3 medium), all fixed in code, none dismissed.
 - [x] 2.9 Add gitleaks rules for RPC provider keys (Infura, Alchemy, QuickNode, Ankr) to `.gitleaks.toml`, and let the register check accept a `[[rules]]` table only with a `giano-` ID and only `id`, `description`, `regex` and `keywords` (D8). Add allowlist AF-010 for the public forge-std Infura key. Verify with unit tests that each rule matches a fake key and captures only the key, and that a rule with a default rule's ID fails.
 - [x] 2.10 Pin the actions of `dependency-audit`, `secret-scan` and `codeql.yml` to commit SHAs, as #246 does (D12). Verify `node scripts/check-ci-gate.mjs` passes.
 - [x] 2.11 Widen `giano-alchemy-key` to every versioned Alchemy API path (`/v2/`, `/nft/v3/`, `/prices/v1/`) (D8). Verify with unit tests that each form matches and captures only the key.
@@ -43,12 +43,12 @@
 
 ## 3. Images (PR 3)
 
-- [ ] 3.1 Change the `build` job of `docker.yml` as in D10: build to a tar, Trivy binary per architecture with recorded sha256, scan, report mode, then the existing push step only off PRs. Add Trivy to the pinning table. Verify all 16 build jobs are green on the PR.
-- [ ] 3.2 Add the `diff_ids` comparison step after the push. Verify it with a `workflow_dispatch` run on the branch: the step passes and the logs show the cached build.
-- [ ] 3.3 Triage the first scan results: fix by refreshing a DHI digest where a fix exists, or add a register entry. Verify every image scan passes.
+- [x] 3.1 Change the `build` job of `docker.yml` as in D10: build to a tar, Trivy binary per architecture with recorded sha256, scan, report mode, then the existing push step only off PRs. Add Trivy to the pinning table. Verify all 16 build jobs are green on the PR.
+- [x] 3.2 Add the `diff_ids` comparison step after the push. Verify it with a `workflow_dispatch` run on the branch: the step passes and the logs show the cached build. The first push run on `main` (195823b9) did this instead: every build job passed the step and the push used the cached build. Run: https://github.com/appliedblockchain/giano/actions/runs/43245912466.
+- [x] 3.3 Triage the first scan results: fix by refreshing a DHI digest where a fix exists, or add a register entry. Verify every image scan passes.
 - [x] 3.4 Update the ABIP-2 section of `docs/abip-compliance.md` with the scan step. Verify the doc matches the workflow.
 - [x] 3.5 Add `.github/workflows/security-scan.yml` (Monday schedule and `workflow_dispatch`) as in the weekly-scan requirement: audit both workspaces, scan the `latest` tag of each of the 8 images, list entries expiring within 14 days, list dismissed CodeQL alerts without an entry. Least permissions per job (`packages: read`, `security-events: read`, `issues: write` on the report job only).
-- [ ] 3.6 Make the report job open or update one issue labelled `security-scan`, and close it on a clean run. Verify with two `workflow_dispatch` runs: one with a test entry that expires within 14 days (issue opened), one without (issue closed).
+- [x] 3.6 Make the report job open or update one issue labelled `security-scan`, and close it on a clean run. Verify with two `workflow_dispatch` runs: one with a test entry that expires within 14 days (issue opened), one without (issue closed). Opened #277: https://github.com/appliedblockchain/giano/actions/runs/43249327548 (scratch branch `chore/scratch-g25-security-scan-issue`, test entry AF-999). Closed it: https://github.com/appliedblockchain/giano/actions/runs/43249927704 (`main`).
 - [x] 3.7 Pin the actions of the scan steps in `docker.yml` and of `security-scan.yml` to commit SHAs, as #246 does (D12). Verify `node scripts/check-ci-gate.mjs` passes.
 - [x] 3.8 Say in `security/README.md` what to do when a new advisory fails every open PR: fix it in one PR, or add a short-lived entry with an owner and a `followUp`. Verify the README links resolve.
 

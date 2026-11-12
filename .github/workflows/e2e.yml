@@ -6,6 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# contents: read for the checkout. packages: read for the reference dApp, which installs the published
+# connector from GitHub Packages. Nothing in this workflow writes with the token.
+permissions:
+  contents: read
+  packages: read
+
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true

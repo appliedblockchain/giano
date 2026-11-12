@@ -118,18 +118,17 @@ describe("admin: write and read back", () => {
 	});
 
 	it("normalises the contract address to lowercase", async () => {
-		const mixed = "0x1111111111111111111111111111111111111111"
-			.replace("0x1111", "0x1111")
-			.toUpperCase()
-			.replace("0X", "0x");
+		// Hex letters, so the upper-case form differs from the stored one.
+		const lower = "0xabcdef1111111111111111111111111111111111";
+		const upper = "0xABCDEF1111111111111111111111111111111111";
 		const put = await ctx.app.inject({
 			method: "PUT",
-			url: `/v1/admin/tx-mappings/${mixed}`,
+			url: `/v1/admin/tx-mappings/${upper}`,
 			headers: admin(TENANT_A.adminKey),
-			payload: descriptorFor(mixed),
+			payload: descriptorFor(upper),
 		});
 		expect(put.statusCode, put.body).toBe(200);
-		expect((put.json() as { contract: string }).contract).toBe(USDC);
+		expect((put.json() as { contract: string }).contract).toBe(lower);
 	});
 
 	it("refuses a descriptor that does not bind the requested contract, storing nothing", async () => {

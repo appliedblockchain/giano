@@ -38,6 +38,14 @@ describe("isBlockRangeError", () => {
 		expect(isBlockRangeError(new Error(message))).toBe(true);
 	});
 
+	it("answers quickly on a long message that repeats the start of a pattern", () => {
+		// CodeQL js/polynomial-redos: an unbounded gap took quadratic time on this input.
+		const message = "limited to a ".repeat(20_000);
+		const start = performance.now();
+		expect(isBlockRangeError(new Error(message))).toBe(false);
+		expect(performance.now() - start).toBeLessThan(100);
+	});
+
 	it("does not swallow unrelated failures", () => {
 		expect(isBlockRangeError(new Error("execution reverted"))).toBe(false);
 		expect(isBlockRangeError(new Error("fetch failed"))).toBe(false);
