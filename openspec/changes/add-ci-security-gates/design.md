@@ -152,7 +152,9 @@ missing, empty or carries an error object, so a registry outage fails the job in
 `/`. #246 added the file with the `github-actions` entry, so PR 2 adds only the two npm entries. All are weekly with
 `cooldown: default-days: 7`. npm uses `versioning-strategy: increase`, so pins stay exact
 (ABIP-7), and an open PR limit of 5 per entry. Dependabot puts the manifest and lockfile change in one PR, as
-`AGENTS.md` requires.
+`AGENTS.md` requires. Every entry ignores semver-major updates, so a major upgrade is done by hand and gets its own
+review. For actions, some must also change major version together (#246). The ignore may also stop a security
+update PR that needs a new major version. The Dependabot alert and the dependency audit still report that advisory.
 
 Security update PRs ignore `cooldown`. A security PR that proposes a version younger than 7 days fails the frozen
 install and the release-age check. It then waits, as ABIP-6 says. This needs no new rule.

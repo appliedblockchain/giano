@@ -5,6 +5,10 @@
 #   version fails the frozen install in CI and waits.
 # - versioning-strategy: increase keeps every pin exact (ABIP-7).
 # - Each PR holds the manifest change and the lockfile change it causes, and nothing else.
+# - Major versions are bumped by hand (ignore semver-major), for npm and for actions. A major
+#   upgrade needs its own review, and its release notes, not a weekly PR. The ignore may also stop a
+#   security update PR that needs a new major version. The Dependabot alert and the dependency audit
+#   in ci.yml still report that advisory, and the upgrade is then done by hand.
 # Slither (pip) and the release binaries in ci.yml are not covered. They are updated by hand under
 # "Tools installed outside npm" in docs/abip-compliance.md.
 version: 2
@@ -17,6 +21,9 @@ updates:
       default-days: 7
     versioning-strategy: increase
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /services/custom-example
@@ -26,6 +33,9 @@ updates:
       default-days: 7
     versioning-strategy: increase
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Workflows pin every third-party action to a full commit SHA, with the release as a trailing
   # comment. Dependabot keeps both up to date.
