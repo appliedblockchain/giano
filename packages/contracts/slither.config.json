@@ -1,0 +1,12 @@
+{
+	"//": [
+		"Scope only (openspec: ci-security-gates, design D3). Accepted findings go in security/accepted-findings.json, never here. scripts/check-accepted-findings.mjs fixes every key and value below.",
+		"include_paths keeps a finding when any of its code is in packages/contracts/src outside src/testing/ (test-only contracts production never deploys). Findings only in lib/, node_modules/, vendor/, test/ or script/ are dropped. filter_paths is not used: it drops a finding in src/ that also touches a dependency.",
+		"show_ignored_findings makes Slither ignore slither-disable comments and triage files in every file, including dependencies, so the register is the only way to accept a finding.",
+		"Informational and optimization detectors are off; they are severity filters, not suppressions. Low and Medium stay on and appear in the uploaded report."
+	],
+	"include_paths": "packages/contracts/src/(?!testing/)",
+	"exclude_informational": true,
+	"exclude_optimization": true,
+	"show_ignored_findings": true
+}
