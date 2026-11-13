@@ -818,7 +818,7 @@ Rules, in order — first failure decides, but every rule is still recorded:
 | `sponsorship-enabled` | Tenant switch on, config parses |
 | `sender-binding` | `userOp.sender` is the session's wallet |
 | `decodable-calls` | `callData` decodes as `execute` / `executeBatch`; anything else is refused, not guessed |
-| `self-calls` | Every call whose target is the sender itself is wallet management (below); any other self-call is refused with `contract-not-allowed` |
+| `self-calls` | Every call whose target is the sender itself must be wallet management (below); any other self-call is refused with `contract-not-allowed` |
 | `wallet-management` | A self-call to `addOwnerAddress`, `addOwnerPublicKey` or `removeOwnerAtIndex` with no value, or a plain value transfer to self (calldata `0x`), is wallet management: sponsored under the platform cap (or the tenant's lower one) unless the tenant has explicitly opted out |
 | `contract-allowlist` | Every inner call's target is listed |
 | `function-allowlist` | Every inner call's selector is permitted for its target |
@@ -845,10 +845,10 @@ upgraded to their own implementation can redefine any function, so no calldata r
 Checking the implementation needs the paymaster contract to do it during validation; ticket G40
 tracks that.
 
-A self-call bypasses `contract-allowlist` and `function-allowlist` entirely rather than needing an
+A wallet-management self-call bypasses `contract-allowlist` and `function-allowlist` entirely rather than needing an
 entry in them. That is R-65: the tenant does not own this rule, so its list is not consulted for it.
 A mixed batch that touches both the wallet itself and an application contract is evaluated under
-both rules — the application calls against the allowlist, the self-calls against the platform
+both rules — the application calls against the allowlist, the wallet-management calls against the platform
 policy — and the tighter of the two caps applies, because the operation is one charge and the chain
 cannot split it.
 
