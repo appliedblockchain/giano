@@ -17,7 +17,7 @@ Until this change, every call from the wallet to itself counted as wallet manage
 **Non-goals.**
 - Checking that the sender runs the canonical wallet implementation, and binding `initCode` to the sponsorship authorisation. Both need a paymaster contract change. Ticket G40 tracks them.
 - A separate refusal reason for a refused self-call. The reason stays `contract-not-allowed`, which every wallet already handles.
-- Whether a plain value transfer to self should stay wallet management, or need its own tenant opt-in. This is a policy decision, recorded as an open question in `design.md`.
+- Whether a plain value transfer to self should stay wallet management, or need its own tenant opt-in. This is a policy decision, recorded as an open question in `design.md`. Ticket G41 was created for it.
 - Per-user limits on sponsored operations.
 
 ## Capabilities

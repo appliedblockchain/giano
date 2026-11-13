@@ -19,5 +19,5 @@
 
 ## 4. Follow-ups (not in this change)
 
-- [ ] 4.1 Decide whether a plain value transfer to self stays wallet management (design, Open Questions).
+- [ ] 4.1 Decide whether a plain value transfer to self stays wallet management (design, Open Questions). Ticket G41.
 - [ ] 4.2 G40: on-chain checks for the wallet implementation and `initCode`.

@@ -37,4 +37,4 @@ A new reason would need a new JSON-RPC code, wallet copy and a release of the pu
 
 ## Open Questions
 
-- Should a plain value transfer to self stay wallet management? Today any signed-in user can repeat it, sponsored, with nothing in the tenant's allowlist. It is recorded with `isWalletManagement` and the platform cap, so it mixes into the wallet-management spend figures. A tenant can only refuse it by setting `walletManagement.enabled: false`, which also stops sponsoring owner changes. The alternative is a separate tenant opt-in for self-sends. This is a policy decision for the tech lead, and a follow-up change.
+- Should a plain value transfer to self stay wallet management? Today any signed-in user can repeat it, sponsored, with nothing in the tenant's allowlist. It is recorded with `isWalletManagement` and the platform cap, so it mixes into the wallet-management spend figures. A tenant can only refuse it by setting `walletManagement.enabled: false`, which also stops sponsoring owner changes. The alternative is a separate tenant opt-in for self-sends. This is a policy decision for the tech lead, and a follow-up change. Ticket G41 was created for it.
