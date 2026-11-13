@@ -1,6 +1,6 @@
 {
 	"name": "@appliedblockchain/giano-connector",
-	"version": "7.0.0",
+	"version": "7.0.1",
 	"description": "wagmi connector and RainbowKit wallet for Giano passkey smart wallets",
 	"license": "MIT",
 	"repository": {

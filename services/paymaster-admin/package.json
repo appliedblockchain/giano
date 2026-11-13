@@ -13,7 +13,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@appliedblockchain/giano-paymaster-sdk": "workspace:^7.0.0",
+		"@appliedblockchain/giano-paymaster-sdk": "workspace:^7.0.1",
 		"@chakra-ui/react": "3.36.1",
 		"@emotion/react": "11.14.0",
 		"react": "19.1.0",
