@@ -59,7 +59,11 @@ export type SponsorshipDecision = {
 	 * is decided, not after.
 	 */
 	capSource?: "tenant" | "platform" | "wallet-management-tenant";
-	/** True when the operation contains a call from the wallet to itself that adds or removes an owner. */
+	/**
+	 * True when the operation contains a call from the wallet to itself that is sponsored as wallet
+	 * management: a call that adds or removes an owner, or a plain value transfer to self (see
+	 * `classifyCall`). Not every operation with this flag changes the owner set.
+	 */
 	isWalletManagement: boolean;
 };
 
@@ -147,7 +151,12 @@ export function computeOverheadBound(
 }
 
 /** One call of the operation. `empty` is true when the call carries no calldata at all. */
-type InnerCall = { target: Address; selector: Hex | null; empty: boolean };
+type InnerCall = {
+	target: Address;
+	value: bigint;
+	selector: Hex | null;
+	empty: boolean;
+};
 
 /**
  * Decodes the account's own `execute` / `executeBatch` calldata.
@@ -162,8 +171,14 @@ export function decodeInnerCalls(callData: Hex): InnerCall[] | null {
 			data: callData,
 		});
 		if (decoded.functionName === "execute") {
-			const [target, , data] = decoded.args as readonly [Address, bigint, Hex];
-			return [{ target, selector: selectorOf(data), empty: size(data) === 0 }];
+			const [target, value, data] = decoded.args as readonly [
+				Address,
+				bigint,
+				Hex,
+			];
+			return [
+				{ target, value, selector: selectorOf(data), empty: size(data) === 0 },
+			];
 		}
 		if (decoded.functionName === "executeBatch") {
 			const calls = decoded.args[0] as readonly {
@@ -173,6 +188,7 @@ export function decodeInnerCalls(callData: Hex): InnerCall[] | null {
 			}[];
 			return calls.map((call) => ({
 				target: call.target,
+				value: call.value,
 				selector: selectorOf(call.data),
 				empty: size(call.data) === 0,
 			}));
@@ -203,47 +219,51 @@ function selectorOf(data: Hex): Hex | null {
  * A self-call to one of these runs calls the allowlist never sees, and the tenant pays for them.
  * A list of refused functions misses the next such function. This list refuses it by default.
  *
+ * The list holds only the functions the product sends (`packages/wallet-core/src/management/owners.ts`).
+ * `removeLastOwner` is not in it: it leaves the wallet with no owner, so it locks the wallet for
+ * good, and wallet-kit refuses to build it (WM-28). Sponsoring it would only let a user make the
+ * tenant pay to lock a wallet.
+ *
  * The cost: a self-administration function added to the wallet later is not sponsored until it is
  * added here. That failure is safe. The user is asked to pay gas, and the tenant's balance is not
  * at risk.
  */
 export const OWNER_MANAGEMENT_SELECTORS: ReadonlySet<Hex> = new Set(
-	(
-		[
-			"addOwnerAddress",
-			"addOwnerPublicKey",
-			"removeOwnerAtIndex",
-			"removeLastOwner",
-		] as const
-	).map((name) =>
-		toFunctionSelector(getAbiItem({ abi: gianoSmartWalletAbi, name })),
+	(["addOwnerAddress", "addOwnerPublicKey", "removeOwnerAtIndex"] as const).map(
+		(name) =>
+			toFunctionSelector(getAbiItem({ abi: gianoSmartWalletAbi, name })),
 	),
 );
 
-function isSelfCall(call: InnerCall, sender: Address): boolean {
-	return call.target.toLowerCase() === sender.toLowerCase();
-}
-
 /**
- * A self-call sponsored as wallet management. Two kinds:
+ * What one call of the operation is, for the rules below. Each call is classified once, and every
+ * rule reads that result, so the rules cannot disagree about a call.
  *
- * - A call that adds or removes an owner (`OWNER_MANAGEMENT_SELECTORS`).
- * - A plain value transfer to self, with calldata of exactly `0x`. It reaches only the wallet's
- *   empty `receive()` (solady `Receiver`), so it runs no payload. wallet-kit allows the same call
- *   (`packages/wallet-kit/src/self-calls.ts`). Calldata of 1 to 3 bytes has no selector but
- *   reaches the wallet's `fallback`, so it is not a plain transfer and is refused.
+ * - `application`: a call to any other address. The tenant's allowlists govern it.
+ * - `wallet-management`: a self-call sponsored as wallet management. Two kinds:
+ *   - A call to one of `OWNER_MANAGEMENT_SELECTORS` with no value. These functions are not
+ *     payable, so a call with value always reverts, and the tenant would pay for an operation
+ *     that cannot succeed.
+ *   - A plain value transfer to self, with calldata of exactly `0x`. It reaches only the wallet's
+ *     empty `receive()` (solady `Receiver`), so it runs no payload. wallet-kit allows the same
+ *     call (`packages/wallet-kit/src/self-calls.ts`).
+ * - `refused-self-call`: any other self-call. It may run a payload the allowlist cannot check.
+ *   Calldata of 1 to 3 bytes has no selector but reaches the wallet's `fallback`, so it is not a
+ *   plain transfer and lands here.
  */
-function isWalletManagementCall(call: InnerCall, sender: Address): boolean {
-	if (!isSelfCall(call, sender)) return false;
-	if (call.empty) return true;
-	return (
-		call.selector !== null && OWNER_MANAGEMENT_SELECTORS.has(call.selector)
-	);
-}
+type CallKind = "application" | "wallet-management" | "refused-self-call";
 
-/** Any other self-call. It may run a payload the allowlist cannot check, so it is refused. */
-function isOtherSelfCall(call: InnerCall, sender: Address): boolean {
-	return isSelfCall(call, sender) && !isWalletManagementCall(call, sender);
+function classifyCall(call: InnerCall, sender: Address): CallKind {
+	if (call.target.toLowerCase() !== sender.toLowerCase()) return "application";
+	if (call.empty) return "wallet-management";
+	if (
+		call.value === 0n &&
+		call.selector !== null &&
+		OWNER_MANAGEMENT_SELECTORS.has(call.selector)
+	) {
+		return "wallet-management";
+	}
+	return "refused-self-call";
 }
 
 export function evaluateSponsorship(
@@ -313,6 +333,10 @@ export function evaluateSponsorship(
 
 	// 3. Decode, or refuse. Never guess.
 	const calls = decodeInnerCalls(candidate.callData);
+	const classified = (calls ?? []).map((call) => ({
+		call,
+		kind: classifyCall(call, candidate.sender),
+	}));
 	if (calls === null) {
 		refuse(
 			"decodable-calls",
@@ -325,32 +349,47 @@ export function evaluateSponsorship(
 			"contract-not-allowed",
 			"the operation contains no calls",
 		);
-	} else if (calls.some((call) => isOtherSelfCall(call, candidate.sender))) {
-		// A self-call to anything but owner management or a plain transfer may run a payload this
-		// rule cannot decode.
-		refuse(
-			"decodable-calls",
-			"contract-not-allowed",
-			"a call from the wallet to itself is sponsored only to add or remove an owner, or as a plain value transfer",
-		);
 	} else {
 		pass("decodable-calls", `${calls.length} inner call(s)`);
 	}
 
+	// 3b. Self-calls. A call from the wallet to itself is sponsored only as wallet management (see
+	//     classifyCall). Any other self-call may run a payload these rules cannot check. The
+	//     reason stays `contract-not-allowed`, the reason the wallet already knows, but the rule
+	//     has its own name so the decision table says why.
+	const refusedSelfCalls = classified.filter(
+		({ kind }) => kind === "refused-self-call",
+	);
+	if (refusedSelfCalls.length > 0) {
+		refuse(
+			"self-calls",
+			"contract-not-allowed",
+			`a call from the wallet to itself is sponsored only to add or remove an owner (with no value), or as a plain value transfer; refused: ${refusedSelfCalls
+				.map(
+					({ call }) =>
+						`${call.selector ?? "calldata with no selector"}${call.value > 0n ? ` with value ${call.value}` : ""}`,
+				)
+				.join(", ")}`,
+		);
+	} else {
+		pass("self-calls");
+	}
+
 	// 4. Wallet management: a call from the wallet to itself that adds or removes an owner (see
 	//    OWNER_MANAGEMENT_SELECTORS for why this is a list of allowed functions), or a plain value
-	//    transfer to self (see isWalletManagementCall). Rule 3 refuses every other self-call, and
-	//    it is excluded here so it can never gain the wallet-management cap or skip the allowlist.
+	//    transfer to self (see classifyCall). Rule 3b refuses every other self-call, and it is
+	//    excluded here so it can never gain the wallet-management cap or skip the allowlist.
 	//
 	//    These transactions are sponsored. A user acquiring a second device holds no native token
 	//    and has no way to obtain one, so an unsponsored recovery path does not work for the users
 	//    who need it. That is why the rule is the platform's and not an allowlist entry: a tenant
 	//    that forgot to list something must not be able to break account recovery.
-	const selfCalls = (calls ?? []).filter((call) =>
-		isWalletManagementCall(call, candidate.sender),
+	const isWalletManagement = classified.some(
+		({ kind }) => kind === "wallet-management",
 	);
-	const isWalletManagement = selfCalls.length > 0;
-	const hasApplicationCalls = (calls ?? []).length > selfCalls.length;
+	const hasApplicationCalls = classified.some(
+		({ kind }) => kind === "application",
+	);
 
 	const tenantCapWei = config.maxCostPerTxWei
 		? BigInt(config.maxCostPerTxWei)
@@ -414,11 +453,11 @@ export function evaluateSponsorship(
 	const contractFailures: string[] = [];
 	const functionFailures: string[] = [];
 
-	for (const call of calls ?? []) {
-		// A self-call is governed by rule 4, not by the allowlist — a tenant should not have to
-		// allow-list its users' own wallet addresses, which it cannot know in advance. Any other
-		// self-call is not skipped, so it also fails here if rule 3 is ever changed.
-		if (isWalletManagementCall(call, candidate.sender)) continue;
+	for (const { call, kind } of classified) {
+		// Wallet management is governed by rule 4, not by the allowlist — a tenant should not have
+		// to allow-list its users' own wallet addresses, which it cannot know in advance. A refused
+		// self-call is not skipped, so it also fails here if rule 3b is ever changed.
+		if (kind === "wallet-management") continue;
 
 		const allowed = byContract.get(call.target.toLowerCase() as Address);
 		if (!allowed) {

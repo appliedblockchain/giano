@@ -32,22 +32,24 @@ const ADD_OWNER = encodeFunctionData({
 	args: [OTHER],
 });
 
-function execute(target: Address, data: Hex = "0x"): Hex {
+function execute(target: Address, data: Hex = "0x", value = 0n): Hex {
 	return encodeFunctionData({
 		abi: gianoSmartWalletAbi,
 		functionName: "execute",
-		args: [target, 0n, data],
+		args: [target, value, data],
 	});
 }
 
-function executeBatch(calls: Array<{ target: Address; data: Hex }>): Hex {
+function executeBatch(
+	calls: Array<{ target: Address; data: Hex; value?: bigint }>,
+): Hex {
 	return encodeFunctionData({
 		abi: gianoSmartWalletAbi,
 		functionName: "executeBatch",
 		args: [
 			calls.map((call) => ({
 				target: call.target,
-				value: 0n,
+				value: call.value ?? 0n,
 				data: call.data,
 			})),
 		],
@@ -126,7 +128,7 @@ describe("cost arithmetic", () => {
 describe("call decoding", () => {
 	it("decodes a single execute", () => {
 		expect(decodeInnerCalls(execute(TOKEN, TRANSFER))).toEqual([
-			{ target: TOKEN, selector: TRANSFER, empty: false },
+			{ target: TOKEN, value: 0n, selector: TRANSFER, empty: false },
 		]);
 	});
 
@@ -134,18 +136,18 @@ describe("call decoding", () => {
 		const calls = decodeInnerCalls(
 			executeBatch([
 				{ target: TOKEN, data: TRANSFER },
-				{ target: OTHER, data: APPROVE },
+				{ target: OTHER, data: APPROVE, value: 7n },
 			]),
 		);
 		expect(calls).toEqual([
-			{ target: TOKEN, selector: TRANSFER, empty: false },
-			{ target: OTHER, selector: APPROVE, empty: false },
+			{ target: TOKEN, value: 0n, selector: TRANSFER, empty: false },
+			{ target: OTHER, value: 7n, selector: APPROVE, empty: false },
 		]);
 	});
 
 	it("reports a bare value transfer as having no selector rather than inventing one", () => {
-		expect(decodeInnerCalls(execute(TOKEN, "0x"))).toEqual([
-			{ target: TOKEN, selector: null, empty: true },
+		expect(decodeInnerCalls(execute(TOKEN, "0x", 5n))).toEqual([
+			{ target: TOKEN, value: 5n, selector: null, empty: true },
 		]);
 	});
 
@@ -303,6 +305,8 @@ describe("wallet management", () => {
 			"executeBatch([self, 0x])",
 			executeBatch([{ target: WALLET, data: "0x" }]),
 		],
+		// receive() is payable, so a transfer of real value to self succeeds.
+		["execute(self, 0x, value 1)", execute(WALLET, "0x", 1n)],
 	])("sponsors a plain value transfer to self: %s", (_label, callData) => {
 		const decision = evaluate({ candidate: { ...candidate, callData } });
 		expect(decision.allowed).toBe(true);
@@ -376,14 +380,6 @@ describe("wallet management", () => {
 				args: [1n, "0x"],
 			}),
 		],
-		[
-			"removeLastOwner",
-			encodeFunctionData({
-				abi: gianoSmartWalletAbi,
-				functionName: "removeLastOwner",
-				args: [0n, "0x"],
-			}),
-		],
 	] as Array<[string, Hex]>)(
 		"sponsors %s as wallet management",
 		(_name, data) => {
@@ -395,8 +391,8 @@ describe("wallet management", () => {
 		},
 	);
 
-	it("allows exactly the four owner-management functions", () => {
-		expect(OWNER_MANAGEMENT_SELECTORS.size).toBe(4);
+	it("allows exactly the three owner-management functions the product sends", () => {
+		expect(OWNER_MANAGEMENT_SELECTORS.size).toBe(3);
 	});
 
 	it("does not require a tenant to allow-list its own users wallet addresses", () => {
@@ -504,6 +500,24 @@ describe("other self-calls", () => {
 		// 1 to 3 bytes: no selector, but not empty either, so the call reaches the fallback.
 		["execute(self, 1 byte)", execute(WALLET, "0x00")],
 		["execute(self, 3 bytes)", execute(WALLET, "0xabcdef")],
+		// Leaves the wallet with no owner. The product never sends it (WM-28).
+		[
+			"execute(self, removeLastOwner)",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "removeLastOwner",
+					args: [0n, "0x"],
+				}),
+			),
+		],
+		// The owner functions are not payable, so this always reverts and the tenant pays for nothing.
+		["execute(self, 1 wei, addOwnerAddress)", execute(WALLET, ADD_OWNER, 1n)],
+		[
+			"executeBatch([self, 1 wei, addOwnerAddress])",
+			executeBatch([{ target: WALLET, data: ADD_OWNER, value: 1n }]),
+		],
 	];
 
 	it.each(otherSelfCalls)("refuses %s", (_label, callData) => {
@@ -511,9 +525,14 @@ describe("other self-calls", () => {
 		expect(decision.allowed).toBe(false);
 		expect(decision.reason).toBe("contract-not-allowed");
 		expect(decision.isWalletManagement).toBe(false);
+		// The calls decoded fine. The refusal is recorded under its own rule, so the decision
+		// table says why.
 		expect(
 			decision.results.find((r) => r.rule === "decodable-calls")?.passed,
-		).toBe(false);
+		).toBe(true);
+		expect(decision.results.find((r) => r.rule === "self-calls")?.passed).toBe(
+			false,
+		);
 		expect(
 			decision.results.find((r) => r.rule === "contract-allowlist")?.passed,
 		).toBe(false);
@@ -606,6 +625,7 @@ describe("audit trail", () => {
 			"sponsorship-enabled",
 			"sender-binding",
 			"decodable-calls",
+			"self-calls",
 			"wallet-management",
 			"contract-allowlist",
 			"function-allowlist",
