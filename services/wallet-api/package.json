@@ -23,7 +23,7 @@
 		"@appliedblockchain/giano-tx-describe": "workspace:^7.0.1",
 		"@fastify/cors": "10.1.0",
 		"@fastify/rate-limit": "10.3.0",
-		"@fastify/swagger": "9.8.1",
+		"@fastify/swagger": "9.9.3",
 		"@fastify/swagger-ui": "6.1.2",
 		"@simplewebauthn/server": "13.3.2",
 		"drizzle-orm": "0.45.4",
