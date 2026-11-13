@@ -37,9 +37,17 @@ jobs:
       fail-fast: false
       matrix:
         leg:
-          - { id: main-1, name: 'main 1/2', test: 'pnpm test --fully-parallel --shard=1/2' }
-          - { id: main-2, name: 'main 2/2', test: 'pnpm test --fully-parallel --shard=2/2' }
-          - { id: demo, name: 'reference demo', test: 'pnpm test:demo' }
+          - {
+              id: main-1,
+              name: "main 1/2",
+              test: "pnpm test --fully-parallel --shard=1/2",
+            }
+          - {
+              id: main-2,
+              name: "main 2/2",
+              test: "pnpm test --fully-parallel --shard=2/2",
+            }
+          - { id: demo, name: "reference demo", test: "pnpm test:demo" }
     steps:
       # The stack builds wallet-api, wallet-web, paymaster-admin and the bundler from their
       # Dockerfiles, which build on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous
