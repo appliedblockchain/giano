@@ -40,11 +40,11 @@ jobs:
       # codeql-action v4.39.1, released 2026-10-21: an exact version at least 7 days old
       # (docs/abip-compliance.md, "Tools installed outside npm"). Dependabot proposes updates
       # after its 7-day cooldown.
-      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: ${{ matrix.language }}
           # Neither language needs a build: CodeQL reads the source and the workflow files.
           build-mode: none
-      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: /language:${{ matrix.language }}
