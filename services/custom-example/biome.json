@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.6.5/schema.json",
 	"root": true,
 	"vcs": {
 		"enabled": false
@@ -7,6 +7,16 @@
 	"files": {
 		"ignoreUnknown": false,
 		"includes": ["**", "!!**/dist"]
+	},
+	"markdown": {
+		"formatter": {
+			"enabled": false
+		}
+	},
+	"yaml": {
+		"formatter": {
+			"enabled": false
+		}
 	},
 	"formatter": {
 		"enabled": true,
