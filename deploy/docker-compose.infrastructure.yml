@@ -118,7 +118,7 @@ services:
     image: caddy:2.10-alpine
     restart: unless-stopped
     ports:
-      - '80:80'
+      - "80:80"
     volumes:
       - ./infrastructure/Caddyfile:/etc/caddy/Caddyfile:ro
     # Start order only, for one specific reason: Caddy resolves an upstream name per request,
@@ -136,7 +136,11 @@ services:
     healthcheck:
       # The index page, which Caddy answers itself. Deliberately not a route through to an
       # upstream: this reports whether the ROUTER is up, not the stack behind it.
-      test: ['CMD-SHELL', 'wget -q -O- --header="Host: giano.localhost" http://127.0.0.1/ >/dev/null || exit 1']
+      test:
+        [
+          "CMD-SHELL",
+          'wget -q -O- --header="Host: giano.localhost" http://127.0.0.1/ >/dev/null || exit 1',
+        ]
       interval: 10s
       timeout: 3s
       start_period: 5s
@@ -161,22 +165,40 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   anvil:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
-    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337', '--load-state', '/devnet/state.json']
+    entrypoint:
+      [
+        "anvil",
+        "--host",
+        "0.0.0.0",
+        "--chain-id",
+        "31337",
+        "--load-state",
+        "/devnet/state.json",
+      ]
     restart: unless-stopped
     volumes:
       - ../e2e/devnet/state.json:/devnet/state.json:ro
     ports:
       # For `cast`, not for a browser: the browser reaches this chain at rpc.giano.localhost.
-      - '8545:8545'
+      - "8545:8545"
 
   anvil-b:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
-    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31338', '--load-state', '/devnet/state.json']
+    entrypoint:
+      [
+        "anvil",
+        "--host",
+        "0.0.0.0",
+        "--chain-id",
+        "31338",
+        "--load-state",
+        "/devnet/state.json",
+      ]
     restart: unless-stopped
     volumes:
       - ../e2e/devnet/state-31338.json:/devnet/state.json:ro
     ports:
-      - '8546:8545'
+      - "8546:8545"
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # bundler — one giano-bundler serving both chains (POST /31337, POST /31338).
@@ -199,10 +221,10 @@ services:
       - anvil-b
     environment:
       GIANO_CHAINS: *giano-chains
-      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-      GIANO_DEV_MODE: 'true'
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      GIANO_DEV_MODE: "true"
     ports:
-      - '4337:4337'
+      - "4337:4337"
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # postgres — wallet-api's database, and the only service that has one.
@@ -221,7 +243,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      test: ["CMD-SHELL", "pg_isready -U giano -d giano"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -241,8 +263,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/init.js']
-    restart: 'no'
+    command: ["node", "dist/init.js"]
+    restart: "no"
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
@@ -308,7 +330,7 @@ services:
       # For `curl` against the admin API. The browser reaches this at api.giano.localhost,
       # and the wallet origins proxy it same-origin under /api, which is the path the SPA
       # actually uses.
-      - '8080:8080'
+      - "8080:8080"
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       # A build concern only, and `test` rather than `development` because the production
@@ -322,7 +344,7 @@ services:
       # services/wallet-api/src/environments.ts.
       GIANO_ENVIRONMENT: local-infra
       # the init service ran them, as the AWS task's init container does
-      RUN_MIGRATIONS: 'false'
+      RUN_MIGRATIONS: "false"
       # The closed list of chains this backend serves: the document at the top of this file.
       # Each chain submits to <BUNDLER_BASE_URL>/<chainId>.
       GIANO_CHAINS: *giano-chains
@@ -337,20 +359,20 @@ services:
       # charged — rather than a paymaster that cannot refuse anything. The paymaster, its
       # signer and both tenants' funded balances are baked into the devnet state; the RULES
       # go in at bring-up through the real admin API (see sponsorship-provisioner).
-      SPONSORSHIP_ENABLED: 'true'
+      SPONSORSHIP_ENABLED: "true"
       SPONSORSHIP_SIGNER_KIND: local
-      SPONSORSHIP_SIGNER_KEY_REF: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
-      SPONSORSHIP_VALIDITY_SECONDS: '180'
+      SPONSORSHIP_SIGNER_KEY_REF: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+      SPONSORSHIP_VALIDITY_SECONDS: "180"
       # Must be STRICTLY GREATER than the validity window; the config loader enforces it.
-      SPONSORSHIP_RESERVATION_TTL_SECONDS: '300'
+      SPONSORSHIP_RESERVATION_TTL_SECONDS: "300"
       # Generous on purpose: the baked state leaves the base fee high (~100 gwei after the
       # deployment blocks), and a tight cap would refuse "add a passkey on a new device" for
       # a reason that has nothing to do with wallet management.
-      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: '100000000000000000'
-      PAYMASTER_WATCHER_ENABLED: 'true'
-      PAYMASTER_WATCHER_POLL_MS: '1000'
-      PAYMASTER_WATCHER_CONFIRMATIONS: '0'
-      PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
+      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: "100000000000000000"
+      PAYMASTER_WATCHER_ENABLED: "true"
+      PAYMASTER_WATCHER_POLL_MS: "1000"
+      PAYMASTER_WATCHER_CONFIRMATIONS: "0"
+      PAYMASTER_RECONCILE_INTERVAL_MS: "5000"
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # sponsorship-provisioner — installs each tenant's sponsorship RULES, then verifies them.
@@ -371,7 +393,7 @@ services:
   # ════════════════════════════════════════════════════════════════════════════════════════
   sponsorship-provisioner:
     image: node:24-alpine
-    restart: 'no'
+    restart: "no"
     depends_on:
       wallet-api:
         condition: service_healthy
@@ -382,7 +404,7 @@ services:
       # Over the compose network, not through the proxy: the tenant is selected by slug and
       # admin key, not by Host, so there is nothing to gain from a round-trip through :80.
       WALLET_API_URL: http://wallet-api:8080
-    command: ['node', 'provision-sponsorship.mjs']
+    command: ["node", "provision-sponsorship.mjs"]
 
   # ════════════════════════════════════════════════════════════════════════════════════════
   # wallet-web — tenant `stock`'s wallet origin, and the shared UI.
@@ -467,16 +489,16 @@ services:
       sponsorship-provisioner:
         condition: service_completed_successfully
     environment:
-      BYO_WALLET_PORT: '8080'
+      BYO_WALLET_PORT: "8080"
       # wallet-api base URL /api is proxied to; Host and Origin forwarded untouched
       WALLET_API_UPSTREAM: http://wallet-api:8080
-      CHAIN_ID: '31337'
+      CHAIN_ID: "31337"
       CHAIN_NAME: Devnet A
-      CHAIN_B_ID: '31338'
+      CHAIN_B_ID: "31338"
       CHAIN_B_NAME: Devnet B
       # Required: this image carries no contracts registry and no devnet artefacts, so the
       # factory it derives addresses from has to be supplied. Same address on both chains.
-      FACTORY_ADDRESS: '0x9c01925D07527A7920031196396A9c37421715A2'
+      FACTORY_ADDRESS: "0x9c01925D07527A7920031196396A9c37421715A2"
       # The real sponsorship path, through /api/v1/paymaster. `service` needs no permissive
       # paymaster fixture, so PAYMASTER_ADDRESS stays unset.
       SPONSORSHIP_MODE: service

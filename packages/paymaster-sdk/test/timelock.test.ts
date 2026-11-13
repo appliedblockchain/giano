@@ -110,12 +110,11 @@ function chain(options: ChainOptions = {}) {
 			case "getDelay":
 				return effective(args[1] as string);
 			case "getBatchDelay":
-				return (args[1] as string[])
-					.map(effective)
-					.reduce(
-						(longest, each) => (each > longest ? each : longest),
-						MIN_DELAY,
-					);
+				return (args[1] as string[]).map(effective).reduce(
+					// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
+					(longest, each) => (each > longest ? each : longest),
+					MIN_DELAY,
+				);
 			case "hasRole":
 				return (
 					args[0] === TIMELOCK_ROLES.EXECUTOR_ROLE &&

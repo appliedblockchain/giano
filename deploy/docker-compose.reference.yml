@@ -15,7 +15,7 @@ services:
     volumes:
       - giano-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      test: ["CMD-SHELL", "pg_isready -U giano -d giano"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -24,8 +24,8 @@ services:
   # (services/wallet-api/src/init.ts). wallet-api waits for it and never migrates itself.
   init:
     image: ghcr.io/appliedblockchain/giano-wallet-api:${GIANO_VERSION:-latest}
-    command: ['node', 'dist/init.js']
-    restart: 'no'
+    command: ["node", "dist/init.js"]
+    restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,11 +44,11 @@ services:
       init:
         condition: service_completed_successfully
     ports:
-      - '8080:8080'
+      - "8080:8080"
     environment:
       DATABASE_URL: postgres://giano:${POSTGRES_PASSWORD}@postgres:5432/giano
       # the init service ran them
-      RUN_MIGRATIONS: 'false'
+      RUN_MIGRATIONS: "false"
       # Which environment this is (services/wallet-api/src/environments.ts). `reference` has no
       # platform console of Giano's, so no platform route is registered.
       GIANO_ENVIRONMENT: reference
@@ -109,7 +109,7 @@ services:
     depends_on:
       - wallet-api
     ports:
-      - '8081:8080'
+      - "8081:8080"
     environment:
       # the dedicated wallet origin, e.g. https://wallet.clientapp.com behind your TLS proxy
       GIANO_CHAIN_ID: ${CHAIN_ID:?}

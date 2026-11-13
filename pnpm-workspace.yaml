@@ -104,7 +104,7 @@ saveExact: true
 # Native deps left unbuilt (matches pre-pnpm-11 behavior — none were built before).
 # Flip any to `true` and reinstall if its build scripts are needed.
 allowBuilds:
-  '@swc/core': false
+  "@swc/core": false
   bufferutil: false
   cpu-features: false
   esbuild: false

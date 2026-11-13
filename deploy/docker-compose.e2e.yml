@@ -45,24 +45,42 @@ services:
   # behaviour is exercised rather than reasoned about.
   anvil:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
-    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337', '--load-state', '/devnet/state.json']
+    entrypoint:
+      [
+        "anvil",
+        "--host",
+        "0.0.0.0",
+        "--chain-id",
+        "31337",
+        "--load-state",
+        "/devnet/state.json",
+      ]
     volumes:
       - ../e2e/devnet/state.json:/devnet/state.json:ro
     ports:
-      - '8545:8545'
+      - "8545:8545"
 
   # Chain B: a distinct chain id that cannot be confused with A (S10), started by default —
   # the two-chain stack is what contributors and CI run, and the single-chain suite passes
   # against it unmodified (MC-128).
   anvil-b:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
-    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31338', '--load-state', '/devnet/state.json']
+    entrypoint:
+      [
+        "anvil",
+        "--host",
+        "0.0.0.0",
+        "--chain-id",
+        "31338",
+        "--load-state",
+        "/devnet/state.json",
+      ]
     volumes:
       # v0.9 caches its EIP-712 chain ID/domain in runtime code. Generate each chain
       # separately; the generator verifies that all Giano contract addresses still agree.
       - ../e2e/devnet/state-31338.json:/devnet/state.json:ro
     ports:
-      - '8546:8545'
+      - "8546:8545"
 
   # Lends the demo port 80, so its URLs can omit a port without anything running as root.
   #
@@ -78,14 +96,14 @@ services:
   # would just fight it for the port. Bring it up with:
   #   docker compose --profile portless -f deploy/docker-compose.e2e.yml up -d
   portless-port80:
-    profiles: ['portless']
+    profiles: ["portless"]
     image: alpine/socat@sha256:3ed1cd38741bd445ebffa3aecb9d80c46a83db45f5b5ef03332976c7ca9814af # latest as of 2026-08
     ports:
-      - '80:80'
+      - "80:80"
     # How a container reaches a host-loopback listener: Docker Desktop provides this name
     # already, Linux needs it mapped explicitly.
     extra_hosts:
-      - 'host.docker.internal:host-gateway'
+      - "host.docker.internal:host-gateway"
     # 1355 is PORTLESS_LISTEN_PORT in e2e/origins.mjs — keep the two in step.
     command: TCP-LISTEN:80,fork,reuseaddr TCP:host.docker.internal:1355
     restart: unless-stopped
@@ -102,10 +120,10 @@ services:
       - anvil-b
     environment:
       GIANO_CHAINS: *giano-chains
-      BUNDLER_EXECUTOR_PRIVATE_KEYS: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-      GIANO_DEV_MODE: 'true'
+      BUNDLER_EXECUTOR_PRIVATE_KEYS: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      GIANO_DEV_MODE: "true"
     ports:
-      - '4337:4337'
+      - "4337:4337"
 
   postgres:
     image: postgres:17-alpine
@@ -114,7 +132,7 @@ services:
       POSTGRES_USER: giano
       POSTGRES_PASSWORD: giano
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      test: ["CMD-SHELL", "pg_isready -U giano -d giano"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -132,8 +150,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/init.js']
-    restart: 'no'
+    command: ["node", "dist/init.js"]
+    restart: "no"
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
@@ -182,7 +200,7 @@ services:
       # published for the host-side BYO wallet proxy (e2e/wallet-byo/serve.mjs) and as the
       # loopback target for portless's http://api.localhost.
       # NOTE: collides with giano-dev's 8080 — the two stacks already collide on 8545/4337.
-      - '8080:8080'
+      - "8080:8080"
     environment:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       # NODE_ENV is a build concern only: `test` rather than `development` because the production
@@ -197,7 +215,7 @@ services:
       # services/wallet-api/src/environments.ts.
       GIANO_ENVIRONMENT: e2e
       # the init service ran them
-      RUN_MIGRATIONS: 'false'
+      RUN_MIGRATIONS: "false"
       # The closed list of chains this backend serves (MC-46): the document above. Each chain
       # submits to <BUNDLER_BASE_URL>/<chainId>.
       GIANO_CHAINS: *giano-chains
@@ -206,26 +224,26 @@ services:
       # The ceremony limit is per client IP, and every Playwright test is the same IP. With
       # operations included as soon as they are sent, the suite runs passkey ceremonies faster
       # than the production default of 30 a minute allows; this is a test-runner allowance only.
-      CEREMONY_RATE_LIMIT_PER_MINUTE: '120'
+      CEREMONY_RATE_LIMIT_PER_MINUTE: "120"
       # ── Gas sponsorship ──────────────────────────────────────────────────────
       # The demo transacts through the PRODUCTION paymaster, so what is demonstrated is the path
       # real tenants use — rules enforced, balance debited, fee charged — rather than a permissive
       # fixture that cannot fail. All of it is pre-baked into the devnet state
       # (e2e/devnet/generate-state.mjs); the rules go in at bring-up through the real admin API.
-      SPONSORSHIP_ENABLED: 'true'
+      SPONSORSHIP_ENABLED: "true"
       # `local` is refused when GIANO_DEPLOYMENT_CLASS=production. This stack is a devnet, and the
       # key is anvil's — deterministic, worthless, and committed on purpose.
       SPONSORSHIP_SIGNER_KIND: local
-      SPONSORSHIP_SIGNER_KEY_REF: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
-      SPONSORSHIP_VALIDITY_SECONDS: '180'
-      SPONSORSHIP_RESERVATION_TTL_SECONDS: '300'
+      SPONSORSHIP_SIGNER_KEY_REF: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+      SPONSORSHIP_VALIDITY_SECONDS: "180"
+      SPONSORSHIP_RESERVATION_TTL_SECONDS: "300"
       # Generous for a devnet: fixtures should never trip the platform wallet-management cap when
       # what they are exercising is a passkey addition rather than the cap itself.
-      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: '100000000000000000'
-      PAYMASTER_WATCHER_ENABLED: 'true'
-      PAYMASTER_WATCHER_POLL_MS: '1000'
-      PAYMASTER_WATCHER_CONFIRMATIONS: '0'
-      PAYMASTER_RECONCILE_INTERVAL_MS: '5000'
+      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: "100000000000000000"
+      PAYMASTER_WATCHER_ENABLED: "true"
+      PAYMASTER_WATCHER_POLL_MS: "1000"
+      PAYMASTER_WATCHER_CONFIRMATIONS: "0"
+      PAYMASTER_RECONCILE_INTERVAL_MS: "5000"
 
   wallet-web:
     build:
@@ -249,7 +267,7 @@ services:
       tx-mapping-provisioner:
         condition: service_completed_successfully
     ports:
-      - '8081:8080'
+      - "8081:8080"
     environment:
       # Both chains, one wallet origin (MC-39). No node or bundler URLs: the wallet reads through
       # wallet-api's /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId>, so
@@ -282,7 +300,7 @@ services:
       sponsorship-provisioner:
         condition: service_completed_successfully
     ports:
-      - '8083:8080'
+      - "8083:8080"
     environment:
       # The Platform area's same-origin proxy to wallet-api, as wallet-web's. Unset, the console has
       # no Platform area at all.
@@ -319,8 +337,8 @@ services:
     working_dir: /provision
     environment:
       WALLET_API_URL: http://wallet-api:8080
-    command: ['node', 'provision-sponsorship.mjs']
-    restart: 'no'
+    command: ["node", "provision-sponsorship.mjs"]
+    restart: "no"
 
   # Publishes each demo tenant's ERC-7730 transaction-display mappings through the real admin API,
   # then reads them back. Gated into readiness the same way the sponsorship provisioner is, and for
@@ -337,5 +355,5 @@ services:
     working_dir: /provision
     environment:
       WALLET_API_URL: http://wallet-api:8080
-    command: ['node', 'provision-tx-mappings.mjs']
-    restart: 'no'
+    command: ["node", "provision-tx-mappings.mjs"]
+    restart: "no"

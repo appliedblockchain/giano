@@ -23,18 +23,18 @@ services:
       POSTGRES_USER: giano
       POSTGRES_PASSWORD: giano
     ports:
-      - '5432:5432'
+      - "5432:5432"
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      test: ["CMD-SHELL", "pg_isready -U giano -d giano"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
-    entrypoint: ['anvil', '--host', '0.0.0.0', '--chain-id', '31337']
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--chain-id", "31337"]
     ports:
-      - '8545:8545'
+      - "8545:8545"
 
   # giano-bundler waits for the EntryPoint to appear, so it can start before pnpm local:deploy runs.
   bundler:
@@ -46,9 +46,9 @@ services:
     environment:
       GIANO_CHAINS: *giano-chains
       BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
-      GIANO_DEV_MODE: 'true'
+      GIANO_DEV_MODE: "true"
     ports:
-      - '4337:4337'
+      - "4337:4337"
 
   # The init step every deployment runs before wallet-api (services/wallet-api/src/init.ts):
   # migrations, the local-dev bootstrap platform admins into an empty platform_admins table, and the dev
@@ -61,8 +61,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/init.js']
-    restart: 'no'
+    command: ["node", "dist/init.js"]
+    restart: "no"
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
@@ -94,7 +94,7 @@ services:
       init:
         condition: service_completed_successfully
     ports:
-      - '8080:8080'
+      - "8080:8080"
     environment:
       NODE_ENV: development
       # What the deployment is, as distinct from how it was built — it is what gates whether a
@@ -103,7 +103,7 @@ services:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       GIANO_ENVIRONMENT: local-dev
       # the init service ran them
-      RUN_MIGRATIONS: 'false'
+      RUN_MIGRATIONS: "false"
       GIANO_CHAINS: *giano-chains
       BUNDLER_BASE_URL: http://bundler:4337
       LOG_LEVEL: debug

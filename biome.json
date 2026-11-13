@@ -31,11 +31,6 @@
 			"enabled": false
 		}
 	},
-	"yaml": {
-		"formatter": {
-			"enabled": false
-		}
-	},
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab"
